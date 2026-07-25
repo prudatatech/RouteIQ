@@ -411,9 +411,9 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     }
   }, [])
 
-  // WebSocket + HTTP polling fallback every 12s
+  // WebSocket + HTTP polling fallback every 5s
   useEffect(() => {
-    if (!initialVehicle?.id) return;
+    if (!initialVehicle?.id || !trackingId) return;
     let wsAlive = false
 
     const ws = telemetryWS.connect((data) => {
@@ -428,30 +428,41 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       }
     })
 
-    // HTTP poll fallback every 12s
+    // HTTP poll fallback every 5s using the public tracking API
     pollRef.current = setInterval(async () => {
       if (wsAlive) { wsAlive = false; return } // WS delivered data, skip poll
       try {
-        const res = await fetch(`/api/v1/telemetry/${initialVehicle.id}/history?limit=1`)
-        if (res.ok) {
-          const arr = await res.json()
-          if (arr?.[0]) {
-            setLiveVehicle((prev: any) => ({
+        const data = await shipmentsAPI.trackPublicly(trackingId)
+        if (data?.vehicle) {
+          setLiveVehicle((prev: any) => {
+            let calculatedSpeed = prev?.speed || 0;
+            if (prev?.lat && prev?.lng && (prev.lat !== data.vehicle.lat || prev.lng !== data.vehicle.lng)) {
+              // rough distance calculation for speed (meters per 5 sec)
+              const from = point([prev.lng, prev.lat]);
+              const to = point([data.vehicle.lng, data.vehicle.lat]);
+              const distanceKm = turfLength(lineString([from.geometry.coordinates, to.geometry.coordinates]), {units: 'kilometers'});
+              // distanceKm / 5 seconds = (distanceKm * 1000) meters / 5 sec = m/s
+              calculatedSpeed = (distanceKm * 1000) / 5;
+            } else if (!prev?.lat || (prev.lat === data.vehicle.lat && prev.lng === data.vehicle.lng)) {
+              calculatedSpeed = 0; // Stationary
+            }
+
+            return {
               ...prev,
-              lat: arr[0].latitude,
-              lng: arr[0].longitude,
-              speed: arr[0].speed || 0
-            }))
-          }
+              lat: data.vehicle.lat,
+              lng: data.vehicle.lng,
+              speed: calculatedSpeed
+            };
+          });
         }
       } catch { }
-    }, 12000)
+    }, 5000)
 
     return () => {
       ws.close()
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [initialVehicle?.id])
+  }, [initialVehicle?.id, trackingId])
 
   // Auto-update ETA & city every 30s
   useEffect(() => {

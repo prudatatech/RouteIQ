@@ -386,14 +386,14 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
       await supabase.from('vehicles').insert({
         id: uuidv4(),
         plate_number: `TEMP-${userId.substring(0, 6).toUpperCase()}`,
-        vehicle_type: vehicle_type,
+        vehicle_type: 'truck', // Must be valid enum
         driver_id: userId,
         status: 'idle',
         capacity_kg: 1000 // Default capacity
       });
     } else {
       // Update existing vehicle type
-      await supabase.from('vehicles').update({ vehicle_type }).eq('id', existingVehicle.id);
+      await supabase.from('vehicles').update({ vehicle_type: 'truck' }).eq('id', existingVehicle.id);
     }
 
     res.json({ status: 'success', vehicle_type });
