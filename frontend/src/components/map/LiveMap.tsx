@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import mapboxgl from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
 import { Search, Navigation, X } from 'lucide-react'
 import axios from 'axios'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -223,6 +223,9 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
     let lastRouteSetTime = 0
 
     if (!mapRef.current || _mapInstance) return
+    if (MAPBOX_TOKEN && MAPBOX_TOKEN !== 'your_mapbox_token_here') {
+      mapboxgl.accessToken = MAPBOX_TOKEN
+    }
 
     const map = new mapboxgl.Map({
       container: mapRef.current!,
@@ -299,15 +302,16 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer' })
       map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = '' })
 
-      map.on('click', 'clusters', async (e) => {
+      map.on('click', 'clusters', (e) => {
         const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] })
         const clusterId = features[0].properties?.cluster_id
-        try {
-          const zoom = await (map.getSource('trucks') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(clusterId)
-          map.easeTo({ center: (features[0].geometry as any).coordinates, zoom })
-        } catch (err) {
-          console.error('Failed to get cluster expansion zoom', err)
-        }
+        ;(map.getSource('trucks') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
+          clusterId,
+          (err, zoom) => {
+            if (err || typeof zoom !== 'number') return
+            map.easeTo({ center: (features[0].geometry as any).coordinates, zoom })
+          }
+        )
       })
 
       map.on('click', 'unclustered-point', (e) => {
