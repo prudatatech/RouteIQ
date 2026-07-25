@@ -205,7 +205,6 @@ export const capacityService = {
       const { data: s } = await supabase.from('shipments').insert({
         tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
         status: 'assigned',
-        vehicle_id: window.vehicle_id,
         priority: 'high',
         origin_name: vendorOriginName,
         origin_address: vendorOriginAddress,
@@ -262,8 +261,7 @@ export const capacityService = {
       drop_lat: manifestDropLat,
       drop_lng: manifestDropLng,
       capacity_kg: bid.weight_kg || 500,
-      status: 'scheduled',
-      route_type: window.trigger_type === 'end_of_route' || window.trigger_type === 'return_trip' ? 'backhaul' : 'forward'
+      status: 'scheduled'
     });
 
     // 7. Inject the route stop for the vendor's drop-off point if there's an active route
