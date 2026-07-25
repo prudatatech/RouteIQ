@@ -1,0 +1,78 @@
+﻿F841 Local variable `total_v_q` is assigned to but never used
+  --> app\api\v1\endpoints\dashboard.py:33:9
+   |
+31 |         routes_q = select(Route).where(Route.created_at >= today)
+32 |         v_count_q = select(func.count()).where(Vehicle.status == "on_route")
+33 |         total_v_q = select(func.count(Vehicle.id))
+   |         ^^^^^^^^^
+34 |
+35 |     # Active vehicles
+   |
+help: Remove assignment to unused variable `total_v_q`
+
+F821 Undefined name `datetime`
+   --> app\api\v1\endpoints\telemetry.py:102:20
+    |
+100 |         longitude=payload["lng"],
+101 |         reason=payload.get("reason", "unknown"),
+102 |         start_time=datetime.now()
+    |                    ^^^^^^^^
+103 |     )
+104 |     db.add(stoppage)
+    |
+
+F821 Undefined name `self`
+  --> app\services\telemetry_service.py:91:37
+   |
+89 |                 # Run re-optimization in background to not block ingestion
+90 |                 import asyncio
+91 |                 asyncio.create_task(self._trigger_reroute_check(str(vehicle_id)))
+   |                                     ^^^^
+92 |
+93 |         return t
+   |
+
+E701 Multiple statements on one line (colon)
+  --> app\services\traffic_service.py:16:21
+   |
+14 |         # Pseudo-random consistency
+15 |         score = (abs(lat) + abs(lng)) % 10
+16 |         if score > 8: return "high"
+   |                     ^
+17 |         if score > 5: return "medium"
+18 |         return "low"
+   |
+
+E701 Multiple statements on one line (colon)
+  --> app\services\traffic_service.py:17:21
+   |
+15 |         score = (abs(lat) + abs(lng)) % 10
+16 |         if score > 8: return "high"
+17 |         if score > 5: return "medium"
+   |                     ^
+18 |         return "low"
+   |
+
+F841 Local variable `d` is assigned to but never used
+  --> check_db.py:8:9
+   |
+ 6 | async def check():
+ 7 |     async with AsyncSessionLocal() as s:
+ 8 |         d = (await s.execute(select(Depot))).scalars().all()
+   |         ^
+ 9 |         v_avail = (await s.execute(select(Vehicle).where(Vehicle.status.in_(["available", "idle"])))).scalars().all()
+10 |         dp_pending = (await s.execute(select(DeliveryPoint).where(DeliveryPoint.status == "pending"))).scalars().all()
+   |
+help: Remove assignment to unused variable `d`
+
+E402 Module level import not at top of file
+  --> tests\test_api.py:13:1
+   |
+13 | from asgi_lifespan import LifespanManager
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |
+15 | @pytest_asyncio.fixture
+   |
+
+Found 7 errors.
+No fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option).

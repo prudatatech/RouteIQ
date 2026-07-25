@@ -1,0 +1,194 @@
+version: '3.9'
+
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL Database
+  # ─────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: routeiq_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: routeiq
+      POSTGRES_PASSWORD: routeiq_pass
+      POSTGRES_DB: routeiq
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U routeiq"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Redis Cache + Message Broker
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: routeiq_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # FastAPI Backend
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: routeiq_backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://routeiq:routeiq_pass@db:5432/routeiq
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  telemetry:
+    build:
+      context: ./telemetry-service
+      dockerfile: Dockerfile
+    container_name: routeiq_telemetry
+    restart: unless-stopped
+    ports:
+      - "8003:8002"
+    environment:
+      PORT: 8002
+      DATABASE_URL: postgresql://routeiq:routeiq_pass@db:5432/routeiq
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: 6692a21c0546dd3f374ea4cfe562bb0e41556e5188
+      BACKEND_API_URL: http://backend:8000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./telemetry-service:/app
+      - /app/node_modules
+    command: npm run dev
+
+
+  # ─────────────────────────────────────────────
+  # Celery Worker
+  # ─────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: routeiq_celery_worker
+    restart: unless-stopped
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=4
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://routeiq:routeiq_pass@db:5432/routeiq
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+    depends_on:
+      - backend
+      - redis
+    healthcheck:
+      disable: true
+
+  # ─────────────────────────────────────────────
+  # Celery Beat Scheduler
+  # ─────────────────────────────────────────────
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: routeiq_celery_beat
+    restart: unless-stopped
+    command: celery -A app.core.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    env_file: ./backend/.env
+    depends_on:
+      - celery_worker
+    healthcheck:
+      disable: true
+
+  # ─────────────────────────────────────────────
+  # React Frontend
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: routeiq_frontend
+    restart: unless-stopped
+    ports:
+      - "3005:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # Prometheus Monitoring
+  # ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: routeiq_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+
+  # ─────────────────────────────────────────────
+  # Grafana Dashboards
+  # ─────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: routeiq_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/prometheus/grafana_datasource.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

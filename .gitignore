@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+backend/app/ml/eta_model.pkl
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.env
+*.local
+
+# Docker
+*.override.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+secrets/
+
+# Logs & debug output
+*.log
+all_logs.txt
+db_logs.txt
+build.log
+test_results*.txt
+backend_logs.txt
+recent_logs.txt
+build_output_fresh.txt
+frontend/build_output.txt
+backend/state_output.txt
+backend/seed_error.txt
+backend_error.log
+backend_error_utf8.log
+optimization_error.log
+
+# Dev/debug scripts (not needed in repo)
+backend/check_pass.py
+backend/check_users.py
+backend/diag.py
+backend/fix_passwords.py
+backend/reset_passwords.py
+backend/verify_login_api.py
+backend/tmp_check_db.py

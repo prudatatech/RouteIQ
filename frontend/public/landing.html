@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouteIQ | AI-Powered Fleet Intelligence</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#0ea5e9', // Sky 500
+                        secondary: '#10b981', // Emerald 500
+                        accent: '#f97316', // Orange 500
+                        dark: '#0f172a', // Slate 900
+                        darker: '#020617', // Slate 950
+                        surface: '#1e293b', // Slate 800
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #020617;
+            color: #f8fafc;
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-image: linear-gradient(90deg, #0ea5e9, #10b981);
+        }
+        
+        .text-gradient-accent {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-image: linear-gradient(90deg, #f97316, #fbbf24);
+        }
+
+        .hero-glow {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(14,165,233,0.15) 0%, rgba(2,6,23,0) 70%);
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: -1;
+            pointer-events: none;
+        }
+        
+        .feature-card {
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+            border-color: rgba(14, 165, 233, 0.4);
+        }
+        
+        .grid-bg {
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+            -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+        }
+    </style>
+</head>
+<body class="antialiased overflow-x-hidden selection:bg-primary selection:text-white">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 glass-panel border-b-0 border-white/5 transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <div class="flex-shrink-0">
+                    <span class="font-display font-bold text-2xl tracking-tight">Route<span class="text-primary">IQ</span></span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8">
+                        <a href="#features" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">Features</a>
+                        <a href="#spot-lock" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">Spot & Lock</a>
+                        <a href="#comparison" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">Comparison</a>
+                        <a href="#" class="bg-primary/10 text-primary hover:bg-primary hover:text-white px-5 py-2.5 rounded-full text-sm font-semibold transition-all border border-primary/20">Request Demo</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <div class="relative pt-32 pb-20 sm:pt-40 sm:pb-24 lg:pb-32 overflow-hidden">
+        <div class="hero-glow"></div>
+        <div class="absolute inset-0 grid-bg opacity-30 z-[-1]"></div>
+        
+        <div class="max-w-7xl mx-auto px-6 lg:px-8 relative z-10 text-center">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full glass-panel text-sm font-medium text-primary mb-8 border-primary/20">
+                <span class="relative flex h-2 w-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                </span>
+                AI-Powered Fleet Intelligence
+            </div>
+            
+            <h1 class="font-display text-5xl sm:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
+                Live fleet visibility. <br class="hidden sm:block">
+                <span class="text-gradient">AI-optimized routes.</span><br>
+                Zero empty returns.
+            </h1>
+            
+            <p class="mt-6 text-lg sm:text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
+                RouteIQ brings real-time GPS tracking, AI-driven route optimization, and a live capacity-matching marketplace into a single platform — so fleets spend less time running empty and shippers never wait on freight.
+            </p>
+            
+            <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="#" class="px-8 py-4 bg-primary text-white rounded-full font-semibold text-lg hover:bg-sky-400 transition-all shadow-[0_0_20px_rgba(14,165,233,0.4)] hover:shadow-[0_0_30px_rgba(14,165,233,0.6)] transform hover:-translate-y-1">
+                    Start Optimizing Today
+                </a>
+                <a href="#executive-summary" class="px-8 py-4 glass-panel text-white rounded-full font-semibold text-lg hover:bg-surface transition-all border border-white/10 hover:border-white/20">
+                    Explore Platform <i class="fa-solid fa-arrow-down ml-2 text-sm"></i>
+                </a>
+            </div>
+
+            <div class="mt-16 flex flex-wrap justify-center gap-4 text-sm font-medium text-gray-400">
+                <span class="glass-panel px-4 py-2 rounded-lg border-white/5"><i class="fa-solid fa-location-crosshairs text-primary mr-2"></i> Live GPS Tracking</span>
+                <span class="glass-panel px-4 py-2 rounded-lg border-white/5"><i class="fa-solid fa-route text-secondary mr-2"></i> AI Route Optimization</span>
+                <span class="glass-panel px-4 py-2 rounded-lg border-white/5"><i class="fa-solid fa-handshake text-accent mr-2"></i> Spot & Lock Matching</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Executive Summary Stats -->
+    <div id="executive-summary" class="py-12 bg-surface/30 border-y border-white/5 relative z-10">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center divide-y md:divide-y-0 md:divide-x divide-white/10">
+                <div class="p-4">
+                    <div class="text-4xl font-display font-bold text-white mb-2">360&deg;</div>
+                    <div class="text-primary font-medium">Live fleet visibility</div>
+                </div>
+                <div class="p-4 pt-8 md:pt-4">
+                    <div class="text-4xl font-display font-bold text-white mb-2">AI</div>
+                    <div class="text-secondary font-medium">Route & ETA optimization</div>
+                </div>
+                <div class="p-4 pt-8 md:pt-4">
+                    <div class="text-4xl font-display font-bold text-white mb-2">Zero</div>
+                    <div class="text-accent font-medium">Wasted empty-return capacity</div>
+                </div>
+            </div>
+            
+            <div class="mt-16 max-w-4xl mx-auto text-center">
+                <p class="text-lg text-gray-300 leading-relaxed mb-6">
+                    RouteIQ is an AI-powered fleet management and logistics intelligence platform. It gives fleet owners, logistics companies, and shippers a single system for live vehicle tracking, AI-driven route planning, and real-time capacity matching — closing the gap between vehicles that have space and shipments that need to move.
+                </p>
+                <p class="text-lg text-gray-300 leading-relaxed">
+                    Unlike traditional fleet-tracking software that only shows <em>where</em> a vehicle is, and unlike on-demand booking apps that only handle <em>new</em> requests, RouteIQ combines both: full operational visibility for fleet managers, plus a live marketplace layer that lets idle or returning capacity get discovered and booked instantly — directly tackling one of logistics' most persistent cost leaks: the empty return trip.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- The Problem & Solution -->
+    <div id="spot-lock" class="py-24 relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+                <!-- Problem -->
+                <div>
+                    <h2 class="text-accent font-semibold tracking-wide uppercase text-sm mb-3">The Empty-Return Problem</h2>
+                    <h3 class="font-display text-3xl md:text-4xl font-bold mb-6">Why logistics fleets lose money on the way back</h3>
+                    <p class="text-gray-400 mb-6 text-lg">
+                        In road freight, a truck that delivers a full load often drives back to its origin with nothing on board. This "empty return" problem is one of the largest hidden costs in logistics — the fleet still pays for fuel, driver time, tolls, and vehicle wear, but earns nothing.
+                    </p>
+                    <ul class="space-y-4">
+                        <li class="flex items-start">
+                            <div class="flex-shrink-0 h-6 w-6 rounded-full bg-red-500/20 flex items-center justify-center mt-0.5 border border-red-500/30">
+                                <i class="fa-solid fa-eye-slash text-red-400 text-xs"></i>
+                            </div>
+                            <p class="ml-4 text-gray-300"><strong class="text-white">No real-time visibility</strong> — Shippers with loads near a returning truck have no way to know capacity exists right now.</p>
+                        </li>
+                        <li class="flex items-start">
+                            <div class="flex-shrink-0 h-6 w-6 rounded-full bg-red-500/20 flex items-center justify-center mt-0.5 border border-red-500/30">
+                                <i class="fa-solid fa-hourglass-half text-red-400 text-xs"></i>
+                            </div>
+                            <p class="ml-4 text-gray-300"><strong class="text-white">Slow, manual matching</strong> — Existing load-boards rely on posting and waiting for bids, which takes hours.</p>
+                        </li>
+                        <li class="flex items-start">
+                            <div class="flex-shrink-0 h-6 w-6 rounded-full bg-red-500/20 flex items-center justify-center mt-0.5 border border-red-500/30">
+                                <i class="fa-solid fa-shield-halved text-red-400 text-xs"></i>
+                            </div>
+                            <p class="ml-4 text-gray-300"><strong class="text-white">No trust layer</strong> — Without verified capacity and delivery proof, fleets default to known contacts, leaving capacity unused.</p>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Solution -->
+                <div class="glass-panel p-8 md:p-10 rounded-3xl border-t-4 border-t-secondary relative group">
+                    <div class="absolute -inset-1 bg-gradient-to-r from-secondary to-primary rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                    <div class="relative">
+                        <h2 class="text-secondary font-semibold tracking-wide uppercase text-sm mb-3">The RouteIQ Answer</h2>
+                        <h3 class="font-display text-3xl font-bold mb-6">Spot & Lock Layer</h3>
+                        <p class="text-gray-300 mb-8 text-lg">
+                            RouteIQ turns every returning or idle vehicle into discoverable, bookable capacity in real time. Instead of posting a load and waiting, shippers see nearby vehicles on a live map and lock one instantly.
+                        </p>
+                        
+                        <!-- Flow Diagram -->
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-darker/50 p-6 rounded-2xl border border-white/5">
+                            <div class="text-center w-full">
+                                <div class="w-12 h-12 rounded-full bg-surface border border-white/10 flex items-center justify-center mx-auto mb-3 text-primary">
+                                    <i class="fa-solid fa-broadcast-tower"></i>
+                                </div>
+                                <div class="text-sm font-semibold text-white">Broadcast</div>
+                                <div class="text-xs text-gray-500 mt-1">Live capacity</div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-gray-600 hidden sm:block"></i>
+                            <i class="fa-solid fa-chevron-down text-gray-600 sm:hidden"></i>
+                            
+                            <div class="text-center w-full">
+                                <div class="w-12 h-12 rounded-full bg-surface border border-white/10 flex items-center justify-center mx-auto mb-3 text-secondary">
+                                    <i class="fa-solid fa-map-location-dot"></i>
+                                </div>
+                                <div class="text-sm font-semibold text-white">Spot Map</div>
+                                <div class="text-xs text-gray-500 mt-1">Updates instantly</div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-gray-600 hidden sm:block"></i>
+                            <i class="fa-solid fa-chevron-down text-gray-600 sm:hidden"></i>
+                            
+                            <div class="text-center w-full">
+                                <div class="w-12 h-12 rounded-full bg-surface border border-white/10 flex items-center justify-center mx-auto mb-3 text-accent">
+                                    <i class="fa-solid fa-check-double"></i>
+                                </div>
+                                <div class="text-sm font-semibold text-white">Tap to Lock</div>
+                                <div class="text-xs text-gray-500 mt-1">Confirmed pickup</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Spot & Lock Features Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-16">
+                <div class="glass-panel p-6 rounded-2xl feature-card">
+                    <h4 class="text-lg font-bold text-white mb-2">Live Spot Map</h4>
+                    <p class="text-sm text-gray-400">Real-time map of nearby vehicles with spare capacity, updated as fleets move — not a static load board.</p>
+                </div>
+                <div class="glass-panel p-6 rounded-2xl feature-card">
+                    <h4 class="text-lg font-bold text-white mb-2">Tap-to-Lock</h4>
+                    <p class="text-sm text-gray-400">Instant claim on a passing vehicle's capacity, replacing slow post-and-bid models.</p>
+                </div>
+                <div class="glass-panel p-6 rounded-2xl feature-card">
+                    <h4 class="text-lg font-bold text-white mb-2">Corridor Prediction</h4>
+                    <p class="text-sm text-gray-400">Forecasts which vehicles will pass a route in the next few hours, so shippers can plan ahead.</p>
+                </div>
+                <div class="glass-panel p-6 rounded-2xl feature-card">
+                    <h4 class="text-lg font-bold text-white mb-2">Fixed-Formula Pricing</h4>
+                    <p class="text-sm text-gray-400">Price set by distance, weight, and fuel index — removing bidding friction completely.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Capabilities -->
+    <div id="features" class="py-24 bg-surface/30 border-y border-white/5 relative">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <h2 class="font-display text-3xl md:text-5xl font-bold mb-6">Core Fleet Capabilities</h2>
+                <p class="text-gray-400 text-lg">A complete ecosystem that replaces disjointed legacy software with unified operational intelligence.</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Feature 1 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-primary">
+                    <div class="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 border border-primary/20 text-primary text-xl">
+                        <i class="fa-solid fa-satellite-dish"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Live GPS & Telemetry</h3>
+                    <p class="text-gray-400">Continuous tracking of location, speed, fuel level, and engine data across the entire fleet.</p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-secondary">
+                    <div class="w-14 h-14 rounded-2xl bg-secondary/10 flex items-center justify-center mb-6 border border-secondary/20 text-secondary text-xl">
+                        <i class="fa-solid fa-route"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">AI Route Optimization</h3>
+                    <p class="text-gray-400">A vehicle-routing solver plans efficient multi-stop routes automatically respecting delivery windows.</p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-accent">
+                    <div class="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mb-6 border border-accent/20 text-accent text-xl">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Predictive ETA</h3>
+                    <p class="text-gray-400">Machine-learning ETA modeling accounts for traffic and route conditions, not just straight-line distance.</p>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-purple-500">
+                    <div class="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6 border border-purple-500/20 text-purple-400 text-xl">
+                        <i class="fa-solid fa-wrench"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Health & Maintenance</h3>
+                    <p class="text-gray-400">Automated alerts flag maintenance issues and engine faults before they cause breakdowns.</p>
+                </div>
+
+                <!-- Feature 5 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-rose-500">
+                    <div class="w-14 h-14 rounded-2xl bg-rose-500/10 flex items-center justify-center mb-6 border border-rose-500/20 text-rose-400 text-xl">
+                        <i class="fa-solid fa-box-open"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Cargo Tracking</h3>
+                    <p class="text-gray-400">End-to-end shipment visibility with digital proof-of-delivery and instant signature capture.</p>
+                </div>
+
+                <!-- Feature 6 -->
+                <div class="glass-panel p-8 rounded-3xl feature-card border-l-4 border-l-blue-500">
+                    <div class="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6 border border-blue-500/20 text-blue-400 text-xl">
+                        <i class="fa-solid fa-mobile-screen-button"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-3">Driver Mobile App</h3>
+                    <p class="text-gray-400">Navigation-grade GPS collection and seamless task management in the hands of every driver.</p>
+                </div>
+            </div>
+            
+            <!-- Architecture Banner -->
+            <div class="mt-16 bg-gradient-to-br from-primary/20 to-blue-900/20 rounded-3xl border border-primary/20 p-8 md:p-12 text-center relative overflow-hidden">
+                <div class="absolute inset-0 grid-bg opacity-20"></div>
+                <div class="relative z-10">
+                    <h3 class="font-display text-2xl font-bold text-white mb-4">Direct-to-Cloud Real-Time Architecture</h3>
+                    <p class="text-gray-300 max-w-3xl mx-auto mb-8">
+                        RouteIQ uses the same architectural pattern used by on-demand platforms like ride-hailing and delivery apps — so fleet status updates reach the dashboard instantly, without constant polling.
+                    </p>
+                    <div class="flex flex-col sm:flex-row justify-center items-center gap-4 text-sm font-bold text-white">
+                        <div class="glass-panel px-6 py-3 rounded-full border-white/10">📱 Driver App Collects GPS</div>
+                        <i class="fa-solid fa-arrow-right-long text-primary hidden sm:block"></i>
+                        <i class="fa-solid fa-arrow-down text-primary sm:hidden"></i>
+                        <div class="glass-panel px-6 py-3 rounded-full border-white/10">☁️ Live DB Update</div>
+                        <i class="fa-solid fa-arrow-right-long text-primary hidden sm:block"></i>
+                        <i class="fa-solid fa-arrow-down text-primary sm:hidden"></i>
+                        <div class="glass-panel px-6 py-3 rounded-full border-white/10">💻 Real-Time Dashboard</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Value Prop & Trust -->
+    <div class="py-24 relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
+                <!-- Why it matters -->
+                <div>
+                    <h2 class="font-display text-3xl font-bold mb-8">Why It Matters</h2>
+                    <div class="space-y-6">
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center flex-shrink-0 text-secondary">
+                                <i class="fa-solid fa-chart-line"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-white font-bold text-lg">Lower cost per trip</h4>
+                                <p class="text-gray-400 mt-1">Filling return capacity through Spot & Lock turns a previously unpaid leg into direct revenue.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center flex-shrink-0 text-secondary">
+                                <i class="fa-solid fa-truck-fast"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-white font-bold text-lg">Better asset utilization</h4>
+                                <p class="text-gray-400 mt-1">Fleet managers see exactly which vehicles are idle, moving, or available right now.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center flex-shrink-0 text-secondary">
+                                <i class="fa-solid fa-leaf"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-white font-bold text-lg">Sustainability reporting</h4>
+                                <p class="text-gray-400 mt-1">Fewer empty-return kilometers means lower fuel use and emissions, reportable for ESG purposes.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center flex-shrink-0 text-secondary">
+                                <i class="fa-solid fa-layer-group"></i>
+                            </div>
+                            <div>
+                                <h4 class="text-white font-bold text-lg">One unified ecosystem</h4>
+                                <p class="text-gray-400 mt-1">Fleet tracking, spot bookings, and logistics data live together seamlessly in a single platform.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trust & Safety -->
+                <div class="glass-panel p-8 md:p-10 rounded-3xl border-t-4 border-t-accent">
+                    <h2 class="font-display text-3xl font-bold mb-8">Trust, Verification & Safety</h2>
+                    <div class="space-y-6">
+                        <div class="p-5 rounded-2xl bg-darker/50 border border-white/5 hover:border-accent/30 transition-colors">
+                            <h4 class="text-white font-bold text-lg mb-2 flex items-center gap-2">
+                                <i class="fa-solid fa-certificate text-accent"></i> Verified Capacity
+                            </h4>
+                            <p class="text-gray-400 text-sm">Capacity claims are checked against hard vehicle and route data rather than taken purely on trust.</p>
+                        </div>
+                        <div class="p-5 rounded-2xl bg-darker/50 border border-white/5 hover:border-accent/30 transition-colors">
+                            <h4 class="text-white font-bold text-lg mb-2 flex items-center gap-2">
+                                <i class="fa-solid fa-camera text-accent"></i> Photo-Based Damage Checks
+                            </h4>
+                            <p class="text-gray-400 text-sm">Timestamped pickup and drop photos help flag and resolve damage disputes quickly and fairly.</p>
+                        </div>
+                        <div class="p-5 rounded-2xl bg-darker/50 border border-white/5 hover:border-accent/30 transition-colors">
+                            <h4 class="text-white font-bold text-lg mb-2 flex items-center gap-2">
+                                <i class="fa-solid fa-money-bill-transfer text-accent"></i> Proof-of-Delivery Payouts
+                            </h4>
+                            <p class="text-gray-400 text-sm">Payment flows are tied to confirmed digital delivery, drastically reducing manual verification delays.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Comparison Table -->
+    <div id="comparison" class="py-24 bg-surface/30 border-t border-white/5">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <h2 class="font-display text-3xl md:text-5xl font-bold mb-6">RouteIQ at a Glance</h2>
+                <p class="text-gray-400 text-lg">How it compares to traditional fleet software and on-demand booking apps.</p>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[800px]">
+                    <thead>
+                        <tr>
+                            <th class="p-4 border-b border-white/10 text-gray-400 font-semibold text-sm uppercase tracking-wider">Capability</th>
+                            <th class="p-4 border-b border-primary/30 bg-primary/10 text-primary font-bold text-lg rounded-t-xl text-center w-1/4">RouteIQ</th>
+                            <th class="p-4 border-b border-white/10 text-gray-400 font-semibold text-sm uppercase tracking-wider text-center w-1/4">Traditional Fleet Software</th>
+                            <th class="p-4 border-b border-white/10 text-gray-400 font-semibold text-sm uppercase tracking-wider text-center w-1/4">On-Demand Booking Apps</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5 text-gray-300">
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">Live GPS fleet tracking</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center">Yes</td>
+                            <td class="p-4 text-center text-gray-500">Limited</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">AI route optimization (VRP)</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-gray-500">Rare</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">Predictive ETA modeling</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-gray-500">Rare</td>
+                            <td class="p-4 text-center text-gray-500">Basic</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">Live spare-capacity map (Spot & Lock)</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">Empty-return matching</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                            <td class="p-4 text-center text-gray-500">Manual bidding</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors">
+                            <td class="p-4 font-medium text-white">Verified capacity & damage detection</td>
+                            <td class="p-4 bg-primary/5 text-center text-primary font-bold"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                        </tr>
+                        <tr class="hover:bg-white/5 transition-colors border-b border-white/5">
+                            <td class="p-4 font-medium text-white">Unified logistics ecosystem</td>
+                            <td class="p-4 bg-primary/10 text-center text-primary font-bold rounded-b-xl"><i class="fa-solid fa-check"></i> Yes</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                            <td class="p-4 text-center text-red-400"><i class="fa-solid fa-xmark"></i> No</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-8 text-center text-gray-400 max-w-4xl mx-auto">
+                <p>Traditional fleet software provides visibility but not a marketplace. On-demand booking apps provide a marketplace but not fleet-wide operational intelligence. <strong class="text-white">RouteIQ is built to do both in one platform.</strong></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- CTA Footer -->
+    <footer class="relative py-24 overflow-hidden">
+        <div class="absolute inset-0 bg-primary/10"></div>
+        <div class="absolute inset-0 grid-bg opacity-30"></div>
+        <div class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
+        
+        <div class="max-w-4xl mx-auto px-6 relative z-10 text-center">
+            <h2 class="font-display text-4xl md:text-5xl font-bold mb-6 text-white">Ready to eliminate empty returns?</h2>
+            <p class="text-xl text-primary/80 font-medium mb-10">Live visibility, optimized routes, and no more empty returns.</p>
+            
+            <a href="#" class="inline-block px-10 py-5 bg-white text-darker rounded-full font-bold text-lg hover:bg-gray-100 transition-all shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_40px_rgba(255,255,255,0.5)] transform hover:-translate-y-1">
+                Get Started with RouteIQ
+            </a>
+            
+            <div class="mt-16 text-gray-500 text-sm">
+                &copy; 2026 RouteIQ Platform. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

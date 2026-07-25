@@ -1,0 +1,3 @@
+Found 2 target vehicles.
+Vehicle: HR38AC-1276, Last Sync: None, Status: offline
+Vehicle: HR38AC-1658, Last Sync: None, Status: on_route

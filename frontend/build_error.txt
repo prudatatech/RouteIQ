@@ -1,0 +1,17 @@
+
+> routeiq-frontend@1.0.0 build
+> tsc && vite build
+
+src/components/map/LiveMap.tsx(61,11): error TS2353: Object literal may only specify known properties, and 'background' does not exist in type 'StyleSpecification'.
+src/components/ui/AppLayout.tsx(4,3): error TS6133: 'Settings' is declared but its value is never read.
+src/components/ui/AppLayout.tsx(4,13): error TS6133: 'Bell' is declared but its value is never read.
+src/components/ui/AppLayout.tsx(4,27): error TS6133: 'ChevronRight' is declared but its value is never read.
+src/components/ui/index.tsx(79,64): error TS6133: 'className' is declared but its value is never read.
+src/pages/DashboardPage.tsx(2,42): error TS6133: 'Zap' is declared but its value is never read.
+src/pages/DashboardPage.tsx(2,47): error TS6133: 'AlertTriangle' is declared but its value is never read.
+src/pages/FleetPage.tsx(2,20): error TS6133: 'useMutation' is declared but its value is never read.
+src/pages/FleetPage.tsx(3,24): error TS6133: 'Filter' is declared but its value is never read.
+src/pages/FleetPage.tsx(6,1): error TS6133: 'toast' is declared but its value is never read.
+src/pages/FleetPage.tsx(18,9): error TS6133: 'queryClient' is declared but its value is never read.
+src/pages/OptimizePage.tsx(3,34): error TS6133: 'AlertCircle' is declared but its value is never read.
+src/pages/RoutesPage.tsx(3,16): error TS6133: 'CardHeader' is declared but its value is never read.

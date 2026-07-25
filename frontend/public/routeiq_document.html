@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouteIQ - Pilot Proposal & Business Overview</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #0F2A4A; /* Deep Navy */
+            --secondary: #009688; /* Teal */
+            --accent: #F26122; /* Vibrant Orange */
+            --brand-dark: #111827;
+            --text-main: #333333;
+            --text-muted: #555555;
+            --bg-light: #F8F9FA;
+            --border: #E5E7EB;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        body {
+            background: #E5E7EB;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: 'Inter', sans-serif;
+            color: var(--text-main);
+            padding: 2rem;
+            gap: 2rem;
+        }
+
+        h1, h2, h3, .serif {
+            font-family: 'DM Serif Display', serif;
+        }
+
+        /* A4 Page Formatting */
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            background: white;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            page-break-after: always;
+        }
+
+        /* Cover Page */
+        .cover {
+            background: var(--primary);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 20mm;
+        }
+
+        .cover-accent {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 150mm;
+            height: 150mm;
+            background: radial-gradient(circle, var(--secondary) 0%, transparent 70%);
+            opacity: 0.3;
+            transform: translate(30%, -30%);
+        }
+
+        .cover-tag {
+            font-family: 'Inter', sans-serif;
+            color: var(--accent);
+            font-size: 11pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 5mm;
+            z-index: 2;
+            position: relative;
+        }
+
+        .cover h1 {
+            font-size: 55pt;
+            line-height: 1.1;
+            margin-bottom: 6mm;
+            position: relative;
+            z-index: 2;
+        }
+
+        .cover p.subtitle {
+            font-size: 18pt;
+            font-weight: 300;
+            font-family: 'Inter', sans-serif;
+            color: #CBD5E1;
+            max-width: 140mm;
+            line-height: 1.4;
+            margin-bottom: 15mm;
+            z-index: 2;
+            position: relative;
+        }
+
+        .cover .meta-box {
+            font-family: 'Inter', sans-serif;
+            font-size: 11pt;
+            line-height: 1.8;
+            color: #E2E8F0;
+            max-width: 120mm;
+            padding: 8mm;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid var(--accent);
+            z-index: 2;
+            position: relative;
+        }
+
+        /* Inner Pages */
+        .inner-page {
+            padding: 15mm 15mm 25mm 15mm;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .inner-page .header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9pt;
+            font-weight: 600;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8mm;
+            border-bottom: 2px solid var(--secondary);
+            padding-bottom: 4mm;
+        }
+
+        .header .page-tag {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-muted);
+            font-size: 9pt;
+            font-weight: 400;
+        }
+
+        h2.headline {
+            font-size: 26pt;
+            color: var(--primary);
+            line-height: 1.1;
+            margin-bottom: 5mm;
+        }
+
+        h3.subhead {
+            font-family: 'Inter', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            color: var(--secondary);
+            margin-bottom: 3mm;
+            margin-top: 6mm;
+            display: flex;
+            align-items: center;
+            gap: 2mm;
+        }
+
+        h3.subhead.accent {
+            color: var(--accent);
+        }
+
+        .body-text {
+            font-size: 10.5pt;
+            line-height: 1.5;
+            color: var(--text-main);
+            margin-bottom: 4mm;
+        }
+
+        .body-text strong {
+            color: var(--primary);
+        }
+
+        /* Highlight Boxes */
+        .highlight-box {
+            background: #FFF5F1;
+            border: 1px solid #FED7AA;
+            border-radius: 8px;
+            padding: 8mm;
+            margin: 6mm 0;
+            position: relative;
+            page-break-inside: avoid;
+        }
+
+        .highlight-box h3 {
+            font-size: 18pt;
+            color: var(--accent);
+            margin-bottom: 3mm;
+        }
+
+        .highlight-box p {
+            font-size: 10.5pt;
+            line-height: 1.5;
+            color: var(--brand-dark);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .blue-box {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 8px;
+            padding: 8mm;
+            margin: 6mm 0;
+            page-break-inside: avoid;
+            border-left: 4px solid var(--primary);
+        }
+
+        .blue-box h3 {
+            font-family: 'Inter', sans-serif;
+            font-size: 12pt;
+            color: var(--primary);
+            margin-bottom: 3mm;
+            font-weight: 700;
+        }
+
+        /* Feature Grid */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5mm;
+            margin-top: 6mm;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 5mm;
+            margin-top: 6mm;
+        }
+
+        .feature-block {
+            background: white;
+            border: 1px solid var(--border);
+            padding: 5mm;
+            border-radius: 6px;
+            border-top: 4px solid var(--primary);
+            page-break-inside: avoid;
+        }
+
+        .feature-block.teal {
+            border-top-color: var(--secondary);
+            background: #F0FDF4;
+        }
+
+        .feature-block.orange {
+            border-top-color: var(--accent);
+            background: #FFF5F1;
+        }
+
+        .feature-block h4 {
+            font-family: 'Inter', sans-serif;
+            font-size: 10.5pt;
+            color: var(--primary);
+            margin-bottom: 2mm;
+            font-weight: 700;
+        }
+
+        .feature-block p {
+            font-size: 9.5pt;
+            line-height: 1.4;
+            color: var(--text-muted);
+        }
+
+        /* Lists */
+        ul.bullet-list {
+            margin-left: 2mm;
+            margin-bottom: 6mm;
+            list-style: none;
+        }
+
+        ul.bullet-list li {
+            font-size: 10.5pt;
+            line-height: 1.5;
+            margin-bottom: 2mm;
+            position: relative;
+            padding-left: 5mm;
+        }
+
+        ul.bullet-list li::before {
+            content: '•';
+            color: var(--accent);
+            font-size: 16pt;
+            position: absolute;
+            left: 0;
+            top: -4px;
+        }
+
+        /* Table */
+        .brochure-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6mm;
+            page-break-inside: avoid;
+        }
+
+        .brochure-table th {
+            text-align: left;
+            padding: 3mm;
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: white;
+            background: var(--primary);
+            border-bottom: 2px solid var(--brand-dark);
+        }
+
+        .brochure-table td {
+            padding: 3.5mm 3mm;
+            font-size: 9.5pt;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-main);
+            line-height: 1.4;
+        }
+
+        .brochure-table tr td:first-child {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .brochure-table tr:nth-child(even) td {
+            background-color: #F8FAFC;
+        }
+
+        /* Footer */
+        .brochure-footer {
+            margin-top: auto;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8pt;
+            color: #9CA3AF;
+            font-family: 'Inter', sans-serif;
+            border-top: 1px solid var(--border);
+            padding-top: 3mm;
+        }
+
+        /* Print Settings */
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        @media print {
+            body { background: none; padding: 0; gap: 0; margin: 0; }
+            .page {
+                box-shadow: none;
+                margin: 0;
+                width: 210mm;
+                height: 297mm;
+                page-break-after: always;
+                overflow: hidden;
+            }
+            .page:last-child { page-break-after: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- PAGE 1: COVER -->
+    <div class="page cover">
+        <div class="cover-accent"></div>
+        <div class="cover-tag">RouteIQ Platform</div>
+        <h1>Fleet Pilot Proposal</h1>
+        <p class="subtitle">Turning your empty miles into booked revenue.</p>
+
+        <div class="meta-box">
+            <strong>PREPARED FOR:</strong> Fleet Operations, Leadership &amp; Investors<br>
+            <strong>FOCUS:</strong> Cost Reduction, Margin Expansion &amp; ESG Compliance<br>
+            <strong>OBJECTIVE:</strong> Proof of Concept (PoC) &amp; Business Partnership
+        </div>
+    </div>
+
+    <!-- PAGE 2: BUSINESS CASE -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>The Business Case</span>
+            <span class="page-tag">01 / OVERVIEW</span>
+        </div>
+
+        <h2 class="headline">Every empty return is a paid trip earning nothing.</h2>
+
+        <p class="body-text">
+            For fleet operators, the most expensive miles are the ones driven empty. Your drivers drop off a full load and turn around to head home. You are paying for fuel, driver hours, vehicle wear, and tolls, but generating absolutely zero revenue on that return leg.
+        </p>
+        <p class="body-text">
+            Why does this happen? Usually, it's a communication gap. A shipper right near your returning truck might desperately need a load moved along that exact route, but <strong>they have no idea your truck is there.</strong> Traditional load boards require hours of manual bidding and phone calls, by which time your driver is already halfway home.
+        </p>
+
+        <h3 class="subhead">Unit Economics Snapshot (Per Truck Impact)</h3>
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Without RouteIQ (Status Quo)</th>
+                    <th>With RouteIQ</th>
+                    <th>Annual Financial Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Empty Miles Driven</td>
+                    <td>~35% of total miles</td>
+                    <td>Under 15%</td>
+                    <td style="color: var(--secondary); font-weight: 600;">Fuel/Wear Savings</td>
+                </tr>
+                <tr>
+                    <td>Revenue per Round Trip</td>
+                    <td>1-Way Paid Only</td>
+                    <td>1.5x to 2x (Backhaul filled)</td>
+                    <td style="color: var(--secondary); font-weight: 600;">+$30k - $50k Top Line</td>
+                </tr>
+                <tr>
+                    <td>Dispatch Overhead</td>
+                    <td>2 Hours per manual load bid</td>
+                    <td>Automated Match & Lock</td>
+                    <td style="color: var(--secondary); font-weight: 600;">+30% Dispatch Capacity</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="blue-box" style="margin-top: 6mm;">
+            <h3>The Cost of the Status Quo</h3>
+            <ul style="margin-left: 5mm; margin-top: 2mm; line-height: 1.6; font-size: 10pt;">
+                <li><strong>Lost Margin:</strong> Operating costs remain fixed while revenue drops to zero.</li>
+                <li><strong>Wasted Assets:</strong> Trucks that could be moving freight are instead burning fuel.</li>
+                <li><strong>Manual Delays:</strong> Dispatchers spend hours hunting for backhauls instead of managing the fleet.</li>
+            </ul>
+        </div>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 1</span>
+        </div>
+    </div>
+
+    <!-- PAGE 3: WHAT THIS MEANS FOR YOUR FLEET -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>Operational Impact</span>
+            <span class="page-tag">02 / FLEET INTEGRATION</span>
+        </div>
+
+        <h2 class="headline">You keep control. We bring the demand.</h2>
+        <p class="body-text">
+            RouteIQ is not a brokerage that dictates your terms, and we aren't trying to replace your core business. We sit on top of your existing operations to ensure that your excess capacity never goes to waste.
+        </p>
+
+        <div class="grid-2">
+            <div class="feature-block teal">
+                <h4>What Changes (The Value)</h4>
+                <ul class="bullet-list" style="margin-top: 2mm;">
+                    <li><strong>Idle trucks become bookable capacity</strong> automatically.</li>
+                    <li>Shippers can <strong>tap-to-lock</strong> your empty space without manual phone negotiations.</li>
+                    <li>You get <strong>instant alerts</strong> when your empty trucks enter high-demand zones.</li>
+                </ul>
+            </div>
+            <div class="feature-block orange">
+                <h4>What Stays The Same (Your Control)</h4>
+                <ul class="bullet-list" style="margin-top: 2mm;">
+                    <li><strong>Your Drivers:</strong> You manage your own drivers.</li>
+                    <li><strong>Your Vehicles:</strong> You own and operate your assets.</li>
+                    <li><strong>Your Existing Operations:</strong> Primary contracts remain untouched; we just fill the gaps.</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3 class="subhead" style="margin-top: 8mm;">Value Proposition Matrix</h3>
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>Stakeholder</th>
+                    <th>Pain Point Addressed</th>
+                    <th>RouteIQ Solution Provided</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Fleet Owners</strong></td>
+                    <td>Margin erosion from empty miles</td>
+                    <td>Turns cost centers (empty trucks) into revenue generating assets via the Spot & Lock map.</td>
+                </tr>
+                <tr>
+                    <td><strong>Dispatchers</strong></td>
+                    <td>Time wasted manually calling brokers</td>
+                    <td>Automated matching and geofence alerts replace manual hunting with proactive push notifications.</td>
+                </tr>
+                <tr>
+                    <td><strong>Shippers</strong></td>
+                    <td>Unreliable capacity and slow booking</td>
+                    <td>Tap-to-Lock provides instant booking on verified passing trucks with GPS tracking.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 2</span>
+        </div>
+    </div>
+
+    <!-- PAGE 4: ROADMAP & CO-DESIGN -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>What You'd Be Piloting</span>
+            <span class="page-tag">03 / FEATURES</span>
+        </div>
+
+        <h2 class="headline">Ready today. Co-designed tomorrow.</h2>
+        <p class="body-text">
+            A successful pilot means deploying technology that works immediately, while also giving you a direct voice in what gets built next. We are offering you a seat at the table to shape the product to fit your exact fleet needs.
+        </p>
+
+        <h3 class="subhead">Live and Ready For Your Fleet Today</h3>
+        <div class="grid-3">
+            <div class="feature-block">
+                <h4>Live GPS Tracking</h4>
+                <p>Real-time visibility into all your vehicles on a unified dashboard.</p>
+            </div>
+            <div class="feature-block">
+                <h4>Automatic Route Planning</h4>
+                <p>Automated multi-stop planning that cuts down drive time.</p>
+            </div>
+            <div class="feature-block">
+                <h4>Driver App</h4>
+                <p>A mobile app for your drivers to receive routes and confirm delivery.</p>
+            </div>
+        </div>
+
+        <h3 class="subhead" style="margin-top: 6mm; color: var(--accent);">Built During The Pilot (With Your Input)</h3>
+        <p class="body-text">
+            During our pilot window, you will have direct input as we finalize these revenue-generating features. <strong>We build them based on your feedback.</strong>
+        </p>
+        <div class="grid-2">
+            <div class="feature-block orange">
+                <h4>Spot & Lock Marketplace</h4>
+                <p>The core engine that allows shippers to instantly book your empty capacity. You help us define the pricing rules and acceptance workflows.</p>
+            </div>
+            <div class="feature-block orange">
+                <h4>Empty-Truck Alerts</h4>
+                <p>Automated notifications when an empty truck enters a high-demand zone. You help us map the zones that matter most to your business.</p>
+            </div>
+        </div>
+
+
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 3</span>
+        </div>
+    </div>
+
+    <!-- PAGE 5: THE ASK (PILOT PROPOSAL) -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>The Ask</span>
+            <span class="page-tag">04 / THE PROPOSAL</span>
+        </div>
+
+        <h2 class="headline">A low-risk, high-value pilot.</h2>
+        <p class="body-text">
+            We know testing new software is a risk for your operations. We want to prove our value in a tight, controlled environment before asking for a fleet-wide rollout.
+        </p>
+
+        <div class="blue-box" style="margin-top: 4mm;">
+            <ul style="margin-left: 2mm; list-style: none; line-height: 1.8; font-size: 11pt;">
+                <li style="margin-bottom: 2mm;"><strong>Scope:</strong> 5 to 10 vehicles operating on a single, high-traffic corridor.</li>
+                <li style="margin-bottom: 2mm;"><strong>Duration:</strong> A strict 4 to 6-week window. No open-ended testing.</li>
+                <li style="margin-bottom: 2mm;"><strong>Cost:</strong> $0. This pilot is entirely free of charge.</li>
+                <li style="margin-bottom: 2mm;"><strong>What we need from you:</strong> Driver participation (app install), basic vehicle IDs, and a dedicated point of contact for weekly feedback.</li>
+                <li><strong>What you get:</strong> Live dashboard access, direct support, and input into what gets built next.</li>
+            </ul>
+        </div>
+
+        <h3 class="subhead">Success Criteria & ROI Targets</h3>
+        <p class="body-text">
+            We will define success together before the pilot starts. We recommend tracking:
+        </p>
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>KPI (Key Performance Indicator)</th>
+                    <th>Current Baseline</th>
+                    <th>Pilot Target Goal</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Empty Return Ratio</td>
+                    <td>~35% empty</td>
+                    <td>Reduce to < 20% on pilot corridor</td>
+                </tr>
+                <tr>
+                    <td>Dispatch Time per Backhaul</td>
+                    <td>2+ Hours (Manual)</td>
+                    <td>< 15 Mins (Automated Lock)</td>
+                </tr>
+                <tr>
+                    <td>Driver Adoption Rate</td>
+                    <td>0%</td>
+                    <td>> 90% daily active usage</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3 class="subhead" style="margin-top: 6mm;">What Happens After?</h3>
+        <p class="body-text">
+            If the pilot hits our agreed-upon metrics, we will present a discounted annual contract for fleet-wide rollout. If it doesn't work for you, you walk away. There is no lock-in, and you retain full ownership of all data generated during the pilot.
+        </p>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 4</span>
+        </div>
+    </div>
+
+    <!-- PAGE 6: INTEGRATION & DATA -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>Security & Onboarding</span>
+            <span class="page-tag">05 / INTEGRATION</span>
+        </div>
+
+        <h2 class="headline">Minimal friction. Total data ownership.</h2>
+        <p class="body-text">
+            Deploying a pilot shouldn't require an IT overhaul. RouteIQ is designed to run alongside your existing systems with almost no setup work on your end.
+        </p>
+
+        <div class="grid-2">
+            <div class="feature-block">
+                <h4>No Hardware Required</h4>
+                <p>RouteIQ runs entirely through our driver app and a web-based admin dashboard. There are no expensive trackers or hardware to install in your trucks for this pilot.</p>
+            </div>
+            <div class="feature-block teal">
+                <h4>Fast Onboarding</h4>
+                <p>We only need a list of your participating vehicle IDs and driver phone numbers. We can have your 5-10 pilot vehicles active on the dashboard in under 24 hours.</p>
+            </div>
+        </div>
+
+        <h3 class="subhead" style="margin-top: 10mm;">Data Privacy & Compliance Standards</h3>
+        <p class="body-text">
+            We treat your fleet's data with the utmost security. Your routes, customer locations, and driver information are your proprietary assets. This commitment to data integrity is also a cornerstone of our investor compliance standards.
+        </p>
+        
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>Security Area</th>
+                    <th>RouteIQ Implementation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Data Ownership</strong></td>
+                    <td>At the end of the pilot, you can export all your generated data. You retain 100% ownership.</td>
+                </tr>
+                <tr>
+                    <td><strong>Access Controls (RLS)</strong></td>
+                    <td>Every fleet's data is kept separate via strict Row-Level Security. Fleet A cannot see Fleet B's data.</td>
+                </tr>
+                <tr>
+                    <td><strong>Identity Masking</strong></td>
+                    <td>Identifying details (driver names, exact start points) stay hidden on the live map until a booking is secured.</td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Infrastructure</strong></td>
+                    <td>Hosted on secure, scalable cloud infrastructure ensuring 99.9% uptime during operational hours.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 5</span>
+        </div>
+    </div>
+
+    <!-- PAGE 7: AUTOMATED BROKERAGE -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>Execution Engine</span>
+            <span class="page-tag">06 / AUTOMATED BROKERAGE</span>
+        </div>
+
+        <h2 class="headline">We don't negotiate. We execute.</h2>
+        <p class="body-text">
+            Manual bidding is a race to the bottom that bleeds time and margin. RouteIQ operates as a high-speed execution engine built for <strong>world-level fleet control</strong>. We connect your assets directly to global demand and use algorithmic pricing to lock in revenue before your truck even slows down.
+        </p>
+        <p class="body-text" style="font-size: 11.5pt; font-weight: 600; color: var(--accent); margin-top: -2mm; margin-bottom: 6mm;">
+            Our doctrine is simple: If there is physical space in your truck on a return trip, our smart grid secures a booking for it. Zero waste. Zero loss.
+        </p>
+
+        <div class="highlight-box" style="margin-top: 6mm;">
+            <h3 class="serif" style="color: var(--primary);">The Automated Bidding Engine:</h3>
+            <ol style="margin-left: 6mm; margin-top: 3mm; line-height: 1.8; color: var(--text-main); font-size: 10.5pt;">
+                <li><strong>Live Node Ingestion:</strong> Your driver's phone acts as a telemetry node, broadcasting real-time location and available volumetric space directly to our matching engine.</li>
+                <li><strong>Predictive Availability:</strong> The moment a truck's manifest clears, our system projects its return vector and weaponizes that empty capacity by listing it on the live Spot Map.</li>
+                <li><strong>Algorithmic Pricing &amp; Lock:</strong> We eliminate manual broker bids. Our algorithm factors distance, local demand density, and fuel indices to generate a dynamic, non-negotiable price. The first shipper to tap locks the freight.</li>
+                <li><strong>Instant Dispatch:</strong> The system automatically recalculates the route and pushes the new manifest to the driver's app. Zero phone calls, zero hesitation — just continuous paid movement.</li>
+            </ol>
+        </div>
+
+        <h3 class="subhead" style="margin-top: 6mm;">Capturing the Broker Spread</h3>
+        <p class="body-text">
+            By intelligently automating world-level online bidding and capacity matching, we bypass traditional freight brokers entirely. This doesn't just save time — it allows you to capture the 15-20% margin that brokers typically skim off the top of every transaction. You command the market; you don't wait for it.
+        </p>
+
+        <div class="blue-box">
+            <h3>Deploying Aggressive Capabilities</h3>
+            <p style="font-size: 10.5pt; line-height: 1.6; color: var(--text-main); font-family: 'Inter', sans-serif;">
+                We deploy this execution engine without an IT project. No hardware installation. Just an app on the phones your drivers already carry, empowering your fleet with enterprise-grade automated brokerage.
+            </p>
+        </div>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 6</span>
+        </div>
+    </div>
+    
+    <!-- PAGE 8: MARKET OPPORTUNITY & INVESTOR PERSPECTIVE -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>Strategic Growth</span>
+            <span class="page-tag">07 / PARTNERSHIPS & INVESTORS</span>
+        </div>
+
+        <h2 class="headline">A highly scalable market opportunity.</h2>
+        <p class="body-text">
+            For our investment and strategic business partners, RouteIQ represents an entry into solving a massive structural inefficiency in the global supply chain. Logistics is a multi-trillion dollar industry, yet operates with staggering waste.
+        </p>
+
+        <h3 class="subhead">Market Sizing & Economic Impact</h3>
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>Market Segment</th>
+                    <th>Current Inefficiency</th>
+                    <th>RouteIQ Target Opportunity</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Total Addressable Market (TAM)</strong></td>
+                    <td>Global road freight market ($3T+)</td>
+                    <td>Digitizing the capacity procurement layer.</td>
+                </tr>
+                <tr>
+                    <td><strong>Serviceable Market (SAM)</strong></td>
+                    <td>Regional LTL and full-truckload brokers</td>
+                    <td>Capturing margin from manual broker fees (15-20%).</td>
+                </tr>
+                <tr>
+                    <td><strong>The "Empty Mile" Waste</strong></td>
+                    <td>20% to 35% of all miles are driven empty.</td>
+                    <td>Unlocking billions in previously unmonetized asset capacity.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="grid-2" style="margin-top: 8mm;">
+            <div class="feature-block orange">
+                <h4>High Margin Software Model</h4>
+                <p>RouteIQ operates as an asset-light SaaS and transaction network. We don't own trucks; we provide the intelligence layer that connects them, yielding high gross margins.</p>
+            </div>
+            <div class="feature-block teal">
+                <h4>ESG & Sustainability Driver</h4>
+                <p>Reducing empty miles directly reduces CO2 emissions. RouteIQ provides automated carbon tracking, making it an attractive ESG compliance tool for modern enterprises.</p>
+            </div>
+        </div>
+        
+        <p class="body-text" style="margin-top: 6mm;">
+            By partnering with RouteIQ through this pilot, fleets and investors alike are at the ground floor of establishing a new, frictionless standard for logistics capacity distribution.
+        </p>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 7</span>
+        </div>
+    </div>
+
+    <!-- PAGE 9: ROUTEIQ VS ALTERNATIVES -->
+    <div class="page inner-page">
+        <div class="header">
+            <span>RouteIQ vs Alternatives</span>
+            <span class="page-tag">08 / COMPARISON</span>
+        </div>
+
+        <h2 class="headline">Where RouteIQ fits, in plain terms.</h2>
+        <p class="body-text">
+            Most fleet software shows you where your trucks are. Most load-booking apps only handle new requests. RouteIQ does both — and fills the gap in between: your empty return trips.
+        </p>
+
+        <table class="brochure-table">
+            <thead>
+                <tr>
+                    <th>Capability / Metric</th>
+                    <th>RouteIQ</th>
+                    <th>Traditional Fleet Software</th>
+                    <th>On-Demand Booking Apps</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Live vehicle tracking</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>Limited</td>
+                </tr>
+                <tr>
+                    <td>Automatic route planning</td>
+                    <td>Yes</td>
+                    <td>Rare</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td>Digital proof of delivery</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td>Live map of nearby empty capacity</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                    <td>No</td>
+                </tr>
+                <tr>
+                    <td>Instant booking (no phone calls)</td>
+                    <td>Yes</td>
+                    <td>No</td>
+                    <td>Manual calls only</td>
+                </tr>
+                <tr>
+                    <td><strong>Capital Expenditure (CapEx)</strong></td>
+                    <td style="color: var(--secondary); font-weight: 600;">$0 (Uses existing phones)</td>
+                    <td>High (Requires ELD hardware)</td>
+                    <td>$0</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="blue-box" style="margin-top: 10mm; background: var(--primary); color: white; border-left-color: var(--secondary);">
+            <h3 style="color: white; margin-bottom: 2mm;">The Bottom Line</h3>
+            <p style="color: #CBD5E1; font-size: 10pt;">
+                Traditional fleet software tells you where your trucks are. Booking apps only handle new requests. RouteIQ does both — turning idle capacity into revenue automatically, with zero upfront capital expenditure.
+            </p>
+        </div>
+
+        <div class="brochure-footer">
+            <span>RouteIQ Pilot Proposal</span>
+            <span>Page 8</span>
+        </div>
+    </div>
+
+</body>
+</html>
