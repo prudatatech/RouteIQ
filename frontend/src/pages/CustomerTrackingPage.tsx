@@ -520,26 +520,16 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     if (dLat && dLng && !routeFetchedRef.current) {
       routeFetchedRef.current = true
       if (trackingId) {
-        fetch(`/api/v1/shipments/track/${trackingId}/route?lat=${lat}&lng=${lng}&dLat=${dLat}&dLng=${dLng}`)
-          .then(r => { if (!r.ok) throw new Error("proxy failed"); return r.json() })
+        fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${dLng},${dLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
+          .then(r => r.json())
           .then(data => {
-            if (data.coordinates) {
-              setFullRouteCoords(data.coordinates); setActiveRouteCoords(data.coordinates)
-              const calcEta = formatEta(data.duration_seconds / 60)
+            if (data.routes?.[0]) {
+              const c = data.routes[0].geometry.coordinates
+              setFullRouteCoords(c); setActiveRouteCoords(c)
+              const calcEta = formatEta(data.routes[0].duration / 60)
               setEta(calcEta); if (onEtaUpdate) onEtaUpdate(calcEta)
             }
-          }).catch(() => {
-            fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${dLng},${dLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
-              .then(r => r.json())
-              .then(data => {
-                if (data.routes?.[0]) {
-                  const c = data.routes[0].geometry.coordinates
-                  setFullRouteCoords(c); setActiveRouteCoords(c)
-                  const calcEta = formatEta(data.routes[0].duration / 60)
-                  setEta(calcEta); if (onEtaUpdate) onEtaUpdate(calcEta)
-                }
-              }).catch(console.error)
-          })
+          }).catch(console.error)
       }
     }
   }, [liveVehicle?.lat, liveVehicle?.lng, destination?.lat, destination?.lng, onEtaUpdate, trackingId])
