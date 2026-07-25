@@ -13,7 +13,7 @@ const LiveMapPage: React.FC = () => {
     if (mapContainer.current && !mapInstance.current) {
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
-        style: '/map-style.json',
+        style: '/map-style.json?v=2',
         center: [0, 0],
         zoom: 2,
       });

@@ -222,7 +222,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
 
     const map = new mapboxgl.Map({
       container: mapRef.current!,
-      style: '/map-style.json',
+      style: '/map-style.json?v=2',
       center: MAP_DEFAULTS.CENTER,
       zoom: MAP_DEFAULTS.ZOOM,
       minZoom: MAP_DEFAULTS.MIN_ZOOM,
@@ -287,7 +287,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       map.addLayer({ id: 'clusters', type: 'circle', source: 'trucks', filter: ['has', 'point_count'], paint: { 'circle-color': '#0F172A', 'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 50, 40], 'circle-stroke-width': 2, 'circle-stroke-color': '#EAB308' } })
       
       // Cluster Count layer
-      map.addLayer({ id: 'cluster-count', type: 'symbol', source: 'trucks', filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count'], 'text-size': 12, 'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'] }, paint: { 'text-color': '#ffffff' } })
+      map.addLayer({ id: 'cluster-count', type: 'symbol', source: 'trucks', filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count'], 'text-size': 12, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#ffffff' } })
       
       // Map Interactions
       map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer' })
