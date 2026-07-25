@@ -45,7 +45,7 @@ export default function VendorOnboardingPage() {
       try {
         const token = (await supabase.auth.getSession()).data.session?.access_token
         if (!token) return
-        const res = await fetch('/api/v1/vendor/profile', {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/vendor/profile`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
         if (res.ok) {
@@ -107,7 +107,7 @@ export default function VendorOnboardingPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/v1/vendor/profile', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/vendor/profile`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
