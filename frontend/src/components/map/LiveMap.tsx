@@ -44,9 +44,10 @@ interface Vehicle {
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
 
+let _mapInstance: mapboxgl.Map | null = null;
+
 export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, onVehicleSelect, customPendingStops }: { vehicles: Vehicle[], selectedVehicleId?: string | null, zoomFocusEvent?: number, onVehicleSelect?: (id: string) => void, customPendingStops?: any[] }) {
   const mapRef = useRef<HTMLDivElement>(null)
-  const mapInst = useRef<mapboxgl.Map | null>(null)
   const intervalRef = useRef<any>(null)
   const queryClient = useQueryClient()
 
@@ -60,8 +61,10 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
     refetchInterval: 10000,
     select: (routes: any[]) => routes.filter(r => r.status === 'active' || r.status === 'pending')
   })
-  const activeRoutesRef = useRef<any[] | undefined>()
-  useEffect(() => { activeRoutesRef.current = activeRoutes }, [activeRoutes])
+  const activeRoutesRef = useRef<any[]>([])
+  const lastRenderedRouteRef = useRef<string>('')
+  const lastRenderedDestRef = useRef<string>('')
+  useEffect(() => { activeRoutesRef.current = activeRoutes || [] }, [activeRoutes])
 
   const customPendingStopsRef = useRef<any[] | undefined>()
   useEffect(() => { customPendingStopsRef.current = customPendingStops }, [customPendingStops])
@@ -75,21 +78,21 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
   // Only zoom when explicitly requested via zoomFocusEvent
   const lastZoomEvent = useRef<number | undefined>();
   useEffect(() => {
-    if (!selectedVehicleId || !mapInst.current || !zoomFocusEvent) return
+    if (!selectedVehicleId || !_mapInstance || !zoomFocusEvent) return
     if (lastZoomEvent.current === zoomFocusEvent) return;
     lastZoomEvent.current = zoomFocusEvent;
     
     // Prioritize LIVE position from Websocket
     const liveTarget = targetPositions.current[selectedVehicleId]
     if (liveTarget && liveTarget.lat && liveTarget.lng) {
-      mapInst.current.flyTo({ center: [liveTarget.lng, liveTarget.lat], zoom: 16, duration: 2000 })
+      _mapInstance.flyTo({ center: [liveTarget.lng, liveTarget.lat], zoom: 16, duration: 2000 })
       return
     }
 
     // Fallback to DB position
     const v = vehicles.find(v => v.id === selectedVehicleId)
     if (v && v.latitude && v.longitude) {
-      mapInst.current.flyTo({ center: [v.longitude, v.latitude], zoom: 16, duration: 2000 })
+      _mapInstance.flyTo({ center: [v.longitude, v.latitude], zoom: 16, duration: 2000 })
     }
   }, [zoomFocusEvent, selectedVehicleId, vehicles])
 
@@ -133,7 +136,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
         <div className="flex flex-col"><span className="text-muted font-bold">Daily Dist</span><span className="font-black">210 km</span></div>
         <div className="flex flex-col"><span className="text-muted font-bold">Idle Time</span><span className="font-black">10m</span></div>
         <div className="flex flex-col"><span className="text-muted font-bold">Stops</span><span className="font-black">3</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Odometer</span><span className="font-black">45,120 km</span></div>
+        <div className="flex flex-col"><span className="font-bold">Odometer</span><span className="font-black">45,120 km</span></div>
       </div>
     </div>
   )
@@ -148,7 +151,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!searchQuery || !mapInst.current) return
+    if (!searchQuery || !_mapInstance) return
 
     setIsSearching(true)
     try {
@@ -166,7 +169,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
 
       if (resp.data?.features?.length > 0) {
         const [lng, lat] = resp.data.features[0].center
-        mapInst.current.flyTo({ center: [lng, lat], zoom: 12, duration: 2500 })
+        _mapInstance.flyTo({ center: [lng, lat], zoom: 12, duration: 2500 })
       }
     } catch (err) {
       console.error('Search failed', err)
@@ -217,8 +220,9 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
     let ws: any = null
     let realtimeChannel: any = null
     let waypointChannel: any = null
+    let lastRouteSetTime = 0
 
-    if (!mapRef.current || mapInst.current) return
+    if (!mapRef.current || _mapInstance) return
 
     const map = new mapboxgl.Map({
       container: mapRef.current!,
@@ -542,28 +546,47 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
                      lineCoords = [[vPos.lng, vPos.lat], ...mbRoute];
                    }
                    
-                   routeSource.setData({
-                      type: 'FeatureCollection',
-                      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: lineCoords }, properties: {} }]
-                   })
-                   geofenceSource.setData({
-                      type: 'FeatureCollection',
-                      features: geofenceFeatures
-                   })
-                   destSource.setData({
-                      type: 'FeatureCollection',
-                      features: destFeatures
-                   })
+                   const routeString = JSON.stringify(lineCoords)
+                   const now = performance.now()
+                   if (lastRenderedRouteRef.current !== routeString && (now - lastRouteSetTime > 200)) {
+                     lastRouteSetTime = now
+                     lastRenderedRouteRef.current = routeString
+                     routeSource.setData({
+                        type: 'FeatureCollection',
+                        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: lineCoords }, properties: {} }]
+                     })
+                   }
+                   
+                   const destString = JSON.stringify(destFeatures)
+                   if (lastRenderedDestRef.current !== destString) {
+                     lastRenderedDestRef.current = destString
+                     geofenceSource.setData({
+                        type: 'FeatureCollection',
+                        features: geofenceFeatures
+                     })
+                     destSource.setData({
+                        type: 'FeatureCollection',
+                        features: destFeatures
+                     })
+                   }
                  }
               } else {
-                 routeSource.setData({ type: 'FeatureCollection', features: [] })
-                 geofenceSource.setData({ type: 'FeatureCollection', features: [] })
-                 destSource.setData({ type: 'FeatureCollection', features: [] })
+                 if (lastRenderedRouteRef.current !== 'empty') {
+                   lastRenderedRouteRef.current = 'empty'
+                   lastRenderedDestRef.current = 'empty'
+                   routeSource.setData({ type: 'FeatureCollection', features: [] })
+                   geofenceSource.setData({ type: 'FeatureCollection', features: [] })
+                   destSource.setData({ type: 'FeatureCollection', features: [] })
+                 }
               }
            } else {
-              routeSource.setData({ type: 'FeatureCollection', features: [] })
-              geofenceSource.setData({ type: 'FeatureCollection', features: [] })
-              destSource.setData({ type: 'FeatureCollection', features: [] })
+              if (lastRenderedRouteRef.current !== 'empty') {
+                lastRenderedRouteRef.current = 'empty'
+                lastRenderedDestRef.current = 'empty'
+                routeSource.setData({ type: 'FeatureCollection', features: [] })
+                geofenceSource.setData({ type: 'FeatureCollection', features: [] })
+                destSource.setData({ type: 'FeatureCollection', features: [] })
+              }
            }
         }
 
@@ -573,21 +596,21 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       animate()
     })
 
-    mapInst.current = map
+    _mapInstance = map
 
     return () => {
       cancelAnimationFrame(intervalRef.current!)
       if (ws) ws.close()
       if (realtimeChannel) supabase.removeChannel(realtimeChannel)
       if (waypointChannel) supabase.removeChannel(waypointChannel)
-      mapInst.current?.remove()
-      mapInst.current = null
+      _mapInstance?.remove()
+      _mapInstance = null
     }
   }, []) // Empty dependency array ensures we only initialize the Map once!
 
   useEffect(() => {
-    if (!mapInst.current || !openLoads?.loads) return
-    const map = mapInst.current
+    if (!_mapInstance || !openLoads?.loads) return
+    const map = _mapInstance
     const source = map.getSource('marketplace-loads') as mapboxgl.GeoJSONSource
     if (source) {
       const features = openLoads.loads.filter((l: any) => l.origin_lat && l.origin_lng).map((l: any) => ({
@@ -656,7 +679,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       
       try {
         const res = await axios.get(
-          `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`
+          `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordsString}?overview=full&geometries=geojson&access_token=${MAPBOX_TOKEN}`
         );
         if (res.data.routes && res.data.routes.length > 0) {
           const routeData = res.data.routes[0];

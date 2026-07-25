@@ -378,12 +378,13 @@ function calcBearing(from: [number, number], to: [number, number]): number {
 }
 
 /* ─── TrackingMap ──────────────────────────────────────────────── */
+let _customerMapInstance: mapboxgl.Map | null = null;
+
 function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (eta: string) => void }) {
   const { trackingId } = useParams()
   const initialVehicle = shipment?.vehicle
   const destination = shipment?.destination
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<mapboxgl.Map | null>(null)
   const vMarker = useRef<mapboxgl.Marker | null>(null)
   const dMarker = useRef<mapboxgl.Marker | null>(null)
   const animCancelRef = useRef<(() => void) | null>(null)
@@ -462,8 +463,8 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       const lat = liveVehicle?.lat; const lng = liveVehicle?.lng
       if (!lat || !lng) return
 
-      // Refresh ETA via OSRM
-      fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${destination.lng},${destination.lat}?overview=false`)
+      // Refresh ETA via Mapbox driving-traffic
+      fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${lng},${lat};${destination.lng},${destination.lat}?overview=false&access_token=${MAPBOX_TOKEN}`)
         .then(r => r.json())
         .then(data => {
           if (data.routes?.[0]) {
@@ -509,7 +510,8 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     if (dLat && dLng && !routeFetchedRef.current) {
       routeFetchedRef.current = true
       if (trackingId) {
-        fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${dLng},${dLat}?overview=full&geometries=geojson`)
+        // Fetch Route Geometry via Mapbox
+        fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${lng},${lat};${dLng},${dLat}?overview=full&geometries=geojson&access_token=${MAPBOX_TOKEN}`)
         .then(r => r.json())
         .then(data => {
           if (data.routes?.[0]) {
@@ -539,7 +541,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
   // Create map
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
+    if (!containerRef.current || _customerMapInstance) return
     if (!MAPBOX_TOKEN || MAPBOX_TOKEN === 'your_mapbox_token_here') return
 
     mapboxgl.accessToken = MAPBOX_TOKEN
@@ -596,14 +598,14 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       }
     })
 
-    mapRef.current = map
-    return () => { mapRef.current?.remove(); mapRef.current = null }
+    _customerMapInstance = map
+    return () => { _customerMapInstance?.remove(); _customerMapInstance = null }
   }, [])
 
   // Update route layer
   useEffect(() => {
-    if (!mapRef.current || !mapLoaded || !activeRouteCoords || activeRouteCoords.length === 0) return
-    const source = mapRef.current.getSource('route') as mapboxgl.GeoJSONSource
+    if (!_customerMapInstance || !mapLoaded || !activeRouteCoords || activeRouteCoords.length === 0) return
+    const source = _customerMapInstance.getSource('route') as mapboxgl.GeoJSONSource
     if (source) {
       source.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: activeRouteCoords } })
     }
@@ -611,7 +613,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
   // Animate marker with rotation (Uber/Ola style)
   useEffect(() => {
-    if (!mapRef.current || !liveVehicle?.lat || !liveVehicle?.lng) return
+    if (!_customerMapInstance || !liveVehicle?.lat || !liveVehicle?.lng) return
     if (!vMarker.current) return
 
     const targetCoord = [liveVehicle.lng, liveVehicle.lat] as [number, number]
@@ -641,13 +643,13 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
         onTick: (coord) => {
           if (vMarker.current) {
             vMarker.current.setLngLat(coord)
-            if (isFollowing) mapRef.current?.panTo(coord, { duration: 0 })
+            if (isFollowing) _customerMapInstance?.panTo(coord, { duration: 0 })
           }
         }
       })
     } else {
       vMarker.current.setLngLat(targetCoord)
-      if (isFollowing) mapRef.current.panTo(targetCoord, { duration: 1000 })
+      if (isFollowing) _customerMapInstance.panTo(targetCoord, { duration: 1000 })
     }
     prevCoordRef.current = targetCoord
   }, [liveVehicle?.lat, liveVehicle?.lng, activeRouteCoords, isFollowing])
@@ -705,8 +707,8 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       <button
         onClick={() => {
           setIsFollowing(true);
-          if (liveVehicle?.lat && liveVehicle?.lng && mapRef.current) {
-            mapRef.current.flyTo({ center: [liveVehicle.lng, liveVehicle.lat], zoom: 15, duration: 1500 });
+          if (liveVehicle?.lat && liveVehicle?.lng && _customerMapInstance) {
+            _customerMapInstance.flyTo({ center: [liveVehicle.lng, liveVehicle.lat], zoom: 15, duration: 1500 });
           }
         }}
         style={{
