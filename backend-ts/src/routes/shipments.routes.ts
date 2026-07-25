@@ -65,20 +65,30 @@ router.get('/track/:tracking_id/route', async (req: Request, res: Response) => {
       return;
     }
     
-    // Fetch directly from OSRM to get both polyline and duration
+    // Fetch directly from Google Maps API to get both polyline and duration
+    const { settings } = await import('../core/config');
     const axios = (await import('axios')).default;
     
-    const url = `http://router.project-osrm.org/route/v1/driving/${lng},${lat};${dLng},${dLat}?overview=full`;
+    if (!settings.GOOGLE_MAPS_API_KEY) {
+      res.status(500).json({ detail: 'Google Maps API key not configured' });
+      return;
+    }
+    
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${lat},${lng}&destination=${dLat},${dLng}&key=${settings.GOOGLE_MAPS_API_KEY}`;
     const response = await axios.get(url);
     
-    if (response.data.code !== 'Ok' || !response.data.routes?.[0]) {
+    if (response.data.status !== 'OK' || !response.data.routes?.[0]) {
       res.status(404).json({ detail: 'Route not found' });
       return;
     }
     
     const route = response.data.routes[0];
-    const polyline = route.geometry;
-    const durationSeconds = route.duration || 0;
+    const polyline = route.overview_polyline.points;
+    let durationSeconds = 0;
+    
+    if (route.legs && route.legs.length > 0) {
+      durationSeconds = route.legs.reduce((acc: number, leg: any) => acc + (leg.duration?.value || 0), 0);
+    }
     
     const polylineModule = await import('@mapbox/polyline');
     const decoded = polylineModule.default.decode(polyline);
