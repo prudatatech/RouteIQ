@@ -59,17 +59,18 @@ export default function EmergencyPage() {
     setLiveVehicle(null)
     if (!selectedAlert?.vehicle_id) return
 
-    // Immediately start listening for live pings from the WebSocket
-    const ws = telemetryWS.connect((data) => {
-      if (data.type === 'TELEMETRY_UPDATE' && data.data.vehicle_id === selectedAlert.vehicle_id) {
-        setLiveVehicle({
-          lat: data.data.lat,
-          lng: data.data.lng
-        })
-      }
-    })
+    // Listen for live pings from Supabase Realtime
+    const channel = supabase.channel(`emergency-live-gps`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vehicles', filter: `id=eq.${selectedAlert.vehicle_id}` }, (payload: any) => {
+        if (payload.new?.latitude && payload.new?.longitude) {
+          setLiveVehicle({
+            lat: payload.new.latitude,
+            lng: payload.new.longitude
+          })
+        }
+      }).subscribe()
 
-    return () => { ws.close() }
+    return () => { supabase.removeChannel(channel) }
   }, [selectedAlert?.vehicle_id])
 
   // Initialize Map

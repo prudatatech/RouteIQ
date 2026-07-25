@@ -375,17 +375,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
         } 
       })
 
-      // WebSocket Connection (secondary path — local backend)
-      ws = telemetryWS.connect((msg: any) => {
-        if (msg.type === 'TELEMETRY_UPDATE') {
-          const { vehicle_id, lat, lng, speed, fuel } = msg.data
-          targetPositions.current[vehicle_id] = { lat, lng, speed, fuel }
-          if (!currentPositions.current[vehicle_id]) {
-            currentPositions.current[vehicle_id] = { lat, lng }
-          }
-        }
-      })
-
+      
       // Track which vehicles need rendering
       const dirtyFlags: Record<string, boolean> = {}
       const animCancelers: Record<string, () => void> = {}

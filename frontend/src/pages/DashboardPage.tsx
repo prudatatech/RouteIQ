@@ -47,31 +47,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let isMounted = true;
-    const ws = telemetryWS.connect((msg) => {
-      if (!isMounted) return;
-      if (msg.type === 'TELEMETRY_UPDATE') {
-        setLiveTelemetry(prev => ({
-          ...prev,
-          [msg.data.vehicle_id]: msg.data
-        }))
-      } else if (msg.type === 'VEHICLE_OFFLINE' || msg.type === 'ALERT_CRITICAL' || msg.type === 'ALERT_WARNING') {
-        const isCritical = msg.type === 'ALERT_CRITICAL' || msg.type === 'VEHICLE_OFFLINE'
-        const newAlert = {
-          id: Date.now(),
-          type: isCritical ? 'critical' : 'warning',
-          title: msg.title || (isCritical ? 'Critical Event' : 'Fleet Warning'),
-          desc: msg.message || msg.data?.message || `${msg.data?.plate_number} has lost connection.`,
-          time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-        }
-        setAlerts(prev => [newAlert, ...prev].slice(0, 10)) // Keep last 10
-      }
-    })
-    return () => {
-      isMounted = false;
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close()
-      }
-    }
+    
   }, [])
 
   useEffect(() => {
