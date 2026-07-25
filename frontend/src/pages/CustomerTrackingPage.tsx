@@ -16,17 +16,17 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
 
 /* ─── Nexus Light Theme (Off-white/Grey & Yellow) ──────────────── */
 const T = {
-  bg:         '#F4F4F5',  // Off-white/light gray background
-  card:       '#FFFFFF',  // White cards
-  cardAlt:    '#FAFAFA',  // Slightly offset gray for inner cards
-  primary:    '#FFC107',  // Yellow accent
-  primaryDk:  '#B38700',
-  textHigh:   '#18181B',  // Near black for high contrast text
-  textMed:    '#52525B',  // Medium gray for secondary text
-  textLow:    '#A1A1AA',  // Light gray for tertiary text
-  border:     '#E4E4E7',  // Light gray borders
-  green:      '#10B981',
-  blue:       '#3B82F6',
+  bg: '#F4F4F5',  // Off-white/light gray background
+  card: '#FFFFFF',  // White cards
+  cardAlt: '#FAFAFA',  // Slightly offset gray for inner cards
+  primary: '#FFC107',  // Yellow accent
+  primaryDk: '#B38700',
+  textHigh: '#18181B',  // Near black for high contrast text
+  textMed: '#52525B',  // Medium gray for secondary text
+  textLow: '#A1A1AA',  // Light gray for tertiary text
+  border: '#E4E4E7',  // Light gray borders
+  green: '#10B981',
+  blue: '#3B82F6',
 }
 
 const S = {
@@ -383,17 +383,17 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
   const initialVehicle = shipment?.vehicle
   const destination = shipment?.destination
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef       = useRef<mapboxgl.Map | null>(null)
-  const vMarker      = useRef<mapboxgl.Marker | null>(null)
-  const dMarker      = useRef<mapboxgl.Marker | null>(null)
+  const mapRef = useRef<mapboxgl.Map | null>(null)
+  const vMarker = useRef<mapboxgl.Marker | null>(null)
+  const dMarker = useRef<mapboxgl.Marker | null>(null)
   const animCancelRef = useRef<(() => void) | null>(null)
   const routeFetchedRef = useRef(false)
   const prevCoordRef = useRef<[number, number] | null>(null)
-  const markerElRef  = useRef<HTMLDivElement | null>(null)
-  const bearingRef   = useRef(0)
-  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null)
-  const etaPollRef   = useRef<ReturnType<typeof setInterval> | null>(null)
-  
+  const markerElRef = useRef<HTMLDivElement | null>(null)
+  const bearingRef = useRef(0)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const etaPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   const [liveVehicle, setLiveVehicle] = useState(initialVehicle)
   const [fullRouteCoords, setFullRouteCoords] = useState<any>(null)
   const [activeRouteCoords, setActiveRouteCoords] = useState<any>(null)
@@ -444,7 +444,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
             }))
           }
         }
-      } catch {}
+      } catch { }
     }, 12000)
 
     return () => {
@@ -471,13 +471,13 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
             setEta(calcEta)
             if (onEtaUpdate) onEtaUpdate(calcEta)
           }
-        }).catch(() => {})
+        }).catch(() => { })
 
       // Refresh city
       fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&types=place,locality`)
         .then(r => r.json())
         .then(data => { if (data.features?.[0]) setCity(data.features[0].text) })
-        .catch(() => {})
+        .catch(() => { })
     }, 30000)
 
     return () => { if (etaPollRef.current) clearInterval(etaPollRef.current) }
@@ -518,7 +518,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
               setEta(calcEta); if (onEtaUpdate) onEtaUpdate(calcEta)
             }
           }).catch(() => {
-             fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${dLng},${dLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
+            fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${dLng},${dLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
               .then(r => r.json())
               .then(data => {
                 if (data.routes?.[0]) {
@@ -562,7 +562,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
     map.on('load', () => {
       setMapLoaded(true)
-      
+
       if (destination?.lat && destination?.lng) {
         const el = document.createElement('div')
         el.style.cssText = `width:24px;height:24px;border-radius:50%;background:#3B82F6;border:2px solid #fff;box-shadow:0 0 10px rgba(59,130,246,0.3);`
@@ -640,7 +640,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
     if (currentLngLat && (currentLngLat.lng !== targetCoord[0] || currentLngLat.lat !== targetCoord[1])) {
       const startCoord = [currentLngLat.lng, currentLngLat.lat] as [number, number]
-      
+
       animCancelRef.current = animateMarkerAlongRoute({
         startCoord,
         endCoord: targetCoord,
@@ -662,9 +662,9 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
   if (!MAPBOX_TOKEN || MAPBOX_TOKEN === 'your_mapbox_token_here') {
     return (
-      <div style={{...S.mapInner, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'}}>
-         <Activity size={32} color={T.textLow} />
-         <p style={{marginTop: 12, color: T.textLow, fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '2px'}}>Telemetry Offline</p>
+      <div style={{ ...S.mapInner, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <Activity size={32} color={T.textLow} />
+        <p style={{ marginTop: 12, color: T.textLow, fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '2px' }}>Telemetry Offline</p>
       </div>
     )
   }
@@ -672,7 +672,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
   return (
     <div style={{ position: 'relative', width: '100%', height: 300, background: T.cardAlt, border: `1px solid ${T.border}` }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      
+
       {/* Live Data Overlay */}
       <div style={{
         position: 'absolute', top: 16, left: 16, zIndex: 10,
@@ -710,7 +710,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
 
       {/* Locate Button */}
-      <button 
+      <button
         onClick={() => {
           setIsFollowing(true);
           if (liveVehicle?.lat && liveVehicle?.lng && mapRef.current) {
@@ -738,10 +738,10 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
 /* ─── Steps config ─────────────────────────────────────────────── */
 const STEPS = [
-  { key: 'created',    label: 'Booked' },
-  { key: 'picked_up',  label: 'Picked Up' },
+  { key: 'created', label: 'Booked' },
+  { key: 'picked_up', label: 'Picked Up' },
   { key: 'in_transit', label: 'In Transit' },
-  { key: 'delivered',  label: 'Delivered' },
+  { key: 'delivered', label: 'Delivered' },
 ]
 
 /* ─── Main Page ────────────────────────────────────────────────── */
@@ -774,13 +774,13 @@ export default function CustomerTrackingPage() {
             <div style={S.logoBox}>RI</div>
             <div>
               <div style={S.logoText}>ROUTEIQ</div>
-              <div style={S.logoSub}>by Prudata Logistics</div>
+              <div style={S.logoSub}>by Prudata </div>
             </div>
           </Link>
-          <div style={{display: 'flex', gap: 16, alignItems: 'center'}}>
-             <Link to="/login" style={{ color: T.textMed, fontWeight: 700, fontSize: 12, textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '2px' }}>
-               Command Center
-             </Link>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <Link to="/login" style={{ color: T.textMed, fontWeight: 700, fontSize: 12, textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '2px' }}>
+              Command Center
+            </Link>
           </div>
         </div>
       </nav>
@@ -790,13 +790,13 @@ export default function CustomerTrackingPage() {
         {/* ── Search ── */}
         <div style={S.searchWrap}>
           <h1 style={S.searchHeader}>
-            CARGO <span style={{color: T.primaryDk}}>TRACKER</span>
+            CARGO <span style={{ color: T.primaryDk }}>TRACKER</span>
           </h1>
           <div style={S.searchHeaderSub}>
-             <Activity size={16} color={T.primaryDk} />
-             Enterprise Multi-Agent AI Ecosystem
+            <Activity size={16} color={T.primaryDk} />
+            Enterprise Multi-Agent AI Ecosystem
           </div>
-          
+
           <form
             onSubmit={e => { e.preventDefault(); if (searchId) navigate(`/track/${searchId}`) }}
             style={S.searchBox}
@@ -818,17 +818,17 @@ export default function CustomerTrackingPage() {
         {/* ── Loading ── */}
         {isLoading && (
           <div style={{ padding: '64px 0' }}>
-             <div style={{color: T.primaryDk, fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: 12}}>
-               <Activity size={20} className="animate-pulse" />
-               Locating shipment telemetry...
-             </div>
+            <div style={{ color: T.primaryDk, fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Activity size={20} className="animate-pulse" />
+              Locating shipment telemetry...
+            </div>
           </div>
         )}
 
         {/* ── Error ── */}
         {error && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.05)', border: '1px solid #EF4444', 
+            background: 'rgba(239, 68, 68, 0.05)', border: '1px solid #EF4444',
             padding: '24px', display: 'flex', alignItems: 'center', gap: 16,
             maxWidth: 600
           }}>
@@ -848,15 +848,15 @@ export default function CustomerTrackingPage() {
 
             {/* ── LEFT COLUMN ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-              
+
               <div style={S.card}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={S.trackingIdLabel}>Tracking ID</div>
                     <div style={S.trackingIdValue}>{(shipment as any).tracking_id}</div>
                   </div>
                   <div style={S.statusPill}>
-                    <span style={{width: 8, height: 8, borderRadius: '50%', background: T.primaryDk, boxShadow: `0 0 10px ${T.primary}`}} />
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: T.primaryDk, boxShadow: `0 0 10px ${T.primary}` }} />
                     {(shipment as any).status.replace('_', ' ')}
                   </div>
                 </div>
@@ -865,7 +865,7 @@ export default function CustomerTrackingPage() {
                 <div style={S.progressWrap}>
                   <div style={S.progressLineBg} />
                   <div style={S.progressLineFill(progressPercent)} />
-                  
+
                   {STEPS.map((step, idx) => {
                     const passed = idx < currentStepIdx
                     const active = idx === currentStepIdx
@@ -896,69 +896,69 @@ export default function CustomerTrackingPage() {
               </div>
 
               {/* Cargo Specs */}
-              <div style={{...S.card, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24}}>
-                 <div style={S.infoCol}>
-                    <div style={S.infoLabel}>Weight</div>
-                    <div style={S.infoValue}>{(shipment as any).total_weight_kg || 0} KG</div>
-                 </div>
-                 <div style={S.infoCol}>
-                    <div style={S.infoLabel}>Items</div>
-                    <div style={S.infoValue}>{(shipment as any).total_items || 0}</div>
-                 </div>
-                 <div style={S.infoCol}>
-                    <div style={S.infoLabel}>Priority</div>
-                    <div style={{...S.infoValue, color: T.primaryDk}}>{(shipment as any).priority?.toUpperCase() || 'STD'}</div>
-                 </div>
+              <div style={{ ...S.card, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+                <div style={S.infoCol}>
+                  <div style={S.infoLabel}>Weight</div>
+                  <div style={S.infoValue}>{(shipment as any).total_weight_kg || 0} KG</div>
+                </div>
+                <div style={S.infoCol}>
+                  <div style={S.infoLabel}>Items</div>
+                  <div style={S.infoValue}>{(shipment as any).total_items || 0}</div>
+                </div>
+                <div style={S.infoCol}>
+                  <div style={S.infoLabel}>Priority</div>
+                  <div style={{ ...S.infoValue, color: T.primaryDk }}>{(shipment as any).priority?.toUpperCase() || 'STD'}</div>
+                </div>
               </div>
 
             </div>
 
             {/* ── RIGHT COLUMN ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-               
-               {/* ETA */}
-               <div style={S.sideCard}>
-                 <div style={S.sideCardTitle}>
-                   <span>Estimated Arrival</span>
-                   <Clock size={16} color={T.primaryDk} />
-                 </div>
-                 <div style={S.etaBox}>
-                   <div style={S.etaNumber}>
-                     {liveEta !== null ? liveEta : '--'}
-                   </div>
-                   <div style={S.etaUnit}>
-                     <div style={{color: T.textHigh}}>Hours</div>
-                     <div style={{color: T.textLow, fontSize: 11, marginTop: 4}}>Live Navigation</div>
-                   </div>
-                 </div>
-               </div>
 
-               {/* Map */}
-               <div style={{...S.sideCard, padding: 0}}>
-                 <TrackingMap shipment={shipment} onEtaUpdate={setLiveEta} />
-                 <div style={{padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.cardAlt}}>
-                   <div style={{fontSize: 11, fontWeight: 800, color: T.primaryDk, textTransform: 'uppercase', letterSpacing: '2px'}}>Live Telemetry Pipe</div>
-                   <div style={{fontSize: 11, color: T.textMed}}>GPS Sync: Active</div>
-                 </div>
-               </div>
+              {/* ETA */}
+              <div style={S.sideCard}>
+                <div style={S.sideCardTitle}>
+                  <span>Estimated Arrival</span>
+                  <Clock size={16} color={T.primaryDk} />
+                </div>
+                <div style={S.etaBox}>
+                  <div style={S.etaNumber}>
+                    {liveEta !== null ? liveEta : '--'}
+                  </div>
+                  <div style={S.etaUnit}>
+                    <div style={{ color: T.textHigh }}>Hours</div>
+                    <div style={{ color: T.textLow, fontSize: 11, marginTop: 4 }}>Live Navigation</div>
+                  </div>
+                </div>
+              </div>
 
-               {/* Vehicle Info */}
-               <div style={S.sideCard}>
-                 <div style={S.sideCardTitle}>Carrier Details</div>
-                 <div style={S.vehicleRow}>
-                   <div style={S.vehicleIcon}>
-                     <Truck size={24} />
-                   </div>
-                   <div>
-                     <div style={{fontSize: 18, fontWeight: 800, color: T.textHigh}}>
-                       {(shipment as any).vehicle?.plate_number || 'Awaiting Assignment'}
-                     </div>
-                     <div style={{fontSize: 12, color: T.textMed, marginTop: 4, textTransform: 'uppercase', letterSpacing: '1px'}}>
-                       {(shipment as any).vehicle?.type || 'Vehicle'} • {(shipment as any).vehicle?.status?.replace('_', ' ') || 'Standby'}
-                     </div>
-                   </div>
-                 </div>
-               </div>
+              {/* Map */}
+              <div style={{ ...S.sideCard, padding: 0 }}>
+                <TrackingMap shipment={shipment} onEtaUpdate={setLiveEta} />
+                <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.cardAlt }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: T.primaryDk, textTransform: 'uppercase', letterSpacing: '2px' }}>Live Telemetry Pipe</div>
+                  <div style={{ fontSize: 11, color: T.textMed }}>GPS Sync: Active</div>
+                </div>
+              </div>
+
+              {/* Vehicle Info */}
+              <div style={S.sideCard}>
+                <div style={S.sideCardTitle}>Carrier Details</div>
+                <div style={S.vehicleRow}>
+                  <div style={S.vehicleIcon}>
+                    <Truck size={24} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: T.textHigh }}>
+                      {(shipment as any).vehicle?.plate_number || 'Awaiting Assignment'}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textMed, marginTop: 4, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      {(shipment as any).vehicle?.type || 'Vehicle'} • {(shipment as any).vehicle?.status?.replace('_', ' ') || 'Standby'}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
             </div>
           </div>

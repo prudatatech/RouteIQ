@@ -51,11 +51,11 @@ export default function LoginPage() {
           role = 'vendor';
         }
       }
-      
+
       if (!role) {
         throw new Error('Account pending approval or role assignment.');
       }
-      
+
       useAuthStore.getState().setSession(data.session, role)
 
       toast.success(`Welcome back, ${role}!`)
@@ -95,7 +95,7 @@ export default function LoginPage() {
             ROUTE<span className="text-primary">IQ</span>
           </h1>
           <p className="text-muted font-bold uppercase tracking-[0.12em] text-[9px]">
-            by Prudata Logistics
+            by Prudata
           </p>
         </div>
 
@@ -157,7 +157,7 @@ export default function LoginPage() {
 
       {/* Footer Meta */}
       <div className="mt-12 text-[10px] font-bold text-muted uppercase tracking-[0.5em] animate-pulse">
-         Core v1.0 // Intelligence Grid Active
+        Core v1.0 // Intelligence Grid Active
       </div>
     </div>
   )
