@@ -416,21 +416,11 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     if (!initialVehicle?.id || !trackingId) return;
     let wsAlive = false
 
-    const ws = telemetryWS.connect((data) => {
-      if (data.type === 'TELEMETRY_UPDATE' && data.data.vehicle_id === initialVehicle.id) {
-        wsAlive = true
-        setLiveVehicle((prev: any) => ({
-          ...prev,
-          lat: data.data.lat,
-          lng: data.data.lng,
-          speed: data.data.speed || 0
-        }))
-      }
-    })
+    // WebSocket removed for public page; relies entirely on 5s HTTP polling
 
     // HTTP poll fallback every 5s using the public tracking API
     pollRef.current = setInterval(async () => {
-      if (wsAlive) { wsAlive = false; return } // WS delivered data, skip poll
+      if (false) { wsAlive = false; return } // WS delivered data, skip poll
       try {
         const data = await shipmentsAPI.trackPublicly(trackingId)
         if (data?.vehicle) {
@@ -459,8 +449,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     }, 5000)
 
     return () => {
-      ws.close()
-      if (pollRef.current) clearInterval(pollRef.current)
+            if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [initialVehicle?.id, trackingId])
 
@@ -473,8 +462,8 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       const lat = liveVehicle?.lat; const lng = liveVehicle?.lng
       if (!lat || !lng) return
 
-      // Refresh ETA via Mapbox Directions
-      fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${destination.lng},${destination.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
+      // Refresh ETA via OSRM
+      fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${destination.lng},${destination.lat}?overview=false`)
         .then(r => r.json())
         .then(data => {
           if (data.routes?.[0]) {
@@ -520,16 +509,18 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     if (dLat && dLng && !routeFetchedRef.current) {
       routeFetchedRef.current = true
       if (trackingId) {
-        fetch(`https://api.mapbox.com/directions/v5/mapbox/driving/${lng},${lat};${dLng},${dLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.routes?.[0]) {
-              const c = data.routes[0].geometry.coordinates
-              setFullRouteCoords(c); setActiveRouteCoords(c)
-              const calcEta = formatEta(data.routes[0].duration / 60)
-              setEta(calcEta); if (onEtaUpdate) onEtaUpdate(calcEta)
-            }
-          }).catch(console.error)
+        fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${dLng},${dLat}?overview=full&geometries=geojson`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.routes?.[0]) {
+            const c = data.routes[0].geometry.coordinates;
+            setFullRouteCoords(c);
+            setActiveRouteCoords(c);
+            const calcEta = formatEta(data.routes[0].duration / 60);
+            setEta(calcEta);
+            if (onEtaUpdate) onEtaUpdate(calcEta);
+          }
+        }).catch(console.error)
       }
     }
   }, [liveVehicle?.lat, liveVehicle?.lng, destination?.lat, destination?.lng, onEtaUpdate, trackingId])
