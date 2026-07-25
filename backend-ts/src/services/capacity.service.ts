@@ -216,14 +216,18 @@ export const capacityService = {
         // Create a dynamic shipment for this cargo so it appears in Admin Live Shipments
         let finalShipmentId = window.fallback_shipment_id;
         
-        // Fetch vendor info to set origin name
+        // Fetch vendor info to set origin name and get coords
         let vendorOriginName = 'Dynamic Vendor Pickup';
         let vendorOriginAddress = 'Vendor Location';
+        let vendorLat = null;
+        let vendorLng = null;
         if (bid.vendor_id) {
-          const { data: vendor } = await supabase.from('vendor_profiles').select('company_name, address, city').eq('id', bid.vendor_id).single();
+          const { data: vendor } = await supabase.from('vendor_profiles').select('company_name, address, city, latitude, longitude').eq('id', bid.vendor_id).single();
           if (vendor) {
             vendorOriginName = vendor.company_name || vendorOriginName;
             vendorOriginAddress = vendor.address || vendor.city || vendorOriginAddress;
+            vendorLat = vendor.latitude;
+            vendorLng = vendor.longitude;
           }
         }
 
@@ -284,6 +288,31 @@ export const capacityService = {
             }
           }
         }
+
+        // Also insert into cargo_manifest so it shows up in the admin dashboard and driver's fallback screen
+        let manifestDropLat = null;
+        let manifestDropLng = null;
+        let manifestDropAddress = '';
+        if (bid.dropoff_point_id) {
+          const { data: dp } = await supabase.from('delivery_points').select('latitude, longitude, address, name').eq('id', bid.dropoff_point_id).single();
+          if (dp) {
+            manifestDropLat = dp.latitude;
+            manifestDropLng = dp.longitude;
+            manifestDropAddress = dp.address || dp.name;
+          }
+        }
+
+        await supabase.from('cargo_manifest').insert({
+          vehicle_id: window.vehicle_id,
+          pickup_location: vendorOriginAddress,
+          pickup_lat: vendorLat,
+          pickup_lng: vendorLng,
+          drop_location: manifestDropAddress,
+          drop_lat: manifestDropLat,
+          drop_lng: manifestDropLng,
+          capacity_kg: bid.weight_kg || 500,
+          status: 'scheduled'
+        });
 
         if (route) {
           let insertSequence = 1;
