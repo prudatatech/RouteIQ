@@ -1,0 +1,28 @@
+[
+  {
+    "id": "40713a3c-ce26-4051-a1e7-20bfc4d315ba",
+    "plate_number": "TRUCK-5009",
+    "vehicle_type": "truck",
+    "capacity_kg": 5000,
+    "fuel_type": "diesel",
+    "fuel_capacity_liters": 60,
+    "fuel_efficiency_kmpl": 12,
+    "current_fuel_liters": 60,
+    "status": "idle",
+    "latitude": 23.7842434,
+    "longitude": 86.4460965,
+    "last_heartbeat": "2026-07-25T13:21:00.319+00:00",
+    "spark_id": null,
+    "last_sync": "2026-07-25T08:43:01.846+00:00",
+    "driver_id": "a7b38f7f-214d-4c18-bd0e-98ac21ab10c3",
+    "created_at": "2026-07-18T16:19:01.665475+00:00",
+    "updated_at": "2026-07-18T16:19:01.665475+00:00",
+    "available_capacity_kg": 5000,
+    "capacity_confirmed_at": null,
+    "capacity_updated_at": "2026-07-25T10:09:29.443+00:00",
+    "bidding_window_open": true,
+    "bidding_window_closes_at": null,
+    "last_known_connectivity_zone": null,
+    "declared_load_percentage": 0
+  }
+]

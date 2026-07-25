@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { createAccessToken, createRefreshToken, decodeToken, requireAuth } from '../core/auth';
 import { settings } from '../core/config';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
@@ -383,6 +384,7 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
     if (!existingVehicle) {
       // Create a new vehicle for the driver
       await supabase.from('vehicles').insert({
+        id: uuidv4(),
         plate_number: `TEMP-${userId.substring(0, 6).toUpperCase()}`,
         vehicle_type: vehicle_type,
         driver_id: userId,
