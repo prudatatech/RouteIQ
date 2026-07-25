@@ -733,7 +733,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       .from('routes')
       .select('*, route_stops(*, delivery_points(*)), depots(*)')
       .eq('vehicle_id', vehicle.id)
-      .in('status', ['active', 'pending', 'in_progress'])
+      .in('status', ['active', 'pending'])
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
