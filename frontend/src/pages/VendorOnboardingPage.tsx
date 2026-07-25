@@ -198,7 +198,7 @@ export default function VendorOnboardingPage() {
     if (!mapInst.current) {
       mapInst.current = new mapboxgl.Map({
         container: mapContainerRef.current,
-        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        style: '/map-style.json',
         center: [numLng, numLat],
         zoom: 9,
         attributionControl: false,

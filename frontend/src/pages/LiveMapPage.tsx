@@ -13,7 +13,7 @@ const LiveMapPage: React.FC = () => {
     if (mapContainer.current && !mapInstance.current) {
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
-        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        style: '/map-style.json',
         center: [0, 0],
         zoom: 2,
       });
