@@ -153,32 +153,6 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        {/* Demo Roles / Quick Login */}
-        <div className="space-y-4 pt-4">
-          <div className="flex items-center gap-4 px-4">
-            <div className="h-px flex-1 bg-slate-200" />
-            <span className="text-[9px] font-black text-muted uppercase tracking-[0.3em] whitespace-nowrap">Rapid Demo Access</span>
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
-          
-          <div className="flex justify-center">
-            {QUICK_LOGINS.map(({ role, icon: Icon, email: e, pass: p }) => (
-              <button
-                key={role}
-                onClick={() => handleLogin(undefined, e, p)}
-                disabled={loading}
-                className="group w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-slate-100 hover:border-yellow-400/50 transition-all text-left relative overflow-hidden shadow-sm"
-              >
-                <Icon size={20} className={clsx("mb-2 group-hover:scale-110 transition-transform text-slate-900")} />
-                <div className="font-display font-black text-xs text-slate-900 uppercase tracking-tighter">{role}</div>
-                <div className="text-[8px] font-bold text-muted uppercase tracking-widest mt-0.5">Quick Link</div>
-                <div className="absolute -right-2 -bottom-2 opacity-[0.03] rotate-12 group-hover:rotate-0 transition-transform text-slate-900">
-                  <Icon size={48} />
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Footer Meta */}
