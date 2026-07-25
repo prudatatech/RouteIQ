@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate } from 'react-router-dom'
 import { formatEta } from '@/utils/timeFormat'
+import LiveRateMarquee from '@/components/LiveRateMarquee'
 
 export default function VendorPortalPage() {
   const [windows, setWindows] = useState<any[]>([])
@@ -304,7 +305,8 @@ export default function VendorPortalPage() {
         </div>
       </header>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-12 space-y-12">
+      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-6 space-y-12">
+        <LiveRateMarquee />
         {/* Welcome Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>

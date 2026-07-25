@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Shield, Search, User } from 'lucide-react'
+import { Shield, Search, User, Settings } from 'lucide-react'
 import { usersAPI, analyticsAPI } from '@/services/api'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import CargoManifestConnectingForm from '@/components/CargoManifestConnectingForm'
+import LiveRateMarquee from '@/components/LiveRateMarquee'
+import { supabase } from '@/services/supabase'
 
 const ROLE_OPTIONS = ['admin', 'manager', 'driver', 'superadmin', 'vendor']
 
@@ -16,7 +18,29 @@ export default function SuperadminPage() {
   const [selectedRequestToAssign, setSelectedRequestToAssign] = useState<any>(null)
   const [vendorEmail, setVendorEmail] = useState('')
   const [vendorPassword, setVendorPassword] = useState('')
+  const [ratePerKm, setRatePerKm] = useState<string>('')
+  const [isUpdatingRate, setIsUpdatingRate] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    supabase.from('system_settings').select('value').eq('key', 'rate_per_km').single().then(({ data }) => {
+      if (data?.value?.rate) setRatePerKm(data.value.rate.toString())
+    })
+  }, [])
+
+  const updateRate = async () => {
+    if (!ratePerKm) return
+    setIsUpdatingRate(true)
+    try {
+      const { error } = await supabase.from('system_settings').update({ value: { rate: Number(ratePerKm) } }).eq('key', 'rate_per_km')
+      if (error) throw error
+      toast.success('Live Rate Per KM updated successfully!')
+    } catch (e: any) {
+      toast.error('Failed to update rate: ' + e.message)
+    } finally {
+      setIsUpdatingRate(false)
+    }
+  }
 
   const { data: users = [] as any[], isLoading: usersLoading } = useQuery<any[]>({
     queryKey: ['users'],
@@ -121,7 +145,8 @@ export default function SuperadminPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-20">
+      <LiveRateMarquee />
       <div className="flex justify-between items-end">
         <div className="space-y-1">
           <h1 className="font-heading font-bold text-3xl text-text tracking-tight">Platform Administration</h1>
@@ -129,6 +154,27 @@ export default function SuperadminPage() {
             <Shield size={14} className="text-purple-500" />
             Manage system users, access levels, and security policies
           </p>
+        </div>
+        
+        {/* Global Settings: Rate Per KM */}
+        <div className="bg-surface border border-primary/30 p-3 rounded-2xl flex items-center gap-4 shadow-lg shadow-primary/5">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-1">
+              <Settings size={10} /> Global Rate (₹/KM)
+            </span>
+            <span className="text-xs text-muted">Updates live across all apps</span>
+          </div>
+          <div className="flex gap-2">
+            <input 
+              type="number" 
+              className="bg-surface2 border border-border rounded-lg w-24 px-3 py-1.5 text-text font-mono font-bold text-sm outline-none focus:border-primary transition-colors"
+              value={ratePerKm}
+              onChange={e => setRatePerKm(e.target.value)}
+            />
+            <Button size="sm" variant="accent" onClick={updateRate} disabled={isUpdatingRate}>
+              {isUpdatingRate ? <Spinner size={14} /> : 'Save'}
+            </Button>
+          </div>
         </div>
       </div>
 
