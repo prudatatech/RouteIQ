@@ -173,9 +173,101 @@ export const capacityService = {
     // 4.5. Update vehicle capacity to 0 since the space is now occupied
     await supabase.from('vehicles').update({ available_capacity_kg: 0 }).eq('id', window.vehicle_id);
 
-    // 5. Inject the route stop for the vendor's drop-off point
+    // 5. Create a dynamic shipment for this cargo so it appears in Admin Live Shipments
+    let finalShipmentId = window.fallback_shipment_id;
+    
+    // Fetch vendor info to set origin name and get coords
+    let vendorOriginName = 'Dynamic Vendor Pickup';
+    let vendorOriginAddress = 'Vendor Location';
+    let vendorLat = null;
+    let vendorLng = null;
+    if (bid.vendor_id) {
+      const { data: vendor } = await supabase.from('vendor_profiles').select('company_name, address, city, latitude, longitude').eq('id', bid.vendor_id).single();
+      if (vendor) {
+        vendorOriginName = vendor.company_name || vendorOriginName;
+        vendorOriginAddress = vendor.address || vendor.city || vendorOriginAddress;
+        vendorLat = vendor.latitude;
+        vendorLng = vendor.longitude;
+      }
+    }
+
+    if (window.fallback_shipment_id) {
+      await supabase.from('shipments').update({
+        status: 'assigned',
+        priority: 'high',
+        total_weight_kg: bid.weight_kg,
+        total_items: 1,
+        origin_name: vendorOriginName,
+        origin_address: vendorOriginAddress,
+        bid_id: bid.id
+      }).eq('id', window.fallback_shipment_id);
+    } else {
+      const { data: s } = await supabase.from('shipments').insert({
+        tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
+        status: 'assigned',
+        vehicle_id: window.vehicle_id,
+        priority: 'high',
+        origin_name: vendorOriginName,
+        origin_address: vendorOriginAddress,
+        total_items: 1,
+        total_weight_kg: bid.weight_kg || 500,
+        bid_id: bid.id
+      }).select('id').single();
+      if (s) finalShipmentId = s.id;
+    }
+
+    if (finalShipmentId && bid.dropoff_point_id) {
+      const { data: vendorDp } = await supabase.from('delivery_points').select('*').eq('id', bid.dropoff_point_id).single();
+      if (vendorDp) {
+        const { data: updatedDummy } = await supabase.from('delivery_points')
+          .update({
+            name: vendorDp.name,
+            address: vendorDp.address,
+            latitude: vendorDp.latitude,
+            longitude: vendorDp.longitude,
+            demand_kg: vendorDp.demand_kg
+          })
+          .eq('shipment_id', finalShipmentId)
+          .select();
+          
+        if (!updatedDummy || updatedDummy.length === 0) {
+          await supabase.from('delivery_points')
+            .update({ shipment_id: finalShipmentId })
+            .eq('id', bid.dropoff_point_id);
+        } else {
+          bid.dropoff_point_id = updatedDummy[0].id;
+        }
+      }
+    }
+
+    // 6. Also insert into cargo_manifest so it shows up in the admin dashboard and driver's fallback screen
+    let manifestDropLat = null;
+    let manifestDropLng = null;
+    let manifestDropAddress = '';
     if (bid.dropoff_point_id) {
-      // Find the active route for this vehicle
+      const { data: dp } = await supabase.from('delivery_points').select('latitude, longitude, address, name').eq('id', bid.dropoff_point_id).single();
+      if (dp) {
+        manifestDropLat = dp.latitude;
+        manifestDropLng = dp.longitude;
+        manifestDropAddress = dp.address || dp.name;
+      }
+    }
+
+    await supabase.from('cargo_manifest').insert({
+      vehicle_id: window.vehicle_id,
+      pickup_location: vendorOriginAddress,
+      pickup_lat: vendorLat,
+      pickup_lng: vendorLng,
+      drop_location: manifestDropAddress,
+      drop_lat: manifestDropLat,
+      drop_lng: manifestDropLng,
+      capacity_kg: bid.weight_kg || 500,
+      status: 'scheduled',
+      route_type: window.trigger_type === 'end_of_route' || window.trigger_type === 'return_trip' ? 'backhaul' : 'forward'
+    });
+
+    // 7. Inject the route stop for the vendor's drop-off point if there's an active route
+    if (bid.dropoff_point_id) {
       const { data: route } = await supabase.from('routes')
         .select('id')
         .eq('vehicle_id', window.vehicle_id)
@@ -183,10 +275,8 @@ export const capacityService = {
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-      
 
       if (route) {
-        // Find the lowest sequence of any PENDING stop
         const { data: pendingStops } = await supabase.from('route_stops')
           .select('id, sequence')
           .eq('route_id', route.id)
@@ -196,13 +286,10 @@ export const capacityService = {
         let insertSequence = 1;
         if (pendingStops && pendingStops.length > 0) {
           insertSequence = pendingStops[0].sequence;
-          
-          // Shift all existing pending stops by 1 to make room for the detour
           for (const stop of pendingStops) {
             await supabase.from('route_stops').update({ sequence: stop.sequence + 1 }).eq('id', stop.id);
           }
         } else {
-          // No pending stops, just append it
           const { data: allStops } = await supabase.from('route_stops')
             .select('sequence')
             .eq('route_id', route.id)
@@ -213,159 +300,30 @@ export const capacityService = {
           }
         }
 
-        // Create a dynamic shipment for this cargo so it appears in Admin Live Shipments
-        let finalShipmentId = window.fallback_shipment_id;
-        
-        // Fetch vendor info to set origin name and get coords
-        let vendorOriginName = 'Dynamic Vendor Pickup';
-        let vendorOriginAddress = 'Vendor Location';
-        let vendorLat = null;
-        let vendorLng = null;
-        if (bid.vendor_id) {
-          const { data: vendor } = await supabase.from('vendor_profiles').select('company_name, address, city, latitude, longitude').eq('id', bid.vendor_id).single();
-          if (vendor) {
-            vendorOriginName = vendor.company_name || vendorOriginName;
-            vendorOriginAddress = vendor.address || vendor.city || vendorOriginAddress;
-            vendorLat = vendor.latitude;
-            vendorLng = vendor.longitude;
-          }
-        }
-
-        if (window.fallback_shipment_id) {
-          await supabase.from('shipments').update({
-            status: 'assigned',
-            priority: 'high',
-            total_weight_kg: bid.weight_kg,
-            total_items: 1,
-            origin_name: vendorOriginName,
-            origin_address: vendorOriginAddress,
-            bid_id: bid.id
-          }).eq('id', window.fallback_shipment_id);
-        } else {
-          const { data: s } = await supabase.from('shipments').insert({
-            tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
-            status: 'assigned',
-            vehicle_id: window.vehicle_id,
-            priority: 'high',
-            origin_name: vendorOriginName,
-            origin_address: vendorOriginAddress,
-            total_items: 1,
-            total_weight_kg: bid.weight_kg || 500,
-            bid_id: bid.id
-          }).select('id').single();
-          if (s) finalShipmentId = s.id;
-        }
-
-        if (finalShipmentId && bid.dropoff_point_id) {
-          // Instead of deleting the dummy delivery point which might fail silently or cause issues,
-          // we simply fetch the vendor's dropoff point details and overwrite the dummy!
-          const { data: vendorDp } = await supabase.from('delivery_points').select('*').eq('id', bid.dropoff_point_id).single();
-          
-          if (vendorDp) {
-            // Attempt to overwrite the dummy delivery point that belongs to this shipment
-            const { data: updatedDummy } = await supabase.from('delivery_points')
-              .update({
-                name: vendorDp.name,
-                address: vendorDp.address,
-                latitude: vendorDp.latitude,
-                longitude: vendorDp.longitude,
-                demand_kg: vendorDp.demand_kg
-              })
-              .eq('shipment_id', finalShipmentId)
-              .select();
-              
-            if (!updatedDummy || updatedDummy.length === 0) {
-              // No dummy DP existed! This means the shipment was just created and has no delivery points yet.
-              // So we simply LINK the vendor's delivery point to this new shipment.
-              await supabase.from('delivery_points')
-                .update({ shipment_id: finalShipmentId })
-                .eq('id', bid.dropoff_point_id);
-            } else {
-              // Dummy DP existed and was overwritten successfully.
-              // We must use the dummy DP for the route_stops insertion to avoid duplicating DPs for the shipment.
-              // The vendor's DP is left alone (unlinked) to satisfy capacity_bids foreign key constraints.
-              bid.dropoff_point_id = updatedDummy[0].id;
-            }
-          }
-        }
-
-        // Also insert into cargo_manifest so it shows up in the admin dashboard and driver's fallback screen
-        let manifestDropLat = null;
-        let manifestDropLng = null;
-        let manifestDropAddress = '';
-        if (bid.dropoff_point_id) {
-          const { data: dp } = await supabase.from('delivery_points').select('latitude, longitude, address, name').eq('id', bid.dropoff_point_id).single();
-          if (dp) {
-            manifestDropLat = dp.latitude;
-            manifestDropLng = dp.longitude;
-            manifestDropAddress = dp.address || dp.name;
-          }
-        }
-
-        await supabase.from('cargo_manifest').insert({
-          vehicle_id: window.vehicle_id,
-          pickup_location: vendorOriginAddress,
-          pickup_lat: vendorLat,
-          pickup_lng: vendorLng,
-          drop_location: manifestDropAddress,
-          drop_lat: manifestDropLat,
-          drop_lng: manifestDropLng,
-          capacity_kg: bid.weight_kg || 500,
-          status: 'scheduled',
-          route_type: window.trigger_type === 'end_of_route' ? 'backhaul' : 'forward'
+        const stopId = uuidv4();
+        await supabase.from('route_stops').insert({
+          id: stopId,
+          route_id: route.id,
+          delivery_point_id: bid.dropoff_point_id,
+          sequence: insertSequence,
+          status: 'pending'
         });
 
-        if (route) {
-          let insertSequence = 1;
-          const { data: pendingStops } = await supabase.from('route_stops')
-            .select('*')
-            .eq('route_id', route.id)
-            .eq('status', 'pending');
-            
-          if (pendingStops && pendingStops.length > 0) {
-            // Shift all existing pending stops by 1 to make room for the detour
-            for (const stop of pendingStops) {
-              await supabase.from('route_stops').update({ sequence: stop.sequence + 1 }).eq('id', stop.id);
-            }
-          } else {
-            // No pending stops, just append it
-            const { data: allStops } = await supabase.from('route_stops')
-              .select('sequence')
-              .eq('route_id', route.id)
-              .order('sequence', { ascending: false })
-              .limit(1);
-            if (allStops && allStops.length > 0) {
-              insertSequence = allStops[0].sequence + 1;
-            }
-          }
-
-          const stopId = uuidv4();
-          await supabase.from('route_stops').insert({
-            id: stopId,
-            route_id: route.id,
-            delivery_point_id: bid.dropoff_point_id,
-            sequence: insertSequence,
-            status: 'pending'
-          });
-
-          // Trigger driver confirmation for the new stop
-          await supabase.from('driver_confirmations').insert({
-            route_stop_id: stopId,
-            vehicle_id: window.vehicle_id,
-            prompted_at: new Date().toISOString()
-          });
-        }
-
-
+        // Trigger driver confirmation for the new stop
+        await supabase.from('driver_confirmations').insert({
+          route_stop_id: stopId,
+          vehicle_id: window.vehicle_id,
+          prompted_at: new Date().toISOString()
+        });
       }
     }
+
+    // 8. Turn off the bidding_window_open flag
+    await supabase.from('vehicles').update({ bidding_window_open: false, bidding_window_closes_at: null }).eq('id', window.vehicle_id);
 
     return bid;
   },
 
-  /**
-   * WindowResolver: highest compliant bid wins; backlog fallback if none
-   */
   async resolveWindow(windowId: string) {
     // 1. Fetch window and bids
     const { data: window } = await supabase.from('capacity_windows').select('*').eq('id', windowId).single();
