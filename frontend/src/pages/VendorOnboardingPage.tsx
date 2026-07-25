@@ -198,7 +198,7 @@ export default function VendorOnboardingPage() {
     if (!mapInst.current) {
       mapInst.current = new mapboxgl.Map({
         container: mapContainerRef.current,
-        style: '/map-style.json?v=2',
+        style: '/map-style.json?v=3',
         center: [numLng, numLat],
         zoom: 9,
         attributionControl: false,

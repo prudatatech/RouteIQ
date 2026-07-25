@@ -222,7 +222,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
 
     const map = new mapboxgl.Map({
       container: mapRef.current!,
-      style: '/map-style.json?v=2',
+      style: '/map-style.json?v=3',
       center: MAP_DEFAULTS.CENTER,
       zoom: MAP_DEFAULTS.ZOOM,
       minZoom: MAP_DEFAULTS.MIN_ZOOM,
