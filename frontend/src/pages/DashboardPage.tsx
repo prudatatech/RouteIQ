@@ -41,7 +41,7 @@ export default function DashboardPage() {
 
   const { data: vehicles = [] } = useQuery({
     queryKey: ['vehicles', 'live'],
-    queryFn: () => vehiclesAPI.list({ limit: 20 }),
+    queryFn: () => vehiclesAPI.list({ limit: 500 }),
     refetchInterval: 5_000, // 5s polling for Ola/Uber-style live tracking
   })
 
