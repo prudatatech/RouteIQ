@@ -85,6 +85,49 @@ router.put('/sos/:id/resolve', requireAuth, async (req: Request, res: Response) 
   }
 });
 
+// ── GET /sos/config ───────────────────────────────────────────
+router.get('/sos/config', requireAuth, async (req: Request, res: Response) => {
+  // Mock config for driver app
+  res.json({
+    status: 'success',
+    emergency_contacts: ['112', '100', '108'],
+    escalation_timeout_mins: 5,
+    auto_record_audio: false
+  });
+});
+
+// ── POST /sos/trigger ─────────────────────────────────────────
+router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { lat, lng } = req.body;
+    const userId = req.user?.user_id;
+
+    // Get the driver's current vehicle
+    const { data: vehicle } = await supabase
+      .from('vehicles')
+      .select('id')
+      .eq('driver_id', userId)
+      .single();
+
+    if (vehicle) {
+      // Insert SOS alert
+      await supabase.from('sos_alerts').insert({
+        vehicle_id: vehicle.id,
+        driver_id: userId,
+        latitude: lat,
+        longitude: lng,
+        alert_type: 'panic_button',
+        description: 'Driver triggered SOS from mobile app',
+        status: 'active'
+      });
+    }
+
+    res.json({ status: 'success', message: 'SOS triggered successfully' });
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // ── GET /:vehicle_id/live ──────────────────────────────────
 router.get('/:vehicle_id/live', requireAuth, async (req: Request, res: Response) => {
   try {

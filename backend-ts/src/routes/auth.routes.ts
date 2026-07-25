@@ -295,6 +295,7 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
         full_name: driver.full_name,
         is_active: driver.is_active,
         language_preference,
+        vehicle_type: driver.vehicle_type,
       },
     });
   } catch (e: any) {
@@ -364,14 +365,13 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
       return;
     }
 
-    // Bypass the database update because the vehicle_type column is missing from Supabase
-    // The frontend will store this preference in AsyncStorage.
-    // const { error } = await supabase
-    //   .from('users')
-    //   .update({ vehicle_type })
-    //   .eq('id', userId);
+    // Update database since column exists
+    const { error } = await supabase
+      .from('users')
+      .update({ vehicle_type })
+      .eq('id', userId);
 
-    // if (error) throw error;
+    if (error) throw error;
 
     res.json({ status: 'success', vehicle_type });
   } catch (e: any) {
