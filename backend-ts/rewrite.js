@@ -61,7 +61,7 @@ const newApproveBid = `  async approveBid(bidId: string) {
     } else {
       const { data: s } = await supabase.from('shipments').insert({
         tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
-        status: 'assigned',
+        status: 'created',
         priority: 'high',
         origin_name: vendorOriginName,
         origin_address: vendorOriginAddress,
