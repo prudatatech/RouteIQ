@@ -94,7 +94,7 @@ export default function VendorPortalPage() {
 
     let profileData = null;
     try {
-      const pRes = await fetch('/api/v1/vendor/profile', {
+      const pRes = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/vendor/profile`, {
         headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
       if (pRes.ok) {
@@ -107,10 +107,10 @@ export default function VendorPortalPage() {
     if (!profileData) {
       profileData = {
         id: userId,
-        company_name: 'Apex Logistics & Freight',
-        gst_number: '27AABCU9603R1ZM',
-        city: 'Mumbai',
-        address: 'Plot 42, MIDC Industrial Area, Andheri East, Mumbai 400093'
+        company_name: 'New Vendor (Pending Setup)',
+        gst_number: '',
+        city: '',
+        address: ''
       };
     }
     setVendorProfile(profileData);
@@ -119,7 +119,7 @@ export default function VendorPortalPage() {
       supabase.from('capacity_windows').select('*, vehicles(plate_number, available_capacity_kg, vehicle_type)').gt('closes_at', new Date().toISOString()).is('winning_bid_id', null).order('opens_at', { ascending: false }),
       supabase.from('capacity_bids').select('*, capacity_windows!capacity_bids_window_id_fkey(trigger_type, vehicles(plate_number, vehicle_type))').eq('vendor_id', profileData?.id || userId).order('submitted_at', { ascending: false }),
       supabase.from('vendor_shipment_requests').select('*').eq('vendor_id', profileData?.id || userId).order('created_at', { ascending: false }),
-      fetch('/api/v1/vendor/passing-routes', { headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` } }).then(r => r.json().catch(() => []))
+      fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/vendor/passing-routes`, { headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` } }).then(r => r.json().catch(() => []))
     ])
     
     if (resW.data) setWindows(resW.data)
@@ -133,7 +133,7 @@ export default function VendorPortalPage() {
     setShowBidModal(true)
     setUpcomingStops([])
     try {
-      const res = await fetch(`/api/v1/capacity/windows/${w.id}/upcoming-stops`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/capacity/windows/${w.id}/upcoming-stops`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       })
       if (res.ok) {
@@ -153,7 +153,7 @@ export default function VendorPortalPage() {
     if (!selectedWindow || !bidAmount || !ewayBill || !selectedDestination) return
 
     try {
-      const res = await fetch('/api/v1/capacity/bids', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/capacity/bids`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +203,7 @@ export default function VendorPortalPage() {
     if (!reqPickup || !reqDrop || !reqCapacity) return
 
     try {
-      const res = await fetch('/api/v1/vendor/shipment-request', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/vendor/shipment-request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
