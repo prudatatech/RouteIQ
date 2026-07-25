@@ -473,7 +473,9 @@ export default function ShipmentsPage() {
                         <div className="text-[10px] font-bold text-muted uppercase tracking-widest">Total: {s.total_weight_kg} KG</div>
                         {s.capacity_bids && (
                           <div className="mt-3 p-2 bg-primary/10 border border-primary/20 rounded-xl">
-                            <div className="text-[8px] font-black text-primary uppercase tracking-[0.2em] mb-1">Vendor Detour Bid</div>
+                            <div className="text-[8px] font-black text-primary uppercase tracking-[0.2em] mb-1">
+                              {s.capacity_bids.capacity_windows?.trigger_type === 'end_of_route' ? 'Vendor Backhaul Bid' : 'Vendor Forward Bid'}
+                            </div>
                             <div className="text-xs font-bold text-text truncate max-w-[150px]">{s.capacity_bids.vendor_profiles?.company_name}</div>
                             <div className="text-[10px] font-black text-success uppercase tracking-widest">₹{s.capacity_bids.bid_amount}</div>
                             <div className="text-[8px] font-mono text-muted mt-1 truncate max-w-[150px]">{s.capacity_bids.eway_bill_ref} • {s.capacity_bids.load_configuration}</div>

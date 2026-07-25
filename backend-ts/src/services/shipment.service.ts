@@ -376,7 +376,7 @@ export class ShipmentService {
   static async getShipment(shipmentId: string): Promise<Shipment | null> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city))')
+      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows(trigger_type))')
       .eq('id', shipmentId)
       .single();
 
@@ -400,7 +400,7 @@ export class ShipmentService {
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city))')
+      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows(trigger_type))')
       .order('created_at', { ascending: false })
       .range(skip, skip + limit - 1);
 
