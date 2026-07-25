@@ -10,15 +10,15 @@ router.get('/profile', requireAuth, async (req: any, res: any) => {
   try {
     let profile = await vendorService.getProfile(req.user.user_id);
     if (!profile) {
-      const mockV = await supabase.from('vendor_profiles').select('*').limit(1).maybeSingle();
-      profile = mockV.data || {
+      // If the vendor has no profile, return an empty template with their own ID
+      profile = {
         id: req.user.user_id,
-        company_name: 'Apex Logistics & Freight',
-        gst_number: '27AABCU9603R1ZM',
-        city: 'Mumbai',
-        address: 'Plot 42, MIDC Industrial Area, Andheri East, Mumbai, Maharashtra 400093',
-        latitude: 19.1197,
-        longitude: 72.8464
+        company_name: 'New Vendor (Pending Setup)',
+        gst_number: '',
+        city: '',
+        address: '',
+        latitude: null,
+        longitude: null
       };
     }
     res.json(profile);
