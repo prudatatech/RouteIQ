@@ -40,7 +40,7 @@ export default function CapacityBiddingPage() {
     const [resW, resB, resC] = await Promise.all([
       supabase.from('capacity_windows').select('*, vehicles(plate_number)').order('opens_at', { ascending: false }),
       supabase.from('capacity_bids').select('*, vendor_profiles(company_name)'),
-      supabase.from('driver_confirmations').select('*, route_stops(location_name), vehicles(plate_number)')
+      supabase.from('driver_confirmations').select('*, route_stops(id), vehicles(plate_number)')
     ])
     
     if (resW.data) setWindows(resW.data)
@@ -175,7 +175,7 @@ export default function CapacityBiddingPage() {
               <div key={c.id} className="bg-bg rounded-xl border border-border p-4 flex items-center justify-between">
                 <div>
                   <div className="font-bold text-text">{c.vehicles?.plate_number}</div>
-                  <div className="text-xs text-muted mt-1">Stop: {c.route_stops?.location_name || 'Inserted Stop'}</div>
+                  <div className="text-xs text-muted mt-1">Stop: {c.route_stops?.id ? c.route_stops.id.substring(0, 8) : 'Inserted Stop'}</div>
                   <div className="text-xs text-muted mt-1 font-mono">Sent: {new Date(c.prompted_at).toLocaleTimeString()}</div>
                 </div>
                 

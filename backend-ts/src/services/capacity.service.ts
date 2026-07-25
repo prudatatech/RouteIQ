@@ -311,7 +311,8 @@ export const capacityService = {
           drop_lat: manifestDropLat,
           drop_lng: manifestDropLng,
           capacity_kg: bid.weight_kg || 500,
-          status: 'scheduled'
+          status: 'scheduled',
+          route_type: window.trigger_type === 'end_of_route' ? 'backhaul' : 'forward'
         });
 
         if (route) {
