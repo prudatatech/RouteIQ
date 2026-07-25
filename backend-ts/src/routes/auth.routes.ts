@@ -373,6 +373,27 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     if (error) throw error;
 
+    // Check if the driver has a vehicle assigned
+    const { data: existingVehicle } = await supabase
+      .from('vehicles')
+      .select('id')
+      .eq('driver_id', userId)
+      .single();
+
+    if (!existingVehicle) {
+      // Create a new vehicle for the driver
+      await supabase.from('vehicles').insert({
+        plate_number: `TEMP-${userId.substring(0, 6).toUpperCase()}`,
+        vehicle_type: vehicle_type,
+        driver_id: userId,
+        status: 'idle',
+        capacity_kg: 1000 // Default capacity
+      });
+    } else {
+      // Update existing vehicle type
+      await supabase.from('vehicles').update({ vehicle_type }).eq('id', existingVehicle.id);
+    }
+
     res.json({ status: 'success', vehicle_type });
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
