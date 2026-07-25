@@ -754,7 +754,69 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
         .single();
         
       if (manifestErr || !manifest) {
-        res.json({ active: false, message: 'No active route assigned', error: error?.message || 'Route not found' });
+        // No active route and no active manifest. 
+        // Check for recently completed routes or delivered manifests
+        const { data: compRoute } = await supabase
+          .from('routes')
+          .select('*, route_stops(*, delivery_points(*)), depots(*)')
+          .eq('vehicle_id', vehicle.id)
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (compRoute) {
+          const cStops = (compRoute.route_stops || [])
+            .sort((a: any, b: any) => a.sequence - b.sequence)
+            .map((s: any) => ({
+              id: s.id,
+              sequence: s.sequence,
+              status: s.status,
+              delivery_point: s.delivery_points ? {
+                id: s.delivery_points.id,
+                name: s.delivery_points.name,
+                address: s.delivery_points.address,
+                latitude: s.delivery_points.latitude,
+                longitude: s.delivery_points.longitude,
+                demand_kg: s.delivery_points.demand_kg,
+              } : null,
+            }));
+          res.json({
+            active: false,
+            route: {
+              id: compRoute.id,
+              status: compRoute.status,
+              stops: cStops,
+              progress_pct: 100
+            }
+          });
+          return;
+        }
+
+        const { data: compManifest } = await supabase
+          .from('cargo_manifest')
+          .select('*')
+          .eq('vehicle_id', vehicle.id)
+          .eq('status', 'delivered')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (compManifest) {
+          res.json({
+            active: false,
+            is_manifest: true,
+            route: {
+              id: compManifest.id,
+              status: 'completed',
+              stops: [],
+              progress_pct: 100
+            }
+          });
+          return;
+        }
+
+        res.json({ active: false, message: 'No active route assigned' });
         return;
       }
 
