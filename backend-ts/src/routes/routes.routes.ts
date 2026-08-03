@@ -104,7 +104,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
 
       // Side effects on vehicle
       let vehicleStatus = route.vehicles?.status;
-      if (['in_progress', 'active'].includes(newStatus)) {
+      if (['active'].includes(newStatus)) {
         vehicleStatus = 'on_route';
       } else if (['completed', 'cancelled'].includes(newStatus)) {
         vehicleStatus = 'available';
@@ -114,7 +114,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       }
 
       // Notify driver when route is activated
-      if (['in_progress', 'active'].includes(newStatus) && route.vehicles?.driver_id) {
+      if (['active'].includes(newStatus) && route.vehicles?.driver_id) {
         try {
           await notificationService.sendNotification(
             route.vehicles.driver_id,
@@ -218,7 +218,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       routeUpdate.status = parsed.data.status;
 
       // Vehicle status side effect
-      if (['active', 'in_progress'].includes(parsed.data.status)) {
+      if (['active'].includes(parsed.data.status)) {
         await supabase.from('vehicles').update({ status: 'on_route' }).eq('id', route.vehicle_id);
       } else if (['completed', 'cancelled'].includes(parsed.data.status)) {
         await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);

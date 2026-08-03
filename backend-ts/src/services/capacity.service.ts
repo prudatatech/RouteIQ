@@ -269,7 +269,7 @@ export const capacityService = {
       let { data: route } = await supabase.from('routes')
         .select('id')
         .eq('vehicle_id', window.vehicle_id)
-        .in('status', ['pending', 'active', 'in_progress'])
+        .in('status', ['pending', 'active'])
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
