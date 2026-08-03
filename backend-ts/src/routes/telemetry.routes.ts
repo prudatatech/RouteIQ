@@ -489,7 +489,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       .from('routes')
       .select('id, status, total_distance_km, total_duration_minutes')
       .eq('vehicle_id', vehicle?.id || '')
-      .in('status', ['active', 'pending'])
+      .in('status', ['active', 'pending', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -821,6 +821,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       }
 
       // Map manifest to route shape
+      // 'scheduled' = assigned but driver hasn't started
+      // 'in_transit' = driver clicked Start Journey OR completed pickup
       const mStatus = manifest.status === 'scheduled' ? 'pending' : 'active';
       const manifestStops = [
         {
@@ -850,6 +852,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           }
         }
       ];
+
+      console.log(`[my-route] Manifest found: id=${manifest.id}, db_status=${manifest.status}, mapped_status=${mStatus}, stops=${manifestStops.map(s => s.id + ':' + s.status).join(',')}`);
 
       res.json({
         active: true,
