@@ -122,60 +122,70 @@ export const vendorService = {
       .single();
     if (reqErr) throw new Error(reqErr.message);
 
-    // Update request status and assign vehicle
-    // Note: assigned_vehicle_id column may need migration; use safe update
+    // Update request status. Since 'assigned' might violate CHECK constraint if migration 018 wasn't run,
+    // we use 'fulfilled' which is a valid status in the original schema and removes it from the pending list.
     const updatePayload: any = {
-      status: 'assigned',
+      status: 'fulfilled', // Workaround for check constraint
       updated_at: new Date().toISOString()
     };
+    
     // Try setting assigned_vehicle_id if column exists
     try {
-      const testUpdate = await supabase.from('vendor_shipment_requests').update({
+      await supabase.from('vendor_shipment_requests').update({
         ...updatePayload,
         assigned_vehicle_id: vehicleId,
         ...(cost !== undefined ? { cost } : {}),
         ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
-      }).eq('id', requestId).select().single();
-      if (!testUpdate.error) {
-        // Notify the vendor
-        await notificationService.sendNotification(
-          testUpdate.data.vendor_id,
-          'Vehicle Assigned!',
-          `A vehicle has been assigned to your shipment request from ${testUpdate.data.pickup_location}.`,
-          'vehicle_assigned',
-          { request_id: testUpdate.data.id, vehicle_id: vehicleId }
-        );
-        // Try creating cargo_manifest entry
-        await supabase.from('cargo_manifest').insert({
-          vehicle_id: vehicleId,
-          vendor_request_id: requestId,
-          pickup_location: req.pickup_location,
-          pickup_lat: req.pickup_lat,
-          pickup_lng: req.pickup_lng,
-          drop_location: req.drop_location,
-          drop_lat: req.drop_lat,
-          drop_lng: req.drop_lng,
-          capacity_kg: req.required_capacity_kg,
-          status: 'scheduled',
-          created_at: new Date().toISOString()
-        });
-        return testUpdate.data;
-      }
-    } catch (_) { /* column may not exist, fall through */ }
+      }).eq('id', requestId);
+    } catch (_) { 
+      // Column may not exist, fall back to simple update
+      await supabase.from('vendor_shipment_requests').update(updatePayload).eq('id', requestId);
+    }
 
-    // Fallback: plain status update
-    const { data, error } = await supabase.from('vendor_shipment_requests').update(updatePayload)
-      .eq('id', requestId).select().single();
-    if (error) throw new Error(error.message);
+    // Insert into cargo_manifest
+    const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
+      vehicle_id: vehicleId,
+      vendor_request_id: requestId,
+      pickup_location: req.pickup_location,
+      pickup_lat: req.pickup_lat,
+      pickup_lng: req.pickup_lng,
+      drop_location: req.drop_location,
+      drop_lat: req.drop_lat,
+      drop_lng: req.drop_lng,
+      capacity_kg: req.required_capacity_kg,
+      status: 'scheduled',
+      created_at: new Date().toISOString()
+    });
 
+    if (manifestErr) {
+      console.error('Failed to create cargo_manifest:', manifestErr);
+      throw new Error(`Failed to create manifest: ${manifestErr.message}`);
+    }
+
+    // Get Driver ID for notification
+    const { data: vehicle } = await supabase.from('vehicles').select('driver_id').eq('id', vehicleId).single();
+
+    if (vehicle?.driver_id) {
+      // Notify the driver instantly so the listener triggers
+      await notificationService.sendNotification(
+        vehicle.driver_id,
+        'New Cargo Assigned',
+        `A new pickup has been scheduled at ${req.pickup_location}.`,
+        'cargo_assigned',
+        { request_id: requestId, vehicle_id: vehicleId }
+      );
+    }
+
+    // Notify the vendor
     await notificationService.sendNotification(
-      data.vendor_id,
+      req.vendor_id,
       'Vehicle Assigned!',
-      `A vehicle has been assigned to your shipment request from ${data.pickup_location}.`,
+      `A vehicle has been assigned to your shipment request from ${req.pickup_location}.`,
       'vehicle_assigned',
-      { request_id: data.id, vehicle_id: vehicleId }
+      { request_id: requestId, vehicle_id: vehicleId }
     );
-    return data;
+    
+    return { success: true };
   },
 
   /**
