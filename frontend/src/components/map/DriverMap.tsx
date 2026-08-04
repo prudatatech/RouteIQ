@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import mapboxgl from 'maplibre-gl';
 import axios from 'axios';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -22,18 +21,12 @@ export default function DriverMap({ currentLat, currentLng, targetLat, targetLng
   const [distance, setDistance] = useState<string>('--');
 
   useEffect(() => {
-    if (!mapRef.current || !MAPBOX_TOKEN || MAPBOX_TOKEN === 'your_mapbox_token_here') {
-      if (mapRef.current) {
-         mapRef.current.innerHTML = '<div class="p-8 text-center text-muted h-full flex items-center justify-center bg-slate-900">Mapbox token missing</div>';
-      }
-      return;
-    }
+    if (!mapRef.current) return;
 
     if (!mapInst.current) {
-      mapboxgl.accessToken = MAPBOX_TOKEN;
       const map = new mapboxgl.Map({
         container: mapRef.current,
-        style: 'mapbox://styles/mapbox/navigation-night-v1',
+        style: '/map-style.json?v=3',
         center: [currentLng, currentLat],
         zoom: 14,
         pitch: 60,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/services/supabase'
 import toast from 'react-hot-toast'
-import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react'
 import * as turf from '@turf/turf'
 
 export default function VendorRequestsAdmin() {
@@ -84,6 +84,40 @@ export default function VendorRequestsAdmin() {
     else toast.error('Failed to approve')
   }
 
+  const handleReject = async (id: string) => {
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await fetch(`/api/v1/vendor/shipment-request/${id}/reject`, {
+        method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+      toast.success('Request rejected');
+      fetchRequests();
+    } catch (err: any) {
+      toast.error('Failed to reject: ' + err.message);
+    }
+  }
+
+  const handleRemove = async (id: string) => {
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await fetch(`/api/v1/vendor/shipment-request/${id}/reject`, {
+        method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+      toast.success('Permanently removed');
+      fetchRequests();
+    } catch (err: any) {
+      toast.error('Failed to remove: ' + err.message);
+    }
+  }
+
   return (
     <>
       <div className="rounded-[40px] overflow-hidden flex flex-col bg-white border border-slate-200 shadow-xl">
@@ -127,18 +161,32 @@ export default function VendorRequestsAdmin() {
               </div>
               <div className="flex gap-2 pt-2 border-t border-slate-200">
                 {req.status === 'pending' && (
-                  <button
-                    onClick={() => handleApprove(req.id)}
-                    className="flex-1 py-1.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-green-100 transition-colors"
-                  >
-                    <CheckCircle2 size={12} /> Approve
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleApprove(req.id)}
+                      className="flex-1 py-1.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-green-100 transition-colors"
+                    >
+                      <CheckCircle2 size={12} /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleReject(req.id)}
+                      className="flex-1 py-1.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-red-100 transition-colors"
+                    >
+                      <X size={12} /> Reject
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => { setSelectedReq(req); setSelectedVehicle('') }}
                   className="flex-1 py-1.5 rounded-xl border border-yellow-300 bg-yellow-50 text-yellow-800 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-yellow-100 transition-colors"
                 >
                   <Truck size={12} /> Assign Vehicle
+                </button>
+                <button
+                  onClick={() => handleRemove(req.id)}
+                  className="flex-1 py-1.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-100 transition-colors"
+                >
+                  <Trash2 size={12} /> Remove
                 </button>
               </div>
             </div>

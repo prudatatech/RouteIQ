@@ -7,13 +7,14 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import CargoManifestConnectingForm from '@/components/CargoManifestConnectingForm'
 import LiveRateMarquee from '@/components/LiveRateMarquee'
+import AdminKycReview from '@/components/AdminKycReview'
 import { supabase } from '@/services/supabase'
 
 const ROLE_OPTIONS = ['admin', 'manager', 'driver', 'superadmin', 'vendor']
 
 export default function SuperadminPage() {
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bids' | 'requests'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bids' | 'requests' | 'kyc'>('users')
   const [showAddVendor, setShowAddVendor] = useState(false)
   const [selectedRequestToAssign, setSelectedRequestToAssign] = useState<any>(null)
   const [vendorEmail, setVendorEmail] = useState('')
@@ -180,7 +181,7 @@ export default function SuperadminPage() {
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-border pb-px overflow-x-auto">
-        {['users', 'requests', 'bids', 'audit'].map((t) => (
+        {['users', 'requests', 'bids', 'kyc', 'audit'].map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t as any)}
@@ -215,6 +216,8 @@ export default function SuperadminPage() {
 
       {/* Content Table */}
       <Card className="border-border shadow-2xl relative overflow-hidden">
+        {activeTab === 'kyc' && <AdminKycReview />}
+        
         {activeTab === 'users' ? (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">

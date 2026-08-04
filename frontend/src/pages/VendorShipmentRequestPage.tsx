@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/mapbox';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import { useNavigate, useLocation } from 'react-router-dom';
+import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import { MapPin, ArrowLeft, Send, Search, Info } from 'lucide-react';
@@ -12,6 +11,7 @@ const DEFAULT_CENTER = { longitude: 72.8464, latitude: 19.1197 }; // Mumbai
 
 export default function VendorShipmentRequestPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const token = useAuthStore(s => s.token);
   
   // State
@@ -36,8 +36,41 @@ export default function VendorShipmentRequestPage() {
   const [dropSuggestions, setDropSuggestions] = useState<any[]>([]);
   const [dropLocation, setDropLocation] = useState<any>(null);
   
-  // Fetch market rates & profile
+  // Fetch market rates & profile & handle initial state
   useEffect(() => {
+    // 1. Restore from session if pending (Deferred Auth)
+    let restored = false;
+    if (token) {
+      const pendingMapRequest = sessionStorage.getItem('pendingMapRequest');
+      if (pendingMapRequest) {
+        const data = JSON.parse(pendingMapRequest);
+        setPickupLocation(data.pickup);
+        setPickupSearch(data.pickup?.address || '');
+        setDropLocation(data.drop);
+        setDropSearch(data.drop?.address || '');
+        setCapacity(data.capacity?.toString() || '');
+        sessionStorage.removeItem('pendingMapRequest');
+        restored = true;
+      }
+    } 
+    
+    if (!restored) {
+      // 2. Parse URL query params (from Hero Search)
+      const params = new URLSearchParams(location.search);
+      const query = params.get('query');
+      const lat = params.get('lat');
+      const lng = params.get('lng');
+      
+      if (query && !pickupLocation) {
+        setPickupSearch(query);
+        if (lat && lng) {
+          const newLoc = { address: query, lat: parseFloat(lat), lng: parseFloat(lng) };
+          setPickupLocation(newLoc);
+          setViewState({ longitude: newLoc.lng, latitude: newLoc.lat, zoom: 14 });
+        }
+      }
+    }
+
     const fetchData = async () => {
       try {
         const [rateRes, profileRes] = await Promise.all([
@@ -52,6 +85,27 @@ export default function VendorShipmentRequestPage() {
         
         if (profileRes.ok) {
           const profileData = await profileRes.json();
+          // Fetch raw dummy2 from supabase to get KYC status
+          const { data: rawProfile } = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://plutdajzefwtpgofpqlk.supabase.co'}/rest/v1/vendor_profiles?id=eq.${profileData.id}&select=dummy2`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_HqsWylfok2BD7EOtiEpV1g_lKhSlFLL' }
+          }).then(r => r.json()).catch(() => []);
+          
+          const { data: kycProfile } = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://plutdajzefwtpgofpqlk.supabase.co'}/rest/v1/kyc_profiles?id=eq.${profileData.id}&select=kyc_status`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_HqsWylfok2BD7EOtiEpV1g_lKhSlFLL' }
+          }).then(r => r.json()).catch(() => []);
+          
+          if (rawProfile && rawProfile[0] && rawProfile[0].dummy2) {
+            try {
+              const parsed = typeof rawProfile[0].dummy2 === 'string' ? JSON.parse(rawProfile[0].dummy2) : rawProfile[0].dummy2;
+              profileData.kycStatus = (parsed.status || 'pending').toLowerCase();
+            } catch(e) { profileData.kycStatus = 'pending'; }
+          } else {
+            profileData.kycStatus = 'pending';
+          }
+          
+          if (kycProfile && kycProfile[0] && kycProfile[0].kyc_status) {
+            profileData.kycStatus = kycProfile[0].kyc_status.toLowerCase();
+          }
           setVendorProfile(profileData);
         }
       } catch (e) {
@@ -59,7 +113,7 @@ export default function VendorShipmentRequestPage() {
       }
     };
     if (token) fetchData();
-  }, [token]);
+  }, [token, location.search]);
 
   // Geocoding Search
   const searchMapbox = async (query: string, setSuggestions: any) => {
@@ -77,14 +131,22 @@ export default function VendorShipmentRequestPage() {
   };
 
   useEffect(() => {
+    if (pickupLocation && pickupSearch === pickupLocation.address) {
+      setPickupSuggestions([]);
+      return;
+    }
     const timer = setTimeout(() => searchMapbox(pickupSearch, setPickupSuggestions), 500);
     return () => clearTimeout(timer);
-  }, [pickupSearch]);
+  }, [pickupSearch, pickupLocation]);
 
   useEffect(() => {
+    if (dropLocation && dropSearch === dropLocation.address) {
+      setDropSuggestions([]);
+      return;
+    }
     const timer = setTimeout(() => searchMapbox(dropSearch, setDropSuggestions), 500);
     return () => clearTimeout(timer);
-  }, [dropSearch]);
+  }, [dropSearch, dropLocation]);
 
   const updateMapBounds = (newPickup: any, newDrop: any) => {
     if (newPickup && newDrop) {
@@ -217,6 +279,19 @@ export default function VendorShipmentRequestPage() {
       return;
     }
     
+    const payload = {
+      pickup: pickupLocation,
+      drop: dropLocation,
+      capacity: Number(capacity)
+    };
+
+    if (!token) {
+      sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload));
+      toast('Please log in or create an account to post this load.', { icon: '🔒' });
+      navigate('/vendor/login');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
@@ -240,7 +315,7 @@ export default function VendorShipmentRequestPage() {
       }
       
       toast.success('Request Sent!');
-      navigate('/vendor');
+      navigate('/vendor/shipments');
     } catch (err: any) {
       toast.error('Failed to submit request: ' + err.message);
     } finally {
@@ -253,7 +328,7 @@ export default function VendorShipmentRequestPage() {
       {/* Header */}
       <header className="border-b border-border bg-surface sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/vendor')} className="text-muted hover:text-text transition-colors">
+          <button onClick={() => navigate(-1)} className="text-muted hover:text-text transition-colors">
             <ArrowLeft size={24} />
           </button>
           <h1 className="text-2xl font-display font-black uppercase tracking-tight text-text">New Shipment Request</h1>
@@ -379,8 +454,7 @@ export default function VendorShipmentRequestPage() {
             {...viewState}
             // @ts-ignore
             onMove={(evt: any) => setViewState(evt.viewState)}
-            mapStyle="mapbox://styles/mapbox/streets-v12"
-            mapboxAccessToken={MAPBOX_TOKEN}
+            mapStyle="/map-style.json?v=3"
           >
             <NavigationControl position="bottom-right" />
             

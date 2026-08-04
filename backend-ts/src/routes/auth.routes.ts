@@ -353,7 +353,7 @@ router.post('/logout', (_req: Request, res: Response) => {
 // ── PUT /driver/profile ────────────────────────────────────
 router.put('/driver/profile', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { vehicle_type } = req.body;
+    const { vehicle_type, full_name } = req.body;
     const userId = req.user?.user_id;
 
     if (!userId || req.user?.role !== 'driver') {
@@ -361,15 +361,19 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
       return;
     }
 
-    if (!vehicle_type) {
-      res.status(400).json({ detail: 'vehicle_type is required' });
+    const updates: any = {};
+    if (vehicle_type) updates.vehicle_type = vehicle_type;
+    if (full_name) updates.full_name = full_name;
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ detail: 'No update data provided' });
       return;
     }
 
     // Update database since column exists
     const { error } = await supabase
       .from('users')
-      .update({ vehicle_type })
+      .update(updates)
       .eq('id', userId);
 
     if (error) throw error;

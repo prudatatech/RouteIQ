@@ -111,6 +111,29 @@ export const vendorService = {
   },
 
   /**
+   * Super admin rejects a vendor shipment request
+   */
+  async rejectRequest(requestId: string) {
+    const { data, error } = await supabase.from('vendor_shipment_requests').update({
+      status: 'rejected',
+      updated_at: new Date().toISOString()
+    }).eq('id', requestId).select().single();
+
+    if (error) throw new Error(error.message);
+
+    // Notify the vendor
+    await notificationService.sendNotification(
+      data.vendor_id,
+      'Request Rejected',
+      `Your shipment request from ${data.pickup_location} has been rejected by admins.`,
+      'request_rejected',
+      { request_id: data.id }
+    );
+
+    return data;
+  },
+
+  /**
    * Admin assigns a vehicle to a vendor request and creates a cargo manifest entry
    */
   async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number, costPerKm?: number) {

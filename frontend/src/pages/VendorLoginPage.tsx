@@ -1,31 +1,59 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Zap, Eye, EyeOff, ShieldCheck, UserCog, User, Truck, Package, ArrowRight } from 'lucide-react'
+import { Zap, Eye, EyeOff, Package, ArrowRight, ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { Card, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-export default function LoginPage() {
+export default function VendorLoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(false)
   
   const navigate = useNavigate()
 
-  const handleLogin = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
-    e?.preventDefault()
+  useEffect(() => {
+    // If they land here and they already have a session, redirect back to vendor page
+    const session = useAuthStore.getState().session
+    if (session) navigate('/vendor')
+  }, [navigate])
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
-    const targetEmail = customEmail || email
-    const targetPass = customPass || password
 
     try {
+      if (isSignUp) {
+        // Sign Up Flow for Vendors
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { role: 'vendor' }
+          }
+        })
+
+        if (error) throw error
+        if (!data.session) {
+          toast.success('Account created! Please check your email to verify (if enabled).')
+          setLoading(false)
+          setIsSignUp(false)
+          return
+        }
+        
+        useAuthStore.getState().setSession(data.session, 'vendor')
+        toast.success('Account created! Welcome to RouteIQ Marketplace.')
+        handleSuccessfulLogin()
+        
+      } else {
         // Sign In Flow
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: targetEmail,
-          password: targetPass,
+          email,
+          password,
         })
 
         if (error) throw error
@@ -52,26 +80,13 @@ export default function LoginPage() {
         }
 
         if (!role) {
-          throw new Error('Account pending approval or role assignment.');
+          role = 'vendor' // fallback to vendor
         }
 
         useAuthStore.getState().setSession(data.session, role)
-
-        toast.success(`Welcome back, ${role}!`)
-        if (role === 'superadmin') {
-          navigate('/superadmin')
-        } else if (role === 'vendor') {
-          // Check if vendor profile is fully set up
-          if (!vProfile) {
-            navigate('/vendor/onboarding')
-          } else {
-            navigate('/vendor')
-          }
-        } else if (role === 'driver') {
-          navigate('/driver')
-        } else {
-          navigate('/dashboard')
-        }
+        toast.success(`Welcome back!`)
+        handleSuccessfulLogin(vProfile)
+      }
     } catch (e: any) {
       toast.error(e.message || 'Authentication failed')
     } finally {
@@ -79,6 +94,13 @@ export default function LoginPage() {
     }
   }
 
+  const handleSuccessfulLogin = (vProfile?: any) => {
+    if (sessionStorage.getItem('pendingMapRequest')) {
+      navigate('/vendor/request')
+    } else {
+      navigate('/vendor')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
@@ -86,30 +108,59 @@ export default function LoginPage() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="w-full max-w-[420px] space-y-8 relative z-10 animate-fade-in">
+        
+        <button onClick={() => navigate('/vendor')} className="text-muted hover:text-text font-bold text-xs uppercase tracking-widest flex items-center gap-2 transition-colors">
+           <ArrowLeft size={14} /> Back to Marketplace
+        </button>
+
         {/* Branding */}
         <div className="text-center space-y-3">
-          <div className="inline-flex w-20 h-20 bg-primary rounded-3xl items-center justify-center shadow-[0_8px_32px_rgba(79,172,254,0.3)] rotate-3 hover:rotate-0 transition-transform duration-500">
-            <Zap size={44} className="text-bg fill-current" strokeWidth={2.5} />
+          <div className="inline-flex w-16 h-16 bg-primary/10 rounded-2xl items-center justify-center border border-primary/20 shadow-[0_8px_32px_rgba(79,172,254,0.15)]">
+            <Package size={32} className="text-primary" />
           </div>
-          <h1 className="font-display text-5xl font-black text-text tracking-tighter uppercase leading-none pt-4">
-            ROUTE<span className="text-primary">IQ</span>
+          <h1 className="font-display text-4xl font-black text-text tracking-tighter uppercase leading-none pt-2">
+            VENDOR <span className="text-primary">PORTAL</span>
           </h1>
-          <p className="text-muted font-bold uppercase tracking-[0.12em] text-[9px]">
-            by Prudata
+          <p className="text-muted font-bold text-sm">
+            Sign in to claim capacity or post loads.
           </p>
         </div>
 
         {/* Login Card */}
         <Card className="p-2 border-border bg-surface/50 shadow-2xl backdrop-blur-3xl overflow-hidden rounded-3xl">
+          
+          <form onSubmit={handleLogin} className="space-y-6 p-6">
+            
+            <div className="flex bg-surface2 rounded-xl p-1 mb-6 border border-border">
+              <button
+                type="button"
+                onClick={() => setIsSignUp(false)}
+                className={clsx(
+                  "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                  !isSignUp ? "bg-primary text-white shadow-md" : "text-muted hover:text-text"
+                )}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSignUp(true)}
+                className={clsx(
+                  "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                  isSignUp ? "bg-primary text-white shadow-md" : "text-muted hover:text-text"
+                )}
+              >
+                Create Account
+              </button>
+            </div>
 
-          <form onSubmit={handleLogin} className="space-y-6 p-6 pt-8">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-muted tracking-widest ml-1">
-                Command Control ID
+                Email Address
               </label>
               <input
                 type="email"
-                placeholder="nexus.auth@prudata.io"
+                placeholder="you@company.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
@@ -119,7 +170,7 @@ export default function LoginPage() {
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-muted tracking-widest ml-1">
-                Access Pass-Key
+                {isSignUp ? 'Choose Password' : 'Password'}
               </label>
               <div className="relative">
                 <input
@@ -150,29 +201,13 @@ export default function LoginPage() {
                 <Spinner size={20} />
               ) : (
                 <span className="flex items-center gap-2">
-                  AUTHORIZE SESSION <Zap size={16} className="fill-current group-hover:scale-110 transition-transform" />
+                  {isSignUp ? 'Create Account' : 'Sign In'} <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
                 </span>
               )}
             </Button>
           </form>
+
         </Card>
-
-        {/* Vendor Portal Link */}
-        <div className="pt-2">
-          <button
-            onClick={() => navigate('/vendor')}
-            className="w-full bg-surface2/50 hover:bg-surface2 border border-border text-text px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-sm transition-all hover:border-primary/50 group"
-          >
-            Explore Cargo Network Without Login 
-            <ArrowRight size={16} className="group-hover:translate-x-1 text-primary transition-transform" />
-          </button>
-        </div>
-
-      </div>
-
-      {/* Footer Meta */}
-      <div className="mt-12 text-[10px] font-bold text-muted uppercase tracking-[0.5em] animate-pulse">
-        Core v1.0 // Intelligence Grid Active
       </div>
     </div>
   )

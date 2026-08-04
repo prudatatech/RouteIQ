@@ -9,8 +9,7 @@ import {
   FileText, Activity
 } from 'lucide-react'
 import { shipmentsAPI, telemetryWS } from '@/services/api'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import mapboxgl from 'maplibre-gl'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
 
@@ -544,13 +543,12 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     if (!containerRef.current || _customerMapInstance) return
     if (!MAPBOX_TOKEN || MAPBOX_TOKEN === 'your_mapbox_token_here') return
 
-    mapboxgl.accessToken = MAPBOX_TOKEN
     const cx = liveVehicle?.lng || destination?.lng || 77.209
     const cy = liveVehicle?.lat || destination?.lat || 28.613
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: '/map-style.json?v=3',
       center: [cx, cy], zoom: 13, attributionControl: false,
     })
 

@@ -3,8 +3,7 @@ import { supabase } from '@/services/supabase'
 import { telemetryWS } from '@/services/api'
 import { format } from 'date-fns'
 import { AlertTriangle, MapPin, Truck, User, Phone, CheckCircle, ShieldAlert } from 'lucide-react'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import mapboxgl from 'maplibre-gl'
 import toast from 'react-hot-toast'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
@@ -76,10 +75,9 @@ export default function EmergencyPage() {
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return
-    mapboxgl.accessToken = MAPBOX_TOKEN
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: '/map-style.json?v=3',
       center: [78.9629, 20.5937],
       zoom: 4
     })

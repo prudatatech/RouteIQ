@@ -24,13 +24,19 @@ import LiveMapPage from '@/pages/LiveMapPage'
 import MobileTrackPage from '@/pages/MobileTrackPage'
 import CapacityBiddingPage from '@/pages/CapacityBiddingPage'
 import VendorPortalPage from '@/pages/VendorPortalPage'
+import VendorTrackingPage from '@/pages/VendorTrackingPage'
 import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
 import VendorOnboardingPage from '@/pages/VendorOnboardingPage'
+import VendorDocumentsPage from '@/pages/VendorDocumentsPage'
+import VendorLoginPage from '@/pages/VendorLoginPage'
+import VendorLayout from '@/components/ui/VendorLayout'
+import VendorShipmentsPage from '@/pages/VendorShipmentsPage'
+import VendorCorridorPage from '@/pages/VendorCorridorPage'
 
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const token = useAuthStore(s => s.token)
   const role = useAuthStore(s => s.role)
-  
+
   if (!token) return <Navigate to="/login" replace />
 
   // If this route is restricted to certain roles
@@ -41,7 +47,7 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
       return <Navigate to="/dashboard" replace />
     }
   }
-  
+
   return <>{children}</>
 }
 
@@ -83,7 +89,7 @@ export default function App() {
 
           const fallbackRole = session.user.user_metadata?.role;
           let role = user?.role || fallbackRole;
-          
+
           // If user is not admin/superadmin, but has a vendor profile, treat as vendor
           if (role !== 'admin' && role !== 'superadmin' && vProfile) {
             role = 'vendor';
@@ -119,21 +125,22 @@ export default function App() {
               <DriverPage />
             </PrivateRoute>
           } />
-          <Route path="/vendor" element={
-            <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
-              <VendorPortalPage />
-            </PrivateRoute>
-          } />
-          <Route path="/vendor/request" element={
-            <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
-              <VendorShipmentRequestPage />
-            </PrivateRoute>
-          } />
+          {/* Vendor Portal */}
+          <Route path="/vendor" element={<VendorLayout />}>
+            <Route index element={<VendorPortalPage />} />
+            <Route path="documents" element={<VendorDocumentsPage />} />
+            <Route path="shipments" element={<VendorShipmentsPage />} />
+            <Route path="corridor" element={<VendorCorridorPage />} />
+            <Route path="request" element={<VendorShipmentRequestPage />} />
+            <Route path="tracking" element={<VendorTrackingPage />} />
+          </Route>
+
           <Route path="/vendor/onboarding" element={
             <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
               <VendorOnboardingPage />
             </PrivateRoute>
           } />
+          <Route path="/vendor/login" element={<VendorLoginPage />} />
           <Route path="/" element={
             <PrivateRoute>
               <AppLayout />

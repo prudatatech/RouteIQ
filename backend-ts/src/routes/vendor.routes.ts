@@ -70,6 +70,16 @@ router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin
   }
 });
 
+// Reject shipment request (Admin/Super Admin)
+router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+  try {
+    const request = await vendorService.rejectRequest(req.params.id);
+    res.json(request);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Assign vehicle to shipment request (Admin/Super Admin)
 router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
   try {

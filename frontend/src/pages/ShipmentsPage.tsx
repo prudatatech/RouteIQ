@@ -21,95 +21,7 @@ const STATUS_OPTIONS = ['all', 'created', 'picked_up', 'in_transit', 'delivered'
 const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
 import { formatEta } from '@/utils/timeFormat'
-
-function InlineTrackingMap({ trackingId, allVehicles }: { trackingId: string, allVehicles: any[] }) {
-  const { data: trackInfo, isLoading } = useQuery({
-    queryKey: ['trackPublicly', trackingId],
-    queryFn: () => shipmentsAPI.trackPublicly(trackingId),
-    refetchInterval: 10000,
-  })
-
-  const [isCalling, setIsCalling] = useState(false)
-
-  if (isLoading) return <div className="h-64 flex items-center justify-center"><Loader2 size={24} className="animate-spin text-yellow-500" /></div>
-  
-  if (!trackInfo || !trackInfo.vehicle?.id) {
-    return <div className="h-64 flex items-center justify-center text-xs font-bold text-muted uppercase tracking-widest bg-slate-50 rounded-2xl">Awaiting Driver Assignment</div>
-  }
-
-  // Need to provide vehicle to LiveMap, so it knows the start position.  
-  // It handles its own realtime updates if it has the ID.
-  const activeVehicle = {
-    id: trackInfo.vehicle.id,
-    plate_number: trackInfo.vehicle.plate_number,
-    status: trackInfo.vehicle.status,
-    latitude: trackInfo.vehicle.lat,
-    longitude: trackInfo.vehicle.lng,
-    vehicle_type: trackInfo.vehicle.type
-  }
-
-  // Fallback map array with only the active vehicle if it's not in allVehicles
-  const mapVehicles = allVehicles.some(v => v.id === activeVehicle.id) ? allVehicles : [activeVehicle]
-
-  let customPendingStops: any[] = []
-  if (trackInfo && trackInfo.tracking_id?.startsWith('CM-')) {
-    if (trackInfo.status === 'created' || trackInfo.status === 'assigned' || trackInfo.status === 'scheduled') {
-      customPendingStops = [{
-        status: 'pending',
-        sequence: 1,
-        delivery_points: {
-          latitude: trackInfo.origin_lat,
-          longitude: trackInfo.origin_lng
-        }
-      }]
-    } else if (trackInfo.status === 'in_transit') {
-      customPendingStops = [{
-        status: 'pending',
-        sequence: 1,
-        delivery_points: {
-          latitude: trackInfo.destination?.lat,
-          longitude: trackInfo.destination?.lng
-        }
-      }]
-    }
-  }
-
-  const handleCallDriver = async () => {
-    try {
-      setIsCalling(true)
-      await telemetryAPI.callDriver(activeVehicle.id)
-      toast.success('Ringing driver app...')
-    } catch (e: any) {
-      toast.error('Failed to call driver: ' + e.message)
-    } finally {
-      setIsCalling(false)
-    }
-  }
-
-  return (
-    <div className="h-80 w-full rounded-2xl overflow-hidden border-2 border-slate-100 bg-white shadow-inner relative group">
-      <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg border border-slate-100 flex items-center justify-between min-w-[200px]">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <div>
-            <div className="text-[9px] font-black uppercase tracking-widest text-muted">ETA</div>
-            <div className="text-xs font-black text-slate-900">{trackInfo.eta_minutes ? formatEta(trackInfo.eta_minutes) : 'CALCULATING...'}</div>
-          </div>
-        </div>
-        <Button 
-          size="sm" 
-          className="ml-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1 text-xs font-bold flex items-center gap-2"
-          onClick={handleCallDriver}
-          disabled={isCalling}
-        >
-          {isCalling ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
-          {isCalling ? 'Calling...' : 'Call'}
-        </Button>
-      </div>
-      <LiveMap vehicles={mapVehicles} selectedVehicleId={activeVehicle.id} customPendingStops={customPendingStops.length > 0 ? customPendingStops : undefined} />
-    </div>
-  )
-}
+import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 
 function AssignDriverModal({ shipmentId, onClose }: { shipmentId: string, onClose: () => void }) {
   const [mode, setMode] = useState<'near' | 'any'>('near')
@@ -309,7 +221,7 @@ export default function ShipmentsPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
         <div>
           <h1 className="text-5xl font-black text-text font-display tracking-tight uppercase leading-none mb-2">
-            Cargo Manifest (Updated)
+            Live Cargo Loads
           </h1>
           <p className="text-muted font-bold text-lg tracking-tight">
             Managing <span className="text-text">{shipments.length}</span> active shipments across the global logistics grid.
@@ -317,7 +229,7 @@ export default function ShipmentsPage() {
         </div>
         <Button variant="accent" onClick={openModal} className="h-16 px-10 rounded-2xl shadow-2xl shadow-primary/20 bg-primary hover:bg-primary-dark text-bg font-black uppercase tracking-widest group">
           <Plus size={22} className="group-hover:rotate-90 transition-transform duration-300 mr-2" />
-          Initialize New Shipment
+          Live Shipment Create
         </Button>
       </div>
 
