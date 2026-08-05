@@ -41,7 +41,60 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
     const { data: routes, error } = await query;
     if (error) { res.status(500).json({ detail: error.message }); return; }
-    res.json(routes || []);
+
+    const result = routes ? [...routes] : [];
+
+    // Also fetch cargo manifests and map them to standard routes so the admin dashboard LiveMap can plot them
+    let manifestQuery = supabase.from('cargo_manifest').select('*');
+    if (vehicleId) manifestQuery = manifestQuery.eq('vehicle_id', vehicleId);
+    if (status === 'active' || status === 'pending') {
+      manifestQuery = manifestQuery.in('status', ['scheduled', 'in_transit']);
+    }
+    
+    const { data: manifests } = await manifestQuery;
+    
+    if (manifests) {
+      for (const manifest of manifests) {
+        result.push({
+          id: manifest.id,
+          vehicle_id: manifest.vehicle_id,
+          status: manifest.status === 'scheduled' ? 'pending' : (manifest.status === 'in_transit' ? 'active' : manifest.status),
+          is_manifest: true,
+          total_distance_km: 0,
+          total_duration_minutes: 0,
+          route_stops: [
+            {
+              id: manifest.id + '_pickup',
+              sequence: 1,
+              status: manifest.status === 'scheduled' ? 'pending' : 'completed',
+              delivery_points: {
+                id: manifest.id + '_pickup_dp',
+                name: "Pickup: " + (manifest.pickup_location || '').substring(0, 20),
+                address: manifest.pickup_location,
+                latitude: manifest.pickup_lat,
+                longitude: manifest.pickup_lng,
+                demand_kg: manifest.capacity_kg
+              }
+            },
+            {
+              id: manifest.id + '_drop',
+              sequence: 2,
+              status: 'pending',
+              delivery_points: {
+                id: manifest.id + '_drop_dp',
+                name: "Drop: " + (manifest.drop_location || '').substring(0, 20),
+                address: manifest.drop_location,
+                latitude: manifest.drop_lat,
+                longitude: manifest.drop_lng,
+                demand_kg: manifest.capacity_kg
+              }
+            }
+          ]
+        });
+      }
+    }
+
+    res.json(result);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
   }
