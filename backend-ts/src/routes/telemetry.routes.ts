@@ -742,7 +742,14 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       console.error(`[my-route] Query result error:`, error.message, `route id:`, (route as any)?.id);
     }
 
-    if (error || !route) {
+    // Auto-clean: if route exists but has 0 stops, it's stale — delete it and fall through to manifest
+    const hasStops = route && (route.route_stops || []).length > 0;
+    if (route && !hasStops) {
+      console.log(`[my-route] Found stale empty route ${route.id} with 0 stops, auto-deleting`);
+      await supabase.from('routes').delete().eq('id', route.id);
+    }
+
+    if (error || !route || !hasStops) {
       // Check for cargo manifest instead
       const { data: manifest, error: manifestErr } = await supabase
         .from('cargo_manifest')
