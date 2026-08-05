@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { shipmentsAPI } from '@/services/api'
 import { formatEta } from '@/utils/timeFormat'
+import { Link } from 'react-router-dom'
 import maplibregl from 'maplibre-gl'
 
 const STEPS = [
@@ -158,9 +159,21 @@ function TrackingCard({ trackingId }: { trackingId: string }) {
             </div>
           </div>
 
-          {/* Small Map */}
-          <div className="flex-1 min-h-[250px] relative">
-            <SmallTrackingMap shipment={s} />
+          {/* Live Tracking Link */}
+          <div className="flex-1 flex flex-col items-center justify-center bg-surface2/30 p-6 relative group overflow-hidden">
+             <div className="absolute inset-0 bg-primary/5 group-hover:bg-primary/10 transition-colors" />
+             <div className="z-10 flex flex-col items-center gap-4 text-center">
+                <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/30 group-hover:scale-110 transition-transform">
+                  <Map className="text-black" size={32} />
+                </div>
+                <div>
+                   <div className="text-text font-black text-lg">Launch Live Tracker</div>
+                   <div className="text-muted text-[10px] font-bold uppercase tracking-widest mt-1 max-w-[200px]">View live vehicle movement, routing, and real-time ETA</div>
+                </div>
+                <Link to={`/track/${trackingId}`} className="mt-2 bg-text text-bg px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary hover:text-black transition-colors">
+                  Open Map
+                </Link>
+             </div>
           </div>
 
           {/* Vehicle Info */}

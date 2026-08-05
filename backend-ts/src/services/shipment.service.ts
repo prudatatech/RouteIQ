@@ -654,7 +654,7 @@ export class ShipmentService {
       // Let's just fetch all active manifests and find the match
       const { data: allManifests } = await supabase
         .from('cargo_manifest')
-        .select('*, vehicles(*)');
+        .select('*, vehicles(*), vendor_shipment_requests(vendor_id)');
       
       const manifest = allManifests?.find((m: any) => m.id.toUpperCase().startsWith(manifestId.toUpperCase()));
       if (!manifest) return null;
@@ -662,6 +662,7 @@ export class ShipmentService {
       const trackingInfo: Record<string, any> = {
         id: manifest.id,
         tracking_id: trackingId,
+        vendor_id: manifest.vendor_shipment_requests?.vendor_id || null,
         status: manifest.status === 'scheduled' ? 'created' : manifest.status,
         priority: 'high',
         total_items: 1,
