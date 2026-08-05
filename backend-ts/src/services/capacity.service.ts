@@ -191,6 +191,18 @@ export const capacityService = {
       }
     }
 
+    // Fallback to vehicle's current location if vendor coordinates are missing
+    if (!vendorLat || !vendorLng) {
+      const { data: v } = await supabase.from('vehicles').select('latitude, longitude, current_location_name').eq('id', window.vehicle_id).single();
+      if (v) {
+        vendorLat = v.latitude;
+        vendorLng = v.longitude;
+        if (vendorOriginAddress === 'Vendor Location' && v.current_location_name) {
+          vendorOriginAddress = v.current_location_name;
+        }
+      }
+    }
+
     if (window.fallback_shipment_id) {
       await supabase.from('shipments').update({
         status: 'assigned',
