@@ -39,13 +39,21 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── GET /track/:tracking_id (PUBLIC — no auth) ─────────────
-router.get('/track/:tracking_id', async (req: Request, res: Response) => {
+router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Response) => {
   try {
     const info = await ShipmentService.getPublicTracking(req.params.tracking_id);
     if (!info) {
       res.status(404).json({ detail: 'Shipment with this tracking ID not found' });
       return;
     }
+    
+    const user = (req as any).user;
+    const isAdmin = ['admin', 'superadmin'].includes(user.role);
+    if (!isAdmin && user.user_id !== info.vendor_id) {
+      res.status(403).json({ detail: 'Forbidden: You do not have access to this tracking information.' });
+      return;
+    }
+
     res.json(info);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
@@ -53,7 +61,7 @@ router.get('/track/:tracking_id', async (req: Request, res: Response) => {
 });
 
 // ── GET /track/:tracking_id/route (PUBLIC — Google Maps Directions Proxy) ──
-router.get('/track/:tracking_id/route', async (req: Request, res: Response) => {
+router.get('/track/:tracking_id/route', requireAuth, async (req: Request, res: Response) => {
   try {
     const lat = req.query.lat as string;
     const lng = req.query.lng as string;
