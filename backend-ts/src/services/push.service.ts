@@ -1,5 +1,5 @@
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
-import { supabase } from './supabase.service';
+import { supabase } from '../core/supabase';
 
 const expo = new Expo();
 
