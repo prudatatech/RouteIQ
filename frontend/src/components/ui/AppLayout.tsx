@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { to: '/emergency',     icon: ShieldAlert,     label: 'Emergency Alerts',roles: ['admin', 'superadmin'] },
   { to: '/optimize',      icon: Zap,             label: 'Neural Reroute',  roles: ['admin', 'superadmin'] },
   { to: '/capacity-bidding', icon: Briefcase,    label: 'Capacity Bidding', roles: ['admin', 'superadmin'] },
-  { to: '/vendor',        icon: Package,         label: 'Vendor Portal',   roles: ['vendor', 'admin', 'superadmin'] },
+  { to: '/vendor',        icon: Package,         label: 'Vendor Portal',   roles: ['vendor'] },
   { to: '/analytics',     icon: BarChart3,       label: 'Intel Dashboard', roles: ['admin', 'superadmin'] },
   { to: '/ai-hub',        icon: Brain,           label: 'Nexus AI Hub',    roles: ['admin', 'superadmin'] },
   { to: '/cargo-network', icon: Network,         label: 'Cargo Network',   roles: ['admin', 'superadmin'] },
