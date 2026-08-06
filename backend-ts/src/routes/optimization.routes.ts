@@ -95,6 +95,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       max_solve_seconds: payload.max_solve_time_seconds,
       traffic_factor: payload.consider_traffic ? 1.0 + payload.traffic_density * settings.TRAFFIC_FACTOR_MULTIPLIER : 1.0,
       weather_factor: payload.consider_weather ? 1.0 + payload.weather_severity * settings.WEATHER_FACTOR_MULTIPLIER : 1.0,
+      algorithm: payload.algorithm === 'genetic' ? 'ga' : payload.algorithm,
     };
 
     let solution: any;

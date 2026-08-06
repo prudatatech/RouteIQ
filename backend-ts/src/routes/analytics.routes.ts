@@ -1,6 +1,6 @@
 /**
- * RouteIQ — Analytics Routes
- * Ports: backend/app/api/v1/endpoints/analytics.py
+ * RouteIQ — Analytics Routes (v2)
+ * Full Fleet Intelligence endpoints
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
@@ -38,6 +38,48 @@ router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /fleet-overview ────────────────────────────────────
+router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized to view fleet overview' });
+      return;
+    }
+    const data = await AnalyticsService.getFleetOverview();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /vehicle-health ────────────────────────────────────
+router.get('/vehicle-health', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized to view vehicle health' });
+      return;
+    }
+    const data = await AnalyticsService.getVehicleHealth();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /profitable-routes ─────────────────────────────────
+router.get('/profitable-routes', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized to view route profitability' });
+      return;
+    }
+    const data = await AnalyticsService.getMostProfitableRoutes();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // ── GET /active-missions ───────────────────────────────────
 router.get('/active-missions', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -55,9 +97,7 @@ router.get('/active-missions', requireAuth, async (req: Request, res: Response) 
 // ── POST /sync-sparkgps ────────────────────────────────────
 router.post('/sync-sparkgps', requireAuth, async (_req: Request, res: Response) => {
   try {
-    // Import SparkGPS service dynamically
     const { SparkGPSService } = await import('../services/spark-gps.service');
-
     if (settings.SPARK_GPS_API_TOKEN) {
       await SparkGPSService.fetchAndSync();
       res.json({ status: 'success', message: 'SparkGPS live sync complete' });
@@ -77,7 +117,6 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
       res.status(403).json({ detail: 'Only superadmins can view audit logs' });
       return;
     }
-
     const { data: logs, error } = await supabase
       .from('ai_agent_logs')
       .select('*')
@@ -97,6 +136,48 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
         timestamp: log.created_at,
       }))
     );
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /driver-performance ──────────────────────────────────
+router.get('/driver-performance', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized' });
+      return;
+    }
+    const data = await AnalyticsService.getDriverPerformance();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /financials ──────────────────────────────────────────
+router.get('/financials', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized' });
+      return;
+    }
+    const data = await AnalyticsService.getFinancialMetrics();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /vendor-performance ──────────────────────────────────
+router.get('/vendor-performance', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized' });
+      return;
+    }
+    const data = await AnalyticsService.getVendorPerformance();
+    res.json(data);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
   }

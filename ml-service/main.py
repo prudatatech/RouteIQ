@@ -39,6 +39,7 @@ else:
 
 # ── Import ML modules (from same directory) ──────────────────
 from ml.vrp_solver import Location, VehicleConfig, solve_vrp_ortools, OptimizedRoute, VRPSolution
+from ml.ga_solver import solve_vrp_ga
 from ml.eta_model import eta_predictor
 from ml.bin_packer import bin_pack
 
@@ -81,6 +82,7 @@ class OptimizeRequest(BaseModel):
     traffic_factor: float = 1.0
     weather_factor: float = 1.0
     blockages: List[List[int]] = []
+    algorithm: str = "ortools"
 
 class ETARequest(BaseModel):
     distance_km: float
@@ -132,14 +134,24 @@ async def optimize(req: OptimizeRequest):
             for v in req.vehicles
         ]
 
-        solution = solve_vrp_ortools(
-            locations=locations,
-            vehicles=vehicles,
-            max_solve_seconds=req.max_solve_seconds,
-            traffic_factor=req.traffic_factor,
-            weather_factor=req.weather_factor,
-            blockages=[(b[0], b[1]) for b in req.blockages if len(b) == 2],
-        )
+        if getattr(req, "algorithm", "ortools") == "ga":
+            solution = solve_vrp_ga(
+                locations=locations,
+                vehicles=vehicles,
+                max_solve_seconds=req.max_solve_seconds,
+                traffic_factor=req.traffic_factor,
+                weather_factor=req.weather_factor,
+                blockages=[(b[0], b[1]) for b in req.blockages if len(b) == 2],
+            )
+        else:
+            solution = solve_vrp_ortools(
+                locations=locations,
+                vehicles=vehicles,
+                max_solve_seconds=req.max_solve_seconds,
+                traffic_factor=req.traffic_factor,
+                weather_factor=req.weather_factor,
+                blockages=[(b[0], b[1]) for b in req.blockages if len(b) == 2],
+            )
 
         return {
             "routes": [

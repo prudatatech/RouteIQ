@@ -188,6 +188,12 @@ export const analyticsAPI = {
   activeMissions: () => api.get('/analytics/active-missions').then(r => r.data),
   syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data),
   auditLogs: () => api.get('/analytics/audit-logs').then(r => r.data),
+  driverPerformance: () => api.get('/analytics/driver-performance').then(r => r.data),
+  financials: () => api.get('/analytics/financials').then(r => r.data),
+  vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => r.data),
+  fleetOverview: () => api.get('/analytics/fleet-overview').then(r => r.data),
+  vehicleHealth: () => api.get('/analytics/vehicle-health').then(r => r.data),
+  profitableRoutes: () => api.get('/analytics/profitable-routes').then(r => r.data),
 }
 
 export const telemetryWS = {
