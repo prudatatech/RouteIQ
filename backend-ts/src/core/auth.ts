@@ -164,6 +164,24 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 /**
+ * Like requireAuth but does NOT reject unauthenticated requests.
+ * If a valid Bearer token is present, decodes it and sets req.user.
+ * If no token or invalid token, req.user stays undefined and request continues.
+ */
+export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      req.user = await decodeToken(token);
+    } catch (_) {
+      // Ignore — treat as unauthenticated
+    }
+  }
+  next();
+}
+
+/**
  * Role-based access control middleware factory.
  * Superadmin always passes.
  */

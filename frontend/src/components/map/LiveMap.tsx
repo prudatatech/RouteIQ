@@ -643,11 +643,14 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       }
       
       if (pendingStops.length === 0) {
+        console.log('LiveMap: No pending stops found for route', activeRoutes);
         fetchedRouteGeometryRef.current = null;
         setLiveETA(null);
         setLiveDistance(null);
         return;
       }
+
+      console.log('LiveMap: Pending stops found', pendingStops);
 
       const vPos = currentPositions.current[selectedVehicleId];
       const coords: [number, number][] = [];

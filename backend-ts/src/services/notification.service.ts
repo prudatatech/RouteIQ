@@ -1,4 +1,5 @@
 import { supabase } from '../core/supabase';
+import { pushService } from './push.service';
 
 export const notificationService = {
   /**
@@ -17,6 +18,10 @@ export const notificationService = {
       console.error('Error sending notification:', error);
       throw new Error(error.message);
     }
+    
+    // Also trigger native Push Notification if they are a driver
+    await pushService.sendToUser(userId, title, body, data);
+
     return notif;
   },
 
