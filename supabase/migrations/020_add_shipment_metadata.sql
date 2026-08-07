@@ -5,3 +5,6 @@ ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 ALTER TABLE public.shipments 
 ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.cargo_manifest 
+ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;  
+ 

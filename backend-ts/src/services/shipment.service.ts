@@ -381,24 +381,53 @@ export class ShipmentService {
       .maybeSingle();
 
     if (error || !data) {
-      // Fallback: Check if it's a vendor shipment request
+      // Fallback 1: Check if it's a vendor shipment request
       const { data: vendorData, error: vendorError } = await supabase
         .from('vendor_shipment_requests')
         .select('*')
         .eq('id', shipmentId)
         .maybeSingle();
         
-      if (vendorError || !vendorData) return null;
-      
-      // Adapt vendor request into Shipment interface shape
+      if (!vendorError && vendorData) {
+        return {
+          id: vendorData.id,
+          tracking_id: 'VR-' + vendorData.id.substring(0, 8).toUpperCase(),
+          status: vendorData.status,
+          metadata: vendorData.metadata || {},
+          pickup_location: { address: vendorData.pickup_location, lat: vendorData.pickup_lat, lng: vendorData.pickup_lng },
+          drop_location: { address: vendorData.drop_location, lat: vendorData.drop_lat, lng: vendorData.drop_lng },
+          created_at: vendorData.created_at,
+        } as any;
+      }
+
+      // Fallback 2: Check if it's a cargo manifest
+      const { data: manifestData, error: manifestError } = await supabase
+        .from('cargo_manifest')
+        .select('*')
+        .eq('id', shipmentId)
+        .maybeSingle();
+
+      if (manifestError || !manifestData) return null;
+
+      // If it's a cargo manifest, fetch its parent vendor request for metadata if it exists
+      let metadata = {};
+      if (manifestData.vendor_request_id) {
+        const { data: parentReq } = await supabase
+          .from('vendor_shipment_requests')
+          .select('metadata')
+          .eq('id', manifestData.vendor_request_id)
+          .maybeSingle();
+        if (parentReq?.metadata) metadata = parentReq.metadata;
+      }
+
       return {
-        id: vendorData.id,
-        tracking_id: 'VR-' + vendorData.id.substring(0, 8).toUpperCase(),
-        status: vendorData.status,
-        metadata: vendorData.metadata,
-        pickup_location: { address: vendorData.pickup_location, lat: vendorData.pickup_lat, lng: vendorData.pickup_lng },
-        drop_location: { address: vendorData.drop_location, lat: vendorData.drop_lat, lng: vendorData.drop_lng },
-        created_at: vendorData.created_at,
+        id: manifestData.id,
+        tracking_id: 'CM-' + manifestData.id.substring(0, 8).toUpperCase(),
+        status: manifestData.status,
+        metadata: metadata,
+        pickup_location: { address: manifestData.pickup_location, lat: manifestData.pickup_lat, lng: manifestData.pickup_lng },
+        drop_location: { address: manifestData.drop_location, lat: manifestData.drop_lat, lng: manifestData.drop_lng },
+        created_at: manifestData.created_at,
       } as any;
     }
 
@@ -514,7 +543,23 @@ export class ShipmentService {
         .update({ metadata })
         .eq('id', shipmentId);
         
-      if (vendorError) return null;
+      if (vendorError) {
+        // Try cargo_manifest parent request
+        const { data: manifest } = await supabase
+          .from('cargo_manifest')
+          .select('vendor_request_id')
+          .eq('id', shipmentId)
+          .maybeSingle();
+
+        if (manifest?.vendor_request_id) {
+          await supabase
+            .from('vendor_shipment_requests')
+            .update({ metadata })
+            .eq('id', manifest.vendor_request_id);
+        } else {
+          return null;
+        }
+      }
     }
     return await this.getShipment(shipmentId);
   }
