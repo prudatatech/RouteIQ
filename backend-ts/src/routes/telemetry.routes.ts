@@ -719,7 +719,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       .from('vehicles')
       .select('id')
       .eq('driver_id', req.user!.user_id)
-      .single();
+      .maybeSingle();
 
     console.log(`[my-route] Found vehicle for driver:`, vehicle?.id);
 
@@ -736,9 +736,9 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       .in('status', ['active', 'pending'])
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    if (error) {
+    if (error && error.code !== 'PGRST116') {
       console.error(`[my-route] Query result error:`, error.message, `route id:`, (route as any)?.id);
     }
 

@@ -342,8 +342,13 @@ export default function VendorShipmentRequestPage() {
       });
       
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || await res.text());
+        const errorText = await res.text();
+        let errorMessage = errorText;
+        try {
+          const errData = JSON.parse(errorText);
+          if (errData.error || errData.detail) errorMessage = errData.error || errData.detail;
+        } catch (e) {}
+        throw new Error(errorMessage);
       }
       
       toast.success('Shipment Request Created!');
