@@ -13,6 +13,7 @@
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "@supabase/supabase-js": "^2.109.0",
+    "@upstash/redis": "^1.38.2",
     "axios": "^1.18.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
