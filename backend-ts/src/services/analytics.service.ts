@@ -190,4 +190,92 @@ export class AnalyticsService {
 
     return missions;
   }
+
+  /**
+   * Returns top profitable routes. (Mock data)
+   */
+  static async getProfitableRoutes(): Promise<Record<string, any>[]> {
+    return [
+      { id: 'R-01', route_name: 'Delhi - Mumbai Expr', revenue: 120500, cost: 45000, profit_margin: 62.6, status: 'Active' },
+      { id: 'R-02', route_name: 'Bangalore - Chennai', revenue: 85000, cost: 32000, profit_margin: 62.3, status: 'Active' },
+      { id: 'R-03', route_name: 'Hyderabad - Pune', revenue: 94000, cost: 41000, profit_margin: 56.3, status: 'Pending' },
+      { id: 'R-04', route_name: 'Kolkata - Patna', revenue: 67000, cost: 31000, profit_margin: 53.7, status: 'Active' },
+      { id: 'R-05', route_name: 'Ahmedabad - Surat', revenue: 45000, cost: 22000, profit_margin: 51.1, status: 'Completed' },
+    ];
+  }
+
+  /**
+   * Returns driver performance metrics. (Mock data)
+   */
+  static async getDriverPerformance(): Promise<Record<string, any>[]> {
+    return [
+      { id: 'D-101', name: 'Rajesh Kumar', rating: 4.8, trips: 142, on_time_pct: 98.2, safety_score: 95 },
+      { id: 'D-102', name: 'Suresh Singh', rating: 4.6, trips: 89, on_time_pct: 94.5, safety_score: 91 },
+      { id: 'D-103', name: 'Amit Patel', rating: 4.9, trips: 210, on_time_pct: 99.1, safety_score: 98 },
+      { id: 'D-104', name: 'Vikram Sharma', rating: 4.3, trips: 56, on_time_pct: 88.4, safety_score: 82 },
+      { id: 'D-105', name: 'Manoj Yadav', rating: 4.7, trips: 115, on_time_pct: 96.0, safety_score: 93 },
+    ];
+  }
+
+  /**
+   * Returns high-level financial summary metrics. (Mock data)
+   */
+  static async getFinancials(): Promise<Record<string, any>> {
+    return {
+      total_revenue: 2540000,
+      total_expenses: 1240000,
+      net_profit: 1300000,
+      fuel_costs: 450000,
+      maintenance_costs: 120000,
+      yoy_growth_pct: 14.5,
+      monthly_trend: [
+        { month: 'Jan', revenue: 300000, profit: 150000 },
+        { month: 'Feb', revenue: 320000, profit: 160000 },
+        { month: 'Mar', revenue: 350000, profit: 180000 },
+        { month: 'Apr', revenue: 340000, profit: 170000 },
+        { month: 'May', revenue: 380000, profit: 190000 },
+        { month: 'Jun', revenue: 420000, profit: 210000 },
+      ]
+    };
+  }
+
+  /**
+   * Returns vehicle health and maintenance alerts. (Mock data)
+   */
+  static async getVehicleHealth(): Promise<Record<string, any>[]> {
+    return [
+      { id: 'V-001', plate_number: 'KA-01-HH-1234', health_score: 98, status: 'Good', next_service: '2026-10-15', alerts: 0 },
+      { id: 'V-002', plate_number: 'MH-12-AB-9876', health_score: 82, status: 'Warning', next_service: '2026-08-20', alerts: 1 },
+      { id: 'V-003', plate_number: 'DL-04-CC-5555', health_score: 65, status: 'Critical', next_service: '2026-08-10', alerts: 3 },
+      { id: 'V-004', plate_number: 'TN-09-PQ-1111', health_score: 95, status: 'Good', next_service: '2026-11-01', alerts: 0 },
+      { id: 'V-005', plate_number: 'GJ-01-XY-9999', health_score: 88, status: 'Good', next_service: '2026-09-12', alerts: 0 },
+    ];
+  }
+
+  /**
+   * Returns generic fleet overview stats. (Mock data)
+   */
+  static async getFleetOverview(): Promise<Record<string, any>> {
+    return {
+      total_fleet_size: 150,
+      active_vehicles: 112,
+      in_maintenance: 8,
+      idle_vehicles: 30,
+      utilization_rate_pct: 74.6,
+      average_daily_km: 245,
+    };
+  }
+
+  /**
+   * Returns 3PL / Vendor performance metrics. (Mock data)
+   */
+  static async getVendorPerformance(): Promise<Record<string, any>[]> {
+    return [
+      { id: 'VEN-01', name: 'FastLogistics Inc', rating: 4.8, active_contracts: 12, compliance_score: 98 },
+      { id: 'VEN-02', name: 'Global Freight Co', rating: 4.5, active_contracts: 8, compliance_score: 92 },
+      { id: 'VEN-03', name: 'Express Movers', rating: 4.2, active_contracts: 5, compliance_score: 85 },
+      { id: 'VEN-04', name: 'City Cargo', rating: 4.7, active_contracts: 15, compliance_score: 95 },
+      { id: 'VEN-05', name: 'National Transports', rating: 3.9, active_contracts: 3, compliance_score: 78 },
+    ];
+  }
 }

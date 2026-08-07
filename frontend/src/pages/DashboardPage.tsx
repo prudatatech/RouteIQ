@@ -175,19 +175,19 @@ export default function DashboardPage() {
 
       {/* Map + Fleet List */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
-        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl relative group">
+        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl relative group h-[650px]">
           <div className="absolute top-8 left-8 z-10 pointer-events-none">
              <div className="bg-bg/40 backdrop-blur-xl border border-border px-8 py-5 rounded-[24px] shadow-2xl">
                 <h2 className="text-xl font-black text-text tracking-tight uppercase">Live <span className="text-primary">Geospatial</span> Grid</h2>
                 <p className="text-muted text-[10px] font-bold uppercase tracking-[0.2em] mt-2 opacity-60">High-Density Telemetry Pipe Active</p>
              </div>
           </div>
-          <div className="h-[650px]">
+          <div className="flex-1">
             <LiveMap vehicles={vehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
           </div>
         </div>
 
-        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl">
+        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl h-[650px]">
           <div className="px-8 pt-10 pb-6 flex justify-between items-center border-b border-border">
             <div>
               <h2 className="text-2xl font-black text-text tracking-tighter uppercase">Cargo <span className="text-primary">Fleet</span></h2>

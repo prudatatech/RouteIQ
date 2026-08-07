@@ -102,4 +102,64 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /profitable-routes ─────────────────────────────────
+router.get('/profitable-routes', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getProfitableRoutes();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /driver-performance ────────────────────────────────
+router.get('/driver-performance', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getDriverPerformance();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /financials ────────────────────────────────────────
+router.get('/financials', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getFinancials();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /vehicle-health ────────────────────────────────────
+router.get('/vehicle-health', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getVehicleHealth();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /fleet-overview ────────────────────────────────────
+router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getFleetOverview();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── GET /vendor-performance ────────────────────────────────
+router.get('/vendor-performance', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await AnalyticsService.getVendorPerformance();
+    res.json(data);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 export default router;
