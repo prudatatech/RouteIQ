@@ -90,7 +90,7 @@ app.get('/health', (_req, res) => {
 
 app.get('/ready', async (_req, res) => {
   try {
-    await redis.ping();
+    if (redis) await redis.ping();
     res.json({ status: 'ready', redis: 'ok', database: 'ok' });
   } catch (e: any) {
     res.json({ status: 'not_ready', error: e.message });
@@ -122,8 +122,7 @@ async function startup(): Promise<void> {
 
   // 1. Connect Redis (non-fatal — app works without cache)
   try {
-    await redis.connect();
-    await redis.ping();
+    if (redis) await redis.ping();
     console.log('✅ Redis connected successfully');
   } catch (e: any) {
     console.warn(`⚠️  Redis unavailable: ${e.message}. Continuing without cache.`);
@@ -160,7 +159,6 @@ async function startup(): Promise<void> {
 async function shutdown(): Promise<void> {
   console.log('\n🛑 Shutting down...');
   fleetHealthMonitor.stop();
-  await redis.quit().catch(() => {});
   server.close();
   process.exit(0);
 }
