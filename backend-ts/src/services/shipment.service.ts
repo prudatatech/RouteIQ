@@ -378,9 +378,29 @@ export class ShipmentService {
       .from('shipments')
       .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
       .eq('id', shipmentId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      // Fallback: Check if it's a vendor shipment request
+      const { data: vendorData, error: vendorError } = await supabase
+        .from('vendor_shipment_requests')
+        .select('*')
+        .eq('id', shipmentId)
+        .maybeSingle();
+        
+      if (vendorError || !vendorData) return null;
+      
+      // Adapt vendor request into Shipment interface shape
+      return {
+        id: vendorData.id,
+        tracking_id: 'VR-' + vendorData.id.substring(0, 8).toUpperCase(),
+        status: vendorData.status,
+        metadata: vendorData.metadata,
+        pickup_location: { address: vendorData.pickup_location, lat: vendorData.pickup_lat, lng: vendorData.pickup_lng },
+        drop_location: { address: vendorData.drop_location, lat: vendorData.drop_lat, lng: vendorData.drop_lng },
+        created_at: vendorData.created_at,
+      } as any;
+    }
 
     // Map to our interface shape
     const shipment: Shipment = {
@@ -487,7 +507,15 @@ export class ShipmentService {
       .update({ metadata })
       .eq('id', shipmentId);
 
-    if (error) return null;
+    if (error) {
+      // Try vendor_shipment_requests
+      const { error: vendorError } = await supabase
+        .from('vendor_shipment_requests')
+        .update({ metadata })
+        .eq('id', shipmentId);
+        
+      if (vendorError) return null;
+    }
     return await this.getShipment(shipmentId);
   }
 

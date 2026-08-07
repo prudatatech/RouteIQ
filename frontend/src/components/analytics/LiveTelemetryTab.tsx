@@ -156,17 +156,18 @@ export default function LiveTelemetryTab() {
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data)
-        // Expected shape: { vehicle_id, speed_kmph, fuel_level_pct, latitude, longitude, timestamp }
-        const vehicleId = msg.vehicle_id
+        // The backend sends: { type: 'TELEMETRY_UPDATE', data: { vehicle_id, lat, lng, speed, timestamp } }
+        const payload = msg.type === 'TELEMETRY_UPDATE' ? msg.data : msg;
+        const vehicleId = payload.vehicle_id
         if (!vehicleId) return
         setLivePoints(prev => {
           const existing = prev.get(vehicleId) ?? []
           const point = {
-            time: new Date(msg.timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            speed: msg.speed_kmph ?? 0,
-            fuel: msg.fuel_level_pct ?? 0,
-            lat: msg.latitude,
-            lng: msg.longitude,
+            time: new Date(payload.timestamp || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            speed: payload.speed ?? payload.speed_kmph ?? 0,
+            fuel: payload.fuel_level_pct ?? 0,
+            lat: payload.lat ?? payload.latitude,
+            lng: payload.lng ?? payload.longitude,
           }
           const updated = [...existing, point].slice(-120) // keep last 120 points
           const next = new Map(prev)
