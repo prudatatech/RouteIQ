@@ -84,7 +84,7 @@ export default function OptimizePage() {
                 </label>
                 {[
                   { value: 'ortools', label: 'Google OR-Tools', desc: 'Constraint programming · Most accurate' },
-                  { value: 'genetic', label: 'Genetic Algorithm', desc: 'Evolutionary · Good for large fleets' },
+                  { value: 'genetic', label: 'Machine Learning (GA + XGBoost)', desc: 'Evolutionary · Learns travel times' },
                   { value: 'reinforcement', label: 'Reinforcement Learning', desc: 'Deep RL · Learns from history' },
                 ].map(opt => (
                   <div
