@@ -33,7 +33,40 @@ export const vendorService = {
   /**
    * Vendor creates a custom shipment request
    */
-  async createShipmentRequest(vendorId: string, pickup: any, drop: any, capacity: number) {
+  async createShipmentRequest(vendorId: string, pickup: any, drop: any, capacity: number, metadata: any = {}) {
+    // 1. Calculate ETA and Distance
+    const distanceKm = Math.sqrt(
+      Math.pow(pickup.lat - drop.lat, 2) + Math.pow(pickup.lng - drop.lng, 2)
+    ) * 111; // Approx km
+
+    // Assume average speed of 40km/h for trucks
+    const drivingHours = distanceKm / 40;
+    
+    // Add 20% buffer for halts/rests + 2 hours loading/unloading
+    const totalHours = (drivingHours * 1.2) + 2;
+    
+    const isLongHaul = distanceKm > 500 || totalHours > 12; // Anomaly threshold
+
+    const dispatchDate = new Date(); // Dispatching today/now
+    const reportingDate = new Date();
+    reportingDate.setHours(reportingDate.getHours() + Math.ceil(totalHours));
+
+    // Enrich metadata with ETA and Consignor/Transporter rules
+    const enrichedMetadata = {
+      ...metadata,
+      transporter: "Route IQ",
+      consignor_id: vendorId, // We'll assume the client fetches actual vendor name if needed
+      routing: {
+        estimated_distance_km: Math.round(distanceKm),
+        estimated_driving_hours: drivingHours.toFixed(1),
+        total_estimated_hours: totalHours.toFixed(1),
+        is_long_haul: isLongHaul,
+        dispatch_date: dispatchDate.toISOString(),
+        reporting_date: reportingDate.toISOString()
+      },
+      alerts: isLongHaul ? ['Requires Fuel Up Check', 'Strict Anomaly Monitoring'] : []
+    };
+
     const { data, error } = await supabase.from('vendor_shipment_requests').insert({
       vendor_id: vendorId,
       pickup_location: pickup.address,
@@ -43,7 +76,8 @@ export const vendorService = {
       drop_lat: drop.lat,
       drop_lng: drop.lng,
       required_capacity_kg: capacity,
-      status: 'pending'
+      status: 'pending',
+      metadata: enrichedMetadata
     }).select().single();
 
     if (error) throw new Error(error.message);
@@ -51,7 +85,7 @@ export const vendorService = {
     // Notify super admins
     await notificationService.notifySuperAdmins(
       'New Vendor Request',
-      `Vendor requested a ${capacity}kg shipment from ${pickup.address} to ${drop.address}.`,
+      `Vendor requested a ${capacity}kg shipment (${enrichedMetadata.cargo?.category || 'General'}) from ${pickup.address} to ${drop.address}. ETA: ${totalHours.toFixed(1)} hrs.`,
       'vendor_request',
       { request_id: data.id }
     );

@@ -3,11 +3,24 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { MapPin, ArrowLeft, Send, Search, Info } from 'lucide-react';
+import { MapPin, ArrowLeft, Send, Search, Info, Package, User, FileText, Settings, ShieldAlert } from 'lucide-react';
 import * as turf from '@turf/turf';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const DEFAULT_CENTER = { longitude: 72.8464, latitude: 19.1197 }; // Mumbai
+
+const PRODUCT_CATEGORIES = [
+  "FMCG", "Electronics", "Textile", "Steel", "Cement", 
+  "Agriculture", "Chemicals", "Furniture", "Automobile Parts", "Machinery"
+];
+
+const PACKAGING_TYPES = [
+  "Box", "Carton", "Bag", "Drum", "Pallet", "Roll", "Loose", "Bundle", "Container"
+];
+
+const UNITS = [
+  "Kg", "Ton", "Piece", "Box", "Bag", "Drum", "Litre", "Roll", "Carton"
+];
 
 export default function VendorShipmentRequestPage() {
   const navigate = useNavigate();
@@ -25,6 +38,31 @@ export default function VendorShipmentRequestPage() {
   const [currentRate, setCurrentRate] = useState(45); // Default to 45, fetch if possible
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [vendorProfile, setVendorProfile] = useState<any>(null);
+  
+  // New Detailed Form State
+  const [consigneeName, setConsigneeName] = useState('');
+  const [consigneeContact, setConsigneeContact] = useState('');
+  const [consigneeEmail, setConsigneeEmail] = useState('');
+  
+  const [productCategory, setProductCategory] = useState('');
+  const [productName, setProductName] = useState('');
+  const [brand, setBrand] = useState('');
+  const [modelVariant, setModelVariant] = useState('');
+  
+  const [packagingType, setPackagingType] = useState('');
+  const [noOfPackages, setNoOfPackages] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [unit, setUnit] = useState('');
+  const [declaredValue, setDeclaredValue] = useState('');
+  
+  const [specialHandling, setSpecialHandling] = useState({
+    fragile: false,
+    hazardous: false,
+    coldChain: false,
+    stackable: false,
+    highValue: false
+  });
+  const [remarks, setRemarks] = useState('');
   
   // Pickup State
   const [pickupSearch, setPickupSearch] = useState('');
@@ -85,27 +123,6 @@ export default function VendorShipmentRequestPage() {
         
         if (profileRes.ok) {
           const profileData = await profileRes.json();
-          // Fetch raw dummy2 from supabase to get KYC status
-          const { data: rawProfile } = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://plutdajzefwtpgofpqlk.supabase.co'}/rest/v1/vendor_profiles?id=eq.${profileData.id}&select=dummy2`, {
-            headers: { 'Authorization': `Bearer ${token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_HqsWylfok2BD7EOtiEpV1g_lKhSlFLL' }
-          }).then(r => r.json()).catch(() => []);
-          
-          const { data: kycProfile } = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://plutdajzefwtpgofpqlk.supabase.co'}/rest/v1/kyc_profiles?id=eq.${profileData.id}&select=kyc_status`, {
-            headers: { 'Authorization': `Bearer ${token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_HqsWylfok2BD7EOtiEpV1g_lKhSlFLL' }
-          }).then(r => r.json()).catch(() => []);
-          
-          if (rawProfile && rawProfile[0] && rawProfile[0].dummy2) {
-            try {
-              const parsed = typeof rawProfile[0].dummy2 === 'string' ? JSON.parse(rawProfile[0].dummy2) : rawProfile[0].dummy2;
-              profileData.kycStatus = (parsed.status || 'pending').toLowerCase();
-            } catch(e) { profileData.kycStatus = 'pending'; }
-          } else {
-            profileData.kycStatus = 'pending';
-          }
-          
-          if (kycProfile && kycProfile[0] && kycProfile[0].kyc_status) {
-            profileData.kycStatus = kycProfile[0].kyc_status.toLowerCase();
-          }
           setVendorProfile(profileData);
         }
       } catch (e) {
@@ -274,15 +291,36 @@ export default function VendorShipmentRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pickupLocation || !dropLocation || !capacity) {
-      toast.error('Please complete all fields');
+    if (!pickupLocation || !dropLocation || !capacity || !productCategory || !productName) {
+      toast.error('Please complete all required fields');
       return;
     }
     
     const payload = {
       pickup: pickupLocation,
       drop: dropLocation,
-      capacity: Number(capacity)
+      capacity: Number(capacity),
+      metadata: {
+        consignee: {
+          name: consigneeName,
+          contact: consigneeContact,
+          email: consigneeEmail,
+        },
+        cargo: {
+          category: productCategory,
+          name: productName,
+          brand,
+          modelVariant,
+          packagingType,
+          noOfPackages: Number(noOfPackages) || 0,
+          quantity: Number(quantity) || 0,
+          unit,
+          grossWeightKg: Number(capacity),
+          declaredValue,
+          specialHandling,
+          remarks
+        }
+      }
     };
 
     if (!token) {
@@ -294,12 +332,6 @@ export default function VendorShipmentRequestPage() {
 
     setIsSubmitting(true);
     try {
-      const payload = {
-        pickup: pickupLocation,
-        drop: dropLocation,
-        capacity: Number(capacity)
-      };
-
       const res = await fetch('/api/v1/vendor/shipment-request', {
         method: 'POST',
         headers: {
@@ -314,7 +346,7 @@ export default function VendorShipmentRequestPage() {
         throw new Error(errData.error || await res.text());
       }
       
-      toast.success('Request Sent!');
+      toast.success('Shipment Request Created!');
       navigate('/vendor/shipments');
     } catch (err: any) {
       toast.error('Failed to submit request: ' + err.message);
@@ -323,10 +355,17 @@ export default function VendorShipmentRequestPage() {
     }
   };
 
+  const InputSectionHeader = ({ title, icon: Icon }: { title: string, icon: any }) => (
+    <div className="flex items-center gap-2 mb-4 mt-8 first:mt-0 pb-2 border-b border-border">
+      <Icon size={18} className="text-primary" />
+      <h3 className="font-display font-bold text-text uppercase tracking-wider text-sm">{title}</h3>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-bg text-text flex flex-col">
       {/* Header */}
-      <header className="border-b border-border bg-surface sticky top-0 z-10 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-border bg-surface sticky top-0 z-30 px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="text-muted hover:text-text transition-colors">
             <ArrowLeft size={24} />
@@ -337,27 +376,20 @@ export default function VendorShipmentRequestPage() {
 
       <main className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-73px)]">
         {/* Left Side: Form */}
-        <div className="w-full lg:w-[450px] bg-surface2 border-r border-border p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6 relative z-10">
-          <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex items-start gap-3">
-            <Info className="text-primary mt-0.5" size={18} />
-            <div>
-              <h3 className="font-bold text-sm text-primary mb-1">Current Market Rate</h3>
-              <p className="text-2xl font-display font-black tracking-tight">₹{currentRate} <span className="text-sm font-normal text-muted">/ km</span></p>
-            </div>
-          </div>
-
+        <div className="w-full lg:w-[500px] bg-surface2 border-r border-border p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6 relative z-10 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6 flex-1 flex flex-col">
+            
+            <InputSectionHeader title="Routing Details" icon={MapPin} />
             
             {/* Pickup */}
             <div className="space-y-2 relative z-20">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-2">
-                  <MapPin size={14} className="text-success" /> Pickup Location
+                  <span className="w-2 h-2 rounded-full bg-success"></span> Pickup Location <span className="text-error">*</span>
                 </label>
                 <div className="flex gap-2">
                   <button type="button" onClick={handleUseWarehouse} className="text-[10px] bg-indigo-500/10 text-indigo-500 font-bold px-2 py-1 rounded hover:bg-indigo-500/20 transition-colors">Warehouse</button>
                   <button type="button" onClick={handleUseCurrentLocation} className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-1 rounded hover:bg-primary/20 transition-colors">Your Location</button>
-                  <button type="button" onClick={() => document.getElementById('pickup-search')?.focus()} className="text-[10px] bg-surface2 text-text font-bold px-2 py-1 rounded border border-border hover:bg-surface transition-colors">Other</button>
                 </div>
               </div>
               <div className="relative">
@@ -391,7 +423,7 @@ export default function VendorShipmentRequestPage() {
             {/* Drop */}
             <div className="space-y-2 relative z-10">
               <label className="block text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-2">
-                <MapPin size={14} className="text-error" /> Drop Location
+                <span className="w-2 h-2 rounded-full bg-error"></span> Drop Location <span className="text-error">*</span>
               </label>
               <div className="relative">
                 <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
@@ -420,28 +452,128 @@ export default function VendorShipmentRequestPage() {
               )}
             </div>
 
-            {/* Capacity */}
-            <div className="space-y-2 relative z-0">
-              <label className="block text-xs font-bold text-muted uppercase tracking-widest">
-                Required Capacity (KG)
-              </label>
-              <input 
-                type="number"
-                required
-                value={capacity}
-                onChange={e => setCapacity(e.target.value)}
-                placeholder="e.g. 5000"
-                className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 font-mono text-text focus:outline-none transition-all"
+            <InputSectionHeader title="Consignee Details (Receiver)" icon={User} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Name</label>
+                <input type="text" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} placeholder="E.g. Rahul Sharma" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Contact Number</label>
+                <input type="text" value={consigneeContact} onChange={e => setConsigneeContact(e.target.value)} placeholder="+91 9876543210" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Email Address</label>
+                <input type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} placeholder="rahul@example.com" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+            </div>
+
+            <InputSectionHeader title="Product Details" icon={Package} />
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Product Category <span className="text-error">*</span></label>
+                <select required value={productCategory} onChange={e => setProductCategory(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
+                  <option value="" disabled>Select Category</option>
+                  {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Product Name <span className="text-error">*</span></label>
+                <input required type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="E.g. Basmati Rice" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Brand</label>
+                <input type="text" value={brand} onChange={e => setBrand(e.target.value)} placeholder="E.g. India Gate" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Model / Variant</label>
+                <input type="text" value={modelVariant} onChange={e => setModelVariant(e.target.value)} placeholder="E.g. 1121 Steam" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+            </div>
+
+            <InputSectionHeader title="Packaging & Quantity" icon={Settings} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Packaging</label>
+                <select value={packagingType} onChange={e => setPackagingType(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
+                  <option value="" disabled>Select Type</option>
+                  {PACKAGING_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">No. Packages</label>
+                <input type="number" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} placeholder="E.g. 250" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Quantity</label>
+                <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="E.g. 250" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Unit</label>
+                <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
+                  <option value="" disabled>Select Unit</option>
+                  {UNITS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Gross Wt (KG) <span className="text-error">*</span></label>
+                <input required type="number" value={capacity} onChange={e => setCapacity(e.target.value)} placeholder="E.g. 5000" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-bold text-primary focus:outline-none transition-all" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Declared Value</label>
+                <input type="text" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} placeholder="₹5,80,000" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
+              </div>
+            </div>
+
+            <InputSectionHeader title="Special Handling" icon={ShieldAlert} />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { id: 'fragile', label: 'Fragile' },
+                { id: 'hazardous', label: 'Hazardous' },
+                { id: 'coldChain', label: 'Cold Chain' },
+                { id: 'stackable', label: 'Stackable' },
+                { id: 'highValue', label: 'High Value' }
+              ].map(opt => (
+                <label key={opt.id} className="flex items-center gap-2 cursor-pointer bg-surface border border-border p-3 rounded-xl hover:border-primary transition-all">
+                  <input 
+                    type="checkbox" 
+                    // @ts-ignore
+                    checked={specialHandling[opt.id]}
+                    // @ts-ignore
+                    onChange={(e) => setSpecialHandling(s => ({ ...s, [opt.id]: e.target.checked }))}
+                    className="w-4 h-4 text-primary rounded focus:ring-primary focus:ring-offset-surface bg-surface border-border"
+                  />
+                  <span className="text-sm font-medium">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <InputSectionHeader title="Remarks" icon={FileText} />
+            <div className="space-y-2">
+              <textarea 
+                value={remarks} 
+                onChange={e => setRemarks(e.target.value)} 
+                placeholder="Handle Carefully..." 
+                className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all min-h-[100px] resize-y"
               />
             </div>
 
-            <div className="mt-auto pt-6 border-t border-border">
+            <div className="pt-6 border-t border-border mt-8">
               <button 
                 type="submit" 
-                disabled={isSubmitting || !pickupLocation || !dropLocation || !capacity}
+                disabled={isSubmitting || !pickupLocation || !dropLocation || !capacity || !productCategory || !productName}
                 className="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Request'} <Send size={18} />
+                {isSubmitting ? 'Creating Shipment...' : 'Submit Request'} <Send size={18} />
               </button>
             </div>
 
@@ -449,7 +581,7 @@ export default function VendorShipmentRequestPage() {
         </div>
 
         {/* Right Side: Map */}
-        <div className="flex-1 relative bg-surface z-0">
+        <div className="flex-1 relative bg-surface z-0 hidden lg:block">
           <Map
             {...viewState}
             // @ts-ignore

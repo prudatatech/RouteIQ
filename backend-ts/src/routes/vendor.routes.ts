@@ -41,8 +41,8 @@ router.post('/profile', requireAuth, requireRole('vendor'), async (req: any, res
 // Create shipment request (Vendor)
 router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
-    const { pickup, drop, capacity } = req.body;
-    const request = await vendorService.createShipmentRequest(req.user.user_id, pickup, drop, capacity);
+    const { pickup, drop, capacity, metadata } = req.body;
+    const request = await vendorService.createShipmentRequest(req.user.user_id, pickup, drop, capacity, metadata);
     res.json(request);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
