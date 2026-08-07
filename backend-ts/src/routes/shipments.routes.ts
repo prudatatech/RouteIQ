@@ -122,6 +122,28 @@ router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+// ── PUT /:shipment_id/metadata ─────────────────────────────
+router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
+  try {
+    const metadata = req.body;
+    if (!metadata) {
+      res.status(400).json({ detail: 'Metadata body is required' });
+      return;
+    }
+
+    const shipment = await ShipmentService.updateShipmentMetadata(
+      req.params.shipment_id, metadata
+    );
+    if (!shipment) {
+      res.status(404).json({ detail: 'Shipment not found' });
+      return;
+    }
+    res.json(shipment);
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // ── PATCH /:shipment_id (status update with POD) ───────────
 router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) => {
   try {

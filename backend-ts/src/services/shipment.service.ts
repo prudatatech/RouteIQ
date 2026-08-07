@@ -476,6 +476,22 @@ export class ShipmentService {
   }
 
   /**
+   * Update shipment metadata (dates, consignee, cargo details).
+   */
+  static async updateShipmentMetadata(
+    shipmentId: string,
+    metadata: any
+  ): Promise<Shipment | null> {
+    const { error } = await supabase
+      .from('shipments')
+      .update({ metadata })
+      .eq('id', shipmentId);
+
+    if (error) return null;
+    return await this.getShipment(shipmentId);
+  }
+
+  /**
    * Update shipment status with optional POD data.
    */
   static async updateShipmentStatus(

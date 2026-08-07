@@ -2,7 +2,7 @@ import {
   Plus, Search, Package, MapPin, Layers,
   ShieldCheck, ShieldAlert, Zap, Navigation, Loader2,
   Calendar, Clock, AlertTriangle, Scale, Smartphone, Copy, MessageCircle, CheckCircle, Ruler,
-  Minus, X
+  Minus, X, FileText
 } from 'lucide-react'
 import axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -398,6 +398,9 @@ export default function ShipmentsPage() {
                   )}
 
                   <div className="mt-6 flex flex-col items-start gap-3">
+                    <button onClick={(e) => { e.stopPropagation(); navigate('/shipments/' + s.id + '/manifest') }} className="flex items-center gap-2 text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-400 transition-colors tracking-widest" title="View Manifest Form">
+                      <FileText size={14} className="text-indigo-500" /> View Form
+                    </button>
                     {!(s.open_bidding && !s.bid_id) && (
                       <button onClick={(e) => { e.stopPropagation(); navigate('/track/' + s.tracking_id) }} className="flex items-center gap-2 text-[10px] font-black uppercase text-primary hover:text-text transition-colors tracking-widest" title="Navigate Details">
                         <Navigation size={14} className="text-primary" /> Details

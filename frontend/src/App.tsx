@@ -16,6 +16,7 @@ import SuperadminPage from '@/pages/SuperadminPage'
 import AIHubPage from '@/pages/AIHubPage'
 import CargoNetworkPage from '@/pages/CargoNetworkPage'
 import ShipmentsPage from '@/pages/ShipmentsPage'
+import ShipmentManifestPage from '@/pages/ShipmentManifestPage'
 import RouteDetailsPage from '@/pages/RouteDetailsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import DriverPage from '@/pages/DriverPage'
@@ -155,6 +156,11 @@ export default function App() {
             <Route path="shipments" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <ShipmentsPage />
+              </PrivateRoute>
+            } />
+            <Route path="shipments/:id/manifest" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <ShipmentManifestPage />
               </PrivateRoute>
             } />
             <Route path="fleet" element={
