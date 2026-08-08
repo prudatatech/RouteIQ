@@ -8,6 +8,18 @@ import { SecurityService } from './security.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 
+const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return "Pending";
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c * 1.3).toString();
+};
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -402,7 +414,7 @@ export class ShipmentService {
             noOfPackages: "50",
             grossWeight: "1200 KG",
             declaredValue: "₹ 5,00,000",
-            dispatch_date: new Date().toISOString().split('T')[0],
+            dispatch_date: new Date(vendorData.created_at).toISOString().split('T')[0],
             is_long_haul: true,
             remarks: "Generated mock vendor data."
           };
@@ -423,8 +435,8 @@ export class ShipmentService {
             declaredValue: vMeta.cargo?.declaredValue || "",
             specialHandling: vMeta.cargo?.specialHandling || {},
             remarks: vMeta.cargo?.remarks || "",
-            dispatch_date: new Date().toISOString().split('T')[0],
-            reporting_date: new Date().toISOString().split('T')[0],
+            dispatch_date: new Date(vendorData.created_at).toISOString().split('T')[0],
+            reporting_date: new Date(new Date(vendorData.created_at).getTime() + 86400000).toISOString().split('T')[0],
             eta_details: { eta_text: "Pending Routing...", distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng) },
             is_long_haul: false
           };
@@ -476,8 +488,8 @@ export class ShipmentService {
           unit: "Pieces",
           grossWeight: manifestData.capacity_kg ? `${manifestData.capacity_kg} KG` : "500 KG",
           declaredValue: "₹ 2,45,000",
-          dispatch_date: new Date().toISOString().split('T')[0],
-          reporting_date: new Date().toISOString().split('T')[0],
+          dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
+          reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
           eta_details: {
             eta_text: "Tomorrow, 12:30 PM",
             distance_km: "350"
@@ -506,8 +518,8 @@ export class ShipmentService {
           declaredValue: metadata.cargo?.declaredValue || "",
           specialHandling: metadata.cargo?.specialHandling || {},
           remarks: metadata.cargo?.remarks || "",
-          dispatch_date: new Date().toISOString().split('T')[0],
-          reporting_date: new Date().toISOString().split('T')[0],
+          dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
+          reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
           eta_details: { eta_text: "Tomorrow, 14:00 PM", distance_km: getDist(manifestData.pickup_lat, manifestData.pickup_lng, manifestData.drop_lat, manifestData.drop_lng) },
           is_long_haul: false
         };
