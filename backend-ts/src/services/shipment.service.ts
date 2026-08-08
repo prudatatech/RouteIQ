@@ -34,10 +34,7 @@ const getETA = (distance: string, createdAt: string): string => {
   return date.toLocaleString('en-US', { 
     month: 'short', 
     day: 'numeric', 
-    year: 'numeric', 
-    hour: 'numeric', 
-    minute: '2-digit', 
-    hour12: true 
+    year: 'numeric'
   });
 };
 
@@ -503,7 +500,7 @@ export class ShipmentService {
           realDistKm = route.total_distance_km.toString();
           const routeStart = new Date(route.created_at || manifestData.created_at);
           routeStart.setTime(routeStart.getTime() + (route.total_duration_minutes || 0) * 60 * 1000);
-          realEtaText = routeStart.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+          realEtaText = routeStart.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
       }
 
