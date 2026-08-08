@@ -5,12 +5,9 @@ import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import { 
-  ArrowLeft, Edit3, Save, X, FileText, Package, User, 
-  MapPin, Clock, Calendar, ShieldCheck, Box, Truck,
-  AlertTriangle, Navigation, Loader2
+  ArrowLeft, Edit3, Save, X, Printer, Loader2
 } from 'lucide-react';
 import { shipmentsAPI } from '@/services/api';
-import { formatEta } from '@/utils/timeFormat';
 
 export default function ShipmentManifestPage() {
   const { id } = useParams<{ id: string }>();
@@ -27,7 +24,6 @@ export default function ShipmentManifestPage() {
     enabled: !!id && !!token,
   });
 
-  // Initialize edit form when data loads
   useEffect(() => {
     if (shipment?.metadata) {
       setEditData(shipment.metadata);
@@ -53,19 +49,19 @@ export default function ShipmentManifestPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#FDFDFD] flex items-center justify-center">
-        <Loader2 className="animate-spin text-primary w-12 h-12" />
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
+        <Loader2 className="animate-spin text-gray-500 w-8 h-8" />
       </div>
     );
   }
 
   if (isError || !shipment) {
     return (
-      <div className="p-8">
-        <div className="bg-red-50 text-red-500 p-4 rounded-xl border border-red-200">
+      <div className="p-8 font-sans">
+        <div className="bg-red-50 text-red-600 p-4 border border-red-200">
           Failed to load shipment details. Please try again later.
         </div>
-        <button onClick={() => navigate(-1)} className="mt-4 flex items-center gap-2 text-text/60 hover:text-text">
+        <button onClick={() => navigate(-1)} className="mt-4 flex items-center gap-2 text-gray-600 hover:text-black">
           <ArrowLeft size={16} /> Back
         </button>
       </div>
@@ -92,65 +88,94 @@ export default function ShipmentManifestPage() {
     updateMutation.mutate(editData);
   };
 
-  const renderField = (label: string, value: any, fieldKey: string, type = 'text', width = 'w-full') => {
+  const printDocument = () => {
+    window.print();
+  };
+
+  const renderField = (label: string, value: any, fieldKey: string, type = 'text') => {
     if (isEditing) {
+      if (type === 'checkbox') {
+        const isChecked = meta.specialHandling?.[fieldKey] || false;
+        return (
+          <label className="flex items-center gap-2 text-sm text-black cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isChecked}
+              onChange={() => handleCheckboxChange(fieldKey)}
+              className="w-4 h-4 rounded-none border-black focus:ring-black"
+            />
+            {label}
+          </label>
+        );
+      }
+
       return (
-        <div className={`flex flex-col gap-1 ${width}`}>
-          <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">{label}</label>
+        <div className="flex flex-col gap-1 w-full">
+          <label className="text-xs font-bold text-gray-600 uppercase tracking-tight">{label}</label>
           <input 
             type={type}
             value={value || ''}
             onChange={(e) => handleInputChange(fieldKey, e.target.value)}
-            className="w-full bg-white border border-black/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            className="w-full bg-white border border-gray-300 rounded-none px-2 py-1 text-sm text-black focus:outline-none focus:border-black transition-colors"
           />
         </div>
       );
     }
     
+    if (type === 'checkbox') {
+      const isChecked = meta.specialHandling?.[fieldKey] || false;
+      return (
+        <div className="flex items-center gap-2 text-sm text-black">
+          <div className="w-3 h-3 border border-black flex items-center justify-center">
+            {isChecked && <div className="w-1.5 h-1.5 bg-black" />}
+          </div>
+          {label}
+        </div>
+      );
+    }
+
     return (
-      <div className={`flex flex-col gap-1 ${width}`}>
-        <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">{label}</label>
-        <div className="text-sm font-semibold text-text truncate">
-          {value || <span className="text-text/30 italic">Not specified</span>}
+      <div className="flex flex-col gap-1 w-full">
+        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{label}</label>
+        <div className="text-sm font-semibold text-black uppercase">
+          {value || <span className="text-gray-400 italic normal-case font-normal">N/A</span>}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] p-6 lg:p-12 font-sans pb-32">
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans print:bg-white print:p-0">
       
-      {/* Header */}
-      <div className="max-w-5xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-        <div>
-          <button 
-            onClick={() => navigate('/shipments')} 
-            className="flex items-center gap-2 text-text/50 hover:text-text mb-4 transition-colors font-medium text-sm"
-          >
-            <ArrowLeft size={16} /> Back to Cargo Manifest
-          </button>
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-black text-text uppercase tracking-tight">Cargo Manifest</h1>
-            <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-bold uppercase rounded-md tracking-wider">
-              {shipment.tracking_id}
-            </span>
-          </div>
-          <p className="text-text/50 text-sm mt-1">Detailed operational parameters for shipment ID: {shipment.id}</p>
-        </div>
+      {/* Action Bar (Hidden in Print) */}
+      <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden">
+        <button 
+          onClick={() => navigate(-1)} 
+          className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium text-sm"
+        >
+          <ArrowLeft size={16} /> Back to Shipments
+        </button>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={printDocument}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
+          >
+            <Printer size={16} /> Print Document
+          </button>
+          
           {isEditing ? (
             <>
               <button 
                 onClick={() => setIsEditing(false)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-black/5 text-text hover:bg-black/10 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
                 disabled={updateMutation.isPending}
               >
                 <X size={16} /> Cancel
               </button>
               <button 
                 onClick={handleSave}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-primary text-white hover:bg-primary/90 transition-all shadow-[0_4px_14px_0_rgba(252,211,77,0.39)]"
+                className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
                 disabled={updateMutation.isPending}
               >
                 {updateMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />}
@@ -160,7 +185,7 @@ export default function ShipmentManifestPage() {
           ) : (
             <button 
               onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-black text-white hover:bg-black/80 transition-colors shadow-lg shadow-black/10"
+              className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
             >
               <Edit3 size={16} /> Edit Manifest
             </button>
@@ -168,155 +193,149 @@ export default function ShipmentManifestPage() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Formal Document Container */}
+      <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-sm p-8 print:border-none print:shadow-none print:max-w-full">
         
-        {/* Left Column - Logistics & Routing */}
-        <div className="lg:col-span-1 flex flex-col gap-6">
-          
-          <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-500">
-                <Navigation size={20} />
-              </div>
-              <div>
-                <h2 className="font-black text-lg">Routing Logistics</h2>
-                <p className="text-[10px] text-text/50 font-bold uppercase tracking-wider">System Generated</p>
-              </div>
+        {/* Document Header */}
+        <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold tracking-widest text-black uppercase">Cargo Manifest / Waybill</h1>
+            <p className="text-xs font-semibold text-gray-600 tracking-wider mt-1">GOVERNMENT PORTAL FORMAT COMPLIANT</p>
+          </div>
+          <div className="text-right flex flex-col items-end">
+            <div className="border-2 border-black p-2 bg-gray-50 mb-2">
+              <p className="font-mono font-bold text-lg tracking-[0.2em]">{shipment.tracking_id}</p>
             </div>
-
-            <div className="space-y-6">
-              <div className="flex items-start gap-4">
-                <div className="mt-1"><MapPin size={16} className="text-blue-500" /></div>
-                <div>
-                  <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">Origin (Consignor)</label>
-                  <p className="text-sm font-bold text-text">{shipment.pickup_location?.address}</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start gap-4">
-                <div className="mt-1"><MapPin size={16} className="text-rose-500" /></div>
-                <div>
-                  <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">Destination (Consignee)</label>
-                  <p className="text-sm font-bold text-text">{shipment.drop_location?.address}</p>
-                </div>
-              </div>
-
-              <div className="h-px bg-black/5 w-full my-4" />
-
-              {renderField('Dispatch Date', meta.dispatch_date, 'dispatch_date', 'date')}
-              {renderField('Reporting Date', meta.reporting_date, 'reporting_date', 'date')}
-              {renderField('Estimated Time (ETA)', meta.eta_details?.eta_text, 'eta_details.eta_text')}
-              
-              <div className="flex items-center justify-between bg-black/5 p-4 rounded-2xl">
-                <div>
-                  <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">Distance</label>
-                  <p className="font-bold text-text">{meta.eta_details?.distance_km} KM</p>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-text/40 uppercase tracking-wider">Long Haul Flag</label>
-                  <p className={`font-bold ${meta.is_long_haul ? 'text-amber-500' : 'text-emerald-500'}`}>
-                    {meta.is_long_haul ? 'YES' : 'NO'}
-                  </p>
-                </div>
-              </div>
-
+            <div className="text-[10px] uppercase font-bold text-gray-500">
+              System ID: <span className="text-black font-mono">{shipment.id.substring(0, 18)}...</span>
             </div>
           </div>
-
-          <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500">
-                <User size={20} />
-              </div>
-              <h2 className="font-black text-lg">Consignee Details</h2>
-            </div>
-            
-            <div className="space-y-4">
-              {renderField('Full Name', meta.consigneeName, 'consigneeName')}
-              {renderField('Contact Number', meta.consigneeContact, 'consigneeContact')}
-              {renderField('Email Address', meta.consigneeEmail, 'consigneeEmail', 'email')}
-            </div>
-          </div>
-          
         </div>
 
-        {/* Right Column - Cargo Specs */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          
-          <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
-                <Package size={20} />
+        {/* Section 1: Addresses */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-t border-l border-black mb-6">
+          <div className="border-b border-r border-black p-4">
+            <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">1. Consignor (Origin)</div>
+            <p className="text-sm font-semibold text-black uppercase mt-2">{shipment.pickup_location?.address || 'N/A'}</p>
+            {isEditing && (
+              <p className="text-[10px] text-gray-400 mt-2 italic">* Origin address is system-generated from route details.</p>
+            )}
+          </div>
+          <div className="border-b border-r border-black p-4">
+            <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">2. Consignee (Destination)</div>
+            <div className="space-y-3 mt-3">
+              {renderField('Full Name', meta.consigneeName, 'consigneeName')}
+              {renderField('Contact Number', meta.consigneeContact, 'consigneeContact')}
+              {renderField('Email Address', meta.consigneeEmail, 'consigneeEmail')}
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
+                <p className="text-sm font-semibold text-black uppercase">{shipment.drop_location?.address || 'N/A'}</p>
               </div>
-              <h2 className="font-black text-lg">Product Information</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-              {renderField('Product Category', meta.productCategory, 'productCategory')}
-              {renderField('Product Name', meta.productName, 'productName')}
-              {renderField('Brand', meta.brand, 'brand')}
-              {renderField('Model / Variant', meta.modelVariant, 'modelVariant')}
             </div>
           </div>
+        </div>
 
-          <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-500">
-                <Box size={20} />
-              </div>
-              <h2 className="font-black text-lg">Packaging & Quantity</h2>
+        {/* Section 2: Logistics Details */}
+        <div className="mb-6">
+          <div className="bg-black text-white text-xs font-bold uppercase tracking-wider p-1.5 pl-3 border border-black">3. Logistics Parameters</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-l border-b border-black">
+            <div className="border-r border-black p-3">
+              {renderField('Dispatch Date', meta.dispatch_date, 'dispatch_date', 'date')}
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-6">
-              {renderField('Packaging Type', meta.packagingType, 'packagingType')}
-              {renderField('No. of Packages', meta.noOfPackages, 'noOfPackages', 'number')}
-              {renderField('Quantity', meta.quantity, 'quantity', 'number')}
-              {renderField('Unit', meta.unit, 'unit')}
-              {renderField('Gross Weight', meta.grossWeight, 'grossWeight')}
-              {renderField('Declared Value (₹)', meta.declaredValue, 'declaredValue')}
+            <div className="border-r border-black p-3">
+              {renderField('Reporting Date', meta.reporting_date, 'reporting_date', 'date')}
+            </div>
+            <div className="border-r border-black p-3">
+              {renderField('Estimated ETA', meta.eta_details?.eta_text, 'eta_details.eta_text')}
+            </div>
+            <div className="border-r border-black p-3">
+              {renderField('Distance (KM)', meta.eta_details?.distance_km, 'eta_details.distance_km')}
             </div>
           </div>
+        </div>
 
-          <div className="bg-white rounded-3xl p-6 border border-black/5 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-500">
-                <ShieldCheck size={20} />
+        {/* Section 3: Cargo Particulars */}
+        <div className="mb-6">
+          <div className="bg-black text-white text-xs font-bold uppercase tracking-wider p-1.5 pl-3 border border-black">4. Cargo Particulars</div>
+          <div className="border-l border-black">
+            <div className="grid grid-cols-1 md:grid-cols-3 border-b border-black">
+              <div className="border-r border-black p-3">
+                {renderField('Product Category', meta.productCategory, 'productCategory')}
               </div>
-              <h2 className="font-black text-lg">Special Handling</h2>
+              <div className="border-r border-black p-3">
+                {renderField('Product Name', meta.productName, 'productName')}
+              </div>
+              <div className="border-r border-black p-3">
+                {renderField('Brand / Make', meta.brand, 'brand')}
+              </div>
             </div>
-
-            <div className="flex flex-wrap gap-4 mb-8">
-              {[
-                { key: 'fragile', label: 'Fragile', color: 'rose' },
-                { key: 'hazardous', label: 'Hazardous', color: 'amber' },
-                { key: 'coldChain', label: 'Cold Chain', color: 'blue' },
-                { key: 'stackable', label: 'Stackable', color: 'emerald' },
-                { key: 'highValue', label: 'High Value', color: 'purple' },
-              ].map(item => (
-                <div 
-                  key={item.key}
-                  onClick={() => isEditing && handleCheckboxChange(item.key)}
-                  className={`
-                    flex items-center gap-3 px-5 py-3 rounded-2xl border-2 transition-all
-                    ${isEditing ? 'cursor-pointer' : 'cursor-default'}
-                    ${meta.specialHandling?.[item.key] 
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' 
-                      : 'border-black/5 bg-[#FDFDFD] text-text/40'}
-                  `}
-                >
-                  <div className={`w-5 h-5 rounded flex items-center justify-center border-2 
-                    ${meta.specialHandling?.[item.key] ? 'border-indigo-500 bg-indigo-500' : 'border-black/20'}
-                  `}>
-                    {meta.specialHandling?.[item.key] && <ShieldCheck size={14} className="text-white" />}
-                  </div>
-                  <span className="font-bold text-sm">{item.label}</span>
-                </div>
-              ))}
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 border-b border-black">
+              <div className="border-r border-black p-3">
+                {renderField('Packaging Type', meta.packagingType, 'packagingType')}
+              </div>
+              <div className="border-r border-black p-3">
+                {renderField('No. of Packages', meta.noOfPackages, 'noOfPackages', 'number')}
+              </div>
+              <div className="border-r border-black p-3 bg-gray-50">
+                {renderField('Gross Weight', meta.grossWeight, 'grossWeight')}
+              </div>
+              <div className="border-r border-black p-3 bg-gray-50">
+                {renderField('Declared Value', meta.declaredValue, 'declaredValue')}
+              </div>
             </div>
-
-            {renderField('Remarks / Instructions', meta.remarks, 'remarks')}
           </div>
+        </div>
 
+        {/* Section 4: Special Handling & Remarks */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-t border-l border-black mb-12">
+          <div className="border-b border-r border-black p-4 bg-gray-50">
+            <div className="text-xs font-bold uppercase tracking-wider mb-4 border-b border-gray-300 pb-1">5. Special Handling Flags</div>
+            <div className="grid grid-cols-2 gap-4">
+              {renderField('Fragile Cargo', null, 'fragile', 'checkbox')}
+              {renderField('Hazardous (Hazmat)', null, 'hazardous', 'checkbox')}
+              {renderField('Cold Chain / Temp Controlled', null, 'coldChain', 'checkbox')}
+              {renderField('Stackable', null, 'stackable', 'checkbox')}
+              {renderField('High Value', null, 'highValue', 'checkbox')}
+              {renderField('Long Haul', null, 'longHaul', 'checkbox')}
+            </div>
+          </div>
+          <div className="border-b border-r border-black p-4">
+            <div className="text-xs font-bold uppercase tracking-wider mb-3 border-b border-gray-300 pb-1">6. Remarks & Instructions</div>
+            {isEditing ? (
+              <textarea 
+                value={meta.remarks || ''}
+                onChange={(e) => handleInputChange('remarks', e.target.value)}
+                className="w-full bg-white border border-gray-300 p-2 text-sm text-black focus:outline-none focus:border-black min-h-[100px]"
+                placeholder="Enter remarks or special instructions..."
+              />
+            ) : (
+              <div className="text-sm font-semibold text-black uppercase min-h-[100px]">
+                {meta.remarks || <span className="text-gray-400 italic normal-case font-normal">No additional remarks</span>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer Signatures */}
+        <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t border-dashed border-gray-400">
+          <div className="text-center">
+            <div className="border-b border-black h-12 mb-2"></div>
+            <p className="text-xs font-bold uppercase text-black">Consignor Signature</p>
+          </div>
+          <div className="text-center">
+            <div className="border-b border-black h-12 mb-2"></div>
+            <p className="text-xs font-bold uppercase text-black">Transporter Signature</p>
+          </div>
+          <div className="text-center">
+            <div className="border-b border-black h-12 mb-2"></div>
+            <p className="text-xs font-bold uppercase text-black">Consignee Signature</p>
+            <p className="text-[9px] text-gray-500 mt-1">(Sign upon delivery)</p>
+          </div>
+        </div>
+
+        <div className="mt-8 text-center text-[9px] text-gray-400 uppercase tracking-widest border-t border-black pt-2">
+          System Generated Document • RouteIQ Logistics Platform • {new Date().toISOString().split('T')[0]}
         </div>
 
       </div>

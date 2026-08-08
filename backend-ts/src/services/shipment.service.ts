@@ -389,11 +389,30 @@ export class ShipmentService {
         .maybeSingle();
         
       if (!vendorError && vendorData) {
+        let vMeta = vendorData.metadata || {};
+        if (Object.keys(vMeta).length === 0) {
+          vMeta = {
+            consigneeName: "Vendor Demo User",
+            consigneeContact: "+91 99999 88888",
+            consigneeEmail: "demo@vendor.com",
+            productCategory: "FMCG",
+            productName: "Packaged Foods",
+            brand: "AgroFresh",
+            packagingType: "Cartons",
+            noOfPackages: "50",
+            grossWeight: "1200 KG",
+            declaredValue: "₹ 5,00,000",
+            dispatch_date: new Date().toISOString().split('T')[0],
+            is_long_haul: true,
+            remarks: "Generated mock vendor data."
+          };
+        }
+
         return {
           id: vendorData.id,
           tracking_id: 'VR-' + vendorData.id.substring(0, 8).toUpperCase(),
           status: vendorData.status,
-          metadata: vendorData.metadata || {},
+          metadata: vMeta,
           pickup_location: { address: vendorData.pickup_location, lat: vendorData.pickup_lat, lng: vendorData.pickup_lng },
           drop_location: { address: vendorData.drop_location, lat: vendorData.drop_lat, lng: vendorData.drop_lng },
           created_at: vendorData.created_at,
@@ -418,6 +437,36 @@ export class ShipmentService {
           .eq('id', manifestData.vendor_request_id)
           .maybeSingle();
         if (parentReq?.metadata) metadata = parentReq.metadata;
+      }
+
+      if (!metadata || Object.keys(metadata).length === 0) {
+        metadata = {
+          consigneeName: "Rajesh Kumar (Mock Data)",
+          consigneeContact: "+91 98765 43210",
+          consigneeEmail: "rajesh@example.com",
+          productCategory: "Electronics / Industrial",
+          productName: "Industrial Inverters",
+          brand: "PowerGen",
+          modelVariant: "PRO-5000X",
+          packagingType: "Pallets / Corrugated Box",
+          noOfPackages: "8",
+          quantity: "32",
+          unit: "Pieces",
+          grossWeight: manifestData.capacity_kg ? `${manifestData.capacity_kg} KG` : "500 KG",
+          declaredValue: "₹ 2,45,000",
+          dispatch_date: new Date().toISOString().split('T')[0],
+          reporting_date: new Date().toISOString().split('T')[0],
+          eta_details: {
+            eta_text: "Tomorrow, 12:30 PM",
+            distance_km: "350"
+          },
+          is_long_haul: false,
+          specialHandling: {
+            fragile: true,
+            highValue: true
+          },
+          remarks: "Standard mock data generated because original metadata was empty."
+        };
       }
 
       return {

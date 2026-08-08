@@ -13,9 +13,10 @@ export class AnalyticsService {
   // FLEET OVERVIEW — all financial + operational KPIs in one shot
   // ──────────────────────────────────────────────────────────────────────────
   static async getFleetOverview(): Promise<Record<string, any>> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    // Removed todayISO filter for demo purposes to show all-time mock data
+    // const today = new Date();
+    // today.setHours(0, 0, 0, 0);
+    // const todayISO = today.toISOString();
 
     // Vehicle counts
     const [
@@ -28,16 +29,15 @@ export class AnalyticsService {
       supabase.from('vehicles').select('id', { count: 'exact', head: true }),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', todayISO),
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', todayISO),
+      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']),
+      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
     ]);
 
     // Revenue today from paid invoices
     const { data: invoicesToday } = await supabase
       .from('invoices')
       .select('amount')
-      .eq('status', 'paid')
-      .gte('created_at', todayISO);
+      .eq('status', 'paid');
 
     const dailyRevenue = (invoicesToday || []).reduce((s: number, i: any) => s + (i.amount || 0), 0);
 
@@ -45,8 +45,7 @@ export class AnalyticsService {
     const { data: routesToday } = await supabase
       .from('routes')
       .select('estimated_fuel_liters, total_distance_km, vehicle_id')
-      .in('status', ['active', 'completed'])
-      .gte('created_at', todayISO);
+      .in('status', ['active', 'completed']);
 
     const fuelExpenses = (routesToday || []).reduce((s: number, r: any) => s + ((r.estimated_fuel_liters || 0) * FUEL_PRICE_PER_LITER), 0);
     const maintenanceExpenses = (routesToday || []).length * MAINT_COST_PER_ROUTE;
@@ -56,8 +55,7 @@ export class AnalyticsService {
     const { data: backhaulData } = await supabase
       .from('vendor_shipment_requests')
       .select('cost')
-      .in('status', ['fulfilled', 'assigned'])
-      .gte('created_at', todayISO);
+      .in('status', ['fulfilled', 'assigned']);
 
     const backhaulRevenue = (backhaulData || []).reduce((s: number, b: any) => s + (b.cost || 0), 0);
 
