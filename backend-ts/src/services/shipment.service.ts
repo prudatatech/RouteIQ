@@ -406,6 +406,28 @@ export class ShipmentService {
             is_long_haul: true,
             remarks: "Generated mock vendor data."
           };
+        } else if (vMeta.consignee || vMeta.cargo) {
+          vMeta = {
+            consigneeName: vMeta.consignee?.name || "",
+            consigneeContact: vMeta.consignee?.contact || "",
+            consigneeEmail: vMeta.consignee?.email || "",
+            productCategory: vMeta.cargo?.category || "",
+            productName: vMeta.cargo?.name || "",
+            brand: vMeta.cargo?.brand || "",
+            modelVariant: vMeta.cargo?.modelVariant || "",
+            packagingType: vMeta.cargo?.packagingType || "",
+            noOfPackages: vMeta.cargo?.noOfPackages || "",
+            quantity: vMeta.cargo?.quantity || "",
+            unit: vMeta.cargo?.unit || "",
+            grossWeight: vMeta.cargo?.grossWeightKg ? `${vMeta.cargo.grossWeightKg} KG` : "",
+            declaredValue: vMeta.cargo?.declaredValue || "",
+            specialHandling: vMeta.cargo?.specialHandling || {},
+            remarks: vMeta.cargo?.remarks || "",
+            dispatch_date: new Date().toISOString().split('T')[0],
+            reporting_date: new Date().toISOString().split('T')[0],
+            eta_details: { eta_text: "Pending Routing...", distance_km: "Pending" },
+            is_long_haul: false
+          };
         }
 
         return {
@@ -439,7 +461,7 @@ export class ShipmentService {
         if (parentReq?.metadata) metadata = parentReq.metadata;
       }
 
-      if (!metadata || Object.keys(metadata).length === 0) {
+      if (!metadata || Object.keys(metadata || {}).length === 0) {
         metadata = {
           consigneeName: "Rajesh Kumar (Mock Data)",
           consigneeContact: "+91 98765 43210",
@@ -466,6 +488,28 @@ export class ShipmentService {
             highValue: true
           },
           remarks: "Standard mock data generated because original metadata was empty."
+        };
+      } else if (metadata.consignee || metadata.cargo) {
+        metadata = {
+          consigneeName: metadata.consignee?.name || "",
+          consigneeContact: metadata.consignee?.contact || "",
+          consigneeEmail: metadata.consignee?.email || "",
+          productCategory: metadata.cargo?.category || "",
+          productName: metadata.cargo?.name || "",
+          brand: metadata.cargo?.brand || "",
+          modelVariant: metadata.cargo?.modelVariant || "",
+          packagingType: metadata.cargo?.packagingType || "",
+          noOfPackages: metadata.cargo?.noOfPackages || "",
+          quantity: metadata.cargo?.quantity || "",
+          unit: metadata.cargo?.unit || "",
+          grossWeight: metadata.cargo?.grossWeightKg ? `${metadata.cargo.grossWeightKg} KG` : "",
+          declaredValue: metadata.cargo?.declaredValue || "",
+          specialHandling: metadata.cargo?.specialHandling || {},
+          remarks: metadata.cargo?.remarks || "",
+          dispatch_date: new Date().toISOString().split('T')[0],
+          reporting_date: new Date().toISOString().split('T')[0],
+          eta_details: { eta_text: "Tomorrow, 14:00 PM", distance_km: "420" },
+          is_long_haul: false
         };
       }
 
