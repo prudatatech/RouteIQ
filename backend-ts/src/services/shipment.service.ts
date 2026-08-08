@@ -425,7 +425,7 @@ export class ShipmentService {
             remarks: vMeta.cargo?.remarks || "",
             dispatch_date: new Date().toISOString().split('T')[0],
             reporting_date: new Date().toISOString().split('T')[0],
-            eta_details: { eta_text: "Pending Routing...", distance_km: "Pending" },
+            eta_details: { eta_text: "Pending Routing...", distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng) },
             is_long_haul: false
           };
         }
@@ -508,7 +508,7 @@ export class ShipmentService {
           remarks: metadata.cargo?.remarks || "",
           dispatch_date: new Date().toISOString().split('T')[0],
           reporting_date: new Date().toISOString().split('T')[0],
-          eta_details: { eta_text: "Tomorrow, 14:00 PM", distance_km: "420" },
+          eta_details: { eta_text: "Tomorrow, 14:00 PM", distance_km: getDist(manifestData.pickup_lat, manifestData.pickup_lng, manifestData.drop_lat, manifestData.drop_lng) },
           is_long_haul: false
         };
       }
