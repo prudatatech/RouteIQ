@@ -20,6 +20,27 @@ const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string
   return Math.round(R * c * 1.3).toString();
 };
 
+const getETA = (distance: string, createdAt: string): string => {
+  if (distance === "Pending" || !createdAt) return "Pending Routing...";
+  const dist = parseInt(distance);
+  if (isNaN(dist)) return "Pending Routing...";
+  
+  // Assume average speed of 40 km/h + 2 hours loading time
+  const travelHours = (dist / 40) + 2;
+  
+  const date = new Date(createdAt);
+  date.setTime(date.getTime() + travelHours * 60 * 60 * 1000);
+  
+  return date.toLocaleString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit', 
+    hour12: true 
+  });
+};
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -437,7 +458,10 @@ export class ShipmentService {
             remarks: vMeta.cargo?.remarks || "",
             dispatch_date: new Date(vendorData.created_at).toISOString().split('T')[0],
             reporting_date: new Date(new Date(vendorData.created_at).getTime() + 86400000).toISOString().split('T')[0],
-            eta_details: { eta_text: "Pending Routing...", distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng) },
+            eta_details: { 
+              eta_text: getETA(getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng), vendorData.created_at), 
+              distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng) 
+            },
             is_long_haul: false
           };
         }
@@ -461,6 +485,27 @@ export class ShipmentService {
         .maybeSingle();
 
       if (manifestError || !manifestData) return null;
+
+      // Check if there is an active/recent route for this manifest's vehicle to get REAL system ETA/Distance
+      let realDistKm = getDist(manifestData.pickup_lat, manifestData.pickup_lng, manifestData.drop_lat, manifestData.drop_lng);
+      let realEtaText = getETA(realDistKm, manifestData.created_at);
+      
+      if (manifestData.vehicle_id) {
+        const { data: route } = await supabase
+          .from('routes')
+          .select('total_distance_km, total_duration_minutes, created_at')
+          .eq('vehicle_id', manifestData.vehicle_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+          
+        if (route && route.total_distance_km) {
+          realDistKm = route.total_distance_km.toString();
+          const routeStart = new Date(route.created_at || manifestData.created_at);
+          routeStart.setTime(routeStart.getTime() + (route.total_duration_minutes || 0) * 60 * 1000);
+          realEtaText = routeStart.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+        }
+      }
 
       // If it's a cargo manifest, fetch its parent vendor request for metadata if it exists
       let metadata: any = {};
@@ -491,8 +536,8 @@ export class ShipmentService {
           dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
           reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
           eta_details: {
-            eta_text: "Tomorrow, 12:30 PM",
-            distance_km: "350"
+            eta_text: realEtaText,
+            distance_km: realDistKm
           },
           is_long_haul: false,
           specialHandling: {
@@ -520,7 +565,10 @@ export class ShipmentService {
           remarks: metadata.cargo?.remarks || "",
           dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
           reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
-          eta_details: { eta_text: "Tomorrow, 14:00 PM", distance_km: getDist(manifestData.pickup_lat, manifestData.pickup_lng, manifestData.drop_lat, manifestData.drop_lng) },
+          eta_details: { 
+            eta_text: realEtaText, 
+            distance_km: realDistKm 
+          },
           is_long_haul: false
         };
       }
