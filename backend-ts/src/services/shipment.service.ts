@@ -389,7 +389,7 @@ export class ShipmentService {
         .maybeSingle();
         
       if (!vendorError && vendorData) {
-        let vMeta = vendorData.metadata || {};
+        let vMeta: any = vendorData.metadata || {};
         if (Object.keys(vMeta).length === 0) {
           vMeta = {
             consigneeName: "Vendor Demo User",
@@ -451,7 +451,7 @@ export class ShipmentService {
       if (manifestError || !manifestData) return null;
 
       // If it's a cargo manifest, fetch its parent vendor request for metadata if it exists
-      let metadata = {};
+      let metadata: any = {};
       if (manifestData.vendor_request_id) {
         const { data: parentReq } = await supabase
           .from('vendor_shipment_requests')
