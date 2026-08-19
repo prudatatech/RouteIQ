@@ -14,7 +14,7 @@ import numpy as np
 from .vrp_solver import Location, VehicleConfig, VRPSolution, OptimizedRoute, haversine_km
 from .eta_model import eta_predictor
 
-logger = logging.getLogger("routeiq.ga")
+logger = logging.getLogger("margixindia.ga")
 
 def _travel_time(loc1: Location, loc2: Location, vehicle: VehicleConfig, traffic: float, weather: float) -> float:
     dist = haversine_km(loc1.lat, loc1.lng, loc2.lat, loc2.lng)

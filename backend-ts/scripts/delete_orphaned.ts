@@ -12,7 +12,7 @@ async function testCreate() {
   };
 
   const body = {
-    email: 'driver_14787804704@driver.routeiq.local',
+    email: 'driver_14787804704@driver.margixindia.local',
     email_confirm: true,
     user_metadata: {
       full_name: 'Driver 4704',

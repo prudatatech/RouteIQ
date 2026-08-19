@@ -18,7 +18,7 @@ async def client():
 @pytest.fixture
 async def auth_headers(client):
     # Register a test manager
-    email = f"test_cargo_{random.randint(1000, 9999)}@routeiq.io"
+    email = f"test_cargo_{random.randint(1000, 9999)}@margixindia.io"
     await client.post("/api/v1/auth/register", json={
         "email": email,
         "full_name": "Cargo Manager",

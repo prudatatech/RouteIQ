@@ -17,7 +17,7 @@ logging.basicConfig(
     filename='sync_debug.log',
     filemode='w'
 )
-logger = logging.getLogger("routeiq.sync_script")
+logger = logging.getLogger("margixindia.sync_script")
 
 async def run_manual_sync():
     logger.info("Starting manual hardware sync debug version...")

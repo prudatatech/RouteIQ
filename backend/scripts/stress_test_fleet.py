@@ -17,7 +17,7 @@ logger = logging.getLogger("stress_test")
 
 # Configuration
 API_URL = "http://localhost:8001/api/v1"
-ADMIN_EMAIL = "admin@routeiq.io"
+ADMIN_EMAIL = "admin@margixindia.io"
 ADMIN_PASSWORD = "Admin1234!"
 FLEET_SIZE = 50 
 UPDATE_INTERVAL = 2.0 

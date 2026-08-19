@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Dashboard Routes
+ * margixindia — Dashboard Routes
  * Ports: backend/app/api/v1/endpoints/dashboard.py
  */
 import { Router, Request, Response } from 'express';

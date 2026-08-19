@@ -28,7 +28,7 @@ async function testCreate() {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      email: 'driver_917360095009@driver.routeiq.local',
+      email: 'driver_917360095009@driver.margixindia.local',
       email_confirm: true,
       user_metadata: {
         full_name: 'Driver 5009',

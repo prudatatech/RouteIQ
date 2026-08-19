@@ -22,7 +22,7 @@ async function seed() {
   console.log("Creating vendor user...");
   // 1. Create auth user
   const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
-    email: 'vendor@routeiq.io',
+    email: 'vendor@margixindia.io',
     password: 'Vendor1234!',
     email_confirm: true,
     user_metadata: { role: 'vendor' }
@@ -37,9 +37,9 @@ async function seed() {
   if (!userId) {
     // get existing user
     const { data: existing } = await supabase.auth.admin.listUsers();
-    const vendorUser = existing.users.find(u => u.email === 'vendor@routeiq.io');
+    const vendorUser = existing.users.find(u => u.email === 'vendor@margixindia.io');
     if (vendorUser) {
-        userId = vendorUser.id;
+      userId = vendorUser.id;
     }
   }
 
@@ -47,7 +47,7 @@ async function seed() {
     // 2. Insert into public.users
     const { error: dbErr } = await supabase.from('users').upsert({
       id: userId,
-      email: 'vendor@routeiq.io',
+      email: 'vendor@margixindia.io',
       full_name: 'Test Vendor',
       role: 'vendor',
       is_active: true

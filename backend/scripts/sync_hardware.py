@@ -11,7 +11,7 @@ from app.core.database import AsyncSessionLocal
 from app.services.spark_gps_service import SparkGPSService
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("routeiq.sync_script")
+logger = logging.getLogger("margixindia.sync_script")
 
 async def run_manual_sync():
     logger.info("Starting manual SparkGPS hardware sync...")

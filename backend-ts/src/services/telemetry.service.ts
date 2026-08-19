@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Telemetry Service
+ * margixindia — Telemetry Service
  * Ports: backend/app/services/telemetry_service.py
  */
 import { supabase } from '../core/supabase';

@@ -4,7 +4,7 @@ import json
 
 async def test_optimization():
     auth_url = "http://localhost:8000/api/v1/auth/login"
-    login_data = {"email": "superadmin@routeiq.com", "password": "Super@123"}
+    login_data = {"email": "superadmin@margixindia.com", "password": "Super@123"}
     
     async with httpx.AsyncClient() as client:
         # 1. Login

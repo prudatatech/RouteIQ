@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Zod validation schemas
+ * margixindia — Zod validation schemas
  * Ports: backend/app/schemas/schemas.py + backend/app/schemas/auth.py
  */
 import { z } from 'zod';

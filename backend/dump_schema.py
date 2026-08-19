@@ -13,7 +13,7 @@ def dump_sql(sql, *multiparams, **params):
 
 engine = create_mock_engine("postgresql://", dump_sql)
 
-print("-- ROUTEIQ COMPLETE DATABASE SCHEMA --")
+print("-- margixindia COMPLETE DATABASE SCHEMA --")
 print("-- Generated from SQLAlchemy Models --\n")
 
 # Use a separate print for the enums or rely on the mock engine

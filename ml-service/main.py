@@ -1,5 +1,5 @@
 """
-RouteIQ ML Microservice — Standalone FastAPI
+margixindia ML Microservice — Standalone FastAPI
 Runs on port 8001. Called by the TS backend for:
   - VRP route optimization (Google OR-Tools)
   - ETA prediction (XGBoost / physics-based)
@@ -24,7 +24,7 @@ from supabase import create_client, Client
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-logger = logging.getLogger("routeiq.ml")
+logger = logging.getLogger("margixindia.ml")
 
 # ── Supabase ─────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -44,7 +44,7 @@ from ml.eta_model import eta_predictor
 from ml.bin_packer import bin_pack
 
 # ── FastAPI App ──────────────────────────────────────────────
-app = FastAPI(title="RouteIQ ML Service", version="1.0.0")
+app = FastAPI(title="margixindia ML Service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,7 +103,7 @@ class BinPackRequest(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "routeiq-ml", "version": "1.0.0"}
+    return {"status": "healthy", "service": "margixindia-ml", "version": "1.0.0"}
 
 
 @app.post("/optimize")

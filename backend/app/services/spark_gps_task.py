@@ -3,7 +3,7 @@ import logging
 from app.core.database import AsyncSessionLocal
 from app.services.spark_gps_service import SparkGPSService
 
-logger = logging.getLogger("routeiq.spark_gps_task")
+logger = logging.getLogger("margixindia.spark_gps_task")
 
 class SparkGPSTask:
     def __init__(self, interval_seconds: int = 30):

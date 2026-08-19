@@ -68,7 +68,7 @@ export default function AddShipmentModal() {
   // Sort vehicles by distance to origin
   const sortedVehicles = useMemo(() => {
     if (!formData.origin_lat || !formData.origin_lng) return vehicles;
-    
+
     const toRad = (value: number) => (value * Math.PI) / 180;
     const calcDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
       const R = 6371; // km
@@ -83,7 +83,7 @@ export default function AddShipmentModal() {
 
     return [...vehicles].map((v: any) => {
       if (v.latitude && v.longitude) {
-         return { ...v, distance_km: calcDist(formData.origin_lat, formData.origin_lng, v.latitude, v.longitude) }
+        return { ...v, distance_km: calcDist(formData.origin_lat, formData.origin_lng, v.latitude, v.longitude) }
       }
       return { ...v, distance_km: 999999 }
     }).sort((a, b) => a.distance_km - b.distance_km);
@@ -112,7 +112,7 @@ export default function AddShipmentModal() {
   }
 
   const shareWhatsApp = () => {
-    const msg = encodeURIComponent(`📍 RouteIQ GPS Tracking Link\nVehicle tracking is live. Open this link on your phone to start sharing location:\n${mobileLink}`)
+    const msg = encodeURIComponent(`📍 margixindia GPS Tracking Link\nVehicle tracking is live. Open this link on your phone to start sharing location:\n${mobileLink}`)
     window.open(`https://wa.me/${formData.mobilePhone.replace(/\D/g, '')}?text=${msg}`, '_blank')
   }
 
@@ -193,7 +193,7 @@ export default function AddShipmentModal() {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       toast.success('Shipment successfully initialized')
       closeModal()
-      
+
       // Dispatch custom event for neural pipeline trigger on ShipmentsPage
       window.dispatchEvent(new CustomEvent('shipmentCreated', { detail: data }))
     },
@@ -262,7 +262,7 @@ export default function AddShipmentModal() {
           {/* Dispatch Mode: Direct vs Bidding */}
           <div className="border border-slate-200 p-6 rounded-3xl bg-slate-50/50 shadow-sm">
             <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 mb-3 block">Dispatch Mode</label>
-            
+
             <div className="flex bg-white p-1 rounded-2xl border border-slate-200">
               <button
                 onClick={() => setFormData({ ...formData, open_bidding: false })}
@@ -292,13 +292,13 @@ export default function AddShipmentModal() {
                     Broadcasting to vendors within 50km
                   </p>
                 </div>
-                
+
                 {!formData.selectedVehicleId && (
                   <div className="mb-4 text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 p-2 rounded-lg border border-red-100">
                     * Please scroll down and Assign a Driver first
                   </div>
                 )}
-                
+
                 <div className="mb-4 flex gap-4">
                   <div className="flex-[2]">
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Window Duration</label>
@@ -388,18 +388,18 @@ export default function AddShipmentModal() {
                   </div>
                 )}
               </div>
-              
+
               {/* Nearby Vendors Display */}
               {formData.open_bidding && formData.origin_lat && (
                 <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl animate-in fade-in duration-300">
                   <div className="flex items-center justify-between mb-3">
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                      <Radio size={12} className={isLoadingVendors ? "animate-spin text-primary" : "text-primary"} /> 
+                      <Radio size={12} className={isLoadingVendors ? "animate-spin text-primary" : "text-primary"} />
                       Nearby Vendors (50km)
                     </label>
                     <Badge className="text-[8px] bg-white text-slate-500 shadow-sm border border-slate-200">{nearbyVendors.length} Found</Badge>
                   </div>
-                  
+
                   {isLoadingVendors ? (
                     <div className="flex items-center justify-center p-4">
                       <Loader2 size={16} className="animate-spin text-slate-400" />
@@ -480,139 +480,139 @@ export default function AddShipmentModal() {
           {/* Cargo Payload (requested) */}
           <div className="space-y-4">
             <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1">Cargo Payload Configuration</label>
-              <div className="flex gap-4">
-                <div className="flex-1 space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Total Items</label>
-                  <div className="relative">
-                    <Package size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="number"
-                      placeholder="e.g. 5"
-                      min="1"
-                      value={formData.total_items || ''}
-                      onChange={(e) => setFormData({ ...formData, total_items: parseInt(e.target.value) || 0 })}
-                      className="w-full h-14 pl-12 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Total Weight (KG)</label>
-                  <div className="relative">
-                    <Scale size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="number"
-                      placeholder="e.g. 1500"
-                      min="0.1"
-                      step="0.1"
-                      value={formData.total_weight_kg || ''}
-                      onChange={(e) => setFormData({ ...formData, total_weight_kg: parseFloat(e.target.value) || 0 })}
-                      className="w-full h-14 pl-12 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
-                    />
-                  </div>
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Total Items</label>
+                <div className="relative">
+                  <Package size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="number"
+                    placeholder="e.g. 5"
+                    min="1"
+                    value={formData.total_items || ''}
+                    onChange={(e) => setFormData({ ...formData, total_items: parseInt(e.target.value) || 0 })}
+                    className="w-full h-14 pl-12 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
+                  />
                 </div>
               </div>
-              
-              <div className="flex gap-4 mt-4">
-                <div className="flex-1 space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Length (cm)</label>
-                  <div className="relative">
-                    <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="number"
-                      placeholder="L"
-                      min="1"
-                      value={formData.length_cm || ''}
-                      onChange={(e) => setFormData({ ...formData, length_cm: parseInt(e.target.value) || 0 })}
-                      className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Width (cm)</label>
-                  <div className="relative">
-                    <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="number"
-                      placeholder="W"
-                      min="1"
-                      value={formData.width_cm || ''}
-                      onChange={(e) => setFormData({ ...formData, width_cm: parseInt(e.target.value) || 0 })}
-                      className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Height (cm)</label>
-                  <div className="relative">
-                    <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                    <input
-                      type="number"
-                      placeholder="H"
-                      min="1"
-                      value={formData.height_cm || ''}
-                      onChange={(e) => setFormData({ ...formData, height_cm: parseInt(e.target.value) || 0 })}
-                      className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-2 bg-yellow-500/10 p-3 rounded-xl border border-yellow-500/30">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase text-yellow-700 tracking-widest">Calculated Capacity</span>
-                  <span className="text-xs font-black text-yellow-800">
-                    {Math.max(formData.total_weight_kg || 0, ((formData.length_cm || 0) * (formData.width_cm || 0) * (formData.height_cm || 0)) / 5000).toFixed(1)} KG
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mt-1 text-[9px] font-bold text-yellow-600/70">
-                  <span>Physical: {formData.total_weight_kg || 0} kg</span>
-                  <span>Volumetric: {(((formData.length_cm || 0) * (formData.width_cm || 0) * (formData.height_cm || 0)) / 5000).toFixed(1)} kg</span>
+              <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Total Weight (KG)</label>
+                <div className="relative">
+                  <Scale size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="number"
+                    placeholder="e.g. 1500"
+                    min="0.1"
+                    step="0.1"
+                    value={formData.total_weight_kg || ''}
+                    onChange={(e) => setFormData({ ...formData, total_weight_kg: parseFloat(e.target.value) || 0 })}
+                    className="w-full h-14 pl-12 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
+                  />
                 </div>
               </div>
             </div>
 
-          {/* Section 2: Cargo Archetypes (Image 3 style) */}
-          <div className="space-y-4">
-              <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
-                <Layers size={12} className="text-muted" /> Shipment Intelligence
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {CARGO_ARCHETYPES.map(cargo => (
-                  <button
-                    key={cargo.id}
-                    onClick={() => setFormData({ ...formData, cargo_type: cargo.id })}
-                    className={clsx(
-                      "relative p-5 rounded-[2rem] border-2 text-left transition-all group overflow-hidden",
-                      formData.cargo_type === cargo.id
-                        ? "bg-surface border-slate-900 shadow-xl shadow-slate-900/10"
-                        : "bg-white border-slate-100 hover:border-yellow-500/30"
-                    )}
-                  >
-                    <div className="flex items-center gap-4 relative z-10">
-                      <div className={clsx(
-                        "w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110",
-                        formData.cargo_type === cargo.id ? "bg-surface2" : "bg-slate-50"
-                      )}>
-                        <img src={cargo.icon} alt="" className="w-10 h-10 object-contain drop-shadow-xl" />
-                      </div>
-                      <div>
-                        <div className={clsx(
-                          "text-sm font-black uppercase tracking-tight",
-                          formData.cargo_type === cargo.id ? "text-yellow-400" : "text-slate-900"
-                        )}>{cargo.name}</div>
-                        <div className={clsx(
-                          "text-[10px] font-bold",
-                          formData.cargo_type === cargo.id ? "text-muted" : "text-muted"
-                        )}>{cargo.desc}</div>
-                      </div>
-                    </div>
-                    {formData.cargo_type === cargo.id && (
-                      <Zap size={40} className="absolute -right-4 -bottom-4 text-text/5 rotate-12" />
-                    )}
-                  </button>
-                ))}
+            <div className="flex gap-4 mt-4">
+              <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Length (cm)</label>
+                <div className="relative">
+                  <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="number"
+                    placeholder="L"
+                    min="1"
+                    value={formData.length_cm || ''}
+                    onChange={(e) => setFormData({ ...formData, length_cm: parseInt(e.target.value) || 0 })}
+                    className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Width (cm)</label>
+                <div className="relative">
+                  <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="number"
+                    placeholder="W"
+                    min="1"
+                    value={formData.width_cm || ''}
+                    onChange={(e) => setFormData({ ...formData, width_cm: parseInt(e.target.value) || 0 })}
+                    className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Height (cm)</label>
+                <div className="relative">
+                  <Ruler size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    type="number"
+                    placeholder="H"
+                    min="1"
+                    value={formData.height_cm || ''}
+                    onChange={(e) => setFormData({ ...formData, height_cm: parseInt(e.target.value) || 0 })}
+                    className="w-full h-14 pl-10 pr-2 bg-slate-50 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-slate-200 outline-none"
+                  />
+                </div>
               </div>
             </div>
+
+            <div className="mt-2 bg-yellow-500/10 p-3 rounded-xl border border-yellow-500/30">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-yellow-700 tracking-widest">Calculated Capacity</span>
+                <span className="text-xs font-black text-yellow-800">
+                  {Math.max(formData.total_weight_kg || 0, ((formData.length_cm || 0) * (formData.width_cm || 0) * (formData.height_cm || 0)) / 5000).toFixed(1)} KG
+                </span>
+              </div>
+              <div className="flex justify-between items-center mt-1 text-[9px] font-bold text-yellow-600/70">
+                <span>Physical: {formData.total_weight_kg || 0} kg</span>
+                <span>Volumetric: {(((formData.length_cm || 0) * (formData.width_cm || 0) * (formData.height_cm || 0)) / 5000).toFixed(1)} kg</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Cargo Archetypes (Image 3 style) */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
+              <Layers size={12} className="text-muted" /> Shipment Intelligence
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {CARGO_ARCHETYPES.map(cargo => (
+                <button
+                  key={cargo.id}
+                  onClick={() => setFormData({ ...formData, cargo_type: cargo.id })}
+                  className={clsx(
+                    "relative p-5 rounded-[2rem] border-2 text-left transition-all group overflow-hidden",
+                    formData.cargo_type === cargo.id
+                      ? "bg-surface border-slate-900 shadow-xl shadow-slate-900/10"
+                      : "bg-white border-slate-100 hover:border-yellow-500/30"
+                  )}
+                >
+                  <div className="flex items-center gap-4 relative z-10">
+                    <div className={clsx(
+                      "w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110",
+                      formData.cargo_type === cargo.id ? "bg-surface2" : "bg-slate-50"
+                    )}>
+                      <img src={cargo.icon} alt="" className="w-10 h-10 object-contain drop-shadow-xl" />
+                    </div>
+                    <div>
+                      <div className={clsx(
+                        "text-sm font-black uppercase tracking-tight",
+                        formData.cargo_type === cargo.id ? "text-yellow-400" : "text-slate-900"
+                      )}>{cargo.name}</div>
+                      <div className={clsx(
+                        "text-[10px] font-bold",
+                        formData.cargo_type === cargo.id ? "text-muted" : "text-muted"
+                      )}>{cargo.desc}</div>
+                    </div>
+                  </div>
+                  {formData.cargo_type === cargo.id && (
+                    <Zap size={40} className="absolute -right-4 -bottom-4 text-text/5 rotate-12" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Section 3: Priority & Plan for Later (Image 4 style) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -665,9 +665,9 @@ export default function AddShipmentModal() {
                   </div>
 
                   <div className="h-64 w-full rounded-xl overflow-hidden border border-slate-200">
-                    <LiveMap 
-                      vehicles={sortedVehicles} 
-                      selectedVehicleId={formData.selectedVehicleId} 
+                    <LiveMap
+                      vehicles={sortedVehicles}
+                      selectedVehicleId={formData.selectedVehicleId}
                       onVehicleSelect={(id) => {
                         setFormData((prev: any) => ({ ...prev, selectedVehicleId: id }))
                         const driverVehicle = sortedVehicles.find((v: any) => v.id === id)
@@ -690,7 +690,7 @@ export default function AddShipmentModal() {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Or select manually</label>
                     <select
                       value={formData.selectedVehicleId}
-                      onChange={e => { 
+                      onChange={e => {
                         const id = e.target.value
                         const driverVehicle = sortedVehicles.find((v: any) => v.id === id)
                         setFormData((prev: any) => {
@@ -714,7 +714,7 @@ export default function AddShipmentModal() {
                       ))}
                     </select>
                   </div>
-                  
+
                   <div className="flex gap-2 pt-2">
                     <input
                       type="tel"

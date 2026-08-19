@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Spark GPS Push API Routes
+ * margixindia — Spark GPS Push API Routes
  * Ports: backend/app/api/v1/endpoints/spark_gps.py
  * 
  * This endpoint receives hardware GPS data pushed from SparkGPS/Roadcast devices.

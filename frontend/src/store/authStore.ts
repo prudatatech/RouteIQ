@@ -61,7 +61,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
     }),
-    { name: 'routeiq-auth-store' }
+    { name: 'margixindia-auth-store' }
   )
 )
 

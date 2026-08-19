@@ -96,7 +96,7 @@ export default function MobileTrackPage() {
       <div className="w-full max-w-sm mb-6 text-center">
         <div className="flex items-center justify-center gap-2 mb-1">
           <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-          <span className="text-yellow-400 text-xs font-black uppercase tracking-widest">RouteIQ</span>
+          <span className="text-yellow-400 text-xs font-black uppercase tracking-widest">margixindia</span>
         </div>
         <h1 className="text-white text-2xl font-black">Mobile GPS Tracker</h1>
         {session && (
@@ -108,12 +108,11 @@ export default function MobileTrackPage() {
       <div className="w-full max-w-sm bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-2xl">
 
         {/* Status Banner */}
-        <div className={`px-6 py-4 flex items-center gap-3 transition-colors duration-500 ${
-          status === 'tracking' ? 'bg-emerald-500/20 border-b border-emerald-500/30' :
-          status === 'connecting' ? 'bg-yellow-500/20 border-b border-yellow-500/30' :
-          status === 'denied' || status === 'error' ? 'bg-red-500/20 border-b border-red-500/30' :
-          'bg-slate-800/50 border-b border-slate-700'
-        }`}>
+        <div className={`px-6 py-4 flex items-center gap-3 transition-colors duration-500 ${status === 'tracking' ? 'bg-emerald-500/20 border-b border-emerald-500/30' :
+            status === 'connecting' ? 'bg-yellow-500/20 border-b border-yellow-500/30' :
+              status === 'denied' || status === 'error' ? 'bg-red-500/20 border-b border-red-500/30' :
+                'bg-slate-800/50 border-b border-slate-700'
+          }`}>
           {status === 'tracking' && <><CheckCircle className="text-emerald-400 flex-shrink-0" size={20} /><span className="text-emerald-300 font-bold text-sm">Live Tracking Active</span><Wifi className="text-emerald-400 ml-auto" size={16} /></>}
           {status === 'connecting' && <><Loader2 className="text-yellow-400 flex-shrink-0 animate-spin" size={20} /><span className="text-yellow-300 font-bold text-sm">Acquiring GPS Signal…</span></>}
           {(status === 'denied' || status === 'error') && <><AlertCircle className="text-red-400 flex-shrink-0" size={20} /><span className="text-red-300 font-bold text-sm">{status === 'denied' ? 'Permission Denied' : 'Error'}</span><WifiOff className="text-red-400 ml-auto" size={16} /></>}
@@ -154,7 +153,7 @@ export default function MobileTrackPage() {
               <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center">
                 <MapPin className="text-slate-500" size={28} />
               </div>
-              <p className="text-slate-400 text-sm text-center">Tap the button below to start sharing your live location with RouteIQ</p>
+              <p className="text-slate-400 text-sm text-center">Tap the button below to start sharing your live location with margixindia</p>
             </div>
           )}
 
@@ -193,7 +192,7 @@ export default function MobileTrackPage() {
       {/* Footer */}
       <p className="mt-6 text-slate-600 text-xs text-center">
         Your location is only shared while this page is open.<br />
-        Powered by RouteIQ · Prudata Technologies
+        Powered by margixindia · Prudata Technologies
       </p>
     </div>
   )

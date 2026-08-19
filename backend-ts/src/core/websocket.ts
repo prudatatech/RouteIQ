@@ -1,5 +1,5 @@
 /**
- * RouteIQ — WebSocket Connection Manager
+ * margixindia — WebSocket Connection Manager
  * Ports: backend/app/core/websocket.py
  */
 import WebSocket from 'ws';

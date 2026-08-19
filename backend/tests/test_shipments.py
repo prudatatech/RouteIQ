@@ -17,7 +17,7 @@ async def client():
 async def auth_headers(client):
     # Register test user
     await client.post("/api/v1/auth/register", json={
-        "email": "test_shipments@routeiq.io",
+        "email": "test_shipments@margixindia.io",
         "full_name": "Shipment Test User",
         "password": "Secure1234!",
         "role": "manager",
@@ -25,7 +25,7 @@ async def auth_headers(client):
     
     # Login
     r = await client.post("/api/v1/auth/login", json={
-        "email": "test_shipments@routeiq.io",
+        "email": "test_shipments@margixindia.io",
         "password": "Secure1234!",
     })
     token = r.json()["access_token"]

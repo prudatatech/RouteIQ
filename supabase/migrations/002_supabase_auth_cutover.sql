@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
--- RouteIQ — Supabase Auth Cutover Migration
+-- margixindia — Supabase Auth Cutover Migration
 -- Run in Supabase SQL Editor (Dashboard → SQL → New Query)
 -- ═══════════════════════════════════════════════════════════
 

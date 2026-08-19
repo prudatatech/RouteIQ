@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
--- RouteIQ — Supabase Schema Sync Migration
+-- margixindia — Supabase Schema Sync Migration
 -- Run this ONCE in your Supabase SQL Editor (SQL → New Query)
 -- ═══════════════════════════════════════════════════════════
 

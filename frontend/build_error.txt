@@ -1,5 +1,5 @@
 
-> routeiq-frontend@1.0.0 build
+> margixindia-frontend@1.0.0 build
 > tsc && vite build
 
 src/components/map/LiveMap.tsx(61,11): error TS2353: Object literal may only specify known properties, and 'background' does not exist in type 'StyleSpecification'.

@@ -4,7 +4,7 @@ import asyncio
 async def login():
     # Trying the internal exposed port 8000 that FastAPI usually runs on during local dev
     url = "http://localhost:8000/api/v1/auth/login"
-    data = {"email": "superadmin@routeiq.com", "password": "Super@123"}
+    data = {"email": "superadmin@margixindia.com", "password": "Super@123"}
     async with httpx.AsyncClient() as client:
         try:
             r = await client.post(url, json=data, timeout=10.0)

@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Auth middleware
+ * margixindia — Auth middleware
  * 
  * Verifies Supabase-issued JWTs using SUPABASE_JWT_SECRET.
  * Falls back to legacy SECRET_KEY for backward compatibility
@@ -105,7 +105,7 @@ export async function decodeToken(token: string): Promise<TokenData> {
     throw new Error('Primary secret not configured properly (is placeholder)');
   } catch (err: any) {
     // Silenced: console.warn(`[Auth] Primary JWT verification failed: ${err.message}`);
-    
+
     // If SUPABASE_JWT_SECRET is set and differs from SECRET_KEY,
     // try legacy SECRET_KEY as fallback for old tokens
     if (settings.SUPABASE_JWT_SECRET && settings.SUPABASE_JWT_SECRET !== settings.SECRET_KEY) {
@@ -134,7 +134,7 @@ export async function decodeToken(token: string): Promise<TokenData> {
     } catch (decodeErr) {
       // Decode failed completely
     }
-    
+
     // Fail fast! Do not fall back to network call (supabase.auth.getUser) 
     // to avoid 10-second timeouts if Supabase Cloud is unreachable.
     throw new Error('Invalid or expired token (failed local verification and decode)');

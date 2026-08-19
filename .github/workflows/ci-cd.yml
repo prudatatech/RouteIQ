@@ -1,4 +1,4 @@
-name: RouteIQ CI/CD
+name: margixindia CI/CD
 
 on:
   push:
@@ -19,9 +19,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: routeiq
-          POSTGRES_PASSWORD: routeiq_pass
-          POSTGRES_DB: routeiq_test
+          POSTGRES_USER: margixindia
+          POSTGRES_PASSWORD: margixindia_pass
+          POSTGRES_DB: margixindia_test
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready
@@ -55,7 +55,7 @@ jobs:
       - name: Run tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+asyncpg://routeiq:routeiq_pass@localhost:5432/routeiq_test
+          DATABASE_URL: postgresql+asyncpg://margixindia:margixindia_pass@localhost:5432/margixindia_test
           REDIS_URL: redis://localhost:6379/0
           SECRET_KEY: test-secret-key-for-ci
           PYTHONPATH: .
@@ -156,16 +156,16 @@ jobs:
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
-            --cluster routeiq-prod \
-            --service routeiq-backend \
+            --cluster margixindia-prod \
+            --service margixindia-backend \
             --force-new-deployment
           aws ecs update-service \
-            --cluster routeiq-prod \
-            --service routeiq-frontend \
+            --cluster margixindia-prod \
+            --service margixindia-frontend \
             --force-new-deployment
 
       - name: Wait for deployment
         run: |
           aws ecs wait services-stable \
-            --cluster routeiq-prod \
-            --services routeiq-backend routeiq-frontend
+            --cluster margixindia-prod \
+            --services margixindia-backend margixindia-frontend

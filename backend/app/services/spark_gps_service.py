@@ -13,7 +13,7 @@ from sqlalchemy.orm import joinedload, selectinload
 import random
 from app.services.telemetry_service import TelemetryService
 
-logger = logging.getLogger("routeiq.sparkgps")
+logger = logging.getLogger("margixindia.sparkgps")
 
 class SparkGPSService:
     """
@@ -43,7 +43,7 @@ class SparkGPSService:
                 logger.info("No external data fetched from SparkGPS API.")
                 return
 
-            # 2. Get all RouteIQ vehicles to map by spark_id or plate number
+            # 2. Get all margixindia vehicles to map by spark_id or plate number
             result = await db.execute(select(Vehicle))
             internal_vehicles = result.scalars().all()
             

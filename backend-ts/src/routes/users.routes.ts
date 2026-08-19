@@ -1,5 +1,5 @@
 /**
- * RouteIQ — User Routes
+ * margixindia — User Routes
  * Ports: backend/app/api/v1/endpoints/users.py
  */
 import { Router, Request, Response } from 'express';
@@ -133,7 +133,7 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
 
     // Check if user exists in public.users
     const { data: existingUser } = await supabase.from('users').select('id').eq('id', user_id).single();
-    
+
     let updateError;
     if (!existingUser) {
       // It's a vendor that only exists in vendor_profiles. Bypass public.users entirely

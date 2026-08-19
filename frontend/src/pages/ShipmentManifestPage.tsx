@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { 
+import {
   ArrowLeft, Edit3, Save, X, Printer, Loader2
 } from 'lucide-react';
 import { shipmentsAPI } from '@/services/api';
@@ -98,8 +98,8 @@ export default function ShipmentManifestPage() {
         const isChecked = meta.specialHandling?.[fieldKey] || false;
         return (
           <label className="flex items-center gap-2 text-sm text-black cursor-pointer">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={isChecked}
               onChange={() => handleCheckboxChange(fieldKey)}
               className="w-4 h-4 rounded-none border-black focus:ring-black"
@@ -112,7 +112,7 @@ export default function ShipmentManifestPage() {
       return (
         <div className="flex flex-col gap-1 w-full">
           <label className="text-xs font-bold text-gray-600 uppercase tracking-tight">{label}</label>
-          <input 
+          <input
             type={type}
             value={value || ''}
             onChange={(e) => handleInputChange(fieldKey, e.target.value)}
@@ -121,7 +121,7 @@ export default function ShipmentManifestPage() {
         </div>
       );
     }
-    
+
     if (type === 'checkbox') {
       const isChecked = meta.specialHandling?.[fieldKey] || false;
       return (
@@ -146,34 +146,34 @@ export default function ShipmentManifestPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans print:bg-white print:p-0">
-      
+
       {/* Action Bar (Hidden in Print) */}
       <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden">
-        <button 
-          onClick={() => navigate(-1)} 
+        <button
+          onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium text-sm"
         >
           <ArrowLeft size={16} /> Back to Shipments
         </button>
 
         <div className="flex items-center gap-2">
-          <button 
+          <button
             onClick={printDocument}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
           >
             <Printer size={16} /> Print Document
           </button>
-          
+
           {isEditing ? (
             <>
-              <button 
+              <button
                 onClick={() => setIsEditing(false)}
                 className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
                 disabled={updateMutation.isPending}
               >
                 <X size={16} /> Cancel
               </button>
-              <button 
+              <button
                 onClick={handleSave}
                 className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
                 disabled={updateMutation.isPending}
@@ -183,7 +183,7 @@ export default function ShipmentManifestPage() {
               </button>
             </>
           ) : (
-            <button 
+            <button
               onClick={() => setIsEditing(true)}
               className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
             >
@@ -195,7 +195,7 @@ export default function ShipmentManifestPage() {
 
       {/* Formal Document Container */}
       <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-sm p-8 print:border-none print:shadow-none print:max-w-full">
-        
+
         {/* Document Header */}
         <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
           <div>
@@ -269,7 +269,7 @@ export default function ShipmentManifestPage() {
                 {renderField('Brand / Make', meta.brand, 'brand')}
               </div>
             </div>
-            
+
             <div className="grid grid-cols-2 md:grid-cols-4 border-b border-black">
               <div className="border-r border-black p-3">
                 {renderField('Packaging Type', meta.packagingType, 'packagingType')}
@@ -303,7 +303,7 @@ export default function ShipmentManifestPage() {
           <div className="border-b border-r border-black p-4">
             <div className="text-xs font-bold uppercase tracking-wider mb-3 border-b border-gray-300 pb-1">6. Remarks & Instructions</div>
             {isEditing ? (
-              <textarea 
+              <textarea
                 value={meta.remarks || ''}
                 onChange={(e) => handleInputChange('remarks', e.target.value)}
                 className="w-full bg-white border border-gray-300 p-2 text-sm text-black focus:outline-none focus:border-black min-h-[100px]"
@@ -335,7 +335,7 @@ export default function ShipmentManifestPage() {
         </div>
 
         <div className="mt-8 text-center text-[9px] text-gray-400 uppercase tracking-widest border-t border-black pt-2">
-          System Generated Document • RouteIQ Logistics Platform • {new Date().toISOString().split('T')[0]}
+          System Generated Document • margixindia Logistics Platform • {new Date().toISOString().split('T')[0]}
         </div>
 
       </div>

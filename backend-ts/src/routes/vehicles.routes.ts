@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Vehicle Routes
+ * margixindia — Vehicle Routes
  * Ports: backend/app/api/v1/endpoints/vehicles.py
  */
 import { Router, Request, Response } from 'express';
@@ -144,7 +144,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
         const used = (updateData.declared_load_percentage / 100) * vInfo.capacity_kg;
         const available = Math.max(0, vInfo.capacity_kg - used);
         updateData.available_capacity_kg = available;
-        
+
         // If they declared 0% load, they are fully available
         if (updateData.declared_load_percentage === 0) {
           updateData.status = 'available';
@@ -178,7 +178,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
     const { alert_type, description, latitude, longitude } = req.body;
-    
+
     // Ensure the driver is reporting for their own vehicle unless admin
     if (req.user!.role === 'driver') {
       const { data: v } = await supabase.from('vehicles').select('driver_id').eq('id', req.params.vehicle_id).single();
@@ -198,7 +198,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     }).select().single();
 
     if (error) { res.status(500).json({ detail: error.message }); return; }
-    
+
     // Turn the vehicle status to maintenance or offline?
     await supabase.from('vehicles').update({ status: 'maintenance' }).eq('id', req.params.vehicle_id);
 
@@ -212,7 +212,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
 router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
     const { opens_at, closes_at, floor_price } = req.body;
-    
+
     if (req.user!.role === 'driver') {
       const { data: v } = await supabase.from('vehicles').select('driver_id').eq('id', req.params.vehicle_id).single();
       if (v?.driver_id !== req.user!.user_id) {
@@ -228,7 +228,7 @@ router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admi
     }).select().single();
 
     if (error) { res.status(500).json({ detail: error.message }); return; }
-    
+
     // Also update vehicle bidding_window_open flag
     await supabase.from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: window.closes_at }).eq('id', req.params.vehicle_id);
 

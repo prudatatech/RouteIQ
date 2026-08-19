@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    app: routeiq
+    app: margixindia
     env: production
 
 alerting:
@@ -11,7 +11,7 @@ alerting:
         - targets: []
 
 scrape_configs:
-  - job_name: routeiq_backend
+  - job_name: margixindia_backend
     static_configs:
       - targets: ['backend:8000']
     metrics_path: /metrics

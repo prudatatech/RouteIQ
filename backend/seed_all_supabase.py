@@ -15,10 +15,10 @@ async def seed_admin():
     print("Seeding admin users...")
     async with AsyncSessionLocal() as db:
         for u_data in [
-            {"email": "superadmin@routeiq.io", "full_name": "Super Administrator", "password": "SuperAdmin1234!", "role": "superadmin"},
-            {"email": "admin@routeiq.io", "full_name": "Fleet Administrator", "password": "Admin1234!", "role": "admin"},
-            {"email": "manager@routeiq.io", "full_name": "Regional Manager", "password": "Manager1234!", "role": "manager"},
-            {"email": "driver@routeiq.io", "full_name": "Route Pilot", "password": "Driver1234!", "role": "driver"}
+            {"email": "superadmin@margixindia.io", "full_name": "Super Administrator", "password": "SuperAdmin1234!", "role": "superadmin"},
+            {"email": "admin@margixindia.io", "full_name": "Fleet Administrator", "password": "Admin1234!", "role": "admin"},
+            {"email": "manager@margixindia.io", "full_name": "Regional Manager", "password": "Manager1234!", "role": "manager"},
+            {"email": "driver@margixindia.io", "full_name": "Route Pilot", "password": "Driver1234!", "role": "driver"}
         ]:
             result = await db.execute(select(User).where(User.email == u_data["email"]))
             if not result.scalar_one_or_none():

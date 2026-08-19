@@ -4,7 +4,7 @@ import asyncio
 async def test_sim():
     # 1. Login to get token (telemetry script didn't do this)
     auth_url = "http://localhost:8000/api/v1/auth/login"
-    login_data = {"email": "superadmin@routeiq.com", "password": "Super@123"}
+    login_data = {"email": "superadmin@margixindia.com", "password": "Super@123"}
     
     async with httpx.AsyncClient() as client:
         r_auth = await client.post(auth_url, json=login_data, timeout=10.0)

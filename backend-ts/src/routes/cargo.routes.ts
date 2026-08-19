@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Cargo Collaboration Routes
+ * margixindia — Cargo Collaboration Routes
  * Ports: backend/app/api/v1/endpoints/cargo.py
  * Includes: Scenarios, Security Alerts, Backhaul, Pooling, POD, Dynamic Pricing
  */

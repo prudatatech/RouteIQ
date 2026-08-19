@@ -1,4 +1,4 @@
-# RouteIQ ML Service — Python Dependencies
+# margixindia ML Service — Python Dependencies
 # Deploy: Railway (Python service)
 # DB: Supabase (no SQLAlchemy)
 

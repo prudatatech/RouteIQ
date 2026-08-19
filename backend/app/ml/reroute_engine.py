@@ -19,7 +19,7 @@ from app.core.redis import cache_get, cache_set
 from app.ml.vrp_solver import Location, VehicleConfig, solve_vrp_ortools
 from app.models.models import Route, RouteStop
 
-logger = logging.getLogger("routeiq.reroute")
+logger = logging.getLogger("margixindia.reroute")
 
 REROUTE_DELAY_THRESHOLD_MINUTES = 8   # reroute if delay > 8 min (tightened for better ROI)
 REROUTE_COOLDOWN_SECONDS = 300          # don't reroute same vehicle for 5 min

@@ -13,7 +13,7 @@ export default function VendorLoginPage() {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
-  
+
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -44,11 +44,11 @@ export default function VendorLoginPage() {
           setIsSignUp(false)
           return
         }
-        
+
         useAuthStore.getState().setSession(data.session, 'vendor')
-        toast.success('Account created! Welcome to RouteIQ Marketplace.')
+        toast.success('Account created! Welcome to margixindia Marketplace.')
         handleSuccessfulLogin()
-        
+
       } else {
         // Sign In Flow
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -108,9 +108,9 @@ export default function VendorLoginPage() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="w-full max-w-[420px] space-y-8 relative z-10 animate-fade-in">
-        
+
         <button onClick={() => navigate('/vendor')} className="text-muted hover:text-text font-bold text-xs uppercase tracking-widest flex items-center gap-2 transition-colors">
-           <ArrowLeft size={14} /> Back to Marketplace
+          <ArrowLeft size={14} /> Back to Marketplace
         </button>
 
         {/* Branding */}
@@ -128,9 +128,9 @@ export default function VendorLoginPage() {
 
         {/* Login Card */}
         <Card className="p-2 border-border bg-surface/50 shadow-2xl backdrop-blur-3xl overflow-hidden rounded-3xl">
-          
+
           <form onSubmit={handleLogin} className="space-y-6 p-6">
-            
+
             <div className="flex bg-surface2 rounded-xl p-1 mb-6 border border-border">
               <button
                 type="button"

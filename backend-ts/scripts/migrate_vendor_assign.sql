@@ -1,4 +1,4 @@
--- RouteIQ: Vendor Assign Vehicle Migration
+-- margixindia: Vendor Assign Vehicle Migration
 -- Run this in: Supabase Dashboard > SQL Editor
 -- Date: 2026-07-24
 

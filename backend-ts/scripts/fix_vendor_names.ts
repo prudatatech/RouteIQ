@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import * as dotenv from 'dotenv'
 
-dotenv.config({ path: 'd:/routeiq-main/backend-ts/.env' })
+dotenv.config({ path: 'd:/margixindia-main/backend-ts/.env' })
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 async function updatePendingVendors() {
   console.log('Fetching users to match emails with vendor_profiles...')
-  
+
   const { data: users, error: usersErr } = await supabase.auth.admin.listUsers()
   if (usersErr) {
     console.error('Error fetching users', usersErr)

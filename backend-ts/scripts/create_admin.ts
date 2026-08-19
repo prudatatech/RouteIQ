@@ -17,7 +17,7 @@ async function createAdmin() {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      email: 'admin@routeiq.io',
+      email: 'admin@margixindia.io',
       password: 'Admin1234!',
       email_confirm: true,
       user_metadata: {
@@ -26,7 +26,7 @@ async function createAdmin() {
       }
     })
   });
-  
+
   const createText = await createRes.text();
   console.log('Status:', createRes.status);
   console.log('Response:', createText);

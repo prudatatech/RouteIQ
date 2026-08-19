@@ -1,4 +1,4 @@
-"""Test suite for RouteIQ API."""
+"""Test suite for margixindia API."""
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -31,17 +31,17 @@ async def test_health(client):
 async def test_register_and_login(client):
     # Register
     r = await client.post("/api/v1/auth/register", json={
-        "email": "test@routeiq.io",
+        "email": "test@margixindia.io",
         "full_name": "Test User",
         "password": "Secure1234!",
         "role": "manager",
     })
     assert r.status_code == 201
-    assert r.json()["email"] == "test@routeiq.io"
+    assert r.json()["email"] == "test@margixindia.io"
 
     # Login
     r = await client.post("/api/v1/auth/login", json={
-        "email": "test@routeiq.io",
+        "email": "test@margixindia.io",
         "password": "Secure1234!",
     })
     assert r.status_code == 200

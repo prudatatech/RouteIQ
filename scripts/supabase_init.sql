@@ -1,5 +1,5 @@
 -- ==============================================================================
--- RouteIQ Supabase Initialization Script
+-- margixindia Supabase Initialization Script
 -- ==============================================================================
 
 -- Enable required extensions

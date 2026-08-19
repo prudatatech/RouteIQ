@@ -430,7 +430,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
               // rough distance calculation for speed (meters per 5 sec)
               const from = point([prev.lng, prev.lat]);
               const to = point([data.vehicle.lng, data.vehicle.lat]);
-              const distanceKm = turfLength(lineString([from.geometry.coordinates, to.geometry.coordinates]), {units: 'kilometers'});
+              const distanceKm = turfLength(lineString([from.geometry.coordinates, to.geometry.coordinates]), { units: 'kilometers' });
               // distanceKm / 5 seconds = (distanceKm * 1000) meters / 5 sec = m/s
               calculatedSpeed = (distanceKm * 1000) / 5;
             } else if (!prev?.lat || (prev.lat === data.vehicle.lat && prev.lng === data.vehicle.lng)) {
@@ -449,7 +449,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
     }, 5000)
 
     return () => {
-            if (pollRef.current) clearInterval(pollRef.current)
+      if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [initialVehicle?.id, trackingId])
 
@@ -511,17 +511,17 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       if (trackingId) {
         // Fetch Route Geometry via Mapbox
         fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${lng},${lat};${dLng},${dLat}?overview=full&geometries=geojson&access_token=${MAPBOX_TOKEN}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.routes?.[0]) {
-            const c = data.routes[0].geometry.coordinates;
-            setFullRouteCoords(c);
-            setActiveRouteCoords(c);
-            const calcEta = formatEta(data.routes[0].duration / 60);
-            setEta(calcEta);
-            if (onEtaUpdate) onEtaUpdate(calcEta);
-          }
-        }).catch(console.error)
+          .then(r => r.json())
+          .then(data => {
+            if (data.routes?.[0]) {
+              const c = data.routes[0].geometry.coordinates;
+              setFullRouteCoords(c);
+              setActiveRouteCoords(c);
+              const calcEta = formatEta(data.routes[0].duration / 60);
+              setEta(calcEta);
+              if (onEtaUpdate) onEtaUpdate(calcEta);
+            }
+          }).catch(console.error)
       }
     }
   }, [liveVehicle?.lat, liveVehicle?.lng, destination?.lat, destination?.lng, onEtaUpdate, trackingId])
@@ -765,7 +765,7 @@ export default function CustomerTrackingPage() {
           <Link to="/" style={S.logo}>
             <div style={S.logoBox}>RI</div>
             <div>
-              <div style={S.logoText}>ROUTEIQ</div>
+              <div style={S.logoText}>margixindia</div>
               <div style={S.logoSub}>by Prudata </div>
             </div>
           </Link>

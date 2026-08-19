@@ -14,7 +14,7 @@ async def seed_admin():
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         # Check if admin exists
-        result = await db.execute(select(User).where(User.email == "admin@routeiq.io"))
+        result = await db.execute(select(User).where(User.email == "admin@margixindia.io"))
         existing = result.scalar_one_or_none()
         
         if existing:
@@ -25,7 +25,7 @@ async def seed_admin():
         users = [
             User(
                 id=uuid.uuid4(),
-                email="superadmin@routeiq.io",
+                email="superadmin@margixindia.io",
                 full_name="Super Administrator",
                 hashed_password=hash_password("SuperAdmin1234!"),
                 role="superadmin",
@@ -33,7 +33,7 @@ async def seed_admin():
             ),
             User(
                 id=uuid.uuid4(),
-                email="admin@routeiq.io",
+                email="admin@margixindia.io",
                 full_name="Fleet Administrator",
                 hashed_password=hash_password("Admin1234!"),
                 role="admin",
@@ -41,7 +41,7 @@ async def seed_admin():
             ),
             User(
                 id=uuid.uuid4(),
-                email="manager@routeiq.io",
+                email="manager@margixindia.io",
                 full_name="Regional Manager",
                 hashed_password=hash_password("Manager1234!"),
                 role="manager",
@@ -49,7 +49,7 @@ async def seed_admin():
             ),
             User(
                 id=uuid.uuid4(),
-                email="driver@routeiq.io",
+                email="driver@margixindia.io",
                 full_name="Route Pilot",
                 hashed_password=hash_password("Driver1234!"),
                 role="driver",

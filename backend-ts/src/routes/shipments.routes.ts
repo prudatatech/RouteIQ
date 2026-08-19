@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Shipment Routes
+ * margixindia — Shipment Routes
  * Ports: backend/app/api/v1/endpoints/shipments.py
  */
 import { Router, Request, Response } from 'express';
@@ -46,7 +46,7 @@ router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Respons
       res.status(404).json({ detail: 'Shipment with this tracking ID not found' });
       return;
     }
-    
+
     const user = (req as any).user;
     const isAdmin = ['admin', 'superadmin'].includes(user.role);
     if (!isAdmin && user.user_id !== info.vendor_id) {
@@ -67,41 +67,41 @@ router.get('/track/:tracking_id/route', requireAuth, async (req: Request, res: R
     const lng = req.query.lng as string;
     const dLat = req.query.dLat as string;
     const dLng = req.query.dLng as string;
-    
+
     if (!lat || !lng || !dLat || !dLng) {
       res.status(400).json({ detail: 'Missing coordinates' });
       return;
     }
-    
+
     // Fetch directly from Google Maps API to get both polyline and duration
     const { settings } = await import('../core/config');
     const axios = (await import('axios')).default;
-    
+
     if (!settings.GOOGLE_MAPS_API_KEY) {
       res.status(500).json({ detail: 'Google Maps API key not configured' });
       return;
     }
-    
+
     const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${lat},${lng}&destination=${dLat},${dLng}&key=${settings.GOOGLE_MAPS_API_KEY}`;
     const response = await axios.get(url);
-    
+
     if (response.data.status !== 'OK' || !response.data.routes?.[0]) {
       res.status(404).json({ detail: 'Route not found' });
       return;
     }
-    
+
     const route = response.data.routes[0];
     const polyline = route.overview_polyline.points;
     let durationSeconds = 0;
-    
+
     if (route.legs && route.legs.length > 0) {
       durationSeconds = route.legs.reduce((acc: number, leg: any) => acc + (leg.duration?.value || 0), 0);
     }
-    
+
     const polylineModule = await import('@mapbox/polyline');
     const decoded = polylineModule.default.decode(polyline);
     const geojsonCoords = decoded.map(coord => [coord[1], coord[0]]);
-    
+
     res.json({ coordinates: geojsonCoords, raw_polyline: polyline, duration_seconds: durationSeconds });
   } catch (e: any) {
     res.status(500).json({ detail: e.message });

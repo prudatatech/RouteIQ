@@ -1,5 +1,5 @@
 const { Client } = require('pg');
-const c = new Client('postgres://postgres:postgres@localhost:5432/routeiq');
+const c = new Client('postgres://postgres:postgres@localhost:5432/margixindia');
 c.connect().then(() => {
   return c.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'cargo_manifest';");
 }).then(r => {

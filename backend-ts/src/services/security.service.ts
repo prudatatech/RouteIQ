@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Security Service (Hash Chain)
+ * margixindia — Security Service (Hash Chain)
  * Ports: backend/app/services/security_service.py
  */
 import crypto from 'crypto';

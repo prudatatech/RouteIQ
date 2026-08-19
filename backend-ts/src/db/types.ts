@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Database types
+ * margixindia — Database types
  * TypeScript interfaces for all 15+ Supabase tables.
  * Ports: backend/app/models/models.py (SQLAlchemy models)
  */

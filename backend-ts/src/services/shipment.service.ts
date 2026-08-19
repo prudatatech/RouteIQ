@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Shipment Service
+ * margixindia — Shipment Service
  * Ports: backend/app/services/shipment_service.py
  */
 import { v4 as uuidv4 } from 'uuid';
@@ -13,10 +13,10 @@ const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 1.3).toString();
 };
 
@@ -24,16 +24,16 @@ const getETA = (distance: string, createdAt: string): string => {
   if (distance === "Pending" || !createdAt) return "Pending Routing...";
   const dist = parseInt(distance);
   if (isNaN(dist)) return "Pending Routing...";
-  
+
   // Assume average speed of 40 km/h + 2 hours loading time
   const travelHours = (dist / 40) + 2;
-  
+
   const date = new Date(createdAt);
   date.setTime(date.getTime() + travelHours * 60 * 60 * 1000);
-  
-  return date.toLocaleString('en-US', { 
-    month: 'short', 
-    day: 'numeric', 
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
     year: 'numeric'
   });
 };
@@ -277,7 +277,7 @@ export class ShipmentService {
             status: 'pending'
           });
         }
-        
+
         // Trigger background dynamic route matching for vendors
         if (shipmentIn.origin_lat && shipmentIn.origin_lng && shipmentIn.dest_lat && shipmentIn.dest_lng) {
           // Fire and forget, do not await to block the request
@@ -292,7 +292,7 @@ export class ShipmentService {
             ).catch(console.error);
           });
         }
-        
+
         // Open Superadmin Bidding Window if requested
         if (shipmentIn.open_bidding && shipmentIn.vehicle_id) {
           const { data: vehicle } = await supabase.from('vehicles').select('capacity_kg, available_capacity_kg').eq('id', shipmentIn.vehicle_id).single();
@@ -377,7 +377,7 @@ export class ShipmentService {
       sequence: 1,
       status: 'pending'
     });
-    
+
     if (stopErr) throw new Error(`Failed to create route stop: ${stopErr.message}`);
 
     // Optionally trigger vendor match
@@ -417,7 +417,7 @@ export class ShipmentService {
         .select('*')
         .eq('id', shipmentId)
         .maybeSingle();
-        
+
       if (!vendorError && vendorData) {
         let vMeta: any = vendorData.metadata || {};
         if (Object.keys(vMeta).length === 0) {
@@ -455,9 +455,9 @@ export class ShipmentService {
             remarks: vMeta.cargo?.remarks || "",
             dispatch_date: new Date(vendorData.created_at).toISOString().split('T')[0],
             reporting_date: new Date(new Date(vendorData.created_at).getTime() + 86400000).toISOString().split('T')[0],
-            eta_details: { 
-              eta_text: getETA(getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng), vendorData.created_at), 
-              distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng) 
+            eta_details: {
+              eta_text: getETA(getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng), vendorData.created_at),
+              distance_km: getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng)
             },
             is_long_haul: false
           };
@@ -486,7 +486,7 @@ export class ShipmentService {
       // Check if there is an active/recent route for this manifest's vehicle to get REAL system ETA/Distance
       let realDistKm = getDist(manifestData.pickup_lat, manifestData.pickup_lng, manifestData.drop_lat, manifestData.drop_lng);
       let realEtaText = getETA(realDistKm, manifestData.created_at);
-      
+
       if (manifestData.vehicle_id) {
         const { data: route } = await supabase
           .from('routes')
@@ -495,7 +495,7 @@ export class ShipmentService {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-          
+
         if (route && route.total_distance_km) {
           realDistKm = route.total_distance_km.toString();
           const routeStart = new Date(route.created_at || manifestData.created_at);
@@ -562,9 +562,9 @@ export class ShipmentService {
           remarks: metadata.cargo?.remarks || "",
           dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
           reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
-          eta_details: { 
-            eta_text: realEtaText, 
-            distance_km: realDistKm 
+          eta_details: {
+            eta_text: realEtaText,
+            distance_km: realDistKm
           },
           is_long_haul: false
         };
@@ -610,10 +610,10 @@ export class ShipmentService {
       const routeStops = deliveryPoint?.route_stops || [];
       const activeRouteStop = routeStops.find((rs: any) => rs.routes);
       const vehicle = activeRouteStop?.routes?.vehicles;
-      
+
       let vehicleId = activeRouteStop?.routes?.vehicle_id || null;
       let driverName = vehicle?.users?.full_name || null;
-      
+
       // Fallback to logs if route is missing (e.g. legacy data)
       if (!vehicleId && d.shipment_logs) {
         const assignedLog = d.shipment_logs.find((l: any) => l.status === 'assigned' && l.metadata_json?.vehicle_id);
@@ -667,7 +667,7 @@ export class ShipmentService {
     }));
 
     // Combine and re-sort by created_at descending
-    const combined = [...mappedShipments, ...mappedManifests].sort((a, b) => 
+    const combined = [...mappedShipments, ...mappedManifests].sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
@@ -692,7 +692,7 @@ export class ShipmentService {
         .from('vendor_shipment_requests')
         .update({ metadata })
         .eq('id', shipmentId);
-        
+
       if (vendorError) {
         // Try cargo_manifest parent request
         const { data: manifest } = await supabase
@@ -768,7 +768,7 @@ export class ShipmentService {
 
         if (route && route.vehicle_id) {
           await ShipmentService.recalculateVehicleCapacity(route.vehicle_id);
-          
+
           // Note: Automatic backhaul bidding was disabled in favor of Driver-triggered bidding.
           // The driver will now trigger `openBackhaulWindow` from the driver app.
         }
@@ -827,7 +827,7 @@ export class ShipmentService {
     // 2. Delete route stops linked to delivery points
     if (dps && dps.length > 0) {
       const dpIds = dps.map((dp: any) => dp.id);
-      
+
       // Get vehicles to recalculate capacity later
       const { data: stops } = await supabase.from('route_stops').select('route_id').in('delivery_point_id', dpIds);
       if (stops && stops.length > 0) {
@@ -887,14 +887,14 @@ export class ShipmentService {
         .from('cargo_manifest')
         .select('*, vehicles(*)')
         .textSearch('id', manifestId, { type: 'plain' }); // Wait, textSearch on uuid might not work. Better to just fetch all and filter or use like if it's string.
-        // Actually, we map the first 8 characters to CM-XXXXXXXX in listShipments.
-        // It's safer to just fetch the one matching the id. But we only have 8 chars.
-      
+      // Actually, we map the first 8 characters to CM-XXXXXXXX in listShipments.
+      // It's safer to just fetch the one matching the id. But we only have 8 chars.
+
       // Let's just fetch all active manifests and find the match
       const { data: allManifests } = await supabase
         .from('cargo_manifest')
         .select('*, vehicles(*), vendor_shipment_requests(vendor_id)');
-      
+
       const manifest = allManifests?.find((m: any) => m.id.toUpperCase().startsWith(manifestId.toUpperCase()));
       if (!manifest) return null;
 
@@ -939,17 +939,17 @@ export class ShipmentService {
         // Rough ETA calculation based on distance from vehicle to pickup or drop
         const targetLat = manifest.status === 'in_transit' ? manifest.drop_lat : manifest.pickup_lat;
         const targetLng = manifest.status === 'in_transit' ? manifest.drop_lng : manifest.pickup_lng;
-        
+
         if (v.latitude && v.longitude && targetLat && targetLng) {
           const R = 6371; // km
           const dLat = (targetLat - v.latitude) * Math.PI / 180;
           const dLon = (targetLng - v.longitude) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos(v.latitude * Math.PI / 180) * Math.cos(targetLat * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           const distanceKm = R * c;
-          
+
           // Assume 40km/h average speed
           trackingInfo.eta_minutes = Math.max(5.0, Math.round((distanceKm / 40) * 60));
         }

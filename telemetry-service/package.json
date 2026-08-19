@@ -1,7 +1,7 @@
 {
-  "name": "routeiq-telemetry-service",
+  "name": "margixindia-telemetry-service",
   "version": "1.0.0",
-  "description": "High performance Node.js telemetry ingestion service for RouteIQ",
+  "description": "High performance Node.js telemetry ingestion service for margixindia",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

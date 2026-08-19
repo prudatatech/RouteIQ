@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { 
-  LayoutDashboard, Truck, Map, BarChart3, Zap, 
+import {
+  LayoutDashboard, Truck, Map, BarChart3, Zap,
   LogOut, Shield, Brain, Package, Network, ExternalLink, Briefcase, ShieldAlert
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
@@ -20,19 +20,19 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/dashboard',     icon: LayoutDashboard, label: 'Control Tower',   roles: ['admin', 'superadmin'] },
-  { to: '/shipments',     icon: Package,         label: 'Cargo Manifest',  roles: ['admin', 'superadmin'] },
-  { to: '/fleet',         icon: Truck,           label: 'Fleet Assets',    roles: ['admin', 'superadmin'] },
-  { to: '/routes',        icon: Map,             label: 'Route Grid',      roles: ['admin', 'superadmin'] },
-  { to: '/emergency',     icon: ShieldAlert,     label: 'Emergency Alerts',roles: ['admin', 'superadmin'] },
-  { to: '/optimize',      icon: Zap,             label: 'Neural Reroute',  roles: ['admin', 'superadmin'] },
-  { to: '/capacity-bidding', icon: Briefcase,    label: 'Capacity Bidding', roles: ['admin', 'superadmin'] },
-  { to: '/vendor',        icon: Package,         label: 'Vendor Portal',   roles: ['vendor'] },
-  { to: '/analytics',     icon: BarChart3,       label: 'Intel Dashboard', roles: ['admin', 'superadmin'] },
-  { to: '/ai-hub',        icon: Brain,           label: 'Nexus AI Hub',    roles: ['admin', 'superadmin'] },
-  { to: '/cargo-network', icon: Network,         label: 'Cargo Network',   roles: ['admin', 'superadmin'] },
-  { to: '/track',         icon: Shield,          label: 'Tracking Portal', external: true },
-  { to: '/superadmin',    icon: Shield,          label: 'Superadmin',      roles: ['superadmin'] },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Control Tower', roles: ['admin', 'superadmin'] },
+  { to: '/shipments', icon: Package, label: 'Cargo Manifest', roles: ['admin', 'superadmin'] },
+  { to: '/fleet', icon: Truck, label: 'Fleet Assets', roles: ['admin', 'superadmin'] },
+  { to: '/routes', icon: Map, label: 'Route Grid', roles: ['admin', 'superadmin'] },
+  { to: '/emergency', icon: ShieldAlert, label: 'Emergency Alerts', roles: ['admin', 'superadmin'] },
+  { to: '/optimize', icon: Zap, label: 'Neural Reroute', roles: ['admin', 'superadmin'] },
+  { to: '/capacity-bidding', icon: Briefcase, label: 'Capacity Bidding', roles: ['admin', 'superadmin'] },
+  { to: '/vendor', icon: Package, label: 'Vendor Portal', roles: ['vendor'] },
+  { to: '/analytics', icon: BarChart3, label: 'Intel Dashboard', roles: ['admin', 'superadmin'] },
+  { to: '/ai-hub', icon: Brain, label: 'Nexus AI Hub', roles: ['admin', 'superadmin'] },
+  { to: '/cargo-network', icon: Network, label: 'Cargo Network', roles: ['admin', 'superadmin'] },
+  { to: '/track', icon: Shield, label: 'Tracking Portal', external: true },
+  { to: '/superadmin', icon: Shield, label: 'Superadmin', roles: ['superadmin'] },
 ]
 
 export default function AppLayout() {
@@ -87,7 +87,7 @@ export default function AppLayout() {
             </div>
             <div>
               <div className="font-display font-black text-base text-text tracking-tight uppercase leading-tight">
-                ROUTEIQ
+                margixindia
               </div>
               <div className="font-display font-bold text-[9px] text-primary uppercase tracking-[0.12em]">
                 by Prudata Logistics
@@ -147,7 +147,7 @@ export default function AppLayout() {
 
         {/* Bottom: Sign Out */}
         <div className="px-4 pb-4 pt-2 border-t border-border flex-shrink-0">
-          <button 
+          <button
             className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-bold text-muted hover:text-error hover:bg-error/10 transition-all group"
             onClick={handleLogout}
           >

@@ -20,4 +20,4 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
-logger = logging.getLogger("routeiq")
+logger = logging.getLogger("margixindia")

@@ -4,7 +4,7 @@ const client = new Client({
   password: 'password', // standard windows postgres password often is postgres or admin or password
   host: 'localhost',
   port: 5432,
-  database: 'routeiq'
+  database: 'margixindia'
 });
 
 async function run() {
@@ -13,7 +13,7 @@ async function run() {
     console.log('Connected!');
     await client.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS vehicle_type text;`);
     console.log('Done.');
-  } catch(e) {
+  } catch (e) {
     console.error(e);
   } finally {
     await client.end();

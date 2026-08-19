@@ -11,7 +11,7 @@ from app.core.websocket import manager
 from app.core.database import AsyncSessionLocal
 from app.services.intelligence_engine import IntelligenceEngine
 
-logger = logging.getLogger("routeiq.telemetry")
+logger = logging.getLogger("margixindia.telemetry")
 
 class TelemetryService:
     @staticmethod

@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Analytics Service (v2)
+ * margixindia — Analytics Service (v2)
  * Full Fleet Intelligence: Overview, Vehicle Health, Profitable Routes, AI Insights
  */
 import { supabase } from '../core/supabase';

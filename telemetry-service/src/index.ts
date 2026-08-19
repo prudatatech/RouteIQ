@@ -56,14 +56,14 @@ function generateSystemToken(): string {
     user_id: 'system',
     exp: Math.floor(Date.now() / 1000) + 300
   };
-  
-  const base64Url = (obj: any) => 
+
+  const base64Url = (obj: any) =>
     Buffer.from(JSON.stringify(obj))
       .toString('base64')
       .replace(/=/g, '')
       .replace(/\+/g, '-')
       .replace(/\//g, '_');
-      
+
   const tokenParts = `${base64Url(header)}.${base64Url(payload)}`;
   const signature = crypto
     .createHmac('sha256', secret)
@@ -72,7 +72,7 @@ function generateSystemToken(): string {
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
-    
+
   return `${tokenParts}.${signature}`;
 }
 
@@ -103,7 +103,7 @@ app.post('/api/v1/telemetry', async (req, res) => {
   const client = await pool.connect();
   try {
     const { vehicle_id, latitude, longitude, speed_kmph, heading, fuel_level_pct, timestamp } = req.body;
-    
+
     if (!vehicle_id || latitude === undefined || longitude === undefined) {
       res.status(400).json({ detail: "Missing required fields" });
       return;
@@ -220,7 +220,7 @@ app.post('/api/v1/telemetry', async (req, res) => {
 
 // Basic health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', app: 'RouteIQ Telemetry Service Node.js' });
+  res.json({ status: 'healthy', app: 'margixindia Telemetry Service Node.js' });
 });
 
 // Handle WebSocket upgrade

@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Route Management Routes
+ * margixindia — Route Management Routes
  * Ports: backend/app/api/v1/endpoints/routes.py
  */
 import { Router, Request, Response } from 'express';
@@ -50,9 +50,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     if (status === 'active' || status === 'pending') {
       manifestQuery = manifestQuery.in('status', ['scheduled', 'in_transit']);
     }
-    
+
     const { data: manifests } = await manifestQuery;
-    
+
     if (manifests) {
       for (const manifest of manifests) {
         result.push({

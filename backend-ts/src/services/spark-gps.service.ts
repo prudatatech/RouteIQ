@@ -1,5 +1,5 @@
 /**
- * RouteIQ — SparkGPS Service
+ * margixindia — SparkGPS Service
  * Ports: backend/app/services/spark_gps_service.py
  * 
  * Handles integration with the SparkGPS (Roadcast) API.
@@ -37,7 +37,7 @@ export class SparkGPSService {
         return;
       }
 
-      // 2. Get all RouteIQ vehicles to map by spark_id or plate number
+      // 2. Get all margixindia vehicles to map by spark_id or plate number
       const { data: internalVehicles } = await supabase.from('vehicles').select('*');
       if (!internalVehicles) return;
 

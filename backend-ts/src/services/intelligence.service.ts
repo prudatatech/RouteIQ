@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Intelligence Engine
+ * margixindia — Intelligence Engine
  * Ports: backend/app/services/intelligence_engine.py
  * 
  * Processes incoming telemetry to trigger:

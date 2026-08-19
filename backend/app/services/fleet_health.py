@@ -6,7 +6,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.models import Vehicle
 from app.core.websocket import manager
 
-logger = logging.getLogger("routeiq.fleet_health")
+logger = logging.getLogger("margixindia.fleet_health")
 
 class FleetHealthMonitor:
     def __init__(self, timeout_minutes: int = 2):

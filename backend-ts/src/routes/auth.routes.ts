@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Auth Routes (Post-Supabase Migration)
+ * margixindia — Auth Routes (Post-Supabase Migration)
  * 
  * Frontend login/signup now goes directly to Supabase Auth.
  * This file only handles:
@@ -126,7 +126,7 @@ router.post('/driver/send-otp', async (req: Request, res: Response) => {
       .maybeSingle();
 
     // Send SMS
-    let message = `Your RouteIQ driver login OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`;
+    let message = `Your margixindia driver login OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`;
     if (!existingUser) {
       message = `Welcome Driver! ${message}`;
     }
@@ -211,7 +211,7 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
     let authUserId: string;
 
     if (!driver) {
-      const driverEmail = `driver_${phone.replace(/\+/g, '')}@driver.routeiq.local`;
+      const driverEmail = `driver_${phone.replace(/\+/g, '')}@driver.margixindia.local`;
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email: driverEmail,
         email_confirm: true,
@@ -275,7 +275,7 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
 
     // Issue JWT signed with Supabase JWT secret (compatible with all services)
     const tokenData = { sub: driver.id, role: 'driver' };
-    
+
     // Fetch user metadata to get language preference
     let language_preference = 'en';
     const { data: authUser } = await supabase.auth.admin.getUserById(driver.id);
@@ -411,8 +411,8 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 const RATE_PER_KM = 15; // ₹15/km standard Indian trucking rate
@@ -427,17 +427,17 @@ async function buildEarnings(userId: string) {
   let driverLocationName = 'Origin Depot';
 
   if (driverLat && driverLng) {
-      try {
-          // Use Nominatim (OpenStreetMap) for server-side reverse geocoding to avoid Google Maps API referer restrictions
-          const url = `https://nominatim.openstreetmap.org/reverse?lat=${driverLat}&lon=${driverLng}&format=json`;
-          const response = await fetch(url, { headers: { 'User-Agent': 'RouteIQ-Backend' } });
-          const data: any = await response.json();
-          if (data && data.address) {
-              driverLocationName = data.address.city || data.address.town || data.address.county || data.address.state_district || data.display_name.split(',')[0];
-          }
-      } catch(e) {
-          console.error("Geocoding failed", e);
+    try {
+      // Use Nominatim (OpenStreetMap) for server-side reverse geocoding to avoid Google Maps API referer restrictions
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${driverLat}&lon=${driverLng}&format=json`;
+      const response = await fetch(url, { headers: { 'User-Agent': 'margixindia-Backend' } });
+      const data: any = await response.json();
+      if (data && data.address) {
+        driverLocationName = data.address.city || data.address.town || data.address.county || data.address.state_district || data.display_name.split(',')[0];
       }
+    } catch (e) {
+      console.error("Geocoding failed", e);
+    }
   }
 
   const vehicleIds = vehicles.map(v => v.id);
@@ -461,7 +461,7 @@ async function buildEarnings(userId: string) {
     // Determine proper pickup/drop based on type
     let pickupLoc = t.trip_type === 'cargo' ? (t.pickup_location || 'Unknown Pickup') : 'Assigned Route Start';
     let dropLoc = t.trip_type === 'cargo' ? (t.drop_location || 'Unknown Drop') : 'Multiple Delivery Stops';
-    
+
     let distKm = 0;
 
     if (t.trip_type === 'route' && t.route_stops && t.route_stops.length > 0) {
@@ -469,14 +469,14 @@ async function buildEarnings(userId: string) {
       const sortedStops = [...t.route_stops].sort((a, b) => a.sequence - b.sequence);
       const startStop = sortedStops[0]?.delivery_points;
       const endStop = sortedStops[sortedStops.length - 1]?.delivery_points;
-      
+
       if (t.total_distance_km && t.total_distance_km > 0) {
         distKm = t.total_distance_km;
       } else {
         let calculatedDist = 0;
         for (let i = 0; i < sortedStops.length - 1; i++) {
           const p1 = sortedStops[i]?.delivery_points;
-          const p2 = sortedStops[i+1]?.delivery_points;
+          const p2 = sortedStops[i + 1]?.delivery_points;
           if (p1?.latitude && p1?.longitude && p2?.latitude && p2?.longitude) {
             calculatedDist += haversineKm(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
           }
@@ -490,7 +490,7 @@ async function buildEarnings(userId: string) {
 
         // Add distance from driver location to the single stop
         if (startStop?.latitude && startStop?.longitude && driverLat && driverLng) {
-             distKm += Math.round(haversineKm(driverLat, driverLng, startStop.latitude, startStop.longitude) * 10) / 10;
+          distKm += Math.round(haversineKm(driverLat, driverLng, startStop.latitude, startStop.longitude) * 10) / 10;
         }
       } else {
         pickupLoc = startStop?.name || startStop?.address || 'Unknown Pickup';
@@ -498,9 +498,9 @@ async function buildEarnings(userId: string) {
       }
     } else if (t.trip_type === 'cargo') {
 
-      distKm = t.total_distance_km 
+      distKm = t.total_distance_km
         ? t.total_distance_km
-        : (t.pickup_lat && t.drop_lat) 
+        : (t.pickup_lat && t.drop_lat)
           ? Math.round(haversineKm(t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng) * 10) / 10
           : 0;
     }

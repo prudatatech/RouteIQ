@@ -296,6 +296,7 @@ export default function VendorShipmentRequestPage() {
       return;
     }
     
+    
     const payload = {
       pickup: pickupLocation,
       drop: dropLocation,

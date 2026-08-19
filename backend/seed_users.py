@@ -9,25 +9,25 @@ async def seed_users():
     async with AsyncSessionLocal() as session:
         users_to_seed = [
             {
-                "email": "superadmin@routeiq.com",
+                "email": "superadmin@margixindia.com",
                 "full_name": "Platform Superadmin",
                 "password": "Super@123",
                 "role": "superadmin"
             },
             {
-                "email": "admin@routeiq.com",
+                "email": "admin@margixindia.com",
                 "full_name": "Fleet Admin",
                 "password": "Admin@123",
                 "role": "admin"
             },
             {
-                "email": "manager@routeiq.com",
+                "email": "manager@margixindia.com",
                 "full_name": "Fleet Manager",
                 "password": "Manager@123",
                 "role": "manager"
             },
             {
-                "email": "driver@routeiq.com",
+                "email": "driver@margixindia.com",
                 "full_name": "John Driver",
                 "password": "Driver@123",
                 "role": "driver"

@@ -1,4 +1,4 @@
--- ROUTEIQ COMPLETE DATABASE SCHEMA
+-- margixindia COMPLETE DATABASE SCHEMA
 -- Target: PostgreSQL / Supabase
 -- Created: 2026-04-02
 

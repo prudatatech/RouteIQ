@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const path = 'd:\\routeiq-main\\frontend\\src\\pages\\ShipmentsPage.tsx';
+const path = 'd:\\margixindia-main\\frontend\\src\\pages\\ShipmentsPage.tsx';
 let content = fs.readFileSync(path, 'utf8');
 
 // 1. ShipmentsPage state

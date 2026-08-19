@@ -10,7 +10,7 @@ load_dotenv()
 
 class Settings:
     # App
-    APP_NAME: str = os.getenv("APP_NAME", "ROUTEIQ powered by PRUDATA TECHNOLOGIES")
+    APP_NAME: str = os.getenv("APP_NAME", "margixindia powered by PRUDATA TECHNOLOGIES")
     APP_ENV: str = os.getenv("APP_ENV", "development")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     SECRET_KEY: str = os.getenv("SECRET_KEY", "temporary_secret_key_for_setup")
@@ -23,7 +23,7 @@ class Settings:
 
 
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://routeiq:routeiq_pass@127.0.0.1:1234/routeiq")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://margixindia:margixindia_pass@127.0.0.1:1234/margixindia")
     DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
     DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
 

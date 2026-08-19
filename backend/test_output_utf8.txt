@@ -1,7 +1,7 @@
 ﻿============================= test session starts =============================
-platform win32 -- Python 3.10.7, pytest-8.2.0, pluggy-1.6.0 -- C:\Users\visha\OneDrive\Desktop\routeiq\routeiq\backend\venv\Scripts\python.exe
+platform win32 -- Python 3.10.7, pytest-8.2.0, pluggy-1.6.0 -- C:\Users\visha\OneDrive\Desktop\margixindia\margixindia\backend\venv\Scripts\python.exe
 cachedir: .pytest_cache
-rootdir: C:\Users\visha\OneDrive\Desktop\routeiq\routeiq\backend
+rootdir: C:\Users\visha\OneDrive\Desktop\margixindia\margixindia\backend
 plugins: anyio-4.12.1, Faker-40.5.1, asyncio-0.23.6
 asyncio: mode=strict
 collecting ... collected 2 items

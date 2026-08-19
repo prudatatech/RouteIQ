@@ -6,19 +6,19 @@ services:
   # ─────────────────────────────────────────────
   db:
     image: postgres:16-alpine
-    container_name: routeiq_db
+    container_name: margixindia_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: routeiq
-      POSTGRES_PASSWORD: routeiq_pass
-      POSTGRES_DB: routeiq
+      POSTGRES_USER: margixindia
+      POSTGRES_PASSWORD: margixindia_pass
+      POSTGRES_DB: margixindia
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U routeiq"]
+      test: ["CMD-SHELL", "pg_isready -U margixindia"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
   # ─────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: routeiq_redis
+    container_name: margixindia_redis
     restart: unless-stopped
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
@@ -48,12 +48,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: routeiq_backend
+    container_name: margixindia_backend
     restart: unless-stopped
     env_file: ./backend/.env
     environment:
       DEBUG: "true"
-      DATABASE_URL: postgresql+asyncpg://routeiq:routeiq_pass@db:5432/routeiq
+      DATABASE_URL: postgresql+asyncpg://margixindia:margixindia_pass@db:5432/margixindia
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -76,13 +76,13 @@ services:
     build:
       context: ./telemetry-service
       dockerfile: Dockerfile
-    container_name: routeiq_telemetry
+    container_name: margixindia_telemetry
     restart: unless-stopped
     ports:
       - "8003:8002"
     environment:
       PORT: 8002
-      DATABASE_URL: postgresql://routeiq:routeiq_pass@db:5432/routeiq
+      DATABASE_URL: postgresql://margixindia:margixindia_pass@db:5432/margixindia
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: 6692a21c0546dd3f374ea4cfe562bb0e41556e5188
       BACKEND_API_URL: http://backend:8000
@@ -104,12 +104,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: routeiq_celery_worker
+    container_name: margixindia_celery_worker
     restart: unless-stopped
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=4
     env_file: ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://routeiq:routeiq_pass@db:5432/routeiq
+      DATABASE_URL: postgresql+asyncpg://margixindia:margixindia_pass@db:5432/margixindia
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
     depends_on:
@@ -125,7 +125,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: routeiq_celery_beat
+    container_name: margixindia_celery_beat
     restart: unless-stopped
     command: celery -A app.core.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     env_file: ./backend/.env
@@ -141,7 +141,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: routeiq_frontend
+    container_name: margixindia_frontend
     restart: unless-stopped
     ports:
       - "3005:80"
@@ -158,7 +158,7 @@ services:
   # ─────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
-    container_name: routeiq_prometheus
+    container_name: margixindia_prometheus
     restart: unless-stopped
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -174,7 +174,7 @@ services:
   # ─────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.0.0
-    container_name: routeiq_grafana
+    container_name: margixindia_grafana
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin123

@@ -1,5 +1,5 @@
 /**
- * ROUTEIQ powered by PRUDATA TECHNOLOGIES — Fleet Intelligence Platform
+ * margixindia powered by PRUDATA TECHNOLOGIES — Fleet Intelligence Platform
  * TypeScript/Express Application Entry Point
  * 
  * Ports: backend/app/main.py

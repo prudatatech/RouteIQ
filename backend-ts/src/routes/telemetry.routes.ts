@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Telemetry Routes
+ * margixindia — Telemetry Routes
  * Ports: backend/app/api/v1/endpoints/telemetry.py
  */
 import { Router, Request, Response } from 'express';
@@ -323,7 +323,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
 
     // Support batch pings (offline queue replay)
     const pings = Array.isArray(req.body.pings) ? req.body.pings : [req.body];
-    
+
     // Debug log
     require('fs').appendFileSync('pings_debug.log', JSON.stringify({ time: new Date().toISOString(), driverId, pings }) + '\\n');
 
@@ -341,8 +341,8 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       const timestamp = ping.timestamp || new Date().toISOString();
 
       if (!lat || !lng) {
-         require('fs').appendFileSync('pings_debug.log', 'Skipped ping: no lat/lng\\n');
-         continue;
+        require('fs').appendFileSync('pings_debug.log', 'Skipped ping: no lat/lng\\n');
+        continue;
       }
 
       // Convert speed from m/s (native GPS) to km/h if needed
@@ -524,7 +524,7 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
     }
 
     const { is_break } = req.body;
-    
+
     // Find the vehicle assigned to this driver
     const { data: vehicle } = await supabase
       .from('vehicles')
@@ -552,7 +552,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       res.status(403).json({ detail: 'Only drivers can start routes' });
       return;
     }
-    
+
     const { route_id } = req.body;
     if (!route_id) {
       res.status(400).json({ detail: 'route_id is required' });
@@ -567,7 +567,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       // Update route to active
       await supabase.from('routes').update({ status: 'active' }).eq('id', route_id);
     }
-    
+
     // Also update vehicle to on_route
     const { data: route } = await supabase.from('routes').select('vehicle_id').eq('id', route_id).single();
     if (route?.vehicle_id) {
@@ -598,7 +598,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     if (stop_id.endsWith('_pickup') || stop_id.endsWith('_drop')) {
       const manifestId = stop_id.replace('_pickup', '').replace('_drop', '');
       const isPickup = stop_id.endsWith('_pickup');
-      
+
       const { data: manifest } = await supabase.from('cargo_manifest').select('*').eq('id', manifestId).single();
       if (!manifest) { res.status(404).json({ detail: 'Manifest not found' }); return; }
 
@@ -759,7 +759,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-        
+
       if (manifestErr || !manifest) {
         // No active route and no active manifest. 
         // Check for recently completed routes or delivered manifests

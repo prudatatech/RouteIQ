@@ -35,7 +35,7 @@ async function seed() {
     const drivers = [
       {
         id: uuidv4(),
-        email: 'driver1@routeiq.com',
+        email: 'driver1@margixindia.com',
         phone: '+919876543210',
         full_name: 'Rajesh Kumar',
         role: 'driver',
@@ -43,7 +43,7 @@ async function seed() {
       },
       {
         id: uuidv4(),
-        email: 'driver2@routeiq.com',
+        email: 'driver2@margixindia.com',
         phone: '+919876543211',
         full_name: 'Suresh Singh',
         role: 'driver',
@@ -57,9 +57,9 @@ async function seed() {
 
     // 3. Create Vehicles
     console.log('Inserting Vehicles...');
-    
+
     // We need to fetch the newly created drivers to get their UUIDs if they were upserted
-    const { data: dbDrivers, error: getDrErr } = await supabase.from('users').select('id, email').in('email', ['driver1@routeiq.com', 'driver2@routeiq.com']);
+    const { data: dbDrivers, error: getDrErr } = await supabase.from('users').select('id, email').in('email', ['driver1@margixindia.com', 'driver2@margixindia.com']);
     if (getDrErr) throw getDrErr;
 
     const getDriverId = (email: string) => dbDrivers?.find(d => d.email === email)?.id;
@@ -78,7 +78,7 @@ async function seed() {
         current_fuel_liters: 180,
         latitude: 28.6139,
         longitude: 77.2090,
-        driver_id: getDriverId('driver1@routeiq.com'),
+        driver_id: getDriverId('driver1@margixindia.com'),
       },
       {
         id: uuidv4(),
@@ -93,7 +93,7 @@ async function seed() {
         current_fuel_liters: 70,
         latitude: 19.0760,
         longitude: 72.8777,
-        driver_id: getDriverId('driver2@routeiq.com'),
+        driver_id: getDriverId('driver2@margixindia.com'),
       },
       {
         id: uuidv4(),

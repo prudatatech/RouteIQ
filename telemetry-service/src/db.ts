@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let connectionString = process.env.DATABASE_URL || 'postgresql://routeiq:routeiq_pass@127.0.0.1:5433/routeiq';
+let connectionString = process.env.DATABASE_URL || 'postgresql://margixindia:margixindia_pass@127.0.0.1:5433/margixindia';
 
 // Clean up +asyncpg python specific dialect if present
 if (connectionString.includes('+asyncpg')) {

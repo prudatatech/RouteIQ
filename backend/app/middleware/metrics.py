@@ -5,12 +5,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 REQUEST_COUNT = Counter(
-    "routeiq_http_requests_total",
+    "margixindia_http_requests_total",
     "Total HTTP requests",
     ["method", "endpoint", "status_code"],
 )
 REQUEST_LATENCY = Histogram(
-    "routeiq_http_request_duration_seconds",
+    "margixindia_http_request_duration_seconds",
     "HTTP request duration",
     ["method", "endpoint"],
     buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],

@@ -1,4 +1,4 @@
-# Agent Rules for RouteIQ Workspace
+# Agent Rules for margixindia Workspace
 
 ## Vite Dev Server / Service Worker Conflicts
 If the user reports 404 errors for `main.jsx/tsx`, or manifest syntax errors on a Vite localhost server (e.g., `localhost:5173`), immediately diagnose it as a stale Service Worker conflict from a previous project on the same port.

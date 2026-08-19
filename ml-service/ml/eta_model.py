@@ -14,7 +14,7 @@ from typing import Optional
 
 import numpy as np
 
-logger = logging.getLogger("routeiq.eta")
+logger = logging.getLogger("margixindia.eta")
 
 MODEL_PATH = Path(__file__).parent / "eta_model.pkl"
 

@@ -1,5 +1,5 @@
 /**
- * RouteIQ — Configuration loader
+ * margixindia — Configuration loader
  * Ports: backend/app/core/config.py
  */
 import dotenv from 'dotenv';
@@ -27,7 +27,7 @@ function envBool(key: string, fallback: boolean = false): boolean {
 
 export const settings = {
   // App
-  APP_NAME: env('APP_NAME', 'ROUTEIQ powered by PRUDATA TECHNOLOGIES'),
+  APP_NAME: env('APP_NAME', 'margixindia powered by PRUDATA TECHNOLOGIES'),
   APP_ENV: env('APP_ENV', 'development'),
   DEBUG: envBool('DEBUG', false),
   PORT: envInt('PORT', 8000),

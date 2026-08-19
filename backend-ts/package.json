@@ -1,7 +1,7 @@
 {
-  "name": "routeiq-backend",
+  "name": "margixindia-backend",
   "version": "1.0.0",
-  "description": "RouteIQ Fleet Intelligence Platform — TypeScript Backend",
+  "description": "margixindia Fleet Intelligence Platform — TypeScript Backend",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
