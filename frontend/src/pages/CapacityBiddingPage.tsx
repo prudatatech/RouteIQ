@@ -6,7 +6,7 @@ export default function CapacityBiddingPage() {
   const [windows, setWindows] = useState<any[]>([])
   const [bids, setBids] = useState<any[]>([])
   const [confirmations, setConfirmations] = useState<any[]>([])
-  
+
   useEffect(() => {
     // 1. Initial fetches
     fetchData()
@@ -15,11 +15,11 @@ export default function CapacityBiddingPage() {
     const subW = supabase.channel('cap_windows')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_windows' }, fetchData)
       .subscribe()
-      
+
     const subB = supabase.channel('cap_bids')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData)
       .subscribe()
-      
+
     const subC = supabase.channel('cap_confs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_confirmations' }, fetchData)
       .subscribe()
@@ -42,7 +42,7 @@ export default function CapacityBiddingPage() {
       supabase.from('capacity_bids').select('*, vendor_profiles(company_name)'),
       supabase.from('driver_confirmations').select('*, route_stops(id), vehicles(plate_number)')
     ])
-    
+
     if (resW.data) setWindows(resW.data)
     if (resB.data) setBids(resB.data)
     if (resC.data) setConfirmations(resC.data)
@@ -95,10 +95,10 @@ export default function CapacityBiddingPage() {
           </div>
           <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
             {windows.length === 0 && <div className="text-muted text-sm text-center py-10">No windows found.</div>}
-            
+
             {windows.map(w => {
               const windowBids = bids.filter(b => b.window_id === w.id)
-              const highestCompliant = windowBids.filter(b => b.eway_bill_ref).sort((a,b) => b.bid_amount - a.bid_amount)[0]
+              const highestCompliant = windowBids.filter(b => b.eway_bill_ref).sort((a, b) => b.bid_amount - a.bid_amount)[0]
 
               return (
                 <div key={w.id} className="bg-bg rounded-xl border border-border p-4 space-y-4">
@@ -107,16 +107,16 @@ export default function CapacityBiddingPage() {
                       <div className="font-black text-lg text-text uppercase flex items-center gap-2">
                         {w.vehicles?.plate_number || 'Unknown Vehicle'}
                         {w.trigger_type === 'mid_route' ? (
-                           <span className="bg-[#F26122]/10 text-[#F26122] px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Mid-Route</span>
+                          <span className="bg-[#F26122]/10 text-[#F26122] px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Mid-Route</span>
                         ) : (
-                           <span className="bg-[#009688]/10 text-[#009688] px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Return Trip</span>
+                          <span className="bg-[#009688]/10 text-[#009688] px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Return Trip</span>
                         )}
                       </div>
-                      <div className="text-xs text-muted font-mono mt-1">ID: {w.id.slice(0,8)}...</div>
+                      <div className="text-xs text-muted font-mono mt-1">ID: {w.id.slice(0, 8)}...</div>
                     </div>
                     {getStatusBadge(w)}
                   </div>
-                  
+
                   <div className="flex gap-4 text-sm text-muted">
                     <div><strong className="text-text">Floor:</strong> ₹{w.floor_price}</div>
                     <div><strong className="text-text">Bids:</strong> {windowBids.length}</div>
@@ -137,7 +137,7 @@ export default function CapacityBiddingPage() {
                             <div className="flex items-center gap-4">
                               <div className="font-mono text-sm font-bold">₹{b.bid_amount}</div>
                               {!w.winning_bid_id && (
-                                <button 
+                                <button
                                   onClick={() => handleApproveBid(b.id)}
                                   className="bg-primary hover:bg-primary-dark text-white text-xs px-3 py-1 rounded shadow-sm font-bold transition-colors"
                                 >
@@ -150,10 +150,10 @@ export default function CapacityBiddingPage() {
                       </div>
                     </div>
                   )}
-                  
+
                   {w.fallback_used && (
                     <div className="mt-2 text-xs text-orange-500 bg-orange-500/10 p-2 rounded">
-                      Fallback shipment {w.fallback_shipment_id?.slice(0,8)} assigned.
+                      Fallback shipment {w.fallback_shipment_id?.slice(0, 8)} assigned.
                     </div>
                   )}
                 </div>
@@ -170,7 +170,7 @@ export default function CapacityBiddingPage() {
           </div>
           <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
             {confirmations.length === 0 && <div className="text-muted text-sm text-center py-10">No confirmations active.</div>}
-            
+
             {confirmations.map(c => (
               <div key={c.id} className="bg-bg rounded-xl border border-border p-4 flex items-center justify-between">
                 <div>
@@ -178,40 +178,40 @@ export default function CapacityBiddingPage() {
                   <div className="text-xs text-muted mt-1">Stop: {c.route_stops?.id ? c.route_stops.id.substring(0, 8) : 'Inserted Stop'}</div>
                   <div className="text-xs text-muted mt-1 font-mono">Sent: {new Date(c.prompted_at).toLocaleTimeString()}</div>
                 </div>
-                
+
                 <div className="text-right">
                   {!c.action && c.delivered_at && (
-                     <div className="flex items-center gap-1 text-xs font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded">
-                       <Clock size={12}/> 2-Min Timer Active
-                     </div>
-                  )}
-                  {!c.action && !c.delivered_at && (
-                     <div className="flex items-center gap-1 text-xs font-bold text-yellow-500 bg-yellow-500/10 px-2 py-1 rounded">
-                       <Clock size={12}/> Awaiting Delivery
-                     </div>
-                  )}
-                  
-                  {c.action === 'confirmed' && (
-                    <div className="flex items-center gap-1 text-xs font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded">
-                      <CheckCircle size={12}/> Confirmed
+                    <div className="flex items-center gap-1 text-xs font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded">
+                      <Clock size={12} /> 2-Min Timer Active
                     </div>
                   )}
-                  
+                  {!c.action && !c.delivered_at && (
+                    <div className="flex items-center gap-1 text-xs font-bold text-yellow-500 bg-yellow-500/10 px-2 py-1 rounded">
+                      <Clock size={12} /> Awaiting Delivery
+                    </div>
+                  )}
+
+                  {c.action === 'confirmed' && (
+                    <div className="flex items-center gap-1 text-xs font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded">
+                      <CheckCircle size={12} /> Confirmed
+                    </div>
+                  )}
+
                   {c.action === 'flagged' && (
                     <div className="flex items-center gap-1 text-xs font-bold text-error bg-error/10 px-2 py-1 rounded">
-                      <XCircle size={12}/> Flagged
+                      <XCircle size={12} /> Flagged
                     </div>
                   )}
 
                   {c.action === 'auto_accepted' && (
                     <div className="flex items-center gap-1 text-xs font-bold text-purple-500 bg-purple-500/10 px-2 py-1 rounded">
-                      <Clock size={12}/> Auto (Online)
+                      <Clock size={12} /> Auto (Online)
                     </div>
                   )}
 
                   {c.action === 'auto_accepted_offline' && (
                     <div className="flex items-center gap-1 text-xs font-bold text-orange-500 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/30">
-                      <AlertTriangle size={12}/> Auto (Offline)
+                      <AlertTriangle size={12} /> Auto (Offline)
                     </div>
                   )}
                 </div>

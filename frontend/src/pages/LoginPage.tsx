@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
-  
+
   const navigate = useNavigate()
 
   const handleLogin = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
@@ -22,56 +22,56 @@ export default function LoginPage() {
     const targetPass = customPass || password
 
     try {
-        // Sign In Flow
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: targetEmail,
-          password: targetPass,
-        })
+      // Sign In Flow
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
+        password: targetPass,
+      })
 
-        if (error) throw error
-        if (!data.session) throw new Error('No session returned')
+      if (error) throw error
+      if (!data.session) throw new Error('No session returned')
 
-        // Fetch role from public.users & vendor_profiles
-        const { data: user } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', data.session.user.id)
-          .maybeSingle()
+      // Fetch role from public.users & vendor_profiles
+      const { data: user } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', data.session.user.id)
+        .maybeSingle()
 
-        const { data: vProfile } = await supabase
-          .from('vendor_profiles')
-          .select('id')
-          .eq('id', data.session.user.id)
-          .maybeSingle()
+      const { data: vProfile } = await supabase
+        .from('vendor_profiles')
+        .select('id')
+        .eq('id', data.session.user.id)
+        .maybeSingle()
 
-        let role = user?.role || data.session.user.user_metadata?.role;
-        if (role !== 'admin' && role !== 'superadmin') {
-          if (vProfile || data.session.user.user_metadata?.role === 'vendor') {
-            role = 'vendor';
-          }
+      let role = user?.role || data.session.user.user_metadata?.role;
+      if (role !== 'admin' && role !== 'superadmin') {
+        if (vProfile || data.session.user.user_metadata?.role === 'vendor') {
+          role = 'vendor';
         }
+      }
 
-        if (!role) {
-          throw new Error('Account pending approval or role assignment.');
-        }
+      if (!role) {
+        throw new Error('Account pending approval or role assignment.');
+      }
 
-        useAuthStore.getState().setSession(data.session, role)
+      useAuthStore.getState().setSession(data.session, role)
 
-        toast.success(`Welcome back, ${role}!`)
-        if (role === 'superadmin') {
-          navigate('/superadmin')
-        } else if (role === 'vendor') {
-          // Check if vendor profile is fully set up
-          if (!vProfile) {
-            navigate('/vendor/onboarding')
-          } else {
-            navigate('/vendor')
-          }
-        } else if (role === 'driver') {
-          navigate('/driver')
+      toast.success(`Welcome back, ${role}!`)
+      if (role === 'superadmin') {
+        navigate('/superadmin')
+      } else if (role === 'vendor') {
+        // Check if vendor profile is fully set up
+        if (!vProfile) {
+          navigate('/vendor/onboarding')
         } else {
-          navigate('/dashboard')
+          navigate('/vendor')
         }
+      } else if (role === 'driver') {
+        navigate('/driver')
+      } else {
+        navigate('/dashboard')
+      }
     } catch (e: any) {
       toast.error(e.message || 'Authentication failed')
     } finally {
@@ -92,7 +92,7 @@ export default function LoginPage() {
             <Zap size={44} className="text-bg fill-current" strokeWidth={2.5} />
           </div>
           <h1 className="font-display text-5xl font-black text-text tracking-tighter uppercase leading-none pt-4">
-            ROUTE<span className="text-primary">IQ</span>
+            MARGIX<span className="text-primary">INDIA</span>
           </h1>
           <p className="text-muted font-bold uppercase tracking-[0.12em] text-[9px]">
             by Prudata
@@ -163,7 +163,7 @@ export default function LoginPage() {
             onClick={() => navigate('/vendor')}
             className="w-full bg-surface2/50 hover:bg-surface2 border border-border text-text px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-sm transition-all hover:border-primary/50 group"
           >
-            Explore Cargo Network Without Login 
+            Explore Cargo Network Without Login
             <ArrowRight size={16} className="group-hover:translate-x-1 text-primary transition-transform" />
           </button>
         </div>

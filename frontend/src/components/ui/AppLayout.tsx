@@ -90,7 +90,7 @@ export default function AppLayout() {
                 margixindia
               </div>
               <div className="font-display font-bold text-[9px] text-primary uppercase tracking-[0.12em]">
-                by Prudata Logistics
+                by Prudata
               </div>
             </div>
           </div>
