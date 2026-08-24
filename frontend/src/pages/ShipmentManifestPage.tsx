@@ -216,7 +216,7 @@ export default function ShipmentManifestPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-t border-l border-black mb-6">
           <div className="border-b border-r border-black p-4">
             <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">1. Consignor (Origin)</div>
-            <p className="text-sm font-semibold text-black uppercase mt-2">{shipment.pickup_location?.address || 'N/A'}</p>
+            <p className="text-sm font-semibold text-black uppercase mt-2">{shipment.pickup_location?.address || shipment.origin_address || 'N/A'}</p>
             {isEditing && (
               <p className="text-[10px] text-gray-400 mt-2 italic">* Origin address is system-generated from route details.</p>
             )}
@@ -229,7 +229,7 @@ export default function ShipmentManifestPage() {
               {renderField('Email Address', meta.consigneeEmail, 'consigneeEmail')}
               <div>
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
-                <p className="text-sm font-semibold text-black uppercase">{shipment.drop_location?.address || 'N/A'}</p>
+                <p className="text-sm font-semibold text-black uppercase">{shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
               </div>
             </div>
           </div>
@@ -324,7 +324,11 @@ export default function ShipmentManifestPage() {
             <p className="text-xs font-bold uppercase text-black">Consignor Signature</p>
           </div>
           <div className="text-center">
-            <div className="border-b border-black h-12 mb-2"></div>
+            <div className="border-b border-black h-12 mb-2 flex items-end justify-center pb-1 overflow-hidden">
+              {meta.transporter_signature && (
+                <span className="font-serif italic font-bold text-lg text-blue-800 transform -rotate-2">{meta.transporter_signature}</span>
+              )}
+            </div>
             <p className="text-xs font-bold uppercase text-black">Transporter Signature</p>
           </div>
           <div className="text-center">

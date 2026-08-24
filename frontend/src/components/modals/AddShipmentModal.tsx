@@ -89,6 +89,48 @@ export default function AddShipmentModal() {
     }).sort((a, b) => a.distance_km - b.distance_km);
   }, [vehicles, formData.origin_lat, formData.origin_lng]);
 
+  const handleDriverSelection = async (id: string) => {
+    const driverVehicle = sortedVehicles.find((v: any) => v.id === id)
+    if (!driverVehicle) return;
+
+    setFormData((prev: any) => ({ ...prev, selectedVehicleId: id }))
+    
+    if (driverVehicle.latitude && driverVehicle.longitude) {
+      // Optimistic update
+      setFormData((prev: any) => ({
+        ...prev,
+        origin_name: 'Driver Current Location',
+        origin_address: `Lat: ${driverVehicle.latitude.toFixed(4)}, Lng: ${driverVehicle.longitude.toFixed(4)}`,
+        origin_lat: driverVehicle.latitude,
+        origin_lng: driverVehicle.longitude
+      }))
+      toast.success(`Selected driver ${driverVehicle.plate_number}`)
+
+      try {
+        const token = import.meta.env.VITE_MAPBOX_TOKEN
+        const geocodingBase = import.meta.env.VITE_MAPBOX_GEOCODING_URL || 'https://api.mapbox.com/geocoding/v5/mapbox.places'
+        const resp = await axios.get(
+          `${geocodingBase}/${driverVehicle.longitude},${driverVehicle.latitude}.json`,
+          {
+            params: { access_token: token, limit: 1 }
+          }
+        )
+        const place = resp.data.features?.[0]
+        if (place) {
+          setFormData((prev: any) => ({
+            ...prev,
+            origin_name: place.text || 'Assigned Driver Location',
+            origin_address: place.place_name || place.text,
+          }))
+        }
+      } catch (err) {
+        console.error('Reverse geocoding failed', err)
+      }
+    } else {
+      toast.success(`Selected driver ${driverVehicle.plate_number}`)
+    }
+  }
+
   const generateMobileLink = async () => {
     if (!formData.selectedVehicleId) { toast.error('Select a vehicle first'); return }
     setGeneratingLink(true)
@@ -184,7 +226,41 @@ export default function AddShipmentModal() {
         open_bidding: data.open_bidding,
         bidding_opens_at: data.open_bidding ? new Date().toISOString() : null,
         bidding_closes_at: data.open_bidding ? new Date(Date.now() + (data.bidding_duration_mins || 5) * 60000).toISOString() : null,
-        asking_price: data.open_bidding ? (data.asking_price ? Number(data.asking_price) : null) : null
+        asking_price: data.open_bidding ? (data.asking_price ? Number(data.asking_price) : null) : null,
+        metadata: {
+          dispatch_date: data.plan_for_later && data.scheduled_date ? data.scheduled_date : new Date().toISOString().split('T')[0],
+          productCategory: data.cargo_type === 'standard' ? 'Standard Parcel' : 
+                           data.cargo_type === 'heavy' ? 'Heavy Freight' :
+                           data.cargo_type === 'cold_chain' ? 'Cold Chain' :
+                           data.cargo_type === 'hazardous' ? 'Hazardous' : 'General Cargo',
+          noOfPackages: String(data.total_items),
+          grossWeight: `${data.total_weight_kg} KG`,
+          transporter_signature: data.selectedVehicleId ? 'Auto-Signed at Dispatch' : null,
+          eta_details: (() => {
+            if (!data.origin_lat || !data.dest_lat) return { distance_km: null, eta_text: null };
+            const toRad = (value: number) => (value * Math.PI) / 180;
+            const R = 6371;
+            const dLat = toRad(data.dest_lat - data.origin_lat);
+            const dLon = toRad(data.dest_lng - data.origin_lng);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(data.origin_lat)) * Math.cos(toRad(data.dest_lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const hrs = dist / 40;
+            const etaDate = new Date();
+            etaDate.setHours(etaDate.getHours() + hrs);
+            return {
+              distance_km: dist.toFixed(1),
+              eta_text: `${etaDate.toISOString().split('T')[0]} (Est.)`
+            };
+          })(),
+          specialHandling: {
+            fragile: data.cargo_type === 'standard',
+            hazardous: data.cargo_type === 'hazardous',
+            coldChain: data.cargo_type === 'cold_chain',
+            stackable: true,
+            highValue: data.priority === 'high' || data.priority === 'critical',
+            longHaul: false
+          }
+        }
       }
       return shipmentsAPI.create(payload)
     },
@@ -668,20 +744,7 @@ export default function AddShipmentModal() {
                     <LiveMap
                       vehicles={sortedVehicles}
                       selectedVehicleId={formData.selectedVehicleId}
-                      onVehicleSelect={(id) => {
-                        setFormData((prev: any) => ({ ...prev, selectedVehicleId: id }))
-                        const driverVehicle = sortedVehicles.find((v: any) => v.id === id)
-                        if (driverVehicle && driverVehicle.latitude && driverVehicle.longitude) {
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            origin_name: 'Driver Current Location',
-                            origin_address: `Lat: ${driverVehicle.latitude.toFixed(4)}, Lng: ${driverVehicle.longitude.toFixed(4)}`,
-                            origin_lat: driverVehicle.latitude,
-                            origin_lng: driverVehicle.longitude
-                          }))
-                        }
-                        toast.success(`Selected driver ${driverVehicle?.plate_number}`)
-                      }}
+                      onVehicleSelect={handleDriverSelection}
                     />
                   </div>
 
@@ -690,20 +753,7 @@ export default function AddShipmentModal() {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Or select manually</label>
                     <select
                       value={formData.selectedVehicleId}
-                      onChange={e => {
-                        const id = e.target.value
-                        const driverVehicle = sortedVehicles.find((v: any) => v.id === id)
-                        setFormData((prev: any) => {
-                          const updates: any = { selectedVehicleId: id }
-                          if (driverVehicle && driverVehicle.latitude && driverVehicle.longitude) {
-                            updates.origin_name = 'Driver Current Location'
-                            updates.origin_address = `Lat: ${driverVehicle.latitude.toFixed(4)}, Lng: ${driverVehicle.longitude.toFixed(4)}`
-                            updates.origin_lat = driverVehicle.latitude
-                            updates.origin_lng = driverVehicle.longitude
-                          }
-                          return { ...prev, ...updates }
-                        })
-                      }}
+                      onChange={e => handleDriverSelection(e.target.value)}
                       className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold text-slate-800 focus:ring-2 focus:ring-yellow-500/30 focus:outline-none"
                     >
                       <option value="">-- Choose vehicle --</option>
