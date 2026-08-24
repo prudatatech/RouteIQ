@@ -2,8 +2,13 @@ import axios from 'axios'
 import { supabase } from '@/services/supabase'
 
 
+let baseURL = import.meta.env.VITE_API_URL || '/api/v1';
+if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
+  baseURL = baseURL.replace(/\/$/, '') + '/api/v1';
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
+  baseURL,
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -198,11 +203,14 @@ export const analyticsAPI = {
 
 export const telemetryWS = {
   getURL: () => {
-    const apiUrl = import.meta.env.VITE_API_URL || '';
+    let apiUrl = import.meta.env.VITE_API_URL || '';
     if (apiUrl) {
+      if (!apiUrl.endsWith('/api/v1') && !apiUrl.startsWith('/api')) {
+        apiUrl = apiUrl.replace(/\/$/, '') + '/api/v1';
+      }
       const url = new URL(apiUrl);
       const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${protocol}//${url.host}/api/v1/telemetry/ws`;
+      return `${protocol}//${url.host}${url.pathname}/telemetry/ws`;
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${window.location.host}/api/v1/telemetry/ws`
