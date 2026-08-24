@@ -86,12 +86,15 @@ export default function ShipmentManifestPage() {
 
   // Smart Fallbacks
   const calcDist = () => {
-    if (!shipment?.origin_lat || !shipment?.origin_lng || !shipment?.dest_lat || !shipment?.dest_lng) return null;
+    const destLat = shipment?.delivery_point?.latitude || shipment?.drop_location?.lat || shipment?.dest_lat;
+    const destLng = shipment?.delivery_point?.longitude || shipment?.drop_location?.lng || shipment?.dest_lng;
+    
+    if (!shipment?.origin_lat || !shipment?.origin_lng || !destLat || !destLng) return null;
     const toRad = (value: number) => (value * Math.PI) / 180;
     const R = 6371;
-    const dLat = toRad(shipment.dest_lat - shipment.origin_lat);
-    const dLon = toRad(shipment.dest_lng - shipment.origin_lng);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(shipment.origin_lat)) * Math.cos(toRad(shipment.dest_lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const dLat = toRad(destLat - shipment.origin_lat);
+    const dLon = toRad(destLng - shipment.origin_lng);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(shipment.origin_lat)) * Math.cos(toRad(destLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
@@ -104,7 +107,7 @@ export default function ShipmentManifestPage() {
   })() : null;
 
   const fallbackData = {
-    consigneeName: meta.consigneeName || shipment?.dest_name || shipment?.customer?.name || null,
+    consigneeName: meta.consigneeName || shipment?.delivery_point?.name || shipment?.dest_name || shipment?.customer?.name || null,
     consigneeContact: meta.consigneeContact || shipment?.customer?.phone || null,
     consigneeEmail: meta.consigneeEmail || shipment?.customer?.email || null,
     dispatch_date: meta.dispatch_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
@@ -265,7 +268,7 @@ export default function ShipmentManifestPage() {
               {renderField('Email Address', fallbackData.consigneeEmail, 'consigneeEmail')}
               <div>
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
-                <p className="text-sm font-semibold text-black uppercase">{shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
+                <p className="text-sm font-semibold text-black uppercase">{shipment.delivery_point?.address || shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
               </div>
             </div>
           </div>
