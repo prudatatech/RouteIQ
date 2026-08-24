@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://margixindia-production-45a7.up.railway.app/api/:path*"
+      "destination": "https://routeiq-production-7fb8.up.railway.app/api/:path*"
     },
     {
       "source": "/(.*)",
