@@ -84,6 +84,42 @@ export default function ShipmentManifestPage() {
     }));
   };
 
+  // Smart Fallbacks
+  const calcDist = () => {
+    if (!shipment?.origin_lat || !shipment?.origin_lng || !shipment?.dest_lat || !shipment?.dest_lng) return null;
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(shipment.dest_lat - shipment.origin_lat);
+    const dLon = toRad(shipment.dest_lng - shipment.origin_lng);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(shipment.origin_lat)) * Math.cos(toRad(shipment.dest_lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const calculatedDist = calcDist();
+  const calculatedEta = calculatedDist ? (() => {
+    const hrs = calculatedDist / 40;
+    const d = new Date(shipment.created_at || Date.now());
+    d.setHours(d.getHours() + hrs);
+    return `${d.toISOString().split('T')[0]} (Est.)`;
+  })() : null;
+
+  const fallbackData = {
+    consigneeName: meta.consigneeName || shipment?.dest_name || shipment?.customer?.name || null,
+    consigneeContact: meta.consigneeContact || shipment?.customer?.phone || null,
+    consigneeEmail: meta.consigneeEmail || shipment?.customer?.email || null,
+    dispatch_date: meta.dispatch_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
+    reporting_date: meta.reporting_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
+    eta_text: meta.eta_details?.eta_text || calculatedEta,
+    distance_km: meta.eta_details?.distance_km || (calculatedDist ? calculatedDist.toFixed(1) : null),
+    productCategory: meta.productCategory || shipment?.parcels?.[0]?.category || 'General Cargo',
+    productName: meta.productName || (shipment?.parcels?.[0]?.is_hazardous ? 'Hazardous Materials' : 'Standard Items'),
+    brand: meta.brand || 'Generic',
+    packagingType: meta.packagingType || 'Standard Box/Pallet',
+    noOfPackages: meta.noOfPackages || String(shipment?.total_items || 1),
+    grossWeight: meta.grossWeight || (shipment?.total_weight_kg ? `${shipment.total_weight_kg} KG` : 'Unknown'),
+    declaredValue: meta.declaredValue || (shipment?.asking_price ? `₹${shipment.asking_price}` : null)
+  };
+
   const handleSave = () => {
     updateMutation.mutate(editData);
   };
@@ -224,9 +260,9 @@ export default function ShipmentManifestPage() {
           <div className="border-b border-r border-black p-4">
             <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">2. Consignee (Destination)</div>
             <div className="space-y-3 mt-3">
-              {renderField('Full Name', meta.consigneeName, 'consigneeName')}
-              {renderField('Contact Number', meta.consigneeContact, 'consigneeContact')}
-              {renderField('Email Address', meta.consigneeEmail, 'consigneeEmail')}
+              {renderField('Full Name', fallbackData.consigneeName, 'consigneeName')}
+              {renderField('Contact Number', fallbackData.consigneeContact, 'consigneeContact')}
+              {renderField('Email Address', fallbackData.consigneeEmail, 'consigneeEmail')}
               <div>
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
                 <p className="text-sm font-semibold text-black uppercase">{shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
@@ -240,16 +276,16 @@ export default function ShipmentManifestPage() {
           <div className="bg-black text-white text-xs font-bold uppercase tracking-wider p-1.5 pl-3 border border-black">3. Logistics Parameters</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-l border-b border-black">
             <div className="border-r border-black p-3">
-              {renderField('Dispatch Date', meta.dispatch_date, 'dispatch_date', 'date')}
+              {renderField('Dispatch Date', fallbackData.dispatch_date, 'dispatch_date', 'date')}
             </div>
             <div className="border-r border-black p-3">
-              {renderField('Reporting Date', meta.reporting_date, 'reporting_date', 'date')}
+              {renderField('Reporting Date', fallbackData.reporting_date, 'reporting_date', 'date')}
             </div>
             <div className="border-r border-black p-3">
-              {renderField('Estimated ETA', meta.eta_details?.eta_text, 'eta_details.eta_text')}
+              {renderField('Estimated ETA', fallbackData.eta_text, 'eta_details.eta_text')}
             </div>
             <div className="border-r border-black p-3">
-              {renderField('Distance (KM)', meta.eta_details?.distance_km, 'eta_details.distance_km')}
+              {renderField('Distance (KM)', fallbackData.distance_km, 'eta_details.distance_km')}
             </div>
           </div>
         </div>
@@ -260,28 +296,28 @@ export default function ShipmentManifestPage() {
           <div className="border-l border-black">
             <div className="grid grid-cols-1 md:grid-cols-3 border-b border-black">
               <div className="border-r border-black p-3">
-                {renderField('Product Category', meta.productCategory, 'productCategory')}
+                {renderField('Product Category', fallbackData.productCategory, 'productCategory')}
               </div>
               <div className="border-r border-black p-3">
-                {renderField('Product Name', meta.productName, 'productName')}
+                {renderField('Product Name', fallbackData.productName, 'productName')}
               </div>
               <div className="border-r border-black p-3">
-                {renderField('Brand / Make', meta.brand, 'brand')}
+                {renderField('Brand / Make', fallbackData.brand, 'brand')}
               </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 border-b border-black">
               <div className="border-r border-black p-3">
-                {renderField('Packaging Type', meta.packagingType, 'packagingType')}
+                {renderField('Packaging Type', fallbackData.packagingType, 'packagingType')}
               </div>
               <div className="border-r border-black p-3">
-                {renderField('No. of Packages', meta.noOfPackages, 'noOfPackages', 'number')}
+                {renderField('No. of Packages', fallbackData.noOfPackages, 'noOfPackages', 'number')}
               </div>
               <div className="border-r border-black p-3 bg-gray-50">
-                {renderField('Gross Weight', meta.grossWeight, 'grossWeight')}
+                {renderField('Gross Weight', fallbackData.grossWeight, 'grossWeight')}
               </div>
               <div className="border-r border-black p-3 bg-gray-50">
-                {renderField('Declared Value', meta.declaredValue, 'declaredValue')}
+                {renderField('Declared Value', fallbackData.declaredValue, 'declaredValue')}
               </div>
             </div>
           </div>
