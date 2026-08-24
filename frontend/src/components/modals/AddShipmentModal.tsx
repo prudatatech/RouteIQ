@@ -504,8 +504,7 @@ export default function AddShipmentModal() {
             </div>
 
             {/* Destination Search */}
-            {!formData.open_bidding && (
-              <div className="space-y-4">
+            <div className="space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
                     <MapPin size={12} className="text-yellow-500" /> Goal Destination
@@ -550,7 +549,6 @@ export default function AddShipmentModal() {
                   )}
                 </div>
               </div>
-            )}
           </div>
 
           {/* Cargo Payload (requested) */}
