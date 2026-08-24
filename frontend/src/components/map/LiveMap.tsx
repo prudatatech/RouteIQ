@@ -63,7 +63,14 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
   const activeRoutesRef = useRef<any[]>([])
   const lastRenderedRouteRef = useRef<string>('')
   const lastRenderedDestRef = useRef<string>('')
-  useEffect(() => { activeRoutesRef.current = activeRoutes || [] }, [activeRoutes])
+  useEffect(() => { 
+    // Ensure we don't hold onto a previous vehicle's route while React Query fetches the new one
+    if (activeRoutes && activeRoutes.length > 0 && activeRoutes[0].vehicle_id !== selectedVehicleId) {
+      activeRoutesRef.current = []
+    } else {
+      activeRoutesRef.current = activeRoutes || [] 
+    }
+  }, [activeRoutes, selectedVehicleId])
 
   const customPendingStopsRef = useRef<any[] | undefined>()
   useEffect(() => { customPendingStopsRef.current = customPendingStops }, [customPendingStops])
@@ -623,6 +630,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
   }, [openLoads])
 
   const fetchedRouteGeometryRef = useRef<number[][] | null>(null);
+  const currentFetchedVehicleRef = useRef<string | null>(null);
   const [liveETA, setLiveETA] = useState<number | null>(null);
   const [liveDistance, setLiveDistance] = useState<number | null>(null);
 
@@ -630,9 +638,18 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
     const fetchRouteGeometry = async () => {
       if (!selectedVehicleId) {
         fetchedRouteGeometryRef.current = null;
+        currentFetchedVehicleRef.current = null;
         setLiveETA(null);
         setLiveDistance(null);
         return;
+      }
+
+      // If the vehicle changed, clear the old route geometry immediately
+      if (currentFetchedVehicleRef.current !== selectedVehicleId) {
+        fetchedRouteGeometryRef.current = null;
+        setLiveETA(null);
+        setLiveDistance(null);
+        currentFetchedVehicleRef.current = selectedVehicleId;
       }
 
       let pendingStops: any[] = [];
