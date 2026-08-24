@@ -58,7 +58,7 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
     queryFn: () => routesAPI.list({ vehicle_id: selectedVehicleId }),
     enabled: !!selectedVehicleId,
     refetchInterval: 10000,
-    select: (routes: any[]) => routes.filter(r => r.status === 'active' || r.status === 'pending')
+    select: (routes: any[]) => routes.filter(r => (r.status === 'active' || r.status === 'pending') && r.vehicle_id === selectedVehicleId)
   })
   const activeRoutesRef = useRef<any[]>([])
   const lastRenderedRouteRef = useRef<string>('')
