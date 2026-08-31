@@ -53,7 +53,7 @@ export default function AppLayout() {
       })
       if (res.ok) {
         const data = await res.json()
-        setVendorBadge(data.length)
+        setVendorBadge(Array.isArray(data) ? data.length : 0)
       }
     }
     fetchBadge()

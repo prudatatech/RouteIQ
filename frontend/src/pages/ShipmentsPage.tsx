@@ -209,9 +209,9 @@ export default function ShipmentsPage() {
     return () => window.removeEventListener('shipmentCreated', handleShipmentCreated)
   }, [])
 
-  const filtered = shipments.filter((s: any) => {
+  const filtered = (Array.isArray(shipments) ? shipments : []).filter((s: any) => {
     const matchesFilter = filter === 'all' || s.status === filter
-    const matchesSearch = s.tracking_id.toLowerCase().includes(search.toLowerCase()) ||
+    const matchesSearch = (s.tracking_id || '').toLowerCase().includes(search.toLowerCase()) ||
       s.delivery_point?.name?.toLowerCase().includes(search.toLowerCase())
     return matchesFilter && matchesSearch
   })

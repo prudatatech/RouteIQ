@@ -66,7 +66,7 @@ export default function RoutesPage() {
 
   const { data: pendingStops = [] } = useQuery({
     queryKey: ['shipments', 'pending'],
-    queryFn: () => shipmentsAPI.list().then((list: any[]) => list.filter(s => (s.status === 'created' || s.status === 'pending') && !s.vehicle_id))
+    queryFn: () => shipmentsAPI.list().then((raw: any) => { const list = Array.isArray(raw) ? raw : []; return list.filter(s => (s.status === 'created' || s.status === 'pending') && !s.vehicle_id) })
   })
 
   const handleDispatch = (routeId: string) => {

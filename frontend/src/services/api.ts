@@ -92,9 +92,11 @@ api.interceptors.response.use(
 // API methods — all use the Supabase JWT via the interceptor
 // ═══════════════════════════════════════════════════════════
 
+// Safety helper: ensure API list calls always return arrays
+const ensureArray = (data: any): any[] => Array.isArray(data) ? data : []
 // Vehicles API
 export const vehiclesAPI = {
-  list: (params?: any) => api.get('/vehicles/', { params }).then(r => r.data),
+  list: (params?: any) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
@@ -156,7 +158,7 @@ export const capacityAPI = {
 }
 
 export const shipmentsAPI = {
-  list: (params?: any) => api.get('/shipments/', { params }).then(r => r.data),
+  list: (params?: any) => api.get('/shipments/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
   trackPublicly: (trackingId: string) => api.get(`/shipments/track/${trackingId}`).then(r => r.data),
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
@@ -168,7 +170,7 @@ export const shipmentsAPI = {
 }
 
 export const routesAPI = {
-  list: (params?: any) => api.get('/routes/', { params }).then(r => r.data),
+  list: (params?: any) => api.get('/routes/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/routes/${id}`).then(r => r.data),
   update: (id: string, data: any) => api.patch(`/routes/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/routes/${id}`).then(r => r.data),
