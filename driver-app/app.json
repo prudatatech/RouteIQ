@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "margixindia",
+    "slug": "routeiq",
+    "owner": "kushagratiwari",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "package": "com.margixindia.driverapp",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB7XAze_uFE14yzA9sKuMaHShvqDtEA_Tw"
+        }
+      },
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "updates": {
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/f9e3960e-8b3e-4caf-9044-6cbe07af3371"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow margixindia Driver to use your location for accurate delivery tracking and background updates.",
+          "locationAlwaysPermission": "Allow margixindia Driver to use your location for accurate delivery tracking and background updates.",
+          "locationWhenInUsePermission": "Allow margixindia Driver to use your location for accurate delivery tracking and background updates.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-task-manager",
+      [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/uber_driver_sound.mp3"]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f9e3960e-8b3e-4caf-9044-6cbe07af3371"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}
