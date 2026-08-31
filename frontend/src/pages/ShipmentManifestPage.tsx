@@ -86,8 +86,8 @@ export default function ShipmentManifestPage() {
 
   // Smart Fallbacks
   const calcDist = () => {
-    const destLat = shipment?.delivery_point?.latitude || shipment?.drop_location?.lat || shipment?.dest_lat;
-    const destLng = shipment?.delivery_point?.longitude || shipment?.drop_location?.lng || shipment?.dest_lng;
+    const destLat = shipment?.delivery_point?.latitude || shipment?.delivery_points?.latitude || shipment?.drop_location?.lat || shipment?.dest_lat;
+    const destLng = shipment?.delivery_point?.longitude || shipment?.delivery_points?.longitude || shipment?.drop_location?.lng || shipment?.dest_lng;
     
     if (!shipment?.origin_lat || !shipment?.origin_lng || !destLat || !destLng) return null;
     const toRad = (value: number) => (value * Math.PI) / 180;
@@ -107,9 +107,9 @@ export default function ShipmentManifestPage() {
   })() : null;
 
   const fallbackData = {
-    consigneeName: meta.consigneeName || shipment?.delivery_point?.name || shipment?.dest_name || shipment?.customer?.name || null,
-    consigneeContact: meta.consigneeContact || shipment?.customer?.phone || null,
-    consigneeEmail: meta.consigneeEmail || shipment?.customer?.email || null,
+    consigneeName: meta.consigneeName || shipment?.delivery_point?.name || shipment?.delivery_points?.name || shipment?.dest_name || shipment?.customer?.name || null,
+    consigneeContact: meta.consigneeContact || shipment?.delivery_point?.phone || shipment?.delivery_points?.phone || shipment?.delivery_points?.contact_number || shipment?.customer?.phone || null,
+    consigneeEmail: meta.consigneeEmail || shipment?.delivery_point?.email || shipment?.delivery_points?.email || shipment?.customer?.email || null,
     dispatch_date: meta.dispatch_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
     reporting_date: meta.reporting_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
     eta_text: meta.eta_details?.eta_text || calculatedEta,
@@ -268,7 +268,7 @@ export default function ShipmentManifestPage() {
               {renderField('Email Address', fallbackData.consigneeEmail, 'consigneeEmail')}
               <div>
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
-                <p className="text-sm font-semibold text-black uppercase">{shipment.delivery_point?.address || shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
+                <p className="text-sm font-semibold text-black uppercase">{shipment.delivery_point?.address || shipment.delivery_points?.address || shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
               </div>
             </div>
           </div>
