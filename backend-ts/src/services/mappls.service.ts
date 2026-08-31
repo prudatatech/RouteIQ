@@ -31,7 +31,7 @@ export class MapplsService {
       throw new Error(`Failed to fetch Mappls token: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     
     // Cache the token slightly shorter than its actual expiry (e.g. 5 minutes before)
     const expirySeconds = data.expires_in - 300; 

@@ -266,7 +266,7 @@ router.post('/optimize-pooling', requireAuth, async (req: Request, res: Response
       algorithm: "ortools"
     };
 
-    let mlData = null;
+    let mlData: any = null;
     try {
       const resp = await fetch(`${settings.ML_SERVICE_URL}/optimize`, {
         method: 'POST',
