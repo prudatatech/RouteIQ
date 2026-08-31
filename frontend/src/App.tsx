@@ -11,6 +11,7 @@ import DashboardPage from '@/pages/DashboardPage'
 import FleetPage from '@/pages/FleetPage'
 import RoutesPage from '@/pages/RoutesPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
+import LandingPage from '@/pages/LandingPage'
 import OptimizePage from '@/pages/OptimizePage'
 import SuperadminPage from '@/pages/SuperadminPage'
 import AIHubPage from '@/pages/AIHubPage'
@@ -21,6 +22,12 @@ import RouteDetailsPage from '@/pages/RouteDetailsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import DriverPage from '@/pages/DriverPage'
 import CustomerTrackingPage from '@/pages/CustomerTrackingPage'
+import TplNetworkPage from '@/pages/TplNetworkPage'
+import TplOnboardingPage from '@/pages/TplOnboardingPage'
+import TplTrackApplicationPage from '@/pages/TplTrackApplicationPage'
+import TplVerificationPage from '@/pages/TplVerificationPage'
+import TplActivationPage from '@/pages/TplActivationPage'
+import TplDashboardPage from '@/pages/TplDashboardPage'
 import LiveMapPage from '@/pages/LiveMapPage'
 import MobileTrackPage from '@/pages/MobileTrackPage'
 import CapacityBiddingPage from '@/pages/CapacityBiddingPage'
@@ -142,12 +149,22 @@ export default function App() {
             </PrivateRoute>
           } />
           <Route path="/vendor/login" element={<VendorLoginPage />} />
-          <Route path="/" element={
+
+          {/* 3PL Public/Partner Routes */}
+          <Route path="/3pl/onboard" element={<TplOnboardingPage />} />
+          <Route path="/3pl/onboard/track" element={<TplTrackApplicationPage />} />
+          <Route path="/3pl-portal/activate" element={<TplActivationPage />} />
+          <Route path="/vendor/login" element={<VendorLoginPage />} />
+          <Route path="/3pl-portal" element={<TplDashboardPage />} />
+
+          {/* Public Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+
+          <Route element={
             <PrivateRoute>
               <AppLayout />
             </PrivateRoute>
           }>
-            <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <DashboardPage />
@@ -201,6 +218,16 @@ export default function App() {
             <Route path="superadmin" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <SuperadminPage />
+              </PrivateRoute>
+            } />
+            <Route path="3pl-network" element={
+              <PrivateRoute allowedRoles={['superadmin']}>
+                <TplNetworkPage />
+              </PrivateRoute>
+            } />
+            <Route path="3pl-network/verify" element={
+              <PrivateRoute allowedRoles={['superadmin']}>
+                <TplVerificationPage />
               </PrivateRoute>
             } />
             <Route path="ai-hub" element={
