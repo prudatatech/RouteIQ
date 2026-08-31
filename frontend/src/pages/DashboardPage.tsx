@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useNavigate } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Truck, Clock, Fuel, TrendingUp, Zap, Filter, Activity, Map, Target } from 'lucide-react'
+import { Truck, Clock, Fuel, TrendingUp, Zap, Filter, Activity, Map, Target, AlertTriangle } from 'lucide-react'
 import { dashboardAPI, vehiclesAPI, telemetryWS } from '@/services/api'
 import { KPICard, Card, CardHeader, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -13,6 +13,7 @@ import DeliveryChart from '@/components/dashboard/DeliveryChart'
 import AlertFeed from '@/components/dashboard/AlertFeed'
 import { AIInsightCard } from '@/components/dashboard/AIInsightCard'
 import VendorRequestsAdmin from '@/components/dashboard/VendorRequestsAdmin'
+import TplEscalationSidebar from '@/components/control-tower/TplEscalationSidebar'
 import { STATUS_COLORS, CARGO_EMOJI } from '@/config/mapConfig'
 
 export default function DashboardPage() {
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<'all' | 'moving' | 'idle'>('all')
   const [liveTelemetry, setLiveTelemetry] = useState<Record<string, any>>({})
   const [alerts, setAlerts] = useState<any[]>([])
+  const [isEscalationOpen, setIsEscalationOpen] = useState(false)
 
   const { data: kpis, isLoading } = useQuery({
     queryKey: ['kpis'],
@@ -266,6 +268,22 @@ export default function DashboardPage() {
       {/* Vendor Requests — full width strip */}
       <VendorRequestsAdmin />
 
+      {/* Escalation Alerts Section */}
+      <div className="bg-red-500/5 border border-red-500/20 rounded-[32px] p-6 flex flex-col md:flex-row items-center justify-between gap-4 mt-8 mb-8">
+         <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center flex-shrink-0">
+               <AlertTriangle size={24} />
+            </div>
+            <div>
+               <h3 className="text-lg font-black text-text uppercase">Escalation Recommended</h3>
+               <p className="text-xs font-bold text-muted mt-1 uppercase tracking-wider">Order ORD-8821 (DEL-BOM) • 0 vehicles in 50km radius</p>
+            </div>
+         </div>
+         <button onClick={() => setIsEscalationOpen(true)} className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg shadow-red-500/20 flex-shrink-0">
+            Escalate to 3PL
+         </button>
+      </div>
+
       {/* Charts + Alerts */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <DeliveryChart />
@@ -293,7 +311,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-
       {/* AI Pulse Insight */}
       <AIInsightCard 
         title="Predictive Fleet Optimization"
@@ -301,6 +318,8 @@ export default function DashboardPage() {
         score={98.2}
         trend="up"
       />
+      
+      <TplEscalationSidebar isOpen={isEscalationOpen} onClose={() => setIsEscalationOpen(false)} />
     </div>
   )
 }

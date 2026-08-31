@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, StyleSheet, Linking, Alert } from 'react-native';
+import * as Updates from 'expo-updates';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import { NotificationListener } from './src/components/NotificationListener';
@@ -29,10 +30,23 @@ export default function App() {
   const [splashFinished, setSplashFinished] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    checkUpdatesAndAuth();
   }, []);
 
-  const checkAuth = async () => {
+  const checkUpdatesAndAuth = async () => {
+    try {
+      if (!__DEV__) {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+          return; // Stop execution as the app will reload
+        }
+      }
+    } catch (e) {
+      console.log('Error checking for OTA updates:', e);
+    }
+    
     await api.init();
     const loggedIn = await api.isLoggedIn();
     setIsLoggedIn(loggedIn);

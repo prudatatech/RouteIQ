@@ -342,6 +342,14 @@ export class ShipmentService {
       await ShipmentService.recalculateVehicleCapacity(shipmentIn.vehicle_id);
     }
 
+    // 6.5 Run Matching Engine (Availability Scoring & Cascade)
+    // Run asynchronously to not block the shipment creation response
+    import('./matching.service').then(({ matchingService }) => {
+      matchingService.cascadeEscalation(dbShipment.id).catch((err) => {
+        console.error('Matching Engine failed to run on new shipment:', err);
+      });
+    });
+
     // 7. Return full shipment
     const shipment = await ShipmentService.getShipment(dbShipment.id);
     if (!shipment) throw new Error('Failed to retrieve created shipment');

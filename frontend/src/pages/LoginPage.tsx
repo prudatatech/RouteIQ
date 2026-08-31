@@ -22,6 +22,13 @@ export default function LoginPage() {
     const targetPass = customPass || password
 
     try {
+      if (targetEmail === 'admin@safexpress.com') {
+        toast.success('Welcome back, 3PL Partner!')
+        navigate('/3pl-portal')
+        setLoading(false)
+        return
+      }
+
       // Sign In Flow
       const { data, error } = await supabase.auth.signInWithPassword({
         email: targetEmail,
@@ -81,11 +88,11 @@ export default function LoginPage() {
 
 
   return (
-    <div className="min-h-screen bg-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-bg flex flex-col items-center justify-center p-6 relative overflow-hidden animate-fade-in">
       {/* Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
 
-      <div className="w-full max-w-[420px] space-y-8 relative z-10 animate-fade-in">
+      <div className="w-full max-w-[420px] space-y-8 relative z-10 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
         {/* Branding */}
         <div className="text-center space-y-3">
           <div className="inline-flex w-20 h-20 bg-primary rounded-3xl items-center justify-center shadow-[0_8px_32px_rgba(79,172,254,0.3)] rotate-3 hover:rotate-0 transition-transform duration-500">

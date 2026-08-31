@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Shield, Search, User, Settings } from 'lucide-react'
-import { usersAPI, analyticsAPI } from '@/services/api'
+import { Shield, Search, User, Settings, ChevronRight } from 'lucide-react'
+import { usersAPI, analyticsAPI, tplAPI } from '@/services/api'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -13,6 +14,7 @@ import { supabase } from '@/services/supabase'
 const ROLE_OPTIONS = ['admin', 'manager', 'driver', 'superadmin', 'vendor']
 
 export default function SuperadminPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'bids' | 'requests' | 'kyc'>('users')
   const [showAddVendor, setShowAddVendor] = useState(false)
@@ -79,6 +81,12 @@ export default function SuperadminPage() {
       return res.json()
     },
     enabled: activeTab === 'requests',
+    refetchInterval: 5000
+  })
+
+  const { data: tplQueue = [] } = useQuery<any[]>({
+    queryKey: ['tpl-queue', 'pending'],
+    queryFn: () => tplAPI.queue('pending'),
     refetchInterval: 5000
   })
 
@@ -176,6 +184,20 @@ export default function SuperadminPage() {
               {isUpdatingRate ? <Spinner size={14} /> : 'Save'}
             </Button>
           </div>
+        </div>
+      </div>
+
+      {/* 3PL Verification Widget */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div onClick={() => navigate('/3pl-network?tab=verification')} className="cursor-pointer group">
+          <Card className="p-6 border-border bg-surface hover:border-yellow-500/50 transition-all">
+            <div className="text-[10px] font-black uppercase text-muted tracking-widest mb-2">3PL Verification</div>
+            <div className="text-3xl font-black text-text">{tplQueue.length} Pending</div>
+            <div className="text-xs text-muted font-medium mt-2 truncate">{tplQueue.slice(0, 3).map(t => t.company_name).join(', ') || 'No pending verifications'}</div>
+            <div className="mt-4 flex items-center gap-1 text-xs font-black uppercase tracking-widest text-yellow-500 group-hover:translate-x-1 transition-transform">
+              Review <ChevronRight size={14} />
+            </div>
+          </Card>
         </div>
       </div>
 

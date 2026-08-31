@@ -33,6 +33,7 @@ const navItems: NavItem[] = [
   { to: '/cargo-network', icon: Network, label: 'Cargo Network', roles: ['admin', 'superadmin'] },
   { to: '/track', icon: Shield, label: 'Tracking Portal', external: true },
   { to: '/superadmin', icon: Shield, label: 'Superadmin', roles: ['superadmin'] },
+  { to: '/3pl-network', icon: Building2, label: '3PL Network', roles: ['superadmin'] },
 ]
 
 export default function AppLayout() {
@@ -40,6 +41,7 @@ export default function AppLayout() {
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
   const [vendorBadge, setVendorBadge] = useState(0)
+  const [tplBadge, setTplBadge] = useState(0)
 
   useEffect(() => {
     if (!['admin', 'superadmin'].includes(role || '')) return
@@ -55,11 +57,27 @@ export default function AppLayout() {
       }
     }
     fetchBadge()
+    
+    const fetchTplBadge = async () => {
+      const { data } = await supabase.from('tpl_partners').select('id').eq('status', 'pending');
+      setTplBadge(data?.length || 0);
+    }
+    fetchTplBadge()
+
     // Realtime subscription for new vendor requests
     const sub = supabase.channel('layout_vendor_badge')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, fetchBadge)
       .subscribe()
-    return () => { supabase.removeChannel(sub) }
+      
+    // Realtime subscription for 3PL onboarding
+    const sub2 = supabase.channel('layout_tpl_badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tpl_partners' }, fetchTplBadge)
+      .subscribe()
+
+    return () => { 
+      supabase.removeChannel(sub) 
+      supabase.removeChannel(sub2)
+    }
   }, [role])
 
   const handleLogout = async () => {
@@ -102,7 +120,8 @@ export default function AppLayout() {
             .filter(item => !item.roles || item.roles.includes(role || ''))
             .map(({ to, icon: Icon, label, external }) => {
               // Compute badge for this nav item
-              const itemBadge = (to === '/dashboard' && vendorBadge > 0) ? vendorBadge : undefined
+              const itemBadge = (to === '/dashboard' && vendorBadge > 0) ? vendorBadge : 
+                                (to === '/3pl-network' && tplBadge > 0) ? tplBadge : undefined
               if (external) {
                 return (
                   <button
