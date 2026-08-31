@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Building2, CheckCircle2, ChevronRight, UploadCloud, Plus, AlertCircle, Trash2, ShieldCheck, ArrowLeft, Loader2, Eye, X
 } from 'lucide-react'
+import { tplAPI } from '@/services/api'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -141,8 +142,7 @@ export default function TplOnboardingPage() {
   useEffect(() => {
     if (!editId || !editPan) return;
     
-    import('@/services/api').then(({ tplAPI }) => {
-      tplAPI.getPartner(editId).then(data => {
+    tplAPI.getPartner(editId).then(data => {
         if (data.pan_number === editPan.toUpperCase()) {
           setCompanyName(data.company_name || '')
           setPan(data.pan_number || '')
@@ -171,7 +171,6 @@ export default function TplOnboardingPage() {
       }).finally(() => {
         setIsLoadingExisting(false)
       })
-    })
   }, [editId, editPan, navigate])
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, docName: string) => {
@@ -543,8 +542,8 @@ export default function TplOnboardingPage() {
                       };
                       
                       const promise = editId 
-                        ? import('@/services/api').then(({ tplAPI }) => tplAPI.updateApplication(editId, payload))
-                        : import('@/services/api').then(({ tplAPI }) => tplAPI.onboard(payload));
+                        ? tplAPI.updateApplication(editId, payload)
+                        : tplAPI.onboard(payload);
 
                       const data = await toast.promise(promise, {
                           loading: editId ? 'Updating application...' : 'Submitting application...',
