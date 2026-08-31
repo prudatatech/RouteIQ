@@ -83,13 +83,14 @@ export default function TplNetworkPage() {
     }
   }, [searchParams])
 
+
   const { data: dbPartners = [], isLoading } = useQuery<any[]>({
     queryKey: ['tpl-queue', 'all'],
-    queryFn: () => tplAPI.queue('all'),
+    queryFn: () => tplAPI.queue('all').then((d: any) => Array.isArray(d) ? d : []),
     refetchInterval: 5000
   })
 
-  const mergedPartners = dbPartners.map(p => ({
+  const mergedPartners = (Array.isArray(dbPartners) ? dbPartners : []).map(p => ({
     id: p.id,
     name: p.company_name,
     gst: p.gstin,

@@ -86,7 +86,7 @@ export default function SuperadminPage() {
 
   const { data: tplQueue = [] } = useQuery<any[]>({
     queryKey: ['tpl-queue', 'pending'],
-    queryFn: () => tplAPI.queue('pending'),
+    queryFn: () => tplAPI.queue('pending').then((d: any) => Array.isArray(d) ? d : []),
     refetchInterval: 5000
   })
 

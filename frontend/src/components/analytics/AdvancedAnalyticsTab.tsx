@@ -149,7 +149,7 @@ function DriverAnalyticsView() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [[sortKey, sortDir], setSort] = useState<[string, "asc" | "desc"]>(["completed_routes", "desc"]);
 
-  const { data: raw = [] } = useQuery({ queryKey: ["driver-performance"], queryFn: () => analyticsAPI.driverPerformance(), refetchInterval: 30_000 });
+  const { data: raw = [] } = useQuery({ queryKey: ["driver-performance"], queryFn: () => analyticsAPI.driverPerformance().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: 30_000 });
   const mult = DATE_RANGES.find(d => d.id === dateRange)?.mult || 1;
 
   const drivers = useMemo(() =>
@@ -335,7 +335,7 @@ function VendorAnalyticsView() {
   const [search, setSearch] = useState("");
   const [[sortKey, sortDir], setSort] = useState<[string, "asc" | "desc"]>(["deliveries", "desc"]);
 
-  const { data: raw = [] } = useQuery({ queryKey: ["vendor-performance"], queryFn: () => analyticsAPI.vendorPerformance(), refetchInterval: 30_000 });
+  const { data: raw = [] } = useQuery({ queryKey: ["vendor-performance"], queryFn: () => analyticsAPI.vendorPerformance().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: 30_000 });
   const mult = DATE_RANGES.find(d => d.id === dateRange)?.mult || 1;
 
   const vendors = useMemo(() =>

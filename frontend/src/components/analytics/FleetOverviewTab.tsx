@@ -328,19 +328,19 @@ export default function FleetOverviewTab() {
     queryKey: ['fleet-overview'], queryFn: () => analyticsAPI.fleetOverview(), refetchInterval: REFETCH,
   })
   const { data: vehicleHealth = [], isLoading: vhLoading } = useQuery({
-    queryKey: ['vehicle-health'], queryFn: () => analyticsAPI.vehicleHealth(), refetchInterval: REFETCH,
+    queryKey: ['vehicle-health'], queryFn: () => analyticsAPI.vehicleHealth().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: REFETCH,
   })
   const { data: profRoutes = [], isLoading: prLoading } = useQuery({
-    queryKey: ['profitable-routes'], queryFn: () => analyticsAPI.profitableRoutes(), refetchInterval: REFETCH,
+    queryKey: ['profitable-routes'], queryFn: () => analyticsAPI.profitableRoutes().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: REFETCH,
   })
   const { data: insights = [], isLoading: insLoading } = useQuery({
-    queryKey: ['fleet-insights'], queryFn: () => analyticsAPI.insights(), refetchInterval: REFETCH,
+    queryKey: ['fleet-insights'], queryFn: () => analyticsAPI.insights().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: REFETCH,
   })
   const { data: drivers = [], isLoading: drvLoading } = useQuery({
-    queryKey: ['driver-performance'], queryFn: () => analyticsAPI.driverPerformance(), refetchInterval: REFETCH,
+    queryKey: ['driver-performance'], queryFn: () => analyticsAPI.driverPerformance().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: REFETCH,
   })
   const { data: financials = [], isLoading: finLoading } = useQuery({
-    queryKey: ['financials'], queryFn: () => analyticsAPI.financials(), refetchInterval: REFETCH,
+    queryKey: ['financials'], queryFn: () => analyticsAPI.financials().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: REFETCH,
   })
 
   const ov = overview as any
