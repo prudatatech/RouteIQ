@@ -6,12 +6,16 @@ import {
   HelpCircle, Activity, FileText, CloudRain, Loader2, Thermometer,
   ShieldAlert, LockKeyhole, Camera, Landmark, Info
 } from 'lucide-react'
-import { cargoAPI } from '@/services/api'
+import { cargoAPI, vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import LiveMap from '@/components/map/LiveMap'
+import { useCargoStore } from '@/store/cargoStore'
+import { useAuthStore } from '@/store/authStore'
 
 export default function CargoNetworkPage() {
   const queryClient = useQueryClient()
+  const role = useAuthStore(s => s.role)
   const [activeTab, setActiveTab] = useState<'control-tower' | 'pooling-optimizer' | 'security-pod'>('control-tower')
   
   // Simulation Map State
@@ -22,6 +26,13 @@ export default function CargoNetworkPage() {
   const { data: scenarios } = useQuery({
     queryKey: ['cargo-scenarios'],
     queryFn: cargoAPI.scenarios,
+  })
+
+  // Fetch live vehicles for the map
+  const { data: vehiclesData = [] } = useQuery({
+    queryKey: ['live-vehicles'],
+    queryFn: vehiclesAPI.getAll,
+    refetchInterval: 10000,
   })
 
   // 2. Fetch live alert feed
@@ -64,7 +75,14 @@ export default function CargoNetworkPage() {
 
   // 6. Mutation: Backhaul Match
   const [backhaulResult, setBackhaulResult] = useState<any>(null)
-  const [selectedBackhaulOpp, setSelectedBackhaulOpp] = useState<string>('opp-02')
+  const [selectedBackhaulOpp, setSelectedBackhaulOpp] = useState<string>('')
+  
+  // Update default selected backhaul opportunity when scenarios load
+  useEffect(() => {
+    if (scenarios?.backhaul?.opportunities?.length > 0 && !selectedBackhaulOpp) {
+      setSelectedBackhaulOpp(scenarios.backhaul.opportunities[0].id)
+    }
+  }, [scenarios])
   const backhaulMatchMutation = useMutation({
     mutationFn: ({ oppId, capacity }: { oppId: string, capacity: number }) => 
       cargoAPI.backhaulMatch(oppId, capacity),
@@ -232,178 +250,25 @@ export default function CargoNetworkPage() {
               </div>
             </div>
 
-            {/* Interactive SVG Mapping Area */}
-            <div className="flex-1 w-full bg-surface2/80 rounded-2xl border border-border relative flex items-center justify-center p-4">
-              <svg className="w-full h-full min-h-[350px]" viewBox="0 0 300 400">
-                {/* Dotted Connection Grid */}
-                <line x1="30" y1="0" x2="30" y2="400" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                <line x1="100" y1="0" x2="100" y2="400" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                <line x1="200" y1="0" x2="200" y2="400" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                <line x1="0" y1="100" x2="300" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                <line x1="0" y1="200" x2="300" y2="200" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-                <line x1="0" y1="300" x2="300" y2="300" stroke="rgba(255,255,255,0.03)" strokeWidth="0.5" />
-
-                {/* Corridor Roads (Background Lines) */}
-                {/* Delhi-Mumbai main highway */}
-                <path 
-                  id="delhi-mumbai-path"
-                  d="M 150,40 L 110,100 L 70,270 L 50,310 L 90,360" 
-                  fill="none" 
-                  stroke="rgba(255, 255, 255, 0.1)" 
-                  strokeWidth="3" 
-                  strokeDasharray="4 4"
-                />
-
-                {/* Rajasthan Pooling Branch */}
-                <path 
-                  id="rajasthan-pooling-path"
-                  d="M 150,40 L 110,100 L 80,130 L 60,220" 
-                  fill="none" 
-                  stroke="rgba(255, 255, 255, 0.1)" 
-                  strokeWidth="3" 
-                  strokeDasharray="4 4"
-                />
-
-                {/* Deviation Alarm Highway */}
-                {mapSimulation === 'deviation' && (
-                  <path 
-                    d="M 70,270 L 160,285" 
-                    fill="none" 
-                    stroke="rgba(239, 68, 68, 0.4)" 
-                    strokeWidth="3" 
-                    className="animate-pulse"
-                  />
-                )}
-
-                {/* Active Route Highlight Paths */}
-                {mapSimulation === 'pooling' && (
-                  <path 
-                    d="M 150,40 L 110,100 L 80,130 L 60,220" 
-                    fill="none" 
-                    stroke="var(--accent)" 
-                    strokeWidth="3" 
-                    strokeDasharray="8 8"
-                    className="animate-shimmer"
-                  />
-                )}
-                
-                {mapSimulation === 'backhaul' && (
-                  <path 
-                    d="M 90,360 L 50,310 L 70,270 L 110,100 L 150,40" 
-                    fill="none" 
-                    stroke="var(--accent-secondary)" 
-                    strokeWidth="3" 
-                    strokeDasharray="8 8"
-                  />
-                )}
-
-                {/* City Nodes */}
-                {[
-                  { id: 'delhi', name: 'Delhi', x: 150, y: 40, desc: 'Central Dispatch Hub' },
-                  { id: 'jaipur', name: 'Jaipur', x: 110, y: 100, desc: 'Drop A / Backhaul Node' },
-                  { id: 'ajmer', name: 'Ajmer', x: 80, y: 130, desc: 'Drop B Node' },
-                  { id: 'udaipur', name: 'Udaipur', x: 60, y: 220, desc: 'Drop C Terminal' },
-                  { id: 'vadodara', name: 'Vadodara', x: 70, y: 270, desc: 'Corridor Checkpoint' },
-                  { id: 'surat', name: 'Surat', x: 50, y: 310, desc: 'Pharma Hub' },
-                  { id: 'mumbai', name: 'Mumbai', x: 90, y: 360, desc: 'Port Depot' },
-                ].map(city => {
-                  const isAlert = mapSimulation === 'deviation' && city.id === 'vadodara'
-                  return (
-                    <g key={city.id} className="cursor-pointer group">
-                      <circle 
-                        cx={city.x} 
-                        cy={city.y} 
-                        r={isAlert ? "8" : "5"} 
-                        className={clsx(
-                          "transition-all duration-300",
-                          isAlert ? "fill-red-500 stroke-red-200 animate-ping" : "fill-slate-800 stroke-white/40 hover:fill-primary hover:stroke-primary-dark"
-                        )}
-                        strokeWidth="2"
-                      />
-                      <circle 
-                        cx={city.x} 
-                        cy={city.y} 
-                        r="4" 
-                        className={clsx(
-                          isAlert ? "fill-red-500" : "fill-slate-900 group-hover:fill-slate-950"
-                        )}
-                      />
-                      {/* Name tag */}
-                      <text 
-                        x={city.x + 8} 
-                        y={city.y + 4} 
-                        fill="rgba(255, 255, 255, 0.7)" 
-                        fontSize="8" 
-                        fontFamily="monospace"
-                        className="font-bold select-none group-hover:fill-white transition-colors"
-                      >
-                        {city.name}
-                      </text>
-                    </g>
-                  )
-                })}
-
-                {/* Animated Truck Asset */}
-                {mapSimulation !== 'idle' && (() => {
-                  let tx = 150
-                  let ty = 40
-                  let emoji = '🚛'
-                  
-                  if (mapSimulation === 'pooling') {
-                    // Coordinates: Delhi (150,40) -> Jaipur (110,100) -> Ajmer (80,130) -> Udaipur (60,220)
-                    if (simulationStep === 0) { tx = 150; ty = 40; }
-                    else if (simulationStep === 1) { tx = 110; ty = 100; emoji = '📦'; }
-                    else if (simulationStep === 2) { tx = 80; ty = 130; emoji = '📦'; }
-                    else { tx = 60; ty = 220; emoji = '✅'; }
-                  } else if (mapSimulation === 'backhaul') {
-                    // Return coordinates: Mumbai (90,360) -> Surat (50,310) -> Vadodara (70,270) -> Delhi (150,40)
-                    if (simulationStep === 0) { tx = 90; ty = 360; }
-                    else if (simulationStep === 1) { tx = 50; ty = 310; emoji = '♻️'; }
-                    else if (simulationStep === 2) { tx = 70; ty = 270; emoji = '📦'; }
-                    else { tx = 150; ty = 40; emoji = '🏢'; }
-                  } else if (mapSimulation === 'deviation') {
-                    // Delhi -> Vadodara (70,270) -> Diverges off route (160,285)
-                    if (simulationStep === 0) { tx = 110; ty = 100; }
-                    else if (simulationStep === 1) { tx = 70; ty = 270; }
-                    else { tx = 160; ty = 285; emoji = '🚨'; }
-                  }
-
-                  return (
-                    <g className="transition-all duration-[2000ms] cubic-bezier(0.4, 0, 0.2, 1)">
-                      <circle cx={tx} cy={ty} r="14" fill="rgba(79, 172, 254, 0.15)" stroke="var(--accent)" strokeWidth="1" className="animate-ping" />
-                      <text x={tx - 6} y={ty + 5} fontSize="14">{emoji}</text>
-                    </g>
-                  )
-                })()}
-
-                {/* Simulated Geofence Bounds */}
-                <circle cx="70" cy="270" r="30" fill="none" stroke="rgba(16, 185, 129, 0.15)" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="75" y="255" fill="rgba(16, 185, 129, 0.4)" fontSize="6" fontFamily="monospace">Geo-fence: 30km radius</text>
-              </svg>
-
+            {/* Interactive Live Map Area */}
+            <div className="flex-1 w-full bg-surface2/80 rounded-2xl border border-border relative flex items-center justify-center p-0 overflow-hidden min-h-[350px]">
+              <LiveMap 
+                vehicles={vehiclesData || []} 
+              />
+              
               {/* Live Overlay Panel */}
               <div className="absolute bottom-4 left-4 right-4 bg-surface/90 border border-border p-3 rounded-xl backdrop-blur-md">
                 <div className="flex justify-between text-[8px] font-black text-text-muted tracking-widest uppercase">
-                  <span>Simulated Corridor telemetry</span>
+                  <span>Live Tracking Telemetry</span>
                   <span className="text-primary animate-pulse">Live link active</span>
                 </div>
                 <div className="mt-1.5 flex justify-between items-center text-xs font-bold text-text">
-                  <span>Current Vector:</span>
+                  <span>Active Network:</span>
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent-secondary">
-                    {mapSimulation === 'pooling' ? "Consolidated Delhi ➔ Udaipur manifest" :
-                     mapSimulation === 'backhaul' ? "Surat ➔ Delhi Pharma backhaul" :
-                     mapSimulation === 'deviation' ? "UNAUTHORIZED OUT-OF-GEOFENCE DEVIATION!" :
-                     "Awaiting Route Sim Trigger"}
+                    {vehiclesData.length} Live Assets Connected
                   </span>
                 </div>
               </div>
-            </div>
-            
-            {/* Visual Guide instructions */}
-            <div className="mt-4 flex gap-4 text-[9px] text-text-muted justify-center border-t border-border/40 pt-4">
-              <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-primary" /> Delhi-Rajasthan Pooling</div>
-              <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-accent-secondary" /> Delhi-Mumbai Corridor</div>
-              <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" /> Out of Geofence Deviation</div>
             </div>
           </div>
 
@@ -981,44 +846,46 @@ export default function CargoNetworkPage() {
               </div>
 
               {/* Geo-fencing, Deviations, and Tamper Control Simulator */}
-              <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl relative">
-                <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none mb-2">Simulate Hardware Alarms</h2>
-                <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mb-6">Operator intervention portal: trigger anomalies to inspect agent response</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <button
-                    onClick={() => {
-                      triggerAlertMutation.mutate({
-                        type: 'tamper_detected',
-                        plate_number: 'MH-12Q-4491',
-                        message: 'Intrusion Alert: Lock seal breached at coordinate (19.0760, 72.8777).'
-                      })
-                      setMapSimulation('deviation')
-                    }}
-                    disabled={triggerAlertMutation.isPending}
-                    className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
-                  >
-                    <LockKeyhole size={16} />
-                    Trigger Lock Tamper Alarm
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      triggerAlertMutation.mutate({
-                        type: 'geo_fence_breach',
-                        plate_number: 'HR-55B-9022',
-                        message: 'Geo-fence deviation detected: Truck shifted off highway corridor NH-48 near Vadodara.'
-                      })
-                      setMapSimulation('deviation')
-                    }}
-                    disabled={triggerAlertMutation.isPending}
-                    className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
-                  >
-                    <ShieldAlert size={16} />
-                    Trigger Geo-Fence Deviation
-                  </button>
+              {(role === 'admin' || role === 'superadmin') && (
+                <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl relative">
+                  <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none mb-2">Simulate Hardware Alarms</h2>
+                  <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mb-6">Operator intervention portal: trigger anomalies to inspect agent response</p>
+  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      onClick={() => {
+                        triggerAlertMutation.mutate({
+                          type: 'tamper_detected',
+                          plate_number: 'MH-12Q-4491',
+                          message: 'Intrusion Alert: Lock seal breached at coordinate (19.0760, 72.8777).'
+                        })
+                        setMapSimulation('deviation')
+                      }}
+                      disabled={triggerAlertMutation.isPending}
+                      className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
+                    >
+                      <LockKeyhole size={16} />
+                      Trigger Lock Tamper Alarm
+                    </button>
+  
+                    <button
+                      onClick={() => {
+                        triggerAlertMutation.mutate({
+                          type: 'geo_fence_breach',
+                          plate_number: 'HR-55B-9022',
+                          message: 'Geo-fence deviation detected: Truck shifted off highway corridor NH-48 near Vadodara.'
+                        })
+                        setMapSimulation('deviation')
+                      }}
+                      disabled={triggerAlertMutation.isPending}
+                      className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
+                    >
+                      <ShieldAlert size={16} />
+                      Trigger Geo-Fence Deviation
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Digital Proof of Delivery Simulator Form */}
               <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl relative">

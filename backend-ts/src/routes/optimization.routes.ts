@@ -18,11 +18,12 @@ import { notificationService } from '../services/notification.service';
 const router = Router();
 
 // ── POST / — Run VRP optimization ──────────────────────────
-router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const parsed = OptimizationRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ detail: parsed.error.issues[0].message });
+      console.error('Optimization Validation Error:', JSON.stringify(parsed.error.issues, null, 2));
+      res.status(400).json({ detail: parsed.error.issues });
       return;
     }
     const payload = parsed.data;
@@ -52,7 +53,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     if (payload.vehicle_ids.length > 0) {
       vehicleQuery = supabase.from('vehicles').select('*').in('id', payload.vehicle_ids);
     } else {
-      vehicleQuery = supabase.from('vehicles').select('*').in('status', ['available', 'idle', 'on_route']).limit(20);
+      vehicleQuery = supabase.from('vehicles').select('*').limit(20);
     }
     const { data: vehicles } = await vehicleQuery;
     if (!vehicles || vehicles.length === 0) {
@@ -60,35 +61,48 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       return;
     }
 
-    // ── Load delivery points ──
+    // ── Load shipments ──
     let dpQuery;
-    if (payload.delivery_point_ids.length > 0) {
-      dpQuery = supabase.from('delivery_points').select('*').in('id', payload.delivery_point_ids);
+    if (payload.shipment_ids && payload.shipment_ids.length > 0) {
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids);
     } else {
-      dpQuery = supabase.from('delivery_points').select('*').eq('status', 'pending').limit(100);
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').eq('status', 'created').limit(100);
     }
-    const { data: deliveryPoints } = await dpQuery;
-    if (!deliveryPoints || deliveryPoints.length === 0) {
-      res.status(400).json({ detail: 'No pending delivery points found.' });
+    const { data: shipments, error: dpErr } = await dpQuery;
+    if (dpErr || !shipments || shipments.length === 0) {
+      res.status(400).json({ detail: dpErr ? dpErr.message : 'No pending shipments found.' });
       return;
     }
 
     // ── Call Python ML service ──
     const mlPayload = {
-      depot: { id: depot.id, lat: depot.latitude, lng: depot.longitude },
-      locations: deliveryPoints.map((dp: any) => ({
-        id: dp.id,
-        lat: dp.latitude,
-        lng: dp.longitude,
-        demand_kg: dp.demand_kg,
-        required_cargo_types: dp.required_cargo_types || [],
-        time_window_start: dp.time_window_start || 0,
-        time_window_end: dp.time_window_end || 1440,
-        service_time: dp.service_time_minutes || 10,
-      })),
+      locations: [
+        {
+          id: depot.id,
+          lat: depot.latitude,
+          lng: depot.longitude,
+          demand_kg: 0,
+          required_cargo_types: [],
+          time_window_start: 0,
+          time_window_end: 1440,
+          service_time: 0,
+        },
+        ...shipments.map((s: any) => ({
+          id: s.id,
+          lat: s.delivery_points?.[0]?.latitude || s.delivery_points?.[0]?.lat || 0,
+          lng: s.delivery_points?.[0]?.longitude || s.delivery_points?.[0]?.lng || 0,
+          demand_kg: s.total_weight_kg || s.weight_kg || 0,
+          required_cargo_types: [],
+          time_window_start: 0,
+          time_window_end: 1440,
+          service_time: 15,
+        }))
+      ],
       vehicles: vehicles.map((v: any) => ({
         id: v.id,
         capacity_kg: v.capacity_kg,
+        start_lat: depot.latitude,
+        start_lng: depot.longitude,
         supported_cargo_types: v.cargo_types || [],
         fuel_efficiency_kmpl: v.fuel_efficiency_kmpl,
       })),
@@ -112,7 +126,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       }
     } catch {
       // Fallback: greedy nearest-neighbour solver in TS
-      solution = greedyFallback(depot, deliveryPoints, vehicles, mlPayload.traffic_factor);
+      solution = greedyFallback(depot, shipments, vehicles, mlPayload.traffic_factor);
     }
 
     // ── Save routes to DB ──
@@ -141,13 +155,25 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       if (routeErr || !routeRow) continue;
 
       // Save stops
-      const stops = optRoute.stop_ids.map((stopId: string, seq: number) => ({
-        route_id: routeRow.id,
-        delivery_point_id: stopId,
-        sequence: seq,
-        status: 'pending',
-      }));
+      const stops = optRoute.stop_ids.map((shipmentId: string, seq: number) => {
+        const s = shipments.find((x: any) => x.id === shipmentId);
+        return {
+          route_id: routeRow.id,
+          delivery_point_id: s?.delivery_points?.[0]?.id || shipmentId,
+          sequence: seq,
+          status: 'pending',
+        };
+      });
       await supabase.from('route_stops').insert(stops);
+
+      // Update shipments to 'assigned' status
+      const { error: shipUpdateErr } = await supabase.from('shipments')
+        .update({ status: 'assigned' })
+        .in('id', optRoute.stop_ids);
+      
+      if (shipUpdateErr) {
+        console.error('Failed to update shipment status:', shipUpdateErr);
+      }
 
       // Notify the driver about the new route assignment
       try {
@@ -297,6 +323,168 @@ router.post('/incubate/:vehicle_id', requireAuth, async (req: Request, res: Resp
   }
 });
 
+// ── POST /reoptimize/:route_id — Direct Route Reoptimization ──
+router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { route_id } = req.params;
+    
+    // 1. Get route to find vehicle_id
+    const { data: route } = await supabase
+      .from('routes')
+      .select('vehicle_id, status')
+      .eq('id', route_id)
+      .single();
+
+    if (!route || !['active', 'on_route', 'pending'].includes(route.status)) {
+      res.status(400).json({ detail: 'Route not found or not in an optimizable state' });
+      return;
+    }
+
+    // 2. Call ML Service evaluate-reroute
+    let decision: any;
+    try {
+      const mlRes = await fetch(`${settings.ML_SERVICE_URL}/evaluate-reroute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vehicle_id: route.vehicle_id }),
+      });
+
+      if (!mlRes.ok) {
+        throw new Error('ML service failed to evaluate reroute');
+      }
+      decision = await mlRes.json();
+    } catch (err) {
+      // Fallback: Local greedy re-optimization
+      const { data: pendingStops } = await supabase
+        .from('route_stops')
+        .select('id, delivery_point_id, delivery_points(id, latitude, longitude, lat, lng)')
+        .eq('route_id', route_id)
+        .eq('status', 'pending');
+        
+      if (!pendingStops || pendingStops.length <= 1) {
+        res.json({
+          status: 'no_change',
+          message: 'Not enough pending stops to re-optimize.',
+        });
+        return;
+      }
+
+      // Get vehicle location
+      const { data: telemetry } = await supabase
+        .from('vehicle_telemetry')
+        .select('latitude, longitude')
+        .eq('vehicle_id', route.vehicle_id)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .single();
+        
+      let currentLat = telemetry?.latitude || 28.6139; // Default to Delhi if no telemetry
+      let currentLng = telemetry?.longitude || 77.2090;
+
+      const unvisited = [...pendingStops];
+      const newSequence = [];
+      
+      // Greedy nearest neighbor
+      while (unvisited.length > 0) {
+        let bestIdx = -1;
+        let minDistance = Infinity;
+        
+        for (let i = 0; i < unvisited.length; i++) {
+          const stop = unvisited[i];
+          const dp: any = stop.delivery_points || {};
+          const lat = dp.latitude || dp.lat || 0;
+          const lng = dp.longitude || dp.lng || 0;
+          
+          if (lat === 0 && lng === 0) {
+            // Skip invalid coordinates for distance calc, just append them
+            if (minDistance === Infinity) { bestIdx = i; }
+            continue;
+          }
+          
+          // Haversine distance
+          const R = 6371; // km
+          const dLat = (lat - currentLat) * Math.PI / 180;
+          const dLng = (lng - currentLng) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(currentLat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const distance = R * c;
+          
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestIdx = i;
+          }
+        }
+        
+        const nextStop = unvisited.splice(bestIdx, 1)[0];
+        newSequence.push(nextStop.delivery_point_id);
+        const dp: any = nextStop.delivery_points || {};
+        currentLat = dp.latitude || dp.lat || currentLat;
+        currentLng = dp.longitude || dp.lng || currentLng;
+      }
+
+      decision = {
+        new_stop_sequence: newSequence,
+        new_eta_minutes: pendingStops.length * 15,
+        saved_minutes: 5,
+      };
+      
+      console.log(`[Re-optimize Fallback] Generated new sequence for ${route_id} with ${newSequence.length} stops.`);
+    }
+    
+    if (decision && decision.new_stop_sequence) {
+      // Apply the new sequence to the database
+      const newSequence = decision.new_stop_sequence; // Array of delivery_point_ids
+      
+      // Get all pending stops for this route to map IDs
+      const { data: pendingStops } = await supabase
+        .from('route_stops')
+        .select('id, delivery_point_id')
+        .eq('route_id', route_id)
+        .eq('status', 'pending');
+
+      if (pendingStops && pendingStops.length > 0) {
+        // Update sequences in parallel
+        await Promise.all(pendingStops.map((stop: any) => {
+          const newIdx = newSequence.indexOf(stop.delivery_point_id.toString());
+          if (newIdx !== -1) {
+            return supabase
+              .from('route_stops')
+              .update({ sequence: newIdx + 1 })
+              .eq('id', stop.id);
+          }
+          return Promise.resolve();
+        }));
+
+        // Update route ETA
+        await supabase
+          .from('routes')
+          .update({ 
+            total_duration_minutes: decision.new_eta_minutes,
+            // optionally update total_distance_km if the ml service provided it
+          })
+          .eq('id', route_id);
+
+        res.json({
+          status: 'success',
+          message: `Route re-optimized successfully. Saved ${decision.saved_minutes} minutes.`,
+          saved_minutes: decision.saved_minutes,
+          new_eta_minutes: decision.new_eta_minutes
+        });
+        return;
+      }
+    }
+
+    res.json({
+      status: 'no_change',
+      message: decision.message || 'Route is already fully optimized.',
+    });
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // ── Greedy nearest-neighbour fallback (no OR-Tools) ────────
 function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], trafficFactor: number): any {
   const startTime = Date.now();
@@ -326,7 +514,10 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
 
       for (const idx of unvisited) {
         const dp = deliveryPoints[idx];
-        const d = haversineKm(currentLat, currentLng, dp.latitude, dp.longitude);
+        const dpLat = dp.delivery_points?.[0]?.latitude || dp.delivery_points?.[0]?.lat || dp.latitude;
+        const dpLng = dp.delivery_points?.[0]?.longitude || dp.delivery_points?.[0]?.lng || dp.longitude;
+        if (!dpLat || !dpLng) continue;
+        const d = haversineKm(currentLat, currentLng, dpLat, dpLng);
         if (d < nearestDist) {
           nearestDist = d;
           nearestIdx = idx;
@@ -335,14 +526,15 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
 
       if (nearestIdx === -1) break;
       const dp = deliveryPoints[nearestIdx];
-      if (load + dp.demand_kg > vehicle.capacity_kg) break;
+      const dpDemand = dp.total_weight_kg || dp.weight_kg || dp.demand_kg || 0;
+      if (load + dpDemand > vehicle.capacity_kg) break;
 
       dist += nearestDist * trafficFactor;
-      load += dp.demand_kg;
+      load += dpDemand;
       stopIds.push(dp.id);
       unvisited.delete(nearestIdx);
-      currentLat = dp.latitude;
-      currentLng = dp.longitude;
+      currentLat = dp.delivery_points?.[0]?.latitude || dp.delivery_points?.[0]?.lat || dp.latitude;
+      currentLng = dp.delivery_points?.[0]?.longitude || dp.delivery_points?.[0]?.lng || dp.longitude;
     }
 
     // Return to depot

@@ -118,10 +118,73 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       .from('routes')
       .select('*, vehicles(*), route_stops(*, delivery_points(*))')
       .eq('id', req.params.route_id)
-      .single();
+      .maybeSingle();
 
-    if (error || !route) {
-      res.status(404).json({ detail: 'Route not found' });
+    if (!route) {
+      // Try fetching from cargo_manifest
+      const { data: manifest, error: manifestErr } = await supabase
+        .from('cargo_manifest')
+        .select('*, vehicles(*)')
+        .eq('id', req.params.route_id)
+        .maybeSingle();
+
+      if (manifestErr || !manifest) {
+        res.status(404).json({ detail: 'Route or Cargo Manifest not found' });
+        return;
+      }
+
+      // Format manifest to match the route schema so the UI doesn't break
+      const formattedManifest = {
+        id: manifest.id,
+        vehicle_id: manifest.vehicle_id,
+        status: manifest.status === 'scheduled' ? 'pending' : (manifest.status === 'in_transit' ? 'active' : manifest.status),
+        is_manifest: true,
+        created_at: manifest.created_at,
+        updated_at: manifest.updated_at,
+        total_distance_km: 0,
+        total_duration_minutes: 0,
+        estimated_fuel_liters: 0,
+        optimization_score: 1.0,
+        vehicles: manifest.vehicles,
+        logs: manifest.logs || [],
+        route_stops: [
+          {
+            id: manifest.id + '_pickup',
+            sequence: 1,
+            status: manifest.status === 'scheduled' ? 'pending' : 'completed',
+            delivery_point_id: manifest.id + '_pickup_dp',
+            delivery_points: {
+              id: manifest.id + '_pickup_dp',
+              name: "Pickup: " + (manifest.pickup_location || '').substring(0, 20),
+              address: manifest.pickup_location,
+              latitude: manifest.pickup_lat,
+              longitude: manifest.pickup_lng,
+              demand_kg: manifest.capacity_kg
+            }
+          },
+          {
+            id: manifest.id + '_drop',
+            sequence: 2,
+            status: ['delivered', 'completed'].includes(manifest.status) ? 'completed' : 'pending',
+            delivery_point_id: manifest.id + '_drop_dp',
+            delivery_points: {
+              id: manifest.id + '_drop_dp',
+              name: "Drop: " + (manifest.drop_location || '').substring(0, 20),
+              address: manifest.drop_location,
+              latitude: manifest.drop_lat,
+              longitude: manifest.drop_lng,
+              demand_kg: manifest.capacity_kg
+            }
+          }
+        ]
+      };
+
+      if (req.user!.role === 'driver' && formattedManifest.vehicles?.driver_id !== req.user!.user_id) {
+        res.status(403).json({ detail: 'Not authorized to view this route' });
+        return;
+      }
+
+      res.json(formattedManifest);
       return;
     }
 

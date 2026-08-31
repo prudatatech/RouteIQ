@@ -9,7 +9,7 @@ if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
 
 export const api = axios.create({
   baseURL,
-  timeout: 30_000,
+  timeout: 360_000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -78,7 +78,9 @@ api.interceptors.response.use(
       } else {
         // Session is dead — sign out and redirect
         await supabase.auth.signOut()
-        window.location.href = '/login'
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login'
+        }
       }
     }
     
@@ -101,9 +103,10 @@ export const vehiclesAPI = {
 }
 
 export const optimizationAPI = {
-  optimize: (data: any) => api.post('/optimize/', data).then(r => r.data),
-  predictETA: (data: any) => api.post('/optimize/eta/', data).then(r => r.data),
+  optimize: (data: any) => api.post('/optimize', data).then(r => r.data),
+  predictETA: (data: any) => api.post('/optimize/eta', data).then(r => r.data),
   incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`).then(r => r.data),
+  reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`).then(r => r.data),
   runRiskAnalysis: (vehicleId: string) =>
     api.post(`/agents/risk-analysis/${vehicleId}`).then(r => r.data),
   runCargoMonitoring: (shipmentId: string) =>
@@ -157,7 +160,7 @@ export const shipmentsAPI = {
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
   trackPublicly: (trackingId: string) => api.get(`/shipments/track/${trackingId}`).then(r => r.data),
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
-  updateStatus: (id: string, status: string, params?: any) => api.patch(`/shipments/${id}`, null, { params: { status, ...params } }).then(r => r.data),
+  updateStatus: (id: string, status: string, params?: any) => api.patch(`/shipments/${id}`, {}, { params: { status, ...params } }).then(r => r.data),
   edit: (id: string, data: any) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),

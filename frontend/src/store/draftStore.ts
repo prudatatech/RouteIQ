@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface DraftShipmentData {
   tracking_id: string;
   originSearch: string;
+  destSearch: string;
   searchTerm: string;
   mobilePhone: string;
   selectedVehicleId: string;
@@ -17,6 +18,13 @@ export interface DraftShipmentData {
   delivery_point_address: string;
   dest_lat: number;
   dest_lng: number;
+  stops: Array<{
+    id: string;
+    name: string;
+    address: string;
+    lat: number;
+    lng: number;
+  }>;
   priority: string;
   cargo_type: string;
   total_items: number;
@@ -38,6 +46,7 @@ export interface DraftShipmentData {
 const initialDraftData: DraftShipmentData = {
   tracking_id: `RTX-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
   originSearch: '',
+  destSearch: '',
   searchTerm: '',
   mobilePhone: '',
   selectedVehicleId: '',
@@ -51,6 +60,7 @@ const initialDraftData: DraftShipmentData = {
   delivery_point_address: '',
   dest_lat: 0,
   dest_lng: 0,
+  stops: [],
   priority: 'medium',
   cargo_type: 'standard',
   total_items: 1,

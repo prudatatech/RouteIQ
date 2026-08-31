@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Truck, Map, BarChart3, Zap,
-  LogOut, Shield, Brain, Package, Network, ExternalLink, Briefcase, ShieldAlert
+  LogOut, Shield, Brain, Package, Network, ExternalLink, Briefcase, ShieldAlert, Building2
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'

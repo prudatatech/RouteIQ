@@ -221,39 +221,56 @@ export class ShipmentService {
       totalWeight = shipmentIn.parcels.reduce((sum, p) => sum + p.weight_kg, 0);
     }
 
-    // 3. Handle delivery point
-    const dpId = shipmentIn.delivery_point_id;
-    const isUUID = typeof dpId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dpId);
+    // 3. Handle delivery points (stops)
+    const createdDpIds: string[] = [];
+    const dpRows = [];
 
-    let finalDpId = dpId;
+    let totalDemand = totalWeight || shipmentIn.total_weight_kg || 0.0;
+    const allStopsCount = (shipmentIn.dest_lat ? 1 : 0) + (shipmentIn.stops?.length || 0);
+    const demandPerStop = allStopsCount > 0 ? totalDemand / allStopsCount : 0;
 
-    if (!isUUID) {
-      // Create a new DeliveryPoint
-      const newDpId = uuidv4();
-      const { data: newDp } = await supabase.from('delivery_points').insert({
-        id: newDpId,
+    // Primary destination
+    if (shipmentIn.dest_lat && shipmentIn.dest_lng) {
+      const isUUID = typeof shipmentIn.delivery_point_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shipmentIn.delivery_point_id);
+      const dpId = isUUID ? shipmentIn.delivery_point_id : uuidv4();
+      createdDpIds.push(dpId);
+      dpRows.push({
+        id: dpId,
         name: shipmentIn.open_bidding ? 'Pending Vendor Bid' : (shipmentIn.dest_name || 'New Location'),
         address: shipmentIn.open_bidding ? 'Awaiting Marketplace Match' : (shipmentIn.dest_address || 'Unknown Address'),
-        latitude: shipmentIn.dest_lat || 0.0,
-        longitude: shipmentIn.dest_lng || 0.0,
-        demand_kg: totalWeight || shipmentIn.total_weight_kg || 0.0,
+        latitude: shipmentIn.dest_lat,
+        longitude: shipmentIn.dest_lng,
+        demand_kg: demandPerStop,
         shipment_id: dbShipment.id,
         status: 'pending',
-      }).select().single();
-      finalDpId = newDp?.id || newDpId;
-    } else {
-      // Update existing DP
-      await supabase
-        .from('delivery_points')
-        .update({
+      });
+    }
+
+    // Additional stops
+    if (shipmentIn.stops && shipmentIn.stops.length > 0) {
+      shipmentIn.stops.forEach((stop: any) => {
+        const isUUID = typeof stop.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stop.id);
+        const id = isUUID ? stop.id : uuidv4();
+        createdDpIds.push(id);
+        dpRows.push({
+          id,
+          name: shipmentIn.open_bidding ? 'Pending Vendor Bid' : (stop.name || 'New Location'),
+          address: shipmentIn.open_bidding ? 'Awaiting Marketplace Match' : (stop.address || 'Unknown Address'),
+          latitude: stop.lat || 0.0,
+          longitude: stop.lng || 0.0,
+          demand_kg: demandPerStop,
           shipment_id: dbShipment.id,
-          demand_kg: totalWeight || shipmentIn.total_weight_kg || 1.0,
-        })
-        .eq('id', dpId);
+          status: 'pending',
+        });
+      });
+    }
+    
+    if (dpRows.length > 0) {
+      await supabase.from('delivery_points').upsert(dpRows);
     }
 
     // 4. Create Route if vehicle_id is provided
-    if (shipmentIn.vehicle_id && finalDpId) {
+    if (shipmentIn.vehicle_id && createdDpIds.length > 0) {
       const routeId = uuidv4();
       const { data: dbRoute } = await supabase.from('routes').insert({
         id: routeId,
@@ -269,26 +286,27 @@ export class ShipmentService {
 
       if (dbRoute || routeId) {
         if (!shipmentIn.open_bidding) {
-          await supabase.from('route_stops').insert({
+          const routeStops = createdDpIds.map((dpId, index) => ({
             id: uuidv4(),
             route_id: dbRoute?.id || routeId,
-            delivery_point_id: finalDpId,
-            sequence: 1,
+            delivery_point_id: dpId,
+            sequence: index + 1,
             status: 'pending'
-          });
+          }));
+          await supabase.from('route_stops').insert(routeStops);
         }
 
         // Trigger background dynamic route matching for vendors
-        if (shipmentIn.origin_lat && shipmentIn.origin_lng && shipmentIn.dest_lat && shipmentIn.dest_lng) {
-          // Fire and forget, do not await to block the request
+        const lastStop = shipmentIn.stops && shipmentIn.stops.length > 0 ? shipmentIn.stops[shipmentIn.stops.length - 1] : null;
+        if (shipmentIn.origin_lat && shipmentIn.origin_lng && lastStop?.lat && lastStop?.lng) {
           import('./vendor.service').then(({ vendorService }) => {
             vendorService.matchRouteToVendors(
               dbRoute?.id || routeId,
               shipmentIn.vehicle_id!,
               shipmentIn.origin_lat!,
               shipmentIn.origin_lng!,
-              shipmentIn.dest_lat!,
-              shipmentIn.dest_lng!
+              lastStop!.lat,
+              lastStop!.lng
             ).catch(console.error);
           });
         }
@@ -336,10 +354,11 @@ export class ShipmentService {
   static async assignDriver(shipmentId: string, vehicleId: string): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new Error('Shipment not found');
-    if (!shipment.delivery_point) throw new Error('Shipment has no delivery point');
+    if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new Error('Shipment has no delivery points');
 
-    // Clean up any existing route stops for this delivery point
-    await supabase.from('route_stops').delete().eq('delivery_point_id', shipment.delivery_point.id);
+    // Clean up any existing route stops for these delivery points
+    const dpIds = shipment.delivery_points.map(dp => dp.id);
+    await supabase.from('route_stops').delete().in('delivery_point_id', dpIds);
 
     // Find active or pending route for this vehicle
     const { data: existingRoutes } = await supabase
@@ -369,27 +388,29 @@ export class ShipmentService {
       if (routeErr) throw new Error(`Failed to create route: ${routeErr.message}`);
     }
 
-    // Add route stop
-    const { error: stopErr } = await supabase.from('route_stops').insert({
+    // Add route stops
+    const routeStops = shipment.delivery_points.map((dp, index) => ({
       id: uuidv4(),
       route_id: routeId,
-      delivery_point_id: shipment.delivery_point.id,
-      sequence: 1,
+      delivery_point_id: dp.id,
+      sequence: index + 1,
       status: 'pending'
-    });
+    }));
+    const { error: stopErr } = await supabase.from('route_stops').insert(routeStops);
 
-    if (stopErr) throw new Error(`Failed to create route stop: ${stopErr.message}`);
+    if (stopErr) throw new Error(`Failed to create route stops: ${stopErr.message}`);
 
     // Optionally trigger vendor match
-    if (shipment.origin_lat && shipment.origin_lng && shipment.delivery_point.latitude && shipment.delivery_point.longitude) {
+    const lastStop = shipment.delivery_points[shipment.delivery_points.length - 1];
+    if (shipment.origin_lat && shipment.origin_lng && lastStop.latitude && lastStop.longitude) {
       import('./vendor.service').then(({ vendorService }) => {
         vendorService.matchRouteToVendors(
           routeId,
           vehicleId,
           shipment.origin_lat!,
           shipment.origin_lng!,
-          shipment.delivery_point!.latitude,
-          shipment.delivery_point!.longitude
+          lastStop.latitude,
+          lastStop.longitude
         ).catch(console.error);
       });
     }
@@ -584,7 +605,7 @@ export class ShipmentService {
     // Map to our interface shape
     const shipment: Shipment = {
       ...data,
-      delivery_point: data.delivery_points?.[0] || null,
+      delivery_points: data.delivery_points || [],
       parcels: data.parcels || [],
       logs: data.shipment_logs || [],
       is_verified: SecurityService.verifyChain(data.shipment_logs || []),
@@ -606,15 +627,13 @@ export class ShipmentService {
     if (error || !data) return [];
 
     const mappedShipments = data.map((d: any) => {
-      const deliveryPoint = d.delivery_points?.[0];
-      const routeStops = deliveryPoint?.route_stops || [];
-      const activeRouteStop = routeStops.find((rs: any) => rs.routes);
-      const vehicle = activeRouteStop?.routes?.vehicles;
-
+      const deliveryPoints = d.delivery_points || [];
+      const primaryDp = deliveryPoints[0];
+      const activeRouteStop = primaryDp?.route_stops?.find((rs: any) => rs.routes);
+      const vehicleInfo = activeRouteStop?.routes?.vehicles;
       let vehicleId = activeRouteStop?.routes?.vehicle_id || null;
-      let driverName = vehicle?.users?.full_name || null;
+      let driverName = vehicleInfo?.users?.full_name || null;
 
-      // Fallback to logs if route is missing (e.g. legacy data)
       if (!vehicleId && d.shipment_logs) {
         const assignedLog = d.shipment_logs.find((l: any) => l.status === 'assigned' && l.metadata_json?.vehicle_id);
         if (assignedLog) {
@@ -624,7 +643,7 @@ export class ShipmentService {
 
       return {
         ...d,
-        delivery_point: deliveryPoint || null,
+        delivery_points: deliveryPoints,
         parcels: d.parcels || [],
         logs: d.shipment_logs || [],
         is_verified: SecurityService.verifyChain(d.shipment_logs || []),

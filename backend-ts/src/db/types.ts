@@ -18,6 +18,69 @@ export interface User {
   updated_at: string;
 }
 
+// ── Organizations ────────────────────────────────────────────
+export interface Organization {
+  id: string;
+  name: string;
+  entity_type: 'shipper' | 'forwarder' | 'fleet_owner' | 'broker' | '3pl' | 'super_admin';
+  participation_type: string | null;
+  gstin: string | null;
+  status: 'active' | 'suspended' | 'verification_pending';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NetworkRelationship {
+  id: string;
+  forwarder_org_id: string;
+  partner_org_id: string;
+  relationship_type: string | null;
+  rate_formula_jsonb: any;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ThirdPartyAgreement {
+  id: string;
+  tpl_org_id: string;
+  corridor_structure: any;
+  vehicle_types_supported: string[] | null;
+  wholesale_rate_formula: any;
+  sla_hours: number;
+  platform_markup_percent: number;
+  status: string;
+  effective_date: string;
+  expiry_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookingLedger {
+  id: string;
+  shipment_id: string;
+  client_rate: number;
+  fulfiller_rate: number;
+  platform_margin: number;
+  tier_resolved: 0 | 1 | 2;
+  fulfiller_org_id: string | null;
+  tpl_org_id: string | null;
+  escrow_status: 'pending_escrow' | 'escrow_held' | 'escrow_failed' | 'released';
+  assigned_driver_id: string | null;
+  assigned_vehicle_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookingLedgerAdjustment {
+  id: string;
+  ledger_id: string;
+  adjustment_amount: number;
+  reason: string;
+  adjusted_by: string | null;
+  created_at: string;
+}
+
 // ── Vehicles ───────────────────────────────────────────────
 export interface Vehicle {
   id: string;
@@ -152,7 +215,7 @@ export interface Shipment {
   created_at: string;
   // Joined
   parcels?: Parcel[];
-  delivery_point?: DeliveryPoint;
+  delivery_points?: DeliveryPoint[];
   logs?: ShipmentLog[];
   is_verified?: boolean;
 }

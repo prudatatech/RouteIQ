@@ -1,11 +1,52 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { routesAPI } from '@/services/api'
-import { Card, Badge, StatusDot } from '@/components/ui'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Map, Navigation, Edit2, Trash2, ArrowRight } from 'lucide-react'
+import { routesAPI, vehiclesAPI, deliveryPointsAPI, shipmentsAPI, optimizationAPI } from '@/services/api'
+import { StatusDot } from '@/components/ui'
 import { format } from 'date-fns'
 import { formatEta } from '@/utils/timeFormat'
 import toast from 'react-hot-toast'
+import clsx from 'clsx'
+
+// Haversine fallback for 0 distance routes
+const calculateFallbackDistance = (route: any) => {
+  if (route.total_distance_km > 0) return route.total_distance_km;
+  if (!route.route_stops || route.route_stops.length === 0) return 0;
+  
+  const stops = [...route.route_stops].sort((a: any, b: any) => a.sequence - b.sequence);
+  let totalKm = 0;
+  
+  const toRad = (v: number) => v * Math.PI / 180;
+  
+  let prevLat = route.vehicles?.latitude;
+  let prevLng = route.vehicles?.longitude;
+  
+  if (!prevLat || !prevLng) {
+    // If no vehicle location, start from first stop
+    prevLat = stops[0]?.delivery_points?.latitude;
+    prevLng = stops[0]?.delivery_points?.longitude;
+    stops.shift(); // Remove first stop from distance calc
+  }
+
+  for (const stop of stops) {
+    const lat = stop.delivery_points?.latitude;
+    const lng = stop.delivery_points?.longitude;
+    if (lat && lng && prevLat && prevLng) {
+      const R = 6371; // km
+      const dLat = toRad(lat - prevLat);
+      const dLon = toRad(lng - prevLng);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(toRad(prevLat)) * Math.cos(toRad(lat)) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      totalKm += R * c * 1.3; // 1.3 road multiplier
+      prevLat = lat;
+      prevLng = lng;
+    }
+  }
+  return totalKm;
+}
 
 export default function RoutesPage() {
   const queryClient = useQueryClient()
@@ -18,144 +59,267 @@ export default function RoutesPage() {
     refetchInterval: 20_000,
   })
 
+  const { data: vehicles = [] } = useQuery({
+    queryKey: ['vehicles'],
+    queryFn: () => vehiclesAPI.list({ limit: 100 }),
+  })
+
+  const { data: pendingStops = [] } = useQuery({
+    queryKey: ['shipments', 'pending'],
+    queryFn: () => shipmentsAPI.list().then((list: any[]) => list.filter(s => (s.status === 'created' || s.status === 'pending') && !s.vehicle_id))
+  })
+
+  const handleDispatch = (routeId: string) => {
+    routesAPI.updateStatus(routeId, 'active').then(() => {
+      toast.success('Route dispatched successfully!')
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+    }).catch((err) => toast.error('Failed to dispatch route'))
+  }
+
+  const handleDelete = (routeId: string) => {
+    if (window.confirm('Are you sure you want to delete this route?')) {
+      routesAPI.delete(routeId).then(() => {
+        toast.success('Route deleted')
+        queryClient.invalidateQueries({ queryKey: ['routes'] })
+      }).catch(() => toast.error('Failed to delete route'))
+    }
+  }
+
+  const handleStatusSave = () => {
+    if (!editingRoute) return
+    routesAPI.update(editingRoute.id, { status: editingRoute.status }).then(() => {
+      toast.success('Route status updated')
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+      setEditingRoute(null)
+    }).catch(() => toast.error('Failed to update status'))
+  }
+
+  const { mutate: handleReoptimize, isPending: isOptimizing } = useMutation({
+    mutationFn: (routeId: string) => optimizationAPI.reoptimizeRoute(routeId),
+    onSuccess: (data: any) => {
+      toast.success(data.message || 'Route re-optimized successfully')
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Failed to re-optimize route')
+    }
+  })
+
+  const onRunOptimizerClick = () => {
+    const optimizableRoute = routes.find((r: any) => ['active', 'pending'].includes(r.status));
+    if (optimizableRoute) {
+      handleReoptimize(optimizableRoute.id);
+    } else {
+      toast.error('No active or pending routes to optimize');
+    }
+  }
+
   return (
-    <div>
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', color: '#0F172A' }}>
-          Routes
-        </h1>
-        <p style={{ color: '#64748B', fontSize: 13, marginTop: 2 }}>
-          All active and completed routes
-        </p>
+    <div className="h-[calc(100vh-100px)] flex flex-col space-y-6">
+      <div className="relative p-8 rounded-[2.5rem] bg-surface border border-border overflow-hidden shadow-2xl shrink-0">
+        <div className="absolute top-0 right-0 p-8">
+          <Map className="w-24 h-24 text-primary/10 animate-pulse" />
+        </div>
+        <div className="relative z-10 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-black text-text uppercase tracking-tight leading-none mb-2">
+              Dispatch Grid
+            </h1>
+            <p className="text-xs text-text-muted font-bold tracking-[0.2em] uppercase max-w-2xl">
+              Active routes and historical logistics data.
+            </p>
+          </div>
+          <button 
+            onClick={onRunOptimizerClick}
+            disabled={isOptimizing}
+            className="h-12 px-6 bg-primary hover:bg-primary-dark text-slate-950 text-xs font-black uppercase rounded-xl tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-primary/20 disabled:opacity-50"
+          >
+            {isOptimizing ? 'Optimizing...' : 'Run Optimizer'}
+            {!isOptimizing && <ArrowRight size={16} />}
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
-              {['Route ID', 'Vehicle', 'Status', 'Distance', 'Duration', 'Fuel Est.', 'Score', 'Created', 'Actions'].map(h => (
-                <th key={h} style={{
-                  padding: '12px 16px', textAlign: 'left',
-                  fontSize: 11, color: '#64748B',
-                  textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600,
-                }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#64748B' }}>Loading routes...</td></tr>
-            ) : routes.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#64748B' }}>
-                No routes yet. Run the optimizer to create routes.
-              </td></tr>
-            ) : routes.map((r: any) => (
-              <tr key={r.id}
-                style={{ borderBottom: '1px solid #E2E8F0', cursor: 'pointer', transition: 'background 0.2s' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              >
-                <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: '#0F172A', fontWeight: 500 }}>
-                  {r.id?.slice(0, 8) || 'N/A'}...
-                </td>
-                <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: '#0F172A', fontWeight: 500 }}>
-                  {r.vehicle_id?.slice(0, 8) || 'N/A'}...
-                </td>
-                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <StatusDot status={r.status === 'active' ? 'on_route' : r.status === 'completed' ? 'available' : 'idle'} />
-                    <span style={{ fontSize: 12 }}>{r.status}</span>
-                  </div>
-                </td>
-                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>{r.total_distance_km?.toFixed(1)} km</td>
-                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>{formatEta(r.total_duration_minutes || 0)}</td>
-                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>{r.estimated_fuel_liters?.toFixed(1)} L</td>
-                <td style={{ padding: '12px 16px' }}>
-                  {r.optimization_score
-                    ? <Badge variant="green">{(r.optimization_score * 100).toFixed(0)}%</Badge>
-                    : '—'}
-                </td>
-                <td style={{ padding: '12px 16px', color: '#64748B', fontSize: 11, fontWeight: 500 }}>
-                  {format(new Date(r.created_at), 'dd MMM, HH:mm')}
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {r.status === 'pending' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          routesAPI.updateStatus(r.id, 'active').then(() => {
-                            toast.success('Route dispatched! Vehicle marked as on_route.');
-                            queryClient.invalidateQueries({ queryKey: ['routes'] });
-                            queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-                          });
-                        }}
-                        style={{
-                          padding: '6px 12px', borderRadius: 8, fontSize: 10,
-                          fontWeight: 800, textTransform: 'uppercase',
-                          background: '#10b981', color: '#FFFFFF', border: 'none',
-                          cursor: 'pointer', boxShadow: '0 2px 4px rgba(16,185,129,0.2)'
-                        }}
-                      >
-                        Dispatch
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/routes/${r.id}`);
-                      }}
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748B', padding: 4 }}
-                      title="Navigate Details"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingRoute(r);
-                      }}
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748B', padding: 4 }}
-                      title="Edit"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm('Are you sure you want to delete this route?')) {
-                          routesAPI.delete(r.id).then(() => {
-                            toast.success('Route deleted successfully');
-                            queryClient.invalidateQueries({ queryKey: ['routes'] });
-                          }).catch(() => toast.error('Failed to delete route'));
-                        }
-                      }}
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 4 }}
-                      title="Delete"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
-                  </div>
-                </td>
+      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col space-y-6 pb-6">
+        {pendingStops.length > 0 && (
+          <div className="flex-none bg-surface border border-border rounded-[2.5rem] shadow-xl overflow-hidden flex flex-col p-8">
+            <div className="flex justify-between items-center mb-6 px-2">
+              <div>
+                <h2 className="text-xl font-black text-text uppercase tracking-tight">Cargo Manifest (Pending Shipments)</h2>
+                <p className="text-xs text-text-muted font-bold tracking-[0.2em] uppercase mt-1">Shipments waiting to be routed</p>
+              </div>
+              <span className="text-xs font-black bg-orange-500/10 border border-orange-500/20 text-orange-500 px-4 py-2 rounded-xl uppercase tracking-widest">{pendingStops.length} Shipments Ready</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border">Shipment ID</th>
+                    <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border">Destination</th>
+                    <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border">Load</th>
+                    <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border">Priority</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingStops.map((stop: any) => (
+                    <tr key={stop.id} className="border-b border-border/30 hover:bg-background transition-colors">
+                      <td className="px-6 py-4 font-mono text-xs font-black text-text uppercase tracking-widest">{stop.tracking_id || (stop.id || '').slice(0, 8)}</td>
+                      <td className="px-6 py-4 text-xs font-bold text-text">{stop.delivery_point?.address || stop.delivery_point?.name || stop.origin_name || 'Pending Destination'}</td>
+                      <td className="px-6 py-4 text-xs font-bold text-text">{stop.total_weight_kg || stop.weight_kg || 0} kg <span className="text-text-muted mx-1">|</span> {stop.total_items || 1} items</td>
+                      <td className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">
+                        {stop.priority || 'Medium'} Priority
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 bg-surface border border-border rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col min-h-[500px]">
+          <div className="p-8 pb-4 border-b border-border/50">
+            <h2 className="text-xl font-black text-text uppercase tracking-tight">Planned Routes</h2>
+          </div>
+          <div className="overflow-x-auto flex-1 custom-scrollbar relative">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-20 bg-surface/80 backdrop-blur-md shadow-sm">
+              <tr>
+                {['Route ID', 'Vehicle', 'Status', 'Distance', 'ETA', 'Fuel Est.', 'Score', 'Created', 'Actions'].map(h => (
+                  <th key={h} className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border">
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-20">
+                    <div className="flex flex-col items-center justify-center text-text-muted opacity-50">
+                      <Navigation size={48} className="mb-4 animate-spin-slow" />
+                      <p className="text-xs font-bold uppercase tracking-widest">Loading Network Routes...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (!Array.isArray(routes) || routes.length === 0) ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-20">
+                    <div className="flex flex-col items-center justify-center text-text-muted opacity-50">
+                      <Map size={48} className="mb-4" />
+                      <p className="text-xs font-bold uppercase tracking-widest">No routes exist in the database.</p>
+                      {!Array.isArray(routes) && <p className="text-xs text-red-500 mt-2">API Error: {String(routes?.detail || JSON.stringify(routes))}</p>}
+                    </div>
+                  </td>
+                </tr>
+              ) : routes.map((r: any) => {
+                const vehicle = Array.isArray(vehicles) ? vehicles.find((v: any) => v.id === r.vehicle_id) : null
+                // Attach vehicle to route for distance calculation if missing
+                const routeWithVehicle = { ...r, vehicles: vehicle || r.vehicles }
+                const computedDist = calculateFallbackDistance(routeWithVehicle)
+                const computedDuration = r.total_duration_minutes > 0 ? r.total_duration_minutes : (computedDist / 40) * 60 // Assume 40 km/h average
+                const computedFuel = r.estimated_fuel_liters > 0 ? r.estimated_fuel_liters : computedDist / 4 // Assume 4 km/L
+
+                return (
+                  <tr 
+                    key={r.id} 
+                    className="group border-b border-border/50 hover:bg-background transition-colors cursor-pointer"
+                    onClick={() => navigate(`/routes/${r.id}`)}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="font-mono text-xs font-black text-text uppercase tracking-widest">
+                        {(r.id || '').slice(0, 8)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                          <span className="text-[10px] font-black text-primary">TRK</span>
+                        </div>
+                        <div>
+                          <div className="font-mono text-xs font-black text-text uppercase">
+                            {vehicle?.plate_number || (r.vehicle_id || '').slice(0, 8)}
+                          </div>
+                          <div className="text-[9px] text-text-muted font-bold tracking-widest uppercase">
+                            {vehicle?.model || 'Unknown'}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <StatusDot status={r.status === 'active' ? 'on_route' : r.status === 'completed' ? 'available' : 'idle'} />
+                        <span className="text-xs font-bold text-text uppercase tracking-widest">{r.status}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-text uppercase tracking-widest">
+                      {computedDist.toFixed(1)} km
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-text uppercase tracking-widest">
+                      {formatEta(computedDuration)}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-text uppercase tracking-widest">
+                      {computedFuel.toFixed(1)} L
+                    </td>
+                    <td className="px-6 py-4">
+                      {r.optimization_score ? (
+                        <div className="px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20 text-green-400 text-[10px] font-black tracking-widest inline-block">
+                          {(r.optimization_score * 100).toFixed(0)}%
+                        </div>
+                      ) : (
+                        <span className="text-text-muted text-xs font-bold">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">
+                      {r.created_at ? format(new Date(r.created_at), 'MMM dd, HH:mm') : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {r.status === 'pending' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDispatch(r.id); }}
+                            className="px-3 py-1 bg-primary text-slate-950 text-[9px] font-black uppercase tracking-widest rounded-md hover:bg-primary-dark transition-colors"
+                          >
+                            Dispatch
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingRoute(r); }}
+                          className="w-7 h-7 rounded-md hover:bg-background border border-transparent hover:border-border flex items-center justify-center text-text-muted transition-colors"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
+                          className="w-7 h-7 rounded-md hover:bg-red-500/10 border border-transparent hover:border-red-500/20 flex items-center justify-center text-red-400 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        </div>
+      </div>
 
       {editingRoute && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-        }}>
-          <div style={{ background: '#FFF', padding: 24, borderRadius: 12, width: 400, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Edit Route Status</h2>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Status</label>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="w-[400px] bg-surface border border-border rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-xl font-black text-text uppercase tracking-tight mb-6 flex items-center gap-3">
+              <Edit2 className="text-primary" size={24} />
+              Edit Route Status
+            </h2>
+            <div className="mb-8">
+              <label className="text-xs font-bold text-text-muted uppercase tracking-widest block mb-2">Status</label>
               <select
                 value={editingRoute.status}
                 onChange={(e) => setEditingRoute({ ...editingRoute, status: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E2E8F0', outline: 'none' }}
+                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm font-bold text-text uppercase tracking-wider outline-none focus:border-primary/50"
               >
                 <option value="pending">Pending</option>
                 <option value="active">Active</option>
@@ -163,22 +327,16 @@ export default function RoutesPage() {
                 <option value="cancelled">Cancelled</option>
               </select>
             </div>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
+            <div className="flex gap-4">
               <button
                 onClick={() => setEditingRoute(null)}
-                style={{ padding: '8px 16px', background: '#F1F5F9', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
+                className="flex-1 h-12 bg-background border border-border hover:border-text-muted text-text-muted text-xs font-black uppercase rounded-xl tracking-widest transition-all"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  routesAPI.update(editingRoute.id, { status: editingRoute.status }).then(() => {
-                    toast.success('Route updated successfully');
-                    queryClient.invalidateQueries({ queryKey: ['routes'] });
-                    setEditingRoute(null);
-                  }).catch(() => toast.error('Failed to update route'));
-                }}
-                style={{ padding: '8px 16px', background: '#3B82F6', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, color: '#FFF' }}
+                onClick={handleStatusSave}
+                className="flex-1 h-12 bg-primary hover:bg-primary-dark text-slate-950 text-xs font-black uppercase rounded-xl tracking-widest transition-all"
               >
                 Save Changes
               </button>

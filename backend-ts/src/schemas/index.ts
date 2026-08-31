@@ -27,6 +27,31 @@ export const UserUpdateSchema = z.object({
 });
 export type UserUpdate = z.infer<typeof UserUpdateSchema>;
 
+// ── Organizations ────────────────────────────────────────────
+
+export const OrganizationCreateSchema = z.object({
+  name: z.string().min(2).max(255),
+  entity_type: z.enum(['shipper', 'forwarder', 'fleet_owner', 'broker', '3pl', 'super_admin']),
+  participation_type: z.string().optional().nullable(),
+  gstin: z.string().max(15).optional().nullable(),
+  status: z.enum(['active', 'suspended', 'verification_pending']).default('active'),
+});
+export type OrganizationCreate = z.infer<typeof OrganizationCreateSchema>;
+
+export const ThirdPartyAgreementCreateSchema = z.object({
+  tpl_org_id: z.string().uuid(),
+  corridor_structure: z.any(), // Detailed structure to be defined (e.g. state pairs)
+  vehicle_types_supported: z.array(z.string()).default([]),
+  wholesale_rate_formula: z.any(),
+  sla_hours: z.number().int().positive().default(4),
+  platform_markup_percent: z.number().min(0).default(0.0),
+  status: z.enum(['active', 'paused', 'suspended']).default('active'),
+  effective_date: z.string().optional(),
+  expiry_date: z.string().optional().nullable(),
+});
+export type ThirdPartyAgreementCreate = z.infer<typeof ThirdPartyAgreementCreateSchema>;
+
+
 // ── Vehicles ───────────────────────────────────────────────
 
 export const VehicleCreateSchema = z.object({
@@ -76,12 +101,19 @@ export const ShipmentCreateSchema = z.object({
   delivery_point_id: z.any(),
   origin_name: z.string().optional().nullable(),
   origin_address: z.string().optional().nullable(),
-  origin_lat: z.number().optional().nullable(),
-  origin_lng: z.number().optional().nullable(),
-  dest_name: z.string().optional().nullable(),
-  dest_address: z.string().optional().nullable(),
-  dest_lat: z.number().optional().nullable(),
-  dest_lng: z.number().optional().nullable(),
+  origin_lat: z.number().optional(),
+  origin_lng: z.number().optional(),
+  dest_name: z.string().optional(),
+  dest_address: z.string().optional(),
+  dest_lat: z.number().optional(),
+  dest_lng: z.number().optional(),
+  stops: z.array(z.object({
+    id: z.string().optional().nullable(),
+    name: z.string().optional().nullable(),
+    address: z.string().optional().nullable(),
+    lat: z.number(),
+    lng: z.number(),
+  })).default([]),
   total_items: z.number().int().default(1),
   total_weight_kg: z.number().default(0.0),
   declared_load_kg: z.number().default(0.0),
@@ -116,7 +148,7 @@ export type ShipmentUpdate = z.infer<typeof ShipmentUpdateSchema>;
 export const OptimizationRequestSchema = z.object({
   depot_id: z.string().uuid().optional().nullable(),
   vehicle_ids: z.array(z.string().uuid()).max(100).default([]),
-  delivery_point_ids: z.array(z.string().uuid()).max(500).default([]),
+  shipment_ids: z.array(z.string().uuid()).max(500).default([]),
   algorithm: z.enum(['ortools', 'genetic', 'reinforcement']).default('ortools'),
   consider_traffic: z.boolean().default(true),
   consider_weather: z.boolean().default(true),

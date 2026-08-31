@@ -32,6 +32,10 @@ export default function AddShipmentModal() {
   const [originSuggestions, setOriginSuggestions] = useState<any[]>([])
   const [isSearchingOrigin, setIsSearchingOrigin] = useState(false)
 
+  // State for destination search
+  const [destSuggestions, setDestSuggestions] = useState<any[]>([])
+  const [isSearchingDest, setIsSearchingDest] = useState(false)
+
   // Nearby vendors for bidding
   const [nearbyVendors, setNearbyVendors] = useState<any[]>([])
   const [isLoadingVendors, setIsLoadingVendors] = useState(false)
@@ -187,27 +191,29 @@ export default function AddShipmentModal() {
       }
     }
 
-    const timerDest = setTimeout(() => searchMapbox(formData.searchTerm, setSuggestions, setIsSearching), 500)
+    const timerDest = setTimeout(() => searchMapbox(formData.destSearch, setDestSuggestions, setIsSearchingDest), 500)
+    const timerStops = setTimeout(() => searchMapbox(formData.searchTerm, setSuggestions, setIsSearching), 500)
     const timerOrigin = setTimeout(() => searchMapbox(formData.originSearch, setOriginSuggestions, setIsSearchingOrigin), 500)
 
     return () => {
       clearTimeout(timerDest)
+      clearTimeout(timerStops)
       clearTimeout(timerOrigin)
     }
-  }, [formData.searchTerm, formData.originSearch])
+  }, [formData.destSearch, formData.searchTerm, formData.originSearch])
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
       const payload = {
-        delivery_point_id: data.delivery_point_id,
-        dest_name: data.delivery_point_name,
-        dest_address: data.delivery_point_address,
-        dest_lat: data.dest_lat,
-        dest_lng: data.dest_lng,
+        stops: data.stops || [],
         origin_name: data.origin_name,
         origin_address: data.origin_address,
         origin_lat: data.origin_lat,
         origin_lng: data.origin_lng,
+        dest_name: data.delivery_point_name,
+        dest_address: data.delivery_point_address,
+        dest_lat: data.dest_lat,
+        dest_lng: data.dest_lng,
         total_items: Number(data.total_items),
         total_weight_kg: Number(data.total_weight_kg),
         declared_load_kg: Math.max(Number(data.total_weight_kg), (Number(data.length_cm) * Number(data.width_cm) * Number(data.height_cm)) / 5000),
@@ -240,15 +246,25 @@ export default function AddShipmentModal() {
             if (!data.origin_lat || !data.dest_lat) return { distance_km: null, eta_text: null };
             const toRad = (value: number) => (value * Math.PI) / 180;
             const R = 6371;
-            const dLat = toRad(data.dest_lat - data.origin_lat);
-            const dLon = toRad(data.dest_lng - data.origin_lng);
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(data.origin_lat)) * Math.cos(toRad(data.dest_lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            const hrs = dist / 40;
+            let totalDist = 0;
+            let prevLat = data.origin_lat;
+            let prevLng = data.origin_lng;
+            
+            const allStops = [{ lat: data.dest_lat, lng: data.dest_lng }, ...(data.stops || [])];
+            
+            for (const stop of allStops) {
+              const dLat = toRad(stop.lat - prevLat);
+              const dLon = toRad(stop.lng - prevLng);
+              const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(prevLat)) * Math.cos(toRad(stop.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              totalDist += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+              prevLat = stop.lat;
+              prevLng = stop.lng;
+            }
+            const hrs = totalDist / 40;
             const etaDate = new Date();
             etaDate.setHours(etaDate.getHours() + hrs);
             return {
-              distance_km: dist.toFixed(1),
+              distance_km: totalDist.toFixed(1),
               eta_text: `${etaDate.toISOString().split('T')[0]} (Est.)`
             };
           })(),
@@ -505,36 +521,105 @@ export default function AddShipmentModal() {
 
             {/* Destination Search */}
             <div className="space-y-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
-                    <MapPin size={12} className="text-yellow-500" /> Goal Destination
-                  </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
+                  <MapPin size={12} className="text-red-500" /> Goal Destination
+                </label>
+              </div>
+              <div className="relative group">
+                <div className="absolute left-6 top-1/2 -translate-y-1/2 text-muted">
+                  {isSearchingDest ? <Loader2 size={18} className="animate-spin text-red-500" /> : <MapPin size={18} />}
                 </div>
-                <div className="relative group">
+                <input
+                  placeholder="Where is it going?"
+                  value={formData.destSearch || formData.delivery_point_name}
+                  onChange={(e) => {
+                    setFormData((prev: any) => ({ ...prev, destSearch: e.target.value, ...(prev.delivery_point_name ? { delivery_point_name: '', delivery_point_address: '' } : {}) }))
+                  }}
+                  className="w-full h-14 pl-14 pr-6 bg-slate-50 border-2 border-transparent rounded-2xl text-slate-900 font-bold placeholder:text-muted focus:bg-white focus:border-red-500/30 transition-all outline-none text-sm"
+                />
+                {destSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-2 z-[60] bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
+                    {destSuggestions.map((p: any) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            delivery_point_name: p.text,
+                            delivery_point_address: p.place_name,
+                            dest_lat: p.center[1],
+                            dest_lng: p.center[0],
+                            destSearch: ''
+                          })
+                          setDestSuggestions([])
+                        }}
+                        className="w-full px-5 py-3 text-left hover:bg-slate-50 flex flex-col gap-0.5"
+                      >
+                        <span className="text-xs font-black text-slate-900">{p.text}</span>
+                        <span className="text-[9px] font-bold text-muted uppercase truncate">{p.place_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Additional Delivery Stops Search */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
+                  <MapPin size={12} className="text-yellow-500" /> Additional Stops (Optional)
+                </label>
+                <Badge variant="yellow" className="text-[8px] px-2 py-0.5">{formData.stops.length} Extra</Badge>
+              </div>
+                
+                <div className="space-y-2">
+                  {formData.stops.map((stop: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-2xl shadow-sm animate-in slide-in-from-bottom-2">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black text-slate-900">{stop.name}</span>
+                        <span className="text-[9px] font-bold text-muted uppercase truncate max-w-[200px]">{stop.address}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newStops = [...formData.stops];
+                          newStops.splice(idx, 1);
+                          setFormData({ ...formData, stops: newStops });
+                        }}
+                        className="w-8 h-8 shrink-0 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white flex items-center justify-center transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="relative group mt-2">
                   <div className="absolute left-6 top-1/2 -translate-y-1/2 text-muted">
                     {isSearching ? <Loader2 size={18} className="animate-spin text-yellow-500" /> : <Search size={18} />}
                   </div>
                   <input
-                    placeholder="Final drop destination?"
-                    value={formData.searchTerm || formData.delivery_point_name}
-                    onChange={(e) => {
-                      setFormData((prev: any) => ({ ...prev, searchTerm: e.target.value, ...(prev.delivery_point_name ? { delivery_point_name: '', delivery_point_id: '' } : {}) }))
-                    }}
+                    placeholder={formData.stops.length === 0 ? "Final drop destination?" : "Add another stop?"}
+                    value={formData.searchTerm}
+                    onChange={(e) => setFormData((prev: any) => ({ ...prev, searchTerm: e.target.value }))}
                     className="w-full h-14 pl-14 pr-6 bg-slate-50 border-2 border-transparent rounded-2xl text-slate-900 font-bold placeholder:text-muted focus:bg-white focus:border-yellow-500/30 transition-all outline-none text-sm"
                   />
                   {suggestions.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-2 z-[60] bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden">
+                    <div className="absolute top-full left-0 right-0 mt-2 z-[60] bg-white rounded-2xl border border-slate-100 shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
                       {suggestions.map((p: any) => (
                         <button
                           key={p.id}
                           onClick={() => {
                             setFormData({
                               ...formData,
-                              delivery_point_id: p.id,
-                              delivery_point_name: p.text,
-                              delivery_point_address: p.place_name,
-                              dest_lat: p.center[1],
-                              dest_lng: p.center[0],
+                              stops: [...formData.stops, {
+                                id: p.id,
+                                name: p.text,
+                                address: p.place_name,
+                                lat: p.center[1],
+                                lng: p.center[0]
+                              }],
                               searchTerm: ''
                             })
                             setSuggestions([])
