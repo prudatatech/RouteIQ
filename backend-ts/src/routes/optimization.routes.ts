@@ -335,7 +335,7 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
       .eq('id', route_id)
       .single();
 
-    if (!route || !['active', 'on_route', 'pending'].includes(route.status)) {
+    if (!route || !['active', 'on_route', 'pending', 'in_progress'].includes(route.status)) {
       res.status(400).json({ detail: 'Route not found or not in an optimizable state' });
       return;
     }
