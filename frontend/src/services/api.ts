@@ -204,6 +204,14 @@ export const analyticsAPI = {
   profitableRoutes: () => api.get('/analytics/profitable-routes').then(r => r.data),
 }
 
+export const tplAPI = {
+  onboard: (data: any) => api.post('/tpl/onboard', data).then(r => r.data),
+  queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
+  getPartner: (id: string) => api.get(`/tpl/${id}`).then(r => r.data),
+  approve: (id: string, email: string) => api.post(`/tpl/approve/${id}`, { email }).then(r => r.data),
+  updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
+}
+
 export const telemetryWS = {
   getURL: () => {
     let apiUrl = import.meta.env.VITE_API_URL || '';
