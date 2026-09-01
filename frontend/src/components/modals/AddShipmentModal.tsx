@@ -164,7 +164,7 @@ export default function AddShipmentModal() {
 
   useEffect(() => {
     const searchMapbox = async (query: string, setter: (val: any[]) => void, loadingSetter: (val: boolean) => void) => {
-      if (query.length < 3) {
+      if (!query || query.length < 3) {
         setter([])
         return
       }
@@ -204,8 +204,46 @@ export default function AddShipmentModal() {
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
+      // 1. Sort additional stops geographically (Nearest Neighbor from Origin)
+      const toRad = (value: number) => (value * Math.PI) / 180;
+      const R = 6371;
+      
+      let unvisitedStops = (data.stops || []).map((s: any) => ({ ...s }));
+      let sortedAdditionalStops = [];
+      let currLat = data.origin_lat;
+      let currLng = data.origin_lng;
+      let calculatedTotalDist = 0;
+
+      while (unvisitedStops.length > 0 && currLat && currLng) {
+        let nearestIdx = 0;
+        let minD = Infinity;
+        for (let i = 0; i < unvisitedStops.length; i++) {
+          const stop = unvisitedStops[i];
+          if (!stop.lat || !stop.lng) continue;
+          const dLat = toRad(stop.lat - currLat);
+          const dLon = toRad(stop.lng - currLng);
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(currLat)) * Math.cos(toRad(stop.lat)) * Math.sin(dLon / 2) ** 2;
+          const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          if (d < minD) { minD = d; nearestIdx = i; }
+        }
+        if (minD === Infinity) break;
+        const next = unvisitedStops.splice(nearestIdx, 1)[0];
+        sortedAdditionalStops.push(next);
+        calculatedTotalDist += minD;
+        currLat = next.lat;
+        currLng = next.lng;
+      }
+
+      // Add distance to Final Goal Destination
+      if (data.dest_lat && data.dest_lng && currLat && currLng) {
+        const dLat = toRad(data.dest_lat - currLat);
+        const dLon = toRad(data.dest_lng - currLng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(currLat)) * Math.cos(toRad(data.dest_lat)) * Math.sin(dLon / 2) ** 2;
+        calculatedTotalDist += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
       const payload = {
-        stops: data.stops || [],
+        stops: sortedAdditionalStops,
         origin_name: data.origin_name,
         origin_address: data.origin_address,
         origin_lat: data.origin_lat,
@@ -244,27 +282,12 @@ export default function AddShipmentModal() {
           transporter_signature: data.selectedVehicleId ? 'Auto-Signed at Dispatch' : null,
           eta_details: (() => {
             if (!data.origin_lat || !data.dest_lat) return { distance_km: null, eta_text: null };
-            const toRad = (value: number) => (value * Math.PI) / 180;
-            const R = 6371;
-            let totalDist = 0;
-            let prevLat = data.origin_lat;
-            let prevLng = data.origin_lng;
             
-            const allStops = [{ lat: data.dest_lat, lng: data.dest_lng }, ...(data.stops || [])];
-            
-            for (const stop of allStops) {
-              const dLat = toRad(stop.lat - prevLat);
-              const dLon = toRad(stop.lng - prevLng);
-              const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(prevLat)) * Math.cos(toRad(stop.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-              totalDist += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-              prevLat = stop.lat;
-              prevLng = stop.lng;
-            }
-            const hrs = totalDist / 40;
+            const hrs = calculatedTotalDist / 40; // 40 km/h average commercial speed
             const etaDate = new Date();
             etaDate.setHours(etaDate.getHours() + hrs);
             return {
-              distance_km: totalDist.toFixed(1),
+              distance_km: calculatedTotalDist.toFixed(1),
               eta_text: `${etaDate.toISOString().split('T')[0]} (Est.)`
             };
           })(),
@@ -571,11 +594,11 @@ export default function AddShipmentModal() {
                 <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
                   <MapPin size={12} className="text-yellow-500" /> Additional Stops (Optional)
                 </label>
-                <Badge variant="yellow" className="text-[8px] px-2 py-0.5">{formData.stops.length} Extra</Badge>
+                <Badge variant="yellow" className="text-[8px] px-2 py-0.5">{(formData.stops || []).length} Extra</Badge>
               </div>
                 
                 <div className="space-y-2">
-                  {formData.stops.map((stop: any, idx: number) => (
+                  {(formData.stops || []).map((stop: any, idx: number) => (
                     <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-2xl shadow-sm animate-in slide-in-from-bottom-2">
                       <div className="flex flex-col">
                         <span className="text-xs font-black text-slate-900">{stop.name}</span>
@@ -583,7 +606,7 @@ export default function AddShipmentModal() {
                       </div>
                       <button 
                         onClick={() => {
-                          const newStops = [...formData.stops];
+                          const newStops = [...(formData.stops || [])];
                           newStops.splice(idx, 1);
                           setFormData({ ...formData, stops: newStops });
                         }}
@@ -600,7 +623,7 @@ export default function AddShipmentModal() {
                     {isSearching ? <Loader2 size={18} className="animate-spin text-yellow-500" /> : <Search size={18} />}
                   </div>
                   <input
-                    placeholder={formData.stops.length === 0 ? "Final drop destination?" : "Add another stop?"}
+                    placeholder={(formData.stops || []).length === 0 ? "Final drop destination?" : "Add another stop?"}
                     value={formData.searchTerm}
                     onChange={(e) => setFormData((prev: any) => ({ ...prev, searchTerm: e.target.value }))}
                     className="w-full h-14 pl-14 pr-6 bg-slate-50 border-2 border-transparent rounded-2xl text-slate-900 font-bold placeholder:text-muted focus:bg-white focus:border-yellow-500/30 transition-all outline-none text-sm"
@@ -613,7 +636,7 @@ export default function AddShipmentModal() {
                           onClick={() => {
                             setFormData({
                               ...formData,
-                              stops: [...formData.stops, {
+                              stops: [...(formData.stops || []), {
                                 id: p.id,
                                 name: p.text,
                                 address: p.place_name,

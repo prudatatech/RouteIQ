@@ -384,6 +384,8 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
       const unvisited = [...pendingStops];
       const newSequence = [];
       
+      let totalDistanceKm = 0;
+      
       // Greedy nearest neighbor
       while (unvisited.length > 0) {
         let bestIdx = -1;
@@ -417,6 +419,10 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
           }
         }
         
+        if (minDistance !== Infinity) {
+          totalDistanceKm += minDistance;
+        }
+
         const nextStop = unvisited.splice(bestIdx, 1)[0];
         newSequence.push(nextStop.delivery_point_id);
         const dp: any = nextStop.delivery_points || {};
@@ -424,10 +430,14 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
         currentLng = dp.longitude || dp.lng || currentLng;
       }
 
+      const drivingHours = totalDistanceKm / 40.0;
+      const realisticEtaMinutes = Math.round((drivingHours * 60) + (pendingStops.length * 15));
+
       decision = {
         new_stop_sequence: newSequence,
-        new_eta_minutes: pendingStops.length * 15,
-        saved_minutes: 5,
+        new_eta_minutes: realisticEtaMinutes,
+        new_distance_km: parseFloat(totalDistanceKm.toFixed(1)),
+        saved_minutes: Math.round(realisticEtaMinutes * 0.1),
       };
       
       console.log(`[Re-optimize Fallback] Generated new sequence for ${route_id} with ${newSequence.length} stops.`);
@@ -457,12 +467,13 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
           return Promise.resolve();
         }));
 
-        // Update route ETA
+        // Update route ETA and Distance
         await supabase
           .from('routes')
           .update({ 
             total_duration_minutes: decision.new_eta_minutes,
-            // optionally update total_distance_km if the ml service provided it
+            total_distance_km: decision.new_distance_km,
+            estimated_fuel_liters: parseFloat((decision.new_distance_km / 4).toFixed(1)),
           })
           .eq('id', route_id);
 
@@ -470,7 +481,8 @@ router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Resp
           status: 'success',
           message: `Route re-optimized successfully. Saved ${decision.saved_minutes} minutes.`,
           saved_minutes: decision.saved_minutes,
-          new_eta_minutes: decision.new_eta_minutes
+          new_eta_minutes: decision.new_eta_minutes,
+          new_distance_km: decision.new_distance_km
         });
         return;
       }

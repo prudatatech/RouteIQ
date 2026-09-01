@@ -6,47 +6,9 @@ import { routesAPI, vehiclesAPI, deliveryPointsAPI, shipmentsAPI, optimizationAP
 import { StatusDot } from '@/components/ui'
 import { format } from 'date-fns'
 import { formatEta } from '@/utils/timeFormat'
+import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-
-// Haversine fallback for 0 distance routes
-const calculateFallbackDistance = (route: any) => {
-  if (route.total_distance_km > 0) return route.total_distance_km;
-  if (!route.route_stops || route.route_stops.length === 0) return 0;
-  
-  const stops = [...route.route_stops].sort((a: any, b: any) => a.sequence - b.sequence);
-  let totalKm = 0;
-  
-  const toRad = (v: number) => v * Math.PI / 180;
-  
-  let prevLat = route.vehicles?.latitude;
-  let prevLng = route.vehicles?.longitude;
-  
-  if (!prevLat || !prevLng) {
-    // If no vehicle location, start from first stop
-    prevLat = stops[0]?.delivery_points?.latitude;
-    prevLng = stops[0]?.delivery_points?.longitude;
-    stops.shift(); // Remove first stop from distance calc
-  }
-
-  for (const stop of stops) {
-    const lat = stop.delivery_points?.latitude;
-    const lng = stop.delivery_points?.longitude;
-    if (lat && lng && prevLat && prevLng) {
-      const R = 6371; // km
-      const dLat = toRad(lat - prevLat);
-      const dLon = toRad(lng - prevLng);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(toRad(prevLat)) * Math.cos(toRad(lat)) * 
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      totalKm += R * c * 1.3; // 1.3 road multiplier
-      prevLat = lat;
-      prevLng = lng;
-    }
-  }
-  return totalKm;
-}
 
 export default function RoutesPage() {
   const queryClient = useQueryClient()
@@ -215,11 +177,10 @@ export default function RoutesPage() {
                 </tr>
               ) : routes.map((r: any) => {
                 const vehicle = Array.isArray(vehicles) ? vehicles.find((v: any) => v.id === r.vehicle_id) : null
-                // Attach vehicle to route for distance calculation if missing
                 const routeWithVehicle = { ...r, vehicles: vehicle || r.vehicles }
-                const computedDist = calculateFallbackDistance(routeWithVehicle)
-                const computedDuration = r.total_duration_minutes > 0 ? r.total_duration_minutes : (computedDist / 40) * 60 // Assume 40 km/h average
-                const computedFuel = r.estimated_fuel_liters > 0 ? r.estimated_fuel_liters : computedDist / 4 // Assume 4 km/L
+                const computedDist = getRouteDistance(routeWithVehicle)
+                const computedDuration = getRouteDuration(routeWithVehicle, computedDist)
+                const computedFuel = getRouteFuel(routeWithVehicle, computedDist)
 
                 return (
                   <tr 
@@ -259,7 +220,7 @@ export default function RoutesPage() {
                     <td className="px-6 py-4 text-xs font-bold text-text uppercase tracking-widest">
                       {formatEta(computedDuration)}
                     </td>
-                    <td className="px-6 py-4 text-xs font-bold text-text uppercase tracking-widest">
+                    <td className="py-4 px-6 text-sm font-bold text-slate-700">
                       {computedFuel.toFixed(1)} L
                     </td>
                     <td className="px-6 py-4">

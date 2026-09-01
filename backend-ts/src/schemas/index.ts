@@ -121,6 +121,7 @@ export const ShipmentCreateSchema = z.object({
   enable_mobile_gps: z.boolean().default(false),
   vehicle_id: z.string().uuid().optional().nullable(),
   open_bidding: z.boolean().optional(),
+  metadata: z.any().optional(),
   bidding_opens_at: z.string().optional().nullable(),
   bidding_closes_at: z.string().optional().nullable(),
   asking_price: z.number().optional().nullable(),

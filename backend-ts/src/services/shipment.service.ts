@@ -229,23 +229,6 @@ export class ShipmentService {
     const allStopsCount = (shipmentIn.dest_lat ? 1 : 0) + (shipmentIn.stops?.length || 0);
     const demandPerStop = allStopsCount > 0 ? totalDemand / allStopsCount : 0;
 
-    // Primary destination
-    if (shipmentIn.dest_lat && shipmentIn.dest_lng) {
-      const isUUID = typeof shipmentIn.delivery_point_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shipmentIn.delivery_point_id);
-      const dpId = isUUID ? shipmentIn.delivery_point_id : uuidv4();
-      createdDpIds.push(dpId);
-      dpRows.push({
-        id: dpId,
-        name: shipmentIn.open_bidding ? 'Pending Vendor Bid' : (shipmentIn.dest_name || 'New Location'),
-        address: shipmentIn.open_bidding ? 'Awaiting Marketplace Match' : (shipmentIn.dest_address || 'Unknown Address'),
-        latitude: shipmentIn.dest_lat,
-        longitude: shipmentIn.dest_lng,
-        demand_kg: demandPerStop,
-        shipment_id: dbShipment.id,
-        status: 'pending',
-      });
-    }
-
     // Additional stops
     if (shipmentIn.stops && shipmentIn.stops.length > 0) {
       shipmentIn.stops.forEach((stop: any) => {
@@ -264,6 +247,23 @@ export class ShipmentService {
         });
       });
     }
+
+    // Primary destination
+    if (shipmentIn.dest_lat && shipmentIn.dest_lng) {
+      const isUUID = typeof shipmentIn.delivery_point_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shipmentIn.delivery_point_id);
+      const dpId = isUUID ? shipmentIn.delivery_point_id : uuidv4();
+      createdDpIds.push(dpId);
+      dpRows.push({
+        id: dpId,
+        name: shipmentIn.open_bidding ? 'Pending Vendor Bid' : (shipmentIn.dest_name || 'New Location'),
+        address: shipmentIn.open_bidding ? 'Awaiting Marketplace Match' : (shipmentIn.dest_address || 'Unknown Address'),
+        latitude: shipmentIn.dest_lat,
+        longitude: shipmentIn.dest_lng,
+        demand_kg: demandPerStop,
+        shipment_id: dbShipment.id,
+        status: 'pending',
+      });
+    }
     
     if (dpRows.length > 0) {
       await supabase.from('delivery_points').upsert(dpRows);
@@ -271,14 +271,37 @@ export class ShipmentService {
 
     // 4. Create Route if vehicle_id is provided
     if (shipmentIn.vehicle_id && createdDpIds.length > 0) {
+      let initialDistKm = 0;
+      let currLat = shipmentIn.origin_lat || 0;
+      let currLng = shipmentIn.origin_lng || 0;
+      const R = 6371; // Earth radius in km
+      
+      if (currLat && currLng) {
+        for (const dp of dpRows) {
+          if (!dp.latitude || !dp.longitude) continue;
+          const dLat = (dp.latitude - currLat) * Math.PI / 180;
+          const dLng = (dp.longitude - currLng) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(currLat * Math.PI / 180) * Math.cos(dp.latitude * Math.PI / 180) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          initialDistKm += R * c;
+          currLat = dp.latitude;
+          currLng = dp.longitude;
+        }
+      }
+
+      const initialDurationMins = Math.round((initialDistKm / 40.0 * 60) + (dpRows.length * 15));
+      const initialFuelLiters = parseFloat((initialDistKm / 4.0).toFixed(1));
+
       const routeId = uuidv4();
       const { data: dbRoute } = await supabase.from('routes').insert({
         id: routeId,
         vehicle_id: shipmentIn.vehicle_id,
         status: 'active',
-        total_distance_km: 0,
-        total_duration_minutes: 0,
-        estimated_fuel_liters: 0,
+        total_distance_km: parseFloat(initialDistKm.toFixed(1)),
+        total_duration_minutes: initialDurationMins,
+        estimated_fuel_liters: initialFuelLiters,
         weather_condition: 'clear',
         traffic_delay_minutes: 0,
         waypoints: [],

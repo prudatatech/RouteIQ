@@ -462,12 +462,12 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
       const lat = liveVehicle?.lat; const lng = liveVehicle?.lng
       if (!lat || !lng) return
 
-      // Refresh ETA via Mapbox driving-traffic
+      // Refresh ETA via Mapbox driving-traffic (only if we don't have a backend exact ETA)
       fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${lng},${lat};${destination.lng},${destination.lat}?overview=false&access_token=${MAPBOX_TOKEN}`)
         .then(r => r.json())
         .then(data => {
           if (data.routes?.[0]) {
-            const calcEta = formatEta(data.routes[0].duration / 60)
+            const calcEta = shipment?.estimated_duration_minutes ? formatEta(shipment.estimated_duration_minutes) : formatEta(data.routes[0].duration / 60)
             setEta(calcEta)
             if (onEtaUpdate) onEtaUpdate(calcEta)
           }
@@ -517,7 +517,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
               const c = data.routes[0].geometry.coordinates;
               setFullRouteCoords(c);
               setActiveRouteCoords(c);
-              const calcEta = formatEta(data.routes[0].duration / 60);
+              const calcEta = shipment?.estimated_duration_minutes ? formatEta(shipment.estimated_duration_minutes) : formatEta(data.routes[0].duration / 60);
               setEta(calcEta);
               if (onEtaUpdate) onEtaUpdate(calcEta);
             }

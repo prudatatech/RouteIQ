@@ -10,6 +10,8 @@ import { ArrowLeft, ArrowRight, MapPin, Clock, Activity, ShieldAlert, Droplets, 
 import Map, { Marker, Source, Layer } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import toast from 'react-hot-toast'
+import mapboxgl from 'mapbox-gl'
+import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 
 export default function RouteDetailsPage() {
   const { id } = useParams()
@@ -122,9 +124,9 @@ export default function RouteDetailsPage() {
 
   // Mapbox Live Directions are managed by hooks above
 
-  const displayDistance = liveDist ? (liveDist / 1000).toFixed(1) : (route.total_distance_km?.toFixed(1) || '0.0')
-  const displayDuration = liveDuration ? liveDuration / 60 : route.total_duration_minutes
-  const displayFuel = liveDist ? ((liveDist / 1000) / 4).toFixed(1) : (route.estimated_fuel_liters?.toFixed(1) || '0.0')
+  const displayDistance = getRouteDistance(route).toFixed(1)
+  const displayDuration = getRouteDuration(route, parseFloat(displayDistance))
+  const displayFuel = getRouteFuel(route, parseFloat(displayDistance)).toFixed(1)
 
   return (
     <div className="max-w-[1200px] mx-auto pb-12">
@@ -144,14 +146,10 @@ export default function RouteDetailsPage() {
           <Button 
             variant="accent" 
             className="gap-2 px-6 py-2.5 h-auto text-[11px] shadow-sm disabled:opacity-70" 
-            onClick={() => reoptimizeMutation.mutate()}
-            disabled={reoptimizeMutation.isPending || (!isActive && route?.status !== 'pending')}
+            onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
+            disabled={!isActive && route?.status !== 'pending'}
           >
-            {reoptimizeMutation.isPending ? (
-              <><Loader2 size={14} className="animate-spin" /> OPTIMIZING...</>
-            ) : (
-              <>RUN OPTIMIZER <ArrowRight size={14} /></>
-            )}
+            RUN OPTIMIZER <ArrowRight size={14} />
           </Button>
         </div>
       </div>

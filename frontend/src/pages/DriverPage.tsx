@@ -5,6 +5,8 @@ import {
   CheckCircle2, AlertTriangle, CloudRain, ShieldAlert, FileSignature, Loader2, Zap
 } from 'lucide-react';
 import { routesAPI, shipmentsAPI, telemetryAPI } from '@/services/api';
+import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers';
+import { formatEta } from '@/utils/timeFormat';
 import DriverMap from '@/components/map/DriverMap';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
@@ -100,8 +102,11 @@ export default function DriverPage() {
   });
 
   const activeRoute = routes[0];
-  const stops = activeRoute?.stops || [];
-  const currentStop = stops.find((s: any) => s.status === 'pending');
+  const stops = activeRoute?.stops || activeRoute?.route_stops || [];
+  const currentStop = stops.find((s: any) => s.status === 'pending') || stops[stops.length - 1];
+
+  const computedDist = activeRoute ? getRouteDistance(activeRoute) : 0;
+  const computedDuration = activeRoute ? getRouteDuration(activeRoute, computedDist) : 0;
 
   const updateStatus = useMutation({
     mutationFn: ({ shipmentId, status, params }: any) =>
@@ -200,11 +205,11 @@ export default function DriverPage() {
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
               <div>
                 <p className="text-[10px] text-muted uppercase tracking-widest">ETA</p>
-                <p className="font-black text-lg">4h 15m</p>
+                <p className="font-black text-lg">{formatEta(computedDuration)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-muted uppercase tracking-widest">Distance</p>
-                <p className="font-black text-lg">245 km</p>
+                <p className="font-black text-lg">{computedDist.toFixed(1)} km</p>
               </div>
             </div>
           </div>

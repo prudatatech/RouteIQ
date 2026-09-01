@@ -210,9 +210,10 @@ export default function ShipmentsPage() {
   }, [])
 
   const filtered = (Array.isArray(shipments) ? shipments : []).filter((s: any) => {
+    if (!s) return false;
     const matchesFilter = filter === 'all' || s.status === filter
     const matchesSearch = (s.tracking_id || '').toLowerCase().includes(search.toLowerCase()) ||
-      s.delivery_point?.name?.toLowerCase().includes(search.toLowerCase())
+      (s.delivery_point?.name || '').toLowerCase().includes(search.toLowerCase())
     return matchesFilter && matchesSearch
   })
 
@@ -437,7 +438,7 @@ export default function ShipmentsPage() {
                     <div className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">Status</div>
                     <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(79,172,254,0.8)]" />
-                      <span className="text-xs font-black text-text uppercase tracking-tighter">{s.status.replace(/_/g, ' ')}</span>
+                      <span className="text-xs font-black text-text uppercase tracking-tighter">{(s.status || '').replace(/_/g, ' ')}</span>
                     </div>
                   </div>
 

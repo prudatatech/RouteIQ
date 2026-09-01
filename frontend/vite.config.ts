@@ -2,29 +2,13 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
-const serviceWorkerRecoveryPlugin = () => ({
-  name: 'sw-recovery',
-  configureServer(server) {
-    server.middlewares.use((req, res, next) => {
-      if (req.url?.includes('main.jsx') || req.url?.includes('workbox-')) {
-        res.setHeader('Content-Type', 'application/javascript');
-        res.end(`
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(r => Promise.all(r.map(reg => reg.unregister()))).then(() => window.location.reload(true));
-          }
-        `);
-        return;
-      }
-      next();
-    });
-  }
-});
+
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   
   return {
-    plugins: [react(), serviceWorkerRecoveryPlugin()],
+    plugins: [react()],
     resolve: {
       alias: { '@': path.resolve(__dirname, './src') },
     },

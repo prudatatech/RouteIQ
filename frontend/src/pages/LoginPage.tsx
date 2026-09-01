@@ -92,7 +92,7 @@ export default function LoginPage() {
       {/* Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
 
-      <div className="w-full max-w-[420px] space-y-8 relative z-10 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+      <div className="w-full max-w-[420px] space-y-8 relative z-10 ">
         {/* Branding */}
         <div className="text-center space-y-3">
           <div className="inline-flex w-20 h-20 bg-primary rounded-3xl items-center justify-center shadow-[0_8px_32px_rgba(79,172,254,0.3)] rotate-3 hover:rotate-0 transition-transform duration-500">
