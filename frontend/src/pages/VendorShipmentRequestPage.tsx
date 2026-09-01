@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { MapPin, ArrowLeft, Send, Search, Info, Package, User, FileText, Settings, ShieldAlert } from 'lucide-react';
+import { MapPin, ArrowLeft, Send, Search, Info, Package, User, FileText, Settings, ShieldAlert, Sparkles, Zap } from 'lucide-react';
 import * as turf from '@turf/turf';
+import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const DEFAULT_CENTER = { longitude: 72.8464, latitude: 19.1197 }; // Mumbai
@@ -54,6 +55,14 @@ export default function VendorShipmentRequestPage() {
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('');
   const [declaredValue, setDeclaredValue] = useState('');
+  
+  // HSN Code State
+  const [hsnCode, setHsnCode] = useState('');
+  const [hsnDescription, setHsnDescription] = useState('');
+  const [gstRate, setGstRate] = useState('');
+  const [hsnSuggestions, setHsnSuggestions] = useState<HSNEntry[]>([]);
+  const [showHsnDropdown, setShowHsnDropdown] = useState(false);
+  const hsnDropdownRef = useRef<HTMLDivElement>(null);
   
   const [specialHandling, setSpecialHandling] = useState({
     fragile: false,
@@ -289,6 +298,37 @@ export default function VendorShipmentRequestPage() {
   const pickupFence = createGeoFence(pickupLocation);
   const dropFence = createGeoFence(dropLocation);
 
+  // HSN Auto-suggest: triggers on product name or HSN input changes
+  useEffect(() => {
+    const query = hsnCode || productName;
+    if (query && query.length >= 2) {
+      const results = searchHSN(query, productCategory);
+      setHsnSuggestions(results);
+      if (results.length > 0 && !hsnCode) setShowHsnDropdown(true);
+    } else {
+      setHsnSuggestions([]);
+    }
+  }, [hsnCode, productName, productCategory]);
+
+  // Close HSN dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (hsnDropdownRef.current && !hsnDropdownRef.current.contains(e.target as Node)) {
+        setShowHsnDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectHSN = (entry: HSNEntry) => {
+    setHsnCode(entry.hsn);
+    setHsnDescription(entry.description);
+    setGstRate(String(entry.gstRate));
+    setShowHsnDropdown(false);
+    toast.success(`HSN ${entry.hsn} selected — ${entry.gstRate}% GST`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pickupLocation || !dropLocation || !capacity || !productCategory || !productName) {
@@ -312,6 +352,9 @@ export default function VendorShipmentRequestPage() {
           name: productName,
           brand,
           modelVariant,
+          hsnCode,
+          hsnDescription,
+          gstRate: gstRate ? Number(gstRate) : null,
           packagingType,
           noOfPackages: Number(noOfPackages) || 0,
           quantity: Number(quantity) || 0,
@@ -499,6 +542,91 @@ export default function VendorShipmentRequestPage() {
                 <label className="block text-xs font-bold text-muted uppercase tracking-widest">Model / Variant</label>
                 <input type="text" value={modelVariant} onChange={e => setModelVariant(e.target.value)} placeholder="E.g. 1121 Steam" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
               </div>
+            </div>
+
+            {/* HSN Auto-Suggest Section */}
+            <div className="mt-6 p-4 bg-gradient-to-br from-primary/5 to-accent/5 border border-primary/20 rounded-2xl">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles size={18} className="text-primary" />
+                <h4 className="font-display font-bold text-text uppercase tracking-wider text-xs">Smart HSN Classification</h4>
+                <span className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Auto-Suggest</span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* HSN Code Input */}
+                <div className="space-y-2 relative" ref={hsnDropdownRef}>
+                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">HSN Code <span className="text-error">*</span></label>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={hsnCode} 
+                      onChange={e => { setHsnCode(e.target.value); setShowHsnDropdown(true); }}
+                      onFocus={() => { if (hsnSuggestions.length > 0) setShowHsnDropdown(true); }}
+                      placeholder="E.g. 1006 or type product" 
+                      className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-mono font-bold focus:outline-none transition-all pr-10" 
+                    />
+                    {hsnSuggestions.length > 0 && (
+                      <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-pulse" />
+                    )}
+                  </div>
+                  
+                  {/* Auto-suggest Dropdown */}
+                  {showHsnDropdown && hsnSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-[320px] mt-1 bg-surface border border-border rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                      <div className="px-3 py-2 bg-surface2 border-b border-border">
+                        <p className="text-[9px] font-bold text-muted uppercase tracking-widest">🟡 Suggestions based on {hsnCode ? 'HSN/Product' : 'Product Name'}</p>
+                      </div>
+                      {hsnSuggestions.map((entry, i) => (
+                        <button 
+                          key={`${entry.hsn}-${i}`} 
+                          type="button" 
+                          onClick={() => handleSelectHSN(entry)}
+                          className="w-full text-left px-4 py-3 hover:bg-primary/10 border-b border-border/30 last:border-0 transition-colors group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-black text-sm text-primary">{entry.hsn}</span>
+                            <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">{entry.gstRate}% GST</span>
+                          </div>
+                          <div className="text-xs font-bold text-text mt-1 group-hover:text-primary transition-colors">{entry.description}</div>
+                          <div className="text-[10px] text-muted mt-0.5">{entry.category}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Product Description */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">Description <span className="text-[9px] text-primary">🟡 Auto-suggest</span></label>
+                  <input 
+                    type="text" 
+                    value={hsnDescription} 
+                    onChange={e => setHsnDescription(e.target.value)} 
+                    placeholder="Based on Product Name" 
+                    className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" 
+                  />
+                </div>
+                
+                {/* GST Rate */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">GST Rate (%) <span className="text-[9px] text-primary">🟡 Auto-suggest</span></label>
+                  <input 
+                    type="text" 
+                    value={gstRate ? `${gstRate}%` : ''} 
+                    onChange={e => setGstRate(e.target.value.replace('%', ''))} 
+                    placeholder="Based on HSN/Product" 
+                    className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-bold text-emerald-400 focus:outline-none transition-all" 
+                  />
+                </div>
+              </div>
+              
+              {/* Smart tip */}
+              {!hsnCode && productName && hsnSuggestions.length > 0 && (
+                <div className="mt-3 flex items-center gap-2 text-[10px] text-primary font-bold uppercase tracking-widest animate-pulse">
+                  <Sparkles size={12} />
+                  <span>We found {hsnSuggestions.length} HSN codes matching "{productName}" — click above to auto-fill</span>
+                </div>
+              )}
             </div>
 
             <InputSectionHeader title="Packaging & Quantity" icon={Settings} />
