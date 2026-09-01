@@ -70,7 +70,22 @@ export default function VendorLayout() {
       loadProfile()
     }
     window.addEventListener('vendor-profile-updated', handleProfileUpdate)
-    return () => window.removeEventListener('vendor-profile-updated', handleProfileUpdate)
+    
+    // Real-time listener for KYC status changes by Admin
+    const channel = supabase
+      .channel('layout-kyc-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_profiles', filter: `id=eq.${userId}` }, () => {
+        loadProfile()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, () => {
+        loadProfile()
+      })
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('vendor-profile-updated', handleProfileUpdate)
+      supabase.removeChannel(channel)
+    }
   }, [userId])
 
   const handleLogout = async () => {

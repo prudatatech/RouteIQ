@@ -126,6 +126,21 @@ export default function VendorDocumentsPage() {
       }
     }
     loadProfile()
+
+    // Real-time listener for KYC status changes by Admin
+    const channel = supabase
+      .channel('kyc-status-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_profiles', filter: `id=eq.${userId}` }, () => {
+        loadProfile()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, () => {
+        loadProfile()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [userId])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
