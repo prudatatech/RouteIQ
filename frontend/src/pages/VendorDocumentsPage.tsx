@@ -44,7 +44,6 @@ export default function VendorDocumentsPage() {
     tanNumber: '',
     gstNumber: '',
     gstinDivision: '',
-    hsnCode: '',
     vendorType: 'Service Provider',
     reasonNoGst: '',
     msmeStatus: 'Not Applicable',
@@ -58,6 +57,7 @@ export default function VendorDocumentsPage() {
       cancelledCheque: null as any,
       gstRegistration: null as any,
       msmeCert: null as any,
+      companyLogo: null as any,
     },
     docUrls: {} as any
   })
@@ -235,11 +235,16 @@ export default function VendorDocumentsPage() {
       const { error } = await supabase
         .from('vendor_profiles')
         .update({
-          dummy2: JSON.stringify(kycPayload)
+          dummy2: JSON.stringify(kycPayload),
+          company_name: formData.name || undefined,
+          city: formData.city || undefined,
+          company_logo: formData.docUrls.companyLogo || undefined
         })
         .eq('id', userId)
 
       if (error) throw error
+
+      window.dispatchEvent(new Event('vendor-profile-updated'))
 
       setKycStatus('submitted')
       setIsEditingKyc(false)
@@ -387,7 +392,6 @@ export default function VendorDocumentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="PAN Number" required value={formData.panNumber} onChange={(v: string) => setFormData({...formData, panNumber: v})} readOnly={isReadOnly} />
               <Input label="GST Number" value={formData.gstNumber} onChange={(v: string) => setFormData({...formData, gstNumber: v})} readOnly={isReadOnly} />
-              <Input label="HSN Code" required value={formData.hsnCode} onChange={(v: string) => setFormData({...formData, hsnCode: v})} readOnly={isReadOnly} />
               <Select label="Vendor Type" required value={formData.vendorType} options={['Manufacturer', 'Trader', 'Consultant', 'Service Provider']} onChange={(v: string) => setFormData({...formData, vendorType: v})} readOnly={isReadOnly} />
             </div>
           </Section>
@@ -399,6 +403,7 @@ export default function VendorDocumentsPage() {
               <FileUpload label="Cancelled Cheque PDF Copy" docKey="cancelledCheque" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
               <FileUpload label="GST Registration PDF" docKey="gstRegistration" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
               <FileUpload label="Company Registration / MSME PDF" docKey="msmeCert" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
+              <FileUpload label="Company Logo (Image)" docKey="companyLogo" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
             </div>
           </Section>
 

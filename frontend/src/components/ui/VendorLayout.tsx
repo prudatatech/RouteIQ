@@ -29,7 +29,7 @@ export default function VendorLayout() {
 
         const { data: rawProfile, error } = await supabase
           .from('vendor_profiles')
-          .select('id, company_name, city, dummy2')
+          .select('id, company_name, city, company_logo, dummy2')
           .eq('id', userId)
           .maybeSingle()
           
@@ -63,7 +63,14 @@ export default function VendorLayout() {
         console.error('Error fetching vendor layout profile:', err)
       }
     }
+
     loadProfile()
+
+    const handleProfileUpdate = () => {
+      loadProfile()
+    }
+    window.addEventListener('vendor-profile-updated', handleProfileUpdate)
+    return () => window.removeEventListener('vendor-profile-updated', handleProfileUpdate)
   }, [userId])
 
   const handleLogout = async () => {
@@ -150,14 +157,19 @@ export default function VendorLayout() {
             </button>
             <div className="flex items-center gap-4 border-l border-border pl-6">
               {vendorProfile && (
-                <div className="hidden md:flex flex-col items-end cursor-pointer group" onClick={() => navigate('/vendor/documents')} title="View Documents & Profile">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck size={14} className="text-primary" />
-                    <span className="text-sm font-bold text-text uppercase tracking-tight group-hover:text-primary transition-colors">{vendorProfile.company_name}</span>
+                <div className="hidden md:flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/vendor/documents')} title="View Documents & Profile">
+                  {vendorProfile.company_logo && (
+                    <img src={vendorProfile.company_logo} alt="Company Logo" className="w-8 h-8 rounded-full object-cover border border-border bg-white" />
+                  )}
+                  <div className="flex flex-col items-end">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={14} className="text-primary" />
+                      <span className="text-sm font-bold text-text uppercase tracking-tight group-hover:text-primary transition-colors">{vendorProfile.company_name}</span>
+                    </div>
+                    <span className="text-[10px] text-muted font-mono uppercase tracking-widest flex items-center gap-1">
+                      Verified Vendor <span className="w-1 h-1 rounded-full bg-primary mx-1" /> {vendorProfile.city || 'Profile'}
+                    </span>
                   </div>
-                  <span className="text-[10px] text-muted font-mono uppercase tracking-widest flex items-center gap-1">
-                    Verified Vendor <span className="w-1 h-1 rounded-full bg-primary mx-1" /> {vendorProfile.city || 'Profile'}
-                  </span>
                 </div>
               )}
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent p-[2px] cursor-pointer hover:scale-105 transition-transform shadow-lg shadow-primary/20" onClick={handleLogout} title="Logout">
