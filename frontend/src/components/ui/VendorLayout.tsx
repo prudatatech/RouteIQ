@@ -82,7 +82,13 @@ export default function VendorLayout() {
       })
       .subscribe()
 
+    // Bulletproof fallback: Poll every 5 seconds
+    const pollInterval = setInterval(() => {
+      loadProfile()
+    }, 5000)
+
     return () => {
+      clearInterval(pollInterval)
       window.removeEventListener('vendor-profile-updated', handleProfileUpdate)
       supabase.removeChannel(channel)
     }

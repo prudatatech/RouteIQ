@@ -138,7 +138,13 @@ export default function VendorDocumentsPage() {
       })
       .subscribe()
 
+    // Bulletproof fallback: Poll every 5 seconds in case Realtime isn't enabled in Supabase DB settings
+    const pollInterval = setInterval(() => {
+      loadProfile()
+    }, 5000)
+
     return () => {
+      clearInterval(pollInterval)
       supabase.removeChannel(channel)
     }
   }, [userId])
