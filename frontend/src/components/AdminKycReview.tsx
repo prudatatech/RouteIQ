@@ -42,14 +42,28 @@ export default function AdminKycReview() {
   })
 
   const updateKycMutation = useMutation({
-    mutationFn: async ({ id, status, currentData }: any) => {
-      const payload = {
-        status,
-        data: currentData
+    mutationFn: async ({ id, status }: any) => {
+      // Fetch latest data to prevent overwriting with stale data
+      const { data: latestProfile, error: fetchErr } = await supabase
+        .from('vendor_profiles')
+        .select('dummy2')
+        .eq('id', id)
+        .single()
+        
+      if (fetchErr) throw fetchErr
+      
+      let parsed = { status: 'pending', data: {} }
+      if (latestProfile?.dummy2) {
+        try {
+          parsed = typeof latestProfile.dummy2 === 'string' ? JSON.parse(latestProfile.dummy2) : latestProfile.dummy2
+        } catch(e) {}
       }
+      
+      parsed.status = status
+      
       const { error } = await supabase
         .from('vendor_profiles')
-        .update({ dummy2: JSON.stringify(payload) })
+        .update({ dummy2: JSON.stringify(parsed) })
         .eq('id', id)
       
       if (error) throw error

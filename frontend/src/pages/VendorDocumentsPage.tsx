@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/services/supabase'
 import { FileText, Upload, CheckCircle, AlertCircle, Clock, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
@@ -13,7 +13,14 @@ export default function VendorDocumentsPage() {
   const [kycStatus, setKycStatus] = useState<'pending' | 'submitted' | 'approved' | 'rejected'>('pending')
   const [activeSection, setActiveSection] = useState(1)
   const [activeMainTab, setActiveMainTab] = useState<'kyc' | 'other'>('kyc')
-  const [isEditingKyc, setIsEditingKyc] = useState(false)
+  
+  const [isEditingKyc, _setIsEditingKyc] = useState(false)
+  const isEditingRef = useRef(false)
+  const setIsEditingKyc = (val: boolean) => {
+    isEditingRef.current = val
+    _setIsEditingKyc(val)
+  }
+
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerFile, setViewerFile] = useState({ url: '', name: '' })
 
@@ -90,14 +97,14 @@ export default function VendorDocumentsPage() {
               parsedKyc = typeof profile.dummy2 === 'string' ? JSON.parse(profile.dummy2) : profile.dummy2
               setKycStatus((parsedKyc.status || 'pending').toLowerCase() as any)
               
-              if (parsedKyc.data) {
+              if (parsedKyc.data && !isEditingRef.current) {
                 setFormData(prev => ({ ...prev, ...parsedKyc.data }))
               }
-              if (parsedKyc.otherDocs) {
+              if (parsedKyc.otherDocs && !isEditingRef.current) {
                 setOtherDocs(parsedKyc.otherDocs)
               }
             } catch(e) {}
-          } else {
+          } else if (!isEditingRef.current) {
             // Auto fill available
             setFormData(prev => ({
               ...prev,
