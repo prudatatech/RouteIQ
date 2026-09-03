@@ -71,7 +71,19 @@ export default function ShipmentManifestPage() {
   const meta = isEditing ? editData : (shipment.metadata || {});
 
   const handleInputChange = (field: string, value: any) => {
-    setEditData((prev: any) => ({ ...prev, [field]: value }));
+    setEditData((prev: any) => {
+      const keys = field.split('.');
+      if (keys.length === 1) return { ...prev, [field]: value };
+      
+      const newData = { ...prev };
+      let current = newData;
+      for (let i = 0; i < keys.length - 1; i++) {
+        current[keys[i]] = { ...(current[keys[i]] || {}) };
+        current = current[keys[i]];
+      }
+      current[keys[keys.length - 1]] = value;
+      return newData;
+    });
   };
 
   const handleCheckboxChange = (field: string) => {
@@ -141,8 +153,8 @@ export default function ShipmentManifestPage() {
     consigneeEmail: meta.consigneeEmail || dp?.email || shipment?.customer?.email || null,
     dispatch_date: meta.dispatch_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
     reporting_date: meta.reporting_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
-    eta_text: meta.eta_details?.eta_text || calculatedEta,
-    distance_km: meta.eta_details?.distance_km || (calculatedDist ? calculatedDist.toFixed(1) : null),
+    eta_text: calculatedEta || meta.eta_details?.eta_text,
+    distance_km: (calculatedDist ? calculatedDist.toFixed(1) : null) || meta.eta_details?.distance_km,
     productCategory: meta.productCategory || shipment?.parcels?.[0]?.category || 'General Cargo',
     productName: meta.productName || (shipment?.parcels?.[0]?.is_hazardous ? 'Hazardous Materials' : 'Standard Items'),
     brand: meta.brand || 'Generic',
