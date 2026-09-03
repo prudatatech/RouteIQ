@@ -960,16 +960,11 @@ export class ShipmentService {
         origin_address: manifest.pickup_location,
         origin_lat: manifest.pickup_lat,
         origin_lng: manifest.pickup_lng,
-        destination: (manifest.status === 'in_transit' || manifest.status === 'delivered') ? {
+        destination: {
           name: 'Drop Point',
           address: manifest.drop_location,
           lat: manifest.drop_lat,
           lng: manifest.drop_lng
-        } : {
-          name: 'Pickup Point',
-          address: manifest.pickup_location,
-          lat: manifest.pickup_lat,
-          lng: manifest.pickup_lng
         },
         vehicle: null,
         eta_minutes: null,

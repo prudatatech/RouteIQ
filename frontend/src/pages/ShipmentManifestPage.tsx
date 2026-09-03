@@ -85,19 +85,46 @@ export default function ShipmentManifestPage() {
   };
 
   // Smart Fallbacks
-  const dp = Array.isArray(shipment?.delivery_points) ? shipment.delivery_points[0] : (shipment?.delivery_point || shipment?.delivery_points);
+  const dps = Array.isArray(shipment?.delivery_points) ? shipment.delivery_points : (shipment?.delivery_point ? [shipment.delivery_point] : []);
+  const dp = dps.length > 0 ? dps[dps.length - 1] : (shipment?.drop_location || {lat: shipment?.dest_lat, lng: shipment?.dest_lng});
   
   const calcDist = () => {
-    const destLat = dp?.latitude || shipment?.drop_location?.lat || shipment?.dest_lat;
-    const destLng = dp?.longitude || shipment?.drop_location?.lng || shipment?.dest_lng;
-    
-    if (!shipment?.origin_lat || !shipment?.origin_lng || !destLat || !destLng) return null;
+    if (!shipment?.origin_lat || !shipment?.origin_lng) return null;
     const toRad = (value: number) => (value * Math.PI) / 180;
     const R = 6371;
-    const dLat = toRad(destLat - shipment.origin_lat);
-    const dLon = toRad(destLng - shipment.origin_lng);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(shipment.origin_lat)) * Math.cos(toRad(destLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const getDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    let totalDist = 0;
+    let currLat = shipment.origin_lat;
+    let currLng = shipment.origin_lng;
+    
+    let points = [...dps];
+    if (points.length === 0) {
+      const destLat = shipment?.drop_location?.lat || shipment?.dest_lat;
+      const destLng = shipment?.drop_location?.lng || shipment?.dest_lng;
+      if (destLat && destLng) {
+         points = [{ latitude: destLat, longitude: destLng }];
+      }
+    }
+
+    if (points.length === 0) return null;
+
+    points.forEach((p: any) => {
+      const pLat = p?.latitude || p?.lat;
+      const pLng = p?.longitude || p?.lng;
+      if (pLat && pLng) {
+        totalDist += getDist(currLat, currLng, pLat, pLng);
+        currLat = pLat;
+        currLng = pLng;
+      }
+    });
+
+    return totalDist === 0 ? null : totalDist;
   };
 
   const calculatedDist = calcDist();
