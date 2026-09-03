@@ -515,6 +515,14 @@ export class ShipmentService {
           };
         }
 
+        // ALWAYS inject fresh eta_details regardless of metadata format
+        const vendorDistKm = getDist(vendorData.pickup_lat, vendorData.pickup_lng, vendorData.drop_lat, vendorData.drop_lng);
+        const vendorEtaText = getETA(vendorDistKm, vendorData.created_at);
+        vMeta.eta_details = {
+          eta_text: vendorEtaText,
+          distance_km: vendorDistKm
+        };
+
         return {
           id: vendorData.id,
           tracking_id: 'VR-' + vendorData.id.substring(0, 8).toUpperCase(),
@@ -522,6 +530,14 @@ export class ShipmentService {
           metadata: vMeta,
           pickup_location: { address: vendorData.pickup_location, lat: vendorData.pickup_lat, lng: vendorData.pickup_lng },
           drop_location: { address: vendorData.drop_location, lat: vendorData.drop_lat, lng: vendorData.drop_lng },
+          origin_lat: vendorData.pickup_lat,
+          origin_lng: vendorData.pickup_lng,
+          delivery_points: [{
+            latitude: vendorData.drop_lat,
+            longitude: vendorData.drop_lng,
+            name: 'Drop Point',
+            address: vendorData.drop_location,
+          }],
           created_at: vendorData.created_at,
         } as any;
       }
@@ -622,6 +638,12 @@ export class ShipmentService {
         };
       }
 
+      // ALWAYS inject fresh eta_details regardless of metadata format
+      metadata.eta_details = {
+        eta_text: realEtaText,
+        distance_km: realDistKm
+      };
+
       return {
         id: manifestData.id,
         tracking_id: 'CM-' + manifestData.id.substring(0, 8).toUpperCase(),
@@ -629,6 +651,14 @@ export class ShipmentService {
         metadata: metadata,
         pickup_location: { address: manifestData.pickup_location, lat: manifestData.pickup_lat, lng: manifestData.pickup_lng },
         drop_location: { address: manifestData.drop_location, lat: manifestData.drop_lat, lng: manifestData.drop_lng },
+        origin_lat: manifestData.pickup_lat,
+        origin_lng: manifestData.pickup_lng,
+        delivery_points: [{
+          latitude: manifestData.drop_lat,
+          longitude: manifestData.drop_lng,
+          name: 'Drop Point',
+          address: manifestData.drop_location,
+        }],
         created_at: manifestData.created_at,
       } as any;
     }
