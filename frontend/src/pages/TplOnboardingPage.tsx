@@ -613,9 +613,9 @@ export default function TplOnboardingPage() {
                           success: editId ? 'Application Updated!' : 'Application Submitted!',
                           error: editId ? 'Failed to update application.' : 'Failed to submit application.'
                       })
-                      setTrackingId(editId || data.id)
+                      setTrackingId(customId || editId || data.id)
                       setStep(3)
-                    } catch (e) {
+                     } catch (e) {
                       console.error(e)
                     }
                   }}
@@ -648,11 +648,11 @@ export default function TplOnboardingPage() {
              </p>
              <div className="mt-8 p-6 bg-surface2 border border-border rounded-xl max-w-md w-full">
                <p className="text-xs text-muted font-bold text-center">
-                 <strong className="text-text uppercase tracking-widest text-[10px] block mb-2">Your Application Tracking ID</strong>
+                 <strong className="text-text uppercase tracking-widest text-[10px] block mb-2">Your 3PL Tracking ID</strong>
                  <span className="text-sm font-mono font-black text-primary bg-primary/10 px-4 py-2 rounded-lg block my-3 tracking-widest select-all">
                    {trackingId || 'APP-XXXX'}
                  </span>
-                 Please save this tracking ID. You can use it along with your PAN number to check your status or edit your application before it is approved.
+                 Please save this tracking ID. You can use it to check your status or edit your application before it is approved.
                </p>
              </div>
              

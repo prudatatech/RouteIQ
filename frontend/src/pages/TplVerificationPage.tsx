@@ -44,7 +44,7 @@ export default function TplVerificationPage() {
       if (currentStep >= steps.length) {
         clearInterval(interval)
         // Call API
-        tplAPI.approve(id!, 'admin@3pl.com').then(() => {
+        tplAPI.approve(partner!.id, 'admin@3pl.com').then(() => {
            setTimeout(() => setStatus('invite_sent'), 1000)
         }).catch(err => {
            console.error(err)
@@ -102,6 +102,10 @@ export default function TplVerificationPage() {
                  <div>
                    <div className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Company PAN</div>
                    <div className="font-mono font-bold text-sm">{partner.pan_number}</div>
+                 </div>
+                 <div>
+                   <div className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">3PL ID (Custom ID)</div>
+                   <div className="font-mono font-bold text-sm">{partner.custom_id || partner.id.split('-')[0]}</div>
                  </div>
                  <div>
                    <div className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">GSTIN</div>

@@ -82,15 +82,22 @@ export const tplService = {
    * Get a specific 3PL partner by ID
    */
   async getPartner(id: string) {
-    const { data, error } = await supabase
+    const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id);
+    const query = supabase
       .from('tpl_partners')
       .select(`
         *,
         tpl_corridors (*),
         tpl_documents (*)
-      `)
-      .eq('id', id)
-      .single();
+      `);
+      
+    if (isUuid) {
+      query.eq('id', id);
+    } else {
+      query.eq('custom_id', id);
+    }
+    
+    const { data, error } = await query.single();
       
     if (error) throw new Error(`Failed to fetch partner ${id}: ${error.message}`);
     return data;

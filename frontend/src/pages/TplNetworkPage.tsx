@@ -93,6 +93,7 @@ export default function TplNetworkPage() {
 
   const mergedPartners = (Array.isArray(dbPartners) ? dbPartners : []).map(p => ({
     id: p.id,
+    customId: p.custom_id,
     name: p.company_name,
     gst: p.gstin,
     status: p.status,
@@ -251,7 +252,7 @@ export default function TplNetworkPage() {
                       <td className="p-4 text-xs text-muted">{t.details.map((d: any) => d.corridor).join(', ')}</td>
                       <td className="p-4 text-xs text-yellow-500">Pending Review</td>
                       <td className="p-4 text-right">
-                        <button onClick={() => navigate(`/3pl-network/verify?id=${t.id}`)} className="px-4 py-2 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
+                        <button onClick={() => navigate(`/3pl-network/verify?id=${t.customId || t.id}`)} className="px-4 py-2 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
                           Review
                         </button>
                       </td>

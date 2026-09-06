@@ -21,10 +21,12 @@ export default function TplTrackApplicationPage() {
 
     setLoading(true)
     try {
-      // UUID format check (basic)
-      if (trackingId.length < 32) {
-        throw new Error('Invalid Tracking ID format')
+      // Clean the Tracking ID
+      const cleanedId = trackingId.trim()
+      if (!cleanedId) {
+        throw new Error('Invalid Tracking ID')
       }
+
       
       const data = await tplAPI.getPartner(trackingId.trim())
       
@@ -70,12 +72,12 @@ export default function TplTrackApplicationPage() {
             <form onSubmit={handleTrack} className="space-y-6 relative z-10">
               <div>
                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2">
-                  Application Tracking ID (UUID)
+                  Application Tracking ID / 3PL ID
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
+                  placeholder="e.g. safexpress_3pl"
                   value={trackingId}
                   onChange={e => setTrackingId(e.target.value)}
                   className="w-full bg-bg border border-border rounded-xl px-4 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-mono"
