@@ -8,15 +8,14 @@ import clsx from 'clsx'
 export default function TplTrackApplicationPage() {
   const navigate = useNavigate()
   const [trackingId, setTrackingId] = useState('')
-  const [panNumber, setPanNumber] = useState('')
   
   const [loading, setLoading] = useState(false)
   const [application, setApplication] = useState<any>(null)
 
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!trackingId || !panNumber) {
-      toast.error('Please enter both Tracking ID and PAN Number')
+    if (!trackingId) {
+      toast.error('Please enter a Tracking ID')
       return
     }
 
@@ -29,10 +28,6 @@ export default function TplTrackApplicationPage() {
       
       const data = await tplAPI.getPartner(trackingId.trim())
       
-      if (data.pan_number !== panNumber.trim().toUpperCase()) {
-        throw new Error('PAN Number does not match our records for this application.')
-      }
-
       setApplication(data)
     } catch (err: any) {
       console.error(err)
@@ -87,23 +82,6 @@ export default function TplTrackApplicationPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2">
-                  Registered PAN Number
-                </label>
-                <div className="relative">
-                  <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
-                  <input
-                    type="text"
-                    required
-                    placeholder="ABCDE1234F"
-                    value={panNumber}
-                    onChange={e => setPanNumber(e.target.value.toUpperCase())}
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-4 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all uppercase"
-                  />
-                </div>
-                <p className="text-[10px] text-muted mt-2">Required for security verification.</p>
-              </div>
 
               <button
                 type="submit"

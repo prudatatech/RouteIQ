@@ -6,12 +6,13 @@ export const tplService = {
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
       .from('tpl_partners')
       .insert({
+        custom_id: custom_id || null,
         company_name: companyName,
         pan_number: pan,
         gstin: gst,
@@ -99,12 +100,13 @@ export const tplService = {
    * Update an existing 3PL partner application (only if pending)
    */
   async updateApplication(id: string, data: any) {
-    const { companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
 
     // 1. Update Partner Record
     const { error: partnerErr } = await supabase
       .from('tpl_partners')
       .update({
+        custom_id: custom_id || null,
         company_name: companyName,
         pan_number: pan,
         gstin: gst,
@@ -183,5 +185,41 @@ export const tplService = {
 
     if (error) throw new Error(`Failed to activate partner: ${error.message}`);
     return data;
+  },
+
+  /**
+   * Pause a 3PL partner
+   */
+  async pausePartner(id: string) {
+    const { error } = await supabase
+      .from('tpl_partners')
+      .update({ status: 'paused' })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to pause partner: ${error.message}`);
+    return true;
+  },
+
+  /**
+   * Resume a 3PL partner
+   */
+  async resumePartner(id: string) {
+    const { error } = await supabase
+      .from('tpl_partners')
+      .update({ status: 'active' })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to resume partner: ${error.message}`);
+    return true;
+  },
+
+  /**
+   * Delete a 3PL partner (Hard delete)
+   */
+  async deletePartner(id: string) {
+    const { error } = await supabase
+      .from('tpl_partners')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`Failed to delete partner: ${error.message}`);
+    return true;
   }
 };

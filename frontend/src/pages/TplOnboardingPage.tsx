@@ -63,6 +63,8 @@ export default function TplOnboardingPage() {
   
   // Step 1 State (KYC)
   const [companyName, setCompanyName] = useState('')
+  const [customId, setCustomId] = useState('')
+  const [customIdError, setCustomIdError] = useState('')
   const [email, setEmail] = useState('')
   const [pan, setPan] = useState('')
   const [gst, setGst] = useState('')
@@ -71,6 +73,32 @@ export default function TplOnboardingPage() {
   const [bankIfsc, setBankIfsc] = useState('')
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
   const [previewFile, setPreviewFile] = useState<{file: File, url: string, name: string} | null>(null)
+  
+  // ID Recommendation logic
+  const recommendIds = (name: string) => {
+    if (!name || name.length < 3) return [];
+    const base = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 15);
+    const cleanBase = base.endsWith('_') ? base.slice(0, -1) : base;
+    return [
+      cleanBase,
+      `${cleanBase}_3pl`,
+      `${cleanBase}${new Date().getFullYear()}`,
+      `${cleanBase}_${Math.floor(Math.random() * 1000)}`
+    ].filter(id => id.length >= 5 && id.length <= 20);
+  }
+
+  const handleCustomIdChange = (val: string) => {
+    const rawVal = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setCustomId(rawVal);
+    
+    if (rawVal.length > 0 && (rawVal.length < 5 || rawVal.length > 20)) {
+      setCustomIdError('ID must be between 5 and 20 characters');
+    } else if (rawVal.length > 0 && !/^[a-z0-9_]+$/.test(rawVal)) {
+      setCustomIdError('Only lowercase letters, numbers, and underscores allowed');
+    } else {
+      setCustomIdError('');
+    }
+  }
   
   // Step 3 State (Success)
   const [trackingId, setTrackingId] = useState<string>('')
@@ -98,10 +126,8 @@ export default function TplOnboardingPage() {
   ];
 
   const CORRIDOR_RECOMMENDATIONS = [
-    "DEL-BOM", "BOM-BLR", "DEL-BLR", "BLR-CHE", "CHE-HYD", 
-    "DEL-HYD", "PUN-HYD", "BOM-PUN", "DEL-CCU", "CCU-BOM",
-    "CCU-BLR", "AMD-BOM", "DEL-AMD", "HYD-BLR", "DEL-LKO"
-  ];
+    "DEL-BOM", "BOM-BLR", "DEL-CCU", "MAA-BLR", "DEL-HYD", "PNQ-BLR", "AMD-BOM", "DEL-MAA"
+  ]
 
   const VEHICLE_RECOMMENDATIONS = [
     "32ft SXL", "32ft MXL", "24ft SXL", "20ft", "14ft Eicher", 
@@ -242,11 +268,47 @@ export default function TplOnboardingPage() {
                        <AutocompleteInput
                          label="Company Legal Name *"
                          value={companyName}
-                         onChange={(val: string) => setCompanyName(val)}
+                         onChange={(val: string) => { setCompanyName(val); if (!customId) handleCustomIdChange(recommendIds(val)[0] || ''); }}
                          options={COMPANY_RECOMMENDATIONS}
                          placeholder="e.g. Safexpress Pvt Ltd"
                          className="w-full bg-surface border border-border rounded text-text font-medium text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all"
                        />
+                       <div>
+                         <label className="text-xs font-bold text-muted mb-1 flex items-center justify-between">
+                           <span>Create 3PL ID *</span>
+                           {customIdError && <span className="text-red-500">{customIdError}</span>}
+                         </label>
+                         <div className="relative">
+                           <input
+                             type="text"
+                             value={customId}
+                             onChange={e => handleCustomIdChange(e.target.value)}
+                             className={clsx(
+                               "w-full bg-surface border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all",
+                               customIdError ? "border-red-500 focus:border-red-500" : "border-border focus:border-primary"
+                             )}
+                             placeholder="e.g. safexpress_3pl"
+                             maxLength={20}
+                           />
+                           {!customIdError && customId.length >= 5 && (
+                             <CheckCircle2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />
+                           )}
+                         </div>
+                         {companyName && !customIdError && customId.length < 5 && (
+                           <div className="mt-2 flex flex-wrap gap-2">
+                             {recommendIds(companyName).map(rec => (
+                               <button 
+                                 key={rec} 
+                                 type="button"
+                                 onClick={() => handleCustomIdChange(rec)}
+                                 className="text-[10px] bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary hover:text-bg transition-colors font-mono"
+                               >
+                                 {rec}
+                               </button>
+                             ))}
+                           </div>
+                         )}
+                       </div>
                        <div>
                          <label className="text-xs font-bold text-muted mb-1 block">Contact Email *</label>
                          <input
@@ -537,6 +599,7 @@ export default function TplOnboardingPage() {
                   onClick={async () => {
                     try {
                       const payload = {
+                        custom_id: customId,
                         companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors,
                         documents: Object.keys(uploadedDocs).map(docType => ({ type: docType, url: uploadedDocs[docType].name }))
                       };

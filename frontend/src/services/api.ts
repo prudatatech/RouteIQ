@@ -212,6 +212,9 @@ export const tplAPI = {
   getPartner: (id: string) => api.get(`/tpl/${id}`).then(r => r.data),
   approve: (id: string, email: string) => api.post(`/tpl/approve/${id}`, { email }).then(r => r.data),
   updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
+  pause: (id: string) => api.post(`/tpl/${id}/pause`).then(r => r.data),
+  resume: (id: string) => api.post(`/tpl/${id}/resume`).then(r => r.data),
+  delete: (id: string) => api.delete(`/tpl/${id}`).then(r => r.data),
 }
 
 export const telemetryWS = {

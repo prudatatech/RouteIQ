@@ -50,10 +50,10 @@ export default function LandingPage() {
           The world’s first autonomous control tower powered by real-time telemetry, capacity cascade matching, and predictive AI.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center gap-6 opacity-0 animate-fade-in-up" style={{ animationDelay: '300ms' }}>
+        <div className="flex flex-col sm:flex-row items-center justify-center flex-wrap gap-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '300ms' }}>
           <Button 
             onClick={() => navigate('/login')} 
-            className="px-8 py-4 text-base font-black uppercase tracking-widest bg-primary hover:bg-primary-dark shadow-[0_0_40px_rgba(79,172,254,0.4)] transition-all flex items-center gap-3"
+            className="px-8 py-4 h-auto text-base font-black uppercase tracking-widest bg-primary hover:bg-primary-dark shadow-[0_0_40px_rgba(79,172,254,0.4)] transition-all flex items-center gap-3"
           >
             Access Control Tower <ArrowRight size={18} />
           </Button>
@@ -62,6 +62,12 @@ export default function LandingPage() {
             className="px-8 py-4 text-base font-black uppercase tracking-widest text-text bg-surface border border-border hover:border-primary/50 hover:bg-surface2 rounded-xl transition-all shadow-xl flex items-center gap-3"
           >
             <Globe2 size={18} className="text-primary" /> Join 3PL Network
+          </button>
+          <button 
+            onClick={() => navigate('/3pl/onboard/track')} 
+            className="px-8 py-4 text-base font-black uppercase tracking-widest text-text bg-surface border border-border hover:border-primary/50 hover:bg-surface2 rounded-xl transition-all shadow-xl flex items-center gap-3"
+          >
+            <ShieldCheck size={18} className="text-primary" /> Track Application
           </button>
         </div>
 

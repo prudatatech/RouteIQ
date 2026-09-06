@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
   Building2, Users, Briefcase, Activity, Target, Zap, Clock, ShieldAlert, CheckCircle2, 
   ChevronRight, TrendingUp, AlertTriangle, ShieldCheck, Search, Filter, Calendar, 
   ChevronDown, ExternalLink, MessageSquare, Plus
 } from 'lucide-react'
 import { Card, CardHeader, Spinner } from '@/components/ui'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
 import clsx from 'clsx'
 
@@ -101,12 +102,41 @@ export default function TplNetworkPage() {
     pauseReason: '',
     details: (p.tpl_corridors || []).map((c: any) => ({
       corridor: c.corridor_name,
-      rate: c.proposed_rate || 'Pending',
-      expiry: '2028-12-31',
       vehicles: c.vehicle_types || [],
-      priority: c.priority || 1
+      rate: c.proposed_rate || 'Pending',
+      expiry: '2028-12-31', // Placeholder for now
+      priority: c.priority?.replace('Priority ', '') || 1
     }))
   }))
+
+  const queryClient = useQueryClient()
+
+  const handleTogglePause = async (id: string, currentStatus: string) => {
+    try {
+      if (currentStatus === 'active') {
+        await tplAPI.pause(id)
+        toast.success('Partner paused')
+      } else {
+        await tplAPI.resume(id)
+        toast.success('Partner resumed')
+      }
+      queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+    } catch(e) {
+      toast.error('Failed to update status')
+    }
+  }
+
+  const handleDeletePartner = async (id: string) => {
+    if (confirm('Are you sure you want to permanently delete this partner?')) {
+      try {
+        await tplAPI.delete(id)
+        toast.success('Partner deleted')
+        queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+      } catch(e) {
+        toast.error('Failed to delete partner')
+      }
+    }
+  }
 
   // Live Timer Mock
   const [now, setNow] = useState(new Date())
@@ -305,6 +335,18 @@ export default function TplNetworkPage() {
                         ))}
                       </div>
                     </div>
+                  </div>
+                  <div className="flex justify-end gap-2 p-4 bg-surface2 border-t border-border mt-auto">
+                    {(p.status === 'active' || p.status === 'paused') && (
+                       <>
+                         <button onClick={() => handleTogglePause(p.id, p.status)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-muted hover:text-text bg-surface border border-border hover:border-primary rounded-lg transition-colors">
+                           {p.status === 'active' ? 'Pause Partner' : 'Resume Partner'}
+                         </button>
+                         <button onClick={() => handleDeletePartner(p.id)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-white bg-red-500/10 hover:bg-red-500 rounded-lg transition-colors">
+                           Delete
+                         </button>
+                       </>
+                    )}
                   </div>
                 </Card>
               ))}

@@ -53,5 +53,34 @@ router.patch('/:id', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+// POST /api/v1/tpl/:id/pause
+router.post('/:id/pause', async (req, res) => {
+  try {
+    const data = await tplService.pausePartner(req.params.id);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/tpl/:id/resume
+router.post('/:id/resume', async (req, res) => {
+  try {
+    const data = await tplService.resumePartner(req.params.id);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/v1/tpl/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const data = await tplService.deletePartner(req.params.id);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 export default router;
