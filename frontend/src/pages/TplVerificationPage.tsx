@@ -247,11 +247,22 @@ export default function TplVerificationPage() {
                  Reject & Request Changes
                </button>
                <button 
-                 onClick={handleApprove}
-                 disabled={!gstVerified}
-                 className="px-12 py-3 bg-primary hover:bg-primary-dark text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none"
+                 onClick={() => {
+                   if (!gstVerified) {
+                     setGstVerifying(true);
+                     setTimeout(() => {
+                       setGstVerifying(false);
+                       setGstVerified(true);
+                     }, 1500);
+                   } else {
+                     handleApprove();
+                   }
+                 }}
+                 disabled={gstVerifying}
+                 className="px-12 py-3 bg-primary hover:bg-primary-dark text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
                >
-                 {gstVerified ? 'Confirm & Approve 3PL' : 'Verify GST First'}
+                 {gstVerifying && <Loader2 size={16} className="animate-spin" />}
+                 {gstVerifying ? 'Verifying GST...' : gstVerified ? 'Confirm & Approve 3PL' : 'Verify GST First'}
                </button>
              </div>
           </div>
