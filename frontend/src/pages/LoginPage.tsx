@@ -76,7 +76,7 @@ export default function LoginPage() {
         navigate('/superadmin')
       } else if (role === 'vendor') {
         if (tplPartner) {
-          navigate('/3pl-portal')
+          navigate(`/3pl-portal/${tplPartner.id}`)
         } else if (!vProfile) {
           navigate('/vendor/onboarding')
         } else {

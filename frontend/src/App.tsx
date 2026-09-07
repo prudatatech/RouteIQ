@@ -157,7 +157,7 @@ export default function App() {
           <Route path="/3pl/onboard/setup" element={<TplSetupCredentialsPage />} />
           <Route path="/3pl-portal/activate" element={<TplActivationPage />} />
           <Route path="/vendor/login" element={<VendorLoginPage />} />
-          <Route path="/3pl-portal" element={
+          <Route path="/3pl-portal/:id" element={
             <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
               <TplDashboardPage />
             </PrivateRoute>
