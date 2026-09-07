@@ -196,6 +196,20 @@ export const tplService = {
   },
 
   /**
+   * Get a 3PL partner by their user ID
+   */
+  async getPartnerByUserId(userId: string) {
+    const { data, error } = await supabase
+      .from('tpl_partners')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to fetch partner by user ID: ${error.message}`);
+    return data;
+  },
+
+  /**
    * Pause a 3PL partner
    */
   async pausePartner(id: string) {

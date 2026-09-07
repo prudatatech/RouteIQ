@@ -210,6 +210,7 @@ export const tplAPI = {
   onboard: (data: any) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   getPartner: (id: string) => api.get(`/tpl/${id}`).then(r => r.data),
+  getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
   approve: (id: string, email: string) => api.post(`/tpl/approve/${id}`, { email }).then(r => r.data),
   updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   pause: (id: string) => api.post(`/tpl/${id}/pause`).then(r => r.data),

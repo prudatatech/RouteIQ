@@ -24,6 +24,16 @@ router.get('/queue', async (req, res) => {
   }
 });
 
+// GET /api/v1/tpl/by-user/:userId
+router.get('/by-user/:userId', async (req, res) => {
+  try {
+    const data = await tplService.getPartnerByUserId(req.params.userId);
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/v1/tpl/:id
 router.get('/:id', async (req, res) => {
   try {

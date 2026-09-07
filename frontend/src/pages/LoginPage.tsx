@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Zap, Eye, EyeOff, ShieldCheck, UserCog, User, Truck, Package, ArrowRight } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
+import { tplAPI } from '@/services/api'
 import { Card, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -52,11 +53,12 @@ export default function LoginPage() {
         .eq('id', data.session.user.id)
         .maybeSingle()
 
-      const { data: tplPartner } = await supabase
-        .from('tpl_partners')
-        .select('id')
-        .eq('user_id', data.session.user.id)
-        .maybeSingle()
+      let tplPartner = null;
+      try {
+        tplPartner = await tplAPI.getPartnerByUserId(data.session.user.id);
+      } catch (err) {
+        // Not a 3PL partner
+      }
 
       let role = user?.role || data.session.user.user_metadata?.role;
       if (role !== 'admin' && role !== 'superadmin') {
