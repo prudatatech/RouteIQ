@@ -219,16 +219,16 @@ export default function TplDashboardPage() {
   useEffect(() => {
     if (partner && corridors) {
       if (!settingsForm) {
-        if (partner.pending_updates) {
+        if (partner.pending_updates && partner.pending_updates.corridors) {
           setSettingsForm({
             slaCommitment: partner.pending_updates.sla_commitment || partner.sla_commitment || '2 Hours',
             taxTreatment: partner.pending_updates.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
-            corridors: partner.pending_updates.corridors || []
+            corridors: partner.pending_updates.corridors
           })
         } else {
           setSettingsForm({
-            slaCommitment: partner.sla_commitment || '2 Hours',
-            taxTreatment: partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
+            slaCommitment: partner.pending_updates?.sla_commitment || partner.sla_commitment || '2 Hours',
+            taxTreatment: partner.pending_updates?.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
             corridors: corridors.length > 0 
               ? corridors.map(c => ({
                   id: c.id,
