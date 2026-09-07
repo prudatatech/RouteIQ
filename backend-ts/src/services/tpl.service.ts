@@ -228,5 +228,127 @@ export const tplService = {
       .eq('id', id);
     if (error) throw new Error(`Failed to delete partner: ${error.message}`);
     return true;
+  },
+
+  /**
+   * Send a 4-digit OTP via Resend for 3PL Password Setup
+   */
+  async sendSetupOtp(email: string) {
+    // 1. Check if email exists in tpl_partners and status is active
+    const { data: partner, error } = await supabase
+      .from('tpl_partners')
+      .select('id, company_name, status')
+      .eq('email', email)
+      .single();
+
+    if (error || !partner) {
+      throw new Error('Email not found in our 3PL records.');
+    }
+    if (partner.status !== 'active') {
+      throw new Error(`Your application is currently '${partner.status}'. You can only set up a password once approved.`);
+    }
+
+    // 2. Generate 4-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // 3. Store in Redis
+    const { cacheSet } = await import('../core/redis');
+    await cacheSet(`otp:tpl:${email}`, otp, 300); // 5 mins
+
+    // 4. Send Email via Resend
+    const { Resend } = await import('resend');
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    await resend.emails.send({
+      from: 'Margix India <onboarding@resend.dev>',
+      to: email,
+      subject: 'Margix India - Setup Your 3PL Account Password',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <h2 style="color: #4facfe;">Margix India 3PL Network</h2>
+          <p>Hello ${partner.company_name},</p>
+          <p>Your 3PL partner application has been approved. Please use the OTP below to securely set up your password and access the control tower.</p>
+          <div style="background-color: #f4f4f5; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
+            <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
+          </div>
+          <p style="font-size: 12px; color: #666;">This code expires in 5 minutes. If you didn't request this, you can ignore this email.</p>
+        </div>
+      `
+    });
+
+    return true;
+  },
+
+  /**
+   * Verify OTP and setup Supabase Auth Password
+   */
+  async verifyAndSetupPassword(email: string, otp: string, password: string) {
+    // 1. Verify OTP
+    const { cacheGet, cacheDelete } = await import('../core/redis');
+    const cachedOtp = await cacheGet(`otp:tpl:${email}`);
+
+    if (!cachedOtp || cachedOtp !== otp) {
+      throw new Error('Invalid or expired OTP');
+    }
+
+    // 2. Get the partner to link
+    const { data: partner, error: partnerError } = await supabase
+      .from('tpl_partners')
+      .select('id, company_name, custom_id')
+      .eq('email', email)
+      .single();
+
+    if (partnerError || !partner) throw new Error('Partner record not found');
+
+    // 3. Create or Update user in Supabase Auth via Admin API
+    const { createClient } = await import('@supabase/supabase-js');
+    const adminSupabase = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    // Check if user already exists
+    const { data: users, error: listError } = await adminSupabase.auth.admin.listUsers();
+    let userId = '';
+
+    const existingUser = users?.users?.find(u => u.email === email);
+    
+    if (existingUser) {
+      // Update password
+      const { data, error } = await adminSupabase.auth.admin.updateUserById(existingUser.id, {
+        password: password,
+        email_confirm: true
+      });
+      if (error) throw error;
+      userId = data.user.id;
+    } else {
+      // Create user
+      const { data, error } = await adminSupabase.auth.admin.createUser({
+        email: email,
+        password: password,
+        email_confirm: true,
+        user_metadata: {
+          role: 'vendor'
+        }
+      });
+      if (error) throw error;
+      userId = data.user.id;
+    }
+
+    // 4. Upsert into public.users
+    await adminSupabase.from('users').upsert({
+      id: userId,
+      email: email,
+      full_name: partner.company_name,
+      role: 'vendor'
+    });
+
+    // 5. Link user_id in tpl_partners
+    await this.activate(partner.id, userId);
+
+    // 6. Cleanup OTP
+    await cacheDelete(`otp:tpl:${email}`);
+
+    return true;
   }
 };

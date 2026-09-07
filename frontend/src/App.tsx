@@ -25,6 +25,7 @@ import CustomerTrackingPage from '@/pages/CustomerTrackingPage'
 import TplNetworkPage from '@/pages/TplNetworkPage'
 import TplOnboardingPage from '@/pages/TplOnboardingPage'
 import TplTrackApplicationPage from '@/pages/TplTrackApplicationPage'
+import TplSetupCredentialsPage from '@/pages/TplSetupCredentialsPage'
 import TplVerificationPage from '@/pages/TplVerificationPage'
 import TplActivationPage from '@/pages/TplActivationPage'
 import TplDashboardPage from '@/pages/TplDashboardPage'
@@ -153,6 +154,7 @@ export default function App() {
           {/* 3PL Public/Partner Routes */}
           <Route path="/3pl/onboard" element={<TplOnboardingPage />} />
           <Route path="/3pl/onboard/track" element={<TplTrackApplicationPage />} />
+          <Route path="/3pl/onboard/setup" element={<TplSetupCredentialsPage />} />
           <Route path="/3pl-portal/activate" element={<TplActivationPage />} />
           <Route path="/vendor/login" element={<VendorLoginPage />} />
           <Route path="/3pl-portal" element={<TplDashboardPage />} />

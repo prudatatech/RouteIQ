@@ -83,4 +83,28 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// POST /api/v1/tpl/auth/send-otp
+router.post('/auth/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) throw new Error('Email is required');
+    const data = await tplService.sendSetupOtp(email);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/tpl/auth/setup-password
+router.post('/auth/setup-password', async (req, res) => {
+  try {
+    const { email, otp, password } = req.body;
+    if (!email || !otp || !password) throw new Error('Email, OTP, and Password are required');
+    const data = await tplService.verifyAndSetupPassword(email, otp, password);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

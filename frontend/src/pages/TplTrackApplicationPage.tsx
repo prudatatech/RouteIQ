@@ -156,7 +156,7 @@ export default function TplTrackApplicationPage() {
                     This application has been processed. You can no longer make edits. Please check your email for access instructions.
                   </p>
                   <button
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate('/3pl/onboard/setup?email=' + encodeURIComponent(application.email || ''))}
                     className="mt-6 px-6 py-3 bg-primary text-bg font-black uppercase tracking-widest text-sm rounded-xl"
                   >
                     Go to Login
