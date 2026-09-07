@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 
