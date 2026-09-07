@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Briefcase, FileText, IndianRupee, ShieldCheck, MapPin, Calendar, CheckCircle2,
   Loader2, Download, Package, Activity, AlertTriangle, TrendingUp, Truck, ShieldAlert,
-  LogOut, Building2, User, Bell, Settings, Hash, CreditCard, BarChart3
+  LogOut, Building2, User, Bell, Settings, Hash, CreditCard, BarChart3, Eye, UploadCloud
 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
@@ -20,6 +20,7 @@ export default function TplDashboardPage() {
   const [partner, setPartner] = useState<any>(null)
   const [corridors, setCorridors] = useState<any[]>([])
   const [documents, setDocuments] = useState<any[]>([])
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -73,6 +74,57 @@ export default function TplDashboardPage() {
 
     fetchDashboardData()
   }, [id])
+
+  const handleUpdateDocument = async (docId: string, docType: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File must be less than 2MB')
+      return
+    }
+
+    try {
+      setUploadingDoc(docId)
+      
+      const fileName = `${id}/${docType.replace(/\s+/g, '_')}_${Date.now()}_${file.name}`
+      
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from('kyc_documents')
+        .upload(fileName, file)
+        
+      if (uploadError) throw new Error('Failed to upload document')
+
+      // Update document record
+      const { error: docError } = await supabase
+        .from('tpl_documents')
+        .update({ file_url: fileName, uploaded_at: new Date().toISOString() })
+        .eq('id', docId)
+
+      if (docError) throw new Error('Failed to update document record')
+
+      // Set partner status back to pending
+      const { error: partnerError } = await supabase
+        .from('tpl_partners')
+        .update({ status: 'pending' })
+        .eq('id', id)
+
+      if (partnerError) throw new Error('Failed to update partner status')
+
+      // Update local state
+      setPartner({ ...partner, status: 'pending' })
+      setDocuments(docs => docs.map(d => d.id === docId ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d))
+      
+      toast.success(`${docType} updated successfully. Status changed to pending approval.`)
+    } catch (err: any) {
+      console.error('Document update error:', err)
+      toast.error(err.message || 'Failed to update document')
+    } finally {
+      setUploadingDoc(null)
+      e.target.value = ''
+    }
+  }
 
   // ─── Loading State ─────────────────────────────────────
   if (loading) {
@@ -410,10 +462,31 @@ export default function TplDashboardPage() {
                           <div className="text-[10px] text-muted truncate mt-0.5">{doc.file_url}</div>
                         </div>
                       </div>
-                      <div className="mt-4 pt-3 border-t border-border/30">
-                        <div className="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-bold uppercase tracking-widest">
-                          <CheckCircle2 size={12} /> Uploaded & Verified
-                        </div>
+                      <div className="mt-4 pt-3 border-t border-border/30 grid grid-cols-2 gap-2">
+                        <a 
+                          href={supabase.storage.from('kyc_documents').getPublicUrl(doc.file_url).data.publicUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-surface2 hover:bg-surface border border-border text-text text-[10px] font-black uppercase tracking-widest transition-colors"
+                        >
+                          <Eye size={12} className="text-muted" /> View
+                        </a>
+                        <label className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer">
+                          {uploadingDoc === doc.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <>
+                              <UploadCloud size={12} /> Update
+                            </>
+                          )}
+                          <input 
+                            type="file" 
+                            accept=".pdf,.png,.jpg,.jpeg" 
+                            className="hidden" 
+                            disabled={uploadingDoc === doc.id}
+                            onChange={(e) => handleUpdateDocument(doc.id, doc.doc_type, e)} 
+                          />
+                        </label>
                       </div>
                     </Card>
                   ))}
