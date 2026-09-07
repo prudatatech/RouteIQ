@@ -288,7 +288,7 @@ export const tplService = {
     const { cacheGet, cacheDelete } = await import('../core/redis');
     const cachedOtp = await cacheGet(`otp:tpl:${email}`);
 
-    if (!cachedOtp || cachedOtp !== otp) {
+    if (!cachedOtp || String(cachedOtp) !== String(otp)) {
       throw new Error('Invalid or expired OTP');
     }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Mail, Key, ShieldCheck, Loader2 } from 'lucide-react'
+import { Mail, Key, ShieldCheck, Loader2, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { tplAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
@@ -15,6 +15,7 @@ export default function TplSetupCredentialsPage() {
   
   const [step, setStep] = useState<1 | 2>(1)
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,7 +115,17 @@ export default function TplSetupCredentialsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted">4-Digit Verification Code</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted">4-Digit Verification Code</label>
+                  <button 
+                    type="button" 
+                    onClick={handleSendOtp} 
+                    disabled={loading}
+                    className="text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-1 hover:text-white transition-colors"
+                  >
+                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Resend
+                  </button>
+                </div>
                 <input
                   type="text"
                   required
@@ -131,13 +142,20 @@ export default function TplSetupCredentialsPage() {
                 <div className="relative">
                   <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter new password"
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-4 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-12 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
               </div>
 
@@ -146,12 +164,12 @@ export default function TplSetupCredentialsPage() {
                 <div className="relative">
                   <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-4 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-12 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   />
                 </div>
               </div>
