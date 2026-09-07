@@ -115,25 +115,84 @@ export default function TplVerificationPage() {
                     </div>
                   </div>
                   <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4">Requested Corridor Updates</h3>
-                    {partner.pending_updates.corridors && partner.pending_updates.corridors.length > 0 ? (
-                      <div className="space-y-3">
-                        {partner.pending_updates.corridors.map((c: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center bg-surface2/50 p-3 rounded-lg border border-yellow-500/10">
-                            <div>
-                              <div className="font-bold text-text text-sm">{c.name}</div>
-                              <div className="text-[10px] text-muted font-bold mt-1 uppercase">{c.vehicles}</div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4">Requested Corridor Updates (Diff View)</h3>
+                    {(() => {
+                      const oldCorridors = partner.tpl_corridors || [];
+                      const newCorridors = partner.pending_updates.corridors || [];
+                      
+                      const removed = oldCorridors.filter((oc: any) => !newCorridors.some((nc: any) => nc.id === oc.id));
+                      
+                      const diffList = newCorridors.map((nc: any) => {
+                        const oc = oldCorridors.find((old: any) => old.id === nc.id);
+                        if (!oc) return { ...nc, status: 'added' };
+                        
+                        const oldVehicles = Array.isArray(oc.vehicle_types) ? oc.vehicle_types.join(', ') : (oc.vehicle_types || '');
+                        const isModified = oc.corridor_name !== nc.name || oc.proposed_rate !== nc.rate || oc.priority !== nc.priority || oldVehicles !== nc.vehicles;
+                        
+                        return { ...nc, status: isModified ? 'modified' : 'unchanged', oc };
+                      });
+                      
+                      if (diffList.length === 0 && removed.length === 0) return <p className="text-sm text-muted">No corridor updates requested.</p>;
+
+                      return (
+                        <div className="space-y-3">
+                          {diffList.map((c: any, idx: number) => (
+                            <div key={idx} className={`flex justify-between items-center p-3 rounded-lg border ${
+                              c.status === 'added' ? 'bg-green-500/10 border-green-500/30' : 
+                              c.status === 'modified' ? 'bg-yellow-500/10 border-yellow-500/30' : 
+                              'bg-surface2/50 border-border/50'
+                            }`}>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-bold text-text text-sm">{c.name}</div>
+                                  {c.status === 'added' && <span className="text-[8px] bg-green-500 text-bg px-1.5 py-0.5 rounded uppercase font-black tracking-widest">Added</span>}
+                                  {c.status === 'modified' && <span className="text-[8px] bg-yellow-500 text-bg px-1.5 py-0.5 rounded uppercase font-black tracking-widest">Modified</span>}
+                                </div>
+                                <div className="text-[10px] text-muted font-bold mt-1 uppercase">
+                                  {c.status === 'modified' && c.oc && (Array.isArray(c.oc.vehicle_types) ? c.oc.vehicle_types.join(', ') : (c.oc.vehicle_types || '')) !== c.vehicles && (
+                                    <span className="line-through opacity-50 mr-2">{Array.isArray(c.oc.vehicle_types) ? c.oc.vehicle_types.join(', ') : c.oc.vehicle_types}</span>
+                                  )}
+                                  <span className={c.status === 'added' ? 'text-green-500' : c.status === 'modified' && c.oc && (Array.isArray(c.oc.vehicle_types) ? c.oc.vehicle_types.join(', ') : (c.oc.vehicle_types || '')) !== c.vehicles ? 'text-yellow-600' : ''}>
+                                    {c.vehicles || 'No Vehicles'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-mono text-xs font-bold">
+                                  {c.status === 'modified' && c.oc && c.oc.proposed_rate !== c.rate && (
+                                    <span className="line-through opacity-50 mr-2">{c.oc.proposed_rate || 'N/A'}</span>
+                                  )}
+                                  <span className={c.status === 'added' ? 'text-green-500' : c.status === 'modified' && c.oc && c.oc.proposed_rate !== c.rate ? 'text-yellow-600' : ''}>
+                                    {c.rate || 'No Rate'}
+                                  </span>
+                                </div>
+                                <div className={`text-[9px] font-bold uppercase mt-1 ${c.status === 'added' ? 'text-green-500' : c.status === 'modified' && c.oc && c.oc.priority !== c.priority ? 'text-yellow-600' : 'text-muted'}`}>
+                                  Priority {c.priority}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <div className="font-mono text-xs font-bold">{c.rate || 'No Rate'}</div>
-                              <div className="text-[9px] text-yellow-600 font-bold uppercase mt-1">Priority {c.priority}</div>
+                          ))}
+                          
+                          {removed.map((oc: any, idx: number) => (
+                            <div key={`rm-${idx}`} className="flex justify-between items-center bg-red-500/10 p-3 rounded-lg border border-red-500/30 opacity-70">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-bold text-text text-sm line-through">{oc.corridor_name}</div>
+                                  <span className="text-[8px] bg-red-500 text-bg px-1.5 py-0.5 rounded uppercase font-black tracking-widest">Removed</span>
+                                </div>
+                                <div className="text-[10px] text-muted font-bold mt-1 uppercase line-through">
+                                  {Array.isArray(oc.vehicle_types) ? oc.vehicle_types.join(', ') : (oc.vehicle_types || 'No Vehicles')}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-mono text-xs font-bold line-through">{oc.proposed_rate || 'N/A'}</div>
+                                <div className="text-[9px] text-muted font-bold uppercase mt-1 line-through">Priority {oc.priority}</div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted">No corridor updates requested.</p>
-                    )}
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
              </Card>
