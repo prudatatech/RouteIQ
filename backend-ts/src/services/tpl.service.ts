@@ -6,7 +6,7 @@ export const tplService = {
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
