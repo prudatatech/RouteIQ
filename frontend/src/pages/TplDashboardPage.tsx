@@ -14,7 +14,7 @@ import { useAuthStore } from '@/store/authStore'
 export default function TplDashboardPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'coverage' | 'documents' | 'shipments' | 'earnings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'coverage' | 'documents' | 'shipments' | 'earnings' | 'settings'>('overview')
   
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -74,6 +74,27 @@ export default function TplDashboardPage() {
     }
 
     fetchDashboardData()
+
+    // Realtime subscription for approval updates
+    const channel = supabase.channel(`public:tpl_partners:id=eq.${id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, (payload) => {
+        // If status changed or pending_updates was cleared (approved)
+        if (payload.new) {
+          setPartner(payload.new)
+          // Refetch corridors in case they were updated
+          supabase.from('tpl_corridors').select('*').eq('partner_id', id).then(({ data }) => {
+            if (data) setCorridors(data)
+          })
+          if (payload.new.status === 'active' && !payload.new.pending_updates) {
+             toast.success('Your pending updates have been approved by the Superadmin!')
+          }
+        }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [id])
 
   const handleUpdateDocument = async (docId: string, docType: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,6 +157,40 @@ export default function TplDashboardPage() {
     }
   }
 
+  // ─── Settings Submission ───────────────────────────────
+  const [settingsForm, setSettingsForm] = useState({ fleet: '', routes: '', percentage: '' })
+  const [isSubmittingSettings, setIsSubmittingSettings] = useState(false)
+
+  const handleSaveSettings = async () => {
+    setIsSubmittingSettings(true)
+    try {
+      const updates = {
+        fleet_changes: settingsForm.fleet,
+        route_changes: settingsForm.routes,
+        percentage_changes: settingsForm.percentage,
+        requested_at: new Date().toISOString()
+      }
+      
+      const { error: updateError } = await supabase
+        .from('tpl_partners')
+        .update({ 
+          pending_updates: updates,
+          status: 'pending' 
+        })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+      
+      setPartner({ ...partner, pending_updates: updates, status: 'pending' })
+      toast.success('Settings update requested. Awaiting Superadmin approval.')
+      setSettingsForm({ fleet: '', routes: '', percentage: '' })
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit settings update')
+    } finally {
+      setIsSubmittingSettings(false)
+    }
+  }
+
   // ─── Loading State ─────────────────────────────────────
   if (loading) {
     return (
@@ -188,7 +243,8 @@ export default function TplDashboardPage() {
     { id: 'coverage', icon: MapPin, label: 'Corridors', count: corridors.length },
     { id: 'documents', icon: FileText, label: 'Documents', count: documents.length },
     { id: 'shipments', icon: Truck, label: 'Shipments' },
-    { id: 'earnings', icon: IndianRupee, label: 'Earnings' }
+    { id: 'earnings', icon: IndianRupee, label: 'Earnings' },
+    { id: 'settings', icon: Settings, label: 'Settings' }
   ]
 
   return (
@@ -529,6 +585,72 @@ export default function TplDashboardPage() {
                 </div>
               </div>
             </Card>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <Card className="p-8 border-border/50 bg-surface/30 backdrop-blur-md">
+                <div className="flex items-center gap-3 mb-6 border-b border-border/50 pb-4">
+                  <Settings size={24} className="text-primary" />
+                  <h3 className="text-xl font-black text-text uppercase tracking-tight">Operational Settings</h3>
+                </div>
+
+                {partner.pending_updates && (
+                  <div className="mb-6 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-start gap-3 animate-fade-in">
+                    <AlertTriangle size={20} className="text-yellow-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-black text-yellow-500 uppercase tracking-widest">Update Pending Approval</h4>
+                      <p className="text-xs text-yellow-500/80 mt-1 font-bold">
+                        You have submitted changes that are currently being reviewed by the Superadmin. New requests will overwrite the pending ones.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Add / Update Fleet (Trucks)</label>
+                    <textarea 
+                      value={settingsForm.fleet}
+                      onChange={e => setSettingsForm({ ...settingsForm, fleet: e.target.value })}
+                      placeholder="e.g., Added 2x 32ft MXL trucks, removing 1x 14ft Eicher..."
+                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 min-h-[100px] transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Add / Update Routes</label>
+                    <textarea 
+                      value={settingsForm.routes}
+                      onChange={e => setSettingsForm({ ...settingsForm, routes: e.target.value })}
+                      placeholder="e.g., Requesting new corridor DEL-MAA at ₹45/km..."
+                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 min-h-[100px] transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Update Margin / Percentage</label>
+                    <input 
+                      type="text"
+                      value={settingsForm.percentage}
+                      onChange={e => setSettingsForm({ ...settingsForm, percentage: e.target.value })}
+                      placeholder="e.g., Update tax treatment or adjust SLA / profit margin..."
+                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-border/50 flex justify-end">
+                  <button 
+                    disabled={isSubmittingSettings || (!settingsForm.fleet && !settingsForm.routes && !settingsForm.percentage)}
+                    onClick={handleSaveSettings}
+                    className="px-6 py-3 bg-primary hover:bg-primary-dark text-bg text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isSubmittingSettings ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    Submit for Approval
+                  </button>
+                </div>
+              </Card>
+            </div>
           )}
         </div>
 

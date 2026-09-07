@@ -164,10 +164,10 @@ export const tplService = {
    * Approve a 3PL partner
    */
   async approve(id: string, approverEmail: string) {
-    // 1. Update status
+    // 1. Update status and clear pending updates
     const { data: partner, error } = await supabase
       .from('tpl_partners')
-      .update({ status: 'active' })
+      .update({ status: 'active', pending_updates: null })
       .eq('id', id)
       .select()
       .single();

@@ -90,6 +90,37 @@ export default function TplVerificationPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+         {/* Pending Updates Review (If any) */}
+         {partner.pending_updates && (
+           <div className="lg:col-span-2">
+             <Card className="p-8 border-yellow-500/30 bg-yellow-500/5 shadow-xl relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 blur-3xl rounded-full pointer-events-none" />
+               <div className="flex items-center gap-3 mb-6 border-b border-yellow-500/20 pb-4 relative z-10">
+                 <Zap size={24} className="text-yellow-500" />
+                 <h2 className="text-xl font-black text-yellow-600 uppercase">Pending Profile Updates</h2>
+               </div>
+               <p className="text-sm text-yellow-600/80 font-bold mb-6">
+                 This partner has submitted operational changes that require your approval.
+               </p>
+               
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Fleet Changes</h3>
+                   <p className="text-sm text-text font-medium">{partner.pending_updates.fleet_changes || 'No changes'}</p>
+                 </div>
+                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Route Changes</h3>
+                   <p className="text-sm text-text font-medium">{partner.pending_updates.route_changes || 'No changes'}</p>
+                 </div>
+                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Margin / Percentage</h3>
+                   <p className="text-sm text-text font-medium">{partner.pending_updates.percentage_changes || 'No changes'}</p>
+                 </div>
+               </div>
+             </Card>
+           </div>
+         )}
+
          {/* LEFT: Compliance */}
          <Card className="p-8 border-border bg-surface flex flex-col">
             <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
@@ -243,7 +274,9 @@ export default function TplVerificationPage() {
              <div className="flex items-center gap-3">
                <input type="checkbox" className="w-5 h-5 rounded border-border text-primary focus:ring-primary bg-bg" id="declare" />
                <label htmlFor="declare" className="text-xs font-medium text-muted max-w-lg">
-                 I have reviewed the KYC documents and operational terms. Approving this vendor will provision their 3PL dashboard and send an activation email.
+                 {partner.pending_updates 
+                   ? 'I have reviewed the requested updates. Approving will merge these changes and clear the pending queue.'
+                   : 'I have reviewed the KYC documents and operational terms. Approving this vendor will provision their 3PL dashboard and send an activation email.'}
                </label>
              </div>
              <div className="flex gap-4">
@@ -252,7 +285,7 @@ export default function TplVerificationPage() {
                </button>
                <button 
                  onClick={() => {
-                   if (!gstVerified) {
+                   if (!gstVerified && !partner.pending_updates) {
                      setGstVerifying(true);
                      setTimeout(() => {
                        setGstVerifying(false);
@@ -266,7 +299,7 @@ export default function TplVerificationPage() {
                  className="px-12 py-3 bg-primary hover:bg-primary-dark text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
                >
                  {gstVerifying && <Loader2 size={16} className="animate-spin" />}
-                 {gstVerifying ? 'Verifying GST...' : gstVerified ? 'Confirm & Approve 3PL' : 'Verify GST First'}
+                 {gstVerifying ? 'Verifying GST...' : (gstVerified || partner.pending_updates) ? (partner.pending_updates ? 'Approve Updates' : 'Confirm & Approve 3PL') : 'Verify GST First'}
                </button>
              </div>
           </div>

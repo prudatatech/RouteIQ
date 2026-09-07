@@ -1,0 +1,1 @@
+ALTER TABLE tpl_partners ADD COLUMN IF NOT EXISTS pending_updates JSONB DEFAULT NULL;
