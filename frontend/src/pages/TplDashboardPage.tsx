@@ -44,10 +44,23 @@ function AutocompleteInput({ label, value, onChange, options, placeholder, class
               onMouseDown={(e) => {
                 e.preventDefault();
                 if (isMulti) {
-                  const parts = (value || '').split(',');
-                  parts.pop(); // remove incomplete typing
-                  const newVal = parts.length > 0 ? parts.map((p: string) => p.trim()).join(', ') + ', ' + opt : opt;
-                  onChange(newVal + ', ');
+                  const currentParts = (value || '').split(',').map((p: string) => p.trim()).filter(Boolean);
+                  // Check if the user was in the middle of typing a word by seeing if the input ends with a comma
+                  // Actually, a simpler approach: just check if the last part is a partial match to opt
+                  const lastPart = currentParts.length > 0 ? currentParts[currentParts.length - 1] : '';
+                  if (lastPart && opt.toLowerCase().includes(lastPart.toLowerCase()) && opt.toLowerCase() !== lastPart.toLowerCase()) {
+                     currentParts.pop(); // remove the partially typed part
+                  } else if (currentParts.includes(opt)) {
+                     // If it's already in the list exactly, don't add it again, or let them toggle it? 
+                     // For now, just remove the partially typed text if it was exactly what they clicked (edge case)
+                     if (lastPart.toLowerCase() === opt.toLowerCase()) {
+                        currentParts.pop();
+                     }
+                  }
+                  
+                  // If it's already there, maybe they want it anyway? No, filter duplicates
+                  const newArray = [...currentParts.filter((p: string) => p !== opt), opt];
+                  onChange(newArray.join(', ') + ', ');
                 } else {
                   onChange(opt);
                 }
