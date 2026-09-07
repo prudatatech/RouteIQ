@@ -34,10 +34,10 @@ export default function TplDashboardPage() {
       try {
         if (!id) throw new Error('No partner ID provided')
 
-        // Query Supabase directly (frontend has service-role key so RLS is bypassed)
+        // Query each table separately to avoid RLS policy conflicts on joins
         const { data: partnerData, error: pErr } = await supabase
           .from('tpl_partners')
-          .select('*, tpl_corridors(*), tpl_documents(*)')
+          .select('*')
           .eq('id', id)
           .single()
 
@@ -45,8 +45,20 @@ export default function TplDashboardPage() {
         if (!partnerData) throw new Error('Partner not found')
 
         setPartner(partnerData)
-        setCorridors(partnerData.tpl_corridors || [])
-        setDocuments(partnerData.tpl_documents || [])
+
+        // Fetch corridors separately
+        const { data: corridorsData } = await supabase
+          .from('tpl_corridors')
+          .select('*')
+          .eq('partner_id', id)
+        setCorridors(corridorsData || [])
+
+        // Fetch documents separately
+        const { data: docsData } = await supabase
+          .from('tpl_documents')
+          .select('*')
+          .eq('partner_id', id)
+        setDocuments(docsData || [])
       } catch (err: any) {
         console.error('Dashboard fetch error:', err)
         setError(err.message || 'Failed to load dashboard')
