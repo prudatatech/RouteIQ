@@ -219,19 +219,27 @@ export default function TplDashboardPage() {
   useEffect(() => {
     if (partner && corridors) {
       if (!settingsForm) {
-        setSettingsForm({
-          slaCommitment: partner.sla_commitment || '2 Hours',
-          taxTreatment: partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
-          corridors: corridors.length > 0 
-            ? corridors.map(c => ({
-                id: c.id,
-                name: c.corridor_name,
-                vehicles: (c.vehicle_types || []).join(', '),
-                rate: c.proposed_rate || '',
-                priority: c.priority || '1'
-              }))
-            : [{ id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }]
-        })
+        if (partner.pending_updates) {
+          setSettingsForm({
+            slaCommitment: partner.pending_updates.sla_commitment || partner.sla_commitment || '2 Hours',
+            taxTreatment: partner.pending_updates.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
+            corridors: partner.pending_updates.corridors || []
+          })
+        } else {
+          setSettingsForm({
+            slaCommitment: partner.sla_commitment || '2 Hours',
+            taxTreatment: partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
+            corridors: corridors.length > 0 
+              ? corridors.map(c => ({
+                  id: c.id,
+                  name: c.corridor_name,
+                  vehicles: Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || ''),
+                  rate: c.proposed_rate || '',
+                  priority: c.priority || '1'
+                }))
+              : [{ id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }]
+          })
+        }
       }
     }
   }, [partner, corridors])
@@ -497,7 +505,7 @@ export default function TplDashboardPage() {
                           <div>
                             <div className="text-sm font-bold text-text">{c.corridor_name}</div>
                             <div className="text-[10px] text-muted font-bold mt-0.5">
-                              {(c.vehicle_types || []).join(', ')}
+                              {Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || '')}
                             </div>
                           </div>
                           <div className="text-xs font-mono font-bold text-primary">₹{c.proposed_rate || '—'}</div>
