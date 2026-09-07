@@ -23,7 +23,7 @@ export default function TplDashboardPage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    useAuthStore.getState().clearSession()
+    useAuthStore.getState().clearAuth()
     navigate('/login', { replace: true })
   }
 
