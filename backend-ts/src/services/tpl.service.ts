@@ -14,6 +14,7 @@ export const tplService = {
       .insert({
         custom_id: custom_id || null,
         company_name: companyName,
+        email: email,
         pan_number: pan,
         gstin: gst,
         msme_status: msmeStatus || 'Not Registered',
