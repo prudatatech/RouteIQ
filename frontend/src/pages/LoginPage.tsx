@@ -52,9 +52,15 @@ export default function LoginPage() {
         .eq('id', data.session.user.id)
         .maybeSingle()
 
+      const { data: tplPartner } = await supabase
+        .from('tpl_partners')
+        .select('id')
+        .eq('user_id', data.session.user.id)
+        .maybeSingle()
+
       let role = user?.role || data.session.user.user_metadata?.role;
       if (role !== 'admin' && role !== 'superadmin') {
-        if (vProfile || data.session.user.user_metadata?.role === 'vendor') {
+        if (vProfile || tplPartner || data.session.user.user_metadata?.role === 'vendor') {
           role = 'vendor';
         }
       }
@@ -69,8 +75,9 @@ export default function LoginPage() {
       if (role === 'superadmin') {
         navigate('/superadmin')
       } else if (role === 'vendor') {
-        // Check if vendor profile is fully set up
-        if (!vProfile) {
+        if (tplPartner) {
+          navigate('/3pl-portal')
+        } else if (!vProfile) {
           navigate('/vendor/onboarding')
         } else {
           navigate('/vendor')
