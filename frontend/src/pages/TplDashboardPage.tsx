@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 
-function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass }: any) {
+function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
   const [isOpen, setIsOpen] = useState(false);
   const [filtered, setFiltered] = useState(options);
 
@@ -23,11 +23,13 @@ function AutocompleteInput({ label, value, onChange, options, placeholder, class
         value={value}
         onChange={e => {
           onChange(e.target.value);
-          setFiltered(options.filter((o: string) => o.toLowerCase().includes(e.target.value.toLowerCase())));
+          const searchVal = isMulti ? e.target.value.split(',').pop()?.trim() || '' : e.target.value;
+          setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
           setIsOpen(true);
         }}
         onFocus={() => {
-           setFiltered(options.filter((o: string) => o.toLowerCase().includes(value.toLowerCase())));
+           const searchVal = isMulti ? (value || '').split(',').pop()?.trim() || '' : value;
+           setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
            setIsOpen(true);
         }}
         onBlur={() => setTimeout(() => setIsOpen(false), 200)}
@@ -41,7 +43,14 @@ function AutocompleteInput({ label, value, onChange, options, placeholder, class
               key={opt}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onChange(opt);
+                if (isMulti) {
+                  const parts = (value || '').split(',');
+                  parts.pop(); // remove incomplete typing
+                  const newVal = parts.length > 0 ? parts.map((p: string) => p.trim()).join(', ') + ', ' + opt : opt;
+                  onChange(newVal + ', ');
+                } else {
+                  onChange(opt);
+                }
                 setIsOpen(false);
               }}
               className="px-4 py-2 text-sm hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
@@ -762,6 +771,7 @@ export default function TplDashboardPage() {
                                />
                                <AutocompleteInput
                                  label="Vehicle Types"
+                                 isMulti={true}
                                  labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
                                  value={c.vehicles}
                                  onChange={(val: string) => {

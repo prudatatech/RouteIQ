@@ -164,10 +164,48 @@ export const tplService = {
    * Approve a 3PL partner
    */
   async approve(id: string, approverEmail: string) {
-    // 1. Update status and clear pending updates
-    const { data: partner, error } = await supabase
+    // Fetch the existing partner to get pending_updates
+    const { data: partner, error: fetchErr } = await supabase
       .from('tpl_partners')
-      .update({ status: 'active', pending_updates: null })
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+
+    const updates = partner.pending_updates;
+    const partnerUpdates: any = {
+      status: 'active',
+      pending_updates: null
+    };
+
+    if (updates) {
+      if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;
+      if (updates.tax_treatment) partnerUpdates.tax_treatment = updates.tax_treatment;
+      
+      // Update Corridors if present
+      if (updates.corridors && Array.isArray(updates.corridors)) {
+        // Delete old corridors and insert new ones
+        await supabase.from('tpl_corridors').delete().eq('partner_id', id);
+        
+        const corridorPayloads = updates.corridors.map((c: any) => ({
+          partner_id: id,
+          corridor_name: c.name,
+          vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()) : [],
+          proposed_rate: c.rate,
+          priority: c.priority
+        }));
+        
+        if (corridorPayloads.length > 0) {
+          await supabase.from('tpl_corridors').insert(corridorPayloads);
+        }
+      }
+    }
+
+    // 1. Update status and apply merged updates
+    const { data: updatedPartner, error } = await supabase
+      .from('tpl_partners')
+      .update(partnerUpdates)
       .eq('id', id)
       .select()
       .single();
@@ -175,9 +213,9 @@ export const tplService = {
     if (error) throw new Error(`Approval failed: ${error.message}`);
 
     // 2. Create actual Auth User for them (simulated here)
-    console.log(`[TPL Provisoning] Provisioning account for ${partner.company_name} approved by ${approverEmail}`);
+    console.log(`[TPL Provisoning] Provisioning account for ${updatedPartner.company_name} approved by ${approverEmail}`);
     
-    return partner;
+    return updatedPartner;
   },
   
   /**
