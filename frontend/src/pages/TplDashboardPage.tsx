@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
+import { tplAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 
 export default function TplDashboardPage() {
@@ -23,31 +24,19 @@ export default function TplDashboardPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user || !id) return
         
-        // Fetch partner profile using ID from URL. RLS ensures we only get it if it belongs to the logged in user.
-        const { data: partnerData, error: pErr } = await supabase
-          .from('tpl_partners')
-          .select('*')
-          .eq('id', id)
-          .single()
+        // Fetch partner profile using backend API (bypasses RLS)
+        const partnerData = await tplAPI.getPartner(id)
           
-        if (pErr) throw pErr
-        setPartner(partnerData)
+        if (!partnerData) throw new Error('Partner not found')
         
-        if (partnerData) {
-          // Fetch Corridors
-          const { data: corridorsData } = await supabase
-            .from('tpl_corridors')
-            .select('*')
-            .eq('partner_id', partnerData.id)
-          setCorridors(corridorsData || [])
-
-          // Fetch Documents
-          const { data: docsData } = await supabase
-            .from('tpl_documents')
-            .select('*')
-            .eq('partner_id', partnerData.id)
-          setDocuments(docsData || [])
+        // Add extra authorization check to ensure the logged-in user owns this profile
+        if (partnerData.user_id !== user.id) {
+          throw new Error('Unauthorized')
         }
+
+        setPartner(partnerData)
+        setCorridors(partnerData.tpl_corridors || [])
+        setDocuments(partnerData.tpl_documents || [])
       } catch (err) {
         console.error('Error fetching dashboard data:', err)
       } finally {
