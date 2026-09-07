@@ -1,35 +1,55 @@
 import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Briefcase, FileText, IndianRupee, ShieldCheck, MapPin, Search, Calendar, CheckCircle2, Loader2, Download, Package, Activity, AlertTriangle, TrendingUp, Clock, Truck, ShieldAlert
+  Briefcase, FileText, IndianRupee, ShieldCheck, MapPin, Calendar, CheckCircle2,
+  Loader2, Download, Package, Activity, AlertTriangle, TrendingUp, Truck, ShieldAlert,
+  LogOut, Building2, User, Bell, Settings, Hash, CreditCard, BarChart3
 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
-import { tplAPI } from '@/services/api'
+import { supabase } from '@/services/supabase'
+import { useAuthStore } from '@/store/authStore'
 
 export default function TplDashboardPage() {
   const { id } = useParams()
-  const [activeTab, setActiveTab] = useState<'coverage' | 'requests' | 'shipments' | 'documents' | 'earnings'>('coverage')
+  const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<'overview' | 'coverage' | 'documents' | 'shipments' | 'earnings'>('overview')
   
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [partner, setPartner] = useState<any>(null)
   const [corridors, setCorridors] = useState<any[]>([])
   const [documents, setDocuments] = useState<any[]>([])
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    useAuthStore.getState().clearSession()
+    navigate('/login', { replace: true })
+  }
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       setLoading(true)
+      setError(null)
       try {
-        // Fetch partner profile using backend API (bypasses RLS)
-        const partnerData = await tplAPI.getPartner(id!)
-          
+        if (!id) throw new Error('No partner ID provided')
+
+        // Query Supabase directly (frontend has service-role key so RLS is bypassed)
+        const { data: partnerData, error: pErr } = await supabase
+          .from('tpl_partners')
+          .select('*, tpl_corridors(*), tpl_documents(*)')
+          .eq('id', id)
+          .single()
+
+        if (pErr) throw new Error(pErr.message)
         if (!partnerData) throw new Error('Partner not found')
 
         setPartner(partnerData)
         setCorridors(partnerData.tpl_corridors || [])
         setDocuments(partnerData.tpl_documents || [])
       } catch (err: any) {
-        console.error('Error fetching dashboard data:', err?.response?.data || err?.message || err)
+        console.error('Dashboard fetch error:', err)
+        setError(err.message || 'Failed to load dashboard')
       } finally {
         setLoading(false)
       }
@@ -38,286 +58,392 @@ export default function TplDashboardPage() {
     fetchDashboardData()
   }, [id])
 
+  // ─── Loading State ─────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex h-[80vh] items-center justify-center text-muted flex-col gap-6 animate-fade-in relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 blur-[100px] rounded-full pointer-events-none" />
-        <div className="relative z-10 flex flex-col items-center gap-4">
-          <Loader2 size={40} className="animate-spin text-primary" />
-          <div className="text-sm font-black uppercase tracking-widest text-primary animate-pulse">Syncing 3PL Matrix...</div>
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="relative flex flex-col items-center gap-6">
+          <div className="absolute w-80 h-80 bg-primary/10 blur-[120px] rounded-full pointer-events-none" />
+          <div className="relative z-10 flex flex-col items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center">
+              <Loader2 size={28} className="animate-spin text-primary" />
+            </div>
+            <div className="text-sm font-black uppercase tracking-[0.2em] text-primary animate-pulse">Loading Dashboard...</div>
+            <div className="text-xs text-muted">Fetching your partner profile</div>
+          </div>
         </div>
       </div>
     )
   }
 
-  if (!partner) {
+  // ─── Error State ───────────────────────────────────────
+  if (error || !partner) {
     return (
-      <div className="flex h-[80vh] items-center justify-center text-red-500 flex-col gap-6 animate-fade-in relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-red-500/10 blur-[100px] rounded-full pointer-events-none" />
-        <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-          <ShieldAlert size={64} className="text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]" />
-          <div className="text-lg font-black uppercase tracking-widest text-red-500">Access Denied</div>
-          <div className="text-sm text-red-400/80 max-w-sm">This partner profile either does not exist or you do not have authorization to view it.</div>
+      <div className="min-h-screen bg-bg flex items-center justify-center p-6">
+        <div className="relative max-w-md w-full">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-red-500/10 blur-[120px] rounded-full pointer-events-none" />
+          <div className="relative z-10 text-center space-y-6">
+            <div className="w-20 h-20 mx-auto rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+              <ShieldAlert size={36} className="text-red-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-widest text-red-500 mb-2">Access Denied</h2>
+              <p className="text-sm text-muted max-w-xs mx-auto leading-relaxed">
+                {error || 'This partner profile either does not exist or you do not have authorization to view it.'}
+              </p>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="px-6 py-3 rounded-xl bg-surface border border-border/50 text-text text-xs font-black uppercase tracking-widest hover:bg-surface2 transition-colors inline-flex items-center gap-2"
+            >
+              <LogOut size={14} /> Sign Out & Retry
+            </button>
+          </div>
         </div>
       </div>
     )
   }
+
+  // ─── Main Dashboard ────────────────────────────────────
+  const tabs = [
+    { id: 'overview', icon: BarChart3, label: 'Overview' },
+    { id: 'coverage', icon: MapPin, label: 'Corridors', count: corridors.length },
+    { id: 'documents', icon: FileText, label: 'Documents', count: documents.length },
+    { id: 'shipments', icon: Truck, label: 'Shipments' },
+    { id: 'earnings', icon: IndianRupee, label: 'Earnings' }
+  ]
 
   return (
-    <div className="space-y-10 animate-fade-in pb-32 relative">
-      {/* Background Orbs */}
-      <div className="fixed top-0 left-0 w-[500px] h-[500px] bg-primary/5 blur-[150px] rounded-full pointer-events-none -z-10" />
-      <div className="fixed bottom-0 right-0 w-[600px] h-[600px] bg-blue-500/5 blur-[150px] rounded-full pointer-events-none -z-10" />
-
-      {/* Premium Hero Banner */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/50 bg-surface/50 backdrop-blur-2xl p-8 md:p-12 shadow-2xl">
-        <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-gradient-to-br from-primary/20 to-transparent blur-[80px] -translate-y-1/2 translate-x-1/3 rounded-full pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest shadow-[0_0_15px_rgba(79,172,254,0.15)]">
-              <ShieldCheck size={14} />
-              Verified Partner
+    <div className="min-h-screen bg-bg">
+      {/* ── Top Navigation Bar ──────────────────────────── */}
+      <header className="sticky top-0 z-50 bg-bg/80 backdrop-blur-2xl border-b border-border/50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
+              <Truck size={18} className="text-white" />
             </div>
-            <h1 className="font-display text-5xl md:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-text to-text/50 uppercase leading-none drop-shadow-lg">
-              {partner.company_name}
-            </h1>
-            <div className="flex items-center gap-4 text-xs font-bold text-muted uppercase tracking-widest">
-              <span className="flex items-center gap-1.5"><MapPin size={14} /> ID: {partner.custom_id || partner.id.split('-')[0]}</span>
-              <span className="flex items-center gap-1.5"><Calendar size={14} /> Joined {new Date(partner.created_at).getFullYear()}</span>
+            <div>
+              <h1 className="text-sm font-black uppercase tracking-widest text-text leading-none">Margix 3PL</h1>
+              <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-0.5">Partner Portal</p>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className={clsx(
-              "px-6 py-3 rounded-xl border font-black uppercase tracking-widest text-xs flex items-center gap-2 shadow-lg backdrop-blur-md transition-all hover:scale-105 cursor-default",
-              partner.status === 'active' 
-                ? "bg-green-500/10 border-green-500/30 text-green-500 shadow-green-500/10" 
-                : "bg-yellow-500/10 border-yellow-500/30 text-yellow-500 shadow-yellow-500/10"
-            )}>
-              {partner.status === 'active' ? <Activity size={16} className="animate-pulse" /> : <Clock size={16} />}
-              Status: {partner.status}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border border-border/50 text-xs text-muted">
+              <Building2 size={12} />
+              <span className="font-bold">{partner.company_name}</span>
+            </div>
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-500">
+              <Activity size={12} className="animate-pulse" />
+              <span className="font-bold uppercase">{partner.status}</span>
+            </div>
+            <button className="w-9 h-9 rounded-lg bg-surface border border-border/50 flex items-center justify-center text-muted hover:text-text hover:bg-surface2 transition-colors">
+              <Bell size={16} />
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="h-9 px-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-colors flex items-center gap-2 text-xs font-bold"
+            >
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {/* ── Hero Card ─────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-surface/80 to-surface2/30 backdrop-blur-2xl p-8 md:p-10 shadow-xl">
+          <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-primary/15 to-transparent blur-[100px] -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-[200px] h-[200px] bg-gradient-to-tr from-blue-500/10 to-transparent blur-[80px] translate-y-1/2 -translate-x-1/4 rounded-full pointer-events-none" />
+          
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-[0.2em]">
+                <ShieldCheck size={12} />
+                Verified 3PL Partner
+              </div>
+              <h2 className="text-3xl md:text-4xl font-black tracking-tight text-text leading-none">
+                {partner.company_name}
+              </h2>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Hash size={12} className="text-primary/60" />
+                  {partner.custom_id || partner.id.split('-')[0]}
+                </span>
+                <span className="flex items-center gap-1.5 font-bold">
+                  <CreditCard size={12} className="text-primary/60" />
+                  GST: {partner.gstin}
+                </span>
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Calendar size={12} className="text-primary/60" />
+                  Since {new Date(partner.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="px-5 py-2.5 rounded-xl bg-surface border border-border/50 text-xs font-bold text-text flex items-center gap-2">
+                <IndianRupee size={14} className="text-primary/60" />
+                {partner.tax_treatment || 'Standard'}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* KPI Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-colors group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black text-muted uppercase tracking-widest">Active Shipments</div>
-            <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform"><Package size={16} /></div>
-          </div>
-          <div className="text-3xl font-black text-text">0</div>
-          <div className="text-xs text-muted font-bold mt-2 flex items-center gap-1 text-green-500"><TrendingUp size={12} /> Live now</div>
-        </Card>
-        
-        <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-colors group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black text-muted uppercase tracking-widest">Approved Corridors</div>
-            <div className="w-8 h-8 rounded-full bg-purple-500/10 text-purple-500 flex items-center justify-center group-hover:scale-110 transition-transform"><MapPin size={16} /></div>
-          </div>
-          <div className="text-3xl font-black text-text">{corridors.length}</div>
-          <div className="text-xs text-muted font-bold mt-2">Active service routes</div>
-        </Card>
-        
-        <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-colors group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black text-muted uppercase tracking-widest">SLA Commitment</div>
-            <div className="w-8 h-8 rounded-full bg-green-500/10 text-green-500 flex items-center justify-center group-hover:scale-110 transition-transform"><CheckCircle2 size={16} /></div>
-          </div>
-          <div className="text-3xl font-black text-text">{partner.sla_commitment || 'N/A'}</div>
-          <div className="text-xs text-muted font-bold mt-2">Max acceptance time</div>
-        </Card>
-        
-        <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-colors group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black text-muted uppercase tracking-widest">SLA Breaches</div>
-            <div className="w-8 h-8 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={16} /></div>
-          </div>
-          <div className="text-3xl font-black text-text">0</div>
-          <div className="text-xs text-muted font-bold mt-2 text-green-500">Excellent standing</div>
-        </Card>
-      </div>
+        {/* ── Tab Navigation ────────────────────────────── */}
+        <div className="bg-surface/40 backdrop-blur-xl border border-border/50 p-1.5 rounded-xl flex gap-1 overflow-x-auto custom-scrollbar">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={clsx(
+                'flex items-center gap-2 px-5 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap',
+                activeTab === tab.id 
+                  ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                  : 'text-muted hover:text-text hover:bg-surface/80'
+              )}
+            >
+              <tab.icon size={14} />
+              {tab.label}
+              {tab.count !== undefined && (
+                <span className={clsx(
+                  "ml-1 px-2 py-0.5 rounded text-[10px] font-black", 
+                  activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-surface2 text-muted'
+                )}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
-      {/* Animated Tabs */}
-      <div className="bg-surface/40 backdrop-blur-xl border border-border/50 p-2 rounded-2xl flex gap-2 overflow-x-auto custom-scrollbar shadow-lg">
-        {[
-          { id: 'coverage', icon: ShieldCheck, label: 'Coverage Profile', count: corridors.length },
-          { id: 'documents', icon: FileText, label: 'KYC Documents', count: documents.length },
-          { id: 'requests', icon: Briefcase, label: 'Escalation Requests' },
-          { id: 'shipments', icon: Truck, label: 'Live Shipments' },
-          { id: 'earnings', icon: IndianRupee, label: 'Earnings & Margins' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={clsx(
-              'flex items-center gap-2 px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap relative overflow-hidden group',
-              activeTab === tab.id 
-                ? 'bg-primary text-bg shadow-[0_0_20px_rgba(79,172,254,0.3)]' 
-                : 'text-muted hover:text-text hover:bg-surface/80'
-            )}
-          >
-            {activeTab === tab.id && (
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
-            )}
-            <tab.icon size={16} className={activeTab === tab.id ? 'text-bg' : 'text-primary/70'} />
-            <span className="relative z-10">{tab.label}</span>
-            {tab.count !== undefined && (
-              <span className={clsx(
-                "ml-2 px-2 py-0.5 rounded-md text-[10px] relative z-10", 
-                activeTab === tab.id ? 'bg-bg/20 text-bg' : 'bg-surface2 text-muted'
-              )}>
-                {tab.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+        {/* ── Tab Content ───────────────────────────────── */}
+        <div className="animate-fade-in">
+          
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* KPI Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {[
+                  { label: 'Active Shipments', value: '0', icon: Package, color: 'blue', sub: 'Live now' },
+                  { label: 'Approved Corridors', value: String(corridors.length), icon: MapPin, color: 'purple', sub: 'Active routes' },
+                  { label: 'SLA Commitment', value: partner.sla_commitment || 'N/A', icon: CheckCircle2, color: 'green', sub: 'Max response' },
+                  { label: 'SLA Breaches', value: '0', icon: AlertTriangle, color: 'emerald', sub: 'Excellent standing' },
+                ].map((kpi, i) => (
+                  <Card key={i} className="p-5 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-all group">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-black text-muted uppercase tracking-widest">{kpi.label}</span>
+                      <div className={`w-8 h-8 rounded-lg bg-${kpi.color}-500/10 text-${kpi.color}-500 flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                        <kpi.icon size={16} />
+                      </div>
+                    </div>
+                    <div className="text-2xl font-black text-text">{kpi.value}</div>
+                    <div className="text-[10px] text-muted font-bold mt-1 flex items-center gap-1">
+                      <TrendingUp size={10} className="text-green-500" /> {kpi.sub}
+                    </div>
+                  </Card>
+                ))}
+              </div>
 
-      {/* Tab Content Areas */}
-      <div className="mt-8">
-        
-        {activeTab === 'coverage' && (
-          <div className="space-y-6 animate-fade-in">
-             <Card className="border-border/50 bg-surface/30 backdrop-blur-md overflow-hidden shadow-xl">
-               <div className="p-8 border-b border-border/50 bg-gradient-to-r from-surface2/40 to-transparent flex flex-col md:flex-row md:items-center justify-between gap-4">
-                 <div>
-                   <h3 className="font-display text-2xl font-black text-text tracking-tight flex items-center gap-3">
-                     <MapPin className="text-primary" /> Approved Corridors
-                   </h3>
-                   <p className="text-xs text-muted font-bold mt-2 uppercase tracking-widest">Your rates and vehicle commitments are read-only. Contact admin for modifications.</p>
-                 </div>
-                 <div className="px-4 py-2 rounded-lg bg-surface2/50 border border-border/50 text-xs font-bold text-text flex items-center gap-2">
-                   <IndianRupee size={14} className="text-muted" /> Tax: {partner.tax_treatment || 'Not Specified'}
-                 </div>
-               </div>
-               
-               <div className="overflow-x-auto">
-                 <table className="w-full text-left border-collapse">
-                   <thead>
-                     <tr className="border-b border-border/50 bg-surface2/20">
-                       <th className="p-6 text-[10px] font-black uppercase tracking-widest text-muted">Service Route</th>
-                       <th className="p-6 text-[10px] font-black uppercase tracking-widest text-muted">Vehicle Fleet Types</th>
-                       <th className="p-6 text-[10px] font-black uppercase tracking-widest text-muted text-right">Agreed Rate Profile</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     {corridors.length === 0 ? (
-                       <tr>
-                         <td colSpan={3} className="p-12 text-center">
-                           <div className="flex flex-col items-center justify-center text-muted">
-                             <MapPin size={32} className="mb-4 opacity-50" />
-                             <span className="text-sm font-bold uppercase tracking-widest">No corridors configured</span>
-                           </div>
-                         </td>
-                       </tr>
-                     ) : (
-                       corridors.map(corridor => (
-                         <tr key={corridor.id} className="border-b border-border/20 hover:bg-surface2/40 transition-colors group">
-                           <td className="p-6">
-                             <div className="font-black text-sm text-text flex items-center gap-2">
-                               <div className="w-2 h-2 rounded-full bg-primary/50 group-hover:bg-primary transition-colors" />
-                               {corridor.corridor_name}
-                             </div>
-                           </td>
-                           <td className="p-6">
-                              <div className="flex flex-wrap gap-2">
-                                {(corridor.vehicle_types || []).map((vt: string, idx: number) => (
-                                  <span key={idx} className="px-2.5 py-1 bg-surface2 border border-border/50 text-text text-[10px] rounded-md font-black uppercase tracking-wider shadow-sm group-hover:border-primary/30 transition-colors">
-                                    {vt}
-                                  </span>
-                                ))}
-                              </div>
-                           </td>
-                           <td className="p-6 text-right font-mono text-sm font-bold text-text group-hover:text-primary transition-colors">
-                             {corridor.proposed_rate || 'Standard'}
-                           </td>
-                         </tr>
-                       ))
-                     )}
-                   </tbody>
-                 </table>
-               </div>
-             </Card>
-          </div>
-        )}
+              {/* Quick Info Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
+                    <Building2 size={14} className="text-primary" /> Company Details
+                  </h3>
+                  <div className="space-y-3">
+                    {[
+                      ['PAN', partner.pan_number],
+                      ['GSTIN', partner.gstin],
+                      ['MSME Status', partner.msme_status],
+                      ['Bank A/C', partner.bank_account_no ? `****${partner.bank_account_no.slice(-4)}` : 'N/A'],
+                      ['IFSC', partner.bank_ifsc],
+                    ].map(([label, val]) => (
+                      <div key={label as string} className="flex items-center justify-between text-sm">
+                        <span className="text-muted font-medium">{label}</span>
+                        <span className="font-bold text-text font-mono">{val || 'N/A'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+                
+                <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
+                    <MapPin size={14} className="text-primary" /> Active Corridors
+                  </h3>
+                  {corridors.length === 0 ? (
+                    <div className="text-sm text-muted py-4 text-center">No corridors configured</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {corridors.map(c => (
+                        <div key={c.id} className="flex items-center justify-between p-3 rounded-lg bg-surface2/30 border border-border/30">
+                          <div>
+                            <div className="text-sm font-bold text-text">{c.corridor_name}</div>
+                            <div className="text-[10px] text-muted font-bold mt-0.5">
+                              {(c.vehicle_types || []).join(', ')}
+                            </div>
+                          </div>
+                          <div className="text-xs font-mono font-bold text-primary">₹{c.proposed_rate || '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          )}
 
-        {activeTab === 'documents' && (
-          <div className="space-y-6 animate-fade-in">
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {documents.length === 0 ? (
-                 <div className="col-span-full py-20 flex flex-col items-center justify-center text-center bg-surface/30 backdrop-blur-md border border-border/50 border-dashed rounded-3xl">
-                   <FileText size={48} className="text-muted/50 mb-4" />
-                   <div className="text-sm font-bold uppercase tracking-widest text-muted">No documents uploaded</div>
-                 </div>
-               ) : (
-                 documents.map((doc, idx) => (
-                   <Card key={doc.id} className="p-6 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/60 transition-all hover:-translate-y-1 hover:shadow-xl group flex flex-col justify-between h-48 relative overflow-hidden">
-                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                       <FileText size={64} />
-                     </div>
-                     <div>
-                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 text-primary flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(79,172,254,0.1)] group-hover:scale-110 transition-transform">
-                         <FileText size={20} />
-                       </div>
-                       <h4 className="font-black text-lg text-text leading-tight">{doc.doc_type}</h4>
-                       <div className="text-[10px] text-muted font-bold uppercase tracking-widest mt-2">
-                         Uploaded {new Date(doc.uploaded_at).toLocaleDateString()}
-                       </div>
-                     </div>
-                     <div className="pt-4 mt-4 border-t border-border/30">
-                       <a 
-                         href={doc.file_url} 
-                         target="_blank" 
-                         rel="noreferrer"
-                         className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-primary hover:text-white transition-colors w-full"
-                       >
-                         View Document
-                         <Download size={14} className="group-hover:translate-y-0.5 transition-transform" />
-                       </a>
-                     </div>
-                   </Card>
-                 ))
-               )}
-             </div>
-          </div>
-        )}
+          {/* Corridors Tab */}
+          {activeTab === 'coverage' && (
+            <Card className="border-border/50 bg-surface/30 backdrop-blur-md overflow-hidden shadow-xl">
+              <div className="p-6 border-b border-border/50 bg-gradient-to-r from-surface2/40 to-transparent flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black text-text tracking-tight flex items-center gap-2">
+                    <MapPin size={18} className="text-primary" /> Approved Corridors
+                  </h3>
+                  <p className="text-[10px] text-muted font-bold mt-1 uppercase tracking-widest">Your rates and vehicle commitments. Contact admin for modifications.</p>
+                </div>
+                <div className="px-4 py-2 rounded-lg bg-surface2/50 border border-border/50 text-xs font-bold text-text flex items-center gap-2">
+                  <IndianRupee size={12} className="text-muted" /> Tax: {partner.tax_treatment || 'Not Specified'}
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-border/50 bg-surface2/20">
+                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Route</th>
+                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Vehicle Types</th>
+                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Priority</th>
+                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted text-right">Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {corridors.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-12 text-center">
+                          <MapPin size={28} className="mx-auto mb-3 text-muted/40" />
+                          <span className="text-sm font-bold text-muted">No corridors configured</span>
+                        </td>
+                      </tr>
+                    ) : (
+                      corridors.map(c => (
+                        <tr key={c.id} className="border-b border-border/20 hover:bg-surface2/30 transition-colors">
+                          <td className="p-5">
+                            <div className="font-bold text-sm text-text flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-primary" />
+                              {c.corridor_name}
+                            </div>
+                          </td>
+                          <td className="p-5">
+                            <div className="flex flex-wrap gap-1.5">
+                              {(c.vehicle_types || []).map((vt: string, idx: number) => (
+                                <span key={idx} className="px-2 py-0.5 bg-surface2 border border-border/50 text-text text-[10px] rounded font-bold uppercase tracking-wider">
+                                  {vt}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-5">
+                            <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] rounded font-black uppercase">
+                              P{c.priority || '—'}
+                            </span>
+                          </td>
+                          <td className="p-5 text-right font-mono text-sm font-bold text-text">
+                            ₹{c.proposed_rate || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
-        {/* Empty States for Future Features */}
-        {(activeTab === 'requests' || activeTab === 'shipments' || activeTab === 'earnings') && (
-          <div className="py-24 flex flex-col items-center justify-center text-center animate-fade-in bg-surface/30 backdrop-blur-md border border-border/50 rounded-3xl shadow-2xl relative overflow-hidden">
-             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.02]" />
-             
-             <div className="relative z-10 flex flex-col items-center">
-               <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-surface2 to-surface border border-border/50 flex items-center justify-center text-muted mb-8 shadow-inner relative overflow-hidden">
-                 <div className="absolute inset-0 bg-primary/5 animate-pulse" />
-                 {activeTab === 'requests' && <Briefcase size={32} className="text-primary/50" />}
-                 {activeTab === 'shipments' && <Truck size={32} className="text-blue-500/50" />}
-                 {activeTab === 'earnings' && <IndianRupee size={32} className="text-green-500/50" />}
-               </div>
-               
-               <h2 className="font-display text-3xl font-black uppercase tracking-tight text-text mb-3">
-                 {activeTab === 'requests' && 'Escalation Queue'}
-                 {activeTab === 'shipments' && 'Active Fleet Tracking'}
-                 {activeTab === 'earnings' && 'Financial Ledger'}
-               </h2>
-               
-               <p className="text-sm text-muted font-medium max-w-md leading-relaxed px-6">
-                 {activeTab === 'requests' && "When shipments matching your approved corridors (e.g. DEL-BOM) face SLA breaches in the primary network, they will cascade to you here for immediate bidding."}
-                 {activeTab === 'shipments' && "Track all your currently assigned loads in real-time. Full GPS integration and digital POD uploads will be available when you are dispatched."}
-                 {activeTab === 'earnings' && "Your automated settlement ledger and margin reports. Statements are generated bi-weekly based on successfully delivered SLA commitments."}
-               </p>
-               
-               <div className="mt-8 px-4 py-2 rounded-full bg-surface2/50 border border-border/50 text-[10px] font-black uppercase tracking-widest text-muted flex items-center gap-2">
-                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse" /> System Standby
-               </div>
-             </div>
-          </div>
-        )}
+          {/* Documents Tab */}
+          {activeTab === 'documents' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black text-text flex items-center gap-2">
+                  <FileText size={18} className="text-primary" /> KYC Documents
+                </h3>
+                <span className="text-xs text-muted font-bold">{documents.length} file{documents.length !== 1 ? 's' : ''} uploaded</span>
+              </div>
+              
+              {documents.length === 0 ? (
+                <Card className="p-12 border-border/50 bg-surface/30 backdrop-blur-md text-center">
+                  <FileText size={40} className="mx-auto mb-4 text-muted/40" />
+                  <div className="text-sm font-bold text-muted">No documents uploaded</div>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {documents.map(doc => (
+                    <Card key={doc.id} className="p-5 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-all hover:-translate-y-0.5 hover:shadow-lg group">
+                      <div className="flex items-start gap-4">
+                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 text-primary flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                          <FileText size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-sm text-text truncate">{doc.doc_type}</h4>
+                          <div className="text-[10px] text-muted font-bold uppercase tracking-widest mt-1">
+                            {new Date(doc.uploaded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </div>
+                          <div className="text-[10px] text-muted truncate mt-0.5">{doc.file_url}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-border/30">
+                        <a 
+                          href={doc.file_url} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/20 transition-colors"
+                        >
+                          <Download size={12} /> View / Download
+                        </a>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Shipments & Earnings Empty States */}
+          {(activeTab === 'shipments' || activeTab === 'earnings') && (
+            <Card className="p-16 border-border/50 bg-surface/30 backdrop-blur-md text-center">
+              <div className="max-w-sm mx-auto space-y-5">
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-surface2/50 border border-border/50 flex items-center justify-center">
+                  {activeTab === 'shipments' && <Truck size={28} className="text-muted/50" />}
+                  {activeTab === 'earnings' && <IndianRupee size={28} className="text-muted/50" />}
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-wide text-text mb-2">
+                    {activeTab === 'shipments' ? 'Live Shipment Tracking' : 'Financial Ledger'}
+                  </h3>
+                  <p className="text-sm text-muted leading-relaxed">
+                    {activeTab === 'shipments' 
+                      ? 'Track your assigned loads in real-time with GPS integration and digital POD uploads. This feature activates when you receive your first dispatch.'
+                      : 'Your automated settlement ledger and margin reports will appear here. Statements are generated bi-weekly based on delivered shipments.'
+                    }
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface2/50 border border-border/50 text-[10px] font-black uppercase tracking-widest text-muted">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" /> Coming Soon
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* ── Footer ────────────────────────────────────── */}
+        <footer className="pt-8 pb-6 border-t border-border/30 text-center">
+          <p className="text-[10px] text-muted font-bold uppercase tracking-widest">
+            Margix 3PL Partner Portal • Partner ID: {partner.custom_id || partner.id.split('-')[0]} • © {new Date().getFullYear()}
+          </p>
+        </footer>
       </div>
     </div>
   )
