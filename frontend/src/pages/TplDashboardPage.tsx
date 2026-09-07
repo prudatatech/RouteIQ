@@ -9,6 +9,7 @@ import { Card } from '@/components/ui'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
+import { tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 
 function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
@@ -116,31 +117,13 @@ export default function TplDashboardPage() {
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
         if (!uuidRegex.test(id)) throw new Error('Invalid partner ID format')
 
-        // Query each table separately to avoid RLS policy conflicts on joins
-        const { data: partnerData, error: pErr } = await supabase
-          .from('tpl_partners')
-          .select('*')
-          .eq('id', id)
-          .single()
+        // Use backend API to bypass RLS for corridors and documents
+        const partnerData = await tplAPI.getPartner(id);
+        if (!partnerData) throw new Error('Partner not found');
 
-        if (pErr) throw new Error(pErr.message)
-        if (!partnerData) throw new Error('Partner not found')
-
-        setPartner(partnerData)
-
-        // Fetch corridors separately
-        const { data: corridorsData } = await supabase
-          .from('tpl_corridors')
-          .select('*')
-          .eq('partner_id', id)
-        setCorridors(corridorsData || [])
-
-        // Fetch documents separately
-        const { data: docsData } = await supabase
-          .from('tpl_documents')
-          .select('*')
-          .eq('partner_id', id)
-        setDocuments(docsData || [])
+        setPartner(partnerData);
+        setCorridors(partnerData.tpl_corridors || []);
+        setDocuments(partnerData.tpl_documents || []);
       } catch (err: any) {
         console.error('Dashboard fetch error:', err)
         setError(err.message || 'Failed to load dashboard')
