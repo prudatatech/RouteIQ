@@ -36,7 +36,7 @@ export const tplService = {
       const corridorsData = corridors.map((c: any) => ({
         partner_id: partnerId,
         corridor_name: c.name,
-        vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()) : [],
+        vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
         proposed_rate: c.rate,
         priority: c.priority
       }));
@@ -191,7 +191,7 @@ export const tplService = {
         const corridorPayloads = updates.corridors.map((c: any) => ({
           partner_id: id,
           corridor_name: c.name,
-          vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()) : [],
+          vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
           proposed_rate: c.rate,
           priority: c.priority
         }));
