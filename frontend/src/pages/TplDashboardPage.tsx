@@ -34,6 +34,10 @@ export default function TplDashboardPage() {
       try {
         if (!id) throw new Error('No partner ID provided')
 
+        // Validate that the ID is a proper UUID before querying
+        const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+        if (!uuidRegex.test(id)) throw new Error('Invalid partner ID format')
+
         // Query each table separately to avoid RLS policy conflicts on joins
         const { data: partnerData, error: pErr } = await supabase
           .from('tpl_partners')
@@ -407,14 +411,9 @@ export default function TplDashboardPage() {
                         </div>
                       </div>
                       <div className="mt-4 pt-3 border-t border-border/30">
-                        <a 
-                          href={doc.file_url} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest hover:bg-primary/20 transition-colors"
-                        >
-                          <Download size={12} /> View / Download
-                        </a>
+                        <div className="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-bold uppercase tracking-widest">
+                          <CheckCircle2 size={12} /> Uploaded & Verified
+                        </div>
                       </div>
                     </Card>
                   ))}
