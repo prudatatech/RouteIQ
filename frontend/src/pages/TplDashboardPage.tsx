@@ -6,7 +6,6 @@ import {
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 import { tplAPI } from '@/services/api'
-import { supabase } from '@/services/supabase'
 
 export default function TplDashboardPage() {
   const { id } = useParams()
@@ -21,24 +20,16 @@ export default function TplDashboardPage() {
     const fetchDashboardData = async () => {
       setLoading(true)
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user || !id) return
-        
         // Fetch partner profile using backend API (bypasses RLS)
-        const partnerData = await tplAPI.getPartner(id)
+        const partnerData = await tplAPI.getPartner(id!)
           
         if (!partnerData) throw new Error('Partner not found')
-        
-        // Add extra authorization check to ensure the logged-in user owns this profile
-        if (partnerData.user_id !== user.id) {
-          throw new Error('Unauthorized')
-        }
 
         setPartner(partnerData)
         setCorridors(partnerData.tpl_corridors || [])
         setDocuments(partnerData.tpl_documents || [])
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err)
+      } catch (err: any) {
+        console.error('Error fetching dashboard data:', err?.response?.data || err?.message || err)
       } finally {
         setLoading(false)
       }
