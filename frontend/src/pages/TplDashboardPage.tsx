@@ -3,13 +3,67 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Briefcase, FileText, IndianRupee, ShieldCheck, MapPin, Calendar, CheckCircle2,
   Loader2, Download, Package, Activity, AlertTriangle, TrendingUp, Truck, ShieldAlert,
-  LogOut, Building2, User, Bell, Settings, Hash, CreditCard, BarChart3, Eye, UploadCloud
+  LogOut, Building2, User, Bell, Settings, Hash, CreditCard, BarChart3, Eye, UploadCloud, Plus, Trash2
 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+
+function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass }: any) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [filtered, setFiltered] = useState(options);
+
+  return (
+    <div className="relative w-full">
+      {label && <label className={labelClass || "text-xs font-bold text-muted mb-1 block"}>{label}</label>}
+      <input 
+        type="text" 
+        value={value}
+        onChange={e => {
+          onChange(e.target.value);
+          setFiltered(options.filter((o: string) => o.toLowerCase().includes(e.target.value.toLowerCase())));
+          setIsOpen(true);
+        }}
+        onFocus={() => {
+           setFiltered(options.filter((o: string) => o.toLowerCase().includes(value.toLowerCase())));
+           setIsOpen(true);
+        }}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+        className={className}
+        placeholder={placeholder}
+      />
+      {isOpen && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-md shadow-xl max-h-48 overflow-y-auto animate-fade-in origin-top text-left">
+          {filtered.map((opt: string) => (
+            <div 
+              key={opt}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(opt);
+                setIsOpen(false);
+              }}
+              className="px-4 py-2 text-sm hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const CORRIDOR_RECOMMENDATIONS = [
+  "DEL-BOM", "BOM-BLR", "DEL-CCU", "MAA-BLR", "DEL-HYD", "PNQ-BLR", "AMD-BOM", "DEL-MAA"
+]
+
+const VEHICLE_RECOMMENDATIONS = [
+  "32ft SXL", "32ft MXL", "24ft SXL", "20ft", "14ft Eicher", 
+  "17ft Eicher", "19ft Eicher", "Tata Ace", "Ashok Leyland Dost",
+  "Bolero Pickup", "40ft Trailer", "40ft Flatbed", "Refrigerated Van"
+];
 
 export default function TplDashboardPage() {
   const { id } = useParams()
@@ -158,16 +212,43 @@ export default function TplDashboardPage() {
   }
 
   // ─── Settings Submission ───────────────────────────────
-  const [settingsForm, setSettingsForm] = useState({ fleet: '', routes: '', percentage: '' })
+  const [settingsForm, setSettingsForm] = useState<any>(null)
   const [isSubmittingSettings, setIsSubmittingSettings] = useState(false)
+
+  // Initialize settings form once data loads
+  useEffect(() => {
+    if (partner && corridors) {
+      if (!settingsForm) {
+        setSettingsForm({
+          slaCommitment: partner.sla_commitment || '2 Hours',
+          taxTreatment: partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
+          corridors: corridors.length > 0 
+            ? corridors.map(c => ({
+                id: c.id,
+                name: c.corridor_name,
+                vehicles: (c.vehicle_types || []).join(', '),
+                rate: c.proposed_rate || '',
+                priority: c.priority || '1'
+              }))
+            : [{ id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }]
+        })
+      }
+    }
+  }, [partner, corridors])
+
+  const addCorridor = () => setSettingsForm({ ...settingsForm, corridors: [...settingsForm.corridors, { id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }] })
+  
+  const removeCorridor = (id: number) => {
+    setSettingsForm({ ...settingsForm, corridors: settingsForm.corridors.filter((c: any) => c.id !== id) })
+  }
 
   const handleSaveSettings = async () => {
     setIsSubmittingSettings(true)
     try {
       const updates = {
-        fleet_changes: settingsForm.fleet,
-        route_changes: settingsForm.routes,
-        percentage_changes: settingsForm.percentage,
+        sla_commitment: settingsForm.slaCommitment,
+        tax_treatment: settingsForm.taxTreatment,
+        corridors: settingsForm.corridors,
         requested_at: new Date().toISOString()
       }
       
@@ -608,40 +689,122 @@ export default function TplDashboardPage() {
                   </div>
                 )}
 
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Add / Update Fleet (Trucks)</label>
-                    <textarea 
-                      value={settingsForm.fleet}
-                      onChange={e => setSettingsForm({ ...settingsForm, fleet: e.target.value })}
-                      placeholder="e.g., Added 2x 32ft MXL trucks, removing 1x 14ft Eicher..."
-                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 min-h-[100px] transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Add / Update Routes</label>
-                    <textarea 
-                      value={settingsForm.routes}
-                      onChange={e => setSettingsForm({ ...settingsForm, routes: e.target.value })}
-                      placeholder="e.g., Requesting new corridor DEL-MAA at ₹45/km..."
-                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 min-h-[100px] transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-muted mb-2 block uppercase tracking-widest">Update Margin / Percentage</label>
-                    <input 
-                      type="text"
-                      value={settingsForm.percentage}
-                      onChange={e => setSettingsForm({ ...settingsForm, percentage: e.target.value })}
-                      placeholder="e.g., Update tax treatment or adjust SLA / profit margin..."
-                      className="w-full bg-surface2/50 border border-border rounded-xl text-sm text-text p-4 outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                    />
-                  </div>
+                <div className="space-y-8">
+                   {/* SLA & Tax Options */}
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-border/50">
+                      <div>
+                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">Default SLA Commitment</label>
+                        <select 
+                          value={settingsForm?.slaCommitment || ''}
+                          onChange={e => setSettingsForm({ ...settingsForm, slaCommitment: e.target.value })}
+                          className="w-full p-3 bg-surface2/50 border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
+                        >
+                          <option>2 Hours</option>
+                          <option>4 Hours</option>
+                          <option>6 Hours</option>
+                          <option>12 Hours</option>
+                        </select>
+                        <p className="text-[10px] text-muted font-bold mt-2">Max time to respond to a broadcast request.</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">GTA Tax Treatment</label>
+                        <select 
+                          value={settingsForm?.taxTreatment || ''}
+                          onChange={e => setSettingsForm({ ...settingsForm, taxTreatment: e.target.value })}
+                          className="w-full p-3 bg-surface2/50 border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
+                        >
+                          <option>12% GTA (With ITC) - Forward Charge</option>
+                          <option>5% GTA (No ITC) - Reverse Charge</option>
+                        </select>
+                        <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
+                          <AlertTriangle size={12}/> Determines reverse charge liability on your invoices.
+                        </p>
+                      </div>
+                   </div>
+
+                   {/* Corridor Configurations */}
+                   <div>
+                      <div className="flex justify-between items-center mb-4">
+                        <label className="text-xs font-bold text-muted uppercase tracking-widest">Corridor & Rate Declarations</label>
+                        <button onClick={addCorridor} className="text-[10px] text-primary hover:underline font-black uppercase flex items-center gap-1">
+                          <Plus size={14} /> Add Corridor
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {settingsForm?.corridors?.map((c: any, idx: number) => (
+                          <div key={c.id} className="p-4 bg-surface2/30 border border-border/50 rounded-xl relative group">
+                            {settingsForm.corridors.length > 1 && (
+                              <button onClick={() => removeCorridor(c.id)} className="absolute -right-2 -top-2 w-6 h-6 bg-red-500 text-bg rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                               <AutocompleteInput
+                                 label="Corridor (e.g. DEL-BOM)"
+                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
+                                 value={c.name}
+                                 onChange={(val: string) => {
+                                   const newC = [...settingsForm.corridors];
+                                   newC[idx].name = val.toUpperCase();
+                                   setSettingsForm({ ...settingsForm, corridors: newC });
+                                 }}
+                                 options={CORRIDOR_RECOMMENDATIONS}
+                                 className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold uppercase text-text"
+                               />
+                               <AutocompleteInput
+                                 label="Vehicle Types"
+                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
+                                 value={c.vehicles}
+                                 onChange={(val: string) => {
+                                   const newC = [...settingsForm.corridors];
+                                   newC[idx].vehicles = val;
+                                   setSettingsForm({ ...settingsForm, corridors: newC });
+                                 }}
+                                 options={VEHICLE_RECOMMENDATIONS}
+                                 placeholder="e.g. 32ft SXL, 20ft"
+                                 className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold text-text"
+                               />
+                               <div>
+                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Proposed Rate</label>
+                                 <input 
+                                   type="text" 
+                                   value={c.rate}
+                                   onChange={e => {
+                                     const newC = [...settingsForm.corridors];
+                                     newC[idx].rate = e.target.value;
+                                     setSettingsForm({ ...settingsForm, corridors: newC });
+                                   }}
+                                   placeholder="e.g. Base + 12%" 
+                                   className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-mono text-text" 
+                                 />
+                               </div>
+                               <div>
+                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Requested Priority</label>
+                                 <select 
+                                   value={c.priority}
+                                   onChange={e => {
+                                     const newC = [...settingsForm.corridors];
+                                     newC[idx].priority = e.target.value;
+                                     setSettingsForm({ ...settingsForm, corridors: newC });
+                                   }}
+                                   className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold text-text"
+                                 >
+                                   <option value="1">Priority 1 (Primary)</option>
+                                   <option value="2">Priority 2 (Secondary)</option>
+                                   <option value="3">Priority 3 (Backup)</option>
+                                 </select>
+                               </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                   </div>
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-border/50 flex justify-end">
                   <button 
-                    disabled={isSubmittingSettings || (!settingsForm.fleet && !settingsForm.routes && !settingsForm.percentage)}
+                    disabled={isSubmittingSettings || !settingsForm}
                     onClick={handleSaveSettings}
                     className="px-6 py-3 bg-primary hover:bg-primary-dark text-bg text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >

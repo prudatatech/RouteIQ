@@ -103,20 +103,39 @@ export default function TplVerificationPage() {
                  This partner has submitted operational changes that require your approval.
                </p>
                
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
-                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Fleet Changes</h3>
-                   <p className="text-sm text-text font-medium">{partner.pending_updates.fleet_changes || 'No changes'}</p>
-                 </div>
-                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
-                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Route Changes</h3>
-                   <p className="text-sm text-text font-medium">{partner.pending_updates.route_changes || 'No changes'}</p>
-                 </div>
-                 <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
-                   <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Margin / Percentage</h3>
-                   <p className="text-sm text-text font-medium">{partner.pending_updates.percentage_changes || 'No changes'}</p>
-                 </div>
-               </div>
+                <div className="space-y-6 relative z-10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Requested SLA Commitment</h3>
+                      <p className="text-sm text-text font-medium">{partner.pending_updates.sla_commitment || 'No change'}</p>
+                    </div>
+                    <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-2">Requested Tax Treatment</h3>
+                      <p className="text-sm text-text font-medium">{partner.pending_updates.tax_treatment || 'No change'}</p>
+                    </div>
+                  </div>
+                  <div className="bg-surface/80 p-5 rounded-xl border border-yellow-500/20">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4">Requested Corridor Updates</h3>
+                    {partner.pending_updates.corridors && partner.pending_updates.corridors.length > 0 ? (
+                      <div className="space-y-3">
+                        {partner.pending_updates.corridors.map((c: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center bg-surface2/50 p-3 rounded-lg border border-yellow-500/10">
+                            <div>
+                              <div className="font-bold text-text text-sm">{c.name}</div>
+                              <div className="text-[10px] text-muted font-bold mt-1 uppercase">{c.vehicles}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-mono text-xs font-bold">{c.rate || 'No Rate'}</div>
+                              <div className="text-[9px] text-yellow-600 font-bold uppercase mt-1">Priority {c.priority}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted">No corridor updates requested.</p>
+                    )}
+                  </div>
+                </div>
              </Card>
            </div>
          )}
