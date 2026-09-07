@@ -608,11 +608,16 @@ export default function TplOnboardingPage() {
                       // Actually upload the files to Supabase Storage
                       const uploadPromises = Object.keys(uploadedDocs).map(async (docType) => {
                         const file = uploadedDocs[docType]
-                        const fileName = `${customId || Date.now()}/${docType.replace(/\s+/g, '_')}_${Date.now()}_${file.name}`
+                        const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
+                        const fileName = `${customId || Date.now()}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
                         
                         const { error } = await supabase.storage
                           .from('kyc_documents')
-                          .upload(fileName, file)
+                          .upload(fileName, file, {
+                            cacheControl: '3600',
+                            upsert: true,
+                            contentType: file.type
+                          })
                           
                         if (error) throw new Error(`Failed to upload ${docType}: ${error.message}`)
                         

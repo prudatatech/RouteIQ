@@ -88,14 +88,23 @@ export default function TplDashboardPage() {
     try {
       setUploadingDoc(docId)
       
-      const fileName = `${id}/${docType.replace(/\s+/g, '_')}_${Date.now()}_${file.name}`
+      // Sanitize filename to prevent 400 Bad Request
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
+      const fileName = `${id}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
       
-      // Upload to storage
+      // Upload to storage with upsert and explicit content type
       const { error: uploadError } = await supabase.storage
         .from('kyc_documents')
-        .upload(fileName, file)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type
+        })
         
-      if (uploadError) throw new Error('Failed to upload document')
+      if (uploadError) {
+        console.error('Supabase upload error details:', uploadError)
+        throw new Error(`Upload failed: ${uploadError.message}`)
+      }
 
       // Update document record
       const { error: docError } = await supabase
