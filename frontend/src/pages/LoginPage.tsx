@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Zap, Eye, EyeOff, ShieldCheck, UserCog, User, Truck, Package, ArrowRight } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
@@ -8,7 +8,8 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [searchParams] = useSearchParams()
+  const [email, setEmail] = useState(searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
