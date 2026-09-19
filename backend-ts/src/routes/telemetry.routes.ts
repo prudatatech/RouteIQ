@@ -702,19 +702,14 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         .single();
 
       if (route) {
+        // Get the truck's full capacity to reset available space
+        const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', route.vehicle_id).single();
+        
         await supabase.from('vehicles').update({
           status: 'available',
           current_load_kg: 0,
-          available_capacity_kg: supabase.rpc ? undefined : 0, // will be set below
+          available_capacity_kg: veh ? (veh.capacity_kg || 1000) : 1000,
         }).eq('id', route.vehicle_id);
-        
-        // Reset available_capacity_kg to full capacity
-        const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', route.vehicle_id).single();
-        if (veh) {
-          await supabase.from('vehicles').update({
-            available_capacity_kg: veh.capacity_kg || 1000,
-          }).eq('id', route.vehicle_id);
-        }
       }
     } else {
       // Partial delivery: subtract this stop's shipment weight from the truck
