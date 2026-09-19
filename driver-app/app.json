@@ -65,9 +65,12 @@
       [
         "expo-notifications",
         {
-          "sounds": ["./assets/uber_driver_sound.mp3"]
+          "sounds": [
+            "./assets/uber_driver_sound.mp3"
+          ]
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {
