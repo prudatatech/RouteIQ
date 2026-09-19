@@ -10,6 +10,7 @@ import { vehiclesAPI } from '@/services/api'
 import { Card, StatusDot, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
+import { supabase } from '@/services/supabase'
 import clsx from 'clsx'
 
 const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', 'offline']
@@ -691,6 +692,23 @@ export default function FleetPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<any>(null)
   const [trackingVehicle, setTrackingVehicle] = useState<any>(null)
+  const queryClient = useQueryClient()
+
+  // Real-time updates for Fleet table
+  useEffect(() => {
+    const channel = supabase
+      .channel('fleet_page_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => {
+        // Invalidate fleet queries so React Query auto-refetches immediately
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+        queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [queryClient])
 
   const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ['vehicles', filter],
@@ -851,12 +869,16 @@ export default function FleetPage() {
                         <div className="mt-1">
                           <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
                             <span>LOAD</span>
-                            <span>{(v.current_load_kg || 0).toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg</span>
+                            <span>
+                              {v.status === 'on_route' 
+                                ? (v.current_load_kg || v.capacity_kg || 0).toLocaleString() 
+                                : (v.current_load_kg || 0).toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg
+                            </span>
                           </div>
                           <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all ${((v.current_load_kg || 0) / (v.capacity_kg || 1)) > 0.8 ? 'bg-red-500' : (v.current_load_kg || 0) > 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
-                              style={{ width: `${Math.min(((v.current_load_kg || 0) / (v.capacity_kg || 1)) * 100, 100)}%` }}
+                              className={`h-full rounded-full transition-all ${v.status === 'on_route' ? 'bg-blue-500' : ((v.current_load_kg || 0) / (v.capacity_kg || 1)) > 0.8 ? 'bg-red-500' : (v.current_load_kg || 0) > 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                              style={{ width: `${v.status === 'on_route' ? 100 : Math.min(((v.current_load_kg || 0) / (v.capacity_kg || 1)) * 100, 100)}%` }}
                             />
                           </div>
                         </div>
@@ -913,9 +935,15 @@ export default function FleetPage() {
                         </div>
                         {/* Capacity Status Badge */}
                         <div className="mt-1 flex flex-col gap-1">
-                          <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
-                            Free: {v.available_capacity_kg ?? v.capacity_kg} / {v.capacity_kg} kg
-                          </span>
+                          {v.status === 'on_route' ? (
+                            <span className="text-[9px] font-bold text-orange-600 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
+                              Fully Loaded (On Route)
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
+                              Free: {v.available_capacity_kg ?? v.capacity_kg} / {v.capacity_kg} kg
+                            </span>
+                          )}
                           {v.bidding_window_open && (
                             <span className="text-[9px] font-bold text-blue-600 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
                               Matching Enabled
