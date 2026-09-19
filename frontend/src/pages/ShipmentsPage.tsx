@@ -99,7 +99,18 @@ function AssignDriverModal({ shipmentId, onClose }: { shipmentId: string, onClos
                   <div>
                     <div className="text-lg font-black text-slate-900">{v.plate_number}</div>
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                      {v.vehicle_type} • {v.capacity_kg} KG Cap {v.distance_km ? `• ${v.distance_km.toFixed(1)} km away` : ''}
+                      {v.vehicle_model || v.vehicle_type} • {(v.capacity_kg || 0).toLocaleString()} KG Cap
+                      {v.container_length_ft > 0 && ` • 📦 ${v.container_length_ft}×${v.container_width_ft}×${v.container_height_ft} ft`}
+                      {v.distance_km ? ` • ${v.distance_km.toFixed(1)} km away` : ''}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-16 bg-slate-200 h-1 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${(v.current_load_kg || 0) > 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${Math.min(((v.current_load_kg || 0) / (v.capacity_kg || 1)) * 100, 100)}%` }} />
+                      </div>
+                      <span className="text-[9px] font-bold text-slate-400">
+                        Free: {((v.capacity_kg || 0) - (v.current_load_kg || 0)).toLocaleString()} kg
+                      </span>
                     </div>
                   </div>
                   <Button 

@@ -50,14 +50,51 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       return;
     }
 
+    let insertData: any = { ...parsed.data };
+    let tempPassword = undefined;
+    let mockEmail = undefined;
+
+    // 1. If driver details are provided, create the driver user
+    if (insertData.driver_phone && insertData.driver_name) {
+      // Create a temporary password
+      tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+      mockEmail = `driver_${insertData.driver_phone.replace(/\\D/g, '')}@margixindia.local`;
+      
+      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+        email: mockEmail,
+        phone: insertData.driver_phone.replace(/\\D/g, ''),
+        password: tempPassword,
+        email_confirm: true,
+        phone_confirm: true,
+        user_metadata: { full_name: insertData.driver_name, role: 'driver' }
+      });
+
+      if (authError) {
+        console.warn('Failed to create driver auth user:', authError.message);
+        // It might fail if phone already exists, we will just proceed without throwing 500
+      } else if (authUser.user) {
+        insertData.driver_id = authUser.user.id;
+      }
+    }
+
     const { data: vehicle, error } = await supabase
       .from('vehicles')
-      .insert(parsed.data)
+      .insert(insertData)
       .select()
       .single();
 
     if (error) { res.status(500).json({ detail: error.message }); return; }
-    res.status(201).json(vehicle);
+
+    // If a driver was created, pass the credentials back so the frontend can trigger the wa.me link
+    const responsePayload = {
+      ...vehicle,
+      _driver_email: mockEmail,
+      _driver_password: tempPassword,
+      _driver_phone: insertData.driver_phone,
+      _driver_name: insertData.driver_name,
+    };
+
+    res.status(201).json(responsePayload);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
   }

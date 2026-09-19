@@ -604,10 +604,36 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
 
       if (isPickup) {
         await supabase.from('cargo_manifest').update({ status: 'in_transit' }).eq('id', manifestId);
+        // Add load to truck on pickup
+        const pickupWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;
+        if (pickupWeight > 0 && manifest.vehicle_id) {
+          const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', manifest.vehicle_id).single();
+          if (veh) {
+            const newLoad = Math.min((veh.current_load_kg || 0) + pickupWeight, veh.capacity_kg || 50000);
+            await supabase.from('vehicles').update({
+              current_load_kg: newLoad,
+              available_capacity_kg: Math.max((veh.capacity_kg || 1000) - newLoad, 0),
+            }).eq('id', manifest.vehicle_id);
+          }
+        }
       } else {
         await supabase.from('cargo_manifest').update({ status: 'delivered' }).eq('id', manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
-        await supabase.from('vehicles').update({ status: 'available' }).eq('id', manifest.vehicle_id);
+        // Auto-empty: subtract delivered weight from truck
+        const deliveredWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;
+        if (deliveredWeight > 0 && manifest.vehicle_id) {
+          const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', manifest.vehicle_id).single();
+          if (veh) {
+            const newLoad = Math.max((veh.current_load_kg || 0) - deliveredWeight, 0);
+            await supabase.from('vehicles').update({
+              current_load_kg: newLoad,
+              available_capacity_kg: Math.max((veh.capacity_kg || 1000) - newLoad, 0),
+              status: 'available',
+            }).eq('id', manifest.vehicle_id);
+          }
+        } else {
+          await supabase.from('vehicles').update({ status: 'available' }).eq('id', manifest.vehicle_id);
+        }
       }
 
       // Broadcast completion
@@ -668,8 +694,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       // All stops done → mark route as completed
       await supabase.from('routes').update({ status: 'completed' }).eq('id', stop.route_id);
 
-
-      // Free up vehicle
+      // Free up vehicle and reset load
       const { data: route } = await supabase
         .from('routes')
         .select('vehicle_id')
@@ -677,7 +702,35 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         .single();
 
       if (route) {
-        await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);
+        await supabase.from('vehicles').update({
+          status: 'available',
+          current_load_kg: 0,
+          available_capacity_kg: supabase.rpc ? undefined : 0, // will be set below
+        }).eq('id', route.vehicle_id);
+        
+        // Reset available_capacity_kg to full capacity
+        const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', route.vehicle_id).single();
+        if (veh) {
+          await supabase.from('vehicles').update({
+            available_capacity_kg: veh.capacity_kg || 1000,
+          }).eq('id', route.vehicle_id);
+        }
+      }
+    } else {
+      // Partial delivery: subtract this stop's shipment weight from the truck
+      if (dp?.shipment_id) {
+        const { data: shipment } = await supabase.from('shipments').select('weight_kg').eq('id', dp.shipment_id).single();
+        if (shipment?.weight_kg) {
+          const driverId = req.user!.user_id;
+          const { data: vehicle } = await supabase.from('vehicles').select('id, current_load_kg, capacity_kg').eq('driver_id', driverId).single();
+          if (vehicle) {
+            const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.weight_kg, 0);
+            await supabase.from('vehicles').update({
+              current_load_kg: newLoad,
+              available_capacity_kg: Math.max((vehicle.capacity_kg || 1000) - newLoad, 0),
+            }).eq('id', vehicle.id);
+          }
+        }
       }
     }
 

@@ -17,34 +17,93 @@ const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
 const FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
 const STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
 
+// Indian Truck Presets — standard models with capacity + container dimensions
+const INDIAN_TRUCK_PRESETS: Record<string, { capacity_kg: number; container_length_ft: number; container_width_ft: number; container_height_ft: number; fuel_type: string; fuel_capacity_liters: number; fuel_efficiency_kmpl: number }> = {
+  'Tata Ace (Chota Hathi)': { capacity_kg: 750, container_length_ft: 7, container_width_ft: 4.5, container_height_ft: 4.5, fuel_type: 'diesel', fuel_capacity_liters: 30, fuel_efficiency_kmpl: 18 },
+  'Mahindra Bolero Pickup': { capacity_kg: 1200, container_length_ft: 8, container_width_ft: 5, container_height_ft: 5, fuel_type: 'diesel', fuel_capacity_liters: 50, fuel_efficiency_kmpl: 14 },
+  'Ashok Leyland Dost': { capacity_kg: 1500, container_length_ft: 9, container_width_ft: 5.5, container_height_ft: 5, fuel_type: 'diesel', fuel_capacity_liters: 40, fuel_efficiency_kmpl: 16 },
+  'Ashok Leyland Bada Dost': { capacity_kg: 2000, container_length_ft: 10, container_width_ft: 5.5, container_height_ft: 5.5, fuel_type: 'diesel', fuel_capacity_liters: 45, fuel_efficiency_kmpl: 15 },
+  'Maruti Super Carry': { capacity_kg: 740, container_length_ft: 7, container_width_ft: 4.5, container_height_ft: 4, fuel_type: 'cng', fuel_capacity_liters: 30, fuel_efficiency_kmpl: 22 },
+  'Tata Intra': { capacity_kg: 1500, container_length_ft: 9, container_width_ft: 5, container_height_ft: 5, fuel_type: 'diesel', fuel_capacity_liters: 40, fuel_efficiency_kmpl: 16 },
+  'Tata Yodha': { capacity_kg: 2500, container_length_ft: 10, container_width_ft: 6, container_height_ft: 6, fuel_type: 'diesel', fuel_capacity_liters: 60, fuel_efficiency_kmpl: 14 },
+  'Piaggio Ape Cargo': { capacity_kg: 500, container_length_ft: 5, container_width_ft: 4, container_height_ft: 4, fuel_type: 'cng', fuel_capacity_liters: 15, fuel_efficiency_kmpl: 25 },
+  'Tata 407': { capacity_kg: 3500, container_length_ft: 14, container_width_ft: 6, container_height_ft: 6, fuel_type: 'diesel', fuel_capacity_liters: 80, fuel_efficiency_kmpl: 10 },
+  'Eicher Pro 1049': { capacity_kg: 5000, container_length_ft: 17, container_width_ft: 7, container_height_ft: 7, fuel_type: 'diesel', fuel_capacity_liters: 120, fuel_efficiency_kmpl: 8 },
+  'Tata 709 / 1109': { capacity_kg: 9000, container_length_ft: 19, container_width_ft: 7, container_height_ft: 7, fuel_type: 'diesel', fuel_capacity_liters: 150, fuel_efficiency_kmpl: 6 },
+  'Eicher Pro 2049': { capacity_kg: 9000, container_length_ft: 20, container_width_ft: 7, container_height_ft: 7, fuel_type: 'diesel', fuel_capacity_liters: 150, fuel_efficiency_kmpl: 6 },
+  'BharatBenz 1015R': { capacity_kg: 10000, container_length_ft: 20, container_width_ft: 7, container_height_ft: 7, fuel_type: 'diesel', fuel_capacity_liters: 160, fuel_efficiency_kmpl: 5.5 },
+  'Tata Signa (Multi-axle)': { capacity_kg: 25000, container_length_ft: 32, container_width_ft: 8, container_height_ft: 8, fuel_type: 'diesel', fuel_capacity_liters: 300, fuel_efficiency_kmpl: 4 },
+  'Ashok Leyland U-Truck': { capacity_kg: 25000, container_length_ft: 32, container_width_ft: 8, container_height_ft: 8, fuel_type: 'diesel', fuel_capacity_liters: 300, fuel_efficiency_kmpl: 4 },
+  'Volvo FM / FMX': { capacity_kg: 40000, container_length_ft: 40, container_width_ft: 8, container_height_ft: 9, fuel_type: 'diesel', fuel_capacity_liters: 400, fuel_efficiency_kmpl: 3.5 },
+  'Custom': { capacity_kg: 1000, container_length_ft: 0, container_width_ft: 0, container_height_ft: 0, fuel_type: 'diesel', fuel_capacity_liters: 60, fuel_efficiency_kmpl: 12 },
+}
+
 // ─── Add Vehicle Modal ────────────────────────────────────────────────────────
 function AddVehicleModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [formData, setFormData] = useState({
     plate_number: '',
-    vehicle_type: 'truck',
+    vehicle_type: 'truck' as string,
+    vehicle_model: '' as string,
     capacity_kg: 1000,
     fuel_type: 'diesel',
     fuel_capacity_liters: 60,
     fuel_efficiency_kmpl: 12,
     spark_id: '',
+    driver_name: '',
+    driver_phone: '',
+    container_length_ft: 0,
+    container_width_ft: 0,
+    container_height_ft: 0,
   })
+
+  const handleModelSelect = (model: string) => {
+    const preset = INDIAN_TRUCK_PRESETS[model]
+    if (preset && model !== 'Custom') {
+      setFormData(prev => ({
+        ...prev,
+        vehicle_model: model,
+        capacity_kg: preset.capacity_kg,
+        container_length_ft: preset.container_length_ft,
+        container_width_ft: preset.container_width_ft,
+        container_height_ft: preset.container_height_ft,
+        fuel_type: preset.fuel_type,
+        fuel_capacity_liters: preset.fuel_capacity_liters,
+        fuel_efficiency_kmpl: preset.fuel_efficiency_kmpl,
+      }))
+    } else {
+      setFormData(prev => ({ ...prev, vehicle_model: model }))
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: (data: typeof formData) => vehiclesAPI.create({ ...data, status: 'available' }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       toast.success('Vehicle added successfully')
+      
+      // Trigger WhatsApp if driver was added
+      if (data && data._driver_phone) {
+        const appLink = "https://margixindia.vercel.app/login";
+        const emailMsg = data._driver_email ? `📧 ईमेल: ${data._driver_email}\n` : '';
+        const passMsg = data._driver_password ? `🔐 अस्थायी पासवर्ड: ${data._driver_password}\n` : '';
+        
+        const msg = `*मार्गीक्स इंडिया में आपका स्वागत है, ${data._driver_name}!* 🚚\n\n` +
+          `आपका वाहन फ्लीट इंटेलिजेंस नेटवर्क पर पंजीकृत हो गया है।\n\n` +
+          `*आवश्यक कार्रवाई:* कृपया ऐप इंस्टॉल करें और ट्रिप प्राप्त करने के लिए लॉग इन करें।\n` +
+          `📱 ऐप इंस्टॉल करें और लॉगिन करें: ${appLink}\n` +
+          emailMsg + passMsg;
+          
+        window.open(`https://wa.me/${data._driver_phone.replace(/\\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+      }
+      
       onClose()
       setFormData({
-        plate_number: '',
-        vehicle_type: 'truck',
-        capacity_kg: 1000,
-        fuel_type: 'diesel',
-        fuel_capacity_liters: 60,
-        fuel_efficiency_kmpl: 12,
-        spark_id: '',
+        plate_number: '', vehicle_type: 'truck', vehicle_model: '', capacity_kg: 1000,
+        fuel_type: 'diesel', fuel_capacity_liters: 60, fuel_efficiency_kmpl: 12,
+        spark_id: '', driver_name: '', driver_phone: '',
+        container_length_ft: 0, container_width_ft: 0, container_height_ft: 0,
       })
     },
     onError: (err: any) => {
@@ -71,6 +130,26 @@ function AddVehicleModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
         </div>
 
         <form className="p-6 space-y-4 max-h-[80vh] overflow-y-auto" onSubmit={(e) => { e.preventDefault(); mutation.mutate(formData); }}>
+          {/* Truck Model Preset */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-widest font-bold text-muted ml-1">Truck Model (India)</label>
+            <select
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-yellow-400/50 transition-colors"
+              value={formData.vehicle_model}
+              onChange={e => handleModelSelect(e.target.value)}
+            >
+              <option value="">— Select Truck Model —</option>
+              {Object.keys(INDIAN_TRUCK_PRESETS).map(m => (
+                <option key={m} value={m}>{m} — {INDIAN_TRUCK_PRESETS[m].capacity_kg.toLocaleString()} kg</option>
+              ))}
+            </select>
+            {formData.vehicle_model && formData.vehicle_model !== 'Custom' && (
+              <p className="text-[10px] text-emerald-600 font-bold mt-1 ml-1">
+                ✓ Auto-filled: {formData.capacity_kg.toLocaleString()} kg · {formData.container_length_ft}×{formData.container_width_ft}×{formData.container_height_ft} ft
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase tracking-widest font-bold text-muted ml-1">Plate Number</label>
             <input
@@ -101,6 +180,28 @@ function AddVehicleModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
                 className="w-full bg-surface2 border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 transition-colors mono"
                 value={formData.capacity_kg}
                 onChange={e => setFormData({ ...formData, capacity_kg: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          {/* Container Dimensions */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-widest font-bold text-muted ml-1">Container Size (feet) — L × W × H</label>
+            <div className="grid grid-cols-3 gap-3">
+              <input type="number" step="0.5" placeholder="Length"
+                className="w-full bg-surface2 border border-border rounded-xl px-3 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 mono"
+                value={formData.container_length_ft || ''}
+                onChange={e => setFormData({ ...formData, container_length_ft: Number(e.target.value) })}
+              />
+              <input type="number" step="0.5" placeholder="Width"
+                className="w-full bg-surface2 border border-border rounded-xl px-3 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 mono"
+                value={formData.container_width_ft || ''}
+                onChange={e => setFormData({ ...formData, container_width_ft: Number(e.target.value) })}
+              />
+              <input type="number" step="0.5" placeholder="Height"
+                className="w-full bg-surface2 border border-border rounded-xl px-3 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 mono"
+                value={formData.container_height_ft || ''}
+                onChange={e => setFormData({ ...formData, container_height_ft: Number(e.target.value) })}
               />
             </div>
           </div>
@@ -137,6 +238,36 @@ function AddVehicleModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
               value={formData.spark_id}
               onChange={e => setFormData({ ...formData, spark_id: e.target.value })}
             />
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-[10px] uppercase tracking-widest font-black text-slate-900 mb-3">Driver Onboarding (Optional)</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-muted ml-1">Driver Name</label>
+                <input
+                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 transition-colors"
+                  placeholder="e.g. Rajesh Kumar"
+                  value={formData.driver_name}
+                  onChange={e => setFormData({ ...formData, driver_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-muted ml-1">WhatsApp Number</label>
+                <input
+                  type="tel"
+                  className="w-full bg-surface2 border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:border-yellow-400/50 transition-colors mono"
+                  placeholder="e.g. +919876543210"
+                  value={formData.driver_phone}
+                  onChange={e => setFormData({ ...formData, driver_phone: e.target.value })}
+                />
+              </div>
+            </div>
+            {formData.driver_phone && (
+              <p className="text-[10px] text-emerald-600 font-bold mt-2 ml-1">
+                ✓ A WhatsApp message with login details will be sent automatically.
+              </p>
+            )}
           </div>
 
           <div className="pt-4 flex gap-3">
@@ -696,8 +827,13 @@ export default function FleetPage() {
                         {v.plate_number}
                       </div>
                       <div className="text-[10px] text-muted mt-0.5 font-mono">
-                        {v.capacity_kg?.toFixed(0)} kg · ID: {v.id.slice(0, 8)}
+                        {v.vehicle_model || v.vehicle_type} · {v.capacity_kg?.toLocaleString()} kg
                       </div>
+                      {(v.container_length_ft > 0) && (
+                        <div className="text-[9px] text-blue-600 font-bold mt-0.5">
+                          📦 {v.container_length_ft}×{v.container_width_ft}×{v.container_height_ft} ft
+                        </div>
+                      )}
                     </td>
 
                     {/* Type */}
@@ -711,6 +847,19 @@ export default function FleetPage() {
                             GPS: {v.spark_id}
                           </div>
                         )}
+                        {/* Load Bar */}
+                        <div className="mt-1">
+                          <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
+                            <span>LOAD</span>
+                            <span>{(v.current_load_kg || 0).toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg</span>
+                          </div>
+                          <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${((v.current_load_kg || 0) / (v.capacity_kg || 1)) > 0.8 ? 'bg-red-500' : (v.current_load_kg || 0) > 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.min(((v.current_load_kg || 0) / (v.capacity_kg || 1)) * 100, 100)}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </td>
 

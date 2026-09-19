@@ -62,6 +62,13 @@ export const VehicleCreateSchema = z.object({
   fuel_capacity_liters: z.number().positive().max(1000).default(60.0),
   fuel_efficiency_kmpl: z.number().positive().max(100).default(12.0),
   spark_id: z.string().max(50).optional().nullable(),
+  driver_name: z.string().max(255).optional().nullable(),
+  driver_phone: z.string().max(20).optional().nullable(),
+  vehicle_model: z.string().max(100).optional().nullable(),
+  container_length_ft: z.number().min(0).max(60).optional().nullable(),
+  container_width_ft: z.number().min(0).max(15).optional().nullable(),
+  container_height_ft: z.number().min(0).max(15).optional().nullable(),
+  current_load_kg: z.number().min(0).max(50000).optional().default(0),
 });
 export type VehicleCreate = z.infer<typeof VehicleCreateSchema>;
 
@@ -78,6 +85,13 @@ export const VehicleUpdateSchema = z.object({
   longitude: z.number().optional().nullable(),
   driver_id: z.string().uuid().optional().nullable(),
   declared_load_percentage: z.number().min(0).max(100).optional().nullable(),
+  driver_name: z.string().max(255).optional().nullable(),
+  driver_phone: z.string().max(20).optional().nullable(),
+  vehicle_model: z.string().max(100).optional().nullable(),
+  container_length_ft: z.number().min(0).max(60).optional().nullable(),
+  container_width_ft: z.number().min(0).max(15).optional().nullable(),
+  container_height_ft: z.number().min(0).max(15).optional().nullable(),
+  current_load_kg: z.number().min(0).max(50000).optional().nullable(),
 });
 export type VehicleUpdate = z.infer<typeof VehicleUpdateSchema>;
 

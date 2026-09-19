@@ -154,6 +154,8 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
   // Use refs for animation state to avoid re-renders
   const targetPositions = useRef<Record<string, { lat: number, lng: number, speed: number, fuel?: number }>>({})
   const currentPositions = useRef<Record<string, { lat: number, lng: number }>>({})
+  const dirtyFlags = useRef<Record<string, boolean>>({})
+  const animCancelers = useRef<Record<string, () => void>>({})
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -202,14 +204,33 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
         if (data) {
           for (const v of data) {
             if (v.latitude && v.longitude) {
-              targetPositions.current[v.id] = {
-                lat: v.latitude,
-                lng: v.longitude,
-                speed: v.status === 'on_route' ? 30 : 0,
-                fuel: targetPositions.current[v.id]?.fuel
-              }
-              if (!currentPositions.current[v.id]) {
+              const current = currentPositions.current[v.id]
+              
+              // Only trigger if we moved significantly (avoid jitter if WS is also handling it)
+              if (current && (Math.abs(current.lat - v.latitude) > 0.0001 || Math.abs(current.lng - v.longitude) > 0.0001)) {
+                targetPositions.current[v.id] = {
+                  lat: v.latitude,
+                  lng: v.longitude,
+                  speed: v.status === 'on_route' ? 30 : 0,
+                  fuel: targetPositions.current[v.id]?.fuel
+                }
+                
+                // Trigger animation if not already animating
+                if (!animCancelers.current?.[v.id]) {
+                  const animCancelersRef = animCancelers.current || {};
+                  animCancelersRef[v.id] = animateMarkerAlongRoute({
+                    startCoord: [current.lng, current.lat],
+                    endCoord: [v.longitude, v.latitude],
+                    duration: 2000,
+                    onTick: (coord) => {
+                      currentPositions.current[v.id] = { lng: coord[0], lat: coord[1] }
+                      dirtyFlags.current[v.id] = true
+                    }
+                  })
+                }
+              } else if (!current) {
                 currentPositions.current[v.id] = { lat: v.latitude, lng: v.longitude }
+                if (dirtyFlags.current) dirtyFlags.current[v.id] = true;
               }
             }
           }
@@ -387,40 +408,45 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       })
 
       
-      // Track which vehicles need rendering
-      const dirtyFlags: Record<string, boolean> = {}
-      const animCancelers: Record<string, () => void> = {}
-
       // ── Supabase Realtime (PRIMARY path — direct from driver app GPS) ──
       // This is the Ola/Uber-style pipeline: Driver GPS → Supabase cloud → Dashboard
       realtimeChannel = supabase
         .channel('vehicle-gps-live')
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'vehicles' },
+          { event: '*', schema: 'public', table: 'vehicles' },
           (payload: any) => {
-            const { id, latitude, longitude, status } = payload.new
+            const data = payload.new;
+            if (!data) return;
+            
+            // If it's a new vehicle, force React Query to update the Dashboard sidebar immediately
+            if (payload.eventType === 'INSERT') {
+              queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+            }
+            
+            const { id, latitude, longitude, status } = data;
+            
             if (latitude && longitude) {
               console.log(`🛰️ LIVE GPS: Vehicle ${id} → ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
               
               const current = currentPositions.current[id]
               if (!current) {
                 currentPositions.current[id] = { lat: latitude, lng: longitude }
-                dirtyFlags[id] = true
+                dirtyFlags.current[id] = true
               } else {
                 // Cancel existing animation for this vehicle
-                if (animCancelers[id]) animCancelers[id]()
+                if (animCancelers.current[id]) animCancelers.current[id]()
                 
                 const route = id === selectedVehicleIdRef.current ? (fetchedRouteGeometryRef.current as [number, number][] | undefined) : undefined;
                 
-                animCancelers[id] = animateMarkerAlongRoute({
+                animCancelers.current[id] = animateMarkerAlongRoute({
                   startCoord: [current.lng, current.lat],
                   endCoord: [longitude, latitude],
                   routeCoords: route,
                   duration: 2000,
                   onTick: (coord) => {
                     currentPositions.current[id] = { lng: coord[0], lat: coord[1] }
-                    dirtyFlags[id] = true
+                    dirtyFlags.current[id] = true
                   }
                 })
               }
@@ -481,12 +507,12 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
              const fallbackLat = INDIA_POSITIONS[i % INDIA_POSITIONS.length].lat
              const fallbackLng = INDIA_POSITIONS[i % INDIA_POSITIONS.length].lng
              currentPositions.current[v.id] = { lat: v.latitude ?? fallbackLat, lng: v.longitude ?? fallbackLng }
-             dirtyFlags[v.id] = true
+             dirtyFlags.current[v.id] = true
           }
           
-          if (dirtyFlags[v.id]) {
+          if (dirtyFlags.current[v.id]) {
              needsUpdate = true;
-             dirtyFlags[v.id] = false; // Reset flag after picking it up
+             dirtyFlags.current[v.id] = false; // Reset flag after picking it up
           }
 
           const current = currentPositions.current[v.id]
