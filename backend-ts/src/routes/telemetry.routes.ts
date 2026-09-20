@@ -312,7 +312,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     // Find the driver's assigned vehicle
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id, plate_number, status')
+      .select('id, plate_number, status, current_load_kg')
       .eq('driver_id', driverId)
       .single();
 
@@ -382,7 +382,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
         latitude: latestLat,
         longitude: latestLng,
         last_heartbeat: new Date().toISOString(),
-        status: latestSpeed > 2 ? 'on_route' : vehicle.status,
+        status: (vehicle.current_load_kg || 0) > 0 ? 'on_route' : (vehicle.status === 'offline' ? 'available' : vehicle.status),
       }).eq('id', vehicle.id);
 
       // Cache in Redis

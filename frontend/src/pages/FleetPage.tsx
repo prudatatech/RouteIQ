@@ -6,7 +6,7 @@ import {
   BarChart2, Settings, Cloud, Thermometer, Pencil, Trash2,
   ChevronDown, ExternalLink, Copy, CheckCircle2, Navigation
 } from 'lucide-react'
-import { vehiclesAPI } from '@/services/api'
+import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { Card, StatusDot, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
@@ -719,6 +719,36 @@ export default function FleetPage() {
     }
   }, [queryClient])
 
+  // Live GPS telemetry subscription
+  useEffect(() => {
+    const ws = telemetryWS.connect((data) => {
+      if (data.type === 'gps_update') {
+        queryClient.setQueryData(['vehicles', filter], (oldData: any[]) => {
+          if (!oldData) return oldData;
+          return oldData.map(v => {
+            if (v.id === data.vehicle_id) {
+              return {
+                ...v,
+                latitude: data.lat,
+                longitude: data.lng,
+                last_sync: new Date().toISOString(),
+                speed_kmh: data.speed,
+                status: (v.status === 'offline') 
+                  ? ((v.current_load_kg || 0) > 0 ? 'on_route' : 'available') 
+                  : v.status
+              };
+            }
+            return v;
+          });
+        });
+      }
+    });
+
+    return () => {
+      ws.close();
+    }
+  }, [queryClient, filter]);
+
   const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ['vehicles', filter],
     queryFn: () => vehiclesAPI.list({ status: filter === 'all' ? undefined : filter, limit: 100 }),
@@ -883,15 +913,15 @@ export default function FleetPage() {
                           <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
                             <span>LOAD</span>
                             <span>
-                              {isLoaded ? (v.capacity_kg || 0).toLocaleString() : 0} / {(v.capacity_kg || 0).toLocaleString()} kg
+                              {currentLoad.toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg
                             </span>
                           </div>
                           <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all duration-1000 ease-out ${isLoaded ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
-                              style={{ width: mounted ? `${isLoaded ? 100 : 0}%` : '0%' }}
+                              className={`h-full rounded-full transition-all duration-1000 ease-out ${currentLoad > 0 ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
+                              style={{ width: mounted ? `${(currentLoad / (v.capacity_kg || 1)) * 100}%` : '0%' }}
                             >
-                              {isLoaded && (
+                              {currentLoad > 0 && (
                                 <div className="absolute inset-0 bg-white/20 -translate-x-full animate-shimmer" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
                               )}
                             </div>
@@ -933,13 +963,13 @@ export default function FleetPage() {
                     <td className="px-6 py-5">
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-3">
-                          {v.status === 'on_route' ? (
+                          {isLoaded ? (
                             <>
                               <div className="flex items-center gap-1 text-sky-600">
                                 <Cloud size={14} />
                                 <span className="text-[10px] font-black uppercase tracking-tighter">Live Sync</span>
                               </div>
-                              <div className="flex items-center gap-1 text-orange-600">
+                              <div className="flex items-center gap-1 text-emerald-600">
                                 <Thermometer size={14} />
                                 <span className="text-[10px] font-black uppercase tracking-tighter">Active GPS</span>
                               </div>

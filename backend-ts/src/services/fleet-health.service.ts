@@ -45,7 +45,7 @@ export class FleetHealthMonitor {
           ['cold_chain', 'hazardous'].includes(ct)
         );
 
-        console.warn(`Vehicle ${vehicle.plate_number} (${vehicle.id}) timed out. Marking OFFLINE.`);
+        console.warn(`Vehicle ${vehicle.plate_number} (${vehicle.id}) timed out. Status: ${vehicle.status}`);
 
         // Mark offline
         await supabase.from('vehicles').update({ status: 'offline' }).eq('id', vehicle.id);

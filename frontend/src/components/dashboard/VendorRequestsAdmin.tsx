@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase'
 import toast from 'react-hot-toast'
 import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react'
 import * as turf from '@turf/turf'
+import { useAutoAnimate } from '@formkit/auto-animate/react'
 
 export default function VendorRequestsAdmin() {
   const [requests, setRequests] = useState<any[]>([])
@@ -11,6 +12,7 @@ export default function VendorRequestsAdmin() {
   const [selectedVehicle, setSelectedVehicle] = useState('')
   const [loading, setLoading] = useState(false)
   const [assigning, setAssigning] = useState(false)
+  const [listRef] = useAutoAnimate()
 
   useEffect(() => {
     fetchRequests()
@@ -120,81 +122,90 @@ export default function VendorRequestsAdmin() {
 
   return (
     <>
-      <div className="rounded-[40px] overflow-hidden flex flex-col bg-white border border-slate-200 shadow-xl">
-        {/* Header */}
-        <div className="px-7 pt-7 pb-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] font-black tracking-[0.15em] uppercase text-yellow-500 mb-1">Live Feed</div>
-            <h3 className="text-lg font-black text-slate-800 tracking-tight">Vendor Requests</h3>
-          </div>
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black border ${requests.length > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-800' : 'bg-slate-100 border-slate-200 text-slate-400'}`}>
-            {requests.length > 0 && <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />}
-            {requests.length} REQUESTS
-          </div>
+      <div className="flex flex-col h-full">
+      {/* Standardized Header */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-slate-900">Vendor requests</h2>
+          {requests.length > 0 && (
+            <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
+              {requests.length}
+            </span>
+          )}
         </div>
+      </div>
 
-        {/* List */}
-        <div className="px-4 py-3 flex-1 overflow-y-auto space-y-2" style={{ maxHeight: 340 }}>
+      {/* Scrollable List */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div ref={listRef as any} className="divide-y divide-slate-100">
           {loading ? (
             <div className="text-center py-10 text-slate-400 text-xs font-bold">Loading...</div>
           ) : requests.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 text-xs font-semibold border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center gap-2">
-              <Package size={26} className="opacity-30" />
-              No pending or approved requests
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 py-16">
+              <Package size={32} className="mb-2 text-slate-200" strokeWidth={1.5} />
+              <span className="text-sm">No pending requests</span>
             </div>
           ) : requests.map(req => (
-            <div key={req.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+            <div key={req.id} className="p-4 hover:bg-slate-50 transition-colors">
               <div className="flex justify-between items-start mb-2.5">
                 <div>
-                  <div className="text-[10px] font-black tracking-widest uppercase text-yellow-500 mb-1">
+                  <div className="font-semibold text-sm text-slate-900">
                     {req.vendor_profiles?.company_name || 'Vendor'}
                   </div>
-                  <div className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                    <span className="truncate max-w-[90px]">{req.pickup_location?.split(',')[0]}</span>
-                    <ArrowRight size={11} className="text-yellow-500 flex-shrink-0" />
-                    <span className="truncate max-w-[90px]">{req.drop_location?.split(',')[0]}</span>
+                  <div className="text-xs text-slate-600 flex items-center gap-1.5 mt-0.5">
+                    <span className="truncate max-w-[100px]">{req.pickup_location?.split(',')[0]}</span>
+                    <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
+                    <span className="truncate max-w-[100px]">{req.drop_location?.split(',')[0]}</span>
                   </div>
                 </div>
-                <span className="bg-slate-800 text-yellow-400 rounded-lg px-2.5 py-0.5 text-[10px] font-mono font-bold flex-shrink-0">
-                  {req.required_capacity_kg}KG
+                <span className="bg-indigo-50 text-indigo-700 rounded-md px-2 py-0.5 text-xs font-semibold flex-shrink-0">
+                  {req.required_capacity_kg} kg
                 </span>
               </div>
-              <div className="flex gap-2 pt-2 border-t border-slate-200">
+              <div className="grid grid-cols-2 gap-2 mt-3">
                 {req.status === 'pending' && (
                   <>
                     <button
                       onClick={() => handleApprove(req.id)}
-                      className="flex-1 py-1.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-green-100 transition-colors"
+                      className="col-span-1 py-2 rounded-lg border border-emerald-600 bg-emerald-600 text-white text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-emerald-700 shadow-sm transition-colors"
                     >
-                      <CheckCircle2 size={12} /> Approve
+                      <CheckCircle2 size={14} /> Approve
                     </button>
                     <button
                       onClick={() => handleReject(req.id)}
-                      className="flex-1 py-1.5 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-red-100 transition-colors"
+                      className="col-span-1 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-slate-50 shadow-sm transition-colors"
                     >
-                      <X size={12} /> Reject
+                      <X size={14} /> Reject
                     </button>
                   </>
                 )}
                 <button
                   onClick={() => { setSelectedReq(req); setSelectedVehicle('') }}
-                  className="flex-1 py-1.5 rounded-xl border border-yellow-300 bg-yellow-50 text-yellow-800 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-yellow-100 transition-colors"
+                  className="col-span-1 py-2 rounded-lg border border-yellow-500 bg-yellow-500 text-yellow-950 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-yellow-600 shadow-sm transition-colors"
                 >
-                  <Truck size={12} /> Assign Vehicle
+                  <Truck size={14} /> Assign Vehicle
                 </button>
                 <button
-                  onClick={() => handleRemove(req.id)}
-                  className="flex-1 py-1.5 rounded-xl border border-slate-300 bg-slate-50 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-100 transition-colors"
+                  onClick={async () => {
+                    toast.success('Escalated to 3PL Network');
+                    const { data: { session } } = await supabase.auth.getSession();
+                    await fetch(`/api/v1/vendor/shipment-request/${req.id}/reject`, {
+                      method: 'PUT', headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                    });
+                    fetchRequests();
+                  }}
+                  className="col-span-1 py-2 rounded-lg border border-slate-800 bg-slate-800 text-white text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-slate-900 shadow-sm transition-colors"
                 >
-                  <Trash2 size={12} /> Remove
+                  <AlertCircle size={14} /> Escalate to 3PL
                 </button>
               </div>
-            </div>
-          ))}
+              </div>
+            ))}
         </div>
       </div>
+    </div>
 
-      {/* Assign Vehicle Modal */}
+    {/* Assign Vehicle Modal */}
       {selectedReq && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"

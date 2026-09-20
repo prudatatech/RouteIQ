@@ -1,325 +1,566 @@
 import { useState, useEffect } from 'react'
-import { LogOut } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
-import { useNavigate } from 'react-router-dom'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Truck, Clock, Fuel, TrendingUp, Zap, Filter, Activity, Map, Target, AlertTriangle } from 'lucide-react'
-import { dashboardAPI, vehiclesAPI, telemetryWS } from '@/services/api'
-import { KPICard, Card, CardHeader, Spinner } from '@/components/ui'
-import toast from 'react-hot-toast'
+import {
+  Truck, Clock, Plus, Search, Filter, AlertTriangle, AlertCircle,
+  WifiOff, Wifi, ChevronRight, MapIcon, List, Eye, Calendar, ChevronDown,
+  Package, Activity
+} from 'lucide-react'
+import { dashboardAPI, vehiclesAPI, shipmentsAPI } from '@/services/api'
+import { Spinner } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
-import DeliveryChart from '@/components/dashboard/DeliveryChart'
-import AlertFeed from '@/components/dashboard/AlertFeed'
-import { AIInsightCard } from '@/components/dashboard/AIInsightCard'
+import LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
 import VendorRequestsAdmin from '@/components/dashboard/VendorRequestsAdmin'
-import TplEscalationSidebar from '@/components/control-tower/TplEscalationSidebar'
-import { STATUS_COLORS, CARGO_EMOJI } from '@/config/mapConfig'
+import { supabase } from '@/services/supabase'
+import { useDraftStore } from '@/store/draftStore'
+import { useAutoAnimate } from '@formkit/auto-animate/react'
+import clsx from 'clsx'
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
-  const clearAuth = useAuthStore(state => state.clearAuth);
-  const token = useAuthStore(state => state.token);
-  const handleLogout = () => {
-    clearAuth();
-    navigate('/login');
-  };
+  const navigate = useNavigate()
+  const token = useAuthStore(state => state.token)
+  const openModal = useDraftStore(s => s.openModal)
+
   useEffect(() => {
-    if (!token) navigate('/login');
-  }, [token, navigate]);
+    if (!token) navigate('/login')
+  }, [token, navigate])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedVehicleId = searchParams.get('vehicle')
   const [zoomFocusEvent, setZoomFocusEvent] = useState(0)
-  const [filter, setFilter] = useState<'all' | 'moving' | 'idle'>('all')
-  const [liveTelemetry, setLiveTelemetry] = useState<Record<string, any>>({})
-  const [alerts, setAlerts] = useState<any[]>([])
-  const [isEscalationOpen, setIsEscalationOpen] = useState(false)
+  const [mapView, setMapView] = useState<'map' | 'list'>('map')
+  const [fleetSearch, setFleetSearch] = useState('')
+  const [lastRefresh, setLastRefresh] = useState(new Date())
 
-  const { data: kpis, isLoading } = useQuery({
+  // Auto-animate refs
+  const [needsAttentionRef] = useAutoAnimate()
+  const [tableRef] = useAutoAnimate()
+
+  // ── Data Queries ──────────────────────────────────────────────
+  const { data: kpis, isLoading: kpisLoading } = useQuery({
     queryKey: ['kpis'],
     queryFn: dashboardAPI.kpis,
     refetchInterval: 30_000,
   })
 
-  const { data: vehicles = [] } = useQuery({
+  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery({
     queryKey: ['vehicles', 'live'],
     queryFn: () => vehiclesAPI.list({ limit: 500 }),
-    refetchInterval: 5_000, // 5s polling for Ola/Uber-style live tracking
+    refetchInterval: 5_000,
   })
 
+  const { data: summary } = useQuery({
+    queryKey: ['fleet-summary'],
+    queryFn: vehiclesAPI.summary,
+    refetchInterval: 30_000,
+  })
+
+  const { data: shipments = [] } = useQuery({
+    queryKey: ['shipments', 'active'],
+    queryFn: () => shipmentsAPI.list({ status: 'in_transit', limit: 200 }),
+    refetchInterval: 30_000,
+  })
+
+  const { data: sosAlerts = [] } = useQuery({
+    queryKey: ['sos-alerts'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('sos_alerts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10)
+      return data || []
+    },
+    refetchInterval: 15_000,
+  })
+
+  // Update refresh timestamp
   useEffect(() => {
-    let isMounted = true;
-    
+    const interval = setInterval(() => setLastRefresh(new Date()), 30_000)
+    return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    if (selectedVehicleId && vehicles.length > 0) {
-      const v = vehicles.find((v: any) => v.id === selectedVehicleId)
-      if (v) {
-        toast.success(`Tracking vehicle ${v.plate_number}...`, { id: 'track-v' })
-      }
-    }
-  }, [selectedVehicleId, vehicles])
+  // ── Derived Data ──────────────────────────────────────────────
+  const reportingVehicles = vehicles.filter((v: any) => v.status !== 'offline' && v.status !== 'maintenance')
+  const offlineVehicles = vehicles.filter((v: any) => v.status === 'offline')
+  const incidentVehicles = vehicles.filter((v: any) => v.status === 'maintenance')
+  const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
+  const onTimeRate = kpis?.on_time_rate_pct?.toFixed(0) || '95'
+  const openIncidents = sosAlerts.filter((a: any) => a.status !== 'resolved').length
 
-  const filteredVehicles = vehicles.filter((v: any) => {
-    const live = liveTelemetry[v.id]
-    if (filter === 'all') return true
-    if (filter === 'moving') return (live?.speed > 0 || v.status === 'on_route')
-    if (filter === 'idle') return (!live || live?.speed === 0 || v.status === 'available')
-    return true
+  // Needs attention items
+  const attentionItems: Array<{
+    id: string; type: 'incident' | 'warning' | 'offline' | 'online';
+    title: string; subtitle: string; time: string; action: string; actionFn: () => void
+  }> = []
+
+  // Add SOS alerts
+  sosAlerts.filter((a: any) => a.status !== 'resolved').forEach((alert: any) => {
+    const v = vehicles.find((veh: any) => veh.id === alert.vehicle_id)
+    attentionItems.push({
+      id: alert.id,
+      type: 'incident',
+      title: alert.alert_type === 'accident' ? 'Serious accident' : (alert.alert_type || 'Emergency Alert'),
+      subtitle: `${v?.plate_number || 'Unknown'} · ${alert.description || 'Reported'}`,
+      time: getTimeAgo(alert.created_at),
+      action: 'Review incident',
+      actionFn: () => navigate('/emergency'),
+    })
   })
+
+  // Add offline vehicles
+  offlineVehicles.slice(0, 3).forEach((v: any) => {
+    attentionItems.push({
+      id: v.id,
+      type: 'offline',
+      title: 'Vehicle offline',
+      subtitle: `${v.plate_number}`,
+      time: v.last_sync ? getTimeAgo(v.last_sync) : '',
+      action: 'View vehicle',
+      actionFn: () => {
+        setSearchParams({ vehicle: v.id })
+        setZoomFocusEvent(Date.now())
+      },
+    })
+  })
+
+  // Add online vehicles (put them at the top so they are visible)
+  const recentlyOnline = [...reportingVehicles]
+    .sort((a: any, b: any) => new Date(b.last_sync || 0).getTime() - new Date(a.last_sync || 0).getTime())
+    .slice(0, 2);
+
+  recentlyOnline.forEach((v: any) => {
+    attentionItems.unshift({
+      id: v.id,
+      type: 'online',
+      title: 'Vehicle online',
+      subtitle: `${v.plate_number}`,
+      time: v.last_sync ? getTimeAgo(v.last_sync) : 'Just now',
+      action: 'Track live',
+      actionFn: () => {
+        setSearchParams({ vehicle: v.id })
+        setZoomFocusEvent(Date.now())
+      },
+    })
+  })
+
+  // Fleet table data
+  const fleetTableData = vehicles
+    .filter((v: any) => !fleetSearch || v.plate_number.toLowerCase().includes(fleetSearch.toLowerCase()))
+    .slice(0, 20)
 
   const now = new Date()
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-        <div>
-          <h1 className="font-display text-6xl font-black tracking-tighter text-text uppercase leading-none">
-            Nexus <span className="text-primary">Control</span> Tower
-          </h1>
-          <div className="text-muted font-bold tracking-tight mt-4 flex items-center gap-3 text-sm">
-            <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
-            <Activity size={16} className="text-primary" />
-            Enterprise Multi-Agent AI Ecosystem
-            <span className="opacity-30">|</span>
-            {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST
-          </div>
-        </div>
-
-        {/* Top-right: Fleet filter + Logout */}
-        <div className="flex flex-col items-end gap-3">
-          {/* Logout button */}
-          <button
-            onClick={handleLogout}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '8px 18px', borderRadius: '12px',
-              border: '1.5px solid #e5c84a',
-              background: 'transparent',
-              color: '#B38700',
-              fontWeight: 700, fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'background 0.2s, color 0.2s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = '#B38700';
-              (e.currentTarget as HTMLButtonElement).style.color = '#fff';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-              (e.currentTarget as HTMLButtonElement).style.color = '#B38700';
-            }}
-          >
-            <LogOut size={15} />
-            Sign Out
+    <div className="space-y-6 animate-fade-in">
+      {/* ── Page Header ────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Control Tower</h1>
+          <button className="flex items-center gap-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
+            India operations <ChevronDown size={14} />
           </button>
-
-          {/* Fleet filter tabs */}
-          <div className="flex bg-surface2 p-1.5 rounded-2xl border border-border shadow-2xl">
-            {[
-              { id: 'all', label: 'All Fleet' },
-              { id: 'moving', label: 'In Transit' },
-              { id: 'idle', label: 'Parked' },
-            ].map(f => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id as any)}
-                className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  filter === f.id
-                    ? 'bg-primary text-bg shadow-lg shadow-primary/20'
-                    : 'text-muted hover:text-text'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="flex items-center gap-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors shadow-sm">
+            <Calendar size={14} className="text-slate-400" />
+            {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            <ChevronDown size={14} className="text-slate-400" />
+          </button>
+          <button
+            onClick={openModal}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm shadow-blue-600/20"
+          >
+            <Plus size={16} strokeWidth={2.5} /> Create shipment
+          </button>
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KPICard
-          label="Active Cargo"
-          value={isLoading ? '—' : String(kpis?.active_vehicles ?? 0)}
-          delta={kpis?.delta_vehicles || "+0%"} deltaUp
-          icon={<Truck size={22} className="text-primary" />}
-          color="var(--accent)"
-          progress={kpis ? (kpis.active_vehicles > 0 ? 85 : 0) : 0}
-        />
-        <KPICard
-          label="Delivery Success"
-          value={isLoading ? '—' : `${kpis?.on_time_rate_pct?.toFixed(1) ?? '—'}%`}
-          delta={kpis?.delta_efficiency || "+0%"} deltaUp
-          icon={<Clock size={22} className="text-text" />}
-          color="#FFFFFF"
-          progress={kpis?.on_time_rate_pct ?? 0}
-        />
-        <KPICard
-          label="Operational ROI"
-          value={isLoading ? '—' : `₹${((kpis?.fuel_cost_today ?? 0) / 100000).toFixed(1)}L`}
-          delta={kpis?.delta_roi || "+0%"} deltaUp
-          icon={<Fuel size={22} className="text-primary-dark" />}
-          color="var(--accent-secondary)"
-          progress={kpis ? 72 : 0}
-        />
-        <KPICard
-          label="AI Efficiency"
-          value={isLoading ? '—' : `${kpis?.fuel_saved_pct ?? '—'}%`}
-          delta={kpis?.delta_fuel || "+0%"} deltaUp
-          icon={<Zap size={22} className="text-accent-tertiary" />}
-          color="var(--accent-tertiary)"
-          progress={kpis?.fuel_saved_pct ?? 0}
-        />
+      {/* ── KPI Metrics Row ────────────────────────────────────── */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          {
+            label: 'Active shipments',
+            value: kpisLoading ? '—' : String(activeShipmentCount),
+            sub: 'Current',
+            highlight: false,
+            color: 'blue',
+            icon: Package,
+          },
+          {
+            label: 'Tracked vehicles',
+            value: kpisLoading ? '—' : String(vehicles.length),
+            sub: `${reportingVehicles.length} reporting · ${offlineVehicles.length} offline`,
+            highlight: false,
+            color: 'indigo',
+            icon: Truck,
+          },
+          {
+            label: 'Open incident',
+            value: String(openIncidents),
+            sub: openIncidents > 0 ? 'Requires response' : 'All clear',
+            highlight: openIncidents > 0,
+            color: openIncidents > 0 ? 'red' : 'emerald',
+            icon: openIncidents > 0 ? AlertCircle : Activity,
+          },
+          {
+            label: 'On-time delivery',
+            value: `${onTimeRate}%`,
+            sub: 'Last 30 days',
+            highlight: false,
+            color: 'emerald',
+            icon: Clock,
+          },
+        ].map(({ label, value, sub, highlight, color, icon: Icon }) => (
+          <div
+            key={label}
+            className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 hover:shadow-sm transition-all"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</div>
+              <div className={clsx(
+                "w-8 h-8 rounded-lg flex items-center justify-center",
+                color === 'blue' ? 'bg-blue-50 text-blue-600' :
+                color === 'indigo' ? 'bg-indigo-50 text-indigo-600' :
+                color === 'red' ? 'bg-red-50 text-red-600' :
+                'bg-emerald-50 text-emerald-600'
+              )}>
+                <Icon size={16} strokeWidth={2} />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className={clsx(
+                "text-3xl font-bold tracking-tight",
+                highlight ? "text-red-600" : "text-slate-900"
+              )}>
+                {value}
+              </span>
+              {highlight && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
+            </div>
+            <div className="text-xs text-slate-400 mt-2">{sub}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Map + Fleet List */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
-        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl relative group h-[650px]">
-          <div className="absolute top-8 left-8 z-10 pointer-events-none">
-             <div className="bg-bg/40 backdrop-blur-xl border border-border px-8 py-5 rounded-[24px] shadow-2xl">
-                <h2 className="text-xl font-black text-text tracking-tight uppercase">Live <span className="text-primary">Geospatial</span> Grid</h2>
-                <p className="text-muted text-[10px] font-bold uppercase tracking-[0.2em] mt-2 opacity-60">High-Density Telemetry Pipe Active</p>
-             </div>
+      {/* ── Main Content: Map + Alerts + Vendor ─────────────────────────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px_350px] gap-4 h-[440px]">
+        {/* Live Fleet Map */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-slate-900">Live fleet</h2>
+              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Updated {getSecondsAgo(lastRefresh)} sec ago
+              </div>
+            </div>
+            <div className="flex bg-slate-100 p-0.5 rounded-lg">
+              <button
+                onClick={() => setMapView('map')}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                  mapView === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                <MapIcon size={13} /> Map
+              </button>
+              <button
+                onClick={() => setMapView('list')}
+                className={clsx(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                  mapView === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                <List size={13} /> List
+              </button>
+            </div>
           </div>
-          <div className="flex-1">
+          <div className="h-[440px] relative">
             <LiveMap vehicles={vehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
           </div>
-        </div>
-
-        <div className="rounded-[40px] bg-surface border border-border flex flex-col overflow-hidden shadow-2xl h-[650px]">
-          <div className="px-8 pt-10 pb-6 flex justify-between items-center border-b border-border">
-            <div>
-              <h2 className="text-2xl font-black text-text tracking-tighter uppercase">Cargo <span className="text-primary">Fleet</span></h2>
-              <p className="text-muted text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Real-time Telemetry</p>
+          <div className="flex items-center gap-5 px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Reporting
             </div>
-            <div className="px-5 py-2.5 rounded-2xl bg-primary/10 text-primary text-[10px] font-black tracking-widest border border-primary/20">
-              {filteredVehicles.length} ONLINE
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-slate-400" /> Offline
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> Incident
             </div>
           </div>
-          <div className="px-6 pb-10 pt-4 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-            {isLoading ? (
-              <div className="py-20 flex justify-center"><Spinner /></div>
-            ) : filteredVehicles.length === 0 ? (
-              <div className="py-20 text-center text-muted text-xs font-bold uppercase">No vehicles match filter</div>
-            ) : (
-              filteredVehicles.map((v: any, i: number) => {
-                const live = liveTelemetry[v.id]
-                const dotColor = STATUS_COLORS[v.status] || '#94a3b8'
-                const emoji = v.vehicle_type === 'truck' ? '🚛' : (v.vehicle_type === 'van' ? '🚐' : (v.vehicle_type === 'bike' ? '🏍️' : '🚗'))
-                const speed = live?.speed || 0
-                const primaryCargo = v.cargo_types?.[0] || 'general'
-                const cargoEmoji = CARGO_EMOJI[primaryCargo] || ''
+        </div>
 
-                return (
-                  <div key={v.id} onClick={() => setSearchParams({ vehicle: v.id })} className={`group relative flex items-center gap-5 p-5 rounded-[32px] transition-all cursor-pointer ${selectedVehicleId === v.id ? 'bg-primary/5 border border-primary/30' : 'hover:bg-surface2 border border-transparent hover:border-border'}`}>
-                    <div className="w-16 h-16 rounded-[20px] flex items-center justify-center text-3xl flex-shrink-0 bg-surface2 border border-border group-hover:bg-bg group-hover:scale-105 transition-all shadow-lg relative">
-                      {emoji}
-                      <span className="absolute -top-1 -right-1 text-[12px] bg-surface rounded-full w-6 h-6 flex items-center justify-center shadow-lg border border-border">
-                        {cargoEmoji}
-                      </span>
+        {/* Needs Attention Panel */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-900">Needs attention</h2>
+              {attentionItems.filter(i => i.type !== 'online').length > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
+                  {attentionItems.filter(i => i.type !== 'online').length}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => navigate('/fleet')}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+            >
+              View all
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Alert Items */}
+            <div ref={needsAttentionRef as any} className="divide-y divide-slate-100">
+              {attentionItems.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-400">
+                  <Activity size={24} className="mx-auto mb-2 text-slate-300" />
+                  All clear — no issues detected
+                </div>
+              ) : (
+                attentionItems.slice(0, 5).map((item) => (
+                  <div key={item.id} className={clsx(
+                    "px-5 py-4 flex items-start gap-3 hover:bg-slate-50 transition-colors relative",
+                    item.type === 'incident' ? 'border-l-[3px] border-l-red-600 bg-red-50/30' :
+                    item.type === 'offline' ? 'border-l-[3px] border-l-[#d25c48] bg-[#fdf3ec]' :
+                    item.type === 'online' ? 'border-l-[3px] border-l-emerald-500 bg-emerald-50/30' :
+                    'border-l-[3px] border-l-amber-400 bg-amber-50/30'
+                  )}>
+                    <div className="flex-shrink-0 mt-0.5">
+                      {item.type === 'incident' && (
+                        <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center shadow-sm">
+                          <AlertCircle size={16} className="text-white" strokeWidth={2} />
+                        </div>
+                      )}
+                      {item.type === 'warning' && (
+                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shadow-sm">
+                          <AlertTriangle size={16} className="text-amber-600" strokeWidth={2} />
+                        </div>
+                      )}
+                      {item.type === 'offline' && (
+                        <div className="w-8 h-8 rounded-full bg-[#f8d2c6] flex items-center justify-center">
+                          <WifiOff size={16} className="text-[#a53b26]" strokeWidth={2} />
+                        </div>
+                      )}
+                      {item.type === 'online' && (
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                          <Wifi size={16} className="text-emerald-500 animate-pulse" strokeWidth={2} />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="font-black text-text text-base flex items-center gap-3">
-                          {v.plate_number} 
-                          <span className={`w-2.5 h-2.5 rounded-full ${speed > 0 ? 'animate-pulse' : ''}`} style={{ backgroundColor: dotColor, boxShadow: `0 0 12px ${dotColor}80` }} />
-                        </div>
-                        <div className="font-mono font-black text-[13px]" style={{ color: speed > 0 ? 'var(--success)' : 'var(--muted)' }}>
-                          {speed > 0 ? `${speed.toFixed(0)} KM/H` : 'STATIONARY'}
-                        </div>
-                        <button onClick={() => {
-                          const lat = live?.latitude || v.latitude || 0;
-                          const lng = live?.longitude || v.longitude || 0;
-                          const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-                          window.open(url, '_blank');
-                        }} className="ml-2 flex items-center gap-1 text-xs text-primary hover:underline">
-                          <Map size={14} /> Navigate
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between mt-2 text-[12px] font-bold">
-                        <div className="text-muted truncate pr-4 uppercase tracking-tight flex items-center gap-2">
-                          {v.status === 'gps_off' ? (
-                            <span className="text-red-500 font-black animate-pulse">GPS DISABLED BY DRIVER</span>
-                          ) : v.status === 'on_route' ? 'Active Mission · Primary Route' : 'Awaiting Orders · Idle'}
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSearchParams({ vehicle: v.id });
-                            setZoomFocusEvent(Date.now());
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 hover:bg-primary/20 text-primary font-mono text-[10px] tracking-widest rounded-lg transition-all border border-primary/20 hover:border-primary/50"
-                        >
-                          <Target size={12} /> {live ? 'LIVE TRACK' : 'LOCATE'}
-                        </button>
-                      </div>
+                      <div className={clsx(
+                        "text-sm font-bold",
+                        item.type === 'offline' ? "text-[#7a3321]" : 
+                        item.type === 'online' ? "text-emerald-800" : "text-slate-900"
+                      )}>{item.title}</div>
+                      <div className={clsx(
+                        "text-xs mt-0.5",
+                        item.type === 'offline' ? "text-[#8a4a3a]" : 
+                        item.type === 'online' ? "text-emerald-600" : "text-slate-500"
+                      )}>{item.subtitle}</div>
+                      <div className={clsx(
+                        "text-[11px] mt-0.5",
+                        item.type === 'offline' ? "text-[#9c5f50]" : 
+                        item.type === 'online' ? "text-emerald-500" : "text-slate-400"
+                      )}>{item.time}</div>
                     </div>
+                    <button
+                      onClick={item.actionFn}
+                      className={clsx(
+                        "flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap",
+                        item.type === 'offline' 
+                          ? "bg-[#eff6ff] text-blue-700 hover:bg-blue-100" 
+                          : item.type === 'online' 
+                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          : "text-blue-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                      )}
+                    >
+                      {item.action}
+                    </button>
                   </div>
-                )
-              })
-            )}
+                ))
+              )}
+            </div>
+
+            {/* Recent Fleet Events */}
+            <div className="border-t border-slate-200 px-5 py-3">
+              <h3 className="text-xs font-semibold text-slate-900 mb-3">Recent fleet events</h3>
+              <div className="space-y-2.5">
+                {[...vehicles]
+                  .filter((v: any) => v.last_sync)
+                  .sort((a: any, b: any) => new Date(b.last_sync).getTime() - new Date(a.last_sync).getTime())
+                  .slice(0, 4)
+                  .map((v: any, i: number) => (
+                  <div key={v.id} className="flex items-center gap-3 text-xs">
+                    <span className="text-slate-400 font-mono w-10 text-right">
+                      {v.last_sync ? new Date(v.last_sync).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                    </span>
+                    <span className={clsx(
+                      "w-2 h-2 rounded-full flex-shrink-0",
+                      v.status === 'on_route' ? 'bg-emerald-500' :
+                      v.status === 'maintenance' ? 'bg-red-500' :
+                      v.status === 'offline' ? 'bg-slate-400' : 'bg-emerald-500'
+                    )} />
+                    <span className="text-slate-600 truncate">
+                      {v.plate_number} {v.status === 'on_route' ? 'reported position' : v.status === 'maintenance' ? 'incident opened' : 'synced'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* Vendor Orders / Partner Requests Panel */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
+          <VendorRequestsAdmin />
         </div>
       </div>
 
-      {/* Vendor Requests — full width strip */}
-      <VendorRequestsAdmin />
-
-      {/* Escalation Alerts Section */}
-      <div className="bg-red-500/5 border border-red-500/20 rounded-[32px] p-6 flex flex-col md:flex-row items-center justify-between gap-4 mt-8 mb-8">
-         <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center flex-shrink-0">
-               <AlertTriangle size={24} />
-            </div>
-            <div>
-               <h3 className="text-lg font-black text-text uppercase">Escalation Recommended</h3>
-               <p className="text-xs font-bold text-muted mt-1 uppercase tracking-wider">Order ORD-8821 (DEL-BOM) • 0 vehicles in 50km radius</p>
-            </div>
-         </div>
-         <button onClick={() => setIsEscalationOpen(true)} className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-lg shadow-red-500/20 flex-shrink-0">
-            Escalate to 3PL
-         </button>
-      </div>
-
-      {/* Charts + Alerts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <DeliveryChart />
-        <AlertFeed alerts={alerts} />
-        <Card className="border-slate-200 bg-white shadow-xl rounded-[40px] overflow-hidden">
-          <CardHeader title="System Pulse" subtitle="Infrastructure load metrics" />
-          <div className="px-8 pb-8 space-y-8">
-            {[
-              { label: 'Network Latency', value: 12, color: '#10b981', suffix: 'ms' },
-              { label: 'Data Throughput', value: 94, color: '#0F172A', suffix: '%' },
-              { label: 'ML Prediction Acc', value: 98, color: '#F9C935', suffix: '%' },
-              { label: 'Fleet Sync Rate', value: 100, color: '#F59E0B', suffix: '%' },
-            ].map(({ label, value, color, suffix }) => (
-              <div key={label} className="group">
-                <div className="flex justify-between mb-3 text-[10px] font-black uppercase tracking-widest text-muted">
-                  <span>{label}</span>
-                  <span style={{ color }}>{value}{suffix}</span>
-                </div>
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden p-0.5">
-                  <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${value}%`, background: color }} />
-                </div>
-              </div>
-            ))}
+      {/* ── Fleet Status Table ─────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-slate-900">Fleet status</h2>
+            <span className="text-xs text-slate-400">{vehicles.length} vehicles</span>
           </div>
-        </Card>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus-within:border-slate-300 transition-colors">
+              <Search size={14} className="text-slate-400" />
+              <input
+                placeholder="Search vehicles..."
+                className="bg-transparent border-none outline-none text-xs text-slate-700 w-44 placeholder:text-slate-400"
+                value={fleetSearch}
+                onChange={e => setFleetSearch(e.target.value)}
+              />
+            </div>
+            <button className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
+              <Filter size={13} /> Filters
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px]">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50">
+                {['Vehicle', 'Driver', 'Location', 'Connection', 'Availability', 'Last update', 'Actions'].map(h => (
+                  <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {vehiclesLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-16">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Spinner size={24} />
+                      <span className="text-xs text-slate-400">Loading fleet data...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : fleetTableData.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-sm text-slate-400">No vehicles found</td>
+                </tr>
+              ) : (
+                fleetTableData.map((v: any) => {
+                  const isOnline = v.status !== 'offline'
+                  const isIncident = v.status === 'maintenance'
+                  const statusLabel = isIncident ? 'Incident' : v.status === 'on_route' ? 'On Route' : v.status === 'available' ? 'Available' : v.status === 'idle' ? 'Idle' : 'Unknown'
+                  const statusColor = isIncident ? 'text-red-600' : isOnline ? 'text-emerald-600' : 'text-slate-500'
+                  const statusDot = isIncident ? 'bg-red-500' : isOnline ? 'bg-emerald-500' : 'bg-slate-400'
+
+                  return (
+                    <tr key={v.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-4">
+                        <span className="text-sm font-semibold text-slate-900">{v.plate_number}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="text-sm text-slate-600">{v.driver_name || 'Unassigned'}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="text-sm text-slate-600">
+                          {v.latitude
+                            ? `${v.latitude.toFixed(2)}, ${v.longitude.toFixed(2)}`
+                            : 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={clsx(
+                          "px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5",
+                          isOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+                        )}>
+                          <span className={clsx("w-1.5 h-1.5 rounded-full", isOnline ? "bg-emerald-500" : "bg-slate-400")} />
+                          {isOnline ? 'Reporting' : 'Offline'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={clsx(
+                          "px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5",
+                          isIncident ? "bg-red-100 text-red-700" :
+                          isOnline ? "bg-emerald-100 text-emerald-700" :
+                          "bg-slate-100 text-slate-600"
+                        )}>
+                          <span className={clsx("w-1.5 h-1.5 rounded-full", statusDot)} />
+                          {statusLabel}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={clsx(
+                          "text-sm font-medium",
+                          isOnline ? "text-emerald-600 flex items-center gap-1.5" : "text-slate-500"
+                        )}>
+                          {isOnline && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                          {isOnline ? 'Live' : (v.last_sync ? getTimeAgo(v.last_sync) : '—')}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <button
+                          onClick={() => {
+                            navigate('/fleet')
+                          }}
+                          className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                        >
+                          View <ChevronRight size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* AI Pulse Insight */}
-      <AIInsightCard 
-        title="Predictive Fleet Optimization"
-        insight="Our neural engine has identified a high-traffic cluster near Okhla. Rerouting 4 heavy-duty trucks to the Outer Ring Road will prevent a cumulative 82-minute delay across the cargo manifest."
-        score={98.2}
-        trend="up"
-      />
-      
-      <TplEscalationSidebar isOpen={isEscalationOpen} onClose={() => setIsEscalationOpen(false)} />
+      {/* ── Footer ─────────────────────────────────────────────── */}
+      <div className="text-right text-[11px] text-slate-400 pb-4">
+        Latest refresh: {lastRefresh.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} {lastRefresh.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST
+      </div>
     </div>
   )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function getTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const secs = Math.floor(diff / 1000)
+  if (secs < 60) return `${secs} sec ago`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function getSecondsAgo(date: Date): number {
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
 }

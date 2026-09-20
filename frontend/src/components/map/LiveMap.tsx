@@ -252,13 +252,15 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
     if (!mapRef.current || _mapInstance) return
     const map = new mapboxgl.Map({
       container: mapRef.current!,
-      style: '/map-style.json?v=3',
+      style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
       center: MAP_DEFAULTS.CENTER,
       zoom: MAP_DEFAULTS.ZOOM,
       minZoom: MAP_DEFAULTS.MIN_ZOOM,
       maxZoom: MAP_DEFAULTS.MAX_ZOOM,
       attributionControl: false,
     })
+
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
 
     map.on('load', () => {
       // Add GeoJSON source for trucks
@@ -279,9 +281,14 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       // Active Route (Line)
       map.addSource('active-route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({
+        id: 'active-route-line-glow', type: 'line', source: 'active-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#8B5CF6', 'line-width': 8, 'line-opacity': 0.3 }
+      })
+      map.addLayer({
         id: 'active-route-line', type: 'line', source: 'active-route',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#3B82F6', 'line-width': 4 }
+        paint: { 'line-color': '#8B5CF6', 'line-width': 4 }
       })
 
       // Geofence (Polygon)
@@ -298,8 +305,12 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
       // Destination (Icon)
       map.addSource('destination', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({
-        id: 'destination-point', type: 'symbol', source: 'destination',
-        layout: { 'text-field': '🏠', 'text-size': 20, 'text-allow-overlap': true }
+        id: 'destination-point-glow', type: 'circle', source: 'destination',
+        paint: { 'circle-color': '#8B5CF6', 'circle-radius': 14, 'circle-opacity': 0.3 }
+      })
+      map.addLayer({
+        id: 'destination-point', type: 'circle', source: 'destination',
+        paint: { 'circle-color': '#8B5CF6', 'circle-radius': 8, 'circle-stroke-width': 3, 'circle-stroke-color': '#FFFFFF' }
       })
 
       // Marketplace Loads (Open Jobs)
@@ -419,8 +430,8 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
             const data = payload.new;
             if (!data) return;
             
-            // If it's a new vehicle, force React Query to update the Dashboard sidebar immediately
-            if (payload.eventType === 'INSERT') {
+            // If vehicle status changes, force React Query to update the Dashboard sidebar immediately
+            if (['INSERT', 'UPDATE', 'DELETE'].includes(payload.eventType)) {
               queryClient.invalidateQueries({ queryKey: ['vehicles'] });
             }
             

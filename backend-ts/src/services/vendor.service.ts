@@ -219,8 +219,19 @@ export const vendorService = {
       throw new Error(`Failed to create manifest: ${manifestErr.message}`);
     }
 
-    // Get Driver ID for notification
-    const { data: vehicle } = await supabase.from('vehicles').select('driver_id').eq('id', vehicleId).single();
+    // Get vehicle to update load and notify driver
+    const { data: vehicle } = await supabase.from('vehicles').select('driver_id, capacity_kg, current_load_kg, available_capacity_kg').eq('id', vehicleId).single();
+
+    if (vehicle) {
+      const newLoad = (vehicle.current_load_kg || 0) + req.required_capacity_kg;
+      const newAvail = Math.max(0, (vehicle.available_capacity_kg ?? vehicle.capacity_kg) - req.required_capacity_kg);
+      
+      await supabase.from('vehicles').update({
+        current_load_kg: newLoad,
+        available_capacity_kg: newAvail,
+        status: 'on_route'
+      }).eq('id', vehicleId);
+    }
 
     if (vehicle?.driver_id) {
       // Notify the driver instantly so the listener triggers

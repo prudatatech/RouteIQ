@@ -130,3 +130,27 @@ h1, h2, h3, .font-heading {
 }
 
 .pulse-soft { animation: pulse-soft 3s ease-in-out infinite; }
+
+ /* Delivery Celebration Animations */
+@keyframes bounce-in {
+  0% { transform: scale(0.5) translateY(100px); opacity: 0; }
+  60% { transform: scale(1.05) translateY(-10px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scale-up {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-100px) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateY(800px) rotate(720deg) scale(0.5); opacity: 0; }
+}
+.animate-bounce-in { animation: bounce-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+.animate-scale-up { animation: scale-up 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.animate-confetti { animation: confetti-fall ease-in forwards; }

@@ -12,6 +12,7 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@formkit/auto-animate": "^0.10.0",
     "@supabase/supabase-js": "^2.109.0",
     "@tanstack/react-query": "^5.40.0",
     "@turf/turf": "^7.3.5",

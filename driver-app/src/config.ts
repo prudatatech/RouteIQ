@@ -1,10 +1,4 @@
-/**
- * margixindia Driver App — API Configuration
- */
 
-// Change this to your backend URL
-// Local dev: Your computer's local IP (e.g. 192.168.29.34)
-// Railway: https://routeiq-production-7034.up.railway.app
 export const API_BASE_URL = 'https://routeiq-production-7034.up.railway.app';
 
 export const API_V1 = `${API_BASE_URL}/api/v1`;
