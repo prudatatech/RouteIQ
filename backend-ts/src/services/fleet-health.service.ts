@@ -6,18 +6,18 @@ import { supabase } from '../core/supabase';
 import { wsManager } from '../core/websocket';
 
 export class FleetHealthMonitor {
-  private timeoutMinutes: number;
+  private timeoutSeconds: number;
   private running: boolean = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(timeoutMinutes: number = 2) {
-    this.timeoutMinutes = timeoutMinutes;
+  constructor(timeoutSeconds: number = 10) {
+    this.timeoutSeconds = timeoutSeconds;
   }
 
   start(): void {
     this.running = true;
-    console.log(`Fleet Health Monitor started (Timeout: ${this.timeoutMinutes}m)`);
-    this.timer = setInterval(() => this.checkFleetHealth(), 30_000); // 30s
+    console.log(`Fleet Health Monitor started (Timeout: ${this.timeoutSeconds}s)`);
+    this.timer = setInterval(() => this.checkFleetHealth(), 5_000); // 5s
   }
 
   stop(): void {
@@ -28,7 +28,7 @@ export class FleetHealthMonitor {
 
   private async checkFleetHealth(): Promise<void> {
     try {
-      const thresholdDate = new Date(Date.now() - this.timeoutMinutes * 60 * 1000).toISOString();
+      const thresholdDate = new Date(Date.now() - this.timeoutSeconds * 1000).toISOString();
 
       const { data: staleVehicles } = await supabase
         .from('vehicles')
