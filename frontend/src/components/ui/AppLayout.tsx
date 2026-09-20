@@ -9,6 +9,7 @@ import clsx from 'clsx'
 import AddShipmentModal from '@/components/modals/AddShipmentModal'
 import SOSListener from '@/components/SOSListener'
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 interface NavItem {
   to: string
@@ -42,6 +43,24 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const [vendorBadge, setVendorBadge] = useState(0)
   const [tplBadge, setTplBadge] = useState(0)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    // Global fleet updates to eliminate latency when navigating to Fleet page
+    const invalidateFleet = () => {
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+    }
+    const globalSub = supabase.channel('global_fleet_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidateFleet)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, invalidateFleet)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, invalidateFleet)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(globalSub)
+    }
+  }, [queryClient])
 
   useEffect(() => {
     if (!['admin', 'superadmin'].includes(role || '')) return

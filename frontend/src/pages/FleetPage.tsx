@@ -842,7 +842,11 @@ export default function FleetPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((v: any, idx: number) => (
+                filtered.map((v: any, idx: number) => {
+                  const currentLoad = v.current_load_kg ?? (v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg))
+                  const isLoaded = v.status === 'on_route' || currentLoad > 0
+
+                  return (
                   <tr
                     key={v.id}
                     className="border-b border-slate-100 hover:bg-slate-50 transition-colors group"
@@ -879,17 +883,15 @@ export default function FleetPage() {
                           <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
                             <span>LOAD</span>
                             <span>
-                              {(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0))
-                                ? (v.capacity_kg || 0).toLocaleString() 
-                                : 0} / {(v.capacity_kg || 0).toLocaleString()} kg
+                              {isLoaded ? (v.capacity_kg || 0).toLocaleString() : 0} / {(v.capacity_kg || 0).toLocaleString()} kg
                             </span>
                           </div>
                           <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all duration-1000 ease-out ${(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
-                              style={{ width: mounted ? `${(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) ? 100 : 0}%` : '0%' }}
+                              className={`h-full rounded-full transition-all duration-1000 ease-out ${isLoaded ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
+                              style={{ width: mounted ? `${isLoaded ? 100 : 0}%` : '0%' }}
                             >
-                              {(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) && (
+                              {isLoaded && (
                                 <div className="absolute inset-0 bg-white/20 -translate-x-full animate-shimmer" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
                               )}
                             </div>
@@ -1026,7 +1028,8 @@ export default function FleetPage() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
