@@ -692,17 +692,26 @@ export default function FleetPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<any>(null)
   const [trackingVehicle, setTrackingVehicle] = useState<any>(null)
+  const [mounted, setMounted] = useState(false)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 100)
+    return () => clearTimeout(timer)
+  }, [])
 
   // Real-time updates for Fleet table
   useEffect(() => {
+    const invalidate = () => {
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+    }
+
     const channel = supabase
       .channel('fleet_page_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => {
-        // Invalidate fleet queries so React Query auto-refetches immediately
-        queryClient.invalidateQueries({ queryKey: ['vehicles'] })
-        queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, invalidate)
       .subscribe()
 
     return () => {
@@ -870,16 +879,20 @@ export default function FleetPage() {
                           <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
                             <span>LOAD</span>
                             <span>
-                              {v.status === 'on_route' 
-                                ? (v.current_load_kg || v.capacity_kg || 0).toLocaleString() 
-                                : (v.current_load_kg || 0).toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg
+                              {(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0))
+                                ? (v.capacity_kg || 0).toLocaleString() 
+                                : 0} / {(v.capacity_kg || 0).toLocaleString()} kg
                             </span>
                           </div>
                           <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all ${v.status === 'on_route' ? 'bg-blue-500' : ((v.current_load_kg || 0) / (v.capacity_kg || 1)) > 0.8 ? 'bg-red-500' : (v.current_load_kg || 0) > 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
-                              style={{ width: `${v.status === 'on_route' ? 100 : Math.min(((v.current_load_kg || 0) / (v.capacity_kg || 1)) * 100, 100)}%` }}
-                            />
+                              className={`h-full rounded-full transition-all duration-1000 ease-out ${(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
+                              style={{ width: mounted ? `${(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) ? 100 : 0}%` : '0%' }}
+                            >
+                              {(v.status === 'on_route' || (v.current_load_kg && v.current_load_kg > 0)) && (
+                                <div className="absolute inset-0 bg-white/20 -translate-x-full animate-shimmer" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
