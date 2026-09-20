@@ -843,7 +843,7 @@ export default function FleetPage() {
                 </tr>
               ) : (
                 filtered.map((v: any, idx: number) => {
-                  const currentLoad = v.current_load_kg ?? (v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg))
+                  const currentLoad = v.current_load_kg || (v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg))
                   const isLoaded = v.status === 'on_route' || currentLoad > 0
 
                   return (
