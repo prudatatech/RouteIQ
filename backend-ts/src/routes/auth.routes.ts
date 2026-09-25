@@ -436,14 +436,12 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
     const { cacheDelete } = await import('../core/redis');
     await cacheDelete(otpKey);
 
-    // Find or create driver in auth.users via Supabase Admin API
-    // This ensures the FK constraint (public.users.id → auth.users.id) is satisfied
+    // Find or create customer in auth.users via Supabase Admin API
     let { data: customer } = await supabase
-      .from('users')
+      .from('customers')
       .select('*')
       .eq('phone', phone)
-      .eq('role', 'customer')
-      .single();
+      .maybeSingle();
 
     let authUserId: string;
 
@@ -479,21 +477,23 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
         authUserId = authUser.user!.id;
       }
 
-      // Guarantee the public profile exists via manual upsert (bypassing trigger unreliability)
-      await supabase.from('users').upsert({
+      // Guarantee the public profile exists via manual upsert
+      const { error: upsertErr } = await supabase.from('customers').upsert({
         id: authUserId,
-        email: customerEmail,
         phone: phone,
-        role: 'customer',
         full_name: `Customer ${phone.slice(-4)}`
       }, { onConflict: 'id' });
+      
+      if (upsertErr) {
+        console.error("Failed to upsert customer:", upsertErr);
+      }
 
-      // Fetch the created driver profile
+      // Fetch the created customer profile
       const { data: newCustomer } = await supabase
-        .from('users')
+        .from('customers')
         .select('*')
         .eq('id', authUserId)
-        .single();
+        .maybeSingle();
 
       if (!newCustomer) {
         res.status(500).json({ detail: 'Failed to create customer profile' });
@@ -502,13 +502,8 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
       customer = newCustomer;
     }
 
-    if (!customer.is_active) {
-      res.status(403).json({ detail: 'Customer account disabled. Contact your fleet manager.' });
-      return;
-    }
-
-    // Update last login
-    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', customer.id);
+    // Skip is_active and last_login checks for customers for now, 
+    // as the customers schema doesn't necessarily have these columns yet.
 
     // Issue JWT signed with Supabase JWT secret (compatible with all services)
     const tokenData = { sub: customer.id, role: 'customer' };

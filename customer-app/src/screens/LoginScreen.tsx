@@ -12,7 +12,8 @@ import {
   Dimensions,
   ScrollView,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Vibration
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../services/api';
@@ -45,6 +46,7 @@ export default function LoginScreen({ navigation }: any) {
 
     setIsLoading(true);
     setError('');
+    setOtp(''); // Reset OTP when sending new one
     try {
       await api.sendOTP(phone);
       setStep('otp');
@@ -68,6 +70,7 @@ export default function LoginScreen({ navigation }: any) {
       await api.verifyOTP(phone, otp);
       navigation.replace('Home');
     } catch (err: any) {
+      Vibration.vibrate(400); // Vibrate on wrong OTP
       setError(err.message || 'Invalid OTP');
     } finally {
       setIsLoading(false);
@@ -77,7 +80,7 @@ export default function LoginScreen({ navigation }: any) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <ScrollView
@@ -137,7 +140,11 @@ export default function LoginScreen({ navigation }: any) {
                     keyboardType="phone-pad"
                     maxLength={10}
                     value={phone}
-                    onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, ''))}
+                    onChangeText={(text) => {
+                      const cleaned = text.replace(/[^0-9]/g, '');
+                      setPhone(cleaned);
+                      if (cleaned.length === 10) Keyboard.dismiss();
+                    }}
                   />
                 </View>
 
@@ -173,7 +180,11 @@ export default function LoginScreen({ navigation }: any) {
                     keyboardType="number-pad"
                     maxLength={6}
                     value={otp}
-                    onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
+                    onChangeText={(text) => {
+                      const cleaned = text.replace(/[^0-9]/g, '');
+                      setOtp(cleaned);
+                      if (cleaned.length === 6) Keyboard.dismiss();
+                    }}
                     textAlign="center"
                   />
                 </View>
@@ -205,7 +216,7 @@ export default function LoginScreen({ navigation }: any) {
 
                   <Text style={styles.actionDivider}>•</Text>
 
-                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep('phone')}>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setStep('phone'); setOtp(''); }}>
                     <Text style={styles.secondaryBtnText}>Change Phone</Text>
                   </TouchableOpacity>
                 </View>
