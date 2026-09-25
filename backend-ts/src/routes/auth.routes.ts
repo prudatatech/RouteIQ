@@ -447,10 +447,10 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
 
     let authUserId: string;
 
-    if (!driver) {
-      const driverEmail = `customer_${phone.replace(/\+/g, '')}@customer.margixindia.local`;
+    if (!customer) {
+      const customerEmail = `customer_${phone.replace(/\+/g, '')}@customer.margixindia.local`;
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-        email: driverEmail,
+        email: customerEmail,
         email_confirm: true,
         user_metadata: {
           full_name: `Customer ${phone.slice(-4)}`,
@@ -463,7 +463,7 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
         // If user already exists in auth.users (trigger failed previously), recover gracefully!
         if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
           const { data: existingList } = await supabase.auth.admin.listUsers();
-          const existingUser = existingList.users.find((u: any) => u.email === driverEmail);
+          const existingUser = existingList.users.find((u: any) => u.email === customerEmail);
           if (existingUser) {
             authUserId = existingUser.id;
           } else {
@@ -482,7 +482,7 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
       // Guarantee the public profile exists via manual upsert (bypassing trigger unreliability)
       await supabase.from('users').upsert({
         id: authUserId,
-        email: driverEmail,
+        email: customerEmail,
         phone: phone,
         role: 'customer',
         full_name: `Customer ${phone.slice(-4)}`
@@ -495,7 +495,7 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
         .eq('id', authUserId)
         .single();
 
-      if (!newDriver) {
+      if (!newCustomer) {
         res.status(500).json({ detail: 'Failed to create customer profile' });
         return;
       }
