@@ -2,10 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// We get the localhost IP so it works on physical devices (if backend is running locally).
-// Replace with production URL when deployed.
-const HOST = Constants.expoConfig?.hostUri?.split(`:`)[0] || '192.168.1.100';
-const API_V1 = `http://${HOST}:3000/api/v1`;
+// Use the production backend URL (matches Driver App)
+const API_BASE_URL = 'https://routeiq-production-7034.up.railway.app';
+const API_V1 = `${API_BASE_URL}/api/v1`;
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'margixindia_customer_access_token',
