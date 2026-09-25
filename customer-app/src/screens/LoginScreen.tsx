@@ -15,7 +15,7 @@ import {
   Keyboard
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '../lib/supabase';
+import { api } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -46,11 +46,7 @@ export default function LoginScreen({ navigation }: any) {
     setIsLoading(true);
     setError('');
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: '+91' + phone,
-      });
-
-      if (error) throw error;
+      await api.sendOTP(phone);
       setStep('otp');
       setTimer(60); // Start or reset the 1-minute countdown
     } catch (err: any) {
@@ -69,16 +65,8 @@ export default function LoginScreen({ navigation }: any) {
     setIsLoading(true);
     setError('');
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: '+91' + phone,
-        token: otp,
-        type: 'sms',
-      });
-
-      if (error) throw error;
-      if (data.session) {
-        navigation.replace('Home');
-      }
+      await api.verifyOTP(phone, otp);
+      navigation.replace('Home');
     } catch (err: any) {
       setError(err.message || 'Invalid OTP');
     } finally {

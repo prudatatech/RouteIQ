@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { api } from '../services/api';
 
 export default function HomeScreen({ navigation }: any) {
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await api.logout();
     navigation.replace('Login');
   };
 

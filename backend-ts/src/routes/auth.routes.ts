@@ -304,6 +304,243 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
   }
 });
 
+
+// ═══════════════════════════════════════════════════════════
+// CUSTOMER AUTH — Twilio Phone OTP
+// ═══════════════════════════════════════════════════════════
+
+// ── POST /customer/send-otp — Send OTP to driver's phone ────
+router.post('/customer/send-otp', async (req: Request, res: Response) => {
+  try {
+    let { phone } = req.body;
+    if (!phone) {
+      res.status(400).json({ detail: 'phone is required' });
+      return;
+    }
+
+    // Normalize Indian phone number
+    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
+    if (!phone.startsWith('+')) {
+      if (phone.startsWith('91') && phone.length === 12) {
+        phone = '+' + phone;
+      } else if (phone.length === 10) {
+        phone = '+91' + phone;
+      } else {
+        phone = '+' + phone;
+      }
+    }
+
+    // Validate: must be at least 10 digits
+    const digitsOnly = phone.replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      res.status(400).json({ detail: 'Invalid phone number' });
+      return;
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+
+    // Store OTP in Redis with TTL
+    const { cacheSet } = await import('../core/redis');
+    const otpKey = `otp:customer:${phone}`;
+    await cacheSet(otpKey, { otp, phone, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
+
+    // Rate limit: max 3 OTPs per phone per 10 minutes
+    const rateLimitKey = `otp:ratelimit:${phone}`;
+    const { cacheGet } = await import('../core/redis');
+    const rateData = await cacheGet<{ count: number }>(rateLimitKey);
+    if (rateData && rateData.count >= 50) {
+      res.status(429).json({ detail: 'Too many OTP requests. Please wait 10 minutes.' });
+      return;
+    }
+    await cacheSet(rateLimitKey, { count: (rateData?.count || 0) + 1 }, 600);
+
+    // Check if driver is new
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    // Send SMS
+    let message = `Your margixindia customer login OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`;
+    if (!existingUser) {
+      message = `Welcome Customer! ${message}`;
+    }
+    const sent = await sendTwilioSMS(phone, message);
+
+    if (!sent) {
+      res.status(500).json({ detail: 'Failed to send OTP. Please try again.' });
+      return;
+    }
+
+    res.json({
+      status: 'otp_sent',
+      phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
+      expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
+      message: 'OTP sent successfully',
+    });
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// ── POST /customer/verify-otp — Verify OTP and login driver ──
+router.post('/customer/verify-otp', async (req: Request, res: Response) => {
+  try {
+    let { phone, otp } = req.body;
+    if (!phone || !otp) {
+      res.status(400).json({ detail: 'phone and otp are required' });
+      return;
+    }
+
+    // Normalize phone
+    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
+    if (!phone.startsWith('+')) {
+      if (phone.startsWith('91') && phone.length === 12) {
+        phone = '+' + phone;
+      } else if (phone.length === 10) {
+        phone = '+91' + phone;
+      } else {
+        phone = '+' + phone;
+      }
+    }
+
+    // Retrieve OTP from Redis
+    const { cacheGet, cacheSet } = await import('../core/redis');
+    const otpKey = `otp:customer:${phone}`;
+    const storedData = await cacheGet<{ otp: string; phone: string; attempts: number }>(otpKey);
+
+    if (!storedData) {
+      res.status(401).json({ detail: 'OTP expired or not found. Please request a new one.' });
+      return;
+    }
+
+    // Brute-force protection: max 5 attempts
+    if (storedData.attempts >= 5) {
+      const { cacheDelete } = await import('../core/redis');
+      await cacheDelete(otpKey);
+      res.status(429).json({ detail: 'Too many failed attempts. Please request a new OTP.' });
+      return;
+    }
+
+    if (storedData.otp !== otp.trim()) {
+      // Increment attempts
+      storedData.attempts += 1;
+      await cacheSet(otpKey, storedData, settings.OTP_EXPIRY_SECONDS);
+      res.status(401).json({ detail: 'Incorrect OTP', remaining_attempts: 5 - storedData.attempts });
+      return;
+    }
+
+    // OTP verified! Delete it from Redis
+    const { cacheDelete } = await import('../core/redis');
+    await cacheDelete(otpKey);
+
+    // Find or create driver in auth.users via Supabase Admin API
+    // This ensures the FK constraint (public.users.id → auth.users.id) is satisfied
+    let { data: customer } = await supabase
+      .from('users')
+      .select('*')
+      .eq('phone', phone)
+      .eq('role', 'customer')
+      .single();
+
+    let authUserId: string;
+
+    if (!driver) {
+      const driverEmail = `customer_${phone.replace(/\+/g, '')}@customer.margixindia.local`;
+      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+        email: driverEmail,
+        email_confirm: true,
+        user_metadata: {
+          full_name: `Customer ${phone.slice(-4)}`,
+          role: 'customer',
+          phone,
+        },
+      });
+
+      if (authError) {
+        // If user already exists in auth.users (trigger failed previously), recover gracefully!
+        if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
+          const { data: existingList } = await supabase.auth.admin.listUsers();
+          const existingUser = existingList.users.find((u: any) => u.email === driverEmail);
+          if (existingUser) {
+            authUserId = existingUser.id;
+          } else {
+            res.status(500).json({ detail: 'Failed to recover existing customer account' });
+            return;
+          }
+        } else {
+          console.error('Failed to create auth user for customer:', authError);
+          res.status(500).json({ detail: 'Failed to create customer account' });
+          return;
+        }
+      } else {
+        authUserId = authUser.user!.id;
+      }
+
+      // Guarantee the public profile exists via manual upsert (bypassing trigger unreliability)
+      await supabase.from('users').upsert({
+        id: authUserId,
+        email: driverEmail,
+        phone: phone,
+        role: 'customer',
+        full_name: `Customer ${phone.slice(-4)}`
+      }, { onConflict: 'id' });
+
+      // Fetch the created driver profile
+      const { data: newCustomer } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUserId)
+        .single();
+
+      if (!newDriver) {
+        res.status(500).json({ detail: 'Failed to create customer profile' });
+        return;
+      }
+      customer = newCustomer;
+    }
+
+    if (!customer.is_active) {
+      res.status(403).json({ detail: 'Customer account disabled. Contact your fleet manager.' });
+      return;
+    }
+
+    // Update last login
+    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', customer.id);
+
+    // Issue JWT signed with Supabase JWT secret (compatible with all services)
+    const tokenData = { sub: customer.id, role: 'customer' };
+
+    // Fetch user metadata to get language preference
+    let language_preference = 'en';
+    const { data: authUser } = await supabase.auth.admin.getUserById(customer.id);
+    if (authUser?.user?.user_metadata?.language_preference) {
+      language_preference = authUser.user.user_metadata.language_preference;
+    }
+
+    res.json({
+      status: 'authenticated',
+      access_token: createAccessToken(tokenData),
+      refresh_token: createRefreshToken(tokenData),
+      token_type: 'bearer',
+      role: 'customer',
+      user_id: customer.id,
+      customer: {
+        id: customer.id,
+        phone: customer.phone,
+        full_name: customer.full_name,
+        is_active: customer.is_active,
+        language_preference,
+        vehicle_type: customer.vehicle_type,
+      },
+    });
+  } catch (e: any) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 // ── POST /refresh ──────────────────────────────────────────
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
