@@ -1,28 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/margix-logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>margixindia powered by PRUDATA TECHNOLOGIES</title>
-    <meta name="description" content="Production-grade multi-agent AI logistics, cargo tracking, and fleet management platform." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/entry.tsx"></script>
-    <script>
-      // Automatically unregister any stale service workers from other localhost projects
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for(let registration of registrations) {
-            registration.unregister();
-            console.log('Unregistered stale service worker');
-          }
-        });
-      }
-    </script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="https://margixindia.vercel.app/logo.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>margixindia powered by PRUDATA TECHNOLOGIES</title>
+  <meta name="description"
+    content="Production-grade multi-agent AI logistics, cargo tracking, and fleet management platform." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap"
+    rel="stylesheet" />
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/entry.tsx"></script>
+  <script>
+    // Automatically unregister any stale service workers from other localhost projects
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+          console.log('Unregistered stale service worker');
+        }
+      });
+    }
+  </script>
+</body>
+
 </html>
