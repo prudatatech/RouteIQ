@@ -27,7 +27,7 @@ export default function VendorRequestsAdmin() {
     setLoading(true)
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('/api/v1/vendor/shipment-request/pending', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) setRequests(await res.json())

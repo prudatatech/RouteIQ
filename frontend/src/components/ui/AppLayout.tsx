@@ -140,7 +140,7 @@ export default function AppLayout() {
     const fetchBadge = async () => {
       const token = (await supabase.auth.getSession()).data.session?.access_token
       if (!token) return
-      const res = await fetch('/api/v1/vendor/shipment-request/pending', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {

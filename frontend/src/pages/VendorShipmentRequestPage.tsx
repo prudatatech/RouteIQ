@@ -36,7 +36,7 @@ export default function VendorShipmentRequestPage() {
   
   // Form State
   const [capacity, setCapacity] = useState('');
-  const [currentRate, setCurrentRate] = useState(45); // Default to 45, fetch if possible
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [vendorProfile, setVendorProfile] = useState<any>(null);
   
@@ -120,15 +120,7 @@ export default function VendorShipmentRequestPage() {
 
     const fetchData = async () => {
       try {
-        const [rateRes, profileRes] = await Promise.all([
-          fetch('/api/v1/vendor/rates', { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch('/api/v1/vendor/profile', { headers: { 'Authorization': `Bearer ${token}` } })
-        ]);
-        
-        if (rateRes.ok) {
-          const data = await rateRes.json();
-          if (data && data.baseRatePerKm) setCurrentRate(data.baseRatePerKm);
-        }
+        const profileRes = await fetch('https://margixindia.vercel.app/api/v1/vendor/profile', { headers: { 'Authorization': `Bearer ${token}` } });
         
         if (profileRes.ok) {
           const profileData = await profileRes.json();
@@ -376,7 +368,7 @@ export default function VendorShipmentRequestPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/v1/vendor/shipment-request', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

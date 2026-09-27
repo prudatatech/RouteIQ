@@ -33,7 +33,6 @@ export default function VendorPortalPage() {
 
   return (
     <div className="w-full animate-fade-in relative z-10 pb-32">
-      <LiveRateMarquee />
       
       {/* Amazon-style Universal Search Hero */}
       <section className="px-6 lg:px-12 flex flex-col items-center justify-center text-center py-12 lg:py-20 animate-fade-in relative">

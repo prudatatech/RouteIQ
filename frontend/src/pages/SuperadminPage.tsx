@@ -60,7 +60,7 @@ export default function SuperadminPage() {
     queryKey: ['pending-bids'],
     queryFn: async () => {
       const { supabase } = await import('@/services/supabase')
-      const res = await fetch('/api/v1/capacity/bids/pending', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/capacity/bids/pending', {
         headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       })
       if (!res.ok) throw new Error('Failed to fetch pending bids')
@@ -74,7 +74,7 @@ export default function SuperadminPage() {
     queryKey: ['pending-requests'],
     queryFn: async () => {
       const { supabase } = await import('@/services/supabase')
-      const res = await fetch('/api/v1/vendor/shipment-request/pending', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
         headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       })
       if (!res.ok) throw new Error('Failed to fetch requests')
@@ -117,7 +117,7 @@ export default function SuperadminPage() {
 
   const addVendorMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/v1/auth/invite-vendor', {
+      const res = await fetch('https://margixindia.vercel.app/api/v1/auth/invite-vendor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: vendorEmail, password: vendorPassword })
@@ -155,7 +155,6 @@ export default function SuperadminPage() {
 
   return (
     <div className="space-y-8 pb-20">
-      <LiveRateMarquee />
       <div className="flex justify-between items-end">
         <div className="space-y-1">
           <h1 className="font-heading font-bold text-3xl text-text tracking-tight">Platform Administration</h1>
@@ -163,27 +162,6 @@ export default function SuperadminPage() {
             <Shield size={14} className="text-purple-500" />
             Manage system users, access levels, and security policies
           </p>
-        </div>
-        
-        {/* Global Settings: Rate Per KM */}
-        <div className="bg-surface border border-primary/30 p-3 rounded-2xl flex items-center gap-4 shadow-lg shadow-primary/5">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-1">
-              <Settings size={10} /> Global Rate (₹/KM)
-            </span>
-            <span className="text-xs text-muted">Updates live across all apps</span>
-          </div>
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              className="bg-surface2 border border-border rounded-lg w-24 px-3 py-1.5 text-text font-mono font-bold text-sm outline-none focus:border-primary transition-colors"
-              value={ratePerKm}
-              onChange={e => setRatePerKm(e.target.value)}
-            />
-            <Button size="sm" variant="accent" onClick={updateRate} disabled={isUpdatingRate}>
-              {isUpdatingRate ? <Spinner size={14} /> : 'Save'}
-            </Button>
-          </div>
         </div>
       </div>
 
