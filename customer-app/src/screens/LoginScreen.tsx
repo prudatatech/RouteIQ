@@ -13,12 +13,18 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
   Keyboard,
-  Vibration
+  Vibration,
+  LayoutAnimation,
+  UIManager
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function LoginScreen({ navigation }: any) {
   const [phone, setPhone] = useState('');
@@ -27,6 +33,12 @@ export default function LoginScreen({ navigation }: any) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [timer, setTimer] = useState(60);
+  const [cursorVisible, setCursorVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => setCursorVisible((v) => !v), 500);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -49,6 +61,7 @@ export default function LoginScreen({ navigation }: any) {
     setOtp(''); // Reset OTP when sending new one
     try {
       await api.sendOTP(phone);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setStep('otp');
       setTimer(60); // Start or reset the 1-minute countdown
     } catch (err: any) {
@@ -172,11 +185,25 @@ export default function LoginScreen({ navigation }: any) {
               <View style={styles.formContainer}>
                 <Text style={styles.otpSentText}>Code sent to +91 {phone}</Text>
 
-                <View style={styles.inputWrapper}>
+                <View style={styles.otpContainer}>
+                  {Array(6).fill(0).map((_, index) => {
+                    const isActive = otp.length === index;
+                    return (
+                      <View key={index} style={[styles.otpBox, isActive && styles.otpBoxActive]}>
+                        {isActive && cursorVisible ? (
+                          <View style={styles.cursor} />
+                        ) : (
+                          <Text style={styles.otpText}>
+                            {otp[index] || ''}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                  
+                  {/* Invisible TextInput that handles the actual keyboard input */}
                   <TextInput
-                    style={styles.otpInput}
-                    placeholder="Enter 6-digit OTP"
-                    placeholderTextColor="#9CA3AF"
+                    style={styles.hiddenOtpInput}
                     keyboardType="number-pad"
                     maxLength={6}
                     value={otp}
@@ -185,7 +212,7 @@ export default function LoginScreen({ navigation }: any) {
                       setOtp(cleaned);
                       if (cleaned.length === 6) Keyboard.dismiss();
                     }}
-                    textAlign="center"
+                    autoFocus
                   />
                 </View>
 
@@ -216,7 +243,11 @@ export default function LoginScreen({ navigation }: any) {
 
                   <Text style={styles.actionDivider}>•</Text>
 
-                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setStep('phone'); setOtp(''); }}>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => { 
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setStep('phone'); 
+                    setOtp(''); 
+                  }}>
                     <Text style={styles.secondaryBtnText}>Change Phone</Text>
                   </TouchableOpacity>
                 </View>
@@ -377,13 +408,42 @@ const styles = StyleSheet.create({
     color: '#111827',
     height: '100%',
   },
-  otpInput: {
-    flex: 1,
-    fontSize: 18,
-    letterSpacing: 4,
-    fontWeight: 'bold',
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 20,
+    position: 'relative',
+  },
+  otpBox: {
+    width: 48,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpBoxActive: {
+    borderColor: '#0D9488',
+    backgroundColor: '#F0FDFA',
+  },
+  otpText: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#111827',
+  },
+  cursor: {
+    width: 2,
+    height: 24,
+    backgroundColor: '#0D9488',
+  },
+  hiddenOtpInput: {
+    position: 'absolute',
+    width: '100%',
     height: '100%',
+    opacity: 0,
   },
   orContainer: {
     flexDirection: 'row',
