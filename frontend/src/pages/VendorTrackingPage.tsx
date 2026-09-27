@@ -212,7 +212,7 @@ function SmallTrackingMap({ shipment }: { shipment: any }) {
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: `https://margixindia.vercel.app/map-style.json?v=3`,
+      style: "https://margixindia.vercel.app/map-style.json?v=3",
       center: [vehicle.lng || 77.5, vehicle.lat || 12.9],
       zoom: 12,
       attributionControl: false,

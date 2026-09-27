@@ -26,7 +26,7 @@ export default function DriverMap({ currentLat, currentLng, targetLat, targetLng
     if (!mapInst.current) {
       const map = new mapboxgl.Map({
         container: mapRef.current,
-        style: `https://margixindia.vercel.app/map-style.json?v=3`,
+        style: "https://margixindia.vercel.app/map-style.json?v=3",
         center: [currentLng, currentLat],
         zoom: 14,
         pitch: 60,

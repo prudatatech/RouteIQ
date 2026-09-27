@@ -2,7 +2,7 @@ import axios from 'axios'
 import { supabase } from '@/services/supabase'
 
 
-let baseURL = import.meta.env.VITE_API_URL || '/api/v1';
+let baseURL = import.meta.env.VITE_API_URL || 'https://margixindia.vercel.app/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
   baseURL = baseURL.replace(/\/$/, '') + '/api/v1';
 }
@@ -231,8 +231,7 @@ export const telemetryWS = {
       const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       return `${protocol}//${url.host}${url.pathname}/telemetry/ws`;
     }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}/api/v1/telemetry/ws`
+    return `wss://margixindia.vercel.app/api/v1/telemetry/ws`
   },
   connect: (onMessage: (data: any) => void) => {
     const ws = new WebSocket(telemetryWS.getURL())
