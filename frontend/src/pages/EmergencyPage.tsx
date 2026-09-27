@@ -77,7 +77,7 @@ export default function EmergencyPage() {
     if (!mapContainerRef.current) return
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: '/map-style.json?v=3',
+      style: `https://margixindia.vercel.app/map-style.json?v=3`,
       center: [78.9629, 20.5937],
       zoom: 4
     })
