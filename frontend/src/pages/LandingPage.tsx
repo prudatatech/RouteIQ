@@ -119,7 +119,7 @@ export default function LandingPage() {
                    </div>
                    <div className="flex-1 bg-surface2/30 rounded-lg border border-border/50 relative overflow-hidden flex items-center justify-center">
                      {/* Real Map Background */}
-                     <img src="/map-bg.jpg" alt="Map Background" className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-multiply" />
+                     <img src="https://margixindia.vercel.app/map-bg.jpg" alt="Map Background" className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-multiply" />
                      
                      {/* Subtle Map Overlay */}
                      <div className="absolute inset-0 bg-primary/5 mix-blend-overlay" />
