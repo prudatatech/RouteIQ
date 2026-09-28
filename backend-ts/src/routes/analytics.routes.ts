@@ -4,7 +4,8 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { requireAuth } from '../core/auth';
+import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 import { AnalyticsService } from '../services/analytics.service';
 import { settings } from '../core/config';
 
@@ -13,7 +14,7 @@ const router = Router();
 // ── GET /insights ──────────────────────────────────────────
 router.get('/insights', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager', 'driver'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view fleet insights' });
       return;
     }
@@ -83,7 +84,7 @@ router.get('/profitable-routes', requireAuth, async (req: Request, res: Response
 // ── GET /active-missions ───────────────────────────────────
 router.get('/active-missions', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager', 'driver'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view mission incubator' });
       return;
     }
@@ -95,7 +96,7 @@ router.get('/active-missions', requireAuth, async (req: Request, res: Response) 
 });
 
 // ── POST /sync-sparkgps ────────────────────────────────────
-router.post('/sync-sparkgps', requireAuth, async (_req: Request, res: Response) => {
+router.post('/sync-sparkgps', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { SparkGPSService } = await import('../services/spark-gps.service');
     if (settings.SPARK_GPS_API_TOKEN) {

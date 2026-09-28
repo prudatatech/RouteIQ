@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
-import { canAccessVehicle, isStaff } from '../core/ownership';
+import { STAFF_ROLES, canAccessConfirmation, canAccessVehicle, isStaff } from '../core/ownership';
 
 const router = Router();
 
@@ -9,21 +9,19 @@ const router = Router();
 router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, res) => {
   try {
     let { vendor_id, window_id, bid_amount, eway_bill_ref, dropoff_point_id, dropoff_name, dropoff_address, dropoff_lat, dropoff_lng, weight_kg, load_configuration } = req.body;
-    
-    // ensure vendor_id matches logged in user unless admin
-    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin' && req.user!.user_id !== vendor_id) {
-      return res.status(403).json({ error: 'You can only bid for your own vendor account.' });
-    }
 
-    // Fallback for admins testing the UI: use a real vendor ID if they don't have one
-    if (req.user!.role === 'admin' || req.user!.role === 'superadmin') {
+    if (req.user!.role === 'vendor') {
+      // Vendors always bid as themselves
+      vendor_id = req.user!.user_id;
+    } else {
+      // Admins bid on behalf of an explicit, existing vendor
+      if (!vendor_id) {
+        return res.status(400).json({ error: 'vendor_id is required' });
+      }
       const { supabase } = await import('../core/supabase');
-      const { data: vProfile } = await supabase.from('vendor_profiles').select('id').eq('id', vendor_id).single();
+      const { data: vProfile } = await supabase.from('vendor_profiles').select('id').eq('id', vendor_id).maybeSingle();
       if (!vProfile) {
-        const { data: anyVendor } = await supabase.from('vendor_profiles').select('id').limit(1).single();
-        if (anyVendor) {
-          vendor_id = anyVendor.id;
-        }
+        return res.status(400).json({ error: 'Vendor not found' });
       }
     }
 
@@ -59,7 +57,7 @@ router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, re
 });
 
 // GET /api/v1/capacity/nearby-vendors
-router.get('/nearby-vendors', requireAuth, async (req, res) => {
+router.get('/nearby-vendors', requireAuth, requireRole(...STAFF_ROLES), async (req, res) => {
   try {
     const lat = parseFloat(req.query.lat as string);
     const lng = parseFloat(req.query.lng as string);
@@ -137,6 +135,9 @@ router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', '
     if (!vehicle_id || !available_capacity_kg || !trigger_type) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
+    if (!(await canAccessVehicle(req.user!, vehicle_id))) {
+      return res.status(403).json({ error: 'Not authorized for this vehicle' });
+    }
     const window = await capacityService.openBackhaulWindow(vehicle_id, available_capacity_kg, trigger_type);
     res.json(window);
   } catch (error: any) {
@@ -148,6 +149,9 @@ router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', '
 router.post('/driver/toggle-matching', requireAuth, requireRole('driver'), async (req, res) => {
   try {
     const { vehicle_id, enabled } = req.body;
+    if (!vehicle_id || !(await canAccessVehicle(req.user!, vehicle_id))) {
+      return res.status(403).json({ error: 'Not authorized for this vehicle' });
+    }
     await capacityService.toggleMatching(vehicle_id, enabled);
     res.json({ success: true });
   } catch (error: any) {
@@ -159,6 +163,9 @@ router.post('/driver/toggle-matching', requireAuth, requireRole('driver'), async
 router.post('/driver/ack-stop', requireAuth, requireRole('driver'), async (req, res) => {
   try {
     const { confirmation_id } = req.body;
+    if (!confirmation_id || !(await canAccessConfirmation(req.user!, confirmation_id))) {
+      return res.status(403).json({ error: 'Not authorized for this confirmation' });
+    }
     await capacityService.ackStopDelivery(confirmation_id);
     res.json({ success: true });
   } catch (error: any) {
@@ -170,6 +177,9 @@ router.post('/driver/ack-stop', requireAuth, requireRole('driver'), async (req, 
 router.post('/driver/flag-stop', requireAuth, requireRole('driver'), async (req, res) => {
   try {
     const { confirmation_id } = req.body;
+    if (!confirmation_id || !(await canAccessConfirmation(req.user!, confirmation_id))) {
+      return res.status(403).json({ error: 'Not authorized for this confirmation' });
+    }
     await capacityService.flagStop(confirmation_id);
     res.json({ success: true });
   } catch (error: any) {
@@ -178,7 +188,7 @@ router.post('/driver/flag-stop', requireAuth, requireRole('driver'), async (req,
 });
 
 // GET /api/v1/capacity/windows/:id/upcoming-stops
-router.get('/windows/:id/upcoming-stops', requireAuth, async (req, res) => {
+router.get('/windows/:id/upcoming-stops', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req, res) => {
   try {
     const { supabase } = await import('../core/supabase');
     const { data: window } = await supabase.from('capacity_windows').select('vehicle_id').eq('id', req.params.id).single();
@@ -193,13 +203,7 @@ router.get('/windows/:id/upcoming-stops', requireAuth, async (req, res) => {
 
       // Inject Vendor Primary Hub if the requester is a vendor
       if (req.user) {
-        let { data: vendor } = await supabase.from('vendor_profiles').select('*').eq('id', req.user.user_id).single();
-        
-        // Fallback for admins testing the vendor portal
-        if (!vendor && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
-          const { data: anyVendor } = await supabase.from('vendor_profiles').select('*').limit(1).single();
-          vendor = anyVendor;
-        }
+        const { data: vendor } = await supabase.from('vendor_profiles').select('*').eq('id', req.user.user_id).maybeSingle();
 
         if (vendor) {
           const companyName = vendor.company_name || 'Unknown Vendor';

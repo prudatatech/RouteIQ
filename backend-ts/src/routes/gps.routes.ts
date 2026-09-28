@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth } from '../core/auth';
+import { canAccessVehicle, requireVehicleAccess } from '../core/ownership';
 import { GPSPointCreateSchema } from '../schemas';
 
 const router = Router();
@@ -15,6 +16,10 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const parsed = GPSPointCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ detail: parsed.error.issues[0].message });
+      return;
+    }
+    if (!(await canAccessVehicle(req.user!, parsed.data.vehicle_id))) {
+      res.status(403).json({ detail: 'Not authorized for this vehicle' });
       return;
     }
 
@@ -53,7 +58,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── GET /vehicle/:vehicle_id — Recent GPS points ───────────
-router.get('/vehicle/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
+router.get('/vehicle/:vehicle_id', requireAuth, requireVehicleAccess(req => req.params.vehicle_id), async (req: Request, res: Response) => {
   try {
     const minutes = parseInt(req.query.minutes as string) || 5;
     const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();

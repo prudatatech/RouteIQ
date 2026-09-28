@@ -47,7 +47,7 @@ const SCENARIOS = {
 };
 
 // ── GET /shipments ─────────────────────────────────────────
-router.get('/shipments', requireAuth, async (_req: Request, res: Response) => {
+router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.from('shipments').select('*');
     if (error) { res.status(500).json({ detail: error.message }); return; }
@@ -58,7 +58,7 @@ router.get('/shipments', requireAuth, async (_req: Request, res: Response) => {
 });
 
 // ── GET /scenarios ─────────────────────────────────────────
-router.get('/scenarios', requireAuth, async (_req: Request, res: Response) => {
+router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { data: shipments, error } = await supabase
       .from('shipments')
@@ -143,7 +143,7 @@ router.get('/scenarios', requireAuth, async (_req: Request, res: Response) => {
 });
 
 // ── GET /security-alerts ───────────────────────────────────
-router.get('/security-alerts', requireAuth, async (_req: Request, res: Response) => {
+router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { data: alerts, error } = await supabase
       .from('maintenance_alerts')
@@ -239,7 +239,7 @@ router.post('/resolve-alert/:alert_id', requireAuth, requireRole('admin', 'super
 });
 
 // ── POST /optimize-pooling ─────────────────────────────────
-router.post('/optimize-pooling', requireAuth, async (req: Request, res: Response) => {
+router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const demands = req.body;
     if (!demands || !Array.isArray(demands) || demands.length === 0) {
@@ -375,7 +375,7 @@ router.post('/optimize-pooling', requireAuth, async (req: Request, res: Response
 });
 
 // ── POST /backhaul-match ───────────────────────────────────
-router.post('/backhaul-match', requireAuth, async (req: Request, res: Response) => {
+router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const opportunityId = req.body.opportunity_id;
     const availableCapacityKg = req.body.available_capacity_kg || 5000;

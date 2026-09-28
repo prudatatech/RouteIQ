@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { requireAuth } from '../core/auth';
+import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 import crypto from 'crypto';
 
 const router = Router();
 
 // ── GET /open-loads ──
-router.get('/open-loads', requireAuth, async (req: Request, res: Response) => {
+router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     // Fetch shipments that have no active driver (status = 'created')
     const { data: shipments, error } = await supabase

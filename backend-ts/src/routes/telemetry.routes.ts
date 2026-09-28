@@ -5,7 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
-import { STAFF_ROLES } from '../core/ownership';
+import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, canAccessRouteStop, canAccessManifest } from '../core/ownership';
 import { consumeRateLimit } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
 import { TelemetryCreateSchema } from '../schemas';
@@ -38,6 +38,10 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       res.status(400).json({ detail: parsed.error.issues[0].message });
       return;
     }
+    if (!(await canAccessVehicle(req.user!, parsed.data.vehicle_id))) {
+      res.status(403).json({ detail: 'Not authorized for this vehicle' });
+      return;
+    }
 
     const t = await TelemetryService.ingestTelemetry(parsed.data);
     res.status(201).json(t);
@@ -56,16 +60,9 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
     const vehicleId = req.params.vehicle_id;
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
 
-    if (req.user!.role === 'driver') {
-      const { data: vehicle } = await supabase
-        .from('vehicles')
-        .select('driver_id')
-        .eq('id', vehicleId)
-        .single();
-      if (!vehicle || vehicle.driver_id !== req.user!.user_id) {
-        res.status(403).json({ detail: 'Not authorized to view this history' });
-        return;
-      }
+    if (!(await canAccessVehicle(req.user!, vehicleId))) {
+      res.status(403).json({ detail: 'Not authorized to view this history' });
+      return;
     }
 
     const { data, error } = await supabase
@@ -83,7 +80,7 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
 });
 
 // ── PUT /sos/:id/resolve ──────────────────────────────────────
-router.put('/sos/:id/resolve', requireAuth, async (req: Request, res: Response) => {
+router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const id = req.params.id;
     // Uses service_role key to bypass RLS
@@ -146,16 +143,9 @@ router.get('/:vehicle_id/live', requireAuth, async (req: Request, res: Response)
   try {
     const vehicleId = req.params.vehicle_id;
 
-    if (req.user!.role === 'driver') {
-      const { data: vehicle } = await supabase
-        .from('vehicles')
-        .select('driver_id')
-        .eq('id', vehicleId)
-        .single();
-      if (!vehicle || vehicle.driver_id !== req.user!.user_id) {
-        res.status(403).json({ detail: 'Not authorized to view live data' });
-        return;
-      }
+    if (!(await canAccessVehicle(req.user!, vehicleId))) {
+      res.status(403).json({ detail: 'Not authorized to view live data' });
+      return;
     }
 
     const data = await cacheGet(`vehicle:live:${vehicleId}`);
@@ -168,8 +158,12 @@ router.get('/:vehicle_id/live', requireAuth, async (req: Request, res: Response)
 // ── POST /stoppages ────────────────────────────────────────
 router.post('/stoppages', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (req.user!.role !== 'driver') {
+    if (!isStaff(req.user) && req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can report stoppages' });
+      return;
+    }
+    if (!req.body.vehicle_id || !(await canAccessVehicle(req.user!, req.body.vehicle_id))) {
+      res.status(403).json({ detail: 'Not authorized for this vehicle' });
       return;
     }
 
@@ -577,6 +571,10 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       res.status(400).json({ detail: 'route_id is required' });
       return;
     }
+    if (!(await canAccessRoute(req.user!, route_id))) {
+      res.status(403).json({ detail: 'Not authorized for this route' });
+      return;
+    }
 
     // Check if it's a cargo manifest
     const { data: manifest } = await supabase.from('cargo_manifest').select('id').eq('id', route_id).single();
@@ -617,6 +615,10 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     if (stop_id.endsWith('_pickup') || stop_id.endsWith('_drop')) {
       const manifestId = stop_id.replace('_pickup', '').replace('_drop', '');
       const isPickup = stop_id.endsWith('_pickup');
+      if (!(await canAccessManifest(req.user!, manifestId))) {
+        res.status(403).json({ detail: 'Not authorized for this stop' });
+        return;
+      }
 
       const { data: manifest } = await supabase.from('cargo_manifest').select('*').eq('id', manifestId).single();
       if (!manifest) { res.status(404).json({ detail: 'Manifest not found' }); return; }
@@ -668,6 +670,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         remaining_stops: isPickup ? 1 : 0,
         route_completed: !isPickup,
       });
+      return;
+    }
+
+    // Ownership is checked before anything is written
+    if (!(await canAccessRouteStop(req.user!, stop_id))) {
+      res.status(403).json({ detail: 'Not authorized for this stop' });
       return;
     }
 

@@ -276,13 +276,8 @@ router.post('/eta', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── POST /incubate/:vehicle_id — AI Incubator ──────────────
-router.post('/incubate/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
+router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized to incubate routing' });
-      return;
-    }
-
     // Try calling ML service for reroute evaluation
     try {
       const mlRes = await fetch(`${settings.ML_SERVICE_URL}/evaluate-reroute`, {
@@ -325,7 +320,7 @@ router.post('/incubate/:vehicle_id', requireAuth, async (req: Request, res: Resp
 });
 
 // ── POST /reoptimize/:route_id — Direct Route Reoptimization ──
-router.post('/reoptimize/:route_id', requireAuth, async (req: Request, res: Response) => {
+router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { route_id } = req.params;
     

@@ -5,7 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
-import { canAccessShipment } from '../core/ownership';
+import { STAFF_ROLES, canAccessShipment } from '../core/ownership';
 import { ShipmentCreateSchema } from '../schemas';
 import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
@@ -28,7 +28,7 @@ router.post('/', requireAuth, requireRole('superadmin', 'admin', 'manager'), asy
 });
 
 // ── GET / ──────────────────────────────────────────────────
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const skip = parseInt(req.query.skip as string) || 0;
     const limit = parseInt(req.query.limit as string) || 100;
@@ -112,6 +112,10 @@ router.get('/track/:tracking_id/route', requireAuth, async (req: Request, res: R
 // ── GET /:shipment_id ──────────────────────────────────────
 router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!(await canAccessShipment(req.user!, req.params.shipment_id))) {
+      res.status(403).json({ detail: 'Not authorized for this shipment' });
+      return;
+    }
     const shipment = await ShipmentService.getShipment(req.params.shipment_id);
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });
@@ -148,11 +152,17 @@ router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'adm
 // ── PATCH /:shipment_id (status update with POD) ───────────
 router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const status = req.body.status as string;
-    const lat = req.body.lat ? parseFloat(req.body.lat as string) : undefined;
-    const lng = req.body.lng ? parseFloat(req.body.lng as string) : undefined;
-    const receivedBy = req.body.received_by as string | undefined;
-    const signatureData = req.body.signature_data as string | undefined;
+    if (!(await canAccessShipment(req.user!, req.params.shipment_id))) {
+      res.status(403).json({ detail: 'Not authorized for this shipment' });
+      return;
+    }
+    // The web client sends these as query params; accept either location
+    const input = { ...req.query, ...(req.body || {}) } as Record<string, unknown>;
+    const status = input.status as string;
+    const lat = input.lat ? parseFloat(input.lat as string) : undefined;
+    const lng = input.lng ? parseFloat(input.lng as string) : undefined;
+    const receivedBy = input.received_by as string | undefined;
+    const signatureData = input.signature_data as string | undefined;
 
     if (!status || !['created', 'picked_up', 'in_transit', 'delivered', 'cancelled'].includes(status)) {
       res.status(400).json({ detail: 'Invalid status value' });

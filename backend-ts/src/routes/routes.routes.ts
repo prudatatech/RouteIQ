@@ -6,13 +6,14 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet } from '../core/redis';
+import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds } from '../core/ownership';
 import { RouteUpdateSchema } from '../schemas';
 import { notificationService } from '../services/notification.service';
 
 const router = Router();
 
 // ── GET / ──────────────────────────────────────────────────
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     const status = req.query.status as string | undefined;
     const vehicleId = req.query.vehicle_id as string | undefined;
@@ -23,15 +24,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       .from('routes')
       .select('*, vehicles(*), route_stops(*, delivery_points(*))');
 
-    if (req.user!.role === 'driver') {
-      // Need to filter by driver — join through vehicles
-      const { data: driverVehicles } = await supabase
-        .from('vehicles')
-        .select('id')
-        .eq('driver_id', req.user!.user_id);
-      const vehicleIds = (driverVehicles || []).map((v: any) => v.id);
-      if (vehicleIds.length === 0) { res.json([]); return; }
-      query = query.in('vehicle_id', vehicleIds);
+    // Drivers only see routes and manifests for their own vehicles
+    const driverVehicleIds = req.user!.role === 'driver' ? await getDriverVehicleIds(req.user!.user_id) : null;
+    if (driverVehicleIds) {
+      if (driverVehicleIds.length === 0) { res.json([]); return; }
+      query = query.in('vehicle_id', driverVehicleIds);
     }
 
     if (status) query = query.eq('status', status);
@@ -46,6 +43,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
     // Also fetch cargo manifests and map them to standard routes so the admin dashboard LiveMap can plot them
     let manifestQuery = supabase.from('cargo_manifest').select('*');
+    if (driverVehicleIds) manifestQuery = manifestQuery.in('vehicle_id', driverVehicleIds);
     if (vehicleId) manifestQuery = manifestQuery.eq('vehicle_id', vehicleId);
     if (status === 'active' || status === 'pending') {
       manifestQuery = manifestQuery.in('status', ['scheduled', 'in_transit']);
@@ -101,7 +99,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── GET /delivery-points ───────────────────────────────────
-router.get('/delivery-points', requireAuth, async (_req: Request, res: Response) => {
+router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.from('delivery_points').select('*');
     if (error) { res.status(500).json({ detail: error.message }); return; }
@@ -114,6 +112,11 @@ router.get('/delivery-points', requireAuth, async (_req: Request, res: Response)
 // ── GET /:route_id ─────────────────────────────────────────
 router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!(await canAccessRoute(req.user!, req.params.route_id))) {
+      res.status(403).json({ detail: 'Not authorized to view this route' });
+      return;
+    }
+
     const { data: route, error } = await supabase
       .from('routes')
       .select('*, vehicles(*), route_stops(*, delivery_points(*))')
@@ -179,17 +182,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
         ]
       };
 
-      if (req.user!.role === 'driver' && formattedManifest.vehicles?.driver_id !== req.user!.user_id) {
-        res.status(403).json({ detail: 'Not authorized to view this route' });
-        return;
-      }
-
       res.json(formattedManifest);
-      return;
-    }
-
-    if (req.user!.role === 'driver' && route.vehicles?.driver_id !== req.user!.user_id) {
-      res.status(403).json({ detail: 'Not authorized to view this route' });
       return;
     }
 
@@ -202,6 +195,10 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
 // ── PATCH /:route_id/status ────────────────────────────────
 router.patch('/:route_id/status', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!(await canAccessRoute(req.user!, req.params.route_id))) {
+      res.status(403).json({ detail: 'Not authorized to update this route' });
+      return;
+    }
     const newStatus = req.body.status;
 
     const { data: route, error } = await supabase

@@ -5,26 +5,51 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
-import { cacheGet, cacheSet } from '../core/redis';
+import { cacheGet, cacheSet, cacheDeletePattern } from '../core/redis';
+import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core/ownership';
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
 
 const router = Router();
 
+/**
+ * Normalise a driver phone to E.164 the same way driver OTP login does,
+ * so the account created here is the one found at login.
+ */
+function normalizeDriverPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '').replace(/^0+/, '');
+  if (digits.startsWith('91') && digits.length === 12) return '+' + digits;
+  if (digits.length === 10) return '+91' + digits;
+  return '+' + digits;
+}
+
+/** Vehicle fields a driver may change on their own vehicle. */
+const DRIVER_UPDATABLE_FIELDS = new Set(['declared_load_percentage', 'current_load_kg', 'latitude', 'longitude']);
+
+/** Drop cached vehicle lists and driver→vehicle lookups after a write. */
+async function invalidateVehicleCaches(): Promise<void> {
+  await cacheDeletePattern('vehicles:list:*');
+  invalidateDriverVehicles();
+}
+
 // ── GET / ──────────────────────────────────────────────────
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     const status = req.query.status as string | undefined;
     const skip = parseInt(req.query.skip as string) || 0;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const cacheKey = `vehicles:list:${status}:${skip}:${limit}`;
+    // Scope the key: drivers get only their own vehicles
+    const isDriver = req.user!.role === 'driver';
+    const cacheKey = isDriver
+      ? `vehicles:list:driver:${req.user!.user_id}:${skip}:${limit}`
+      : `vehicles:list:staff:${status}:${skip}:${limit}`;
     const cached = await cacheGet(cacheKey);
     if (cached) { res.json(cached); return; }
 
     let query = supabase.from('vehicles').select('*');
 
-    if (req.user!.role === 'driver') {
+    if (isDriver) {
       query = query.eq('driver_id', req.user!.user_id);
     } else if (status) {
       query = query.eq('status', status);
@@ -52,29 +77,43 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     }
 
     let insertData: any = { ...parsed.data };
-    let tempPassword = undefined;
-    let mockEmail = undefined;
 
-    // 1. If driver details are provided, create the driver user
+    // 1. If driver details are provided, create the driver user.
+    // Drivers sign in with phone OTP, so no password is set; the email
+    // matches the one driver OTP login uses for the same phone.
     if (insertData.driver_phone && insertData.driver_name) {
-      // Create a temporary password
-      tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
-      mockEmail = `driver_${insertData.driver_phone.replace(/\\D/g, '')}@margixindia.local`;
-      
+      const phone = normalizeDriverPhone(insertData.driver_phone);
+      const driverEmail = `driver_${phone.replace(/\+/g, '')}@driver.margixindia.local`;
+
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-        email: mockEmail,
-        phone: insertData.driver_phone.replace(/\\D/g, ''),
-        password: tempPassword,
+        email: driverEmail,
+        phone: phone.replace(/\+/g, ''),
         email_confirm: true,
         phone_confirm: true,
-        user_metadata: { full_name: insertData.driver_name, role: 'driver' }
+        app_metadata: { role: 'driver' },
+        user_metadata: { full_name: insertData.driver_name, role: 'driver', phone },
       });
 
       if (authError) {
         console.warn('Failed to create driver auth user:', authError.message);
-        // It might fail if phone already exists, we will just proceed without throwing 500
+        // Phone or email already registered: link the existing driver if there is one
+        const { data: existing } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone', phone)
+          .eq('role', 'driver')
+          .maybeSingle();
+        if (existing) insertData.driver_id = existing.id;
       } else if (authUser.user) {
         insertData.driver_id = authUser.user.id;
+        // Same profile row driver OTP login creates, so login finds this driver
+        await supabase.from('users').upsert({
+          id: authUser.user.id,
+          email: driverEmail,
+          phone,
+          role: 'driver',
+          full_name: insertData.driver_name,
+        }, { onConflict: 'id' });
       }
     }
 
@@ -90,23 +129,15 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
 
     if (error) { res.status(500).json({ detail: error.message }); return; }
 
-    // If a driver was created, pass the credentials back so the frontend can trigger the wa.me link
-    const responsePayload = {
-      ...vehicle,
-      _driver_email: mockEmail,
-      _driver_password: tempPassword,
-      _driver_phone: insertData.driver_phone,
-      _driver_name: insertData.driver_name,
-    };
-
-    res.status(201).json(responsePayload);
+    await invalidateVehicleCaches();
+    res.status(201).json(vehicle);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
   }
 });
 
 // ── GET /summary ───────────────────────────────────────────
-router.get('/summary', requireAuth, async (_req: Request, res: Response) => {
+router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
   try {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
@@ -136,6 +167,10 @@ router.get('/summary', requireAuth, async (_req: Request, res: Response) => {
 // ── GET /:vehicle_id ───────────────────────────────────────
 router.get('/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
+      res.status(403).json({ detail: 'Not authorized to view this vehicle' });
+      return;
+    }
     const { data: vehicle, error } = await supabase
       .from('vehicles')
       .select('*')
@@ -144,11 +179,6 @@ router.get('/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
 
     if (error || !vehicle) {
       res.status(404).json({ detail: 'Vehicle not found' });
-      return;
-    }
-
-    if (req.user!.role === 'driver' && vehicle.driver_id !== req.user!.user_id) {
-      res.status(403).json({ detail: 'Not authorized to view this vehicle' });
       return;
     }
 
@@ -167,17 +197,17 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       return;
     }
 
-    if (req.user!.role === 'driver') {
-      const { data: v } = await supabase.from('vehicles').select('driver_id').eq('id', req.params.vehicle_id).single();
-      if (v?.driver_id !== req.user!.user_id) {
-        return res.status(403).json({ detail: 'Unauthorized to update this vehicle' });
-      }
+    if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
+      return res.status(403).json({ detail: 'Unauthorized to update this vehicle' });
     }
 
-    // Filter undefined values
+    // Filter undefined values; drivers may only report load and position
+    const isDriver = req.user!.role === 'driver';
     const updateData: Record<string, any> = {};
     for (const [key, value] of Object.entries(parsed.data)) {
-      if (value !== undefined) updateData[key] = value;
+      if (value === undefined) continue;
+      if (isDriver && !DRIVER_UPDATABLE_FIELDS.has(key)) continue;
+      updateData[key] = value;
     }
 
     // If declared_load_percentage is provided, update available_capacity_kg
@@ -211,6 +241,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       res.status(404).json({ detail: 'Vehicle not found' });
       return;
     }
+    await invalidateVehicleCaches();
     res.json(vehicle);
   } catch (e: any) {
     res.status(500).json({ detail: e.message });
@@ -223,11 +254,8 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     const { alert_type, description, latitude, longitude } = req.body;
 
     // Ensure the driver is reporting for their own vehicle unless admin
-    if (req.user!.role === 'driver') {
-      const { data: v } = await supabase.from('vehicles').select('driver_id').eq('id', req.params.vehicle_id).single();
-      if (v?.driver_id !== req.user!.user_id) {
-        return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
-      }
+    if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
+      return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
     }
 
     const { data: alert, error } = await supabase.from('sos_alerts').insert({
@@ -256,11 +284,8 @@ router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admi
   try {
     const { opens_at, closes_at, floor_price } = req.body;
 
-    if (req.user!.role === 'driver') {
-      const { data: v } = await supabase.from('vehicles').select('driver_id').eq('id', req.params.vehicle_id).single();
-      if (v?.driver_id !== req.user!.user_id) {
-        return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
-      }
+    if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
+      return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
     }
 
     const { data: window, error } = await supabase.from('capacity_windows').insert({
@@ -319,6 +344,7 @@ router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), asyn
     // 3. Delete vehicle
     await supabase.from('vehicles').delete().eq('id', vehicleId);
 
+    await invalidateVehicleCaches();
     res.status(204).send();
   } catch (e: any) {
     res.status(500).json({ detail: e.message });

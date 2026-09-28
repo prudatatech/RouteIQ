@@ -4,12 +4,13 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { requireAuth } from '../core/auth';
+import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 
 const router = Router();
 
 // ── GET /kpis ──────────────────────────────────────────────
-router.get('/kpis', requireAuth, async (req: Request, res: Response) => {
+router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
