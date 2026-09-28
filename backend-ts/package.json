@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "seed": "ts-node src/scripts/seed.ts"
   },
   "dependencies": {
@@ -32,9 +34,12 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/mapbox__polyline": "^1.0.5",
     "@types/node": "^22.0.0",
+    "@types/supertest": "^7.2.1",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
+    "supertest": "^7.3.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.11"
   }
 }

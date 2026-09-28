@@ -6,3 +6,5 @@ dist
 *.log
 scripts
 *.sql
+test
+vitest.config.mts
