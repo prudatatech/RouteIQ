@@ -26,6 +26,7 @@ jobs:
           cache-dependency-path: backend-ts/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
 
   frontend:
@@ -42,7 +43,27 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm run lint
       - run: npm run build
+
+  mobile-apps:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [driver-app, customer-app]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
 
   ml-service:
     runs-on: ubuntu-latest

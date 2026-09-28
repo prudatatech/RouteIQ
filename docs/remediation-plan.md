@@ -150,6 +150,8 @@ Only login talks to the backend. Remove fabricated content (default name "Maya",
 - Split `backend-ts/src/app.ts` (`createApp()`) from `index.ts` (listen/ws/jobs); add `vitest` + `supertest`; cover the auth matrix (forged/unsigned token, ES256 user, backend HS256, refresh-as-access, forbidden role per router).
 - Add an ESLint config for `frontend` (the `lint` script has none); add tests to CI.
 
+**Status: implemented on this branch.** backend-ts has a vitest suite (63 tests; mock Supabase server, no network) and an app/server split; the frontend has an ESLint 9 config (0 errors, warning cap 453); CI runs backend typecheck/tests/build, frontend typecheck/lint/build, ml-service compile, and typechecks for both mobile apps.
+
 ---
 
 ## Rollout order
