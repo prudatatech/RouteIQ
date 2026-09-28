@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { X, Truck, User, FileText, ArrowRight, ArrowLeft, Save, Minus, ChevronDown, Check } from 'lucide-react';
 import { Card } from '@/components/ui';
 
-const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'];
+const VEHICLE_TYPES = ['truck', 'trailer', 'container', 'heavy_machinery'];
 const FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng'];
 
 export const INDIAN_TRUCK_PRESETS: Record<string, { capacity_kg: number; container_length_ft: number; container_width_ft: number; container_height_ft: number; fuel_type: string; fuel_capacity_liters: number; fuel_efficiency_kmpl: number }> = {
@@ -123,10 +123,10 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const handleTypeChange = (type: string) => {
     let updates: any = { vehicle_type: type };
     if (!formData.vehicle_model || formData.vehicle_model === 'Custom') {
-      if (type === 'van') { updates.capacity_kg = 1500; updates.container_length_ft = 10; updates.container_width_ft = 5; updates.container_height_ft = 5.5; }
-      else if (type === 'bike') { updates.capacity_kg = 50; updates.container_length_ft = 2; updates.container_width_ft = 1.5; updates.container_height_ft = 1.5; }
-      else if (type === 'car') { updates.capacity_kg = 300; updates.container_length_ft = 4; updates.container_width_ft = 3; updates.container_height_ft = 2.5; }
-      else if (type === 'truck') { updates.capacity_kg = 9000; updates.container_length_ft = 19; updates.container_width_ft = 7; updates.container_height_ft = 7; }
+      if (type === 'truck') { updates.capacity_kg = 9000; updates.container_length_ft = 19; updates.container_width_ft = 7; updates.container_height_ft = 7; }
+      else if (type === 'trailer') { updates.capacity_kg = 25000; updates.container_length_ft = 32; updates.container_width_ft = 8; updates.container_height_ft = 8; }
+      else if (type === 'container') { updates.capacity_kg = 20000; updates.container_length_ft = 20; updates.container_width_ft = 8; updates.container_height_ft = 8.5; }
+      else if (type === 'heavy_machinery') { updates.capacity_kg = 40000; updates.container_length_ft = 40; updates.container_width_ft = 9; updates.container_height_ft = 10; }
     }
     setFormData(prev => ({ ...prev, ...updates }));
   };
@@ -151,7 +151,31 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     }
     setFormData(prev => ({ ...prev, ...updates }));
   };
+  const handleNext = () => {
+    if (step === 1) {
+      if (!formData.plate_number?.trim()) return toast.error('Plate number is required');
+      if (!formData.capacity_kg) return toast.error('Capacity is required');
+    }
+    if (step === 2) {
+      if (!formData.driver_name?.trim()) return toast.error('Driver Name is required');
+      if (!formData.driver_phone?.trim()) return toast.error('Driver Phone is required');
+    }
+    setStep(step + 1);
+  };
 
+  const handleFinish = () => {
+    const missingDocs = ['rc', 'insurance', 'fitness', 'permit', 'puc'].filter(doc => {
+      const num = (formData as any)[`${doc}_number`];
+      const exp = (formData as any)[`${doc}_expiry`];
+      return !num?.trim() || !exp?.trim();
+    });
+    
+    if (missingDocs.length > 0) {
+      return toast.error(`Missing details for: ${missingDocs.map(d => d.toUpperCase()).join(', ')}`);
+    }
+
+    mutation.mutate(formData);
+  };
   const mutation = useMutation({
     mutationFn: (data: typeof formData) => {
       const payload: any = { ...data, status: data.status === 'archived' ? 'available' : (data.status || 'available') };
@@ -362,11 +386,11 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
             </button>
             
             {step < 3 ? (
-              <button type="button" onClick={() => setStep(step + 1)} className="px-8 py-3 rounded-xl font-bold text-sm bg-slate-900 text-white flex items-center gap-2 hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-900/20 transition-all hover:scale-[1.02]">
+              <button type="button" onClick={handleNext} className="px-8 py-3 rounded-xl font-bold text-sm bg-slate-900 text-white flex items-center gap-2 hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-900/20 transition-all hover:scale-[1.02]">
                 Next Step <ArrowRight size={16} />
               </button>
             ) : (
-              <button type="button" onClick={() => mutation.mutate(formData)} disabled={mutation.isPending} className="px-8 py-3 rounded-xl font-bold text-sm bg-primary text-primary-foreground flex items-center gap-2 hover:bg-yellow-300 hover:shadow-lg hover:shadow-primary/30 transition-all hover:scale-[1.02] border border-yellow-500">
+              <button type="button" onClick={handleFinish} disabled={mutation.isPending} className="px-8 py-3 rounded-xl font-bold text-sm bg-primary text-primary-foreground flex items-center gap-2 hover:bg-yellow-300 hover:shadow-lg hover:shadow-primary/30 transition-all hover:scale-[1.02] border border-yellow-500">
                 <Save size={18} /> {mutation.isPending ? 'Saving...' : (isEditing ? 'Update Vehicle' : 'Finish & Add Vehicle')}
               </button>
             )}
