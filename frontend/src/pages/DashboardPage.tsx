@@ -4,13 +4,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Truck, Clock, Plus, Search, Filter, AlertTriangle, AlertCircle,
-  WifiOff, Wifi, ChevronRight, MapIcon, List, Eye, Calendar, ChevronDown,
+  WifiOff, Wifi, ChevronRight, MapIcon, List, Calendar, ChevronDown,
   Package, Activity
 } from 'lucide-react'
 import { dashboardAPI, vehiclesAPI, shipmentsAPI } from '@/services/api'
 import { Spinner } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
-import LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
+import _LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
 import VendorRequestsAdmin from '@/components/dashboard/VendorRequestsAdmin'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
@@ -35,7 +35,7 @@ export default function DashboardPage() {
 
   // Auto-animate refs
   const [needsAttentionRef] = useAutoAnimate()
-  const [tableRef] = useAutoAnimate()
+  const [_tableRef] = useAutoAnimate()
 
   // ── Data Queries ──────────────────────────────────────────────
   const { data: kpis, isLoading: kpisLoading } = useQuery({
@@ -50,7 +50,7 @@ export default function DashboardPage() {
     refetchInterval: 5_000,
   })
 
-  const { data: summary } = useQuery({
+  const { data: _summary } = useQuery({
     queryKey: ['fleet-summary'],
     queryFn: vehiclesAPI.summary,
     refetchInterval: 30_000,
@@ -85,7 +85,7 @@ export default function DashboardPage() {
   const activeVehicles = vehicles.filter((v: any) => v.status !== 'archived')
   const reportingVehicles = activeVehicles.filter((v: any) => v.status !== 'offline' && v.status !== 'maintenance')
   const offlineVehicles = activeVehicles.filter((v: any) => v.status === 'offline')
-  const incidentVehicles = activeVehicles.filter((v: any) => v.status === 'maintenance')
+  const _incidentVehicles = activeVehicles.filter((v: any) => v.status === 'maintenance')
   const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
   // No fabricated fallback: on_time_rate_pct is null when there is no route
   // data for today to compute a real rate from.
@@ -400,7 +400,7 @@ export default function DashboardPage() {
                   .filter((v: any) => v.last_sync)
                   .sort((a: any, b: any) => new Date(b.last_sync).getTime() - new Date(a.last_sync).getTime())
                   .slice(0, 4)
-                  .map((v: any, i: number) => (
+                  .map((v: any, _i: number) => (
                   <div key={v.id} className="flex items-center gap-3 text-xs">
                     <span className="text-slate-400 font-mono w-10 text-right">
                       {v.last_sync ? new Date(v.last_sync).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
@@ -478,7 +478,7 @@ export default function DashboardPage() {
                   const isOnline = v.status !== 'offline'
                   const isIncident = v.status === 'maintenance'
                   const statusLabel = isIncident ? 'Incident' : v.status === 'on_route' ? 'On Route' : v.status === 'available' ? 'Available' : v.status === 'idle' ? 'Idle' : 'Unknown'
-                  const statusColor = isIncident ? 'text-red-600' : isOnline ? 'text-emerald-600' : 'text-slate-500'
+                  const _statusColor = isIncident ? 'text-red-600' : isOnline ? 'text-emerald-600' : 'text-slate-500'
                   const statusDot = isIncident ? 'bg-red-500' : isOnline ? 'bg-emerald-500' : 'bg-slate-400'
 
                   return (

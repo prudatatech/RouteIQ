@@ -1,16 +1,14 @@
 import {
   Plus, Search, Package, MapPin, Layers,
-  ShieldCheck, ShieldAlert, Zap, Navigation, Loader2,
-  Calendar, Clock, AlertTriangle, Scale, Smartphone, Copy, MessageCircle, CheckCircle, Ruler,
-  Minus, X, FileText
+  ShieldCheck, Zap, Navigation, Loader2, AlertTriangle, Smartphone, CheckCircle, FileText
 } from 'lucide-react'
-import axios from 'axios'
+import _axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { shipmentsAPI, deliveryPointsAPI, telemetryAPI, vehiclesAPI } from '@/services/api'
-import { Card, StatusDot, Button, Badge } from '@/components/ui'
+import { shipmentsAPI } from '@/services/api'
+import { Card, Button, Badge } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -20,7 +18,6 @@ import { supabase } from '@/services/supabase'
 const STATUS_OPTIONS = ['all', 'created', 'picked_up', 'in_transit', 'delivered', 'cancelled']
 const PRIORITIES = ['low', 'medium', 'high', 'critical']
 
-import { formatEta } from '@/utils/timeFormat'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 
 function AssignDriverModal({ shipmentId, onClose }: { shipmentId: string, onClose: () => void }) {
@@ -136,7 +133,7 @@ function AssignDriverModal({ shipmentId, onClose }: { shipmentId: string, onClos
 }
 
 
-const CARGO_ARCHETYPES = [
+const _CARGO_ARCHETYPES = [
   { id: 'standard', name: 'Standard Parcel', desc: 'Secure express delivery', icon: '/assets/cargo/parcel.png' },
   { id: 'heavy', name: 'Heavy Freight', desc: 'Industrial bulk cargo', icon: '/assets/cargo/freight.png' },
   { id: 'cold_chain', name: 'Cold Chain', desc: 'Temp-sensitive items', icon: '/assets/cargo/cold_chain.png' },
@@ -144,9 +141,9 @@ const CARGO_ARCHETYPES = [
 ]
 
 export default function ShipmentsPage() {
-  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [_activeTab, _setActiveTab] = useState<'active' | 'history'>('active')
+  const [_filterStatus, _setFilterStatus] = useState<string>('all')
+  const [_isAddModalOpen, _setIsAddModalOpen] = useState(false)
   
   const [expandedShipmentId, setExpandedShipmentId] = useState<string | null>(null)
   
@@ -200,7 +197,7 @@ export default function ShipmentsPage() {
   })
 
   const [neuralPipelineStep, setNeuralPipelineStep] = useState<number | null>(null)
-  const [createdShipmentData, setCreatedShipmentData] = useState<any>(null)
+  const [_createdShipmentData, setCreatedShipmentData] = useState<any>(null)
 
   useEffect(() => {
     if (neuralPipelineStep !== null && neuralPipelineStep < 4) {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, ShieldAlert, ArrowRight, Building2, CheckCircle2 } from 'lucide-react'
+import { Search, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { tplAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'

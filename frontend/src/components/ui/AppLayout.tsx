@@ -92,7 +92,7 @@ export default function AppLayout() {
   const toggleCollapsed = () => {
     setIsPinnedCollapsed(prev => {
       const next = !prev
-      try { localStorage.setItem('sidebar_collapsed', String(next)) } catch {}
+      try { localStorage.setItem('sidebar_collapsed', String(next)) } catch (err) { console.warn('Failed to persist sidebar_collapsed', err) }
       return next
     })
     setHoverExpanded(false)
@@ -295,7 +295,7 @@ export default function AppLayout() {
                       key={to}
                       to={to}
                       title={collapsed ? label : undefined}
-                      className={({ isActive }) => clsx(
+                      className={({ isActive: _isActive }) => clsx(
                         'flex items-center rounded-lg text-[13px] transition-all duration-200 relative group overflow-hidden',
                         collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5',
                       )}

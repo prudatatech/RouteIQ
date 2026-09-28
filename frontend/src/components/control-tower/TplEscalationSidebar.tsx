@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, AlertTriangle, ChevronRight, ShieldCheck, Zap } from 'lucide-react'
+import { X, AlertTriangle, ChevronRight, Zap } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 

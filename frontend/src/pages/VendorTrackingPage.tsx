@@ -1,12 +1,10 @@
-import { useEffect, useState, useRef } from 'react'
-import { Map, Package, Activity, Search, MapPin, Navigation, Clock, CheckCircle2, Truck, Box } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Map, Package, Activity, Search, MapPin, Navigation, Clock, CheckCircle2, Truck } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { shipmentsAPI } from '@/services/api'
-import { formatEta } from '@/utils/timeFormat'
 import { Link } from 'react-router-dom'
-import maplibregl from 'maplibre-gl'
 
 const STEPS = [
   { key: 'created', label: 'Booked' },
@@ -195,72 +193,6 @@ function TrackingCard({ trackingId }: { trackingId: string }) {
       </div>
     </div>
   )
-}
-
-/* Small map using maplibre-gl directly */
-function SmallTrackingMap({ shipment }: { shipment: any }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<any>(null)
-  const markerRef = useRef<any>(null)
-  const destMarkerRef = useRef<any>(null)
-  const vehicle = shipment?.vehicle
-  const destination = shipment?.destination
-
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    if (!vehicle?.lat && !vehicle?.lng) return
-
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: "/map-style.json?v=3",
-      center: [vehicle.lng || 77.5, vehicle.lat || 12.9],
-      zoom: 12,
-      attributionControl: false,
-    })
-
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-
-    // Vehicle marker
-    const el = document.createElement('div')
-    el.innerHTML = '🚛'
-    el.style.fontSize = '28px'
-    markerRef.current = new maplibregl.Marker({ element: el }).setLngLat([vehicle.lng, vehicle.lat]).addTo(map)
-
-    // Destination marker
-    if (destination?.lng && destination?.lat) {
-      const dEl = document.createElement('div')
-      dEl.innerHTML = '📍'
-      dEl.style.fontSize = '24px'
-      destMarkerRef.current = new maplibregl.Marker({ element: dEl }).setLngLat([destination.lng, destination.lat]).addTo(map)
-
-      // Fit bounds to include both
-      const bounds = new maplibregl.LngLatBounds()
-      bounds.extend([vehicle.lng, vehicle.lat])
-      bounds.extend([destination.lng, destination.lat])
-      map.fitBounds(bounds, { padding: 40, maxZoom: 14 })
-    }
-
-    mapRef.current = map
-    return () => { map.remove(); mapRef.current = null }
-  }, [vehicle?.lat, vehicle?.lng])
-
-  // Update marker position on vehicle changes
-  useEffect(() => {
-    if (markerRef.current && vehicle?.lat && vehicle?.lng) {
-      markerRef.current.setLngLat([vehicle.lng, vehicle.lat])
-    }
-  }, [vehicle?.lat, vehicle?.lng])
-
-  if (!vehicle?.lat && !vehicle?.lng) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center text-muted gap-2">
-        <Activity size={24} className="opacity-40" />
-        <span className="text-[10px] font-bold uppercase tracking-widest">Awaiting GPS Signal</span>
-      </div>
-    )
-  }
-
-  return <div ref={containerRef} className="w-full h-full" />
 }
 
 export default function VendorTrackingPage() {

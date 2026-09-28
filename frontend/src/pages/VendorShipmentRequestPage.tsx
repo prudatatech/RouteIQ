@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
-import { MapPin, ArrowLeft, Send, Search, Info, Package, User, FileText, Settings, ShieldAlert, Sparkles, Zap } from 'lucide-react';
+import { MapPin, ArrowLeft, Send, Search, Package, User, FileText, Settings, ShieldAlert, Sparkles, Zap } from 'lucide-react';
 import * as turf from '@turf/turf';
 import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase';
 import { vendorAPI } from '@/services/api';
@@ -327,7 +327,7 @@ export default function VendorShipmentRequestPage() {
           updateMapBounds(newLoc, dropLocation);
           toast.success('Location found (coordinates)', { id: 'geo' });
         }
-      }, (error) => {
+      }, (_error) => {
         toast.error('Could not get your location.', { id: 'geo' });
       });
     } else {
@@ -369,10 +369,10 @@ export default function VendorShipmentRequestPage() {
       
       const line = turf.lineString([start.geometry.coordinates, controlPoint.geometry.coordinates, end.geometry.coordinates]);
       return turf.bezierSpline(line, { resolution: 10000, sharpness: 0.85 });
-    } catch (e) {
+    } catch (_e) {
       try {
         return turf.greatCircle(start, end, { properties: { name: 'route' }, npoints: 100 });
-      } catch (e2) {
+      } catch (_e2) {
         return turf.lineString([start.geometry.coordinates, end.geometry.coordinates]);
       }
     }
@@ -744,9 +744,8 @@ export default function VendorShipmentRequestPage() {
                 <label key={opt.id} className="flex items-center gap-2 cursor-pointer bg-surface border border-border p-3 rounded-xl hover:border-primary transition-all">
                   <input 
                     type="checkbox" 
-                    // @ts-ignore
+                    // @ts-expect-error - opt.id is a dynamic string key not in the specialHandling type
                     checked={specialHandling[opt.id]}
-                    // @ts-ignore
                     onChange={(e) => setSpecialHandling(s => ({ ...s, [opt.id]: e.target.checked }))}
                     className="w-4 h-4 text-primary rounded focus:ring-primary focus:ring-offset-surface bg-surface border-border"
                   />
@@ -782,7 +781,6 @@ export default function VendorShipmentRequestPage() {
         <div className="flex-1 relative bg-surface z-0 hidden lg:block">
           <Map
             {...viewState}
-            // @ts-ignore
             onMove={(evt: any) => setViewState(evt.viewState)}
             mapStyle="/map-style.json?v=3"
           >

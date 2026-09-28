@@ -3,12 +3,11 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { formatEta } from '@/utils/timeFormat'
 import {
-  Package, MapPin, Clock, CheckCircle2,
-  Search, Shield, Phone, AlertCircle,
-  Truck, Box, Zap, Navigation, ArrowRight,
-  FileText, Activity
+   MapPin, Clock, CheckCircle2,
+  Search, AlertCircle,
+  Truck, Navigation, Activity
 } from 'lucide-react'
-import { shipmentsAPI, telemetryWS } from '@/services/api'
+import { shipmentsAPI } from '@/services/api'
 import mapboxgl from 'maplibre-gl'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
@@ -414,13 +413,11 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
   // WebSocket + HTTP polling fallback every 5s
   useEffect(() => {
     if (!initialVehicle?.id || !trackingId) return;
-    let wsAlive = false
 
     // WebSocket removed for public page; relies entirely on 5s HTTP polling
 
     // HTTP poll fallback every 5s using the public tracking API
     pollRef.current = setInterval(async () => {
-      if (false) { wsAlive = false; return } // WS delivered data, skip poll
       try {
         const data = await shipmentsAPI.trackPublicly(trackingId)
         if (data?.vehicle) {
@@ -445,7 +442,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
             };
           });
         }
-      } catch { }
+      } catch (err) { console.warn('Tracking poll failed', err) }
     }, 5000)
 
     return () => {

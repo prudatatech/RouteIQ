@@ -336,7 +336,7 @@ export function searchHSN(query: string, category?: string): HSNEntry[] {
   const rawTerms = query.toLowerCase().trim().split(/\s+/);
   const terms = expandSynonyms(rawTerms);
   
-  let results = HSN_DATABASE.map(entry => {
+  const results = HSN_DATABASE.map(entry => {
     let score = 0;
     
     // ── Layer 1: Exact HSN code match ──────────────────

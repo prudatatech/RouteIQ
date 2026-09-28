@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Zap, Eye, EyeOff, ShieldCheck, UserCog, User, Truck, Package, ArrowRight } from 'lucide-react'
+import { Zap, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { Card, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
-import clsx from 'clsx'
+import _clsx from 'clsx'
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams()

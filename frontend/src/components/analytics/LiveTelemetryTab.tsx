@@ -19,7 +19,7 @@ import {
 import { analyticsAPI, telemetryAPI, telemetryWS } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import {
-  Truck, Activity, Fuel, Wifi, WifiOff, ChevronDown,
+  Truck, Activity, Fuel, Wifi, WifiOff,
   Zap, MapPin, Gauge, Clock,
 } from 'lucide-react'
 
@@ -50,7 +50,7 @@ const lightTt = {
 }
 
 /* ─── Stat pill ──────────────────────────────────────────────────────────── */
-function StatPill({ icon: Icon, label, value, color = T.amber }: any) {
+function StatPill({ icon: Icon, label, value, _color = T.amber }: any) {
   return (
     <div style={{
       background: '#fff', border: `1px solid ${T.border}`,

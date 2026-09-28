@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 export default function VendorDocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [vendorId, setVendorId] = useState<string | null>(null)
+  const [_vendorId, setVendorId] = useState<string | null>(null)
   const [kycStatus, setKycStatus] = useState<'pending' | 'submitted' | 'approved' | 'rejected'>('pending')
   const [activeSection, setActiveSection] = useState(1)
   const [activeMainTab, setActiveMainTab] = useState<'kyc' | 'other'>('kyc')
@@ -24,7 +24,7 @@ export default function VendorDocumentsPage() {
 
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerFile, setViewerFile] = useState({ url: '', name: '' })
-  const [viewerLoading, setViewerLoading] = useState(false)
+  const [_viewerLoading, setViewerLoading] = useState(false)
 
   const openDocumentViewer = async (stored: string, name: string) => {
     setViewerLoading(true)
@@ -98,7 +98,7 @@ export default function VendorDocumentsPage() {
 
     const loadProfile = async () => {
       try {
-        const { data: profile, error } = await supabase
+        const { data: profile, error: _error } = await supabase
           .from('vendor_profiles')
           .select('*')
           .eq('id', userId)

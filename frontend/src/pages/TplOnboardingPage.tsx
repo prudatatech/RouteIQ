@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Building2, CheckCircle2, ChevronRight, UploadCloud, Plus, AlertCircle, Trash2, ShieldCheck, ArrowLeft, Loader2, Eye, X
+  Building2, CheckCircle2, ChevronRight, UploadCloud, Plus, AlertCircle, Trash2, ShieldCheck, ArrowLeft, Eye, X
 } from 'lucide-react'
 import { tplAPI } from '@/services/api'
 import { Card } from '@/components/ui'
@@ -82,7 +82,7 @@ export default function TplOnboardingPage() {
   const editPan = searchParams.get('pan')
   
   const [step, setStep] = useState(1)
-  const [isLoadingExisting, setIsLoadingExisting] = useState(!!editId)
+  const [_isLoadingExisting, setIsLoadingExisting] = useState(!!editId)
   
   // Step 1 State (KYC)
   const [companyName, setCompanyName] = useState('')
@@ -215,7 +215,7 @@ export default function TplOnboardingPage() {
           toast.error('Invalid credentials for editing this application.')
           navigate('/3pl/onboard/track')
         }
-      }).catch(err => {
+      }).catch(_err => {
         toast.error('Failed to load application data.')
       }).finally(() => {
         setIsLoadingExisting(false)

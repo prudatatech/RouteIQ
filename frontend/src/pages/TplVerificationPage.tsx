@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Building2, ArrowLeft, CheckCircle2, ShieldCheck, XCircle, ChevronRight, Download, FileText, FileImage, ShieldAlert, Zap, Loader2, Play
+  Building2, ArrowLeft, CheckCircle2, ShieldCheck, Download, FileText, Zap, Loader2
 } from 'lucide-react'
-import { Card, Button, Spinner } from '@/components/ui'
+import { Card, Spinner } from '@/components/ui'
 import { useQuery } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
 import { openKycDocument } from '@/services/kycDocuments'

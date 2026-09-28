@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, CheckCircle2, ShieldCheck, Zap, Loader2 } from 'lucide-react'
+import { Building2, ShieldCheck, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 

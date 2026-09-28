@@ -6,7 +6,7 @@ import { X, Truck, User, FileText, ArrowRight, ArrowLeft, Save, Minus, ChevronDo
 import { Card } from '@/components/ui';
 
 const VEHICLE_TYPES = ['truck', 'trailer', 'container', 'heavy_machinery'];
-const FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng'];
+const _FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng'];
 
 export const INDIAN_TRUCK_PRESETS: Record<string, { capacity_kg: number; container_length_ft: number; container_width_ft: number; container_height_ft: number; fuel_type: string; fuel_capacity_liters: number; fuel_efficiency_kmpl: number }> = {
   'Tata Ace (Chota Hathi)': { capacity_kg: 750, container_length_ft: 7, container_width_ft: 4.5, container_height_ft: 4.5, fuel_type: 'diesel', fuel_capacity_liters: 30, fuel_efficiency_kmpl: 18 },
@@ -114,14 +114,14 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] });
       toast.success('Draft archived successfully');
-    } catch (e: any) {
+    } catch (_e: any) {
       toast.error('Failed to archive draft to server');
     }
     onClose();
   };
 
   const handleTypeChange = (type: string) => {
-    let updates: any = { vehicle_type: type };
+    const updates: any = { vehicle_type: type };
     if (!formData.vehicle_model || formData.vehicle_model === 'Custom') {
       if (type === 'truck') { updates.capacity_kg = 9000; updates.container_length_ft = 19; updates.container_width_ft = 7; updates.container_height_ft = 7; }
       else if (type === 'trailer') { updates.capacity_kg = 25000; updates.container_length_ft = 32; updates.container_width_ft = 8; updates.container_height_ft = 8; }
@@ -132,7 +132,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   };
 
   const handleCapacityChange = (cap: number) => {
-    let updates: any = { capacity_kg: cap };
+    const updates: any = { capacity_kg: cap };
     if (!formData.vehicle_model || formData.vehicle_model === 'Custom') {
       if (formData.vehicle_type === 'truck') {
         let closest = INDIAN_TRUCK_PRESETS['Tata Ace (Chota Hathi)'];
@@ -188,7 +188,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
       return isEditing ? vehiclesAPI.update(initialData.id, payload) : vehiclesAPI.create(payload);
     },
-    onSuccess: (data: any) => {
+    onSuccess: (_data: any) => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] });
       toast.success(isEditing && formData.status === 'archived' ? 'Vehicle finalized' : (isEditing ? 'Vehicle updated successfully' : 'Vehicle added successfully'));
@@ -229,7 +229,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
                 { num: 1, label: 'Vehicle Details', icon: Truck, desc: 'Model & capacity' },
                 { num: 2, label: 'Driver & GPS', icon: User, desc: 'Tracking setup' },
                 { num: 3, label: 'Documents', icon: FileText, desc: 'RC, Insurance, etc.' }
-              ].map((s, i) => (
+              ].map((s, _i) => (
                 <div key={s.num} className={`relative z-10 flex items-start gap-4 transition-all duration-300 ${step === s.num ? 'opacity-100 translate-x-1' : 'opacity-60 hover:opacity-80'}`}>
                   <div className={`w-10 h-10 rounded-full flex flex-shrink-0 items-center justify-center font-bold text-sm transition-colors ${step >= s.num ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-white border-2 border-slate-200 text-slate-400'}`}>
                     <s.icon size={18} />

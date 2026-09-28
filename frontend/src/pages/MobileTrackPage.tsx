@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { MapPin, Wifi, WifiOff, Navigation, CheckCircle, AlertCircle, Loader2, Battery } from 'lucide-react'
+import { MapPin, Wifi, WifiOff, Navigation, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 
 type SessionInfo = {
   vehicle_id: string

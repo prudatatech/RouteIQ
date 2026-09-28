@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Zap, Play, CheckCircle, Clock, Activity, CloudRain, Cpu, Navigation, Map } from 'lucide-react'
+import { Zap, Play, CheckCircle, Activity, CloudRain, Cpu, Navigation, Map } from 'lucide-react'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { formatEta } from '@/utils/timeFormat'
-import { optimizationAPI, vehiclesAPI, deliveryPointsAPI, routesAPI, api } from '@/services/api'
+import { optimizationAPI, vehiclesAPI, routesAPI, api } from '@/services/api'
 import LiveMap from '@/components/map/LiveMap'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -12,7 +12,7 @@ import clsx from 'clsx'
 export default function OptimizePage() {
   const queryClient = useQueryClient()
   const location = useLocation()
-  const navigate = useNavigate()
+  const _navigate = useNavigate()
   const routeIdToReoptimize = location.state?.routeId
   
   const [algo, setAlgo] = useState('ortools')

@@ -150,7 +150,7 @@ export default function VendorOnboardingPage() {
         } else {
           alert('Could not fetch location automatically.')
         }
-      } catch (err) {
+      } catch (_err) {
         alert('Could not fetch location automatically.')
       }
     }
@@ -180,7 +180,7 @@ export default function VendorOnboardingPage() {
             setCitySearchTerm('')
             setSuggestions([])
           }
-        } catch (e) { }
+        } catch (err) { console.warn('Reverse geocoding failed', err) }
       }, () => {
         fetchIpLocation()
       }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })

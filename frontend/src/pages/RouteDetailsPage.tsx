@@ -6,11 +6,11 @@ import { routesAPI, optimizationAPI } from '@/services/api'
 import { Card, Badge, StatusDot, Button } from '@/components/ui'
 import { format, formatDistanceToNow } from 'date-fns'
 import { formatEta } from '@/utils/timeFormat'
-import { ArrowLeft, ArrowRight, MapPin, Clock, Activity, ShieldAlert, Droplets, Calendar, User, Truck, Edit2, Copy, XCircle, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, MapPin, Calendar, User, Truck, Edit2, Copy, XCircle, Trash2 } from 'lucide-react'
 import Map, { Marker, Source, Layer } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import toast from 'react-hot-toast'
-import mapboxgl from 'mapbox-gl'
+import _mapboxgl from 'mapbox-gl'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 
 export default function RouteDetailsPage() {
@@ -42,7 +42,7 @@ export default function RouteDetailsPage() {
     onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to delete')
   })
 
-  const reoptimizeMutation = useMutation({
+  const _reoptimizeMutation = useMutation({
     mutationFn: () => optimizationAPI.reoptimizeRoute(route.id),
     onSuccess: (data: any) => {
       if (data.status === 'success') {
@@ -56,8 +56,8 @@ export default function RouteDetailsPage() {
   })
 
   const [routeGeojson, setRouteGeojson] = useState<any>(null)
-  const [liveDist, setLiveDist] = useState<number | null>(null)
-  const [liveDuration, setLiveDuration] = useState<number | null>(null)
+  const [_liveDist, setLiveDist] = useState<number | null>(null)
+  const [_liveDuration, setLiveDuration] = useState<number | null>(null)
 
   useEffect(() => {
     if (!route) return

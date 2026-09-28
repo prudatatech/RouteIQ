@@ -29,7 +29,7 @@ export default function VendorLayout() {
           city: ''
         }
 
-        const { data: rawProfile, error } = await supabase
+        const { data: rawProfile, error: _error } = await supabase
           .from('vendor_profiles')
           .select('id, company_name, city, company_logo, kyc_status')
           .eq('id', userId)

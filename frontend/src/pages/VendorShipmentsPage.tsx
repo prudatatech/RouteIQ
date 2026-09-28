@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Activity, Package, CheckCircle, TrendingUp, Zap, LogOut, Plus, ArrowRight } from 'lucide-react'
+import { Activity, Package, CheckCircle, TrendingUp, Zap, Plus, ArrowRight } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { formatEta } from '@/utils/timeFormat'
 import { useNavigate } from 'react-router-dom'
 
 export default function VendorShipmentsPage() {

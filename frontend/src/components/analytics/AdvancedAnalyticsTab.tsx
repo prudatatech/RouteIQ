@@ -1,13 +1,13 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from '@tanstack/react-query';
 import { analyticsAPI } from '@/services/api';
 import {
-  ResponsiveContainer, BarChart, Bar, AreaChart, Area,
+  ResponsiveContainer, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import {
-  Truck, Users, Building2, TrendingUp, Filter, Search, ArrowUp, ArrowDown, ArrowUpDown,
-  Star, Clock, AlertTriangle, DollarSign, Package, MapPin, Calendar, RotateCcw,
+  Truck, Building2, Filter, Search, ArrowUp, ArrowDown, ArrowUpDown,
+  Star, Clock, DollarSign, Package, RotateCcw,
   ShieldCheck, Gauge, Route, ChevronDown,
 } from "lucide-react";
 
@@ -36,7 +36,7 @@ const T = {
 const fontDisplay = "'Space Grotesk', 'Sora', sans-serif";
 const fontBody = "'Inter', sans-serif";
 
-const REGIONS = [
+const _REGIONS = [
   "North India (Delhi, Punjab, UP)",
   "South India (Karnataka, TN, Kerala)",
   "East India (West Bengal, Bihar, Odisha)",
@@ -46,7 +46,7 @@ const REGIONS = [
 ];
 
 /* ─── Image-3 style MetricCard ───────────────────────────────────────────── */
-function MetricCard({ icon: Icon, label, value, accent = T.amber }: any) {
+function MetricCard({ icon: Icon, label, value, _accent = T.amber }: any) {
   return (
     <div style={{
       flex: 1, minWidth: 160,
@@ -353,7 +353,7 @@ function VendorAnalyticsView() {
   // Real per-vendor SLA % (a current snapshot, not a fabricated weekly trend).
   const slaByVendor = vendorsWithSla.slice(0, 8).map((v: any) => ({ name: v.name.slice(0, 10), sla: v.sla }));
 
-  const selectStyle: React.CSSProperties = {
+  const _selectStyle: React.CSSProperties = {
     background: T.panel, border: "none", fontSize: 13,
     cursor: "pointer", paddingRight: 20, appearance: "none",
     outline: "none", fontFamily: fontBody,

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Shield, FileText, CheckCircle, XCircle, Search, User, Eye, Download } from 'lucide-react'
+import {  FileText, Eye } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'

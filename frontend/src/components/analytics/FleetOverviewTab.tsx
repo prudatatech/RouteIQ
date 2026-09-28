@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { analyticsAPI } from '@/services/api'
 import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line,
+  ResponsiveContainer, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Line,
 } from 'recharts'
 import {
-  TrendingUp, TrendingDown, Truck, IndianRupee, Fuel, Wrench,
+  TrendingUp, Truck, IndianRupee, Fuel, Wrench,
   Package, Activity, Zap, AlertTriangle, CheckCircle, Clock,
   ArrowRight, RefreshCw, BarChart3, Star, Route, Battery,
   ShieldCheck, Droplets,
@@ -46,7 +46,7 @@ function HealthRing({ score, size = 80 }: { score: number; size?: number }) {
 
 // ─── KPI Metric Card ───────────────────────────────────────────────────────
 function KpiCard({
-  label, value, sub, icon: Icon, color, bgColor, loading
+  label, value, sub, icon: Icon, color: _color, bgColor: _bgColor, loading
 }: {
   label: string; value: string | number; sub?: string
   icon: any; color: string; bgColor: string; loading?: boolean
@@ -538,7 +538,7 @@ export default function FleetOverviewTab() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(profRoutes as any[]).map((r: any, i: number) => (
+              {(profRoutes as any[]).map((r: any, _i: number) => (
                 <div key={r.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
                   background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12,

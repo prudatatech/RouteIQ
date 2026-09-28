@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/services/supabase'
-import { telemetryWS, telemetryAPI } from '@/services/api'
+import {  telemetryAPI } from '@/services/api'
 import { format } from 'date-fns'
 import { AlertTriangle, MapPin, Truck, User, Phone, CheckCircle, ShieldAlert } from 'lucide-react'
 import mapboxgl from 'maplibre-gl'
 import toast from 'react-hot-toast'
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
+const _MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
 
 interface SOSAlert {
   id: string

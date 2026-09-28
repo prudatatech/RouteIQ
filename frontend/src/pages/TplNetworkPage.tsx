@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
-  Building2, Users, Briefcase, Activity, ShieldCheck, Search, Calendar,
-  ChevronDown, ExternalLink, Plus, Inbox, BarChart3
+  Building2, Users, Briefcase, Activity, Search, Calendar, ExternalLink, Plus, Inbox, BarChart3
 } from 'lucide-react'
 import { Card, CardHeader, Spinner } from '@/components/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -64,7 +63,7 @@ export default function TplNetworkPage() {
         toast.success('Partner resumed')
       }
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-    } catch(e) {
+    } catch(_e) {
       toast.error('Failed to update status')
     }
   }
@@ -75,7 +74,7 @@ export default function TplNetworkPage() {
         await tplAPI.delete(id)
         toast.success('Partner deleted')
         queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-      } catch(e) {
+      } catch(_e) {
         toast.error('Failed to delete partner')
       }
     }

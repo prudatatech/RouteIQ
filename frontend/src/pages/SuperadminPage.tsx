@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Shield, Search, User, Settings, ChevronRight } from 'lucide-react'
+import { Shield, Search, User, ChevronRight } from 'lucide-react'
 import { usersAPI, analyticsAPI, tplAPI, capacityAPI, vendorAPI, authAPI } from '@/services/api'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import CargoManifestConnectingForm from '@/components/CargoManifestConnectingForm'
-import LiveRateMarquee from '@/components/LiveRateMarquee'
+import _LiveRateMarquee from '@/components/LiveRateMarquee'
 import AdminKycReview from '@/components/AdminKycReview'
 import { supabase } from '@/services/supabase'
 
@@ -22,7 +22,7 @@ export default function SuperadminPage() {
   const [vendorEmail, setVendorEmail] = useState('')
   const [vendorPassword, setVendorPassword] = useState('')
   const [ratePerKm, setRatePerKm] = useState<string>('')
-  const [isUpdatingRate, setIsUpdatingRate] = useState(false)
+  const [_isUpdatingRate, setIsUpdatingRate] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function SuperadminPage() {
     })
   }, [])
 
-  const updateRate = async () => {
+  const _updateRate = async () => {
     if (!ratePerKm) return
     setIsUpdatingRate(true)
     try {

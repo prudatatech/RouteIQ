@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Cpu, BarChart, AlertTriangle, Loader2, Zap, RotateCw, ShieldCheck } from 'lucide-react';
+import { Cpu, BarChart, Loader2, Zap, RotateCw, ShieldCheck } from 'lucide-react';
 import { AIInsightCard } from '../components/dashboard/AIInsightCard';
 import { analyticsAPI, routesAPI, trafficAPI, optimizationAPI } from '@/services/api';
 import toast from 'react-hot-toast';
@@ -38,7 +38,7 @@ export default function AIHubPage() {
 
       return trafficAPI.simulateEvent(lat, lng, 'accident', 0.8);
     },
-    onSuccess: (data: any) => {
+    onSuccess: (_data: any) => {
       toast.success(`Traffic Anomaly Injected! Agents calculating reroute...`);
       queryClient.invalidateQueries({ queryKey: ['ai-insights'] });
     }

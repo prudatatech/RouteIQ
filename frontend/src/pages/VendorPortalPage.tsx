@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
 import { MapPin, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import LiveRateMarquee from '@/components/LiveRateMarquee'
+import _LiveRateMarquee from '@/components/LiveRateMarquee'
 
 export default function VendorPortalPage() {
   const [heroSearchTerm, setHeroSearchTerm] = useState('')
   const [heroSuggestions, setHeroSuggestions] = useState<any[]>([])
 
   const navigate = useNavigate()
-  const { vendorProfile } = useOutletContext<any>() || {}
+  const { _vendorProfile } = useOutletContext<any>() || {}
 
   useEffect(() => {
     const searchHeroArcGIS = async () => {
@@ -24,7 +23,7 @@ export default function VendorPortalPage() {
         const data = await res.json()
         if (data.suggestions) {
           const mapped = data.suggestions.map((s: any) => {
-            const parts = s.text.split(', ')
+            const _parts = s.text.split(', ')
             return {
               id: s.magicKey,
               place_name: s.text,
@@ -103,7 +102,7 @@ export default function VendorPortalPage() {
                         } else {
                           navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}`);
                         }
-                      } catch (e) {
+                      } catch (_e) {
                         navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}`);
                       }
                     }}

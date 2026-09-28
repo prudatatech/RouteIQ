@@ -61,7 +61,7 @@ export default function AddShipmentModal() {
 
   // Mobile GPS state
   const [mobileLink, setMobileLink] = useState('')
-  const [linkCopied, setLinkCopied] = useState(false)
+  const [_linkCopied, setLinkCopied] = useState(false)
   const [generatingLink, setGeneratingLink] = useState(false)
 
   const { data: vehicles = [] } = useQuery({
@@ -150,14 +150,14 @@ export default function AddShipmentModal() {
     }
   }
 
-  const copyLink = () => {
+  const _copyLink = () => {
     navigator.clipboard.writeText(mobileLink)
     setLinkCopied(true)
     toast.success('Link copied!')
     setTimeout(() => setLinkCopied(false), 2000)
   }
 
-  const shareWhatsApp = () => {
+  const _shareWhatsApp = () => {
     const msg = encodeURIComponent(`📍 margixindia GPS Tracking Link\nVehicle tracking is live. Open this link on your phone to start sharing location:\n${mobileLink}`)
     window.open(`https://wa.me/${formData.mobilePhone.replace(/\D/g, '')}?text=${msg}`, '_blank')
   }
@@ -208,8 +208,8 @@ export default function AddShipmentModal() {
       const toRad = (value: number) => (value * Math.PI) / 180;
       const R = 6371;
       
-      let unvisitedStops = (data.stops || []).map((s: any) => ({ ...s }));
-      let sortedAdditionalStops = [];
+      const unvisitedStops = (data.stops || []).map((s: any) => ({ ...s }));
+      const sortedAdditionalStops = [];
       let currLat = data.origin_lat;
       let currLng = data.origin_lng;
       let calculatedTotalDist = 0;

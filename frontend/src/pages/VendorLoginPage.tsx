@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Zap, Eye, EyeOff, Package, ArrowRight, ArrowLeft } from 'lucide-react'
+import {  Eye, EyeOff, Package, ArrowRight, ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { Card, Button, Spinner } from '@/components/ui'
@@ -94,7 +94,7 @@ export default function VendorLoginPage() {
     }
   }
 
-  const handleSuccessfulLogin = (vProfile?: any) => {
+  const handleSuccessfulLogin = (_vProfile?: any) => {
     if (sessionStorage.getItem('pendingMapRequest')) {
       navigate('/vendor/request')
     } else {

@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Map, Navigation, Edit2, Trash2, ArrowRight } from 'lucide-react'
-import { routesAPI, vehiclesAPI, deliveryPointsAPI, shipmentsAPI, optimizationAPI } from '@/services/api'
+import { routesAPI, vehiclesAPI, shipmentsAPI, optimizationAPI } from '@/services/api'
 import { StatusDot } from '@/components/ui'
 import { format } from 'date-fns'
 import { formatEta } from '@/utils/timeFormat'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import toast from 'react-hot-toast'
-import clsx from 'clsx'
+import _clsx from 'clsx'
 
 export default function RoutesPage() {
   const queryClient = useQueryClient()
@@ -36,7 +36,7 @@ export default function RoutesPage() {
       toast.success('Route dispatched successfully!')
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
-    }).catch((err) => toast.error('Failed to dispatch route'))
+    }).catch((_err) => toast.error('Failed to dispatch route'))
   }
 
   const handleDelete = (routeId: string) => {

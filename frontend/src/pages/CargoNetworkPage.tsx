@@ -29,7 +29,7 @@ export default function CargoNetworkPage() {
   
   // Simulation Map State
   const [mapSimulation, setMapSimulation] = useState<'idle' | 'pooling' | 'backhaul' | 'deviation'>('idle')
-  const [simulationStep, setSimulationStep] = useState(0)
+  const [_simulationStep, setSimulationStep] = useState(0)
 
   // 1. Fetch default scenarios
   const { data: scenarios } = useQuery({
@@ -138,7 +138,7 @@ export default function CargoNetworkPage() {
   const [pricingWeight, setPricingWeight] = useState(6000)
   const [pricingCargoType, setPricingCargoType] = useState('cold_chain')
   const [pricingCongestion, setPricingCongestion] = useState(0.4)
-  const [pricingWeather, setPricingWeather] = useState(0.2)
+  const [pricingWeather, _setPricingWeather] = useState(0.2)
   const [pricingResult, setPricingResult] = useState<any>(null)
 
   const fetchPricingMutation = useMutation({

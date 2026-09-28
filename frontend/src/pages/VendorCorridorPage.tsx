@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Zap, TrendingUp, ArrowRight, ChevronRight, ShieldCheck, MapPin } from 'lucide-react'
+import { Zap, TrendingUp, ArrowRight, ShieldCheck, MapPin } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useOutletContext } from 'react-router-dom'

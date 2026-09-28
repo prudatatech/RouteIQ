@@ -11,7 +11,7 @@ import {
   CARGO_EMOJI,
   MAP_DEFAULTS 
 } from '@/config/mapConfig'
-import { telemetryWS, routesAPI, marketplaceAPI } from '@/services/api'
+import {  routesAPI, marketplaceAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { formatEta } from '@/utils/timeFormat'
@@ -102,52 +102,6 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
     }
   }, [zoomFocusEvent, selectedVehicleId, vehicles])
 
-// VehicleStatusSheet component
-function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle, targetPositionsRef: React.MutableRefObject<any> }) {
-  const [telemetry, setTelemetry] = useState({ speed: 0, fuel: 0 })
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const t = targetPositionsRef.current[vehicle.id]
-      if (t) {
-        setTelemetry({ speed: t.speed || 0, fuel: t.fuel || 0 })
-      }
-    }, 1000)
-    // Initial fetch
-    const t = targetPositionsRef.current[vehicle.id]
-    if (t) {
-      setTelemetry({ speed: t.speed || 0, fuel: t.fuel || 0 })
-    }
-    return () => clearInterval(interval)
-  }, [vehicle.id, targetPositionsRef])
-
-  return (
-    <div className="bg-surface/90 backdrop-blur-md text-text p-6 rounded-3xl border border-border shadow-2xl font-sans w-[350px]">
-      <div className="flex items-center justify-between mb-4 border-b border-border pb-3">
-        <span className="text-sm font-black uppercase text-yellow-500 tracking-tighter">{vehicle.plate_number}</span>
-        <span className="text-[10px] uppercase font-bold text-muted bg-surface2 px-2 py-1 rounded-lg">{vehicle.vehicle_type ?? 'Truck'}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-3 text-[10px]">
-        <div className="flex flex-col"><span className="text-muted font-bold">Geofence</span><span className="font-black">--</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">GPS Status</span><span className="font-black text-green-500">Online</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Network</span><span className="font-black">4G LTE</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Immobilizer</span><span className="font-black">Disarmed</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Parking</span><span className="font-black">--</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Fuel</span><span className="font-black text-yellow-500">{telemetry.fuel.toFixed(1)}%</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Door</span><span className="font-black">Closed</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Battery</span><span className="font-black">12.4V</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Trip Dist</span><span className="font-black">142 km</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Trip Time</span><span className="font-black">2h 15m</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Last Speed</span><span className="font-black text-white">{telemetry.speed.toFixed(0)} km/h</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Max Speed</span><span className="font-black">80 km/h</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Daily Dist</span><span className="font-black">210 km</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Idle Time</span><span className="font-black">10m</span></div>
-        <div className="flex flex-col"><span className="text-muted font-bold">Stops</span><span className="font-black">3</span></div>
-        <div className="flex flex-col"><span className="font-bold">Odometer</span><span className="font-black">45,120 km</span></div>
-      </div>
-    </div>
-  )
-}
-  
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
 
@@ -235,7 +189,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
             }
           }
         }
-      } catch (e) {
+      } catch (_e) {
         // Silent fail — other paths will keep working
       }
     }, 5000)
@@ -244,7 +198,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
   }, [])
 
   useEffect(() => {
-    let ws: any = null
+    const ws: any = null
     let realtimeChannel: any = null
     let waypointChannel: any = null
     let lastRouteSetTime = 0
@@ -344,7 +298,7 @@ function VehicleStatusSheet({ vehicle, targetPositionsRef }: { vehicle: Vehicle,
           if (typeof zoom === 'number') {
             map.easeTo({ center: (features[0].geometry as any).coordinates, zoom })
           }
-        } catch (err) {
+        } catch (_err) {
           // ignore error
         }
       })

@@ -8,7 +8,7 @@ const LiveMapPage: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<maplibregl.Map | null>(null);
   const mobileMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const { position, error, enabled } = useMobileLocation();
+  const { position, error: _error, enabled } = useMobileLocation();
 
   useEffect(() => {
     if (mapContainer.current && !mapInstance.current) {

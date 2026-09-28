@@ -3,9 +3,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Plus, Search, Truck, X, Fuel, Info, AlertCircle, MapPin,
-  BarChart2, Settings, Cloud, Thermometer, Pencil, Trash2,
-  ChevronDown, ExternalLink, Copy, CheckCircle2, Navigation
+  Plus, Search, Truck, X, Fuel, Info, MapPin,
+  BarChart2, Settings, Cloud, Thermometer, Pencil, Trash2, ExternalLink, Copy, CheckCircle2, Navigation
 } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { Card, StatusDot, Button, Spinner } from '@/components/ui'
@@ -15,9 +14,9 @@ import { supabase } from '@/services/supabase'
 import clsx from 'clsx'
 
 const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', 'offline', 'archived']
-const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
-const FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
-const STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
+const _VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
+const _FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
+const _STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
 
 // ─── Location Modal ───────────────────────────────────────────────────────────
 function LocationModal({ vehicle, onClose }: { vehicle: any; onClose: () => void }) {

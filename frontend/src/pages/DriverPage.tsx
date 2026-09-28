@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Home, Map as MapIcon, Package, Bell, User, Phone, Navigation, Play, Pause,
-  CheckCircle2, AlertTriangle, CloudRain, ShieldAlert, FileSignature, Loader2
+  Home, Map as MapIcon, Package, Bell, User, Phone, Play, Pause,
+  CheckCircle2, AlertTriangle, ShieldAlert, Loader2
 } from 'lucide-react';
 import { routesAPI, shipmentsAPI, telemetryAPI } from '@/services/api';
 import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers';
@@ -98,7 +98,7 @@ export default function DriverPage() {
   const [recipientName, setRecipientName] = useState('');
   const [signature, setSignature] = useState<string | null>(null);
 
-  const { data: routes = [], isLoading } = useQuery({
+  const { data: routes = [], isLoading: _isLoading } = useQuery({
     queryKey: ['driver-routes', userId],
     queryFn: () => routesAPI.list({ status: 'active' }),
     refetchInterval: 30_000,

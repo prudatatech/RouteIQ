@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import toast from 'react-hot-toast'
-import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react'
+import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2 } from 'lucide-react'
 import * as turf from '@turf/turf'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
 
@@ -91,7 +91,7 @@ export default function VendorRequestsAdmin() {
     }
   }
 
-  const handleRemove = async (id: string) => {
+  const _handleRemove = async (id: string) => {
     try {
       await vendorAPI.rejectRequest(id);
       toast.success('Permanently removed');
