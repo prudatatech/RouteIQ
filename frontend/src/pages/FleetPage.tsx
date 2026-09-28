@@ -653,7 +653,6 @@ export default function FleetPage() {
 
       {/* Modals */}
       <VehicleWizardModal isOpen={isAddModalOpen || !!editingVehicle} onClose={() => { setIsAddModalOpen(false); setEditingVehicle(null); }} initialData={editingVehicle} />
-      )}
       {trackingVehicle && (
         <LocationModal vehicle={trackingVehicle} onClose={() => setTrackingVehicle(null)} />
       )}
