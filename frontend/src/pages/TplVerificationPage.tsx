@@ -6,8 +6,10 @@ import {
 import { Card, Button, Spinner } from '@/components/ui'
 import { useQuery } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
+import { openKycDocument } from '@/services/kycDocuments'
 import { useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 
 export default function TplVerificationPage() {
   const navigate = useNavigate()
@@ -283,7 +285,14 @@ export default function TplVerificationPage() {
                            <div className="text-[10px] text-muted">{doc.doc_type}</div>
                          </div>
                          <button 
-                           onClick={() => alert('Secure document preview will open here.')}
+                           onClick={async () => {
+                             try {
+                               await openKycDocument(doc.file_url)
+                             } catch (err: any) {
+                               toast.error(err.message || 'Could not open document')
+                             }
+                           }}
+                           title="Open document"
                            className="p-1.5 hover:bg-primary/10 rounded-md text-muted hover:text-primary transition-colors"
                          >
                            <Download size={14} />

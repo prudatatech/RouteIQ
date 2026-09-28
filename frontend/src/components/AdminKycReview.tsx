@@ -4,6 +4,7 @@ import { Shield, FileText, CheckCircle, XCircle, Search, User, Eye, Download } f
 import { supabase } from '@/services/supabase'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { getKycDocumentUrl } from '@/services/kycDocuments'
 import toast from 'react-hot-toast'
 
 export default function AdminKycReview() {
@@ -20,17 +21,9 @@ export default function AdminKycReview() {
         .select('*')
       if (error) throw error
       
-      // Parse dummy2
       return data.map(v => {
-        let kycStatus = 'pending'
-        let kycData = null
-        if (v.dummy2) {
-          try {
-            const parsed = typeof v.dummy2 === 'string' ? JSON.parse(v.dummy2) : v.dummy2
-            kycStatus = parsed.status || 'pending'
-            kycData = parsed.data || null
-          } catch(e) {}
-        }
+        const kycStatus = v.kyc_status || 'pending'
+        const kycData = v.kyc_data?.data || null
         return { ...v, kycStatus, kycData }
       }).sort((a, b) => {
         // Sort submitted first
@@ -43,29 +36,11 @@ export default function AdminKycReview() {
 
   const updateKycMutation = useMutation({
     mutationFn: async ({ id, status }: any) => {
-      // Fetch latest data to prevent overwriting with stale data
-      const { data: latestProfile, error: fetchErr } = await supabase
-        .from('vendor_profiles')
-        .select('dummy2')
-        .eq('id', id)
-        .single()
-        
-      if (fetchErr) throw fetchErr
-      
-      let parsed = { status: 'pending', data: {} }
-      if (latestProfile?.dummy2) {
-        try {
-          parsed = typeof latestProfile.dummy2 === 'string' ? JSON.parse(latestProfile.dummy2) : latestProfile.dummy2
-        } catch(e) {}
-      }
-      
-      parsed.status = status
-      
       const { error } = await supabase
         .from('vendor_profiles')
-        .update({ dummy2: JSON.stringify(parsed) })
+        .update({ kyc_status: status })
         .eq('id', id)
-      
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -135,9 +110,18 @@ export default function AdminKycReview() {
           <h3 className="font-bold text-lg text-text mt-8 mb-4 border-b border-border pb-2">Documents</h3>
           <div className="flex flex-col space-y-3">
             {kData.docUrls ? Object.entries(kData.docUrls).map(([k, v]: any) => (
-              <button 
-                key={k} 
-                onClick={() => { setViewerFile({ url: v, name: k }); setViewerOpen(true); }} 
+              <button
+                key={k}
+                onClick={async () => {
+                  try {
+                    const signedUrl = await getKycDocumentUrl(v)
+                    setViewerFile({ url: signedUrl, name: k })
+                    setViewerOpen(true)
+                  } catch (err) {
+                    console.error(err)
+                    toast.error('Failed to open document')
+                  }
+                }}
                 className="text-primary hover:underline flex items-center text-sm w-fit"
               >
                 <FileText size={14} className="mr-2" /> View {k}

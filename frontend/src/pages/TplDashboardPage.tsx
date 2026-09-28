@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { openKycDocument } from '@/services/kycDocuments'
 
 function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
   const [isOpen, setIsOpen] = useState(false);
@@ -177,7 +178,7 @@ export default function TplDashboardPage() {
         .from('kyc_documents')
         .upload(fileName, file, {
           cacheControl: '3600',
-          upsert: true,
+          upsert: false,
           contentType: file.type
         })
         
@@ -623,14 +624,20 @@ export default function TplDashboardPage() {
                         </div>
                       </div>
                       <div className="mt-4 pt-3 border-t border-border/30 grid grid-cols-2 gap-2">
-                        <a 
-                          href={supabase.storage.from('kyc_documents').getPublicUrl(doc.file_url).data.publicUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await openKycDocument(doc.file_url)
+                            } catch (err: any) {
+                              console.error(err)
+                              toast.error(err.message || 'Failed to open document')
+                            }
+                          }}
                           className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-surface2 hover:bg-surface border border-border text-text text-[10px] font-black uppercase tracking-widest transition-colors"
                         >
                           <Eye size={12} className="text-muted" /> View
-                        </a>
+                        </button>
                         <label className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer">
                           {uploadingDoc === doc.id ? (
                             <Loader2 size={12} className="animate-spin" />

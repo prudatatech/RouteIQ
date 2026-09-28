@@ -634,13 +634,13 @@ export default function TplOnboardingPage() {
                       const uploadPromises = Object.keys(uploadedDocs).map(async (docType) => {
                         const file = uploadedDocs[docType]
                         const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
-                        const fileName = `${customId || Date.now()}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
-                        
+                        const fileName = `tpl-applications/${customId || Date.now()}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
+
                         const { error } = await supabase.storage
                           .from('kyc_documents')
                           .upload(fileName, file, {
                             cacheControl: '3600',
-                            upsert: true,
+                            upsert: false,
                             contentType: file.type
                           })
                           

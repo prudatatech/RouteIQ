@@ -3,10 +3,12 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Package, Search, LogOut, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { getKycDocumentUrl } from '@/services/kycDocuments'
 import toast from 'react-hot-toast'
 
 export default function VendorLayout() {
   const [vendorProfile, setVendorProfile] = useState<any>(null)
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null)
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
   const clearAuth = useAuthStore(s => s.clearAuth)
@@ -29,36 +31,30 @@ export default function VendorLayout() {
 
         const { data: rawProfile, error } = await supabase
           .from('vendor_profiles')
-          .select('id, company_name, city, company_logo, dummy2')
+          .select('id, company_name, city, company_logo, kyc_status')
           .eq('id', userId)
           .maybeSingle()
-          
-        const { data: kycProfile } = await supabase
-          .from('kyc_profiles')
-          .select('kyc_status')
-          .eq('id', userId)
-          .maybeSingle()
-        
+
         if (rawProfile) {
           profileData = { ...profileData, ...rawProfile }
-          if (rawProfile.dummy2) {
-            try {
-              const parsed = typeof rawProfile.dummy2 === 'string' ? JSON.parse(rawProfile.dummy2) : rawProfile.dummy2
-              profileData.kycStatus = (parsed.status || 'pending').toLowerCase()
-            } catch(e) {}
-          } else {
-            profileData.kycStatus = 'pending'
-          }
+          profileData.kycStatus = (rawProfile.kyc_status || 'pending').toLowerCase()
         } else {
           profileData.kycStatus = 'pending'
         }
-        
-        // Override with dedicated KYC table if it exists
-        if (kycProfile && kycProfile.kyc_status) {
-          profileData.kycStatus = kycProfile.kyc_status.toLowerCase()
-        }
 
         setVendorProfile(profileData)
+
+        if (rawProfile?.company_logo) {
+          try {
+            const signedUrl = await getKycDocumentUrl(rawProfile.company_logo)
+            setCompanyLogoUrl(signedUrl)
+          } catch (e) {
+            console.error('Failed to resolve company logo:', e)
+            setCompanyLogoUrl(null)
+          }
+        } else {
+          setCompanyLogoUrl(null)
+        }
       } catch (err) {
         console.error('Error fetching vendor layout profile:', err)
       }
@@ -74,9 +70,6 @@ export default function VendorLayout() {
     // Real-time listener for KYC status changes by Admin
     const channel = supabase
       .channel('layout-kyc-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_profiles', filter: `id=eq.${userId}` }, () => {
-        loadProfile()
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, () => {
         loadProfile()
       })
@@ -179,8 +172,8 @@ export default function VendorLayout() {
             <div className="flex items-center gap-4 border-l border-border pl-6">
               {vendorProfile && (
                 <div className="hidden md:flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/vendor/documents')} title="View Documents & Profile">
-                  {vendorProfile.company_logo && (
-                    <img src={vendorProfile.company_logo} alt="Company Logo" className="w-8 h-8 rounded-full object-cover border border-border bg-white" />
+                  {companyLogoUrl && (
+                    <img src={companyLogoUrl} alt="Company Logo" className="w-8 h-8 rounded-full object-cover border border-border bg-white" />
                   )}
                   <div className="flex flex-col items-end">
                     <div className="flex items-center gap-2">

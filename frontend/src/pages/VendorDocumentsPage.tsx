@@ -4,6 +4,7 @@ import { FileText, Upload, CheckCircle, AlertCircle, Clock, ChevronDown, Chevron
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate } from 'react-router-dom'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { getKycDocumentUrl } from '@/services/kycDocuments'
 import toast from 'react-hot-toast'
 
 export default function VendorDocumentsPage() {
@@ -23,6 +24,21 @@ export default function VendorDocumentsPage() {
 
   const [viewerOpen, setViewerOpen] = useState(false)
   const [viewerFile, setViewerFile] = useState({ url: '', name: '' })
+  const [viewerLoading, setViewerLoading] = useState(false)
+
+  const openDocumentViewer = async (stored: string, name: string) => {
+    setViewerLoading(true)
+    try {
+      const signedUrl = await getKycDocumentUrl(stored)
+      setViewerFile({ url: signedUrl, name })
+      setViewerOpen(true)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to open document')
+    } finally {
+      setViewerLoading(false)
+    }
+  }
 
   const [formData, setFormData] = useState({
     name: '',
@@ -69,7 +85,7 @@ export default function VendorDocumentsPage() {
     docUrls: {} as any
   })
 
-  const [otherDocs, setOtherDocs] = useState<{name: string, url: string}[]>([])
+  const [otherDocs, setOtherDocs] = useState<{name: string, path: string}[]>([])
 
   const userId = useAuthStore(s => s.userId)
   const navigate = useNavigate()
@@ -90,20 +106,21 @@ export default function VendorDocumentsPage() {
 
         if (profile) {
           setVendorId(profile.id)
-          let parsedKyc: any = null
-          
-          if (profile.dummy2) {
-            try {
-              parsedKyc = typeof profile.dummy2 === 'string' ? JSON.parse(profile.dummy2) : profile.dummy2
-              setKycStatus((parsedKyc.status || 'pending').toLowerCase() as any)
-              
-              if (parsedKyc.data && !isEditingRef.current) {
-                setFormData(prev => ({ ...prev, ...parsedKyc.data }))
-              }
-              if (parsedKyc.otherDocs && !isEditingRef.current) {
-                setOtherDocs(parsedKyc.otherDocs)
-              }
-            } catch(e) {}
+          setKycStatus((profile.kyc_status || 'pending').toLowerCase() as any)
+
+          const kycData = profile.kyc_data
+          const hasKycData = kycData && (
+            (kycData.data && Object.keys(kycData.data).length > 0) ||
+            (kycData.otherDocs && kycData.otherDocs.length > 0)
+          )
+
+          if (hasKycData && !isEditingRef.current) {
+            if (kycData.data) {
+              setFormData(prev => ({ ...prev, ...kycData.data }))
+            }
+            if (kycData.otherDocs) {
+              setOtherDocs(kycData.otherDocs)
+            }
           } else if (!isEditingRef.current) {
             // Auto fill available
             setFormData(prev => ({
@@ -114,16 +131,6 @@ export default function VendorDocumentsPage() {
               city: profile.city || '',
               number: profile.city ? `VND-${profile.city.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}` : ''
             }))
-          }
-          
-          // Also check dedicated kyc_profiles table for admin-set status
-          const { data: kycRow } = await supabase
-            .from('kyc_profiles')
-            .select('kyc_status')
-            .eq('id', userId)
-            .maybeSingle()
-          if (kycRow && kycRow.kyc_status) {
-            setKycStatus(kycRow.kyc_status.toLowerCase() as any)
           }
         }
       } catch (err) {
@@ -137,9 +144,6 @@ export default function VendorDocumentsPage() {
     // Real-time listener for KYC status changes by Admin
     const channel = supabase
       .channel('kyc-status-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_profiles', filter: `id=eq.${userId}` }, () => {
-        loadProfile()
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, () => {
         loadProfile()
       })
@@ -166,18 +170,16 @@ export default function VendorDocumentsPage() {
 
     try {
       setSubmitting(true)
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('kyc_documents')
-        .upload(fileName, file)
+        .upload(fileName, file, { upsert: false })
 
       if (error) throw error
-
-      const { data: urlData } = supabase.storage.from('kyc_documents').getPublicUrl(fileName)
 
       setFormData(prev => ({
         ...prev,
         documents: { ...prev.documents, [key]: file },
-        docUrls: { ...prev.docUrls, [key]: urlData.publicUrl }
+        docUrls: { ...prev.docUrls, [key]: fileName }
       }))
     } catch(err) {
       console.error("Upload error", err)
@@ -195,21 +197,19 @@ export default function VendorDocumentsPage() {
 
     try {
       setSubmitting(true)
-      const { error } = await supabase.storage.from('kyc_documents').upload(fileName, file)
+      const { error } = await supabase.storage.from('kyc_documents').upload(fileName, file, { upsert: false })
       if (error) throw error
 
-      const { data: urlData } = supabase.storage.from('kyc_documents').getPublicUrl(fileName)
-      
-      const newDoc = { name: file.name, url: urlData.publicUrl }
+      const newDoc = { name: file.name, path: fileName }
       const updatedDocs = [...otherDocs, newDoc]
       setOtherDocs(updatedDocs)
 
       // Save immediately to profile
-      const { data: profile } = await supabase.from('vendor_profiles').select('dummy2').eq('id', userId).single()
-      const parsedKyc = profile?.dummy2 ? JSON.parse(profile.dummy2) : { status: 'pending', data: formData }
-      parsedKyc.otherDocs = updatedDocs
-      
-      await supabase.from('vendor_profiles').update({ dummy2: JSON.stringify(parsedKyc) }).eq('id', userId)
+      const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).single()
+      const kycData = profile?.kyc_data || { data: formData, otherDocs: [] }
+      kycData.otherDocs = updatedDocs
+
+      await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
       toast.success('Document uploaded successfully')
 
     } catch(err) {
@@ -225,10 +225,10 @@ export default function VendorDocumentsPage() {
     setOtherDocs(updatedDocs)
     
     try {
-      const { data: profile } = await supabase.from('vendor_profiles').select('dummy2').eq('id', userId).single()
-      const parsedKyc = profile?.dummy2 ? JSON.parse(profile.dummy2) : { status: 'pending', data: formData }
-      parsedKyc.otherDocs = updatedDocs
-      await supabase.from('vendor_profiles').update({ dummy2: JSON.stringify(parsedKyc) }).eq('id', userId)
+      const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).single()
+      const kycData = profile?.kyc_data || { data: formData, otherDocs: [] }
+      kycData.otherDocs = updatedDocs
+      await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
       toast.success('Document removed')
     } catch (e) {
       console.error(e)
@@ -256,14 +256,15 @@ export default function VendorDocumentsPage() {
     setSubmitting(true)
     try {
       const kycPayload = {
-        status: 'submitted',
-        data: formData
+        data: formData,
+        otherDocs
       }
 
       const { error } = await supabase
         .from('vendor_profiles')
         .update({
-          dummy2: JSON.stringify(kycPayload),
+          kyc_data: kycPayload,
+          kyc_status: 'submitted',
           company_name: formData.name || undefined,
           city: formData.city || undefined,
           company_logo: formData.docUrls.companyLogo || undefined
@@ -427,11 +428,11 @@ export default function VendorDocumentsPage() {
           {/* Section 7: Documents Upload */}
           <Section title="7. Document Uploads" isActive={activeSection === 7} onToggle={() => setActiveSection(activeSection === 7 ? 0 : 7)}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FileUpload label="PAN Scan PDF Copy" docKey="panScan" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
-              <FileUpload label="Cancelled Cheque PDF Copy" docKey="cancelledCheque" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
-              <FileUpload label="GST Registration PDF" docKey="gstRegistration" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
-              <FileUpload label="Company Registration / MSME PDF" docKey="msmeCert" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
-              <FileUpload label="Company Logo (Image)" docKey="companyLogo" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={(url: string, name: string) => { setViewerFile({ url, name }); setViewerOpen(true); }} isReadOnly={isReadOnly} />
+              <FileUpload label="PAN Scan PDF Copy" docKey="panScan" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={openDocumentViewer} isReadOnly={isReadOnly} />
+              <FileUpload label="Cancelled Cheque PDF Copy" docKey="cancelledCheque" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={openDocumentViewer} isReadOnly={isReadOnly} />
+              <FileUpload label="GST Registration PDF" docKey="gstRegistration" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={openDocumentViewer} isReadOnly={isReadOnly} />
+              <FileUpload label="Company Registration / MSME PDF" docKey="msmeCert" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={openDocumentViewer} isReadOnly={isReadOnly} />
+              <FileUpload label="Company Logo (Image)" docKey="companyLogo" formData={formData} onChange={handleFileChange} onRemove={handleRemoveFile} onView={openDocumentViewer} isReadOnly={isReadOnly} />
             </div>
           </Section>
 
@@ -495,7 +496,7 @@ export default function VendorDocumentsPage() {
                         <FileText className="w-8 h-8 text-primary shrink-0" />
                         <div className="flex flex-col truncate">
                           <span className="text-sm font-bold text-text truncate">{doc.name}</span>
-                          <button onClick={() => { setViewerFile({ url: doc.url, name: doc.name }); setViewerOpen(true); }} className="text-xs text-primary text-left hover:underline w-fit">View Document</button>
+                          <button onClick={() => openDocumentViewer(doc.path, doc.name)} className="text-xs text-primary text-left hover:underline w-fit">View Document</button>
                         </div>
                       </div>
                       <button onClick={() => handleRemoveOtherDoc(idx)} className="text-red-500/70 hover:text-red-500 bg-red-500/10 p-2 rounded-lg transition-colors">
