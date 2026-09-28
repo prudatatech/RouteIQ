@@ -1,25 +1,36 @@
 /**
  * margixindia — Auth middleware
- * 
- * Verifies Supabase-issued JWTs using SUPABASE_JWT_SECRET.
- * Falls back to legacy SECRET_KEY for backward compatibility
- * (driver OTP tokens issued before migration).
- * 
- * Supabase JWT payload structure:
- *   sub: user UUID
- *   role: "authenticated" (Supabase role, NOT app role)
- *   user_metadata: { full_name, role, phone }  ← app role is here
- *   aud: "authenticated"
+ *
+ * Two token sources are accepted, each verified by signature:
+ *
+ * 1. Supabase Auth (web app). The project signs user tokens with an
+ *    asymmetric key (ES256); they are verified against the project's
+ *    public JWKS. Legacy HS256 Supabase tokens (iss = <SUPABASE_URL>/auth/v1)
+ *    are verified with SUPABASE_JWT_SECRET. The app role is always read
+ *    from the database — `user_metadata` is user-editable and never trusted.
+ *
+ * 2. Backend-issued tokens (driver/customer phone OTP). HS256, signed with
+ *    the backend secret. The role in these tokens was set by this server.
  */
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtHeader, JwtPayload, SignOptions } from 'jsonwebtoken';
 import { settings } from './config';
+import { supabase } from './supabase';
 
 // ── Types ──────────────────────────────────────────────────
+
+export type TokenSource = 'supabase' | 'backend';
 
 export interface TokenData {
   user_id: string;
   role: string;
+  source: TokenSource;
+}
+
+interface VerifiedToken {
+  payload: JwtPayload;
+  source: TokenSource;
 }
 
 // Extend Express Request to carry auth data
@@ -31,151 +42,236 @@ declare global {
   }
 }
 
-// ── Token helpers ──────────────────────────────────────────
+export const BACKEND_TOKEN_ISSUER = 'margix-backend';
+
+const SECRET_PLACEHOLDERS = new Set(['', 'YOUR_SUPABASE_JWT_SECRET_HERE', 'temporary_secret_key_for_setup']);
 
 /**
- * The JWT secret to use for verification.
- * Prefers SUPABASE_JWT_SECRET, falls back to legacy SECRET_KEY.
+ * Secret used to sign and verify backend-issued tokens.
+ * Kept identical to the previous resolution order so existing driver and
+ * customer sessions stay valid.
  */
-function getJwtSecret(): string {
-  if (settings.SUPABASE_JWT_SECRET && settings.SUPABASE_JWT_SECRET !== 'YOUR_SUPABASE_JWT_SECRET_HERE') {
-    return settings.SUPABASE_JWT_SECRET;
-  }
-  return settings.SECRET_KEY;
+export function getBackendSecret(): string {
+  if (!SECRET_PLACEHOLDERS.has(settings.SUPABASE_JWT_SECRET)) return settings.SUPABASE_JWT_SECRET;
+  if (!SECRET_PLACEHOLDERS.has(settings.SECRET_KEY)) return settings.SECRET_KEY;
+  return '';
 }
 
-/**
- * Create an access token for driver OTP auth (server-issued).
- * Uses Supabase JWT secret so all services can verify it uniformly.
- */
+function supabaseIssuer(): string {
+  return `${settings.SUPABASE_URL.replace(/\/+$/, '')}/auth/v1`;
+}
+
+// ── Token issuance (backend) ───────────────────────────────
+
+function signBackendToken(data: { sub: string; role: string }, type: 'access' | 'refresh', expiresIn: SignOptions['expiresIn']): string {
+  const secret = getBackendSecret();
+  if (!secret) throw new Error('Backend JWT secret is not configured');
+  const payload = {
+    ...data,
+    aud: 'authenticated',
+    user_metadata: { role: data.role },
+    type,
+  };
+  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn, issuer: BACKEND_TOKEN_ISSUER });
+}
+
+/** Access token for phone-OTP users (drivers, customers). */
 export function createAccessToken(data: { sub: string; role: string }): string {
-  const payload = {
-    ...data,
-    aud: 'authenticated',
-    user_metadata: { role: data.role },
-    type: 'access',
-  };
-  return jwt.sign(payload, getJwtSecret(), {
-    algorithm: 'HS256',
-    expiresIn: `${settings.ACCESS_TOKEN_EXPIRE_MINUTES}m`,
-  });
+  return signBackendToken(data, 'access', settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60);
 }
 
-/**
- * Create a refresh token for driver OTP auth (server-issued).
- */
+/** Refresh token for phone-OTP users (drivers, customers). */
 export function createRefreshToken(data: { sub: string; role: string }): string {
-  const payload = {
-    ...data,
-    aud: 'authenticated',
-    user_metadata: { role: data.role },
-    type: 'refresh',
-  };
-  return jwt.sign(payload, getJwtSecret(), {
-    algorithm: 'HS256',
-    expiresIn: `${settings.REFRESH_TOKEN_EXPIRE_DAYS}d`,
-  });
+  return signBackendToken(data, 'refresh', settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60);
 }
 
-import { supabase } from './supabase';
+// ── Supabase JWKS (asymmetric signing keys) ────────────────
+
+const JWKS_TTL_MS = 10 * 60 * 1000;
+const JWKS_MIN_REFRESH_MS = 30 * 1000;
+let jwksCache: { keys: Map<string, crypto.KeyObject>; fetchedAt: number } | null = null;
+let jwksInflight: Promise<void> | null = null;
+
+async function refreshJwks(): Promise<void> {
+  if (!settings.SUPABASE_URL) throw new Error('SUPABASE_URL is not configured');
+  const res = await fetch(`${supabaseIssuer()}/.well-known/jwks.json`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
+  const body = (await res.json()) as { keys?: Array<crypto.JsonWebKey & { kid?: string }> };
+  const keys = new Map<string, crypto.KeyObject>();
+  for (const jwk of body.keys ?? []) {
+    if (!jwk.kid) continue;
+    keys.set(jwk.kid, crypto.createPublicKey({ key: jwk, format: 'jwk' }));
+  }
+  jwksCache = { keys, fetchedAt: Date.now() };
+}
+
+async function getSigningKey(kid: string): Promise<crypto.KeyObject | undefined> {
+  const age = jwksCache ? Date.now() - jwksCache.fetchedAt : Infinity;
+  const known = jwksCache?.keys.get(kid);
+  // Refetch when the cache is stale, or when an unknown kid appears (key rotation),
+  // but never more often than JWKS_MIN_REFRESH_MS.
+  if (age > JWKS_TTL_MS || (!known && age > JWKS_MIN_REFRESH_MS)) {
+    jwksInflight ??= refreshJwks().finally(() => { jwksInflight = null; });
+    try {
+      await jwksInflight;
+    } catch (e: any) {
+      console.error(`[Auth] ${e.message}`);
+    }
+  }
+  return jwksCache?.keys.get(kid);
+}
+
+// ── Verification ───────────────────────────────────────────
+
+class AuthError extends Error {}
 
 /**
- * Decode and verify a JWT (Supabase-issued or server-issued).
- * Extracts user_id from `sub` and app role from `user_metadata.role`.
+ * Verify a token's signature and classify its source.
+ * Throws AuthError for anything that is not a valid, signed token.
  */
-export async function decodeToken(token: string): Promise<TokenData> {
-  const secret = getJwtSecret();
+async function verifyToken(token: string): Promise<VerifiedToken> {
+  const decoded = jwt.decode(token, { complete: true });
+  if (!decoded || typeof decoded.payload === 'string') throw new AuthError('Malformed token');
+  const header = decoded.header as JwtHeader;
 
-  try {
-    if (secret && secret !== 'YOUR_SUPABASE_JWT_SECRET_HERE') {
-      const payload = jwt.verify(token, secret) as any;
+  let payload: JwtPayload;
+  let source: TokenSource;
 
-      const userId = payload.sub;
-      if (!userId) {
-        throw new Error('Invalid token: missing sub');
-      }
+  if (header.alg === 'ES256' || header.alg === 'RS256') {
+    if (!header.kid) throw new AuthError('Token has no key id');
+    const key = await getSigningKey(header.kid);
+    if (!key) throw new AuthError('Unknown signing key');
+    payload = jwt.verify(token, key, {
+      algorithms: [header.alg],
+      issuer: supabaseIssuer(),
+      audience: 'authenticated',
+    }) as JwtPayload;
+    source = 'supabase';
+  } else if (header.alg === 'HS256') {
+    const secret = getBackendSecret();
+    if (!secret) throw new AuthError('Token secret not configured');
+    payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtPayload;
 
-      // App role: check user_metadata.role (Supabase), then top-level role (legacy)
-      const role = payload.user_metadata?.role
-        || (payload.role !== 'authenticated' ? payload.role : null)
-        || 'driver';
-
-      return { user_id: userId, role };
+    if (settings.SUPABASE_URL && payload.iss === supabaseIssuer()) {
+      // Legacy HS256 Supabase user token (only when SUPABASE_JWT_SECRET is the project's legacy secret)
+      source = 'supabase';
+    } else if (payload.iss === BACKEND_TOKEN_ISSUER || (payload.iss === undefined && typeof payload.type === 'string')) {
+      // Backend-issued. Tokens minted before `iss` was added carry only `type`.
+      source = 'backend';
+    } else {
+      throw new AuthError('Unrecognised token issuer');
     }
-    throw new Error('Primary secret not configured properly (is placeholder)');
-  } catch (err: any) {
-    // Silenced: console.warn(`[Auth] Primary JWT verification failed: ${err.message}`);
-
-    // If SUPABASE_JWT_SECRET is set and differs from SECRET_KEY,
-    // try legacy SECRET_KEY as fallback for old tokens
-    if (settings.SUPABASE_JWT_SECRET && settings.SUPABASE_JWT_SECRET !== settings.SECRET_KEY) {
-      try {
-        const payload = jwt.verify(token, settings.SECRET_KEY) as any;
-
-        const userId = payload.sub;
-        if (!userId) throw new Error('Invalid token: missing sub');
-
-        const role = payload.user_metadata?.role || payload.role || 'driver';
-        // Silenced: console.info(`[Auth] Successfully verified token with legacy fallback secret`);
-        return { user_id: userId, role };
-      } catch (fallbackErr: any) {
-        // Silenced: console.warn(`[Auth] Legacy fallback verification also failed: ${fallbackErr.message}`);
-      }
-    }
-    // If both verifications fail (or if secret is placeholder), we can gracefully degrade to decode-only
-    // for local development if we cannot verify the signature or reach Supabase.
-    try {
-      const payload = jwt.decode(token) as any;
-      if (payload && payload.sub) {
-        // Silenced: console.warn(`[Auth] Warning: Bypassing signature verification (decoded payload only). Do not use in production!`);
-        const role = payload.user_metadata?.role || payload.role || 'driver';
-        return { user_id: payload.sub, role };
-      }
-    } catch (decodeErr) {
-      // Decode failed completely
-    }
-
-    // Fail fast! Do not fall back to network call (supabase.auth.getUser) 
-    // to avoid 10-second timeouts if Supabase Cloud is unreachable.
-    throw new Error('Invalid or expired token (failed local verification and decode)');
+  } else {
+    throw new AuthError('Unsupported token algorithm');
   }
+
+  if (typeof payload.sub !== 'string' || !payload.sub) throw new AuthError('Token has no subject');
+  return { payload, source };
+}
+
+// ── Role resolution ────────────────────────────────────────
+
+const ROLE_CACHE_TTL_MS = 60 * 1000;
+const roleCache = new Map<string, { role: string; expiresAt: number }>();
+
+/** Drop a cached role, e.g. after an admin changes a user's role or status. */
+export function invalidateRoleCache(userId: string): void {
+  roleCache.delete(userId);
+}
+
+/**
+ * App role of a Supabase Auth user, from the database.
+ * Mirrors the web app: `users.role`, except that a non-admin with a vendor
+ * profile or 3PL partner record acts as a vendor.
+ */
+async function resolveSupabaseRole(userId: string): Promise<string> {
+  const cached = roleCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.role;
+
+  const [userRes, vendorRes, tplRes] = await Promise.all([
+    supabase.from('users').select('role, is_active').eq('id', userId).maybeSingle(),
+    supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle(),
+    supabase.from('tpl_partners').select('id').eq('user_id', userId).maybeSingle(),
+  ]);
+  if (userRes.error) throw new Error(`Role lookup failed: ${userRes.error.message}`);
+
+  const user = userRes.data;
+  if (user && user.is_active === false) throw new AuthError('Account is inactive');
+
+  const isVendor = Boolean(vendorRes.data || tplRes.data);
+  let role: string | undefined = user?.role;
+  if (role !== 'admin' && role !== 'superadmin' && isVendor) role = 'vendor';
+  if (!role) throw new AuthError('No role assigned to this account');
+
+  roleCache.set(userId, { role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
+  return role;
+}
+
+function backendTokenRole(payload: JwtPayload): string {
+  const role = payload.user_metadata?.role ?? payload.role;
+  if (typeof role !== 'string' || !role || role === 'authenticated') throw new AuthError('Token has no role');
+  return role;
+}
+
+/**
+ * Verify a token and resolve the caller.
+ * `expectedType` applies to backend-issued tokens: middleware accepts only
+ * access tokens, the refresh endpoint only refresh tokens.
+ */
+export async function authenticateToken(token: string, expectedType: 'access' | 'refresh' = 'access'): Promise<TokenData> {
+  const { payload, source } = await verifyToken(token);
+  const userId = payload.sub as string;
+
+  if (source === 'backend') {
+    if (payload.type !== expectedType) throw new AuthError(`Expected a ${expectedType} token`);
+    return { user_id: userId, role: backendTokenRole(payload), source };
+  }
+
+  if (expectedType !== 'access') throw new AuthError('Supabase sessions are refreshed by Supabase');
+  return { user_id: userId, role: await resolveSupabaseRole(userId), source };
 }
 
 // ── Middleware ──────────────────────────────────────────────
 
+function bearerToken(req: Request): string | null {
+  const header = req.headers.authorization;
+  return header && header.startsWith('Bearer ') ? header.slice(7) : null;
+}
+
 /**
- * Extracts Bearer token from Authorization header, verifies it,
- * and attaches `req.user` (TokenData).
+ * Verifies the Bearer token and attaches `req.user`.
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = bearerToken(req);
+  if (!token) {
     res.status(401).json({ detail: 'Missing or invalid Authorization header' });
     return;
   }
 
-  const token = authHeader.slice(7);
   try {
-    req.user = await decodeToken(token);
+    req.user = await authenticateToken(token);
     next();
-  } catch (err: any) {
-    res.status(401).json({ detail: err.message || 'Invalid or expired token' });
+  } catch (err) {
+    if (err instanceof AuthError || err instanceof jwt.JsonWebTokenError) {
+      res.status(401).json({ detail: 'Invalid or expired token' });
+      return;
+    }
+    console.error('[Auth] Verification error:', err);
+    res.status(503).json({ detail: 'Authentication temporarily unavailable' });
   }
 }
 
 /**
- * Like requireAuth but does NOT reject unauthenticated requests.
- * If a valid Bearer token is present, decodes it and sets req.user.
- * If no token or invalid token, req.user stays undefined and request continues.
+ * Like requireAuth but does not reject unauthenticated requests.
+ * A valid Bearer token sets req.user; otherwise the request continues anonymously.
  */
-export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const token = bearerToken(req);
+  if (token) {
     try {
-      req.user = await decodeToken(token);
-    } catch (_) {
-      // Ignore — treat as unauthenticated
+      req.user = await authenticateToken(token);
+    } catch {
+      // Treat as unauthenticated
     }
   }
   next();
@@ -193,19 +289,11 @@ export function requireRole(...roles: string[]) {
       return;
     }
 
-    // Superadmin bypasses all role checks
-    if (req.user.role === 'superadmin') {
+    if (req.user.role === 'superadmin' || roles.includes(req.user.role)) {
       next();
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
-      res.status(403).json({
-        detail: `Role '${req.user.role}' not authorized. Required: ${roles.join(', ')}`,
-      });
-      return;
-    }
-
-    next();
+    res.status(403).json({ detail: 'Not authorized for this action' });
   };
 }

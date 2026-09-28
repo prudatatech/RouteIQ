@@ -19,6 +19,8 @@ Items marked **(you)** need access only the project owner has (Railway, Supabase
 | 0.3 | Run `select id, email, role, created_at from users where role in ('superadmin','admin','manager');` and confirm every row is legitimate | Anyone could self-register as superadmin until Phase 2.2 ships |
 | 0.4 | Run `supabase functions list`; delete the deployed `cargo` function (`supabase functions delete cargo`) | It runs with `verify_jwt=false` and accepts master POD OTPs `2026`/`1234` |
 | 0.5 | Check whether Roadcast/SparkGPS pushes to `POST /api/v1/spark-gps` (vs. only being polled) | Decides whether that route gets a shared secret or is removed |
+| 0.6 | If an auth user `nexus.auth@prudata.io` exists, change its password (the old seed script hardcoded `password123` for this superadmin) or delete it. Seed scripts now read credentials from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | A committed superadmin password is effectively public |
+| 0.7 | Apply `supabase/migrations/20260928000000_secure_user_roles.sql` in the SQL editor **before** the Phase 1 backend deploys | Closes self-registration as superadmin at the database level |
 
 ---
 

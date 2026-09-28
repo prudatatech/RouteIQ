@@ -4,7 +4,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { requireAuth, requireRole } from '../core/auth';
+import { invalidateRoleCache, requireAuth, requireRole } from '../core/auth';
 import { UserUpdateSchema } from '../schemas';
 
 const router = Router();
@@ -132,7 +132,15 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
     }
 
     // Check if user exists in public.users
-    const { data: existingUser } = await supabase.from('users').select('id').eq('id', user_id).single();
+    const { data: existingUser } = await supabase.from('users').select('id, role').eq('id', user_id).maybeSingle();
+
+    // Only a superadmin may grant privileged roles or modify privileged accounts
+    const privileged = ['admin', 'superadmin'];
+    if (req.user!.role !== 'superadmin'
+      && ((payload.role && privileged.includes(payload.role)) || (existingUser && privileged.includes(existingUser.role)))) {
+      res.status(403).json({ detail: 'Only a superadmin can change admin accounts or grant admin roles' });
+      return;
+    }
 
     let updateError;
     if (!existingUser) {
@@ -154,6 +162,13 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
       res.status(500).json({ detail: updateError.message });
       return;
     }
+
+    if (existingUser && payload.role !== undefined) {
+      // Keep the server-controlled auth role in step with public.users
+      const { error: authErr } = await supabase.auth.admin.updateUserById(user_id, { app_metadata: { role: payload.role } });
+      if (authErr) console.error(`[users] Failed to sync app_metadata role for ${user_id}: ${authErr.message}`);
+    }
+    invalidateRoleCache(user_id);
 
     let finalUser;
     if (!existingUser) {

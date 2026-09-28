@@ -20,9 +20,11 @@ export const UserCreateSchema = z.object({
 });
 export type UserCreate = z.infer<typeof UserCreateSchema>;
 
+export const APP_ROLES = ['superadmin', 'admin', 'manager', 'driver', 'vendor'] as const;
+
 export const UserUpdateSchema = z.object({
   full_name: z.string().optional(),
-  role: z.string().optional(),
+  role: z.enum(APP_ROLES).optional(),
   is_active: z.boolean().optional(),
 });
 export type UserUpdate = z.infer<typeof UserUpdateSchema>;

@@ -19,6 +19,7 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 import { settings } from './core/config';
+import { getBackendSecret } from './core/auth';
 import { redis } from './core/redis';
 import { wsManager } from './core/websocket';
 import apiRouter from './routes';
@@ -28,6 +29,9 @@ import { cacheSet } from './core/redis';
 // ── Create Express app ─────────────────────────────────────
 const app = express();
 const server = createServer(app);
+
+// Railway terminates TLS at its proxy; trust one hop so req.ip is the client address
+app.set('trust proxy', 1);
 
 // ── Middleware (order matters — outermost first) ────────────
 
@@ -121,7 +125,23 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 // ── Startup lifecycle ──────────────────────────────────────
+
+/** Refuse to run in production with missing or weak auth configuration. */
+function assertSecureConfig(): void {
+  const problems: string[] = [];
+  if (!settings.SUPABASE_URL) problems.push('SUPABASE_URL is not set');
+  const secret = getBackendSecret();
+  if (!secret) problems.push('SUPABASE_JWT_SECRET (or SECRET_KEY) is not set');
+  else if (secret.length < 32) problems.push('backend JWT secret is shorter than 32 characters');
+
+  if (problems.length === 0) return;
+  if (settings.isProduction) throw new Error(`Insecure configuration: ${problems.join('; ')}`);
+  console.warn(`⚠️  Insecure configuration (allowed outside production): ${problems.join('; ')}`);
+}
+
 async function startup(): Promise<void> {
+  assertSecureConfig();
+
   console.log('═══════════════════════════════════════════════════════════');
   console.log(`  ${settings.APP_NAME}`);
   console.log(`  Environment: ${settings.APP_ENV}`);

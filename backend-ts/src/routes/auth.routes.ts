@@ -9,7 +9,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { createAccessToken, createRefreshToken, decodeToken, requireAuth } from '../core/auth';
+import { authenticateToken, createAccessToken, createRefreshToken, requireAuth } from '../core/auth';
 import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -215,6 +215,7 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email: driverEmail,
         email_confirm: true,
+        app_metadata: { role: 'driver' },
         user_metadata: {
           full_name: `Driver ${phone.slice(-4)}`,
           role: 'driver',
@@ -450,6 +451,7 @@ router.post('/customer/verify-otp', async (req: Request, res: Response) => {
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email: customerEmail,
         email_confirm: true,
+        app_metadata: { role: 'customer' },
         user_metadata: {
           full_name: `Customer ${phone.slice(-4)}`,
           role: 'customer',
@@ -547,17 +549,21 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     let tokenData;
     try {
-      tokenData = await decodeToken(token);
+      tokenData = await authenticateToken(token, 'refresh');
     } catch {
       res.status(401).json({ detail: 'Invalid or expired token' });
       return;
     }
 
-    const { data: user } = await supabase
-      .from('users')
-      .select('id, role, is_active')
-      .eq('id', tokenData.user_id)
-      .single();
+    // Customers live in their own table; everyone else in users
+    let user: { id: string; role: string; is_active: boolean } | null = null;
+    if (tokenData.role === 'customer') {
+      const { data } = await supabase.from('customers').select('id').eq('id', tokenData.user_id).maybeSingle();
+      if (data) user = { id: data.id, role: 'customer', is_active: true };
+    } else {
+      const { data } = await supabase.from('users').select('id, role, is_active').eq('id', tokenData.user_id).maybeSingle();
+      user = data;
+    }
 
     if (!user || !user.is_active) {
       res.status(401).json({ detail: 'User not found or inactive' });
@@ -794,6 +800,7 @@ router.post('/invite-vendor', async (req: Request, res: Response) => {
       email,
       password,
       email_confirm: true,
+      app_metadata: { role: 'vendor' },
       user_metadata: { role: 'vendor' },
     });
 

@@ -31,7 +31,7 @@ export const settings = {
   APP_ENV: env('APP_ENV', 'development'),
   DEBUG: envBool('DEBUG', false),
   PORT: envInt('PORT', 8000),
-  SECRET_KEY: env('SECRET_KEY', 'temporary_secret_key_for_setup'),
+  SECRET_KEY: env('SECRET_KEY'),
   ALGORITHM: env('ALGORITHM', 'HS256'),
   ACCESS_TOKEN_EXPIRE_MINUTES: envInt('ACCESS_TOKEN_EXPIRE_MINUTES', 60),
   REFRESH_TOKEN_EXPIRE_DAYS: envInt('REFRESH_TOKEN_EXPIRE_DAYS', 7),
@@ -108,6 +108,8 @@ export const settings = {
   },
 
   get isProduction(): boolean {
-    return this.APP_ENV === 'production';
+    return this.APP_ENV === 'production'
+      || process.env.NODE_ENV === 'production'
+      || process.env.RAILWAY_ENVIRONMENT_NAME === 'production';
   },
 };
