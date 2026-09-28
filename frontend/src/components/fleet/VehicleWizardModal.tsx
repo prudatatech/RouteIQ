@@ -99,6 +99,12 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
         dataToSave.plate_number = `DRFT-${Math.floor(Math.random() * 100000)}`;
       }
       
+      // Fix Postgres 500 Error: Convert empty strings to null for Date columns
+      ['rc', 'insurance', 'fitness', 'permit', 'puc'].forEach(doc => {
+         if (!dataToSave[`${doc}_expiry`]) dataToSave[`${doc}_expiry`] = null;
+         if (!dataToSave[`${doc}_number`]) dataToSave[`${doc}_number`] = null;
+      });
+      
       if (isEditing) {
         await vehiclesAPI.update(initialData.id, dataToSave);
       } else {
@@ -148,7 +154,14 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
   const mutation = useMutation({
     mutationFn: (data: typeof formData) => {
-      const payload = { ...data, status: data.status === 'archived' ? 'available' : (data.status || 'available') };
+      const payload: any = { ...data, status: data.status === 'archived' ? 'available' : (data.status || 'available') };
+      
+      // Fix Postgres 500 Error: Convert empty strings to null for Date columns
+      ['rc', 'insurance', 'fitness', 'permit', 'puc'].forEach(doc => {
+         if (!payload[`${doc}_expiry`]) payload[`${doc}_expiry`] = null;
+         if (!payload[`${doc}_number`]) payload[`${doc}_number`] = null;
+      });
+
       return isEditing ? vehiclesAPI.update(initialData.id, payload) : vehiclesAPI.create(payload);
     },
     onSuccess: (data: any) => {
