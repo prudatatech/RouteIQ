@@ -11,6 +11,10 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { authenticateToken, createAccessToken, createRefreshToken, requireAuth, requireRole } from '../core/auth';
 import { settings } from '../core/config';
+import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
+import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
+import { sendError } from '../core/errors';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -19,16 +23,128 @@ const router = Router();
 // DRIVER AUTH — Twilio Phone OTP (like Ola/Uber/Zomato)
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Generates a random numeric OTP of configured length.
- */
+type OtpKind = 'driver' | 'customer';
+
+const OTP_MAX_ATTEMPTS = 5;            // wrong guesses per issued code
+const OTP_SENDS_PER_WINDOW = 3;        // codes per phone per 10 minutes
+const OTP_FAILURES_PER_HOUR = 10;      // wrong guesses per phone per hour, across resends
+
+/** Random numeric OTP of the configured length (4–8 digits). */
 function generateOTP(): string {
-  const len = settings.OTP_LENGTH || 6;
-  let otp = '';
-  for (let i = 0; i < len; i++) {
-    otp += Math.floor(Math.random() * 10).toString();
+  const len = Math.min(Math.max(settings.OTP_LENGTH || 6, 4), 8);
+  return crypto.randomInt(0, 10 ** len).toString().padStart(len, '0');
+}
+
+/** Normalise an Indian phone number to E.164 (+91XXXXXXXXXX); null when invalid. */
+function normalizePhone(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  let phone = raw.replace(/\s+/g, '').replace(/^0+/, '');
+  if (!phone.startsWith('+')) {
+    if (phone.startsWith('91') && phone.length === 12) phone = '+' + phone;
+    else if (phone.length === 10) phone = '+91' + phone;
+    else phone = '+' + phone;
   }
-  return otp;
+  return phone.replace(/\D/g, '').length >= 10 ? phone : null;
+}
+
+function twilioConfigured(): boolean {
+  return Boolean(settings.TWILIO_ACCOUNT_SID && settings.TWILIO_AUTH_TOKEN && settings.TWILIO_PHONE_NUMBER);
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+/**
+ * Issue and send a login OTP. Rate limits are checked before a new code is
+ * stored, so a rejected request never replaces (or resets) the current code.
+ */
+async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void> {
+  try {
+    const phone = normalizePhone(req.body.phone);
+    if (!phone) {
+      res.status(400).json({ detail: 'Invalid phone number' });
+      return;
+    }
+    if (!twilioConfigured() && settings.isProduction) {
+      console.error('[OTP] Twilio is not configured; refusing to issue OTPs in production');
+      res.status(503).json({ detail: 'SMS delivery is temporarily unavailable. Please try again later.' });
+      return;
+    }
+    if (!(await consumeRateLimit(`otp-send:${kind}:${phone}`, OTP_SENDS_PER_WINDOW, 600))) {
+      res.status(429).json({ detail: 'Too many OTP requests. Please wait 10 minutes.' });
+      return;
+    }
+
+    const otp = generateOTP();
+    await cacheSet(`otp:${kind}:${phone}`, { otp, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
+
+    const { data: existing } = await supabase
+      .from(kind === 'driver' ? 'users' : 'customers')
+      .select('id')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    let message = `Your margixindia ${kind} login OTP is: ${otp}. Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Do not share this code.`;
+    if (!existing) message = `Welcome ${kind === 'driver' ? 'Driver' : 'Customer'}! ${message}`;
+
+    if (!(await sendTwilioSMS(phone, message))) {
+      await cacheDelete(`otp:${kind}:${phone}`);
+      res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
+      return;
+    }
+
+    res.json({
+      status: 'otp_sent',
+      phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
+      expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
+      message: 'OTP sent successfully',
+    });
+  } catch (e) {
+    sendError(req, res, e);
+  }
+}
+
+/**
+ * Check a submitted OTP. Sends the error response and returns false when the
+ * code is missing, wrong, expired or the phone is locked out.
+ */
+async function verifyOtp(kind: OtpKind, phone: string, otp: unknown, res: Response): Promise<boolean> {
+  if (typeof otp !== 'string' || !otp.trim()) {
+    res.status(400).json({ detail: 'phone and otp are required' });
+    return false;
+  }
+
+  const failKey = `otp-fail:${kind}:${phone}`;
+  if (Number(await cacheGet(`ratelimit:${failKey}`) ?? 0) >= OTP_FAILURES_PER_HOUR) {
+    res.status(429).json({ detail: 'Too many failed attempts. Please try again in an hour.' });
+    return false;
+  }
+
+  const otpKey = `otp:${kind}:${phone}`;
+  const stored = await cacheGet<{ otp: string; attempts: number; created_at: number }>(otpKey);
+  if (!stored || typeof stored.otp !== 'string') {
+    res.status(401).json({ detail: 'OTP expired or not found. Please request a new one.' });
+    return false;
+  }
+  if (stored.attempts >= OTP_MAX_ATTEMPTS) {
+    await cacheDelete(otpKey);
+    res.status(429).json({ detail: 'Too many failed attempts. Please request a new OTP.' });
+    return false;
+  }
+
+  if (!safeEqual(stored.otp, otp.trim())) {
+    const attempts = stored.attempts + 1;
+    await cacheSet(otpKey, { ...stored, attempts }, settings.OTP_EXPIRY_SECONDS);
+    await consumeRateLimit(failKey, OTP_FAILURES_PER_HOUR, 3600);
+    res.status(401).json({ detail: 'Incorrect OTP', remaining_attempts: Math.max(0, OTP_MAX_ATTEMPTS - attempts) });
+    return false;
+  }
+
+  await cacheDelete(otpKey);
+  return true;
 }
 
 /**
@@ -40,9 +156,9 @@ async function sendTwilioSMS(to: string, body: string): Promise<boolean> {
   const from = settings.TWILIO_PHONE_NUMBER;
 
   if (!accountSid || !authToken || !from) {
-    console.warn('Twilio credentials not configured. OTP will be logged to console only.');
-    console.log(`[DEV OTP] To: ${to}, Message: ${body}`);
-    return true; // Return true in dev mode so the flow continues
+    if (settings.isProduction) return false;
+    console.warn(`[DEV OTP] Twilio not configured. To: ${to}, Message: ${body}`);
+    return true;
   }
 
   try {
@@ -72,132 +188,18 @@ async function sendTwilioSMS(to: string, body: string): Promise<boolean> {
   }
 }
 
-// ── POST /driver/send-otp — Send OTP to driver's phone ────
-router.post('/driver/send-otp', async (req: Request, res: Response) => {
-  try {
-    let { phone } = req.body;
-    if (!phone) {
-      res.status(400).json({ detail: 'phone is required' });
-      return;
-    }
-
-    // Normalize Indian phone number
-    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
-    if (!phone.startsWith('+')) {
-      if (phone.startsWith('91') && phone.length === 12) {
-        phone = '+' + phone;
-      } else if (phone.length === 10) {
-        phone = '+91' + phone;
-      } else {
-        phone = '+' + phone;
-      }
-    }
-
-    // Validate: must be at least 10 digits
-    const digitsOnly = phone.replace(/\D/g, '');
-    if (digitsOnly.length < 10) {
-      res.status(400).json({ detail: 'Invalid phone number' });
-      return;
-    }
-
-    // Generate OTP
-    const otp = generateOTP();
-
-    // Store OTP in Redis with TTL
-    const { cacheSet } = await import('../core/redis');
-    const otpKey = `otp:driver:${phone}`;
-    await cacheSet(otpKey, { otp, phone, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
-
-    // Rate limit: max 3 OTPs per phone per 10 minutes
-    const rateLimitKey = `otp:ratelimit:${phone}`;
-    const { cacheGet } = await import('../core/redis');
-    const rateData = await cacheGet<{ count: number }>(rateLimitKey);
-    if (rateData && rateData.count >= 50) {
-      res.status(429).json({ detail: 'Too many OTP requests. Please wait 10 minutes.' });
-      return;
-    }
-    await cacheSet(rateLimitKey, { count: (rateData?.count || 0) + 1 }, 600);
-
-    // Check if driver is new
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .maybeSingle();
-
-    // Send SMS
-    let message = `Your margixindia driver login OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`;
-    if (!existingUser) {
-      message = `Welcome Driver! ${message}`;
-    }
-    const sent = await sendTwilioSMS(phone, message);
-
-    if (!sent) {
-      res.status(500).json({ detail: 'Failed to send OTP. Please try again.' });
-      return;
-    }
-
-    res.json({
-      status: 'otp_sent',
-      phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
-      expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
-      message: 'OTP sent successfully',
-    });
-  } catch (e: any) {
-    res.status(500).json({ detail: e.message });
-  }
-});
+// ── POST /driver/send-otp — Send OTP to the driver's phone ──
+router.post('/driver/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Request, res: Response) => sendOtp('driver', req, res));
 
 // ── POST /driver/verify-otp — Verify OTP and login driver ──
-router.post('/driver/verify-otp', async (req: Request, res: Response) => {
+router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
   try {
-    let { phone, otp } = req.body;
-    if (!phone || !otp) {
+    const phone = normalizePhone(req.body.phone);
+    if (!phone) {
       res.status(400).json({ detail: 'phone and otp are required' });
       return;
     }
-
-    // Normalize phone
-    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
-    if (!phone.startsWith('+')) {
-      if (phone.startsWith('91') && phone.length === 12) {
-        phone = '+' + phone;
-      } else if (phone.length === 10) {
-        phone = '+91' + phone;
-      } else {
-        phone = '+' + phone;
-      }
-    }
-
-    // Retrieve OTP from Redis
-    const { cacheGet, cacheSet } = await import('../core/redis');
-    const otpKey = `otp:driver:${phone}`;
-    const storedData = await cacheGet<{ otp: string; phone: string; attempts: number }>(otpKey);
-
-    if (!storedData) {
-      res.status(401).json({ detail: 'OTP expired or not found. Please request a new one.' });
-      return;
-    }
-
-    // Brute-force protection: max 5 attempts
-    if (storedData.attempts >= 5) {
-      const { cacheDelete } = await import('../core/redis');
-      await cacheDelete(otpKey);
-      res.status(429).json({ detail: 'Too many failed attempts. Please request a new OTP.' });
-      return;
-    }
-
-    if (storedData.otp !== otp.trim()) {
-      // Increment attempts
-      storedData.attempts += 1;
-      await cacheSet(otpKey, storedData, settings.OTP_EXPIRY_SECONDS);
-      res.status(401).json({ detail: 'Incorrect OTP', remaining_attempts: 5 - storedData.attempts });
-      return;
-    }
-
-    // OTP verified! Delete it from Redis
-    const { cacheDelete } = await import('../core/redis');
-    await cacheDelete(otpKey);
+    if (!(await verifyOtp('driver', phone, req.body.otp, res))) return;
 
     // Find or create driver in auth.users via Supabase Admin API
     // This ensures the FK constraint (public.users.id → auth.users.id) is satisfied
@@ -310,132 +312,18 @@ router.post('/driver/verify-otp', async (req: Request, res: Response) => {
 // CUSTOMER AUTH — Twilio Phone OTP
 // ═══════════════════════════════════════════════════════════
 
-// ── POST /customer/send-otp — Send OTP to driver's phone ────
-router.post('/customer/send-otp', async (req: Request, res: Response) => {
-  try {
-    let { phone } = req.body;
-    if (!phone) {
-      res.status(400).json({ detail: 'phone is required' });
-      return;
-    }
-
-    // Normalize Indian phone number
-    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
-    if (!phone.startsWith('+')) {
-      if (phone.startsWith('91') && phone.length === 12) {
-        phone = '+' + phone;
-      } else if (phone.length === 10) {
-        phone = '+91' + phone;
-      } else {
-        phone = '+' + phone;
-      }
-    }
-
-    // Validate: must be at least 10 digits
-    const digitsOnly = phone.replace(/\D/g, '');
-    if (digitsOnly.length < 10) {
-      res.status(400).json({ detail: 'Invalid phone number' });
-      return;
-    }
-
-    // Generate OTP
-    const otp = generateOTP();
-
-    // Store OTP in Redis with TTL
-    const { cacheSet } = await import('../core/redis');
-    const otpKey = `otp:customer:${phone}`;
-    await cacheSet(otpKey, { otp, phone, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
-
-    // Rate limit: max 3 OTPs per phone per 10 minutes
-    const rateLimitKey = `otp:ratelimit:${phone}`;
-    const { cacheGet } = await import('../core/redis');
-    const rateData = await cacheGet<{ count: number }>(rateLimitKey);
-    if (rateData && rateData.count >= 50) {
-      res.status(429).json({ detail: 'Too many OTP requests. Please wait 10 minutes.' });
-      return;
-    }
-    await cacheSet(rateLimitKey, { count: (rateData?.count || 0) + 1 }, 600);
-
-    // Check if driver is new
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .maybeSingle();
-
-    // Send SMS
-    let message = `Your margixindia customer login OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`;
-    if (!existingUser) {
-      message = `Welcome Customer! ${message}`;
-    }
-    const sent = await sendTwilioSMS(phone, message);
-
-    if (!sent) {
-      res.status(500).json({ detail: 'Failed to send OTP. Please try again.' });
-      return;
-    }
-
-    res.json({
-      status: 'otp_sent',
-      phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
-      expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
-      message: 'OTP sent successfully',
-    });
-  } catch (e: any) {
-    res.status(500).json({ detail: e.message });
-  }
-});
+// ── POST /customer/send-otp — Send OTP to the customer's phone ──
+router.post('/customer/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Request, res: Response) => sendOtp('customer', req, res));
 
 // ── POST /customer/verify-otp — Verify OTP and login driver ──
-router.post('/customer/verify-otp', async (req: Request, res: Response) => {
+router.post('/customer/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
   try {
-    let { phone, otp } = req.body;
-    if (!phone || !otp) {
+    const phone = normalizePhone(req.body.phone);
+    if (!phone) {
       res.status(400).json({ detail: 'phone and otp are required' });
       return;
     }
-
-    // Normalize phone
-    phone = phone.replace(/\s+/g, '').replace(/^0+/, '');
-    if (!phone.startsWith('+')) {
-      if (phone.startsWith('91') && phone.length === 12) {
-        phone = '+' + phone;
-      } else if (phone.length === 10) {
-        phone = '+91' + phone;
-      } else {
-        phone = '+' + phone;
-      }
-    }
-
-    // Retrieve OTP from Redis
-    const { cacheGet, cacheSet } = await import('../core/redis');
-    const otpKey = `otp:customer:${phone}`;
-    const storedData = await cacheGet<{ otp: string; phone: string; attempts: number }>(otpKey);
-
-    if (!storedData) {
-      res.status(401).json({ detail: 'OTP expired or not found. Please request a new one.' });
-      return;
-    }
-
-    // Brute-force protection: max 5 attempts
-    if (storedData.attempts >= 5) {
-      const { cacheDelete } = await import('../core/redis');
-      await cacheDelete(otpKey);
-      res.status(429).json({ detail: 'Too many failed attempts. Please request a new OTP.' });
-      return;
-    }
-
-    if (storedData.otp !== otp.trim()) {
-      // Increment attempts
-      storedData.attempts += 1;
-      await cacheSet(otpKey, storedData, settings.OTP_EXPIRY_SECONDS);
-      res.status(401).json({ detail: 'Incorrect OTP', remaining_attempts: 5 - storedData.attempts });
-      return;
-    }
-
-    // OTP verified! Delete it from Redis
-    const { cacheDelete } = await import('../core/redis');
-    await cacheDelete(otpKey);
+    if (!(await verifyOtp('customer', phone, req.body.otp, res))) return;
 
     // Find or create customer in auth.users via Supabase Admin API
     let { data: customer } = await supabase
