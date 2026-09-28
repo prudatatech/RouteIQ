@@ -183,15 +183,23 @@ export default function VendorShipmentRequestPage() {
 
   const updateMapBounds = (newPickup: any, newDrop: any) => {
     if (newPickup && newDrop) {
-      const centerLng = (newPickup.lng + newDrop.lng) / 2;
-      const centerLat = (newPickup.lat + newDrop.lat) / 2;
-      const distance = turf.distance(
-        turf.point([newPickup.lng, newPickup.lat]),
-        turf.point([newDrop.lng, newDrop.lat]),
-        { units: 'kilometers' }
-      );
-      // Logarithmic zoom calculation based on distance
-      const calculatedZoom = Math.max(4, Math.min(14, 13.5 - Math.log2(Math.max(1, distance))));
+      const minLng = Math.min(newPickup.lng, newDrop.lng);
+      const maxLng = Math.max(newPickup.lng, newDrop.lng);
+      const minLat = Math.min(newPickup.lat, newDrop.lat);
+      const maxLat = Math.max(newPickup.lat, newDrop.lat);
+
+      const latDiff = maxLat - minLat;
+      const lngDiff = maxLng - minLng;
+      const maxDiff = Math.max(latDiff, lngDiff);
+      
+      const centerLng = (minLng + maxLng) / 2;
+      const centerLat = (minLat + maxLat) / 2 + (maxDiff * 0.1); // Shift center up slightly to accommodate curve
+      
+      let calculatedZoom = 11;
+      if (maxDiff > 0) {
+        calculatedZoom = Math.max(3.5, Math.min(14, 7.5 - Math.log2(maxDiff)));
+      }
+
       setViewState({ longitude: centerLng, latitude: centerLat, zoom: calculatedZoom });
     } else if (newPickup) {
       setViewState({ longitude: newPickup.lng, latitude: newPickup.lat, zoom: 16 });
@@ -355,7 +363,12 @@ export default function VendorShipmentRequestPage() {
       const midpoint = turf.midpoint(start, end);
       const bearing = turf.bearing(start, end);
       const offsetDistance = distance * 0.2; 
-      const controlPoint = turf.destination(midpoint, offsetDistance, bearing + 90, { units: 'kilometers' });
+      
+      // If bearing > 0 (Eastwards), subtract 90 to point Northwards
+      // If bearing < 0 (Westwards), add 90 to point Northwards
+      const offsetBearing = bearing > 0 ? bearing - 90 : bearing + 90;
+      
+      const controlPoint = turf.destination(midpoint, offsetDistance, offsetBearing, { units: 'kilometers' });
       
       const line = turf.lineString([start.geometry.coordinates, controlPoint.geometry.coordinates, end.geometry.coordinates]);
       return turf.bezierSpline(line, { resolution: 10000, sharpness: 0.85 });
