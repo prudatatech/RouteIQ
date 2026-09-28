@@ -69,6 +69,21 @@ export const VehicleCreateSchema = z.object({
   container_width_ft: z.number().min(0).max(15).optional().nullable(),
   container_height_ft: z.number().min(0).max(15).optional().nullable(),
   current_load_kg: z.number().min(0).max(50000).optional().default(0),
+  rc_number: z.string().max(50).optional().nullable(),
+  rc_expiry: z.string().optional().nullable(),
+  rc_document_url: z.string().optional().nullable(),
+  insurance_number: z.string().max(50).optional().nullable(),
+  insurance_expiry: z.string().optional().nullable(),
+  insurance_document_url: z.string().optional().nullable(),
+  fitness_certificate_number: z.string().max(50).optional().nullable(),
+  fitness_expiry: z.string().optional().nullable(),
+  fitness_document_url: z.string().optional().nullable(),
+  permit_number: z.string().max(50).optional().nullable(),
+  permit_expiry: z.string().optional().nullable(),
+  permit_document_url: z.string().optional().nullable(),
+  puc_number: z.string().max(50).optional().nullable(),
+  puc_expiry: z.string().optional().nullable(),
+  puc_document_url: z.string().optional().nullable(),
 });
 export type VehicleCreate = z.infer<typeof VehicleCreateSchema>;
 
@@ -92,6 +107,21 @@ export const VehicleUpdateSchema = z.object({
   container_width_ft: z.number().min(0).max(15).optional().nullable(),
   container_height_ft: z.number().min(0).max(15).optional().nullable(),
   current_load_kg: z.number().min(0).max(50000).optional().nullable(),
+  rc_number: z.string().max(50).optional().nullable(),
+  rc_expiry: z.string().optional().nullable(),
+  rc_document_url: z.string().optional().nullable(),
+  insurance_number: z.string().max(50).optional().nullable(),
+  insurance_expiry: z.string().optional().nullable(),
+  insurance_document_url: z.string().optional().nullable(),
+  fitness_certificate_number: z.string().max(50).optional().nullable(),
+  fitness_expiry: z.string().optional().nullable(),
+  fitness_document_url: z.string().optional().nullable(),
+  permit_number: z.string().max(50).optional().nullable(),
+  permit_expiry: z.string().optional().nullable(),
+  permit_document_url: z.string().optional().nullable(),
+  puc_number: z.string().max(50).optional().nullable(),
+  puc_expiry: z.string().optional().nullable(),
+  puc_document_url: z.string().optional().nullable(),
 });
 export type VehicleUpdate = z.infer<typeof VehicleUpdateSchema>;
 

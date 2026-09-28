@@ -2,7 +2,7 @@ import axios from 'axios'
 import { supabase } from '@/services/supabase'
 
 
-let baseURL = import.meta.env.VITE_API_URL || 'https://margixindia.vercel.app/api/v1';
+let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
   baseURL = baseURL.replace(/\/$/, '') + '/api/v1';
 }
