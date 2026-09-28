@@ -9,6 +9,10 @@
 -- other self-signup gets the default `driver`. Customers are stored in
 -- public.customers by the backend and get no public.users row.
 
+-- 004_capacity_bidding_v2 was never applied everywhere: make sure the
+-- vendor role exists before anything assigns it.
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'vendor';
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql
