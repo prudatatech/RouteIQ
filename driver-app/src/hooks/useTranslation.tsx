@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations, Language } from '../locales';
 import { api } from '../services/api';
+import { getCurrentSession } from '../services/supabase';
 
 interface TranslationContextType {
   lang: Language;
@@ -20,8 +21,8 @@ export const TranslationProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Load from async storage initially for login screen
     AsyncStorage.getItem('language_preference').then((saved) => {
-      if (saved === 'en' || saved === 'hi' || saved === 'mr') {
-        setLangState(saved);
+      if (saved && saved in translations) {
+        setLangState(saved as Language);
       }
       setIsLoaded(true);
     });
@@ -32,8 +33,7 @@ export const TranslationProvider = ({ children }: { children: ReactNode }) => {
     await AsyncStorage.setItem('language_preference', newLang);
     try {
       // If logged in, update the backend profile
-      const token = await AsyncStorage.getItem('access_token');
-      if (token) {
+      if (await getCurrentSession()) {
         await api.updateLanguagePreference(newLang);
       }
     } catch (e) {

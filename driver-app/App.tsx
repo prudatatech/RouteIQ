@@ -9,7 +9,10 @@ import * as Updates from 'expo-updates';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import { NotificationListener } from './src/components/NotificationListener';
-import { api } from './src/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, STORAGE_KEYS } from './src/services/api';
+import { supabase } from './src/services/supabase';
+import { locationService } from './src/services/location';
 import { TranslationProvider } from './src/hooks/useTranslation';
 import AnimatedSplashScreen from './src/components/AnimatedSplashScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -33,6 +36,19 @@ export default function App() {
     checkUpdatesAndAuth();
   }, []);
 
+  // Session ended (logout, failed refresh, or rejected token) → back to login.
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        if (locationService.isTracking) locationService.stop();
+        queryClient.clear();
+        AsyncStorage.removeItem(STORAGE_KEYS.DRIVER_INFO).catch(() => {});
+        setIsLoggedIn((current) => (current === null ? current : false));
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
   const checkUpdatesAndAuth = async () => {
     try {
       if (!__DEV__) {
@@ -48,7 +64,9 @@ export default function App() {
     }
     
     await api.init();
-    const loggedIn = await api.isLoggedIn();
+    // Drivers without a Supabase session (including installs upgraded from
+    // token-based builds) must log in again.
+    const loggedIn = await api.isLoggedIn().catch(() => false);
     setIsLoggedIn(loggedIn);
   };
 

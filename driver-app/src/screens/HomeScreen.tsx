@@ -118,7 +118,7 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
     staleTime: 10000,
   });
 
-  const { data: earningsDataQ, refetch: refetchEarnings } = useQuery({
+  const { data: earningsDataQ, refetch: refetchEarnings, isError: earningsIsError, isFetching: earningsIsFetching } = useQuery({
     queryKey: ['earnings'],
     queryFn: () => api.getDriverEarnings(),
     enabled: activeTab === 'wallet',
@@ -683,9 +683,9 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
   const submitCompleteStop = async () => {
     if (!activeStopId) return;
     try {
-      // Basic validation for signature data
+      // The receiver's typed name is sent as signature_data (API field unchanged)
       if (signatureData.trim().length < 3) {
-        Alert.alert(t('required'), t('alert_valid_sig'));
+        Alert.alert(t('required'), t('alert_valid_receiver'));
         return;
       }
       const res = await api.completeStop({
@@ -1341,7 +1341,7 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
       <View style={[styles.routeCard, { marginHorizontal: 0, marginTop: 20, backgroundColor: '#111827' }]}>
         <Text style={[styles.routeLabel, { color: '#9CA3AF' }]}>{t('total_earnings')}</Text>
         <Text style={[styles.routeTitle, { color: '#FFFFFF', fontSize: 36, marginTop: 8 }]}>
-          ₹{earningsData?.total_earnings?.toLocaleString() || '0'}
+          {earningsIsError && !earningsData ? '—' : `₹${earningsData?.total_earnings?.toLocaleString() || '0'}`}
         </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#374151' }}>
           <View>
@@ -1374,7 +1374,20 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
         </TouchableOpacity>
       ))}
 
-      {(!earningsData?.recent_invoices || earningsData.recent_invoices.length === 0) && (
+      {earningsIsError && !earningsData && (
+        <View style={styles.noRouteCard}>
+          <Text style={styles.noRouteTitle}>{t('earnings_load_failed')}</Text>
+          <TouchableOpacity
+            onPress={() => refetchEarnings()}
+            disabled={earningsIsFetching}
+            style={{ marginTop: 12, backgroundColor: '#111827', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 12, opacity: earningsIsFetching ? 0.6 : 1 }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{t('retry')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!earningsIsError && (!earningsData?.recent_invoices || earningsData.recent_invoices.length === 0) && (
         <View style={styles.noRouteCard}>
           <Text style={styles.noRouteTitle}>{t('no_earnings_yet')}</Text>
           <Text style={styles.noRouteText}>{t('no_earnings_desc')}</Text>
@@ -1652,14 +1665,18 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{t('pod_title')}</Text>
-            <Text style={styles.modalSubtitle}>{t('pod_desc')}</Text>
+            <Text style={styles.modalSubtitle}>{t('pod_receiver_desc')}</Text>
+            <Text style={styles.receiverLabel}>{t('pod_receiver_label')}</Text>
             <View style={styles.signatureBox}>
               <TextInput
                 style={styles.signatureInput}
-                placeholder={t('pod_placeholder')}
+                placeholder={t('pod_receiver_placeholder')}
                 placeholderTextColor="#666666"
                 value={signatureData}
                 onChangeText={setSignatureData}
+                autoCapitalize="words"
+                autoCorrect={false}
+                accessibilityLabel={t('pod_receiver_label')}
               />
             </View>
             <View style={styles.modalActions}>
@@ -1912,6 +1929,7 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#FFFFFF', width: '100%', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#E0E0E0' },
   modalTitle: { color: '#111827', fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
   modalSubtitle: { color: '#6B7280', fontSize: 14, marginBottom: 24 },
+  receiverLabel: { color: '#374151', fontSize: 14, fontWeight: '700', marginBottom: 8, alignSelf: 'flex-start' },
   signatureBox: { height: 120, backgroundColor: '#FAF8FF', borderRadius: 12, borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 24 },
   signatureInput: { flex: 1, color: '#111827', fontSize: 24, fontWeight: '600', textAlign: 'center' },
   sosInput: { height: 100, backgroundColor: '#FAF8FF', borderRadius: 12, borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 24, padding: 16, color: '#111827', fontSize: 15, textAlignVertical: 'top' },

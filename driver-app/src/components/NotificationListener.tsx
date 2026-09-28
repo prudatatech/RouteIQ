@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { ToastAndroid, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
 import { Audio } from 'expo-av';
@@ -20,19 +21,14 @@ export const NotificationListener = () => {
   const [userId, setUserId] = React.useState<string | null>(null);
 
   useEffect(() => {
-    let currentToken: string | undefined;
-
-    registerForPushNotificationsAsync().then(token => {
-      if (token) {
-        console.log("Push Token:", token);
-        currentToken = token;
-      }
-    });
-
-    api.getDriverInfo().then((info: any) => {
+    Promise.all([
+      registerForPushNotificationsAsync().catch(() => undefined),
+      api.getDriverInfo(),
+    ]).then(([currentToken, info]: [string | undefined, any]) => {
       if (info?.id) {
         setUserId(info.id);
         if (currentToken) {
+          // RLS allows a driver to set push_token on their own users row only.
           supabase.from('users').update({ push_token: currentToken }).eq('id', info.id)
             .then(({ error }) => {
               if (error) console.error("Failed to save push token:", error);
@@ -119,7 +115,11 @@ async function registerForPushNotificationsAsync() {
     return;
   }
   try {
-    const projectId = "1190a266-468e-4e8f-97cc-61048ab9f825"; // From app.json
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    if (!projectId) {
+      console.log('No EAS projectId in app config; cannot get a push token');
+      return;
+    }
     token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
   } catch (e) {
     console.log("Error getting push token", e);

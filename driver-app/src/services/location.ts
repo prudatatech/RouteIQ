@@ -14,8 +14,9 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
+import { supabase, getCurrentSession } from './supabase';
 import { DEFAULT_PING_INTERVAL_MS, MIN_PING_INTERVAL_MS, MAX_PING_INTERVAL_MS } from '../config';
 
 const QUEUE_KEY = 'margixindia_ping_queue';
@@ -274,13 +275,14 @@ class LocationService {
         timestamp: new Date(location.timestamp).toISOString(),
       };
 
-      // Send queued pings first (offline replay)
+      // Send queued pings first (offline replay). Clear before replaying so a
+      // ping that fails again is re-queued rather than dropped.
       const queue = await this.getQueue();
-      for (const queuedPing of queue) {
-        await this.sendToSupabase(queuedPing);
-      }
       if (queue.length > 0) {
         await this.clearQueue();
+        for (const queuedPing of queue) {
+          await this.sendToSupabase(queuedPing);
+        }
       }
 
       // Send current ping
@@ -303,6 +305,14 @@ class LocationService {
   private async sendToSupabase(ping: LocationPing) {
     if (!this.vehicleId) return;
 
+    // Writes are authorised by the driver's session (row-level security). The
+    // session is restored from secure storage, so this also works in the
+    // headless background task. Without one, keep the ping for later.
+    if (!(await getCurrentSession())) {
+      await this.enqueue(ping);
+      return;
+    }
+
     try {
       // 1. UPDATE vehicle's live position in Supabase
       const { error: vehicleError } = await supabase
@@ -318,25 +328,16 @@ class LocationService {
       if (vehicleError) {
         console.error('Supabase vehicle update error:', vehicleError.message);
         // Queue for retry
-        const queue = await this.getQueue();
-        queue.push(ping);
-        await this.saveQueue(queue);
+        await this.enqueue(ping);
         return;
       }
 
       // 2. INSERT telemetry record for history trail
       const speedKmph = ping.speed > 50 ? ping.speed : ping.speed * 3.6;
-      const uuidv4 = () => {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-          const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      };
-
       const { error: telemetryError } = await supabase
         .from('telemetry')
         .insert({
-          id: uuidv4(),
+          id: Crypto.randomUUID(),
           vehicle_id: this.vehicleId,
           latitude: ping.lat,
           longitude: ping.lng,
@@ -359,9 +360,7 @@ class LocationService {
     } catch (networkError: any) {
       // Network failure → queue for offline replay
       console.warn('Supabase unreachable, queuing ping:', networkError.message);
-      const queue = await this.getQueue();
-      queue.push(ping);
-      await this.saveQueue(queue);
+      await this.enqueue(ping);
     }
   }
 
@@ -434,6 +433,12 @@ class LocationService {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(capped));
   }
 
+  private async enqueue(ping: LocationPing) {
+    const queue = await this.getQueue();
+    queue.push(ping);
+    await this.saveQueue(queue);
+  }
+
   private async clearQueue() {
     await AsyncStorage.removeItem(QUEUE_KEY);
   }
@@ -447,6 +452,10 @@ class LocationService {
   private restartInterval() {
     if (this.intervalId) clearInterval(this.intervalId);
     this.startInterval();
+  }
+
+  get hasIdentity() {
+    return !!this.vehicleId;
   }
 
   get isTracking() {
@@ -469,6 +478,11 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (data) {
     const { locations } = data as { locations: Location.LocationObject[] };
     if (locations && locations.length > 0) {
+      // In a headless run (app killed) the service starts empty: restore the
+      // vehicle identity; the Supabase session is restored from secure storage.
+      if (!locationService.hasIdentity) {
+        await locationService.loadIdentity();
+      }
       // Process the most recent location
       await locationService.processLocationUpdate(locations[locations.length - 1]);
     }

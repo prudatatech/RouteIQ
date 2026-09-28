@@ -1,10 +1,60 @@
+/**
+ * Runtime configuration, read from EXPO_PUBLIC_* environment variables.
+ *
+ * Expo inlines `process.env.EXPO_PUBLIC_*` into the bundle at build time, so
+ * each variable must be referenced literally (no dynamic `process.env[name]`).
+ * Set them in driver-app/.env for local development (see .env.example) and as
+ * EAS environment variables for builds and updates. There are deliberately no
+ * fallbacks: a build without configuration fails at startup instead of
+ * silently talking to the wrong backend.
+ */
 
-export const API_BASE_URL = 'https://routeiq-production-7034.up.railway.app';
+function required(name: string, value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    throw new Error(
+      `[config] Missing required environment variable ${name}. ` +
+        'Set it in driver-app/.env (see .env.example) or in the EAS environment for this build.'
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * Refuse to start with a privileged Supabase key. The app must only ever carry
+ * the public anon (publishable) key; row-level security does the rest.
+ */
+function assertPublicSupabaseKey(key: string): string {
+  if (key.startsWith('sb_secret_')) {
+    throw new Error('[config] EXPO_PUBLIC_SUPABASE_ANON_KEY is a secret key. Use the anon/publishable key.');
+  }
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    let role: unknown;
+    try {
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      role = JSON.parse(atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '='))).role;
+    } catch {
+      role = undefined;
+    }
+    if (role !== undefined && role !== 'anon') {
+      throw new Error(`[config] EXPO_PUBLIC_SUPABASE_ANON_KEY has role "${String(role)}". Use the anon key.`);
+    }
+  }
+  return key;
+}
+
+export const API_BASE_URL = required('EXPO_PUBLIC_API_URL', process.env.EXPO_PUBLIC_API_URL).replace(/\/+$/, '');
 
 export const API_V1 = `${API_BASE_URL}/api/v1`;
 
-// Google Maps API Key (for MapView)
-export const GOOGLE_MAPS_API_KEY = 'AIzaSyB7XAze_uFE14yzA9sKuMaHShvqDtEA_Tw';
+export const SUPABASE_URL = required('EXPO_PUBLIC_SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL);
+
+export const SUPABASE_ANON_KEY = assertPublicSupabaseKey(
+  required('EXPO_PUBLIC_SUPABASE_ANON_KEY', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY)
+);
+
+// The Google Maps key is consumed natively (see app.config.ts), not at runtime.
 
 // GPS Ping defaults (server overrides these)
 export const DEFAULT_PING_INTERVAL_MS = 5000; // 5 seconds (Zomato-style high-frequency)

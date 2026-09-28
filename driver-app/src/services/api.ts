@@ -1,21 +1,63 @@
 /**
  * margixindia Driver App — API Client
- * Handles all HTTP calls to the TS backend with JWT auth.
+ * Handles all HTTP calls to the TS backend, authenticated with the driver's
+ * Supabase access token (the backend verifies it via JWKS).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_V1 } from '../config';
+import { supabase } from './supabase';
 
 const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'margixindia_access_token',
-  REFRESH_TOKEN: 'margixindia_refresh_token',
   DRIVER_INFO: 'margixindia_driver_info',
 };
 
-class ApiClient {
-  private accessToken: string | null = null;
+// Tokens stored in AsyncStorage by builds before the Supabase-session release.
+const LEGACY_TOKEN_KEYS = ['margixindia_access_token', 'margixindia_refresh_token'];
 
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('Your session has expired. Please log in again.');
+    this.name = 'SessionExpiredError';
+  }
+}
+
+async function currentAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+async function parseBody(response: Response): Promise<any> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+class ApiClient {
+  /** Drop tokens left behind by older builds; they are no longer used. */
   async init() {
-    this.accessToken = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    await AsyncStorage.multiRemove(LEGACY_TOKEN_KEYS).catch(() => {});
+  }
+
+  private send(method: string, path: string, body: any, token: string | null) {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Bypass-Tunnel-Reminder': 'true',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(`${API_V1}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
   }
 
   private async request<T = any>(
@@ -24,46 +66,33 @@ class ApiClient {
     body?: any,
     requireAuth = true
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Bypass-Tunnel-Reminder': 'true',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    };
+    let response = await this.send(method, path, body, requireAuth ? await currentAccessToken() : null);
 
-    if (requireAuth && this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
-    }
-
-    const response = await fetch(`${API_V1}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      // Try token refresh on 401
-      if (response.status === 401 && requireAuth) {
-        const refreshed = await this.refreshToken();
-        if (refreshed) {
-          headers['Authorization'] = `Bearer ${this.accessToken}`;
-          const retryResponse = await fetch(`${API_V1}${path}`, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined,
-          });
-          if (retryResponse.ok) {
-            return retryResponse.json();
-          }
-        }
+    if (response.status === 401 && requireAuth) {
+      // Refresh the Supabase session once and retry; if that fails the driver must log in again.
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error || !data.session) {
+        await this.endSession();
+        throw new SessionExpiredError();
       }
-      throw new Error(data.detail || `Request failed: ${response.status}`);
+      response = await this.send(method, path, body, data.session.access_token);
+      if (response.status === 401) {
+        await this.endSession();
+        throw new SessionExpiredError();
+      }
     }
 
+    const data = await parseBody(response);
+    if (!response.ok) {
+      throw new Error(data.detail || data.error || `Request failed: ${response.status}`);
+    }
     return data;
+  }
+
+  /** Clear the local session after an auth failure (App listens for SIGNED_OUT). */
+  private async endSession() {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    await AsyncStorage.removeItem(STORAGE_KEYS.DRIVER_INFO).catch(() => {});
   }
 
   // ── Auth ───────────────────────────────────────────────────
@@ -74,49 +103,46 @@ class ApiClient {
 
   async verifyOTP(phone: string, otp: string): Promise<{
     status: string;
-    access_token: string;
-    refresh_token: string;
     user_id: string;
+    supabase_session: { access_token: string; refresh_token: string; expires_at?: number } | null;
     driver: { id: string; phone: string; full_name: string; language_preference?: string };
   }> {
     const data = await this.request('POST', '/auth/driver/verify-otp', { phone, otp }, false);
 
-    // Store tokens
-    this.accessToken = data.access_token;
-    await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, data.access_token);
-    await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, data.refresh_token);
+    const issued = data.supabase_session;
+    if (!issued?.access_token || !issued?.refresh_token) {
+      throw new Error('Login could not be completed because the server did not start a session. Please try again.');
+    }
+
+    const { data: sessionData, error } = await supabase.auth.setSession({
+      access_token: issued.access_token,
+      refresh_token: issued.refresh_token,
+    });
+    if (error || !sessionData.session) {
+      throw new Error('Login could not be completed. Please try again.');
+    }
+    if (data.driver?.id && sessionData.session.user.id !== data.driver.id) {
+      await this.endSession();
+      throw new Error('Login could not be completed (account mismatch). Please contact your fleet manager.');
+    }
+
+    // Non-sensitive profile only; credentials live in the secure store via Supabase Auth.
     await AsyncStorage.setItem(STORAGE_KEYS.DRIVER_INFO, JSON.stringify(data.driver));
 
     return data;
   }
 
-  async refreshToken(): Promise<boolean> {
-    try {
-      const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-      if (!refreshToken) return false;
-
-      const data = await this.request('POST', '/auth/refresh', { refresh_token: refreshToken }, false);
-      this.accessToken = data.access_token;
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, data.access_token);
-      await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, data.refresh_token);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   async logout(): Promise<void> {
-    this.accessToken = null;
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.ACCESS_TOKEN,
-      STORAGE_KEYS.REFRESH_TOKEN,
-      STORAGE_KEYS.DRIVER_INFO,
-    ]);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      // Server-side sign-out failed (e.g. offline); still clear the local session.
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    }
+    await AsyncStorage.removeItem(STORAGE_KEYS.DRIVER_INFO);
   }
 
   async isLoggedIn(): Promise<boolean> {
-    const token = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-    return !!token;
+    return !!(await currentAccessToken());
   }
 
   async getDriverInfo(): Promise<any> {
@@ -142,15 +168,7 @@ class ApiClient {
   }
 
   async getDriverEarnings(): Promise<any> {
-    try {
-      const result = await this.request('GET', '/auth/driver/earnings', undefined, true);
-      console.log('[EARNINGS] Got result:', JSON.stringify(result).substring(0, 200));
-      return result;
-    } catch (e) {
-      console.error('[EARNINGS] Auth endpoint failed, trying test endpoint:', e);
-      // Fallback to the test endpoint that bypasses auth
-      return this.request('GET', '/auth/driver/earnings-test', undefined, false);
-    }
+    return this.request('GET', '/auth/driver/earnings', undefined, true);
   }
 
   // ── Driver GPS Ping ────────────────────────────────────────
@@ -219,10 +237,6 @@ class ApiClient {
     return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage });
   }
 
-  async confirmCapacity(vehicle_id: string, available_capacity_kg: number): Promise<any> {
-    return this.request('POST', '/capacity/driver/confirm-capacity', { vehicle_id, available_capacity_kg });
-  }
-
   async getVehicleInfo(vehicle_id: string): Promise<any> {
     return this.request('GET', `/vehicles/${vehicle_id}`);
   }
@@ -237,6 +251,10 @@ class ApiClient {
 
   async flagStop(confirmation_id: string): Promise<any> {
     return this.request('POST', '/capacity/driver/flag-stop', { confirmation_id });
+  }
+
+  async getWindowBidCount(window_id: string): Promise<{ count: number }> {
+    return this.request('GET', `/capacity/windows/${encodeURIComponent(window_id)}/bid-count`);
   }
 
   async openBackhaulWindow(vehicle_id: string, available_capacity_kg: number, trigger_type: 'mid_route' | 'return_trip'): Promise<any> {

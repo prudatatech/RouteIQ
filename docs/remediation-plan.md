@@ -96,6 +96,20 @@ The driver app ships the Supabase **service_role** key (bypasses all RLS). It ca
 
 ---
 
+**Approach (implemented on this branch):** instead of making backend-issued tokens acceptable to Supabase (which depends on the legacy HS256 secret the project is moving away from), `POST /auth/driver/verify-otp` also returns a real Supabase session (`supabase_session`) created server-side. The new driver app signs in to Supabase with it, uses the anon/publishable key under the Phase 2 policies, and sends the same token to the API. Existing builds keep receiving backend tokens until they update.
+
+### Release and key rotation (you)
+
+1. Apply the Phase 2 migrations and deploy backend-ts (the session is issued by the backend).
+2. Build the new driver app with EAS (native modules changed, so this is a store/internal build, not an OTA update). Set these as EAS environment variables: `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` (publishable/anon key — never the service role), `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`. Restrict the Maps key to the app's package name and signing certificate in Google Cloud.
+3. Existing drivers log in once more after updating (their old tokens are cleared).
+4. When drivers are on the new build, retire the leaked key:
+   - Supabase Dashboard → Settings → API Keys: create a **publishable** key and a **secret** key.
+   - Railway: set backend-ts and ml-service `SUPABASE_SERVICE_ROLE_KEY` to the new secret key and `SUPABASE_ANON_KEY` to the publishable key; update the frontend's `VITE_SUPABASE_ANON_KEY`, the driver app's `EXPO_PUBLIC_SUPABASE_ANON_KEY` and the customer app's local `.env` to the publishable key.
+   - Then **disable the legacy JWT-based API keys**. This invalidates the service-role key shipped in old driver builds and in git history. It does not change the JWT signing keys, so web and driver sessions stay valid.
+   - Old driver builds stop working at this point (their direct Supabase writes used the legacy key) — only do this once drivers have updated.
+5. Replace `SECRET_KEY` on Railway with a new random value (the old one is in git history); it is only a fallback when `SUPABASE_JWT_SECRET` is set.
+
 ## Phase 4 — Correctness bugs (backend-ts) — H/M
 
 | # | Bug | Fix | Effort |

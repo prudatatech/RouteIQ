@@ -1,17 +1,43 @@
 /**
- * margixindia Driver App — Direct Supabase Client
- * 
- * This client writes GPS coordinates DIRECTLY to Supabase cloud,
- * bypassing the local backend entirely. This ensures GPS data
- * always reaches the database regardless of network topology.
- * 
- * This is the same pattern used by Ola, Uber, Zomato — the driver
- * app writes directly to the cloud database for maximum reliability.
+ * margixindia Driver App — Supabase client
+ *
+ * Uses the public anon key plus the driver's own Supabase Auth session (issued
+ * by the backend at OTP login). Every direct query is therefore governed by
+ * row-level security: a driver can only read and write their own rows.
+ *
+ * The session is persisted in the secure store so the background location task
+ * can load it in a headless JS context (the client restores it on first use).
  */
 import 'react-native-url-polyfill/auto';
-import { createClient } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
+import { createClient, type Session } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config';
+import { secureStorage } from './secureStorage';
 
-const SUPABASE_URL = 'https://plutdajzefwtpgofpqlk.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsdXRkYWp6ZWZ3dHBnb2ZwcWxrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEyNjgyMywiZXhwIjoyMDkwNzAyODIzfQ.pRcvEAWJ0ZPZDMLi9jK2XwypdsMZTuhaWIrAM5VM_Wg';
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: secureStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+});
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Refresh tokens in the foreground only (Supabase React Native guidance).
+// In the background, each request still refreshes an expired token on demand.
+if (AppState.currentState === 'active') {
+  supabase.auth.startAutoRefresh();
+}
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
+
+/** The current session (restored from storage and refreshed if expired), or null. */
+export async function getCurrentSession(): Promise<Session | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}

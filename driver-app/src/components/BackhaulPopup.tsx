@@ -2,7 +2,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { supabase } from '../services/supabase';
-import { API_V1 } from '../config';
+import { api } from '../services/api';
 
 interface BackhaulPopupProps {
   vehicleId: string;
@@ -79,11 +79,8 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
     // 3. Poll for live bid counts
     const fetchBids = async () => {
       try {
-        const res = await fetch(`${API_V1}/capacity/windows/${windowId}/bid-count`);
-        if (res.ok) {
-          const data = await res.json();
-          setBiddersCount(data.count || 0);
-        }
+        const data = await api.getWindowBidCount(windowId);
+        setBiddersCount(data.count || 0);
       } catch (err) {
         // Ignore network errors
       }

@@ -36,15 +36,6 @@ export const translations = {
 
 
 
-    sos_acc_serious: 'Accident - Serious',
-    sos_acc_minor: 'Accident - Non Serious',
-    sos_veh_damage: 'Vehicle Damage',
-    sos_details: 'Additional details (optional)...',
-    sos_sending: 'Sending SOS',
-    sos_wait: 'Please wait...',
-    sos_sent_title: 'SOS Sent',
-    sos_sent_desc: 'Fleet manager has been notified immediately with your exact location.',
-    sos_failed: 'SOS Failed',
     // Modals & Alerts
     alert_next_stop_title: '🚨 Next Stop Added!',
     alert_next_stop_desc: 'A new stop was inserted into your route.',
@@ -219,6 +210,12 @@ export const translations = {
     close: 'Close',
     paid: 'PAID',
     friday: 'Friday',
+    pod_receiver_desc: 'Enter the name of the person who received the delivery',
+    pod_receiver_label: 'Receiver\'s name',
+    pod_receiver_placeholder: 'Full name of receiver',
+    alert_valid_receiver: 'Please enter the receiver\'s name (at least 3 characters)',
+    earnings_load_failed: 'Could not load earnings',
+    retry: 'Retry',
 
   }, hi: {
     view_route_sub: 'रास्ता देखें',
@@ -258,15 +255,6 @@ export const translations = {
 
 
 
-    sos_acc_serious: 'दुर्घटना - गंभीर (Serious)',
-    sos_acc_minor: 'दुर्घटना - मामूली (Minor)',
-    sos_veh_damage: 'वाहन खराब (Damage)',
-    sos_details: 'अतिरिक्त जानकारी (वैकल्पिक)...',
-    sos_sending: 'SOS भेज रहे हैं',
-    sos_wait: 'कृपया प्रतीक्षा करें...',
-    sos_sent_title: 'SOS भेजा गया',
-    sos_sent_desc: 'आपके सटीक स्थान के साथ फ्लीट मैनेजर को तुरंत सूचित कर दिया गया है।',
-    sos_failed: 'SOS विफल',
     alert_next_stop_title: '🚨 अगला स्टॉप जोड़ा गया!',
     alert_next_stop_desc: 'आपके रूट में एक नया स्टॉप डाला गया है।',
     view_map: 'मैप देखें',
@@ -435,6 +423,12 @@ export const translations = {
     close: 'बंद करें',
     paid: 'भुगतान किया',
     friday: 'शुक्रवार',
+    pod_receiver_desc: 'डिलीवरी प्राप्त करने वाले व्यक्ति का नाम दर्ज करें',
+    pod_receiver_label: 'प्राप्तकर्ता का नाम',
+    pod_receiver_placeholder: 'प्राप्तकर्ता का पूरा नाम',
+    alert_valid_receiver: 'कृपया प्राप्तकर्ता का नाम दर्ज करें (कम से कम 3 अक्षर)',
+    earnings_load_failed: 'कमाई लोड नहीं हो सकी',
+    retry: 'फिर से कोशिश करें',
 
   }, mr: {
 
@@ -466,15 +460,6 @@ export const translations = {
 
 
 
-    sos_acc_serious: 'अपघात - गंभीर (Serious)',
-    sos_acc_minor: 'अपघात - किरकोळ (Minor)',
-    sos_veh_damage: 'वाहन खराब (Damage)',
-    sos_details: 'अतिरिक्त माहिती (पर्यायी)...',
-    sos_sending: 'SOS पाठवत आहे',
-    sos_wait: 'कृपया प्रतीक्षा करा...',
-    sos_sent_title: 'SOS पाठवला',
-    sos_sent_desc: 'तुमच्या अचूक स्थानासह फ्लीट मॅनेजरला त्वरित सूचित केले आहे.',
-    sos_failed: 'SOS अयशस्वी',
     alert_next_stop_title: '🚨 पुढचा थांबा जोडला!',
     alert_next_stop_desc: 'तुमच्या मार्गात नवीन थांबा जोडला गेला आहे.',
     view_map: 'मॅप पाहा',
@@ -643,6 +628,12 @@ export const translations = {
     close: 'बंद करा',
     paid: 'भरले',
     friday: 'शुक्रवार',
+    pod_receiver_desc: 'डिलिव्हरी स्वीकारणाऱ्या व्यक्तीचे नाव प्रविष्ट करा',
+    pod_receiver_label: 'प्राप्तकर्त्याचे नाव',
+    pod_receiver_placeholder: 'प्राप्तकर्त्याचे पूर्ण नाव',
+    alert_valid_receiver: 'कृपया प्राप्तकर्त्याचे नाव प्रविष्ट करा (किमान 3 अक्षरे)',
+    earnings_load_failed: 'कमाई लोड करता आली नाही',
+    retry: 'पुन्हा प्रयत्न करा',
 
   }, te: {
 
@@ -674,15 +665,6 @@ export const translations = {
 
 
 
-    sos_acc_serious: 'ప్రమాదం - తీవ్రమైన (Serious)',
-    sos_acc_minor: 'ప్రమాదం - చిన్నది (Minor)',
-    sos_veh_damage: 'వాహనం దెబ్బతింది (Damage)',
-    sos_details: 'అదనపు వివరాలు (ఐచ్ఛికం)...',
-    sos_sending: 'SOS పంపుతోంది',
-    sos_wait: 'దయచేసి వేచి ఉండండి...',
-    sos_sent_title: 'SOS పంపబడింది',
-    sos_sent_desc: 'మీ ఖచ్చితమైన స్థానంతో ఫ్లీట్ మేనేజర్‌కు వెంటనే తెలియజేయబడింది.',
-    sos_failed: 'SOS విఫలమైంది',
     alert_next_stop_title: '🚨 తదుపరి స్టాప్ జోడించబడింది!',
     alert_next_stop_desc: 'మీ రూట్‌లో కొత్త స్టాప్ చేర్చబడింది.',
     view_map: 'మ్యాప్ చూడండి',
@@ -851,6 +833,12 @@ export const translations = {
     close: 'మూసివేయండి',
     paid: 'చెల్లించారు',
     friday: 'శుక్రవారం',
+    pod_receiver_desc: 'డెలివరీని స్వీకరించిన వ్యక్తి పేరు నమోదు చేయండి',
+    pod_receiver_label: 'గ్రహీత పేరు',
+    pod_receiver_placeholder: 'గ్రహీత పూర్తి పేరు',
+    alert_valid_receiver: 'దయచేసి గ్రహీత పేరు నమోదు చేయండి (కనీసం 3 అక్షరాలు)',
+    earnings_load_failed: 'ఆదాయాన్ని లోడ్ చేయడం సాధ్యం కాలేదు',
+    retry: 'మళ్లీ ప్రయత్నించండి',
 
   }, kn: {
     hello_driver: 'ನಮಸ್ಕಾರ ಚಾಲಕರೆ',
@@ -1036,6 +1024,12 @@ export const translations = {
     close: 'ಮುಚ್ಚಿ',
     paid: 'ಪಾವತಿಸಲಾಗಿದೆ',
     friday: 'ಶುಕ್ರವಾರ',
+    pod_receiver_desc: 'ವಿತರಣೆಯನ್ನು ಸ್ವೀಕರಿಸಿದ ವ್ಯಕ್ತಿಯ ಹೆಸರನ್ನು ನಮೂದಿಸಿ',
+    pod_receiver_label: 'ಸ್ವೀಕರಿಸುವವರ ಹೆಸರು',
+    pod_receiver_placeholder: 'ಸ್ವೀಕರಿಸುವವರ ಪೂರ್ಣ ಹೆಸರು',
+    alert_valid_receiver: 'ದಯವಿಟ್ಟು ಸ್ವೀಕರಿಸುವವರ ಹೆಸರನ್ನು ನಮೂದಿಸಿ (ಕನಿಷ್ಠ 3 ಅಕ್ಷರಗಳು)',
+    earnings_load_failed: 'ಗಳಿಕೆಯನ್ನು ಲೋಡ್ ಮಾಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ',
+    retry: 'ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ',
 
   }, bn: {
     hello_driver: 'নমস্কার ড্রাইভার',
@@ -1221,6 +1215,12 @@ export const translations = {
     close: 'বন্ধ করুন',
     paid: 'পরিশোধিত',
     friday: 'শুক্রবার',
+    pod_receiver_desc: 'যিনি ডেলিভারি গ্রহণ করেছেন তাঁর নাম লিখুন',
+    pod_receiver_label: 'প্রাপকের নাম',
+    pod_receiver_placeholder: 'প্রাপকের পুরো নাম',
+    alert_valid_receiver: 'দয়া করে প্রাপকের নাম লিখুন (কমপক্ষে ৩টি অক্ষর)',
+    earnings_load_failed: 'আয় লোড করা যায়নি',
+    retry: 'আবার চেষ্টা করুন',
 
   },
 };
