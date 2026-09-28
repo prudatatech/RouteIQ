@@ -339,6 +339,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     let latestLat = 0;
     let latestLng = 0;
     let latestSpeed = 0;
+    let geofenceAlert: any = null;
 
     for (const ping of pings) {
       const lat = ping.lat || ping.latitude;
@@ -416,8 +417,6 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
         .select('id, route_stops(id, delivery_point_id, sequence, status, delivery_points(id, name, latitude, longitude))')
         .eq('vehicle_id', vehicle.id)
         .eq('status', 'active');
-
-      let geofenceAlert: any = null;
 
       if (activeRoutes && activeRoutes.length > 0) {
         for (const route of activeRoutes) {
@@ -513,7 +512,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       pings_processed: processedCount,
       next_ping_interval_ms: nextPingIntervalMs,
       vehicle_id: vehicle?.id,
-      geofence_alert: null, // Will be populated if within 50m of a stop
+      geofence_alert: geofenceAlert,
       pending_commands: pendingCommands,
       server_time: new Date().toISOString(),
     });
@@ -811,11 +810,11 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       console.error(`[my-route] Query result error:`, error.message, `route id:`, (route as any)?.id);
     }
 
-    // Auto-clean: if route exists but has 0 stops, it's stale — delete it and fall through to manifest
+    // Stale: if route exists but has 0 stops, ignore it and fall through to manifest.
+    // (Deletion is a side effect that must not happen on a GET; a write path should clean these up.)
     const hasStops = route && (route.route_stops || []).length > 0;
     if (route && !hasStops) {
-      console.log(`[my-route] Found stale empty route ${route.id} with 0 stops, auto-deleting`);
-      await supabase.from('routes').delete().eq('id', route.id);
+      console.log(`[my-route] Found stale empty route ${route.id} with 0 stops, ignoring`);
     }
 
     if (error || !route || !hasStops) {

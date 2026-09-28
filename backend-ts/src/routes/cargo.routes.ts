@@ -7,7 +7,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
-import { sendError } from '../core/errors';
+import { sendError, HttpError } from '../core/errors';
 import { ShipmentService } from '../services/shipment.service';
 import { v4 as uuidv4 } from 'uuid';
 import { settings } from '../core/config';
@@ -171,8 +171,22 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
 // ── POST /trigger-alert ────────────────────────────────────
 router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'manager'), async (req: Request, res: Response) => {
   try {
+    const vehicleId = req.body.vehicle_id;
+    if (!vehicleId) {
+      throw new HttpError(400, 'vehicle_id is required');
+    }
+
+    const { data: vehicle, error: vehicleErr } = await supabase
+      .from('vehicles')
+      .select('id, plate_number')
+      .eq('id', vehicleId)
+      .maybeSingle();
+    if (vehicleErr) throw vehicleErr;
+    if (!vehicle) {
+      throw new HttpError(400, `Vehicle ${vehicleId} not found`);
+    }
+
     const alertType = req.body.type || 'tamper_detected';
-    const plateNumber = req.body.plate_number || 'DL-1GC-4922';
     const message = req.body.message || 'Simulated security alert triggered by operator.';
     const severity = alertType === 'tamper_detected' ? 'critical' : 'high';
     const cargoId = `SH-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -180,7 +194,7 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
     const { data: inserted, error } = await supabase
       .from('maintenance_alerts')
       .insert({
-        vehicle_id: uuidv4(),
+        vehicle_id: vehicle.id,
         alert_type: alertType,
         severity,
         description: message,
@@ -196,7 +210,7 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
       alert: {
         id: inserted?.id || '',
         timestamp: inserted?.created_at,
-        plate_number: plateNumber,
+        plate_number: vehicle.plate_number,
         type: alertType,
         severity,
         message,
@@ -274,7 +288,8 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       const resp = await fetch(`${settings.ML_SERVICE_URL}/optimize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mlPayload)
+        body: JSON.stringify(mlPayload),
+        signal: AbortSignal.timeout(10_000),
       });
       if (resp.ok) mlData = await resp.json();
     } catch (e) {
@@ -423,7 +438,8 @@ router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (
         body: JSON.stringify({
           distance_km: opp.deviation_km || 20,
           vehicle_type: 'truck'
-        })
+        }),
+        signal: AbortSignal.timeout(10_000),
       });
       if (mlResp.ok) {
         // Just as an example, we can use the ML response to adjust our profitability score based on time

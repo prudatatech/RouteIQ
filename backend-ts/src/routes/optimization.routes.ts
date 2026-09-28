@@ -15,7 +15,7 @@ import { OptimizationRequestSchema } from '../schemas';
 import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
 import { notificationService } from '../services/notification.service';
-import { sendError } from '../core/errors';
+import { sendError, HttpError } from '../core/errors';
 
 const router = Router();
 
@@ -120,6 +120,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mlPayload),
+        signal: AbortSignal.timeout(10_000),
       });
       if (mlResponse.ok) {
         solution = await mlResponse.json();
@@ -156,17 +157,28 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
 
       if (routeErr || !routeRow) continue;
 
-      // Save stops
-      const stops = optRoute.stop_ids.map((shipmentId: string, seq: number) => {
+      // Save stops. Only stops with a real delivery_point_id can be persisted
+      // (the column is a FK into delivery_points); skip any shipment without one.
+      const stops: any[] = [];
+      let seq = 0;
+      for (const shipmentId of optRoute.stop_ids) {
         const s = shipments.find((x: any) => x.id === shipmentId);
-        return {
+        const deliveryPointId = s?.delivery_points?.[0]?.id;
+        if (!deliveryPointId) {
+          console.warn(`Skipping stop for shipment ${shipmentId}: no delivery point found.`);
+          continue;
+        }
+        stops.push({
           route_id: routeRow.id,
-          delivery_point_id: s?.delivery_points?.[0]?.id || shipmentId,
-          sequence: seq,
+          delivery_point_id: deliveryPointId,
+          sequence: seq++,
           status: 'pending',
-        };
-      });
-      await supabase.from('route_stops').insert(stops);
+        });
+      }
+      if (stops.length > 0) {
+        const { error: stopsErr } = await supabase.from('route_stops').insert(stops);
+        if (stopsErr) console.error('Failed to insert route stops:', stopsErr);
+      }
 
       // Update shipments to 'assigned' status
       const { error: shipUpdateErr } = await supabase.from('shipments')
@@ -240,6 +252,7 @@ router.post('/eta', requireAuth, async (req: Request, res: Response) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(10_000),
       });
       if (mlRes.ok) {
         const result = await mlRes.json();
@@ -285,6 +298,7 @@ router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), a
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicle_id: req.params.vehicle_id }),
+        signal: AbortSignal.timeout(10_000),
       });
       if (mlRes.ok) {
         const decision: any = await mlRes.json();
@@ -344,6 +358,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicle_id: route.vehicle_id }),
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!mlRes.ok) {
@@ -366,17 +381,32 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
         return;
       }
 
-      // Get vehicle location
+      // Get vehicle's latest known position
       const { data: telemetry } = await supabase
-        .from('vehicle_telemetry')
+        .from('telemetry')
         .select('latitude, longitude')
         .eq('vehicle_id', route.vehicle_id)
         .order('timestamp', { ascending: false })
         .limit(1)
-        .single();
-        
-      let currentLat = telemetry?.latitude || 28.6139; // Default to Delhi if no telemetry
-      let currentLng = telemetry?.longitude || 77.2090;
+        .maybeSingle();
+
+      let currentLat = telemetry?.latitude;
+      let currentLng = telemetry?.longitude;
+
+      if (!currentLat || !currentLng) {
+        // Fall back to the vehicle's own last-known position
+        const { data: vehiclePos } = await supabase
+          .from('vehicles')
+          .select('latitude, longitude')
+          .eq('id', route.vehicle_id)
+          .maybeSingle();
+        currentLat = vehiclePos?.latitude;
+        currentLng = vehiclePos?.longitude;
+      }
+
+      if (!currentLat || !currentLng) {
+        throw new HttpError(409, 'Vehicle has no current position (no telemetry or last-known location); cannot re-optimize.');
+      }
 
       const unvisited = [...pendingStops];
       const newSequence = [];

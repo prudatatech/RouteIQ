@@ -962,21 +962,22 @@ export class ShipmentService {
    */
   static async getPublicTracking(trackingId: string): Promise<Record<string, any> | null> {
     if (trackingId.startsWith('CM-')) {
-      const manifestId = trackingId.substring(3).toLowerCase();
-      // Need to find the manifest that starts with this ID
-      const { data: manifests } = await supabase
-        .from('cargo_manifest')
-        .select('*, vehicles(*)')
-        .textSearch('id', manifestId, { type: 'plain' }); // Wait, textSearch on uuid might not work. Better to just fetch all and filter or use like if it's string.
-      // Actually, we map the first 8 characters to CM-XXXXXXXX in listShipments.
-      // It's safer to just fetch the one matching the id. But we only have 8 chars.
+      // Tracking IDs are minted as 'CM-' + the first 8 hex chars of the manifest's
+      // UUID, uppercased (see listShipments / createManifest above). Those 8 chars
+      // are exactly the UUID's first hyphen-delimited segment, so a valid tracking
+      // id maps to a contiguous, indexed range on the `id` primary key — no need to
+      // load every manifest row to prefix-match it client-side.
+      const manifestIdPrefix = trackingId.substring(3).toLowerCase();
+      if (!/^[0-9a-f]{8}$/.test(manifestIdPrefix)) return null;
 
-      // Let's just fetch all active manifests and find the match
-      const { data: allManifests } = await supabase
+      const { data: manifest } = await supabase
         .from('cargo_manifest')
-        .select('*, vehicles(*), vendor_shipment_requests(vendor_id)');
+        .select('*, vehicles(*), vendor_shipment_requests(vendor_id)')
+        .gte('id', `${manifestIdPrefix}-0000-0000-0000-000000000000`)
+        .lte('id', `${manifestIdPrefix}-ffff-ffff-ffff-ffffffffffff`)
+        .limit(1)
+        .maybeSingle();
 
-      const manifest = allManifests?.find((m: any) => m.id.toUpperCase().startsWith(manifestId.toUpperCase()));
       if (!manifest) return null;
 
       const trackingInfo: Record<string, any> = {

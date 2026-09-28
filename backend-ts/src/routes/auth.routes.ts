@@ -20,6 +20,25 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
+/**
+ * Find a Supabase auth.users record by email without loading the whole user
+ * base into memory. `supabase.auth.admin.listUsers()` defaults to the first
+ * 50 users, so a plain call silently misses any account past that page.
+ * Pages through in large batches (bounded) until the email is found.
+ */
+async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
+  const perPage = 1000;
+  const maxPages = 50; // up to 50,000 users
+  for (let page = 1; page <= maxPages; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users?.length) break;
+    const match = data.users.find((u: any) => u.email === email);
+    if (match) return { id: match.id };
+    if (data.users.length < perPage) break; // last page
+  }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════
 // DRIVER AUTH — Twilio Phone OTP (like Ola/Uber/Zomato)
 // ═══════════════════════════════════════════════════════════
@@ -261,8 +280,7 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
       if (authError) {
         // If user already exists in auth.users (trigger failed previously), recover gracefully!
         if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
-          const { data: existingList } = await supabase.auth.admin.listUsers();
-          const existingUser = existingList.users.find((u: any) => u.email === driverEmail);
+          const existingUser = await findAuthUserByEmail(driverEmail);
           if (existingUser) {
             authUserId = existingUser.id;
           } else {
@@ -385,8 +403,7 @@ router.post('/customer/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async
       if (authError) {
         // If user already exists in auth.users (trigger failed previously), recover gracefully!
         if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
-          const { data: existingList } = await supabase.auth.admin.listUsers();
-          const existingUser = existingList.users.find((u: any) => u.email === customerEmail);
+          const existingUser = await findAuthUserByEmail(customerEmail);
           if (existingUser) {
             authUserId = existingUser.id;
           } else {
@@ -512,6 +529,13 @@ router.post('/logout', (_req: Request, res: Response) => {
 });
 
 // ── PUT /driver/profile ────────────────────────────────────
+// vehicles.vehicle_type is a Postgres enum (scripts/supabase_init.sql: CREATE TYPE
+// vehicle_type AS ENUM ('truck', 'van', 'bike', 'car')). users.vehicle_type is a
+// free-text column, so it can hold whatever descriptive value the client sends
+// (e.g. the driver app's specific truck model names, see driver-app/src/screens/
+// HomeScreen.tsx INDIAN_VEHICLES).
+const VEHICLE_ENUM_TYPES = ['truck', 'van', 'bike', 'car'];
+
 router.put('/driver/profile', requireAuth, async (req: Request, res: Response) => {
   try {
     const { vehicle_type, full_name } = req.body;
@@ -519,6 +543,11 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     if (!userId || req.user?.role !== 'driver') {
       res.status(403).json({ detail: 'Only authenticated drivers can update their profile' });
+      return;
+    }
+
+    if (vehicle_type !== undefined && (typeof vehicle_type !== 'string' || !vehicle_type.trim())) {
+      res.status(400).json({ detail: 'vehicle_type must be a non-empty string' });
       return;
     }
 
@@ -539,6 +568,14 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     if (error) throw error;
 
+    // Only the vehicles.vehicle_type enum column accepts truck/van/bike/car —
+    // map the submitted value onto it when it actually is one of those, and
+    // otherwise leave the vehicle's existing category untouched rather than
+    // overwriting it with a value the driver never chose.
+    const normalizedEnumType = typeof vehicle_type === 'string'
+      ? VEHICLE_ENUM_TYPES.find((t) => t === vehicle_type.trim().toLowerCase())
+      : undefined;
+
     // Check if the driver has a vehicle assigned
     const { data: existingVehicle } = await supabase
       .from('vehicles')
@@ -548,17 +585,21 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     if (!existingVehicle) {
       // Create a new vehicle for the driver
-      await supabase.from('vehicles').insert({
+      const { error: insertErr } = await supabase.from('vehicles').insert({
         id: uuidv4(),
         plate_number: `TEMP-${userId.substring(0, 6).toUpperCase()}`,
-        vehicle_type: 'truck', // Must be valid enum
+        vehicle_type: normalizedEnumType || 'truck', // Must be valid enum
         driver_id: userId,
         status: 'idle',
         capacity_kg: 1000 // Default capacity
       });
-    } else {
-      // Update existing vehicle type
-      await supabase.from('vehicles').update({ vehicle_type: 'truck' }).eq('id', existingVehicle.id);
+      if (insertErr) console.error('Failed to create vehicle for driver:', insertErr);
+    } else if (normalizedEnumType) {
+      const { error: vehUpdateErr } = await supabase
+        .from('vehicles')
+        .update({ vehicle_type: normalizedEnumType })
+        .eq('id', existingVehicle.id);
+      if (vehUpdateErr) console.error('Failed to update vehicle type:', vehUpdateErr);
     }
 
     res.json({ status: 'success', vehicle_type });

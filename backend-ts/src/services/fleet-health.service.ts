@@ -10,14 +10,14 @@ export class FleetHealthMonitor {
   private running: boolean = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(timeoutSeconds: number = 10) {
+  constructor(timeoutSeconds: number = 120) {
     this.timeoutSeconds = timeoutSeconds;
   }
 
   start(): void {
     this.running = true;
     console.log(`Fleet Health Monitor started (Timeout: ${this.timeoutSeconds}s)`);
-    this.timer = setInterval(() => this.checkFleetHealth(), 5_000); // 5s
+    this.timer = setInterval(() => this.checkFleetHealth(), 25_000); // 25s
   }
 
   stop(): void {
@@ -32,7 +32,7 @@ export class FleetHealthMonitor {
 
       const { data: staleVehicles } = await supabase
         .from('vehicles')
-        .select('*')
+        .select('id, plate_number, status, cargo_types, last_heartbeat')
         .in('status', ['available', 'on_route', 'idle'])
         .not('last_heartbeat', 'is', null)
         .lt('last_heartbeat', thresholdDate);

@@ -1,4 +1,5 @@
 import { supabase } from '../core/supabase';
+import { ShipmentService } from './shipment.service';
 
 export const matchingService = {
   /**
@@ -8,7 +9,7 @@ export const matchingService = {
     // 1. Fetch Shipment Details
     const { data: shipment, error: shipErr } = await supabase
       .from('shipments')
-      .select('pickup_lat, pickup_lng, required_vehicle_type, metadata_json')
+      .select('origin_lat, origin_lng, required_vehicle_type, metadata_json')
       .eq('id', shipmentId)
       .single();
 
@@ -16,7 +17,7 @@ export const matchingService = {
       throw new Error(`Failed to fetch shipment ${shipmentId} for scoring: ${shipErr?.message}`);
     }
 
-    const { pickup_lat, pickup_lng, required_vehicle_type } = shipment;
+    const { origin_lat: pickup_lat, origin_lng: pickup_lng, required_vehicle_type } = shipment;
 
     if (!pickup_lat || !pickup_lng) {
       return { count: 0, confidenceScore: 0, status: 'No Coordinates' };
@@ -66,7 +67,7 @@ export const matchingService = {
     let confidenceScore = Math.min(Math.round((availableCount / 5) * 100), 100);
 
     // Save score to shipment metadata
-    await supabase
+    const { error: updateErr } = await supabase
       .from('shipments')
       .update({
         metadata_json: {
@@ -80,6 +81,10 @@ export const matchingService = {
         }
       })
       .eq('id', shipmentId);
+
+    if (updateErr) {
+      console.error(`Scoring Engine - Failed to save score for shipment ${shipmentId}:`, updateErr);
+    }
 
     return { count: availableCount, confidenceScore, status: 'Computed' };
   },
@@ -104,7 +109,11 @@ export const matchingService = {
       escalationLevel = 'Tier 1';
 
       // Log broadcast in DB
-      const { data: vendors } = await supabase.from('vendor_profiles').select('id').eq('status', 'active');
+      const { data: vendors } = await supabase
+        .from('vendor_profiles')
+        .select('id')
+        .eq('is_verified', true)
+        .eq('kyc_status', 'approved');
       broadcastedTo = vendors?.length || 0;
 
     } else {
@@ -125,16 +134,12 @@ export const matchingService = {
       broadcastedTo = corridors?.length || 0;
     }
 
-    // Log the escalation
-    await supabase.from('shipment_logs').insert({
-      shipment_id: shipmentId,
-      status: 'escalated',
-      metadata_json: {
-        engine: 'CascadeMatcher',
-        tier: escalationLevel,
-        broadcast_count: broadcastedTo,
-        trigger_score: score.confidenceScore
-      }
+    // Log the escalation (hash-chain aware writer keeps `index`/`previous_hash`/`log_hash` consistent)
+    await ShipmentService.recordShipmentLog(shipmentId, 'escalated', null, null, {
+      engine: 'CascadeMatcher',
+      tier: escalationLevel,
+      broadcast_count: broadcastedTo,
+      trigger_score: score.confidenceScore
     });
 
     return { tier: escalationLevel, broadcastedTo, confidenceScore: score.confidenceScore };
