@@ -108,11 +108,11 @@ export default function VendorShipmentRequestPage() {
       const lat = params.get('lat');
       const lng = params.get('lng');
       
-      if (query && !pickupLocation) {
-        setPickupSearch(query);
+      if (query && !dropLocation) {
+        setDropSearch(query);
         if (lat && lng) {
           const newLoc = { address: query, lat: parseFloat(lat), lng: parseFloat(lng) };
-          setPickupLocation(newLoc);
+          setDropLocation(newLoc);
           setViewState({ longitude: newLoc.lng, latitude: newLoc.lat, zoom: 14 });
         }
       }

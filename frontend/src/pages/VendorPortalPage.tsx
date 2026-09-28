@@ -35,7 +35,7 @@ export default function VendorPortalPage() {
     <div className="w-full animate-fade-in relative z-10 pb-32">
       
       {/* Amazon-style Universal Search Hero */}
-      <section className="px-6 lg:px-12 flex flex-col items-center justify-center text-center py-12 lg:py-20 animate-fade-in relative">
+      <section className="px-6 lg:px-12 flex flex-col items-center justify-center text-center py-12 lg:py-20 animate-fade-in relative z-50">
          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[300px] bg-primary/10 blur-[100px] rounded-full pointer-events-none" />
          <h2 className="text-4xl lg:text-6xl font-display font-black tracking-tight mb-6">
            Where are you shipping <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">today?</span>
