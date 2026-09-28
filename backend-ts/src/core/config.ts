@@ -96,10 +96,10 @@ export const settings = {
   EWAYBILL_GSP_CLIENT_ID: env('EWAYBILL_GSP_CLIENT_ID'),
   FLEET_TELEMATICS_WEBHOOK_SECRET: env('FLEET_TELEMATICS_WEBHOOK_SECRET', 'test_secret'),
 
-  // CORS
+  // CORS: exact origins, comma-separated. '*' is not supported.
   get ALLOWED_ORIGINS(): string[] {
     const origins = env('ALLOWED_ORIGINS');
-    if (origins) return origins.split(',').map(o => o.trim());
+    if (origins) return origins.split(',').map(o => o.trim()).filter(o => o && o !== '*');
     return [
       'http://localhost:3000',
       'http://localhost:5173',
@@ -107,6 +107,15 @@ export const settings = {
       'http://localhost:3005',
       'http://127.0.0.1:3005',
     ];
+  },
+
+  // CORS: optional regexes (comma-separated), e.g. ^https://margixindia-[a-z0-9-]+\.vercel\.app$
+  get CORS_ORIGIN_PATTERNS(): RegExp[] {
+    return env('CORS_ORIGIN_PATTERNS')
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean)
+      .map(p => new RegExp(p));
   },
 
   get isProduction(): boolean {

@@ -59,20 +59,30 @@ app.use((req, res, next) => {
 // 3. Security headers
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// 4. CORS — Dynamic Origin for Vercel deployments
+// 4. CORS — exact origins from ALLOWED_ORIGINS, margixindia.com and its
+// subdomains over https, and optional regexes in CORS_ORIGIN_PATTERNS
+// (e.g. this project's Vercel preview URLs). Clients authenticate with
+// Bearer tokens, so credentials (cookies) are not allowed cross-origin.
+function isAllowedOrigin(origin: string): boolean {
+  if (settings.ALLOWED_ORIGINS.includes(origin)) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:' && (url.hostname === 'margixindia.com' || url.hostname.endsWith('.margixindia.com'))) {
+    return true;
+  }
+  return settings.CORS_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    // If no origin (e.g. mobile app, curl), or if ALLOWED_ORIGINS contains '*'
-    if (!origin || settings.ALLOWED_ORIGINS.includes('*')) {
-      return callback(null, true);
-    }
-    // Allow if origin is in the ALLOWED_ORIGINS array or matches a Vercel preview domain
-    if (settings.ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('margixindia.com')) {
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
+    // Requests without an Origin header (mobile apps, curl, server-to-server) are not subject to CORS
+    callback(null, !origin || isAllowedOrigin(origin));
   },
-  credentials: true,
+  credentials: false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
 }));
