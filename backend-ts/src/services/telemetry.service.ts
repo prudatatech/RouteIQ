@@ -7,6 +7,7 @@ import { cacheSet, cacheGet } from '../core/redis';
 import { wsManager } from '../core/websocket';
 import type { Telemetry } from '../db/types';
 import { v4 as uuidv4 } from 'uuid';
+import { HttpError } from '../core/errors';
 
 export class TelemetryService {
   /**
@@ -37,7 +38,7 @@ export class TelemetryService {
       .single();
 
     if (vErr || !vehicle) {
-      throw new Error(`Vehicle ${vehicleId} not found`);
+      throw new HttpError(404, `Vehicle ${vehicleId} not found`);
     }
 
     const timestamp = data.timestamp || new Date().toISOString();

@@ -1,6 +1,7 @@
 import { supabase } from '../core/supabase';
 import { optimizeService } from './optimize.service';
 import { v4 as uuidv4 } from 'uuid';
+import { HttpError } from '../core/errors';
 
 export const capacityService = {
   /**
@@ -41,7 +42,7 @@ export const capacityService = {
         const isSameCity = vehicle.city?.toLowerCase() === vendor.city?.toLowerCase();
         
         if (!isSameCity && drivingDistanceKm > 50) {
-          throw new Error(`Geofencing lock: The physical driving distance is ${drivingDistanceKm}km (ETA: ${etaMins} mins), which exceeds the 50km limit from your location.`);
+          throw new HttpError(400, `Geofencing lock: The physical driving distance is ${drivingDistanceKm}km (ETA: ${etaMins} mins), which exceeds the 50km limit from your location.`);
         }
       }
     }
@@ -155,13 +156,13 @@ export const capacityService = {
   async approveBid(bidId: string) {
     // 1. Fetch the bid
     const { data: bid, error: bidErr } = await supabase.from('capacity_bids').select('*').eq('id', bidId).single();
-    if (bidErr || !bid) throw new Error('Bid not found');
+    if (bidErr || !bid) throw new HttpError(404, 'Bid not found');
 
     const windowId = bid.window_id;
 
     // 2. Fetch the window
     const { data: window } = await supabase.from('capacity_windows').select('*').eq('id', windowId).single();
-    if (!window) throw new Error('Window not found');
+    if (!window) throw new HttpError(404, 'Window not found');
 
     // 3. Mark this bid as won, others as lost
     await supabase.from('capacity_bids').update({ status: 'won' }).eq('id', bidId);
@@ -424,7 +425,7 @@ export const capacityService = {
    */
   async rejectBid(bidId: string) {
     const { data: bid, error: bidErr } = await supabase.from('capacity_bids').select('*').eq('id', bidId).single();
-    if (bidErr || !bid) throw new Error('Bid not found');
+    if (bidErr || !bid) throw new HttpError(404, 'Bid not found');
 
     await supabase.from('capacity_bids').update({ status: 'rejected' }).eq('id', bidId);
 

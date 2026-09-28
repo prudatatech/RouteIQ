@@ -6,6 +6,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { invalidateRoleCache, requireAuth, requireRole } from '../core/auth';
 import { UserUpdateSchema } from '../schemas';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -24,8 +25,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
     }
     res.json(user);
   } catch (e: any) {
-    console.error('[USERS API ERROR]:', e);
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -50,22 +50,18 @@ router.put('/language', requireAuth, async (req: Request, res: Response) => {
 
     res.json({ status: 'success', language });
   } catch (e: any) {
-    console.error('[USERS API ERROR]:', e);
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
 // ── GET / ──────────────────────────────────────────────────
-router.get('/', requireAuth, requireRole('admin', 'superadmin'), async (_req: Request, res: Response) => {
+router.get('/', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
   try {
     const { data: users, error } = await supabase
       .from('users')
       .select('id, email, full_name, role, is_active, created_at');
 
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
 
     // Fetch ALL vendor profiles
     const { data: profiles } = await supabase
@@ -104,8 +100,7 @@ router.get('/', requireAuth, requireRole('admin', 'superadmin'), async (_req: Re
 
     res.json(mergedUsers);
   } catch (e: any) {
-    console.error('[USERS API GET ERROR]:', e);
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -158,10 +153,7 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
       updateError = error;
     }
 
-    if (updateError) {
-      res.status(500).json({ detail: updateError.message });
-      return;
-    }
+    if (updateError) throw updateError;
 
     if (existingUser && payload.role !== undefined) {
       // Keep the server-controlled auth role in step with public.users
@@ -193,7 +185,7 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
 
     res.json(finalUser);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { supabase } from '../core/supabase';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/profile', requireAuth, async (req: any, res: any) => {
     }
     res.json(profile);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -34,7 +35,7 @@ router.post('/profile', requireAuth, requireRole('vendor'), async (req: any, res
     const profile = await vendorService.upsertProfile(req.user.user_id, companyName, gstNumber, city, address, lat, lng);
     res.json(profile);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -45,7 +46,7 @@ router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req:
     const request = await vendorService.createShipmentRequest(req.user.user_id, pickup, drop, capacity, metadata);
     res.json(request);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -55,8 +56,7 @@ router.get('/shipment-request/pending', requireAuth, requireRole('superadmin', '
     const requests = await vendorService.getPendingRequests();
     res.json(requests);
   } catch (error: any) {
-    console.error('Pending Requests Error:', error);
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -66,7 +66,7 @@ router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin
     const request = await vendorService.approveRequest(req.params.id);
     res.json(request);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -76,7 +76,7 @@ router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin'
     const request = await vendorService.rejectRequest(req.params.id);
     res.json(request);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -88,7 +88,7 @@ router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole('sup
     const request = await vendorService.assignVehicleToRequest(req.params.id, vehicle_id, cost, cost_per_km);
     res.json(request);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -98,7 +98,7 @@ router.get('/rates', requireAuth, async (req: any, res: any) => {
     const rates = await vendorService.getMarketRates();
     res.json(rates);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -108,7 +108,7 @@ router.get('/passing-routes', requireAuth, requireRole('vendor'), async (req: an
     const routes = await vendorService.getPassingRoutes(req.user.user_id);
     res.json(routes);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 

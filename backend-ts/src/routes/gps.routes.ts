@@ -7,6 +7,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth } from '../core/auth';
 import { canAccessVehicle, requireVehicleAccess } from '../core/ownership';
 import { GPSPointCreateSchema } from '../schemas';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -47,13 +48,10 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       .select()
       .single();
 
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
     res.status(201).json(point);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -70,13 +68,10 @@ router.get('/vehicle/:vehicle_id', requireAuth, requireVehicleAccess(req => req.
       .gte('recorded_at', cutoff)
       .order('recorded_at', { ascending: false });
 
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
     res.json(points || []);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

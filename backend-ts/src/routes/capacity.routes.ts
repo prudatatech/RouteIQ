@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessConfirmation, canAccessVehicle, isStaff } from '../core/ownership';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -52,7 +53,7 @@ router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, re
     });
     res.json(bid);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -98,7 +99,7 @@ router.get('/nearby-vendors', requireAuth, requireRole(...STAFF_ROLES), async (r
 
     res.json(nearby);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -124,7 +125,7 @@ router.get('/windows/:id/bid-count', requireAuth, async (req, res) => {
     if (error) throw error;
     res.json({ count: count || 0 });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -141,7 +142,7 @@ router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', '
     const window = await capacityService.openBackhaulWindow(vehicle_id, available_capacity_kg, trigger_type);
     res.json(window);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -155,7 +156,7 @@ router.post('/driver/toggle-matching', requireAuth, requireRole('driver'), async
     await capacityService.toggleMatching(vehicle_id, enabled);
     res.json({ success: true });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -169,7 +170,7 @@ router.post('/driver/ack-stop', requireAuth, requireRole('driver'), async (req, 
     await capacityService.ackStopDelivery(confirmation_id);
     res.json({ success: true });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -183,7 +184,7 @@ router.post('/driver/flag-stop', requireAuth, requireRole('driver'), async (req,
     await capacityService.flagStop(confirmation_id);
     res.json({ success: true });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -256,7 +257,7 @@ router.get('/windows/:id/upcoming-stops', requireAuth, requireRole('vendor', ...
       console.log("Returning routeStops length:", routeStops.length);
       res.json(routeStops);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -273,7 +274,7 @@ router.get('/bids/pending', requireAuth, requireRole('superadmin', 'admin'), asy
     if (error) throw new Error(error.message);
     res.json(data);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -283,7 +284,7 @@ router.post('/bids/:id/approve', requireAuth, requireRole('superadmin', 'admin')
     const bid = await capacityService.approveBid(req.params.id);
     res.json(bid);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 
@@ -293,7 +294,7 @@ router.post('/bids/:id/reject', requireAuth, requireRole('superadmin', 'admin'),
     const bid = await capacityService.rejectBid(req.params.id);
     res.json(bid);
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    sendError(req, res, error, 'error');
   }
 });
 

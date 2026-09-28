@@ -9,6 +9,7 @@ import { cacheGet, cacheSet } from '../core/redis';
 import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds } from '../core/ownership';
 import { RouteUpdateSchema } from '../schemas';
 import { notificationService } from '../services/notification.service';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     query = query.order('created_at', { ascending: false }).range(skip, skip + limit - 1);
 
     const { data: routes, error } = await query;
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     const result = routes ? [...routes] : [];
 
@@ -94,18 +95,18 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 
     res.json(result);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
 // ── GET /delivery-points ───────────────────────────────────
-router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.from('delivery_points').select('*');
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
     res.json(data || []);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -188,7 +189,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
 
     res.json(route);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -246,7 +247,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       res.status(400).json({ detail: 'status is required' });
     }
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -294,7 +295,7 @@ router.post('/:route_id/reroute', requireAuth, async (req: Request, res: Respons
 
     res.json({ status: 'rerouted', route_id: route.id, new_sequence_count: newSequence.length });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -351,7 +352,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
 
     res.json(updated);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -385,7 +386,7 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
 
     res.json({ detail: 'Route deleted successfully' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

@@ -6,6 +6,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
       rerouting_events_today: Math.max(0, Math.floor(totalDeliveries / 8)),
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

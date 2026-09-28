@@ -303,7 +303,7 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
       },
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -422,7 +422,7 @@ router.post('/customer/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async
       },
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -467,7 +467,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       user_id: user.id,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -528,7 +528,7 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     res.json({ status: 'success', vehicle_type });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -664,7 +664,7 @@ router.get('/driver/earnings', requireAuth, async (req: Request, res: Response) 
     const userId = req.user?.user_id;
     if (!userId || req.user?.role !== 'driver') { res.status(403).json({ detail: 'Only drivers' }); return; }
     res.json(await buildEarnings(userId));
-  } catch (e: any) { res.status(500).json({ detail: e.message }); }
+  } catch (e: any) { sendError(req, res, e); }
 });
 
 // ── POST /invite-vendor — Superadmin creates a vendor ──
@@ -685,10 +685,7 @@ router.post('/invite-vendor', requireAuth, requireRole('superadmin'), async (req
       user_metadata: { role: 'vendor' },
     });
 
-    if (authError) {
-      res.status(400).json({ detail: authError.message });
-      return;
-    }
+    if (authError) throw authError;
 
     const authUserId = authUser.user!.id;
 
@@ -715,7 +712,7 @@ router.post('/invite-vendor', requireAuth, requireRole('superadmin'), async (req
 
     res.json({ status: 'success', user_id: authUserId, message: 'Vendor created successfully' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

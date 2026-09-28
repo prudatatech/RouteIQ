@@ -3,6 +3,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import crypto from 'crypto';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -44,7 +45,7 @@ router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), as
 
     res.json({ loads: openLoads });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -149,7 +150,7 @@ router.post('/bid', requireAuth, async (req: Request, res: Response) => {
 
     res.json({ success: true, message: 'Load accepted and dynamically routed!' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

@@ -2,6 +2,7 @@
  * margixindia — Shipment Service
  * Ports: backend/app/services/shipment_service.py
  */
+import { HttpError } from '../core/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
 import { SecurityService } from './security.service';
@@ -384,8 +385,8 @@ export class ShipmentService {
    */
   static async assignDriver(shipmentId: string, vehicleId: string): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
-    if (!shipment) throw new Error('Shipment not found');
-    if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new Error('Shipment has no delivery points');
+    if (!shipment) throw new HttpError(404, 'Shipment not found');
+    if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new HttpError(400, 'Shipment has no delivery points');
 
     // Clean up any existing route stops for these delivery points
     const dpIds = shipment.delivery_points.map(dp => dp.id);

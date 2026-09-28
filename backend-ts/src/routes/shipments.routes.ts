@@ -9,6 +9,7 @@ import { STAFF_ROLES, canAccessShipment } from '../core/ownership';
 import { ShipmentCreateSchema } from '../schemas';
 import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.post('/', requireAuth, requireRole('superadmin', 'admin', 'manager'), asy
     const shipment = await ShipmentService.createShipment(parsed.data);
     res.status(201).json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -35,7 +36,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, r
     const shipments = await ShipmentService.listShipments(skip, limit);
     res.json(shipments);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -57,7 +58,7 @@ router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Respons
 
     res.json(info);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -105,7 +106,7 @@ router.get('/track/:tracking_id/route', requireAuth, async (req: Request, res: R
 
     res.json({ coordinates: geojsonCoords, raw_polyline: polyline, duration_seconds: durationSeconds });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -123,7 +124,7 @@ router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => 
     }
     res.json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -145,7 +146,7 @@ router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'adm
     }
     res.json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -178,7 +179,7 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
     }
     res.json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -202,7 +203,7 @@ router.get('/:shipment_id/verify', requireAuth, async (req: Request, res: Respon
       last_status: shipment.status,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -216,7 +217,7 @@ router.delete('/:shipment_id', requireAuth, requireRole('superadmin', 'admin', '
     }
     res.json({ message: 'Shipment deleted successfully' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -230,7 +231,7 @@ router.patch('/:shipment_id/edit', requireAuth, requireRole('superadmin', 'admin
     }
     res.json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -276,7 +277,7 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
 
     res.json(options);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -295,7 +296,7 @@ router.post('/:shipment_id/assign', requireAuth, requireRole('superadmin', 'admi
     }
     res.json(shipment);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

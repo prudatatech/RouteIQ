@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -80,14 +81,11 @@ router.post('/', requirePushSecret, async (req: Request, res: Response) => {
       .select('id')
       .single();
 
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
 
     res.status(201).json({ status: 'success', gps_point_id: point?.id });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

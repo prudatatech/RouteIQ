@@ -13,6 +13,7 @@ import { TelemetryService } from '../services/telemetry.service';
 import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -45,12 +46,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const t = await TelemetryService.ingestTelemetry(parsed.data);
     res.status(201).json(t);
-  } catch (e: any) {
-    if (e.message.includes('not found')) {
-      res.status(404).json({ detail: e.message });
-    } else {
-      res.status(500).json({ detail: `Telemetry Ingestion Failed: ${e.message}` });
-    }
+  } catch (e) {
+    sendError(req, res, e);
   }
 });
 
@@ -72,10 +69,10 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
       .order('timestamp', { ascending: false })
       .limit(limit);
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
     res.json(data || []);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -85,13 +82,10 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), async (
     const id = req.params.id;
     // Uses service_role key to bypass RLS
     const { error } = await supabase.from('sos_alerts').update({ status: 'resolved' }).eq('id', id);
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
     res.json({ success: true });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -134,7 +128,7 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
 
     res.json({ status: 'success', message: 'SOS triggered successfully' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -151,7 +145,7 @@ router.get('/:vehicle_id/live', requireAuth, async (req: Request, res: Response)
     const data = await cacheGet(`vehicle:live:${vehicleId}`);
     res.json(data || { error: 'No live data available' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -179,10 +173,10 @@ router.post('/stoppages', requireAuth, async (req: Request, res: Response) => {
       .select('id')
       .single();
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
     res.status(201).json({ status: 'stoppage_logged', id: data?.id });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -224,7 +218,7 @@ router.post('/mobile-session', requireAuth, requireRole(...STAFF_ROLES), async (
       plate: vehicle.plate_number,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -249,7 +243,7 @@ router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', '
 
     res.json({ success: true, message: 'Call dispatched' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -302,7 +296,7 @@ router.post('/mobile-push/:session_token', async (req: Request, res: Response) =
 
     res.json({ status: 'ok', vehicle_id: vehicleId });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -524,7 +518,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       server_time: new Date().toISOString(),
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -554,7 +548,7 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
 
     res.json({ success: true });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -593,7 +587,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 
     res.json({ success: true, status: 'active' });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -776,7 +770,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       route_completed: !remainingStops || remainingStops.length === 0,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -993,7 +987,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       },
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

@@ -6,20 +6,18 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
 // ── GET / ──────────────────────────────────────────────────
-router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (_req: Request, res: Response) => {
+router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     const { data: depots, error } = await supabase
       .from('depots')
       .select('id, name, latitude, longitude, address');
 
-    if (error) {
-      res.status(500).json({ detail: error.message });
-      return;
-    }
+    if (error) throw error;
 
     res.json(
       (depots || []).map((d: any) => ({
@@ -31,7 +29,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (_req:
       }))
     );
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

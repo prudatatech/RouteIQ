@@ -15,6 +15,7 @@ import { OptimizationRequestSchema } from '../schemas';
 import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
 import { notificationService } from '../services/notification.service';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -226,7 +227,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       message: `Optimized ${routeResponses.length} routes in ${(solution.solve_time_seconds || 0).toFixed(2)}s`,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -271,7 +272,7 @@ router.post('/eta', requireAuth, async (req: Request, res: Response) => {
       model_version: '1.0.0-physics-ts',
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -315,7 +316,7 @@ router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), a
       message: 'No better route found at this time. Current path is already optimized based on live traffic.',
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -489,7 +490,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
       message: decision.message || 'Route is already fully optimized.',
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

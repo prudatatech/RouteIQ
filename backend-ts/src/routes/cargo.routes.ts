@@ -47,13 +47,13 @@ const SCENARIOS = {
 };
 
 // ── GET /shipments ─────────────────────────────────────────
-router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.from('shipments').select('*');
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
     res.json(data || []);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -143,14 +143,14 @@ router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (_req: 
 });
 
 // ── GET /security-alerts ───────────────────────────────────
-router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { data: alerts, error } = await supabase
       .from('maintenance_alerts')
       .select('*')
       .eq('is_resolved', false);
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     res.json(
       (alerts || []).map((a: any) => ({
@@ -164,7 +164,7 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
       }))
     );
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -189,7 +189,7 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
       .select()
       .single();
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     res.json({
       status: 'success',
@@ -205,7 +205,7 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
       },
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -234,7 +234,7 @@ router.post('/resolve-alert/:alert_id', requireAuth, requireRole('admin', 'super
       alert: { id: req.params.alert_id, status: 'resolved', resolved_at: resolvedAt },
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -370,7 +370,7 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       profitability_index: 92.5,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -457,7 +457,7 @@ router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (
       profitability_score: opp.profitability_score || 85,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -539,7 +539,7 @@ router.get('/pricing-recommendations', requireAuth, async (req: Request, res: Re
       price_valid_until: new Date().toISOString(),
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

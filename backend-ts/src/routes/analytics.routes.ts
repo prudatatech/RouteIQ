@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { AnalyticsService } from '../services/analytics.service';
 import { settings } from '../core/config';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ router.get('/insights', requireAuth, async (req: Request, res: Response) => {
     const insights = await AnalyticsService.getLiveInsights();
     res.json(insights);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -35,7 +36,7 @@ router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
     const stats = await AnalyticsService.getFleetStats();
     res.json(stats);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -49,7 +50,7 @@ router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) =
     const data = await AnalyticsService.getFleetOverview();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -63,7 +64,7 @@ router.get('/vehicle-health', requireAuth, async (req: Request, res: Response) =
     const data = await AnalyticsService.getVehicleHealth();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -77,7 +78,7 @@ router.get('/profitable-routes', requireAuth, async (req: Request, res: Response
     const data = await AnalyticsService.getMostProfitableRoutes();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -91,12 +92,12 @@ router.get('/active-missions', requireAuth, async (req: Request, res: Response) 
     const missions = await AnalyticsService.getActiveMissions();
     res.json(missions);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
 // ── POST /sync-sparkgps ────────────────────────────────────
-router.post('/sync-sparkgps', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.post('/sync-sparkgps', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { SparkGPSService } = await import('../services/spark-gps.service');
     if (settings.SPARK_GPS_API_TOKEN) {
@@ -107,7 +108,7 @@ router.post('/sync-sparkgps', requireAuth, requireRole(...STAFF_ROLES), async (_
       res.json({ status: 'success', message: 'SparkGPS Mock Sync (Demonstration Mode) complete' });
     }
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -124,7 +125,7 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
       .order('created_at', { ascending: false })
       .limit(100);
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     res.json(
       (logs || []).map((log: any) => ({
@@ -138,7 +139,7 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
       }))
     );
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -152,7 +153,7 @@ router.get('/driver-performance', requireAuth, async (req: Request, res: Respons
     const data = await AnalyticsService.getDriverPerformance();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -166,7 +167,7 @@ router.get('/financials', requireAuth, async (req: Request, res: Response) => {
     const data = await AnalyticsService.getFinancialMetrics();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -180,7 +181,7 @@ router.get('/vendor-performance', requireAuth, async (req: Request, res: Respons
     const data = await AnalyticsService.getVendorPerformance();
     res.json(data);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

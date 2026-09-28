@@ -8,6 +8,7 @@ import { cacheGet, cacheSet } from '../core/redis';
 import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -92,7 +93,7 @@ router.post('/event', requireAuth, async (req: Request, res: Response) => {
       })),
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 

@@ -9,6 +9,7 @@ import { cacheGet, cacheSet, cacheDeletePattern } from '../core/redis';
 import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core/ownership';
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
+import { sendError } from '../core/errors';
 
 const router = Router();
 
@@ -58,12 +59,12 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     query = query.range(skip, skip + limit - 1);
 
     const { data: vehicles, error } = await query;
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     await cacheSet(cacheKey, vehicles || [], 30);
     res.json(vehicles || []);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -127,23 +128,23 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       .select()
       .single();
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     await invalidateVehicleCaches();
     res.status(201).json(vehicle);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
 // ── GET /summary ───────────────────────────────────────────
-router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
       .select('status');
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     const counts: Record<string, number> = {};
     for (const v of vehicles || []) {
@@ -160,7 +161,7 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (_req: Re
       archived: counts['archived'] || 0,
     });
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -184,7 +185,7 @@ router.get('/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
 
     res.json(vehicle);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -234,8 +235,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 
     if (error) {
       console.error('Vehicle update error:', error);
-      res.status(400).json({ detail: error.message });
-      return;
+      throw error;
     }
     if (!vehicle) {
       res.status(404).json({ detail: 'Vehicle not found' });
@@ -244,7 +244,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     await invalidateVehicleCaches();
     res.json(vehicle);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -268,14 +268,14 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
       status: 'active'
     }).select().single();
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     // Turn the vehicle status to maintenance or offline?
     await supabase.from('vehicles').update({ status: 'maintenance' }).eq('id', req.params.vehicle_id);
 
     res.status(201).json(alert);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -295,14 +295,14 @@ router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admi
       floor_price: floor_price || 100.0,
     }).select().single();
 
-    if (error) { res.status(500).json({ detail: error.message }); return; }
+    if (error) throw error;
 
     // Also update vehicle bidding_window_open flag
     await supabase.from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: window.closes_at }).eq('id', req.params.vehicle_id);
 
     res.status(201).json(window);
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
@@ -347,7 +347,7 @@ router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), asyn
     await invalidateVehicleCaches();
     res.status(204).send();
   } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+    sendError(req, res, e);
   }
 });
 
