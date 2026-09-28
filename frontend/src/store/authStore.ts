@@ -3,17 +3,29 @@ import { persist } from 'zustand/middleware'
 import { supabase } from '@/services/supabase'
 import type { Session } from '@supabase/supabase-js'
 
+// Supabase's own client already persists the token/refreshToken/session in localStorage
+// under 'margixindia-auth' (see services/supabase.ts). This store used to duplicate that
+// in 'margixindia-auth-store' via zustand's persist — two copies of the same secrets in
+// localStorage. Supabase is now the only token store: token/refreshToken/session live only
+// in memory here (still readable via useAuthStore for the lifetime of the tab, refreshed by
+// setSession/clearAuth/initAuth), and only the non-sensitive role/userId are persisted so
+// role-gated UI has something to paint with before the Supabase session round-trips.
 interface AuthState {
   token: string | null
   refreshToken: string | null
   role: string | null
   userId: string | null
   session: Session | null
+  /** True once the initial supabase.auth.getSession() restore (App's effect / initAuth) has resolved. */
+  authInitialized: boolean
   setAuth: (token: string, refreshToken: string, role: string, userId: string) => void
   setSession: (session: Session | null, role?: string) => void
+  setAuthInitialized: (initialized: boolean) => void
   clearAuth: () => void
   initAuth: () => Promise<void>
 }
+
+const LEGACY_PERSISTED_KEY = 'margixindia-auth-store'
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -23,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
       role: null,
       userId: null,
       session: null,
+      authInitialized: false,
 
       // Legacy setter (kept for backward compat during migration)
       setAuth: (token: string, refreshToken: string, role: string, userId: string) =>
@@ -43,6 +56,8 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      setAuthInitialized: (initialized: boolean) => set({ authInitialized: initialized }),
+
       clearAuth: () =>
         set({ token: null, refreshToken: null, role: null, userId: null, session: null }),
 
@@ -59,9 +74,22 @@ export const useAuthStore = create<AuthState>()(
 
           get().setSession(session, user?.role)
         }
+        set({ authInitialized: true })
       },
     }),
-    { name: 'margixindia-auth-store' }
+    {
+      name: LEGACY_PERSISTED_KEY,
+      // Only non-sensitive UI fields are persisted; token/refreshToken/session stay in
+      // memory only and are re-derived from Supabase's own session storage on load.
+      partialize: (state) => ({ role: state.role, userId: state.userId }),
+      version: 1,
+      migrate: (persistedState) => {
+        // One-time cleanup: any previously persisted token/refreshToken/session is dropped
+        // by only carrying forward role/userId from the old blob.
+        const legacy = (persistedState || {}) as Partial<AuthState>
+        return { role: legacy.role ?? null, userId: legacy.userId ?? null }
+      },
+    }
   )
 )
 

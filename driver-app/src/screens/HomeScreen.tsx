@@ -1369,7 +1369,7 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.invoiceAmount}>₹{inv.total_payout.toLocaleString()}</Text>
-            <Text style={styles.invoiceStatus}>{t('paid')}</Text>
+            <Text style={styles.invoiceStatus}>{inv.status === 'paid' ? t('paid') : t('status_pending')}</Text>
           </View>
         </TouchableOpacity>
       ))}

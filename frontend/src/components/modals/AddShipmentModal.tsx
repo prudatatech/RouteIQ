@@ -594,7 +594,7 @@ export default function AddShipmentModal() {
                 <label className="text-[10px] font-black text-muted uppercase tracking-widest pl-1 flex items-center gap-2">
                   <MapPin size={12} className="text-yellow-500" /> Additional Stops (Optional)
                 </label>
-                <Badge variant="yellow" className="text-[8px] px-2 py-0.5">{(formData.stops || []).length} Extra</Badge>
+                <Badge variant="warn" className="text-[8px] px-2 py-0.5">{(formData.stops || []).length} Extra</Badge>
               </div>
                 
                 <div className="space-y-2">

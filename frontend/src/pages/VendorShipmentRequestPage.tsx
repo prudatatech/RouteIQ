@@ -784,7 +784,7 @@ export default function VendorShipmentRequestPage() {
             {...viewState}
             // @ts-ignore
             onMove={(evt: any) => setViewState(evt.viewState)}
-            mapStyle="https://margixindia.vercel.app/map-style.json?v=3"
+            mapStyle="/map-style.json?v=3"
           >
             <NavigationControl position="bottom-right" />
             

@@ -548,7 +548,7 @@ function TrackingMap({ shipment, onEtaUpdate }: { shipment: any, onEtaUpdate?: (
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "https://margixindia.vercel.app/map-style.json?v=3",
+      style: "/map-style.json?v=3",
       center: [cx, cy], zoom: 13, attributionControl: false,
     })
 

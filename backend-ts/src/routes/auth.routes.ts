@@ -617,15 +617,15 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const RATE_PER_KM = 15; // ₹15/km standard Indian trucking rate
-
 async function buildEarnings(userId: string) {
   const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg').eq('driver_id', userId);
   if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
 
   const activeVehicle = vehicles[0];
-  let driverLat = activeVehicle.latitude || 23.7842;
-  let driverLng = activeVehicle.longitude || 86.4461;
+  // No default coordinates: without a real GPS fix on the vehicle we don't know where the
+  // driver is, so we skip the reverse-geocode below rather than pretending they're in Dhanbad.
+  const driverLat = activeVehicle.latitude;
+  const driverLng = activeVehicle.longitude;
   let driverLocationName = 'Origin Depot';
 
   if (driverLat && driverLng) {
@@ -726,7 +726,9 @@ async function buildEarnings(userId: string) {
       bonus: 0,
       tax: 0,
       total_payout: cost,
-      status: 'paid'
+      // Neither cargo_manifest nor routes trips are linked to an invoices/payments row in
+      // this schema, so we have no real payment status to report — don't claim 'paid'.
+      status: 'pending'
     };
   });
 

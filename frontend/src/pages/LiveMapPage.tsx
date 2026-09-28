@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import { useMobileLocation } from '../hooks/useMobileLocation';
+import { telemetryWS } from '@/services/api';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const LiveMapPage: React.FC = () => {
@@ -13,16 +14,15 @@ const LiveMapPage: React.FC = () => {
     if (mapContainer.current && !mapInstance.current) {
       mapInstance.current = new maplibregl.Map({
         container: mapContainer.current,
-        style: "https://margixindia.vercel.app/map-style.json?v=3",
+        style: "/map-style.json?v=3",
         center: [0, 0],
         zoom: 2,
       });
     }
 
-    const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/updates`);
-    ws.addEventListener('message', (event) => {
-      const data = JSON.parse(event.data);
-      if (mapInstance.current && data.lat && data.lng) {
+    // Live GPS telemetry feed (authenticated with the current Supabase session).
+    const ws = telemetryWS.connect((data) => {
+      if (data.type === 'gps_update' && mapInstance.current && data.lat && data.lng) {
         const el = document.createElement('div');
         el.style.width = '12px';
         el.style.height = '12px';
@@ -31,6 +31,10 @@ const LiveMapPage: React.FC = () => {
         new maplibregl.Marker(el).setLngLat([data.lng, data.lat]).addTo(mapInstance.current);
       }
     });
+
+    return () => {
+      ws.close();
+    };
   }, []);
 
   // Effect to add mobile GPS marker when position updates

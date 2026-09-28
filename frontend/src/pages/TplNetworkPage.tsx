@@ -2,34 +2,19 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
-  Building2, Users, Briefcase, Activity, Target, Zap, Clock, ShieldAlert, CheckCircle2, 
-  ChevronRight, TrendingUp, AlertTriangle, ShieldCheck, Search, Filter, Calendar, 
-  ChevronDown, ExternalLink, MessageSquare, Plus
+  Building2, Users, Briefcase, Activity, ShieldCheck, Search, Calendar,
+  ChevronDown, ExternalLink, Plus, Inbox, BarChart3
 } from 'lucide-react'
 import { Card, CardHeader, Spinner } from '@/components/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
 import clsx from 'clsx'
 
-const queueData = [
-  { id: 'ORD-8821', corridor: 'DEL-BOM', reason: '0 trucks in 50km radius', type: 'Heavy Duty', status: 'Pending Approval', estClientRate: '₹42,500', age: '5m', urgency: 'high', trail: [] },
-  { id: 'ORD-8819', corridor: 'PUN-HYD', reason: 'Tier 1 TTL Expired', type: 'Refrigerated', status: 'Broadcasting', estClientRate: '₹68,000', age: '22m', urgency: 'medium', trail: ['Rivigo (Declined)', 'Delhivery (Pending)'] },
-  { id: 'ORD-8790', corridor: 'BOM-BLR', reason: 'Exception: All 3PLs Declined', type: 'Flatbed', status: 'Manual Intervention', estClientRate: '₹55,200', age: '2h 15m', urgency: 'critical', trail: ['Delhivery (Declined)', 'VRL (Timeout)'] },
-  { id: 'ORD-8825', corridor: 'DEL-BLR', reason: 'Tier 1 TTL Expired', type: 'Heavy Duty', status: 'Pending Approval', estClientRate: '₹89,000', age: '12m', urgency: 'medium', trail: [] },
-]
-
 export default function TplNetworkPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<'management' | 'queue' | 'analytics'>('management')
-  
-  // Analytics State
-  const [timeRange, setTimeRange] = useState('This Week')
-  
-  // Queue State
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([])
-  const [expandedRow, setExpandedRow] = useState<string | null>(null)
-  
+
   // Partner Management State
   const [searchTerm, setSearchTerm] = useState('')
   const [managementFilter, setManagementFilter] = useState<'all' | 'active' | 'paused' | 'pending'>('all')
@@ -94,22 +79,6 @@ export default function TplNetworkPage() {
         toast.error('Failed to delete partner')
       }
     }
-  }
-
-  // Live Timer Mock
-  const [now, setNow] = useState(new Date())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) setSelectedOrders(queueData.map(q => q.id))
-    else setSelectedOrders([])
-  }
-
-  const handleSelect = (id: string) => {
-    setSelectedOrders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   return (
@@ -315,251 +284,30 @@ export default function TplNetworkPage() {
 
         {/* QUEUE TAB */}
         {activeTab === 'queue' && (
-          <div className="space-y-4 relative">
-            {/* Bulk Action Bar */}
-            {selectedOrders.length > 0 && (
-              <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-surface border border-primary/30 shadow-2xl shadow-primary/20 px-6 py-4 rounded-[24px] flex items-center gap-6 z-50 animate-fade-in backdrop-blur-xl">
-                 <div className="text-sm font-bold text-text">
-                   <span className="text-primary font-black">{selectedOrders.length}</span> orders selected
-                 </div>
-                 <div className="w-px h-6 bg-border" />
-                 <button className="px-5 py-2 bg-primary text-bg rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary-dark transition-all">
-                   Batch Approve Broadcast
-                 </button>
-                 <button className="px-5 py-2 bg-surface2 text-muted rounded-xl text-xs font-black uppercase tracking-widest hover:bg-border transition-all">
-                   Assign Manually
-                 </button>
-              </div>
-            )}
-
-            <Card className="border-border bg-surface overflow-hidden">
-              <CardHeader title="Escalation Queue" subtitle="Orders requiring 3PL broadcast or manual intervention" />
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-surface2/50">
-                      <th className="p-4 w-12">
-                        <input type="checkbox" onChange={handleSelectAll} checked={selectedOrders.length === queueData.length && queueData.length > 0} className="w-4 h-4 rounded border-border text-primary focus:ring-primary bg-bg" />
-                      </th>
-                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted">Order Info</th>
-                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted">Time in Queue</th>
-                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted">Escalation Reason</th>
-                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted">Status / SLA</th>
-                      <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted text-right">Client Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {queueData.map(q => (
-                      <React.Fragment key={q.id}>
-                        <tr className={clsx("border-b border-border transition-all hover:bg-surface2/30 cursor-pointer", expandedRow === q.id ? 'bg-surface2/20' : '', selectedOrders.includes(q.id) ? 'bg-primary/5' : '')} onClick={() => setExpandedRow(expandedRow === q.id ? null : q.id)}>
-                          <td className="p-4" onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" checked={selectedOrders.includes(q.id)} onChange={() => handleSelect(q.id)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary bg-bg" />
-                          </td>
-                          <td className="p-4">
-                            <div className="font-mono text-sm font-bold text-text">{q.id}</div>
-                            <div className="text-xs text-muted font-medium mt-1">{q.corridor} • {q.type}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className={clsx("text-sm font-bold", q.urgency === 'critical' ? 'text-red-500' : q.urgency === 'medium' ? 'text-yellow-500' : 'text-green-500')}>
-                              {q.age}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <div className="text-xs text-muted font-medium max-w-[200px] leading-tight">
-                              <span className="inline-flex items-center gap-1.5"><AlertTriangle size={12} className="text-yellow-500 flex-shrink-0" /> {q.reason}</span>
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            {q.status === 'Broadcasting' ? (
-                              <div>
-                                <span className="px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg bg-blue-500/10 text-blue-500 inline-block mb-1">
-                                  {q.status}
-                                </span>
-                                <div className="text-[10px] font-mono font-bold text-muted flex items-center gap-1">
-                                  <Clock size={10} className="animate-pulse text-blue-500"/> {120 - Math.floor((now.getTime() % 3600000)/60000)}m remaining
-                                </div>
-                              </div>
-                            ) : (
-                              <span className={clsx('px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg', 
-                                q.status === 'Pending Approval' ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-red-500/10 text-red-500'
-                              )}>
-                                {q.status}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className="font-mono text-sm font-bold text-text">{q.estClientRate}</div>
-                            <button className="text-[10px] uppercase font-black text-primary hover:underline mt-1 flex items-center justify-end gap-1 w-full">
-                              Details <ChevronDown size={12} className={clsx("transition-transform", expandedRow === q.id ? 'rotate-180' : '')} />
-                            </button>
-                          </td>
-                        </tr>
-                        {/* Expandable Contact Trail */}
-                        {expandedRow === q.id && (
-                          <tr className="bg-surface2/30 border-b border-border shadow-inner">
-                             <td colSpan={6} className="p-6">
-                               <div className="text-[10px] font-black uppercase tracking-widest text-muted mb-3 flex items-center gap-2">
-                                 <MessageSquare size={14} /> Cascade Contact Trail
-                               </div>
-                               {q.trail.length > 0 ? (
-                                 <div className="flex items-center gap-4">
-                                   {q.trail.map((t, i) => {
-                                      const isDeclined = t.includes('Decline') || t.includes('Timeout');
-                                      return (
-                                        <div key={i} className="flex items-center gap-4">
-                                          <div className={clsx("px-3 py-2 rounded-lg text-xs font-bold border", isDeclined ? 'bg-red-500/10 border-red-500/20 text-red-500' : 'bg-blue-500/10 border-blue-500/20 text-blue-500')}>
-                                            {t}
-                                          </div>
-                                          {i < q.trail.length - 1 && <ChevronRight size={16} className="text-muted" />}
-                                        </div>
-                                      )
-                                   })}
-                                 </div>
-                               ) : (
-                                 <div className="text-xs text-muted font-medium italic">No 3PL contacted yet. Waiting for approval to initiate cascade.</div>
-                               )}
-                               <div className="mt-4 pt-4 border-t border-border/50 flex gap-3">
-                                  {q.status === 'Pending Approval' && (
-                                    <button className="px-4 py-2 bg-primary hover:bg-primary-dark text-bg rounded-lg text-xs font-black uppercase tracking-widest transition-all">
-                                      Approve Cascade
-                                    </button>
-                                  )}
-                                  <button className="px-4 py-2 bg-surface border border-border hover:bg-surface2 text-text rounded-lg text-xs font-black uppercase tracking-widest transition-all">
-                                    Assign Manually Override
-                                  </button>
-                               </div>
-                             </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
+          <Card className="border-border bg-surface overflow-hidden">
+            <CardHeader title="Escalation Queue" subtitle="Orders requiring 3PL broadcast or manual intervention" />
+            <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+              <Inbox size={40} className="text-muted opacity-50" />
+              <p className="text-sm font-bold text-text">No escalation queue feed is wired up yet.</p>
+              <p className="text-xs text-muted max-w-md">
+                The 3PL escalation/broadcast cascade isn't backed by an API yet, so there's nothing live to show here.
+              </p>
+            </div>
+          </Card>
         )}
 
         {/* ANALYTICS TAB */}
         {activeTab === 'analytics' && (
-          <div className="space-y-6">
-            <div className="flex justify-end">
-              <div className="relative">
-                 <select 
-                   value={timeRange} 
-                   onChange={(e) => setTimeRange(e.target.value)}
-                   className="appearance-none pl-4 pr-10 py-2.5 bg-surface border border-border rounded-xl text-sm font-bold text-text focus:outline-none focus:border-primary cursor-pointer shadow-sm"
-                 >
-                   <option>This Week</option>
-                   <option>This Month</option>
-                   <option>This Quarter</option>
-                 </select>
-                 <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-              </div>
+          <Card className="border-border bg-surface overflow-hidden">
+            <CardHeader title="Analytics & Margins" subtitle="3PL network performance" />
+            <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+              <BarChart3 size={40} className="text-muted opacity-50" />
+              <p className="text-sm font-bold text-text">No 3PL analytics data source yet.</p>
+              <p className="text-xs text-muted max-w-md">
+                Broadcast resolution time, margins, SLA compliance and the partner leaderboard aren't tracked by the backend yet.
+              </p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-               <Card className="p-6 border-border bg-surface">
-                 <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Avg Broadcast Resolution</div>
-                 <div className="text-3xl font-black text-text">{timeRange === 'This Week' ? '18m' : '22m'}</div>
-                 <div className="text-xs text-green-500 font-bold mt-2 flex items-center gap-1"><TrendingUp size={14}/> -4m vs last period</div>
-               </Card>
-               <Card className="p-6 border-border bg-surface">
-                 <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Tier 2 Margin</div>
-                 <div className="text-3xl font-black text-text">{timeRange === 'This Week' ? '14.2%' : '13.8%'}</div>
-                 <div className="text-xs text-red-500 font-bold mt-2 flex items-center gap-1"><TrendingUp size={14} className="rotate-180"/> -1.1% vs Tier 1</div>
-               </Card>
-               <Card className="p-6 border-border bg-surface">
-                 <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">3PL SLA Compliance</div>
-                 <div className="text-3xl font-black text-text">{timeRange === 'This Week' ? '92%' : '89%'}</div>
-                 <div className="text-xs text-green-500 font-bold mt-2 flex items-center gap-1"><ShieldCheck size={14} /> Target: 95%</div>
-               </Card>
-               <button onClick={() => setActiveTab('queue')} className="text-left">
-                 <Card className="p-6 border-border bg-surface hover:border-red-500/50 hover:bg-red-500/5 transition-all cursor-pointer h-full group">
-                   <div className="flex justify-between items-start">
-                     <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2 group-hover:text-red-500 transition-colors">Exception Rate</div>
-                     <ExternalLink size={14} className="text-muted group-hover:text-red-500 transition-colors" />
-                   </div>
-                   <div className="text-3xl font-black text-error">{timeRange === 'This Week' ? '4.5%' : '6.1%'}</div>
-                   <div className="text-xs text-muted font-bold mt-2">Orders hitting manual queue</div>
-                 </Card>
-               </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-               <Card className="border-border bg-surface overflow-hidden">
-                 <CardHeader title="3PL Partner Leaderboard" subtitle={`Ranked by reliability for ${timeRange}`} />
-                 <table className="w-full text-left">
-                   <thead>
-                     <tr className="border-b border-border bg-surface2/50">
-                       <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted">Partner</th>
-                       <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted text-right">Accept Rate</th>
-                       <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted text-right">Decline Rate</th>
-                       <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted text-right">Avg SLA Response</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     <tr className="border-b border-border hover:bg-surface2/30">
-                       <td className="p-4 font-bold text-sm text-text">Rivigo Freight</td>
-                       <td className="p-4 text-right font-mono text-sm text-green-500">94%</td>
-                       <td className="p-4 text-right font-mono text-sm text-muted">6%</td>
-                       <td className="p-4 text-right font-mono text-sm text-text">14m (vs 2H)</td>
-                     </tr>
-                     <tr className="border-b border-border hover:bg-surface2/30">
-                       <td className="p-4 font-bold text-sm text-text">Delhivery B2B</td>
-                       <td className="p-4 text-right font-mono text-sm text-green-500">88%</td>
-                       <td className="p-4 text-right font-mono text-sm text-muted">12%</td>
-                       <td className="p-4 text-right font-mono text-sm text-text">45m (vs 4H)</td>
-                     </tr>
-                     <tr className="border-b border-border hover:bg-surface2/30 opacity-60">
-                       <td className="p-4 font-bold text-sm text-text">VRL Logistics <span className="text-[9px] bg-yellow-500 text-bg px-1 rounded ml-1 uppercase">Paused</span></td>
-                       <td className="p-4 text-right font-mono text-sm text-yellow-500">65%</td>
-                       <td className="p-4 text-right font-mono text-sm text-muted">35%</td>
-                       <td className="p-4 text-right font-mono text-sm text-red-500">3.5h (vs 6H)</td>
-                     </tr>
-                   </tbody>
-                 </table>
-               </Card>
-
-               <Card className="border-border bg-surface overflow-hidden">
-                 <CardHeader title="Corridor Escalation Heatmap" subtitle={`Tier 2 dependency by lane for ${timeRange}`} />
-                 <div className="p-6 space-y-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-text">PUN-HYD</span>
-                        <span className="text-muted">42 escalations (85% via TTL expiry)</span>
-                      </div>
-                      <div className="h-2 w-full bg-surface2 rounded-full overflow-hidden">
-                        <div className="h-full bg-red-500 w-[85%] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-text">BOM-BLR</span>
-                        <span className="text-muted">28 escalations (60% via No Vehicles)</span>
-                      </div>
-                      <div className="h-2 w-full bg-surface2 rounded-full overflow-hidden">
-                        <div className="h-full bg-yellow-500 w-[60%] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs font-bold mb-1">
-                        <span className="text-text">DEL-BOM</span>
-                        <span className="text-muted">12 escalations (45% via No Vehicles)</span>
-                      </div>
-                      <div className="h-2 w-full bg-surface2 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 w-[45%] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div className="pt-4 mt-2 border-t border-border">
-                      <p className="text-[11px] text-muted font-medium leading-relaxed">
-                        <strong className="text-text">Insight:</strong> PUN-HYD is suffering from severe Tier 1 TTL expiries, indicating that your Tier 1 brokers are actively rejecting or ignoring loads on this lane. Consider reviewing Tier 1 pricing for PUN-HYD before relying purely on 3PL.
-                      </p>
-                    </div>
-                 </div>
-               </Card>
-            </div>
-          </div>
+          </Card>
         )}
 
       </div>

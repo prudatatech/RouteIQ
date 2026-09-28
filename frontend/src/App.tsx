@@ -1,11 +1,12 @@
 // margixindia App Router
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
+import { Spinner } from '@/components/ui'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import FleetPage from '@/pages/FleetPage'
@@ -45,6 +46,17 @@ import VendorCorridorPage from '@/pages/VendorCorridorPage'
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const token = useAuthStore(s => s.token)
   const role = useAuthStore(s => s.role)
+  const authInitialized = useAuthStore(s => s.authInitialized)
+
+  // Supabase's session (and this store) haven't finished restoring yet — e.g. a hard
+  // reload of a deep link. Show a spinner instead of bouncing to /login prematurely.
+  if (!authInitialized) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-bg">
+        <Spinner size={32} />
+      </div>
+    )
+  }
 
   if (!token) return <Navigate to="/login" replace />
 
@@ -77,6 +89,12 @@ export default function App() {
       } else {
         store.setSession(null)
       }
+    }).catch((err) => {
+      console.error('Failed to restore session', err)
+      store.setSession(null)
+    }).finally(() => {
+      // Always release the gate, or protected routes would spin forever
+      useAuthStore.getState().setAuthInitialized(true)
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
@@ -134,14 +152,32 @@ export default function App() {
               <DriverPage />
             </PrivateRoute>
           } />
-          {/* Vendor Portal */}
+          {/* Vendor Portal — home/discover and corridors are intentionally public (browsable
+              before login; corridor bidding itself redirects to /vendor/login when there's no
+              session). Everything that needs a vendor account is gated below. */}
           <Route path="/vendor" element={<VendorLayout />}>
             <Route index element={<VendorPortalPage />} />
-            <Route path="documents" element={<VendorDocumentsPage />} />
-            <Route path="shipments" element={<VendorShipmentsPage />} />
             <Route path="corridor" element={<VendorCorridorPage />} />
-            <Route path="request" element={<VendorShipmentRequestPage />} />
-            <Route path="tracking" element={<VendorTrackingPage />} />
+            <Route path="documents" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorDocumentsPage />
+              </PrivateRoute>
+            } />
+            <Route path="shipments" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorShipmentsPage />
+              </PrivateRoute>
+            } />
+            <Route path="request" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorShipmentRequestPage />
+              </PrivateRoute>
+            } />
+            <Route path="tracking" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorTrackingPage />
+              </PrivateRoute>
+            } />
           </Route>
 
           <Route path="/vendor/onboarding" element={
@@ -156,7 +192,6 @@ export default function App() {
           <Route path="/3pl/onboard/track" element={<TplTrackApplicationPage />} />
           <Route path="/3pl/onboard/setup" element={<TplSetupCredentialsPage />} />
           <Route path="/3pl-portal/activate" element={<TplActivationPage />} />
-          <Route path="/vendor/login" element={<VendorLoginPage />} />
           <Route path="/3pl-portal/:id" element={
             <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
               <TplDashboardPage />
@@ -246,8 +281,12 @@ export default function App() {
                 <CargoNetworkPage />
               </PrivateRoute>
             } />
+            <Route path="live-map" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <LiveMapPage />
+              </PrivateRoute>
+            } />
           </Route>
-          <Route path="live-map" element={<PrivateRoute allowedRoles={['superadmin', 'admin']}><LiveMapPage /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
     </>

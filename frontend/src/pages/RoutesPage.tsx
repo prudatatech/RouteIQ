@@ -171,7 +171,7 @@ export default function RoutesPage() {
                     <div className="flex flex-col items-center justify-center text-text-muted opacity-50">
                       <Map size={48} className="mb-4" />
                       <p className="text-xs font-bold uppercase tracking-widest">No routes exist in the database.</p>
-                      {!Array.isArray(routes) && <p className="text-xs text-red-500 mt-2">API Error: {String(routes?.detail || JSON.stringify(routes))}</p>}
+                      {!Array.isArray(routes) && <p className="text-xs text-red-500 mt-2">API Error: {String((routes as any)?.detail || JSON.stringify(routes))}</p>}
                     </div>
                   </td>
                 </tr>

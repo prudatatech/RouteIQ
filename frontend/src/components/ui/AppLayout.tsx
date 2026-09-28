@@ -213,7 +213,7 @@ export default function AppLayout() {
         {/* Logo */}
         <div className={clsx("flex-shrink-0 border-b border-slate-100 overflow-hidden flex items-center gap-3", collapsed ? "h-[80px] justify-center" : "h-[80px] px-5")}>
           <img 
-            src="https://margixindia.vercel.app/margix-logo.png" 
+            src="/margix-logo.png" 
             alt="Margix" 
             className="transition-all duration-300 flex-shrink-0"
             style={{

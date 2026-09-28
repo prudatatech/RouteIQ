@@ -28,7 +28,7 @@ export function CardHeader({ title, subtitle, action }: {
 type BadgeVariant = 'green' | 'orange' | 'blue' | 'warn' | 'muted'
 
 const badgeStyles: Record<BadgeVariant, string> = {
-  green:  'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  green:  'bg-success/10 text-success border-success/20',
   orange: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
   blue:   'bg-blue-500/10 text-blue-400 border-blue-500/20',
   warn:   'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
