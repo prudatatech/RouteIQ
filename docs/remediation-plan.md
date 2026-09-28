@@ -111,10 +111,10 @@ Only login talks to the backend. Remove fabricated content (default name "Maya",
 
 Each step is a small commit on this branch; every commit keeps `backend-ts` typecheck/build and `frontend` build green.
 
-## Decisions needed
+## Decisions (2026-09-28)
 
-- **D1** AI Hub risk-analysis / cargo-monitoring: remove the buttons (recommended; even the Python version used hardcoded sensor data), or port as a new LLM feature on real telemetry.
-- **D2** Metrics with no real source (on-time trend deltas, fuel cost, reroute counts, profitability scores): remove the tiles/fields (recommended), or add snapshot tables to compute them.
-- **D3** Customer app: strip fabricated content now (recommended), or leave until the booking feature is built.
-- **D4** Proof of delivery: per-shipment OTP sent to the consignee (real feature), or restrict `/cargo/verify-pod` to staff and remove the demo codes (minimal).
-- **D5** Driver POD "signature": real signature capture, or relabel as "Receiver name".
+- **D1** AI Hub risk-analysis / cargo-monitoring: **remove** the buttons and the two `optimizationAPI` methods.
+- **D2** Metrics with no real data source: **remove** the tiles/fields; show only metrics computed from real data.
+- **D3** Customer app: **strip fabricated content** now; the booking flow is a separate feature.
+- **D4** Proof of delivery: **restrict `/cargo/verify-pod` to staff and remove the demo/master codes**.
+- **D5** Driver POD "signature": open — defaults to relabelling as "Receiver name" unless real signature capture is requested.
