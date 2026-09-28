@@ -191,7 +191,7 @@ export default function TplOnboardingPage() {
   useEffect(() => {
     if (!editId || !editPan) return;
     
-    tplAPI.getPartner(editId).then(data => {
+    tplAPI.getPartner(editId, editPan).then(data => {
         if (data.pan_number === editPan.toUpperCase()) {
           setCompanyName(data.company_name || '')
           setPan(data.pan_number || '')
@@ -625,7 +625,9 @@ export default function TplOnboardingPage() {
                       const payload = {
                         custom_id: customId,
                         companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors,
-                        documents: [] as { type: string, url: string }[]
+                        documents: [] as { type: string, url: string }[],
+                        // Proves ownership of the application when editing without an account
+                        ...(editId && editPan ? { verify_pan: editPan } : {})
                       };
 
                       // Actually upload the files to Supabase Storage

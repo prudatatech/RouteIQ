@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Shield, Search, User, Settings, ChevronRight } from 'lucide-react'
-import { usersAPI, analyticsAPI, tplAPI } from '@/services/api'
+import { usersAPI, analyticsAPI, tplAPI, capacityAPI, vendorAPI, authAPI } from '@/services/api'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -58,28 +58,14 @@ export default function SuperadminPage() {
 
   const { data: pendingBids = [] as any[], isLoading: bidsLoading } = useQuery<any[]>({
     queryKey: ['pending-bids'],
-    queryFn: async () => {
-      const { supabase } = await import('@/services/supabase')
-      const res = await fetch('https://margixindia.vercel.app/api/v1/capacity/bids/pending', {
-        headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to fetch pending bids')
-      return res.json()
-    },
+    queryFn: () => capacityAPI.pendingBids(),
     enabled: activeTab === 'bids',
     refetchInterval: 5000 // Realtime polling for prototype
   })
 
   const { data: pendingRequests = [], isLoading: requestsLoading } = useQuery<any[]>({
     queryKey: ['pending-requests'],
-    queryFn: async () => {
-      const { supabase } = await import('@/services/supabase')
-      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
-        headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to fetch requests')
-      return res.json()
-    },
+    queryFn: () => vendorAPI.pendingRequests(),
     enabled: activeTab === 'requests',
     refetchInterval: 5000
   })
@@ -91,20 +77,12 @@ export default function SuperadminPage() {
   })
 
   const approveBidMutation = useMutation({
-    mutationFn: async (bidId: string) => {
-      const { supabase } = await import('@/services/supabase')
-      const res = await fetch(`/api/v1/capacity/bids/${bidId}/approve`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to approve bid')
-      return res.json()
-    },
+    mutationFn: (bidId: string) => capacityAPI.approveBid(bidId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-bids'] })
       toast.success('Bid approved and injected into route!')
     },
-    onError: (err: any) => toast.error(err.message)
+    onError: (err: any) => toast.error(err.response?.data?.error ?? err.response?.data?.detail ?? 'Failed to approve bid')
   })
 
   const updateMutation = useMutation({
@@ -116,18 +94,7 @@ export default function SuperadminPage() {
   })
 
   const addVendorMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('https://margixindia.vercel.app/api/v1/auth/invite-vendor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: vendorEmail, password: vendorPassword })
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Failed to create vendor')
-      }
-      return res.json()
-    },
+    mutationFn: () => authAPI.inviteVendor(vendorEmail, vendorPassword),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('Vendor account created successfully')
@@ -135,7 +102,7 @@ export default function SuperadminPage() {
       setVendorEmail('')
       setVendorPassword('')
     },
-    onError: (err: any) => toast.error(err.message)
+    onError: (err: any) => toast.error(err.response?.data?.detail ?? err.response?.data?.error ?? 'Failed to create vendor')
   })
 
   const filtered = users.filter((u: any) => {

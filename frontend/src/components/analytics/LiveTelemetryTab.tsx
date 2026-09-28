@@ -134,14 +134,11 @@ export default function LiveTelemetryTab() {
   const connectWS = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
-    // Attach auth token as query param for production-safe auth
+    // The server requires a staff access token, passed as a query param
     let wsUrl = telemetryWS.getURL()
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        wsUrl += `?token=${encodeURIComponent(session.access_token)}`
-      }
-    } catch { /* ignore — ws server also accepts un-authed for live feed */ }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    wsUrl += `?token=${encodeURIComponent(session.access_token)}`
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws

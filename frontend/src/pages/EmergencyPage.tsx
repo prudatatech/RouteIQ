@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/services/supabase'
-import { telemetryWS } from '@/services/api'
+import { telemetryWS, telemetryAPI } from '@/services/api'
 import { format } from 'date-fns'
 import { AlertTriangle, MapPin, Truck, User, Phone, CheckCircle, ShieldAlert } from 'lucide-react'
 import mapboxgl from 'maplibre-gl'
@@ -200,23 +200,12 @@ export default function EmergencyPage() {
 
   const markResolved = async (id: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-
-      const res = await fetch(`/api/v1/telemetry/sos/${id}/resolve`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.detail || 'Failed to resolve')
-      }
+      await telemetryAPI.resolveSos(id)
       toast.success('Alert marked as resolved')
       setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'resolved' } : a))
     } catch (error: any) {
-      toast.error('Failed to resolve: ' + error.message)
+      const message = error.response?.data?.detail ?? error.response?.data?.error ?? error.message
+      toast.error('Failed to resolve: ' + message)
     }
   }
 

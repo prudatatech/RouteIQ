@@ -4,7 +4,7 @@ import {
   Network, Truck, Shield, Zap, TrendingUp, BarChart3, Clock, Lock, 
   AlertTriangle, MapPin, User, FileCheck, RefreshCw, Play, Check, 
   HelpCircle, Activity, FileText, CloudRain, Loader2, Thermometer,
-  ShieldAlert, LockKeyhole, Camera, Landmark, Info
+  ShieldAlert, LockKeyhole, Landmark, Info
 } from 'lucide-react'
 import { cargoAPI, vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
@@ -98,23 +98,20 @@ export default function CargoNetworkPage() {
     }
   })
 
-  // 7. Proof of Delivery Form State
-  const [podTrackingId, setPodTrackingId] = useState('SH-99210')
-  const [podOtp, setPodOtp] = useState('')
-  const [podPhotoUploaded, setPodPhotoUploaded] = useState(false)
-  const [podLat, setPodLat] = useState(24.5854) // Default Udaipur
-  const [podLng, setPodLng] = useState(73.7125)
+  // 7. Delivery confirmation (staff)
+  const [podTrackingId, setPodTrackingId] = useState('')
+  const [podRecipient, setPodRecipient] = useState('')
   const [podResult, setPodResult] = useState<any>(null)
-  const [podIsUploading, setPodIsUploading] = useState(false)
 
   const verifyPodMutation = useMutation({
-    mutationFn: (payload: any) => cargoAPI.verifyPod(payload),
+    mutationFn: (payload: { tracking_id: string, recipient_name: string }) => cargoAPI.verifyPod(payload),
     onSuccess: (data) => {
       setPodResult(data)
-      toast.success('Proof of Delivery verified and sealed!')
+      toast.success('Delivery confirmed')
     },
     onError: (err: any) => {
       setPodResult(null)
+      toast.error(err.response?.data?.detail || 'Failed to confirm delivery')
     }
   })
 
@@ -887,132 +884,61 @@ export default function CargoNetworkPage() {
                 </div>
               )}
 
-              {/* Digital Proof of Delivery Simulator Form */}
+              {/* Delivery confirmation */}
               <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl relative">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none">Digital Proof of Delivery (POD)</h2>
-                    <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mt-2">Driver Terminal App Viewport</p>
-                  </div>
-                  <span className="text-[9px] text-primary bg-primary/10 px-3 py-1 rounded-full font-mono uppercase tracking-widest">
-                    Blockchain Seal
-                  </span>
+                <div className="mb-6">
+                  <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none">Confirm Delivery</h2>
+                  <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mt-2">Mark a shipment delivered and record who received it</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Left POD Form Inputs */}
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Shipment Cargo ID</label>
-                        <input 
-                          type="text" value={podTrackingId} onChange={e => setPodTrackingId(e.target.value)}
-                          className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-bold text-text focus:outline-none focus:border-primary"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Recipient Verification OTP</label>
-                        <input 
-                          type="text" placeholder="e.g. 2026 or 1234" value={podOtp} onChange={e => setPodOtp(e.target.value)}
-                          className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-mono font-bold text-text focus:outline-none focus:border-primary"
-                        />
-                      </div>
+                    <div>
+                      <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Tracking ID</label>
+                      <input
+                        type="text" value={podTrackingId} onChange={e => setPodTrackingId(e.target.value)}
+                        placeholder="e.g. RTX-1A2B3C4D"
+                        className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-bold text-text focus:outline-none focus:border-primary"
+                      />
                     </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Geo-Tag Latitude</label>
-                        <input 
-                          type="number" step="0.0001" value={podLat} onChange={e => setPodLat(+e.target.value)}
-                          className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-mono font-bold text-text focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Geo-Tag Longitude</label>
-                        <input 
-                          type="number" step="0.0001" value={podLng} onChange={e => setPodLng(+e.target.value)}
-                          className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-mono font-bold text-text focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Camera / Photo upload mock trigger */}
-                    <div className="flex gap-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPodIsUploading(true)
-                          setTimeout(() => {
-                            setPodPhotoUploaded(true)
-                            setPodIsUploading(false)
-                            toast.success('Cargo offload photo verified (Image SHA-256 sealed)')
-                          }, 1500)
-                        }}
-                        className={clsx(
-                          "flex-1 h-12 rounded-xl text-xs font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2",
-                          podPhotoUploaded ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-surface2 hover:bg-surface border-border text-text"
-                        )}
-                      >
-                        {podIsUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-                        {podPhotoUploaded ? "Photo Uploaded & Tagged" : "Capture Delivery Photo"}
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPodLat(24.5854)
-                          setPodLng(73.7125)
-                          toast.success('GPS Geo-tags synchronized with recipient terminal')
-                        }}
-                        className="px-4 h-12 bg-surface2 hover:bg-surface border border-border text-text-muted hover:text-text rounded-xl text-xs font-black uppercase tracking-wide transition-colors"
-                      >
-                        Sync GPS
-                      </button>
+                    <div>
+                      <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Received By</label>
+                      <input
+                        type="text" value={podRecipient} onChange={e => setPodRecipient(e.target.value)}
+                        placeholder="Recipient's full name"
+                        className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-bold text-text focus:outline-none focus:border-primary"
+                      />
                     </div>
 
                     <button
-                      onClick={() => {
-                        verifyPodMutation.mutate({
-                          tracking_id: podTrackingId,
-                          otp: podOtp,
-                          latitude: podLat,
-                          longitude: podLng,
-                          photo_uploaded: podPhotoUploaded,
-                          recipient_name: 'K. R. Sharma (Udaipur Terminal Manager)'
-                        })
-                      }}
-                      disabled={verifyPodMutation.isPending || !podOtp}
+                      onClick={() => verifyPodMutation.mutate({ tracking_id: podTrackingId.trim(), recipient_name: podRecipient.trim() })}
+                      disabled={verifyPodMutation.isPending || !podTrackingId.trim() || !podRecipient.trim()}
                       className="w-full h-12 bg-primary hover:bg-primary-dark disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2"
                     >
                       {verifyPodMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <FileCheck size={14} />}
-                      Verify & Seal Delivery
+                      Confirm Delivery
                     </button>
                   </div>
 
-                  {/* Right POD Receipt Panel */}
                   <div className="p-6 rounded-2xl bg-surface2/80 border border-border flex flex-col justify-center">
                     {podResult ? (
                       <div className="space-y-4 text-center py-4">
                         <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto">
                           <Check size={24} />
                         </div>
-                        <h4 className="text-sm font-black text-emerald-400 uppercase tracking-wider">Proof of Delivery Sealed</h4>
-                        
+                        <h4 className="text-sm font-black text-emerald-400 uppercase tracking-wider">Delivery Confirmed</h4>
+
                         <div className="text-left bg-surface/50 p-4 rounded-xl border border-border/80 space-y-2 text-xs font-mono">
-                          <div className="flex justify-between"><span className="text-text-muted">STATUS</span><span className="text-text font-bold">{podResult.status.toUpperCase()}</span></div>
+                          <div className="flex justify-between"><span className="text-text-muted">TRACKING ID</span><span className="text-text font-bold">{podResult.tracking_id}</span></div>
                           <div className="flex justify-between"><span className="text-text-muted">RECIPIENT</span><span className="text-text font-bold truncate max-w-[150px]">{podResult.recipient_name}</span></div>
-                          <div className="flex justify-between"><span className="text-text-muted">GPS OFFSET</span><span className="text-emerald-400 font-bold">{podResult.gps_match_offset_meters}m ({podResult.gps_status.split(' ')[0]})</span></div>
-                          <div className="pt-2 border-t border-border/40 flex flex-col gap-1">
-                            <span className="text-text-muted block text-[8px] uppercase">Ledger Receipt Hash</span>
-                            <span className="text-muted break-all text-[8px] font-mono select-all leading-tight">{podResult.blockchain_receipt}</span>
-                          </div>
+                          <div className="flex justify-between"><span className="text-text-muted">DELIVERED</span><span className="text-text font-bold">{new Date(podResult.delivered_at).toLocaleString()}</span></div>
                         </div>
                       </div>
                     ) : (
                       <div className="text-center py-12 text-text-muted space-y-3">
                         <FileText size={40} className="mx-auto opacity-30" />
-                        <p className="text-xs uppercase font-mono tracking-widest">Awaiting dispatch verification details</p>
-                        <p className="text-[10px] leading-relaxed max-w-xs mx-auto">Recipient OTP must be set to "2026" or "1234" to simulate a valid secure delivery transaction.</p>
+                        <p className="text-xs uppercase font-mono tracking-widest">No delivery confirmed yet</p>
+                        <p className="text-[10px] leading-relaxed max-w-xs mx-auto">Drivers confirm deliveries from the driver app; use this when a delivery has to be recorded by the control tower.</p>
                       </div>
                     )}
                   </div>

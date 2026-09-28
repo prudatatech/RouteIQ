@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { XCircle, Truck, MapPin, Zap } from 'lucide-react';
 import { supabase } from '@/services/supabase';
+import { vendorAPI } from '@/services/api';
 import toast from 'react-hot-toast';
 import * as turf from '@turf/turf';
 
@@ -55,29 +56,17 @@ export default function CargoManifestConnectingForm({ request, onClose, onAssign
     
     setIsSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const res = await fetch(`/api/v1/vendor/shipment-request/${request.id}/assign-vehicle`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session?.access_token}`
-        },
-        body: JSON.stringify({
-          vehicle_id: selectedVehicle,
-          cost: cost ? Number(cost) : undefined,
-          cost_per_km: costPerKm ? Number(costPerKm) : undefined
-        })
+      await vendorAPI.assignVehicle(request.id, {
+        vehicle_id: selectedVehicle,
+        cost: cost ? Number(cost) : undefined,
+        cost_per_km: costPerKm ? Number(costPerKm) : undefined
       });
-      
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || await res.text());
-      }
-      
+
       toast.success('Vehicle Assigned and Cargo Manifest Created!');
       onAssigned();
     } catch (err: any) {
-      toast.error('Failed to assign vehicle: ' + err.message);
+      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message;
+      toast.error('Failed to assign vehicle: ' + message);
     } finally {
       setIsSubmitting(false);
     }

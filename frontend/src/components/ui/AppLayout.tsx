@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import clsx from 'clsx'
 import AddShipmentModal from '@/components/modals/AddShipmentModal'
 import SOSListener from '@/components/SOSListener'
@@ -139,14 +140,11 @@ export default function AppLayout() {
   useEffect(() => {
     if (!['admin', 'superadmin'].includes(role || '')) return
     const fetchBadge = async () => {
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      if (!token) return
-      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
+      try {
+        const data = await vendorAPI.pendingRequests()
         setVendorBadge(Array.isArray(data) ? data.length : 0)
+      } catch {
+        // ignore — badge just stays at previous value
       }
     }
     fetchBadge()

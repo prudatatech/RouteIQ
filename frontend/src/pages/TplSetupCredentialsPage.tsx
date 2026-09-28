@@ -27,7 +27,7 @@ export default function TplSetupCredentialsPage() {
     setLoading(true)
     try {
       await tplAPI.sendSetupOtp(email)
-      toast.success('Verification code sent to your email')
+      toast.success('If this email belongs to an approved partner, a code is on its way')
       setStep(2)
     } catch (err: any) {
       console.error(err)
@@ -43,12 +43,12 @@ export default function TplSetupCredentialsPage() {
       toast.error('Passwords do not match')
       return
     }
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters long')
+    if (password.length < 10) {
+      toast.error('Password must be at least 10 characters long')
       return
     }
-    if (!otp || otp.length !== 4) {
-      toast.error('Please enter the 4-digit OTP')
+    if (!otp || otp.length !== 6) {
+      toast.error('Please enter the 6-digit code')
       return
     }
 
@@ -129,11 +129,11 @@ export default function TplSetupCredentialsPage() {
                 <input
                   type="text"
                   required
-                  maxLength={4}
+                  maxLength={6}
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="0000"
-                  className="w-full bg-bg border border-border rounded-xl px-4 py-3 text-center text-2xl tracking-[1em] font-mono text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  placeholder="000000"
+                  className="w-full bg-bg border border-border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                 />
               </div>
 

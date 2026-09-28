@@ -8,6 +8,7 @@ import clsx from 'clsx'
 export default function TplTrackApplicationPage() {
   const navigate = useNavigate()
   const [trackingId, setTrackingId] = useState('')
+  const [editPan, setEditPan] = useState('')
   
   const [loading, setLoading] = useState(false)
   const [application, setApplication] = useState<any>(null)
@@ -115,11 +116,11 @@ export default function TplTrackApplicationPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="text-[9px] font-bold text-muted uppercase tracking-widest">Corridors Requested</div>
-                    <div className="text-sm font-bold mt-1">{application.tpl_corridors?.length || 0}</div>
+                    <div className="text-sm font-bold mt-1">{application.corridor_count ?? 0}</div>
                   </div>
                   <div>
                     <div className="text-[9px] font-bold text-muted uppercase tracking-widest">Documents Provided</div>
-                    <div className="text-sm font-bold mt-1">{application.tpl_documents?.length || 0}</div>
+                    <div className="text-sm font-bold mt-1">{application.document_count ?? 0}</div>
                   </div>
                   <div className="col-span-2">
                     <div className="text-[9px] font-bold text-muted uppercase tracking-widest">Submitted On</div>
@@ -133,9 +134,18 @@ export default function TplTrackApplicationPage() {
                   <p className="text-xs text-muted text-center mb-4">
                     Your application is currently under review. You may still make changes to your operational profile or upload missing documents.
                   </p>
+                  <input
+                    type="text"
+                    value={editPan}
+                    onChange={e => setEditPan(e.target.value.toUpperCase())}
+                    placeholder="Enter your company PAN to edit"
+                    maxLength={10}
+                    className="w-full bg-surface2 border border-border rounded-xl px-4 py-3 text-sm font-mono tracking-widest text-text placeholder:text-muted placeholder:font-sans placeholder:tracking-normal focus:outline-none focus:border-primary"
+                  />
                   <button
-                    onClick={() => navigate(`/3pl/onboard?edit=${application.id}&pan=${application.pan_number}`)}
-                    className="w-full py-4 bg-surface2 hover:bg-bg border border-border hover:border-primary text-text font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                    onClick={() => navigate(`/3pl/onboard?edit=${application.id}&pan=${encodeURIComponent(editPan.trim())}`)}
+                    disabled={!editPan.trim()}
+                    className="w-full py-4 bg-surface2 hover:bg-bg border border-border hover:border-primary text-text font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Edit Application Details
                   </button>
@@ -156,7 +166,7 @@ export default function TplTrackApplicationPage() {
                     This application has been processed. You can no longer make edits. Please check your email for access instructions.
                   </p>
                   <button
-                    onClick={() => navigate('/3pl/onboard/setup?email=' + encodeURIComponent(application.email || ''))}
+                    onClick={() => navigate('/3pl/onboard/setup')}
                     className="mt-6 px-6 py-3 bg-primary text-bg font-black uppercase tracking-widest text-sm rounded-xl"
                   >
                     Go to Login

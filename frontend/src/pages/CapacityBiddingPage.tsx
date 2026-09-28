@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Briefcase, Clock, FileCheck, XCircle, AlertTriangle, CheckCircle, Smartphone } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { capacityAPI } from '@/services/api'
 
 export default function CapacityBiddingPage() {
   const [windows, setWindows] = useState<any[]>([])
@@ -50,14 +51,10 @@ export default function CapacityBiddingPage() {
 
   const handleApproveBid = async (bidId: string) => {
     try {
-      const res = await fetch(`/api/v1/capacity/bids/${bidId}/approve`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
-      })
-      if (!res.ok) throw new Error('Failed to approve bid')
+      await capacityAPI.approveBid(bidId)
       fetchData()
     } catch (err: any) {
-      alert(err.message)
+      alert(err.response?.data?.error ?? err.response?.data?.detail ?? 'Failed to approve bid')
     }
   }
 

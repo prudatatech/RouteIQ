@@ -146,7 +146,7 @@ export const cargoAPI = {
     api.post('/cargo/optimize-pooling', demands).then(r => r.data),
   backhaulMatch: (opportunityId: string, availableCapacityKg: number) =>
     api.post('/cargo/backhaul-match', { opportunity_id: opportunityId, available_capacity_kg: availableCapacityKg }).then(r => r.data),
-  verifyPod: (data: { tracking_id: string, otp: string, latitude: number, longitude: number, photo_uploaded: boolean, recipient_name?: string }) =>
+  verifyPod: (data: { tracking_id: string, recipient_name: string }) =>
     api.post('/cargo/verify-pod', data).then(r => r.data),
   pricingRecommendations: (params: { distance_km: number, weight_kg: number, cargo_type: string, congestion_index: number, weather_severity: number }) =>
     api.get('/cargo/pricing-recommendations', { params }).then(r => r.data),
@@ -155,6 +155,23 @@ export const cargoAPI = {
 export const capacityAPI = {
   getNearbyVendors: (params: { lat: number, lng: number, radius?: number }) =>
     api.get('/capacity/nearby-vendors', { params }).then(r => r.data),
+  pendingBids: () => api.get('/capacity/bids/pending').then(r => r.data),
+  approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
+}
+
+export const vendorAPI = {
+  profile: () => api.get('/vendor/profile').then(r => r.data),
+  createShipmentRequest: (data: any) => api.post('/vendor/shipment-request', data).then(r => r.data),
+  pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
+  approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
+  rejectRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/reject`).then(r => r.data),
+  assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
+    api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
+}
+
+export const authAPI = {
+  inviteVendor: (email: string, password: string) =>
+    api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }
 
 export const shipmentsAPI = {
@@ -190,6 +207,7 @@ export const telemetryAPI = {
   createMobileSession: (vehicleId: string, phone?: string) =>
     api.post('/telemetry/mobile-session', { vehicle_id: vehicleId, phone }).then(r => r.data),
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
+  resolveSos: (id: string, data?: any) => api.put(`/telemetry/sos/${id}/resolve`, data).then(r => r.data),
 }
 
 export const analyticsAPI = {
@@ -209,9 +227,10 @@ export const analyticsAPI = {
 export const tplAPI = {
   onboard: (data: any) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
-  getPartner: (id: string) => api.get(`/tpl/${id}`).then(r => r.data),
+  /** Full record for staff/the partner, or for an applicant who supplies the application's PAN; otherwise status only. */
+  getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
-  approve: (id: string, email: string) => api.post(`/tpl/approve/${id}`, { email }).then(r => r.data),
+  approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   pause: (id: string) => api.post(`/tpl/${id}/pause`).then(r => r.data),
   resume: (id: string) => api.post(`/tpl/${id}/resume`).then(r => r.data),
@@ -221,28 +240,35 @@ export const tplAPI = {
 }
 
 export const telemetryWS = {
+  /** WebSocket URL on the same backend the REST client uses (Vercel rewrites cannot proxy WebSockets). */
   getURL: () => {
-    let apiUrl = import.meta.env.VITE_API_URL || '';
-    if (apiUrl) {
-      if (!apiUrl.endsWith('/api/v1') && !apiUrl.startsWith('/api')) {
-        apiUrl = apiUrl.replace(/\/$/, '') + '/api/v1';
-      }
-      const url = new URL(apiUrl);
-      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${protocol}//${url.host}${url.pathname}/telemetry/ws`;
-    }
-    return `wss://margixindia.vercel.app/api/v1/telemetry/ws`
+    const url = new URL(baseURL, window.location.origin)
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${url.host}${url.pathname.replace(/\/$/, '')}/telemetry/ws`
   },
+  /**
+   * Open the live telemetry feed with the current session token (staff only).
+   * Returns a handle whose close() also cancels a connection still being set up.
+   */
   connect: (onMessage: (data: any) => void) => {
-    const ws = new WebSocket(telemetryWS.getURL())
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        onMessage(data)
-      } catch (err) {
-        console.error('WS Parse Error', err)
+    let ws: WebSocket | null = null
+    let closed = false
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (closed || !session?.access_token) return
+      ws = new WebSocket(`${telemetryWS.getURL()}?token=${encodeURIComponent(session.access_token)}`)
+      ws.onmessage = (event) => {
+        try {
+          onMessage(JSON.parse(event.data))
+        } catch (err) {
+          console.error('WS Parse Error', err)
+        }
       }
+    })
+    return {
+      close: () => {
+        closed = true
+        ws?.close()
+      },
     }
-    return ws
   }
 }

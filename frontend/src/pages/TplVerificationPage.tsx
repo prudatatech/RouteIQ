@@ -44,7 +44,7 @@ export default function TplVerificationPage() {
       if (currentStep >= steps.length) {
         clearInterval(interval)
         // Call API
-        tplAPI.approve(partner!.id, 'admin@3pl.com').then(() => {
+        tplAPI.approve(partner!.id).then(() => {
            setTimeout(() => setStatus('invite_sent'), 1000)
         }).catch(err => {
            console.error(err)

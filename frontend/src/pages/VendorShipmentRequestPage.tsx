@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { MapPin, ArrowLeft, Send, Search, Info, Package, User, FileText, Settings, ShieldAlert, Sparkles, Zap } from 'lucide-react';
 import * as turf from '@turf/turf';
 import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase';
+import { vendorAPI } from '@/services/api';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const DEFAULT_CENTER = { longitude: 72.8464, latitude: 19.1197 }; // Mumbai
@@ -120,12 +121,8 @@ export default function VendorShipmentRequestPage() {
 
     const fetchData = async () => {
       try {
-        const profileRes = await fetch('https://margixindia.vercel.app/api/v1/vendor/profile', { headers: { 'Authorization': `Bearer ${token}` } });
-        
-        if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          setVendorProfile(profileData);
-        }
+        const profileData = await vendorAPI.profile();
+        setVendorProfile(profileData);
       } catch (e) {
         console.warn('Failed to fetch data', e);
       }
@@ -459,29 +456,13 @@ export default function VendorShipmentRequestPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!res.ok) {
-        const errorText = await res.text();
-        let errorMessage = errorText;
-        try {
-          const errData = JSON.parse(errorText);
-          if (errData.error || errData.detail) errorMessage = errData.error || errData.detail;
-        } catch (e) {}
-        throw new Error(errorMessage);
-      }
-      
+      await vendorAPI.createShipmentRequest(payload);
+
       toast.success('Shipment Request Created!');
       navigate('/vendor/shipments');
     } catch (err: any) {
-      toast.error('Failed to submit request: ' + err.message);
+      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message;
+      toast.error('Failed to submit request: ' + message);
     } finally {
       setIsSubmitting(false);
     }

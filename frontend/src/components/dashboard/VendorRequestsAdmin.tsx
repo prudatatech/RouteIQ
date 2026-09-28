@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import { ArrowRight, Truck, X, Package, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react'
 import * as turf from '@turf/turf'
@@ -26,11 +27,8 @@ export default function VendorRequestsAdmin() {
   const fetchRequests = async () => {
     setLoading(true)
     try {
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch('https://margixindia.vercel.app/api/v1/vendor/shipment-request/pending', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) setRequests(await res.json())
+      const data = await vendorAPI.pendingRequests()
+      setRequests(data)
     } finally { setLoading(false) }
   }
 
@@ -64,59 +62,43 @@ export default function VendorRequestsAdmin() {
     if (!selectedReq || !selectedVehicle) return
     setAssigning(true)
     try {
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(`/api/v1/vendor/shipment-request/${selectedReq.id}/assign-vehicle`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicle_id: selectedVehicle })
-      })
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed') }
+      await vendorAPI.assignVehicle(selectedReq.id, { vehicle_id: selectedVehicle })
       toast.success('Vehicle assigned — cargo manifest created!')
       setSelectedReq(null); setSelectedVehicle(''); fetchRequests()
-    } catch (err: any) { toast.error(err.message) }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error ?? err.response?.data?.detail ?? 'Failed')
+    }
     finally { setAssigning(false) }
   }
 
   const handleApprove = async (id: string) => {
-    const token = (await supabase.auth.getSession()).data.session?.access_token
-    const res = await fetch(`/api/v1/vendor/shipment-request/${id}/approve`, {
-      method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (res.ok) { toast.success('Request approved'); fetchRequests() }
-    else toast.error('Failed to approve')
+    try {
+      await vendorAPI.approveRequest(id)
+      toast.success('Request approved'); fetchRequests()
+    } catch {
+      toast.error('Failed to approve')
+    }
   }
 
   const handleReject = async (id: string) => {
     try {
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(`/api/v1/vendor/shipment-request/${id}/reject`, {
-        method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
+      await vendorAPI.rejectRequest(id);
       toast.success('Request rejected');
       fetchRequests();
     } catch (err: any) {
-      toast.error('Failed to reject: ' + err.message);
+      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message;
+      toast.error('Failed to reject: ' + message);
     }
   }
 
   const handleRemove = async (id: string) => {
     try {
-      const token = (await supabase.auth.getSession()).data.session?.access_token
-      const res = await fetch(`/api/v1/vendor/shipment-request/${id}/reject`, {
-        method: 'PUT', headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
+      await vendorAPI.rejectRequest(id);
       toast.success('Permanently removed');
       fetchRequests();
     } catch (err: any) {
-      toast.error('Failed to remove: ' + err.message);
+      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message;
+      toast.error('Failed to remove: ' + message);
     }
   }
 
@@ -188,10 +170,7 @@ export default function VendorRequestsAdmin() {
                 <button
                   onClick={async () => {
                     toast.success('Escalated to 3PL Network');
-                    const { data: { session } } = await supabase.auth.getSession();
-                    await fetch(`/api/v1/vendor/shipment-request/${req.id}/reject`, {
-                      method: 'PUT', headers: { 'Authorization': `Bearer ${session?.access_token}` }
-                    });
+                    await vendorAPI.rejectRequest(req.id);
                     fetchRequests();
                   }}
                   className="col-span-1 py-2 rounded-lg border border-slate-800 bg-slate-800 text-white text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-slate-900 shadow-sm transition-colors"

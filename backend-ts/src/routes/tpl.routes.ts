@@ -31,6 +31,8 @@ function publicView(partner: any) {
     status: partner.status,
     created_at: partner.created_at,
     email_masked: maskEmail(partner.email),
+    corridor_count: partner.tpl_corridors?.length ?? 0,
+    document_count: partner.tpl_documents?.length ?? 0,
   };
 }
 
