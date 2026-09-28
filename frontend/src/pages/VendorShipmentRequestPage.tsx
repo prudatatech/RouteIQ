@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
 import { useAuthStore } from '@/store/authStore';
@@ -340,6 +340,33 @@ export default function VendorShipmentRequestPage() {
 
   const pickupFence = createGeoFence(pickupLocation);
   const dropFence = createGeoFence(dropLocation);
+
+  const routeCurve = useMemo(() => {
+    if (!pickupLocation || !dropLocation) return null;
+    if (pickupLocation.lng === dropLocation.lng && pickupLocation.lat === dropLocation.lat) return null;
+    
+    const start = turf.point([pickupLocation.lng, pickupLocation.lat]);
+    const end = turf.point([dropLocation.lng, dropLocation.lat]);
+    const distance = turf.distance(start, end, { units: 'kilometers' });
+    
+    if (distance < 0.1) return null;
+
+    try {
+      const midpoint = turf.midpoint(start, end);
+      const bearing = turf.bearing(start, end);
+      const offsetDistance = distance * 0.2; 
+      const controlPoint = turf.destination(midpoint, offsetDistance, bearing + 90, { units: 'kilometers' });
+      
+      const line = turf.lineString([start.geometry.coordinates, controlPoint.geometry.coordinates, end.geometry.coordinates]);
+      return turf.bezierSpline(line, { resolution: 10000, sharpness: 0.85 });
+    } catch (e) {
+      try {
+        return turf.greatCircle(start, end, { properties: { name: 'route' }, npoints: 100 });
+      } catch (e2) {
+        return turf.lineString([start.geometry.coordinates, end.geometry.coordinates]);
+      }
+    }
+  }, [pickupLocation, dropLocation]);
 
   // HSN Auto-suggest: triggers on product name or HSN input changes
   useEffect(() => {
@@ -835,6 +862,21 @@ export default function VendorShipmentRequestPage() {
                   </Source>
                 )}
               </>
+            )}
+
+            {/* Route Curve */}
+            {routeCurve && (
+              <Source id="route-curve" type="geojson" data={routeCurve}>
+                <Layer
+                  id="route-curve-layer"
+                  type="line"
+                  paint={{
+                    'line-color': '#0ea5e9', // primary color
+                    'line-width': 3,
+                    'line-dasharray': [2, 2]
+                  }}
+                />
+              </Source>
             )}
           </Map>
           
