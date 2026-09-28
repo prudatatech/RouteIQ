@@ -1,0 +1,70 @@
+# Database (Supabase)
+
+Project ref: `plutdajzefwtpgofpqlk`. backend-ts talks to it with the service role; the web app and driver app use the anon key plus the user's session, governed by row-level security.
+
+## Current state
+
+The production schema was edited by hand over time, so the files in `migrations/` before `20260928*` cannot rebuild it:
+there is no baseline (the base tables live in `../scripts/supabase_init.sql`), several tables exist only in production
+(`tpl_partners`, `tpl_corridors`, `tpl_documents`, `customers`) or only in loose scripts (`cargo_manifest`, `sos_alerts`,
+`kyc_profiles`, `system_settings` under `../backend-ts/`), and some version numbers are reused.
+
+The `20260928*` migrations are written to apply safely on top of production as it is today.
+
+## 1. Apply the security migrations
+
+Order matters. Take a backup first (Dashboard → Database → Backups, or `pg_dump`). Ideally, run the migrations on a Supabase branch first.
+
+Before applying, list the current storage policies — the migration drops every policy that mentions `kyc_documents` or is not scoped to any bucket; anything else on `storage.objects` is left alone:
+```sql
+select policyname, cmd, roles, qual, with_check from pg_policies where schemaname = 'storage';
+```
+
+1. Deploy the web app from this branch (it no longer reads `vendor_profiles.dummy2`/`kyc_profiles`, opens KYC documents through signed URLs, and uploads 3PL application documents under `tpl-applications/`).
+2. In the SQL editor (or `supabase db push` once the baseline below is in place), run, in order:
+   - `migrations/20260928000000_secure_user_roles.sql` — roles only from server-set `app_metadata`; clients cannot write `public.users` except `push_token`.
+   - `migrations/20260928000100_vendor_kyc_columns.sql` — `vendor_profiles.kyc_status` / `kyc_data`, backfilled from `dummy2`. Rows whose `dummy2` is not valid JSON are listed as NOTICEs; review them by hand.
+   - `migrations/20260928000200_row_level_security.sql` — drops every existing policy in `public`, enables RLS on every public table, and creates only the policies the clients need; makes the `kyc_documents` bucket private.
+   - `migrations/20260928000300_status_alignment.sql` — enum/constraint values the code writes.
+3. Deploy backend-ts.
+4. Check:
+   ```sql
+   -- every public table has RLS on
+   select tablename from pg_tables where schemaname = 'public' and not rowsecurity;
+   -- no policy is open to everyone
+   select tablename, policyname, roles, qual from pg_policies where schemaname = 'public' and qual = 'true';
+   -- (expected: only system_settings_select)
+   select public from storage.buckets where id = 'kyc_documents';  -- false
+   -- accounts with elevated roles (confirm each one is legitimate)
+   select id, email, role, created_at from public.users where role in ('superadmin', 'admin', 'manager');
+   -- public views bypass RLS when owned by postgres; review any that exist
+   select table_name from information_schema.views where table_schema = 'public';
+   ```
+
+The driver app still uses the service-role key until the Phase 3 release, so these policies do not affect it yet; they already include what the new driver app needs.
+
+## 2. Make the schema reproducible (baseline)
+
+Needs the Supabase CLI (`brew install supabase/tap/supabase`) and the database password.
+
+```bash
+supabase login
+supabase link --project-ref plutdajzefwtpgofpqlk
+supabase db dump --linked --schema public -f supabase/migrations/20260927000000_baseline.sql
+```
+
+Then, in one commit:
+
+1. Move every migration older than the baseline (everything before `20260927000000`, and the unversioned `add_phone_to_users.sql`; not the `20260928*` files), plus `../scripts/supabase_init.sql`, `../backend-ts/kyc_migration.sql` and `../backend-ts/scripts/*.sql`, into `migrations/_archive/` (history only, never applied again).
+2. The `storage` schema is managed by Supabase and is not dumped; the `kyc_documents` bucket policies live in `20260928000200_row_level_security.sql`.
+3. Grep the baseline for `tpl_partners`, `customers`, `cargo_manifest`, `sos_alerts`, `system_settings`, `kyc_profiles` to confirm they were captured.
+4. Mark the baseline and the `20260928*` migrations as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300`.
+
+The baseline is stamped just before the `20260928*` files; those are idempotent, so on a fresh `supabase db reset` they re-apply cleanly on top of it (and add the storage policies, which the dump does not contain).
+
+From then on every schema change is a new file from `supabase migration new <name>`, tested with `supabase db reset` locally before it is pushed.
+
+## Follow-ups
+
+- Once the new web app has been live for a while, drop `vendor_profiles.dummy2` and `kyc_profiles`.
+- After the Phase 3 driver app release, rotate the service-role key (Dashboard → Settings → API) and update backend-ts and ml-service.

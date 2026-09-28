@@ -76,6 +76,12 @@ Production was edited by hand: `tpl_partners`, `tpl_corridors`, `tpl_documents` 
 
 ---
 
+**Status: migrations and code on this branch; applying them is yours** (runbook: `supabase/README.md`).
+- `20260928000000` (roles from app_metadata), `…0100` (KYC columns, one-time backfill), `…0200` (deny-by-default RLS, field guards, private KYC bucket), `…0300` (status alignment).
+- Verified in a local Postgres 15/16 built from the repo's schema history plus the prod-only tables: all four apply cleanly and re-apply idempotently; 141 role-by-role checks pass (anon, drivers, vendor, 3PL partner, admin/manager/superadmin, inactive admin, service role, signup trigger, KYC backfill, no policy recursion).
+- Frontend reads KYC from the new columns and opens documents through signed URLs; superadmins can now open 3PL applicants' documents.
+- Known follow-ups: vendors see full vehicle rows (incl. driver phone, live position) for open windows — replace with a column-limited view; a verified vendor can edit company name/GST without re-verification; managers can approve KYC (matches backend staff roles — confirm intended); anonymous 3PL applicants can upload any file under `tpl-applications/` (move to backend-issued signed upload URLs).
+
 ## Phase 3 — Driver app release, then key rotation — C
 
 The driver app ships the Supabase **service_role** key (bypasses all RLS). It cannot be rotated until a release stops using it.
