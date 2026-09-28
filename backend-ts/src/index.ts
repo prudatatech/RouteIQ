@@ -62,7 +62,7 @@ app.use(cors({
       return callback(null, true);
     }
     // Allow if origin is in the ALLOWED_ORIGINS array or matches a Vercel preview domain
-    if (settings.ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) {
+    if (settings.ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('margixindia.com')) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -80,6 +80,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/v1', apiRouter);
 
 // ── Health endpoints ───────────────────────────────────────
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'online',
+    message: 'margixindia API is running.',
+    version: '1.0.0',
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     status: 'healthy',
