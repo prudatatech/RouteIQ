@@ -146,3 +146,27 @@ export async function cacheDeletePattern(pattern: string): Promise<number> {
 
   return deleted;
 }
+
+/**
+ * Atomically increment a counter, starting a TTL window on first use.
+ * Returns the new count. Used for rate limits.
+ */
+export async function cacheIncr(key: string, ttlSeconds: number): Promise<number> {
+  if (redisAvailable && redis) {
+    try {
+      const count = await redis.incr(key);
+      if (count === 1) await redis.expire(key, ttlSeconds);
+      return count;
+    } catch (e: any) {
+      console.warn(`Upstash cacheIncr error: ${e.message} — falling back to memory`);
+    }
+  }
+
+  const current = Number(memGet(key) ?? 0) + 1;
+  const existing = memoryCache.get(key);
+  memoryCache.set(key, {
+    value: String(current),
+    expiresAt: existing && existing.expiresAt > Date.now() ? existing.expiresAt : Date.now() + ttlSeconds * 1000,
+  });
+  return current;
+}

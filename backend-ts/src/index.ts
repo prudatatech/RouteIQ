@@ -20,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { settings } from './core/config';
 import { getBackendSecret } from './core/auth';
+import { errorHandler, notFoundHandler } from './core/errors';
 import { redis } from './core/redis';
 import { wsManager } from './core/websocket';
 import apiRouter from './routes';
@@ -104,9 +105,14 @@ app.get('/ready', async (_req, res) => {
     if (redis) await redis.ping();
     res.json({ status: 'ready', redis: 'ok', database: 'ok' });
   } catch (e: any) {
-    res.json({ status: 'not_ready', error: e.message });
+    console.error('[ready] Redis ping failed:', e);
+    res.status(503).json({ status: 'not_ready' });
   }
 });
+
+// ── Fallthrough handlers (must be registered last) ─────────
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // ── WebSocket server ───────────────────────────────────────
 // Path matches the Python backend's WebSocket endpoint
