@@ -85,8 +85,27 @@ export default function VendorPortalPage() {
                {heroSuggestions.map((s: any) => (
                  <button
                    key={s.id}
-                   onClick={() => {
-                      navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}&lat=${s.center[1]}&lng=${s.center[0]}`)
+                   onClick={async () => {
+                      try {
+                        let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${s.magicKey}&f=json`;
+                        let res = await fetch(url);
+                        let data = await res.json();
+                        
+                        if (!data.candidates || data.candidates.length === 0) {
+                          url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(s.place_name)}&f=json`;
+                          res = await fetch(url);
+                          data = await res.json();
+                        }
+                        
+                        if (data.candidates && data.candidates.length > 0) {
+                          const loc = data.candidates[0].location;
+                          navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}&lat=${loc.y}&lng=${loc.x}`);
+                        } else {
+                          navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}`);
+                        }
+                      } catch (e) {
+                        navigate(`/vendor/request?query=${encodeURIComponent(s.place_name)}`);
+                      }
                     }}
                    className="w-full text-left px-6 py-4 border-b border-border hover:bg-surface transition-colors flex items-center gap-4 group"
                  >
