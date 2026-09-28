@@ -54,6 +54,7 @@ const dotColors: Record<string, string> = {
   idle: 'bg-[#64748B]',
   maintenance: 'bg-[#F59E0B] shadow-[0_0_8px_rgba(245,158,11,0.5)]',
   offline: 'bg-[#FF4D4D] shadow-[0_0_8px_rgba(255,77,77,0.5)]',
+  archived: 'bg-[#9CA3AF]',
 }
 
 export function StatusDot({ status }: { status: string }) {
