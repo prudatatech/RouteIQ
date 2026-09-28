@@ -1,7 +1,7 @@
 /**
  * margixindia — Error responses
  *
- * Client errors (HttpError with status < 500) are returned as-is. Anything
+ * HttpError messages are written for clients and returned as-is. Anything
  * else is logged with the request ID and returned as a generic 500, so
  * database and library messages never reach clients.
  */
@@ -22,7 +22,7 @@ type ErrorKey = 'detail' | 'error';
  */
 export function sendError(req: Request, res: Response, err: unknown, key: ErrorKey = 'detail'): void {
   if (res.headersSent) return;
-  if (err instanceof HttpError && err.status < 500) {
+  if (err instanceof HttpError) {
     res.status(err.status).json({ [key]: err.message });
     return;
   }

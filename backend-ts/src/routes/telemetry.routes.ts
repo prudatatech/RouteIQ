@@ -5,6 +5,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
+import { consumeRateLimit } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
 import { TelemetryCreateSchema } from '../schemas';
 import { TelemetryService } from '../services/telemetry.service';
@@ -14,8 +16,19 @@ import crypto from 'crypto';
 
 const router = Router();
 
-// In-memory store for mobile sessions
-const mobileSessions: Record<string, any> = {};
+// In-memory store for mobile tracking sessions (capability URLs shared with drivers)
+const MOBILE_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const mobileSessions: Record<string, { vehicle_id: string; phone: string; plate: string; created_at: string; expires_at: number; active: boolean }> = {};
+
+function getMobileSession(token: string) {
+  const session = mobileSessions[token];
+  if (!session) return null;
+  if (session.expires_at < Date.now()) {
+    delete mobileSessions[token];
+    return null;
+  }
+  return session;
+}
 
 // ── POST / — Ingest telemetry ──────────────────────────────
 router.post('/', requireAuth, async (req: Request, res: Response) => {
@@ -180,7 +193,7 @@ router.post('/stoppages', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── POST /mobile-session ───────────────────────────────────
-router.post('/mobile-session', requireAuth, async (req: Request, res: Response) => {
+router.post('/mobile-session', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const vehicleId = req.body.vehicle_id;
     const phone = req.body.phone || '';
@@ -207,6 +220,7 @@ router.post('/mobile-session', requireAuth, async (req: Request, res: Response) 
       phone,
       plate: vehicle.plate_number,
       created_at: new Date().toISOString(),
+      expires_at: Date.now() + MOBILE_SESSION_TTL_MS,
       active: true,
     };
 
@@ -248,17 +262,26 @@ router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', '
 // ── POST /mobile-push/:session_token (no auth) ─────────────
 router.post('/mobile-push/:session_token', async (req: Request, res: Response) => {
   try {
-    const session = mobileSessions[req.params.session_token];
+    const token = req.params.session_token;
+    const session = getMobileSession(token);
     if (!session || !session.active) {
       res.status(404).json({ detail: 'Invalid or expired tracking session' });
       return;
     }
+    if (!(await consumeRateLimit(`mobile-push:${token}`, 5, 5))) {
+      res.status(429).json({ detail: 'Too many location updates' });
+      return;
+    }
 
     const vehicleId = session.vehicle_id;
-    const lat = req.body.lat || req.body.latitude || 0;
-    const lng = req.body.lng || req.body.longitude || 0;
-    const speed = req.body.speed || 0;
-    const heading = req.body.heading || 0;
+    const lat = Number(req.body.lat ?? req.body.latitude);
+    const lng = Number(req.body.lng ?? req.body.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      res.status(400).json({ detail: 'Valid lat/lng are required' });
+      return;
+    }
+    const speed = Number(req.body.speed) || 0;
+    const heading = Number(req.body.heading) || 0;
 
     const telemetryData = {
       vehicle_id: vehicleId,
@@ -291,12 +314,12 @@ router.post('/mobile-push/:session_token', async (req: Request, res: Response) =
 
 // ── GET /mobile-session/:session_token ─────────────────────
 router.get('/mobile-session/:session_token', (req: Request, res: Response) => {
-  const session = mobileSessions[req.params.session_token];
+  const session = getMobileSession(req.params.session_token);
   if (!session) {
     res.status(404).json({ detail: 'Session not found' });
     return;
   }
-  res.json(session);
+  res.json({ vehicle_id: session.vehicle_id, plate: session.plate, active: session.active });
 });
 
 // ── POST /driver-ping — React Native background GPS (Ola/Uber style) ──
@@ -324,9 +347,6 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     // Support batch pings (offline queue replay)
     const pings = Array.isArray(req.body.pings) ? req.body.pings : [req.body];
 
-    // Debug log
-    require('fs').appendFileSync('pings_debug.log', JSON.stringify({ time: new Date().toISOString(), driverId, pings }) + '\\n');
-
     let processedCount = 0;
     let latestLat = 0;
     let latestLng = 0;
@@ -341,7 +361,6 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       const timestamp = ping.timestamp || new Date().toISOString();
 
       if (!lat || !lng) {
-        require('fs').appendFileSync('pings_debug.log', 'Skipped ping: no lat/lng\\n');
         continue;
       }
 

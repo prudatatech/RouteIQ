@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
+import { canAccessVehicle, isStaff } from '../core/ownership';
 
 const router = Router();
 
@@ -104,9 +105,19 @@ router.get('/nearby-vendors', requireAuth, async (req, res) => {
 });
 
 // GET /api/v1/capacity/windows/:id/bid-count
-router.get('/windows/:id/bid-count', async (req, res) => {
+router.get('/windows/:id/bid-count', requireAuth, async (req, res) => {
   try {
     const { supabase } = await import('../core/supabase');
+    if (req.user!.role === 'driver') {
+      const { data: window } = await supabase.from('capacity_windows').select('vehicle_id').eq('id', req.params.id).maybeSingle();
+      if (!window || !(await canAccessVehicle(req.user!, window.vehicle_id))) {
+        res.status(403).json({ error: 'Not authorized for this window' });
+        return;
+      }
+    } else if (!isStaff(req.user) && req.user!.role !== 'vendor') {
+      res.status(403).json({ error: 'Not authorized' });
+      return;
+    }
     const { count, error } = await supabase
       .from('capacity_bids')
       .select('*', { count: 'exact', head: true })

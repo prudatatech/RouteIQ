@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
+import { canAccessShipment } from '../core/ownership';
 import { ShipmentCreateSchema } from '../schemas';
 import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
@@ -172,8 +173,12 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
 });
 
 // ── GET /:shipment_id/verify ───────────────────────────────
-router.get('/:shipment_id/verify', async (req: Request, res: Response) => {
+router.get('/:shipment_id/verify', requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!(await canAccessShipment(req.user!, req.params.shipment_id))) {
+      res.status(403).json({ detail: 'Not authorized for this shipment' });
+      return;
+    }
     const shipment = await ShipmentService.getShipment(req.params.shipment_id);
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });

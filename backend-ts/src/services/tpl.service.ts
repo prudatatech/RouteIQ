@@ -1,12 +1,35 @@
+import crypto from 'crypto';
 import { supabase } from '../core/supabase';
-import { v4 as uuidv4 } from 'uuid';
+import { settings } from '../core/config';
+import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
+import { HttpError } from '../core/errors';
+
+const OTP_TTL_SECONDS = 300;
+const OTP_MAX_ATTEMPTS = 5;
+
+const otpKey = (email: string) => `otp:tpl:${email.toLowerCase()}`;
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
 
 export const tplService = {
   /**
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+    if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+
+    const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
+    if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
@@ -98,9 +121,9 @@ export const tplService = {
       query.eq('custom_id', id);
     }
     
-    const { data, error } = await query.single();
-      
+    const { data, error } = await query.maybeSingle();
     if (error) throw new Error(`Failed to fetch partner ${id}: ${error.message}`);
+    if (!data) throw new HttpError(404, 'Application not found');
     return data;
   },
 
@@ -109,6 +132,11 @@ export const tplService = {
    */
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('status').eq('id', id).maybeSingle();
+    if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
+    if (!current) throw new HttpError(404, 'Application not found');
+    if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
 
     // 1. Update Partner Record
     const { error: partnerErr } = await supabase
@@ -163,7 +191,7 @@ export const tplService = {
   /**
    * Approve a 3PL partner
    */
-  async approve(id: string, approverEmail: string) {
+  async approve(id: string, approverId: string) {
     // Fetch the existing partner to get pending_updates
     const { data: partner, error: fetchErr } = await supabase
       .from('tpl_partners')
@@ -213,7 +241,7 @@ export const tplService = {
     if (error) throw new Error(`Approval failed: ${error.message}`);
 
     // 2. Create actual Auth User for them (simulated here)
-    console.log(`[TPL Provisoning] Provisioning account for ${updatedPartner.company_name} approved by ${approverEmail}`);
+    console.log(`[TPL Provisoning] Provisioning account for ${updatedPartner.company_name} approved by ${approverId}`);
     
     return updatedPartner;
   },
@@ -284,43 +312,39 @@ export const tplService = {
   },
 
   /**
-   * Send a 4-digit OTP via Resend for 3PL Password Setup
+   * Email a 6-digit password-setup code to an approved partner.
+   * Returns silently when the email is not eligible so the endpoint does not
+   * reveal which emails belong to partners.
    */
   async sendSetupOtp(email: string) {
-    // 1. Check if email exists in tpl_partners and status is active
     const { data: partner, error } = await supabase
       .from('tpl_partners')
       .select('id, company_name, status')
       .eq('email', email)
-      .single();
+      .maybeSingle();
+    if (error) throw new Error(`Partner lookup failed: ${error.message}`);
+    if (!partner || partner.status !== 'active') return;
 
-    if (error || !partner) {
-      throw new Error('Email not found in our 3PL records.');
+    const apiKey = process.env.RESEND_API_KEY;
+    const otp = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    if (!apiKey) {
+      if (settings.isProduction) throw new HttpError(503, 'Email delivery is not configured');
+      console.warn(`[TPL] RESEND_API_KEY not set — development OTP for ${email}: ${otp}`);
     }
-    if (partner.status !== 'active') {
-      throw new Error(`Your application is currently '${partner.status}'. You can only set up a password once approved.`);
-    }
 
-    // 2. Generate 4-digit OTP
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    await cacheSet(otpKey(email), { otp, attempts: 0 }, OTP_TTL_SECONDS);
 
-    // 3. Store in Redis
-    const { cacheSet } = await import('../core/redis');
-    await cacheSet(`otp:tpl:${email}`, otp, 300); // 5 mins
-
-    // 4. Send Email via Resend
+    if (!apiKey) return;
     const { Resend } = await import('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
-
-    await resend.emails.send({
+    const { error: sendErr } = await new Resend(apiKey).emails.send({
       from: 'Margix India <onboarding@resend.dev>',
       to: email,
       subject: 'Margix India - Setup Your 3PL Account Password',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
           <h2 style="color: #4facfe;">Margix India 3PL Network</h2>
-          <p>Hello ${partner.company_name},</p>
-          <p>Your 3PL partner application has been approved. Please use the OTP below to securely set up your password and access the control tower.</p>
+          <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+          <p>Your 3PL partner application has been approved. Please use the code below to set up your password and access the control tower.</p>
           <div style="background-color: #f4f4f5; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
             <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
           </div>
@@ -328,80 +352,70 @@ export const tplService = {
         </div>
       `
     });
-
-    return true;
+    if (sendErr) throw new Error(`Failed to send setup email: ${sendErr.message}`);
   },
 
   /**
-   * Verify OTP and setup Supabase Auth Password
+   * Verify the setup code and set the partner's password.
+   * Only ever sets the password of the account already linked to this
+   * partner, or creates a new vendor account — never takes over an
+   * unrelated existing account with the same email.
    */
   async verifyAndSetupPassword(email: string, otp: string, password: string) {
-    // 1. Verify OTP
-    const { cacheGet, cacheDelete } = await import('../core/redis');
-    const cachedOtp = await cacheGet(`otp:tpl:${email}`);
+    const stored = await cacheGet<{ otp: string; attempts: number }>(otpKey(email));
+    if (!stored || typeof stored.otp !== 'string') throw new HttpError(400, 'Invalid or expired code');
 
-    if (!cachedOtp || String(cachedOtp) !== String(otp)) {
-      throw new Error('Invalid or expired OTP');
+    if (!safeEqual(stored.otp, otp)) {
+      const attempts = (stored.attempts ?? 0) + 1;
+      if (attempts >= OTP_MAX_ATTEMPTS) await cacheDelete(otpKey(email));
+      else await cacheSet(otpKey(email), { otp: stored.otp, attempts }, OTP_TTL_SECONDS);
+      throw new HttpError(400, 'Invalid or expired code');
     }
+    await cacheDelete(otpKey(email));
 
-    // 2. Get the partner to link
     const { data: partner, error: partnerError } = await supabase
       .from('tpl_partners')
-      .select('id, company_name, custom_id')
+      .select('id, company_name, status, user_id')
       .eq('email', email)
-      .single();
+      .maybeSingle();
+    if (partnerError) throw new Error(`Partner lookup failed: ${partnerError.message}`);
+    if (!partner || partner.status !== 'active') throw new HttpError(400, 'Invalid or expired code');
 
-    if (partnerError || !partner) throw new Error('Partner record not found');
-
-    // 3. Create or Update user in Supabase Auth via Admin API
-    const { createClient } = await import('@supabase/supabase-js');
-    const adminSupabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Check if user already exists
-    const { data: users, error: listError } = await adminSupabase.auth.admin.listUsers();
-    let userId = '';
-
-    const existingUser = users?.users?.find(u => u.email === email);
-    
-    if (existingUser) {
-      // Update password
-      const { data, error } = await adminSupabase.auth.admin.updateUserById(existingUser.id, {
-        password: password,
-        email_confirm: true
-      });
-      if (error) throw error;
-      userId = data.user.id;
-    } else {
-      // Create user
-      const { data, error } = await adminSupabase.auth.admin.createUser({
-        email: email,
-        password: password,
-        email_confirm: true,
-        user_metadata: {
-          role: 'vendor'
-        }
-      });
-      if (error) throw error;
-      userId = data.user.id;
+    if (partner.user_id) {
+      // Password reset for the partner's own, already-linked account
+      const { error } = await supabase.auth.admin.updateUserById(partner.user_id, { password });
+      if (error) throw new Error(`Password update failed: ${error.message}`);
+      return true;
     }
 
-    // 4. Upsert into public.users
-    await adminSupabase.from('users').upsert({
-      id: userId,
-      email: email,
-      full_name: partner.company_name,
-      role: 'vendor'
+    const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
+    if (existing) {
+      throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
+    }
+
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      app_metadata: { role: 'vendor' },
+      user_metadata: { role: 'vendor', full_name: partner.company_name },
     });
+    if (createErr || !created.user) {
+      if (createErr && /already (been )?registered|exists/i.test(createErr.message)) {
+        throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
+      }
+      throw new Error(`Account creation failed: ${createErr?.message}`);
+    }
 
-    // 5. Link user_id in tpl_partners
-    await this.activate(partner.id, userId);
+    const { error: upsertErr } = await supabase.from('users').upsert({
+      id: created.user.id,
+      email,
+      full_name: partner.company_name,
+      role: 'vendor',
+    });
+    if (upsertErr) throw new Error(`Failed to create user profile: ${upsertErr.message}`);
 
-    // 6. Cleanup OTP
-    await cacheDelete(`otp:tpl:${email}`);
-
+    await this.activate(partner.id, created.user.id);
     return true;
   }
 };

@@ -9,6 +9,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 import { cacheGet, cacheSet } from '../core/redis';
 import { OptimizationRequestSchema } from '../schemas';
 import { settings } from '../core/config';
@@ -18,7 +19,7 @@ import { notificationService } from '../services/notification.service';
 const router = Router();
 
 // ── POST / — Run VRP optimization ──────────────────────────
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const parsed = OptimizationRequestSchema.safeParse(req.body);
     if (!parsed.success) {

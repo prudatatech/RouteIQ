@@ -6,6 +6,9 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
+import { sendError } from '../core/errors';
+import { ShipmentService } from '../services/shipment.service';
 import { v4 as uuidv4 } from 'uuid';
 import { settings } from '../core/config';
 import { MapplsService } from '../services/mappls.service';
@@ -458,81 +461,48 @@ router.post('/backhaul-match', requireAuth, async (req: Request, res: Response) 
   }
 });
 
-// ── POST /verify-pod ───────────────────────────────────────
-router.post('/verify-pod', requireAuth, async (req: Request, res: Response) => {
+// ── POST /verify-pod — staff confirms a delivery ────────────
+router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const trackingId = req.body.tracking_id;
-    const otp = req.body.otp;
-    const lat = req.body.latitude;
-    const lng = req.body.longitude;
-    const photoUploaded = req.body.photo_uploaded || false;
-
-    if (!trackingId) {
-      res.status(400).json({ detail: 'Tracking ID required' });
+    const trackingId = typeof req.body.tracking_id === 'string' ? req.body.tracking_id.trim() : '';
+    const recipientName = typeof req.body.recipient_name === 'string' ? req.body.recipient_name.trim() : '';
+    if (!trackingId || !recipientName) {
+      res.status(400).json({ detail: 'Tracking ID and recipient name are required' });
       return;
     }
 
     const { data: shipment, error } = await supabase
       .from('shipments')
-      .select('*')
+      .select('id, status')
       .eq('tracking_id', trackingId)
-      .single();
-
-    if (error || !shipment) {
+      .maybeSingle();
+    if (error) throw error;
+    if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });
       return;
     }
-
-    // Master OTP 2026 or fallback to first 4 chars of ID
-    if (otp !== '2026' && otp !== shipment.id.substring(0, 4)) {
-      res.status(400).json({ detail: 'Invalid OTP code. Please verify code sent to recipient.' });
+    if (shipment.status === 'delivered' || shipment.status === 'cancelled') {
+      res.status(409).json({ detail: `Shipment is already ${shipment.status}` });
       return;
     }
 
-    if (!lat || !lng) {
-      res.status(400).json({ detail: 'GPS coordinates required for proof-of-delivery geo-tagging.' });
-      return;
-    }
-    if (!photoUploaded) {
-      res.status(400).json({ detail: 'Verification photo missing. Please take a cargo offload photo.' });
-      return;
-    }
-
-    const targetLat = shipment.dest_lat || 24.5854;
-    const targetLng = shipment.dest_lng || 73.7125;
-    const distanceOffset = Math.sqrt(Math.pow(lat - targetLat, 2) + Math.pow(lng - targetLng, 2)) * 111.0;
-    
-    // Check if within 50km for demo
-    if (distanceOffset > 50) {
-      res.status(400).json({ detail: `Out of range. You are ${distanceOffset.toFixed(1)}km away from the destination.` });
-      return;
-    }
-
-    const blockchainHash = `0x${uuidv4().replace(/-/g, '')}${uuidv4().replace(/-/g, '')}`.substring(0, 66);
-
-    // Update DB
-    await supabase.from('shipments').update({
-      status: 'delivered',
-      signature_data: blockchainHash
-    }).eq('id', shipment.id);
+    const updated = await ShipmentService.updateShipmentStatus(shipment.id, 'delivered', null, null, recipientName);
+    if (!updated) throw new Error(`Failed to mark shipment ${shipment.id} delivered`);
 
     res.json({
-      status: 'verified',
+      status: 'delivered',
       tracking_id: trackingId,
-      verified_at: new Date().toISOString(),
-      recipient_name: shipment.received_by || 'Verified Recipient',
-      gps_match_offset_meters: parseFloat((distanceOffset * 1000).toFixed(1)),
-      gps_status: 'Within Geo-fenced Proximity Limit',
-      blockchain_receipt: blockchainHash,
-      message: 'Proof of Delivery successfully sealed & written to logistics ledger.',
+      recipient_name: recipientName,
+      delivered_at: new Date().toISOString(),
+      confirmed_by: req.user!.user_id,
     });
-  } catch (e: any) {
-    res.status(500).json({ detail: e.message });
+  } catch (e) {
+    sendError(req, res, e);
   }
 });
 
 // ── GET /pricing-recommendations ───────────────────────────
-router.get('/pricing-recommendations', async (req: Request, res: Response) => {
+router.get('/pricing-recommendations', requireAuth, async (req: Request, res: Response) => {
   try {
     const distanceKm = parseFloat(req.query.distance_km as string) || 300;
     const weightKg = parseFloat(req.query.weight_kg as string) || 5000;

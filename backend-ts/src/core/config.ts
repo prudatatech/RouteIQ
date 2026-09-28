@@ -60,6 +60,8 @@ export const settings = {
   SPARK_GPS_API_TOKEN: env('SPARK_GPS_API_TOKEN'),
   SPARK_GPS_USERNAME: env('SPARK_GPS_USERNAME'),
   SPARK_GPS_PASSWORD: env('SPARK_GPS_PASSWORD'),
+  // Shared secret the GPS provider sends when pushing positions to POST /spark-gps
+  SPARK_GPS_PUSH_SECRET: env('SPARK_GPS_PUSH_SECRET'),
 
   // AWS
   AWS_REGION: env('AWS_REGION', 'ap-south-1'),

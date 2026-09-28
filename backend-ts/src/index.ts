@@ -19,7 +19,8 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 import { settings } from './core/config';
-import { getBackendSecret } from './core/auth';
+import { authenticateToken, getBackendSecret } from './core/auth';
+import { isStaff } from './core/ownership';
 import { errorHandler, notFoundHandler } from './core/errors';
 import { redis } from './core/redis';
 import { wsManager } from './core/websocket';
@@ -115,8 +116,31 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // ── WebSocket server ───────────────────────────────────────
-// Path matches the Python backend's WebSocket endpoint
-const wss = new WebSocket.Server({ server, path: '/api/v1/telemetry/ws' });
+// Live fleet feed for staff dashboards. The client passes its access token
+// as ?token=... (browsers cannot set headers on WebSocket requests).
+const WS_PATH = '/api/v1/telemetry/ws';
+const wss = new WebSocket.Server({ noServer: true });
+
+server.on('upgrade', async (req, socket, head) => {
+  const reject = (status: string) => {
+    socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+    socket.destroy();
+  };
+
+  const url = new URL(req.url ?? '', 'http://localhost');
+  if (url.pathname !== WS_PATH) return reject('404 Not Found');
+
+  const token = url.searchParams.get('token');
+  if (!token) return reject('401 Unauthorized');
+  try {
+    const user = await authenticateToken(token);
+    if (!isStaff(user)) return reject('403 Forbidden');
+  } catch {
+    return reject('401 Unauthorized');
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
 
 wss.on('connection', (ws: WebSocket) => {
   wsManager.connect(ws);

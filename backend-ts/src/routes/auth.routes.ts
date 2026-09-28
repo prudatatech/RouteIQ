@@ -9,7 +9,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { authenticateToken, createAccessToken, createRefreshToken, requireAuth } from '../core/auth';
+import { authenticateToken, createAccessToken, createRefreshToken, requireAuth, requireRole } from '../core/auth';
 import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -770,13 +770,6 @@ async function buildEarnings(userId: string) {
   return { total_earnings: totalEarnings, completed_trips: allTrips.length, recent_invoices: invoices };
 }
 
-// Test endpoint (no auth, hardcoded user for debugging)
-router.get('/driver/earnings-test', async (_req: Request, res: Response) => {
-  try {
-    res.json(await buildEarnings('a7b38f7f-214d-4c18-bd0e-98ac21ab10c3'));
-  } catch (e: any) { res.status(500).json({ detail: e.message }); }
-});
-
 // Real endpoint
 router.get('/driver/earnings', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -787,7 +780,7 @@ router.get('/driver/earnings', requireAuth, async (req: Request, res: Response) 
 });
 
 // ── POST /invite-vendor — Superadmin creates a vendor ──
-router.post('/invite-vendor', async (req: Request, res: Response) => {
+router.post('/invite-vendor', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
