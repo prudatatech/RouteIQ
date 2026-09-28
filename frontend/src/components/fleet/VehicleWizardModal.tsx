@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesAPI } from '@/services/api';
 import toast from 'react-hot-toast';
-import { X, Truck, User, FileText, ArrowRight, ArrowLeft, Save, Minus } from 'lucide-react';
+import { X, Truck, User, FileText, ArrowRight, ArrowLeft, Save, Minus, ChevronDown, Check } from 'lucide-react';
 import { Card } from '@/components/ui';
 
 const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'];
@@ -40,6 +40,39 @@ const DEFAULT_FORM_DATA = {
   puc_number: '', puc_expiry: '', puc_document_url: '',
   status: 'available',
 };
+
+function CustomSelect({ value, onChange, options, placeholder }: any) {
+  const [open, setOpen] = useState(false);
+  
+  return (
+    <div className="relative">
+      <div 
+        onClick={() => setOpen(!open)}
+        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-base text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/10 transition-all shadow-sm flex justify-between items-center cursor-pointer"
+      >
+        <span className={value ? 'text-slate-900' : 'text-slate-500'}>{value ? options.find((o: any) => o.value === value)?.label : placeholder}</span>
+        <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </div>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute top-full mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] z-20 max-h-60 overflow-y-auto animate-fade-up">
+            {options.map((opt: any) => (
+              <div 
+                key={opt.value}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`px-4 py-3 cursor-pointer transition-colors flex items-center justify-between border-b border-slate-50 last:border-0 ${value === opt.value ? 'bg-yellow-50 text-yellow-900 font-bold' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'}`}
+              >
+                <span>{opt.label}</span>
+                {value === opt.value && <Check size={16} className="text-yellow-600" />}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function VehicleWizardModal({ isOpen, onClose, initialData = null }: { isOpen: boolean; onClose: () => void; initialData?: any }) {
   const queryClient = useQueryClient();
@@ -129,6 +162,11 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
   if (!isOpen) return null;
 
+  const presetOptions = [
+    { value: '', label: '— Custom Build —' },
+    ...Object.keys(INDIAN_TRUCK_PRESETS).map(m => ({ value: m, label: `${m} — ${INDIAN_TRUCK_PRESETS[m].capacity_kg} kg` }))
+  ];
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={saveDraft} />
@@ -198,28 +236,32 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
                     <input required className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-base text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/10 transition-all font-mono shadow-sm" placeholder="e.g. MH-01-AB-1234" value={formData.plate_number} onChange={e => setFormData({ ...formData, plate_number: e.target.value.toUpperCase() })} />
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative z-50">
                     <label className="text-xs uppercase tracking-widest font-bold text-slate-500 ml-1">Truck Model (Presets)</label>
-                    <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-base text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/10 transition-all shadow-sm" value={formData.vehicle_model} onChange={e => {
-                      const m = e.target.value;
-                      const preset = INDIAN_TRUCK_PRESETS[m];
-                      if (preset && m !== 'Custom') {
-                        setFormData(prev => ({ ...prev, vehicle_model: m, capacity_kg: preset.capacity_kg, container_length_ft: preset.container_length_ft, container_width_ft: preset.container_width_ft, container_height_ft: preset.container_height_ft, fuel_type: preset.fuel_type, fuel_capacity_liters: preset.fuel_capacity_liters, fuel_efficiency_kmpl: preset.fuel_efficiency_kmpl }));
-                      } else {
-                        setFormData(prev => ({ ...prev, vehicle_model: m }));
-                      }
-                    }}>
-                      <option value="">— Custom Build —</option>
-                      {Object.keys(INDIAN_TRUCK_PRESETS).map(m => <option key={m} value={m}>{m} — {INDIAN_TRUCK_PRESETS[m].capacity_kg} kg</option>)}
-                    </select>
+                    <CustomSelect 
+                      options={presetOptions} 
+                      value={formData.vehicle_model} 
+                      placeholder="Select a truck model preset..."
+                      onChange={(m: string) => {
+                        const preset = INDIAN_TRUCK_PRESETS[m];
+                        if (preset && m !== 'Custom') {
+                          setFormData(prev => ({ ...prev, vehicle_model: m, capacity_kg: preset.capacity_kg, container_length_ft: preset.container_length_ft, container_width_ft: preset.container_width_ft, container_height_ft: preset.container_height_ft, fuel_type: preset.fuel_type, fuel_capacity_liters: preset.fuel_capacity_liters, fuel_efficiency_kmpl: preset.fuel_efficiency_kmpl }));
+                        } else {
+                          setFormData(prev => ({ ...prev, vehicle_model: m }));
+                        }
+                      }} 
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-5">
-                    <div className="space-y-2">
+                    <div className="space-y-2 relative z-40">
                       <label className="text-xs uppercase tracking-widest font-bold text-slate-500 ml-1">Vehicle Type</label>
-                      <select className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-base text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-4 focus:ring-yellow-400/10 transition-all shadow-sm" value={formData.vehicle_type} onChange={e => handleTypeChange(e.target.value)}>
-                        {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
-                      </select>
+                      <CustomSelect
+                        options={VEHICLE_TYPES.map(t => ({ value: t, label: t.toUpperCase() }))}
+                        value={formData.vehicle_type}
+                        placeholder="Type"
+                        onChange={(t: string) => handleTypeChange(t)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs uppercase tracking-widest font-bold text-slate-500 ml-1">Capacity (kg)</label>
