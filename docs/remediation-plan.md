@@ -137,6 +137,8 @@ The driver app ships the Supabase **service_role** key (bypasses all RLS). It ca
 - **Routing/auth**: guard `/vendor/*`, remove duplicate `/vendor/login`, move `/live-map` inside the layout, wait for session hydration before `PrivateRoute` redirects, single token store (Supabase only), `Badge` `green` renders yellow.
 - **Type errors** (CI fails until fixed): `CargoNetworkPage` calls non-existent `vehiclesAPI.getAll` (runtime crash), plus 4 others in `CargoNetworkPage`, `AddShipmentModal`, `RoutesPage`.
 
+**Status: implemented on this branch.** Fabricated values were removed or replaced with real computations across analytics, dashboard, AI Hub, cargo network, marketplace, SparkGPS (no more fake telemetry writes), 3PL network, driver earnings (no false "paid"), shipment manifests (no invented consignee data), the web driver dashboard (real browser location instead of a GPS simulator; real signature capture) and the optimizer page (no random savings or simulated solve time). App shell: account pages guarded, session-restore gate, Supabase as the only token store, no hardcoded hosts. 3PL partner IDs are unique (migration `…0400`). Frontend, backend and driver app typecheck with zero errors.
+
 ## Phase 6 — Customer app (decision D3)
 
 Only login talks to the backend. Remove fabricated content (default name "Maya", static rewards, static notifications, dead "Continue to Pricing" button, dead Bookings/Rewards/Profile tabs) or show honest empty states; read `EXPO_PUBLIC_API_URL`; remove the unused Supabase client; add `eas.json`. The booking/pricing/tracking flow is a feature that needs new backend endpoints — scoped separately.

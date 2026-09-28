@@ -31,6 +31,15 @@ export const tplService = {
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
     if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
 
+    // custom_id names the partner's document folder, so it must be unique
+    if (custom_id) {
+      if (typeof custom_id !== 'string' || !/^[a-z0-9_]{5,20}$/.test(custom_id)) {
+        throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
+      }
+      const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', custom_id).maybeSingle();
+      if (takenId) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+    }
+
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
       .from('tpl_partners')

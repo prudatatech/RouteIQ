@@ -129,7 +129,7 @@ export default function VendorDocumentsPage() {
               gstNumber: profile.gst_number || '',
               addressLine1: profile.address || '',
               city: profile.city || '',
-              number: profile.city ? `VND-${profile.city.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}` : ''
+              number: ''
             }))
           }
         }

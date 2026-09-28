@@ -202,6 +202,7 @@ export class ShipmentService {
       .select()
       .single();
 
+    if (shipErr?.code === '23505') throw new HttpError(409, `Tracking ID ${trackingId} is already in use`);
     if (shipErr || !dbShipment) throw new Error(`Failed to create shipment: ${shipErr?.message}`);
 
     // 2. Insert parcels
@@ -474,20 +475,10 @@ export class ShipmentService {
       if (!vendorError && vendorData) {
         let vMeta: any = vendorData.metadata || {};
         if (Object.keys(vMeta).length === 0) {
+          // No manifest details were captured for this request; show only what the record itself says
           vMeta = {
-            consigneeName: "Vendor Demo User",
-            consigneeContact: "+91 99999 88888",
-            consigneeEmail: "demo@vendor.com",
-            productCategory: "FMCG",
-            productName: "Packaged Foods",
-            brand: "AgroFresh",
-            packagingType: "Cartons",
-            noOfPackages: "50",
-            grossWeight: "1200 KG",
-            declaredValue: "₹ 5,00,000",
+            grossWeight: vendorData.required_capacity_kg ? `${vendorData.required_capacity_kg} KG` : "",
             dispatch_date: new Date(vendorData.created_at).toISOString().split('T')[0],
-            is_long_haul: true,
-            remarks: "Generated mock vendor data."
           };
         } else if (vMeta.consignee || vMeta.cargo) {
           vMeta = {
@@ -585,32 +576,14 @@ export class ShipmentService {
       }
 
       if (!metadata || Object.keys(metadata || {}).length === 0) {
+        // No manifest details were captured; show only what the manifest itself records
         metadata = {
-          consigneeName: "Rajesh Kumar (Mock Data)",
-          consigneeContact: "+91 98765 43210",
-          consigneeEmail: "rajesh@example.com",
-          productCategory: "Electronics / Industrial",
-          productName: "Industrial Inverters",
-          brand: "PowerGen",
-          modelVariant: "PRO-5000X",
-          packagingType: "Pallets / Corrugated Box",
-          noOfPackages: "8",
-          quantity: "32",
-          unit: "Pieces",
-          grossWeight: manifestData.capacity_kg ? `${manifestData.capacity_kg} KG` : "500 KG",
-          declaredValue: "₹ 2,45,000",
+          grossWeight: manifestData.capacity_kg ? `${manifestData.capacity_kg} KG` : "",
           dispatch_date: new Date(manifestData.created_at).toISOString().split('T')[0],
-          reporting_date: new Date(new Date(manifestData.created_at).getTime() + 86400000).toISOString().split('T')[0],
           eta_details: {
             eta_text: realEtaText,
             distance_km: realDistKm
           },
-          is_long_haul: false,
-          specialHandling: {
-            fragile: true,
-            highValue: true
-          },
-          remarks: "Standard mock data generated because original metadata was empty."
         };
       } else if (metadata.consignee || metadata.cargo) {
         metadata = {

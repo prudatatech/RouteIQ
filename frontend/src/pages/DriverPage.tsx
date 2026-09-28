@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Home, Map as MapIcon, Package, Bell, User, Phone, Navigation, Play, Pause,
-  CheckCircle2, AlertTriangle, CloudRain, ShieldAlert, FileSignature, Loader2, Zap
+  CheckCircle2, AlertTriangle, CloudRain, ShieldAlert, FileSignature, Loader2
 } from 'lucide-react';
 import { routesAPI, shipmentsAPI, telemetryAPI } from '@/services/api';
 import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers';
@@ -73,7 +73,10 @@ function SignaturePad({ onSave }: { onSave: (data: string) => void }) {
         />
       </div>
       <button
-        onClick={() => onSave('SIG_' + Math.random().toString(16).slice(2, 10))}
+        onClick={() => {
+          const canvas = canvasRef.current;
+          if (canvas) onSave(canvas.toDataURL('image/png'));
+        }}
         className="w-full h-14 bg-yellow-500 text-black font-black uppercase tracking-widest text-xs rounded-xl shadow-lg active:scale-95 transition-transform"
       >
         Save Signature
@@ -87,9 +90,9 @@ export default function DriverPage() {
   const userId = useAuthStore((s: any) => s.userId);
   const [activeTab, setActiveTab] = useState<'home' | 'nav' | 'deliveries' | 'alerts' | 'profile'>('home');
   const [shiftStatus, setShiftStatus] = useState<'OFFLINE' | 'ON_DUTY' | 'ON_MISSION'>('OFFLINE');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [aiAlertVisible, setAiAlertVisible] = useState(false);
-  const [liveLocation, setLiveLocation] = useState({ lat: 28.55, lng: 77.20 });
+  const role = useAuthStore((s: any) => s.role);
+  const [isTracking, setIsTracking] = useState(false);
+  const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number; speedKmph: number } | null>(null);
 
   // POD State
   const [recipientName, setRecipientName] = useState('');
@@ -119,47 +122,45 @@ export default function DriverPage() {
     }
   });
 
-  // GPS Simulation
+  // Before the first fix, show the vehicle's last reported position
   useEffect(() => {
-    if (shiftStatus === 'OFFLINE' || !activeRoute) return;
-
-    let simInterval: any;
-    if (isSimulating && currentStop) {
-      let currentLat = activeRoute.vehicle?.latitude || 28.55;
-      let currentLng = activeRoute.vehicle?.longitude || 77.20;
-      const targetLat = currentStop.delivery_point?.lat || 28.61;
-      const targetLng = currentStop.delivery_point?.lng || 77.23;
-
-      const steps = 60;
-      const latStep = (targetLat - currentLat) / steps;
-      const lngStep = (targetLng - currentLng) / steps;
-
-      toast.success('GPS Simulator Started');
-
-      simInterval = setInterval(() => {
-        currentLat += latStep;
-        currentLng += lngStep;
-
-        telemetryAPI.ingest({
-          vehicle_id: activeRoute.vehicle_id,
-          latitude: currentLat,
-          longitude: currentLng,
-          speed_kmph: 48,
-          fuel_level_pct: 84,
-          heading: 0
-        }).catch(console.error);
-
-        setLiveLocation({ lat: currentLat, lng: currentLng });
-
-        // Randomly trigger AI Alert
-        if (Math.random() > 0.98 && !aiAlertVisible) {
-          setAiAlertVisible(true);
-        }
-
-      }, 2000);
+    const v = activeRoute?.vehicle;
+    if (!liveLocation && v?.latitude != null && v?.longitude != null) {
+      setLiveLocation({ lat: v.latitude, lng: v.longitude, speedKmph: 0 });
     }
-    return () => clearInterval(simInterval);
-  }, [shiftStatus, activeRoute, isSimulating, currentStop?.id, aiAlertVisible]);
+  }, [activeRoute?.vehicle?.latitude, activeRoute?.vehicle?.longitude]);
+
+  // Share this device's real location while on a trip (drivers only)
+  useEffect(() => {
+    if (!isTracking || role !== 'driver') return;
+    if (!('geolocation' in navigator)) {
+      toast.error('Location is not available on this device');
+      return;
+    }
+
+    let lastSent = 0;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, speed, heading, accuracy } = pos.coords;
+        const speedMs = Math.max(0, speed ?? 0);
+        setLiveLocation({ lat: latitude, lng: longitude, speedKmph: Math.round(speedMs * 3.6) });
+
+        if (Date.now() - lastSent < 10_000) return;
+        lastSent = Date.now();
+        telemetryAPI.driverPing({
+          lat: latitude,
+          lng: longitude,
+          speed: speedMs,
+          heading: heading ?? 0,
+          accuracy,
+          timestamp: new Date(pos.timestamp).toISOString(),
+        }).catch(console.error);
+      },
+      (err) => toast.error(`Location unavailable: ${err.message}`),
+      { enableHighAccuracy: true, maximumAge: 5_000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [isTracking, role]);
 
   const finalizeDelivery = () => {
     if (!recipientName || !signature) return toast.error('Check signature fields');
@@ -259,14 +260,14 @@ export default function DriverPage() {
           <button
             onClick={() => {
               if (shiftStatus === 'OFFLINE') { setShiftStatus('ON_DUTY'); toast.success('Online'); }
-              else { setShiftStatus('ON_MISSION'); toast.success('Trip Started'); setIsSimulating(true); }
+              else { setShiftStatus('ON_MISSION'); toast.success('Trip Started'); setIsTracking(true); }
             }}
             className="flex flex-col items-center justify-center p-4 rounded-xl bg-success/10 text-success font-black text-[10px] uppercase tracking-widest hover:bg-success/20 transition-all"
           >
             <Play size={20} className="mb-2" /> Start Trip
           </button>
           <button
-            onClick={() => { setShiftStatus('ON_DUTY'); setIsSimulating(false); toast('Trip Paused'); }}
+            onClick={() => { setShiftStatus('ON_DUTY'); setIsTracking(false); toast('Trip Paused'); }}
             className="flex flex-col items-center justify-center p-4 rounded-xl bg-yellow-500/10 text-yellow-500 font-black text-[10px] uppercase tracking-widest hover:bg-yellow-500/20 transition-all"
           >
             <Pause size={20} className="mb-2" /> Pause Trip
@@ -288,16 +289,26 @@ export default function DriverPage() {
     </div>
   );
 
-  const renderNav = () => (
-    <DriverMap
-      currentLat={liveLocation.lat}
-      currentLng={liveLocation.lng}
-      targetLat={currentStop?.delivery_point?.lat || 28.61}
-      targetLng={currentStop?.delivery_point?.lng || 77.23}
-      shiftStatus={shiftStatus}
-      speed={shiftStatus === 'ON_MISSION' ? 48 : 0}
-    />
-  );
+  const renderNav = () => {
+    if (!liveLocation) {
+      return (
+        <div className="h-full flex items-center justify-center text-sm text-muted text-center px-6">
+          Waiting for your location. Start the trip and allow location access to see navigation.
+        </div>
+      );
+    }
+    const target = currentStop?.delivery_point;
+    return (
+      <DriverMap
+        currentLat={liveLocation.lat}
+        currentLng={liveLocation.lng}
+        targetLat={target?.lat ?? liveLocation.lat}
+        targetLng={target?.lng ?? liveLocation.lng}
+        shiftStatus={shiftStatus}
+        speed={liveLocation.speedKmph}
+      />
+    );
+  };
 
   const renderDeliveries = () => (
     <div className="space-y-6 pb-24">
@@ -386,7 +397,7 @@ export default function DriverPage() {
       <div className="bg-surface p-6 rounded-2xl border border-border shadow-md space-y-4">
         <h3 className="text-[10px] font-black text-muted uppercase tracking-widest">Shift Controls</h3>
         <button
-          onClick={() => { setShiftStatus('OFFLINE'); setIsSimulating(false); toast.success('Shift Ended') }}
+          onClick={() => { setShiftStatus('OFFLINE'); setIsTracking(false); toast.success('Shift Ended') }}
           className="w-full h-14 bg-error/10 text-error font-black uppercase text-xs rounded-xl shadow-md active:scale-95 transition-transform"
         >
           End Shift & Logout
@@ -413,23 +424,6 @@ export default function DriverPage() {
         {activeTab === 'alerts' && renderAlerts()}
         {activeTab === 'profile' && renderProfile()}
       </div>
-
-      {/* AI Suggestion Overlay (Simulated) */}
-      {aiAlertVisible && (
-        <div className="absolute inset-x-4 bottom-24 p-6 bg-primary/10 border-2 border-primary rounded-2xl backdrop-blur-xl shadow-[0_0_40px_rgba(79,172,254,0.3)] z-50 animate-in slide-in-from-bottom">
-          <div className="flex items-center gap-3 mb-4">
-            <Zap className="text-primary animate-pulse" />
-            <h3 className="font-black text-primary uppercase tracking-widest text-sm">Nexus AI</h3>
-          </div>
-          <p className="font-bold text-white leading-tight mb-2">Heavy traffic ahead. Alternative route available.</p>
-          <p className="text-xs text-primary font-bold uppercase tracking-widest mb-6">Time Saved: 32 mins</p>
-
-          <div className="flex gap-3">
-            <button onClick={() => setAiAlertVisible(false)} className="flex-1 h-12 bg-primary text-bg font-black uppercase text-xs rounded-xl">Accept Route</button>
-            <button onClick={() => setAiAlertVisible(false)} className="flex-1 h-12 bg-surface2 font-black uppercase text-xs rounded-xl">Ignore</button>
-          </div>
-        </div>
-      )}
 
       {/* Bottom Tab Bar */}
       <div className="h-20 bg-surface border-t border-border sticky bottom-0 z-50 flex items-center justify-around px-2">

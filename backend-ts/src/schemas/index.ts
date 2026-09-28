@@ -142,7 +142,7 @@ export const ParcelCreateSchema = z.object({
 export type ParcelCreate = z.infer<typeof ParcelCreateSchema>;
 
 export const ShipmentCreateSchema = z.object({
-  tracking_id: z.string().optional().nullable(),
+  tracking_id: z.string().regex(/^RTX-[A-Z0-9]{6,16}$/, 'tracking_id must look like RTX-XXXXXXXX').optional().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
   parcels: z.array(ParcelCreateSchema).default([]),
   delivery_point_id: z.any(),

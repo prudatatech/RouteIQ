@@ -96,7 +96,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     try {
       const dataToSave: any = { ...formData, status: 'archived' };
       if (!dataToSave.plate_number) {
-        dataToSave.plate_number = `DRFT-${Math.floor(Math.random() * 100000)}`;
+        dataToSave.plate_number = `DRFT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       }
       
       // Fix Postgres 500 Error: Convert empty strings to null for Date columns

@@ -47,6 +47,7 @@ export default function OptimizePage() {
     mutationFn: async () => {
       setError(null)
       if (routeIdToReoptimize) {
+        const startedAt = performance.now();
         const reoptData = await optimizationAPI.reoptimizeRoute(routeIdToReoptimize);
         const routeData = await routesAPI.get(routeIdToReoptimize);
         
@@ -64,21 +65,17 @@ export default function OptimizePage() {
           stop_ids: routeData.route_stops || routeData.stop_ids || [],
         };
 
-        const dynamicVariance = Math.random() * 5.8; // Generate a random variance between 0 and 5.8
-        const finalSavingsPct = savedMins > 0 ? ((savedMins / Math.max(1, (fallbackEta + savedMins))) * 100) : (11.2 + dynamicVariance);
+        // Savings only when the solver reports them; re-optimisation does not use the traffic/weather toggles
+        const finalSavingsPct = savedMins > 0 ? (savedMins / Math.max(1, fallbackEta + savedMins)) * 100 : null;
 
         return {
           routes: [enrichedRouteData],
           total_distance_km: estimatedDistance,
           total_fuel_liters: estimatedFuel,
           estimated_savings_pct: finalSavingsPct,
-          solve_time_seconds: 0.8, // Simulated solve time for UI
+          solve_time_seconds: (performance.now() - startedAt) / 1000,
           message: reoptData.message,
           new_eta_minutes: fallbackEta,
-          traffic_anomaly: (traffic && weather) ? 'Multi-Layer Avoidance (Traffic + Weather)' :
-                           traffic ? 'Active Traffic Avoidance (Mappls Live)' :
-                           weather ? 'Severe Weather Avoidance (OpenWeather)' :
-                           'Baseline Solver Core',
         };
       }
       const payload = {
@@ -292,8 +289,8 @@ export default function OptimizePage() {
                     { label: 'Total Distance', value: `${(result.total_distance_km || 0).toFixed(1)} km` },
                     { label: 'ETA', value: formatEta(result.new_eta_minutes || result.routes?.[0]?.total_duration_minutes || 0) },
                     { label: 'Estimated Fuel', value: `${(result.total_fuel_liters || 0).toFixed(1)} L` },
-                    { label: 'Network Savings', value: `${(result.estimated_savings_pct || 0).toFixed(1)}%` },
-                    { label: 'Traffic Logic', value: result.traffic_anomaly || 'Baseline' },
+                    { label: 'Network Savings', value: result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—' },
+                    { label: 'Traffic Logic', value: result.traffic_anomaly || '—' },
                   ].map(({ label, value }) => (
                     <div key={label} className="p-4 rounded-2xl bg-background border border-border">
                       <div className="text-xl font-black text-primary font-mono">{value}</div>

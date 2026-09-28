@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+/** Draft tracking ID; the database enforces uniqueness when the shipment is created. */
+const newTrackingId = () => `RTX-${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`
+
 export interface DraftShipmentData {
   tracking_id: string;
   originSearch: string;
@@ -44,7 +47,7 @@ export interface DraftShipmentData {
 }
 
 const initialDraftData: DraftShipmentData = {
-  tracking_id: `RTX-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+  tracking_id: newTrackingId(),
   originSearch: '',
   destSearch: '',
   searchTerm: '',
@@ -94,7 +97,7 @@ export const useDraftStore = create<DraftStore>()(
     (set) => ({
       isModalOpen: false,
       isMinimized: false,
-      formData: { ...initialDraftData, tracking_id: `RTX-${Math.random().toString(36).substring(2, 9).toUpperCase()}` },
+      formData: { ...initialDraftData, tracking_id: newTrackingId() },
       openModal: () => set({ isModalOpen: true, isMinimized: false }),
       closeModal: () => set({ isModalOpen: false }),
       minimizeModal: () => set({ isMinimized: true }),
@@ -103,7 +106,7 @@ export const useDraftStore = create<DraftStore>()(
         formData: typeof updater === 'function' ? updater(state.formData) : { ...state.formData, ...updater }
       })),
       clearDraft: () => set({ 
-        formData: { ...initialDraftData, tracking_id: `RTX-${Math.random().toString(36).substring(2, 9).toUpperCase()}` },
+        formData: { ...initialDraftData, tracking_id: newTrackingId() },
         isModalOpen: false,
         isMinimized: false
       }),

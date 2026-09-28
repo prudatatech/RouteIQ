@@ -26,6 +26,7 @@ select policyname, cmd, roles, qual, with_check from pg_policies where schemanam
    - `migrations/20260928000100_vendor_kyc_columns.sql` — `vendor_profiles.kyc_status` / `kyc_data`, backfilled from `dummy2`. Rows whose `dummy2` is not valid JSON are listed as NOTICEs; review them by hand.
    - `migrations/20260928000200_row_level_security.sql` — drops every existing policy in `public`, enables RLS on every public table, and creates only the policies the clients need; makes the `kyc_documents` bucket private.
    - `migrations/20260928000300_status_alignment.sql` — enum/constraint values the code writes.
+   - `migrations/20260928000400_unique_tpl_custom_id.sql` — 3PL partner IDs (which name their document folders) must be unique. If it prints duplicate NOTICEs, rename those partners' `custom_id` and run it again.
 3. Deploy backend-ts.
 4. Check:
    ```sql
@@ -58,7 +59,7 @@ Then, in one commit:
 1. Move every migration older than the baseline (everything before `20260927000000`, and the unversioned `add_phone_to_users.sql`; not the `20260928*` files), plus `../scripts/supabase_init.sql`, `../backend-ts/kyc_migration.sql` and `../backend-ts/scripts/*.sql`, into `migrations/_archive/` (history only, never applied again).
 2. The `storage` schema is managed by Supabase and is not dumped; the `kyc_documents` bucket policies live in `20260928000200_row_level_security.sql`.
 3. Grep the baseline for `tpl_partners`, `customers`, `cargo_manifest`, `sos_alerts`, `system_settings`, `kyc_profiles` to confirm they were captured.
-4. Mark the baseline and the `20260928*` migrations as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300`.
+4. Mark the baseline and the `20260928*` migrations as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300 20260928000400`.
 
 The baseline is stamped just before the `20260928*` files; those are idempotent, so on a fresh `supabase db reset` they re-apply cleanly on top of it (and add the storage policies, which the dump does not contain).
 

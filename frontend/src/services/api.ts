@@ -187,7 +187,7 @@ export const shipmentsAPI = {
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
   trackPublicly: (trackingId: string) => api.get(`/shipments/track/${trackingId}`).then(r => r.data),
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
-  updateStatus: (id: string, status: string, params?: any) => api.patch(`/shipments/${id}`, {}, { params: { status, ...params } }).then(r => r.data),
+  updateStatus: (id: string, status: string, fields?: Record<string, unknown>) => api.patch(`/shipments/${id}`, { status, ...fields }).then(r => r.data),
   edit: (id: string, data: any) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),
@@ -209,6 +209,9 @@ export const marketplaceAPI = {
 
 export const telemetryAPI = {
   ingest: (data: object) => api.post('/telemetry/', data).then(r => r.data),
+  /** Driver's own device position (role driver; vehicle resolved server-side). Speed in m/s. */
+  driverPing: (ping: { lat: number, lng: number, speed: number, heading: number, accuracy?: number | null, timestamp: string }) =>
+    api.post('/telemetry/driver-ping', ping).then(r => r.data),
   history: (vehicleId: string, limit = 100) => api.get(`/telemetry/${vehicleId}/history`, { params: { limit } }).then(r => r.data),
   live: (vehicleId: string) => api.get(`/telemetry/${vehicleId}/live`).then(r => r.data),
   logStoppage: (data: any) => api.post('/telemetry/stoppages', data).then(r => r.data),
