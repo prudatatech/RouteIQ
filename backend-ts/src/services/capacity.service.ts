@@ -1,5 +1,4 @@
 import { supabase } from '../core/supabase';
-import { optimizeService } from './optimize.service';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
 
@@ -8,8 +7,42 @@ export const capacityService = {
    * Submit a bid for a capacity window
    */
   async submitBid(data: { vendor_id: string; window_id: string; bid_amount: number; eway_bill_ref: string; dropoff_point_id: string; weight_kg: number; load_configuration: string }) {
-    // Geofencing Check: Get vehicle location and vendor location
-    const { data: window } = await supabase.from('capacity_windows').select('vehicles(latitude, longitude, city)').eq('id', data.window_id).single();
+    const bidAmount = Number(data.bid_amount);
+    const weightKg = Number(data.weight_kg);
+    if (!Number.isFinite(bidAmount) || bidAmount <= 0) throw new HttpError(400, 'bid_amount must be a positive number');
+    if (!Number.isFinite(weightKg) || weightKg <= 0) throw new HttpError(400, 'weight_kg must be a positive number');
+
+    const { data: window, error: windowErr } = await supabase
+      .from('capacity_windows')
+      .select('id, opens_at, closes_at, floor_price, winning_bid_id, vehicles(latitude, longitude, city, available_capacity_kg)')
+      .eq('id', data.window_id)
+      .maybeSingle();
+    if (windowErr) throw new Error(`Failed to load window ${data.window_id}: ${windowErr.message}`);
+    if (!window) throw new HttpError(404, 'Window not found');
+
+    const now = Date.now();
+    if (window.winning_bid_id || new Date(window.closes_at).getTime() <= now || new Date(window.opens_at).getTime() > now) {
+      throw new HttpError(409, 'This capacity window is not open for bids');
+    }
+    if (window.floor_price != null && bidAmount < Number(window.floor_price)) {
+      throw new HttpError(400, `Bid is below the floor price of ₹${window.floor_price}`);
+    }
+    const windowVehicle = window.vehicles as any;
+    if (windowVehicle?.available_capacity_kg != null && weightKg > Number(windowVehicle.available_capacity_kg)) {
+      throw new HttpError(400, `Load of ${weightKg} kg exceeds the ${windowVehicle.available_capacity_kg} kg available on this vehicle`);
+    }
+
+    const { data: existing, error: existingErr } = await supabase
+      .from('capacity_bids')
+      .select('id')
+      .eq('window_id', data.window_id)
+      .eq('vendor_id', data.vendor_id)
+      .eq('status', 'pending')
+      .limit(1);
+    if (existingErr) throw new Error(`Failed to check existing bids: ${existingErr.message}`);
+    if (existing && existing.length > 0) throw new HttpError(409, 'You already have a pending bid on this window');
+
+    // Geofencing Check: vehicle location vs vendor location
     const { data: vendor } = await supabase.from('vendor_profiles').select('latitude, longitude, city').eq('id', data.vendor_id).single();
 
     if (window?.vehicles && vendor) {
@@ -25,7 +58,7 @@ export const capacityService = {
 
         try {
           const axios = require('axios');
-          const osrmRes = await axios.get(`https://router.project-osrm.org/route/v1/driving/${vLng},${vLat};${vndLng},${vndLat}?overview=false`);
+          const osrmRes = await axios.get(`https://router.project-osrm.org/route/v1/driving/${vLng},${vLat};${vndLng},${vndLat}?overview=false`, { timeout: 5000 });
           if (osrmRes.data.routes && osrmRes.data.routes.length > 0) {
             const routeData = osrmRes.data.routes[0];
             drivingDistanceKm = Math.round(routeData.distance / 1000 * 10) / 10;
@@ -50,10 +83,10 @@ export const capacityService = {
     const { data: bid, error } = await supabase.from('capacity_bids').insert({
       vendor_id: data.vendor_id,
       window_id: data.window_id,
-      bid_amount: data.bid_amount,
+      bid_amount: bidAmount,
       eway_bill_ref: data.eway_bill_ref,
       dropoff_point_id: data.dropoff_point_id,
-      weight_kg: data.weight_kg,
+      weight_kg: weightKg,
       load_configuration: data.load_configuration,
       status: 'pending'
     }).select().single();
@@ -154,25 +187,47 @@ export const capacityService = {
    * Superadmin manually approves a backhaul bid
    */
   async approveBid(bidId: string) {
-    // 1. Fetch the bid
-    const { data: bid, error: bidErr } = await supabase.from('capacity_bids').select('*').eq('id', bidId).single();
-    if (bidErr || !bid) throw new HttpError(404, 'Bid not found');
+    // 1. Claim the bid: only a pending bid can be approved, and only once.
+    // The conditional update is atomic per row, so concurrent approvals
+    // (double clicks, retries) cannot both proceed.
+    const { data: bid, error: claimErr } = await supabase
+      .from('capacity_bids')
+      .update({ status: 'won' })
+      .eq('id', bidId)
+      .eq('status', 'pending')
+      .select('*')
+      .maybeSingle();
+    if (claimErr) throw new Error(`Failed to claim bid ${bidId}: ${claimErr.message}`);
+    if (!bid) {
+      const { data: existing } = await supabase.from('capacity_bids').select('status').eq('id', bidId).maybeSingle();
+      if (!existing) throw new HttpError(404, 'Bid not found');
+      throw new HttpError(409, `Bid is already ${existing.status}`);
+    }
 
     const windowId = bid.window_id;
 
-    // 2. Fetch the window
-    const { data: window } = await supabase.from('capacity_windows').select('*').eq('id', windowId).single();
-    if (!window) throw new HttpError(404, 'Window not found');
+    // 2. Claim the window for this bid; another bid may already have won it
+    const { data: window, error: windowErr } = await supabase
+      .from('capacity_windows')
+      .update({ winning_bid_id: bidId })
+      .eq('id', windowId)
+      .is('winning_bid_id', null)
+      .select('*')
+      .maybeSingle();
+    if (windowErr || !window) {
+      // Release the claim: retryable on a database error, lost if another bid won
+      await supabase.from('capacity_bids').update({ status: windowErr ? 'pending' : 'lost' }).eq('id', bidId);
+      if (windowErr) throw new Error(`Failed to claim window ${windowId}: ${windowErr.message}`);
+      throw new HttpError(409, 'Another bid has already won this window');
+    }
 
-    // 3. Mark this bid as won, others as lost
-    await supabase.from('capacity_bids').update({ status: 'won' }).eq('id', bidId);
-    await supabase.from('capacity_bids').update({ status: 'lost' }).eq('window_id', windowId).neq('id', bidId);
+    // 3. Remaining pending bids on the window lose
+    const { error: loseErr } = await supabase.from('capacity_bids').update({ status: 'lost' }).eq('window_id', windowId).eq('status', 'pending');
+    if (loseErr) throw new Error(`Failed to close other bids: ${loseErr.message}`);
 
-    // 4. Update window
-    await supabase.from('capacity_windows').update({ winning_bid_id: bidId }).eq('id', windowId);
-
-    // 4.5. Update vehicle capacity to 0 since the space is now occupied
-    await supabase.from('vehicles').update({ available_capacity_kg: 0 }).eq('id', window.vehicle_id);
+    // 4. The space is now occupied
+    const { error: capErr } = await supabase.from('vehicles').update({ available_capacity_kg: 0 }).eq('id', window.vehicle_id);
+    if (capErr) throw new Error(`Failed to update vehicle capacity: ${capErr.message}`);
 
     // 5. Create a dynamic shipment for this cargo so it appears in Admin Live Shipments
     let finalShipmentId = window.fallback_shipment_id;
@@ -205,7 +260,7 @@ export const capacityService = {
     }
 
     if (window.fallback_shipment_id) {
-      await supabase.from('shipments').update({
+      const { error: shipErr } = await supabase.from('shipments').update({
         status: 'assigned',
         priority: 'high',
         total_weight_kg: bid.weight_kg,
@@ -214,18 +269,20 @@ export const capacityService = {
         origin_address: vendorOriginAddress,
         bid_id: bid.id
       }).eq('id', window.fallback_shipment_id);
+      if (shipErr) throw new Error(`Failed to update shipment ${window.fallback_shipment_id}: ${shipErr.message}`);
     } else {
-      const { data: s } = await supabase.from('shipments').insert({
+      const { data: s, error: shipErr } = await supabase.from('shipments').insert({
         tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
         status: 'created',
         priority: 'high',
         origin_name: vendorOriginName,
         origin_address: vendorOriginAddress,
         total_items: 1,
-        total_weight_kg: bid.weight_kg || 500,
+        total_weight_kg: bid.weight_kg,
         bid_id: bid.id
       }).select('id').single();
-      if (s) finalShipmentId = s.id;
+      if (shipErr || !s) throw new Error(`Failed to create shipment for bid ${bid.id}: ${shipErr?.message}`);
+      finalShipmentId = s.id;
     }
 
     if (finalShipmentId && bid.dropoff_point_id) {
@@ -265,7 +322,7 @@ export const capacityService = {
       }
     }
 
-    await supabase.from('cargo_manifest').insert({
+    const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
       vehicle_id: window.vehicle_id,
       pickup_location: vendorOriginAddress,
       pickup_lat: vendorLat,
@@ -273,9 +330,10 @@ export const capacityService = {
       drop_location: manifestDropAddress,
       drop_lat: manifestDropLat,
       drop_lng: manifestDropLng,
-      capacity_kg: bid.weight_kg || 500,
+      capacity_kg: bid.weight_kg,
       status: 'scheduled'
     });
+    if (manifestErr) throw new Error(`Failed to create manifest for bid ${bid.id}: ${manifestErr.message}`);
 
     // 7. Inject the route stop for the vendor's drop-off point if there's an active route
     if (bid.dropoff_point_id) {
@@ -289,7 +347,7 @@ export const capacityService = {
 
       if (!route) {
         const routeId = uuidv4();
-        await supabase.from('routes').insert({
+        const { error: routeErr } = await supabase.from('routes').insert({
           id: routeId,
           vehicle_id: window.vehicle_id,
           status: 'active',
@@ -300,6 +358,7 @@ export const capacityService = {
           traffic_delay_minutes: 0,
           waypoints: []
         });
+        if (routeErr) throw new Error(`Failed to create route for vehicle ${window.vehicle_id}: ${routeErr.message}`);
         route = { id: routeId };
       }
 
@@ -328,20 +387,22 @@ export const capacityService = {
         }
 
         const stopId = uuidv4();
-        await supabase.from('route_stops').insert({
+        const { error: stopErr } = await supabase.from('route_stops').insert({
           id: stopId,
           route_id: route.id,
           delivery_point_id: bid.dropoff_point_id,
           sequence: insertSequence,
           status: 'pending'
         });
+        if (stopErr) throw new Error(`Failed to add route stop: ${stopErr.message}`);
 
         // Trigger driver confirmation for the new stop
-        await supabase.from('driver_confirmations').insert({
+        const { error: confErr } = await supabase.from('driver_confirmations').insert({
           route_stop_id: stopId,
           vehicle_id: window.vehicle_id,
           prompted_at: new Date().toISOString()
         });
+        if (confErr) throw new Error(`Failed to create driver confirmation: ${confErr.message}`);
       }
     }
 
@@ -349,63 +410,6 @@ export const capacityService = {
     await supabase.from('vehicles').update({ bidding_window_open: false, bidding_window_closes_at: null }).eq('id', window.vehicle_id);
 
     return bid;
-  },
-
-  async resolveWindow(windowId: string) {
-    // 1. Fetch window and bids
-    const { data: window } = await supabase.from('capacity_windows').select('*').eq('id', windowId).single();
-    if (!window) return;
-
-    const { data: bids } = await supabase.from('capacity_bids')
-      .select('*')
-      .eq('window_id', windowId)
-      .not('eway_bill_ref', 'is', null) // Compliance gate
-      .gte('bid_amount', window.floor_price)
-      .order('bid_amount', { ascending: false }); // Highest bid first
-
-    if (bids && bids.length > 0) {
-      // We have a winner!
-      const winningBid = bids[0];
-
-      // Mark bid as won, others as lost
-      await supabase.from('capacity_bids').update({ status: 'won' }).eq('id', winningBid.id);
-      await supabase.from('capacity_bids').update({ status: 'lost' }).eq('window_id', windowId).neq('id', winningBid.id);
-
-      // Update window
-      await supabase.from('capacity_windows').update({ winning_bid_id: winningBid.id }).eq('id', windowId);
-
-      // (In a real system, we would inject the vendor's cargo here as a new shipment)
-      
-    } else {
-      // No compliant bids -> Fallback to backlog
-      const { data: shipments } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('status', 'created')
-        .limit(1);
-
-      if (shipments && shipments.length > 0) {
-        const match = shipments[0];
-        await supabase.from('capacity_windows').update({ 
-          fallback_used: true,
-          fallback_shipment_id: match.id 
-        }).eq('id', windowId);
-
-        // Inject stop via optimization service
-        const stopId = await optimizeService.injectCapacityStop(window.vehicle_id, match.id);
-        
-        if (stopId) {
-          await supabase.from('driver_confirmations').insert({
-            route_stop_id: stopId,
-            vehicle_id: window.vehicle_id,
-            prompted_at: new Date().toISOString()
-          });
-        }
-      } else {
-        // No bids and no backlog (Status: No Match)
-        await supabase.from('capacity_windows').update({ fallback_used: true }).eq('id', windowId);
-      }
-    }
   },
 
   /**
@@ -424,10 +428,19 @@ export const capacityService = {
    * Superadmin manually rejects a backhaul bid
    */
   async rejectBid(bidId: string) {
-    const { data: bid, error: bidErr } = await supabase.from('capacity_bids').select('*').eq('id', bidId).single();
-    if (bidErr || !bid) throw new HttpError(404, 'Bid not found');
-
-    await supabase.from('capacity_bids').update({ status: 'rejected' }).eq('id', bidId);
+    const { data: bid, error: rejectErr } = await supabase
+      .from('capacity_bids')
+      .update({ status: 'rejected' })
+      .eq('id', bidId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle();
+    if (rejectErr) throw new Error(`Failed to reject bid ${bidId}: ${rejectErr.message}`);
+    if (!bid) {
+      const { data: existing } = await supabase.from('capacity_bids').select('status').eq('id', bidId).maybeSingle();
+      if (!existing) throw new HttpError(404, 'Bid not found');
+      throw new HttpError(409, `Bid is already ${existing.status}`);
+    }
 
     return { id: bidId, status: 'rejected' };
   },
@@ -451,37 +464,29 @@ export const capacityService = {
    * Background CRON to check for 2-min inner and 15-min outer timeouts
    */
   async checkConfirmationsTimeout() {
-    const now = new Date();
-    
-    const { data: pending } = await supabase
+    const now = Date.now();
+
+    const { data: pending, error } = await supabase
       .from('driver_confirmations')
-      .select('*')
+      .select('id, prompted_at, delivered_at')
       .is('responded_at', null)
       .is('action', null);
+    if (error) throw new Error(`Failed to load pending confirmations: ${error.message}`);
 
-    if (!pending) return;
+    for (const conf of pending ?? []) {
+      // Inner timer: 2 min after the prompt reached the app; outer: 15 min after it was sent
+      const action = conf.delivered_at
+        ? (now - new Date(conf.delivered_at).getTime() >= 2 * 60_000 ? 'auto_accepted' : null)
+        : (now - new Date(conf.prompted_at).getTime() >= 15 * 60_000 ? 'auto_accepted_offline' : null);
+      if (!action) continue;
 
-    for (const conf of pending) {
-      const promptedAt = new Date(conf.prompted_at);
-      const deliveredAt = conf.delivered_at ? new Date(conf.delivered_at) : null;
-
-      if (deliveredAt) {
-        // Inner Timer (2 min)
-        const diffMins = (now.getTime() - deliveredAt.getTime()) / 60000;
-        if (diffMins >= 2) {
-          await supabase.from('driver_confirmations').update({
-            action: 'auto_accepted'
-          }).eq('id', conf.id);
-        }
-      } else {
-        // Outer Timer (15 min)
-        const diffMins = (now.getTime() - promptedAt.getTime()) / 60000;
-        if (diffMins >= 15) {
-          await supabase.from('driver_confirmations').update({
-            action: 'auto_accepted_offline'
-          }).eq('id', conf.id);
-        }
-      }
+      // Only if the driver has not answered in the meantime
+      const { error: updateErr } = await supabase
+        .from('driver_confirmations')
+        .update({ action })
+        .eq('id', conf.id)
+        .is('action', null);
+      if (updateErr) console.error(`[capacity] Failed to auto-resolve confirmation ${conf.id}: ${updateErr.message}`);
     }
   }
 };

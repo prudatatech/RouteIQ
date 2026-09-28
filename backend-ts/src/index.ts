@@ -199,7 +199,14 @@ async function startup(): Promise<void> {
   fleetHealthMonitor.start();
   console.log('✅ Fleet Health Monitor started');
 
-  // 3. Start SparkGPS background sync if enabled
+  // 3. Auto-resolve driver capacity confirmations nobody answered (2 min / 15 min timers)
+  const { capacityService } = await import('./services/capacity.service');
+  setInterval(() => {
+    capacityService.checkConfirmationsTimeout().catch((e) => console.error('Confirmation timeout check failed:', e));
+  }, 60_000);
+  console.log('✅ Confirmation timeout checker started (60s interval)');
+
+  // 4. Start SparkGPS background sync if enabled
   if (settings.ENABLE_HARDWARE_SYNC) {
     const { SparkGPSService } = await import('./services/spark-gps.service');
     setInterval(async () => {
@@ -213,7 +220,7 @@ async function startup(): Promise<void> {
     console.log('✅ SparkGPS Background Sync started (30s interval)');
   }
 
-  // 4. Start HTTP server
+  // 5. Start HTTP server
   server.listen(settings.PORT, () => {
     console.log(`🚀 Server listening on http://0.0.0.0:${settings.PORT}`);
     console.log(`📡 WebSocket at ws://0.0.0.0:${settings.PORT}/api/v1/telemetry/ws`);
