@@ -7,6 +7,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet } from '../core/redis';
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -75,6 +76,10 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       } else if (authUser.user) {
         insertData.driver_id = authUser.user.id;
       }
+    }
+
+    if (!insertData.id) {
+      insertData.id = crypto.randomUUID();
     }
 
     const { data: vehicle, error } = await supabase
