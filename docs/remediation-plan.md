@@ -1,0 +1,120 @@
+# Remediation Plan
+
+Audit date: 2026-09-28. Working branch: `chore/audit-remediation` (nothing lands on `main` without review).
+
+Live system: `frontend` (Vercel) + `driver-app` + `customer-app` → `backend-ts` (Railway) → Supabase, plus `ml-service`.
+The Python backend, `telemetry-service`, Supabase edge functions, docker-compose/k8s and the old CI were retired in the cleanup commits on this branch.
+
+Severity: **C** critical · **H** high · **M** medium. Effort: S / M / L.
+Items marked **(you)** need access only the project owner has (Railway, Supabase dashboard/CLI, app stores).
+
+---
+
+## Phase 0 — Owner actions before any deploy (you)
+
+| # | Action | Why |
+|---|---|---|
+| 0.1 | On Railway (backend-ts) confirm, by name only, that `SUPABASE_URL`, `SUPABASE_JWT_SECRET` and `SECRET_KEY` are set, `SECRET_KEY` is not `temporary_secret_key_for_setup`, and whether `APP_ENV=production` is set | Phase 1 fails fast in production on a default secret |
+| 0.2 | Take a full Supabase backup (dashboard backup or `pg_dump`) | Required before any migration |
+| 0.3 | Run `select id, email, role, created_at from users where role in ('superadmin','admin','manager');` and confirm every row is legitimate | Anyone could self-register as superadmin until Phase 2.2 ships |
+| 0.4 | Run `supabase functions list`; delete the deployed `cargo` function (`supabase functions delete cargo`) | It runs with `verify_jwt=false` and accepts master POD OTPs `2026`/`1234` |
+| 0.5 | Check whether Roadcast/SparkGPS pushes to `POST /api/v1/spark-gps` (vs. only being polled) | Decides whether that route gets a shared secret or is removed |
+
+---
+
+## Phase 1 — Authentication and authorization (backend-ts) — C
+
+The Supabase project signs user tokens with **ES256** (verified via its public JWKS). `decodeToken` only verifies HS256, so every web-app request in production currently authenticates through the **unsigned `jwt.decode()` fallback** (`backend-ts/src/core/auth.ts:126-133`). Anyone can forge a superadmin token. Removing the fallback without adding ES256 verification would lock every web user out, so the order below matters.
+
+| # | Change | Files | Sev | Effort |
+|---|---|---|---|---|
+| 1.1 | Shared helpers: `core/errors.ts` (`HttpError`, `sendError`, final error + 404 middleware), `core/ownership.ts` (`STAFF_ROLES`, `canAccessVehicle/Route/Shipment/Confirmation`, `requireVehicleAccess`) replacing 8 inline ownership copies, atomic `cacheIncr` in `core/redis.ts`, `app.set('trust proxy', 1)`, production startup assertions (no default/short secret, `SUPABASE_URL` set) | `core/*`, `index.ts` | C | M |
+| 1.2 | `verifyToken`: branch on header `alg`; ES256/RS256 → verify against `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` (cached, issuer + audience checked); HS256 → verify backend-issued tokens only. Delete the legacy `SECRET_KEY` retry and the unsigned decode. Require `type==='access'` in `requireAuth`, `type==='refresh'` in `/auth/refresh`; refresh looks up `customers` for customer tokens. Add `iss` to new backend tokens | `core/auth.ts`, `routes/auth.routes.ts` | C | M |
+| 1.3 | Role from the database, not `user_metadata`: `resolveSupabaseRole(uid)` mirrors the frontend (`users.role`, vendor if `vendor_profiles`/`tpl_partners` row), 60 s cache, `is_active=false` → 403, invalidated from `PATCH /users/:id`. All server `createUser` calls set `app_metadata.role` (driver, customer, invite-vendor, tpl, vehicles, `seed_admin`) | `core/auth.ts`, `auth.routes.ts`, `users.routes.ts`, `tpl.service.ts`, `vehicles.routes.ts`, `scripts/seed_admin.ts` | C | M |
+| 1.4 | **Frontend changes that must deploy before 1.5–1.6**: invite-vendor via the shared `api` client (currently raw `fetch` with no token), telemetry WebSocket sends `?token=`, 3PL track/edit flow stops reading `pan_number` from the public response and sends `verify_pan`, `shipmentsAPI.updateStatus` sends `status` in the body (today it is a query param the server ignores → every status change returns 400) | `frontend/src/services/api.ts`, `SuperadminPage.tsx`, `TplTrackApplicationPage.tsx`, `TplOnboardingPage.tsx` | C | M |
+| 1.5 | Lock down unauthenticated endpoints: `/tpl/*` (superadmin for queue/approve/pause/resume/delete; owner or PAN-gated for `/:id`; hardened public onboard/OTP; **never reset an existing user's password**), `POST /auth/invite-vendor` (superadmin), `POST /optimize` (staff), delete `GET /auth/driver/earnings-test`, `POST /spark-gps` (shared secret, per 0.5), WebSocket upgrade requires a staff token, `GET /shipments/:id/verify` and `/capacity/windows/:id/bid-count` require auth, mobile-session tokens expire and stop returning the phone number | `routes/tpl.routes.ts`, `services/tpl.service.ts`, `auth.routes.ts`, `optimization.routes.ts`, `spark-gps.routes.ts`, `index.ts`, `shipments.routes.ts`, `capacity.routes.ts`, `telemetry.routes.ts` | C | L |
+| 1.6 | Role and ownership checks on every requireAuth-only route (one commit per router): shipments, routes, telemetry (driver actions only on own vehicle/route/stop; `complete-stop` checks ownership **before** updating), capacity (vendor bids as themselves; no fallback to "first vendor"), analytics (drop driver access to fleet-wide data), cargo, gps, vehicles, dashboard, depots, marketplace | `routes/*` | H | L |
+| 1.7 | OTP hardening: `crypto.randomInt`, 6 digits for 3PL, send limit 3/10 min per phone + per-IP limit enforced **before** storing a new code, failure counter that resends don't reset, `timingSafeEqual`, 503 in production when Twilio/Resend is not configured (no OTPs in logs) | `auth.routes.ts`, `tpl.service.ts` | H | M |
+| 1.8 | Vehicles: cache key per role/user and invalidated on writes; stop returning a temporary password; fix double-escaped phone regex (`/\\D/g`) via one shared `normalizeIndianPhone()` | `vehicles.routes.ts` | H | S |
+| 1.9 | CORS: exact origin matching (`margixindia.com` and its subdomains, `ALLOWED_ORIGINS`, optional `CORS_ORIGIN_PATTERNS` for Vercel previews), `credentials: false`, disallowed origins no longer 500 | `index.ts` | H | S |
+| 1.10 | Replace the 137 raw `e.message` responses with `sendError`; delete the `pings_debug.log` write on every driver ping | `routes/*`, `telemetry.routes.ts` | M | M |
+| 1.11 | Remove the master POD OTP (`'2026'` / id-prefix) from `/cargo/verify-pod` and the UI copy that tells users to enter it (see decision D4) | `cargo.routes.ts`, `CargoNetworkPage.tsx` | C | S–M |
+
+Railway env to add with this phase: `CORS_ORIGIN_PATTERNS` (optional), `SPARK_GPS_PUSH_SECRET` (if push is used), `ALLOWED_ORIGINS` including the Vercel and `margixindia.com` origins.
+
+---
+
+## Phase 2 — Database: reproducible schema and row-level security — C
+
+Production was edited by hand: `tpl_partners`, `tpl_corridors`, `tpl_documents` and `customers` exist in no SQL file; `cargo_manifest`, `sos_alerts`, `kyc_profiles`, `system_settings` exist only in loose scripts; migrations start at `002`, reuse version numbers (014, 015, 022, 20260907), include a UTF-16 file and an empty file.
+
+| # | Change | Sev | Effort |
+|---|---|---|---|
+| 2.1 | **(you)** `supabase link` + `supabase db dump --schema public,storage --linked` into `supabase/migrations/<ts>_baseline.sql`; then I archive the old migrations and loose SQL (`scripts/supabase_init.sql`, `backend-ts/kyc_migration.sql`, `backend-ts/scripts/*.sql`) under `supabase/migrations/_archive/`; **(you)** `supabase migration repair --status applied <ts>` | H | M |
+| 2.2 | Secure `handle_new_user`: role only from `raw_app_meta_data` (service-role only), self-signup allowlisted to `vendor`, customers skipped; `REVOKE UPDATE (role, is_active) ON users FROM anon, authenticated`; add `public.current_app_role()` (SECURITY DEFINER, reads `users`) | C | S |
+| 2.3 | RLS hardening: replace `USING (true)` on `capacity_windows`, `capacity_bids`, `driver_confirmations`, `cargo_manifest`, `gps_points`, `ai_agent_logs`, `invoices`, `payments` with owner/role policies; drop `GRANT ALL … TO anon` on vendor tables; `vehicles` readable only by owner driver + staff (vendors get a view without driver PII); `sos_alerts` insert only for own driver; fix the superadmin policies that compare the JWT `role` claim and the 3PL policies that compare `partner_id` to `sub`; revoke anon execute on `calculate_distance` / `match_vendors_to_route`; add `driver_confirmations` to the realtime publication (driver app subscribes to it) | C | L |
+| 2.4 | KYC: move `vendor_profiles.dummy2` (JSON in a text column, 8 read/write sites) to `kyc_data jsonb` + admin-only `kyc_status`; close the `kyc_profiles` self-approve hole; **(you)** set the `kyc_documents` bucket back to private, and switch the 3 `getPublicUrl` call sites to signed URLs | C | M |
+| 2.5 | Align enums with code, per case: shipment `assigned`/`exception`, vehicle `active` (code should use existing values), `vendor_shipment_requests` `fulfilled` vs `assigned`, `user_role` has no `customer`; `routes.depot_id` NOT NULL vs 4 inserts without it | M | M |
+
+---
+
+## Phase 3 — Driver app release, then key rotation — C
+
+The driver app ships the Supabase **service_role** key (bypasses all RLS). It cannot be rotated until a release stops using it.
+
+| # | Change | Effort |
+|---|---|---|
+| 3.1 | Backend-issued tokens: top-level `role: 'authenticated'`, app role in `user_metadata`, so Supabase accepts them for the driver's own direct calls under RLS | S |
+| 3.2 | Driver app uses the anon key + `supabase.auth.setSession()` after OTP login; its direct reads/writes (`vehicles`, `telemetry`, `driver_confirmations`, `users.push_token`, realtime channels) work under the Phase 2.3 policies | M |
+| 3.3 | Config from `EXPO_PUBLIC_*` env (API URL, Supabase URL/anon key, Maps key) instead of source; tokens in `expo-secure-store` | M |
+| 3.4 | Fixes: push `projectId` from `Constants.expoConfig.extra.eas.projectId` (currently a different project → pushes silently fail); remove earnings-test fallback (shows another driver's earnings); bid-count via the authenticated client; language sync storage key; dedupe `sos_*` locale keys; `expo-crypto` UUIDs; `confirmCapacity` calls a non-existent endpoint; POD "signature" (decision D5); add iOS `bundleIdentifier` | M |
+| 3.5 | **(you)** Publish the release, wait for adoption, then rotate the service_role key and the backend signing secret; update Railway / ml-service env | — |
+
+---
+
+## Phase 4 — Correctness bugs (backend-ts) — H/M
+
+| # | Bug | Fix | Effort |
+|---|---|---|---|
+| 4.1 | `approveBid` has no status guard: a double click duplicates shipments, manifests and stops | Claim with `update … eq('status','pending')`, then a single Postgres RPC for the cascade | M |
+| 4.2 | Bidding windows never auto-resolve: `resolveWindow` / `checkConfirmationsTimeout` are never called | Schedule them (interval job like the fleet monitor) | S |
+| 4.3 | `injectCapacityStop` returns a random UUID → `driver_confirmations` rows point at non-existent stops | Create the real `route_stops` row (logic already exists in `approveBid`) | M |
+| 4.4 | Fleet health: 10 s offline threshold checked every 5 s vs 10–60 s ping cadence → vehicles flap offline with critical alerts; `select('*')` every 5 s | ~100 s threshold, 20 s interval, explicit columns | S |
+| 4.5 | Supabase errors ignored (supabase-js does not throw); invalid enum writes fail silently | `assertNoError` helper on mutations; values per 2.5 | M |
+| 4.6 | `matching.service` selects non-existent columns and writes `shipment_logs` without hash fields (runs on every shipment create); `reoptimize` reads non-existent `vehicle_telemetry` → always Delhi; `trigger-alert` uses a random vehicle id | Correct columns/table; use the shared hash-chain writer; require a real vehicle | S–M |
+| 4.7 | GETs with side effects: `my-route` deletes routes, `upcoming-stops` inserts hubs and appends a `mock-123` stop | Read-only GETs; mutations to explicit endpoints; delete the mock stop | S–M |
+| 4.8 | `listUsers()` only sees the first 50 users (driver/customer/3PL lookups); `getPublicTracking` loads every manifest; ML calls have no timeout; driver profile always saves `vehicle_type='truck'`; `geofence_alert` always `null` | Targeted lookups; indexed short id; `AbortController` 10 s; use submitted value; implement or remove the field | S each |
+
+---
+
+## Phase 5 — Replace fabricated data and fix the web app — M
+
+- **Backend mock/random data** (decision D2): `cargo.routes.ts` (static `SCENARIOS`, random scores and coordinates, `profitability_index: 92.5`), `analytics.service.ts` (random on-time rate, invented deltas, "all-time mock" overview), `dashboard.routes.ts` (95 % fallback, invented fuel/reroute figures), `traffic.routes.ts` (random minutes saved), `marketplace.routes.ts` (mock `price_usd`), `spark-gps.service.ts` (hardcoded plates, `mockSyncForDemo` writing fake telemetry), `telemetry.routes.ts` (mock SOS config), earnings invoices all marked `paid`.
+- **Frontend**: `AdvancedAnalyticsTab` charts come from a seeded PRNG → wire to existing `/analytics/driver-performance` and `/analytics/vendor-performance`; `TplNetworkPage` renders a mock `queueData` escalation queue; 13 hardcoded `margixindia.vercel.app` URLs → shared `api` client and relative `/map-style.json` etc.; AI Hub buttons call `/agents/*`, which no longer exists anywhere (decision D1).
+- **Routing/auth**: guard `/vendor/*`, remove duplicate `/vendor/login`, move `/live-map` inside the layout, wait for session hydration before `PrivateRoute` redirects, single token store (Supabase only), `Badge` `green` renders yellow.
+- **Type errors** (CI fails until fixed): `CargoNetworkPage` calls non-existent `vehiclesAPI.getAll` (runtime crash), plus 4 others in `CargoNetworkPage`, `AddShipmentModal`, `RoutesPage`.
+
+## Phase 6 — Customer app (decision D3)
+
+Only login talks to the backend. Remove fabricated content (default name "Maya", static rewards, static notifications, dead "Continue to Pricing" button, dead Bookings/Rewards/Profile tabs) or show honest empty states; read `EXPO_PUBLIC_API_URL`; remove the unused Supabase client; add `eas.json`. The booking/pricing/tracking flow is a feature that needs new backend endpoints — scoped separately.
+
+## Phase 7 — Tests and CI
+
+- Split `backend-ts/src/app.ts` (`createApp()`) from `index.ts` (listen/ws/jobs); add `vitest` + `supertest`; cover the auth matrix (forged/unsigned token, ES256 user, backend HS256, refresh-as-access, forbidden role per router).
+- Add an ESLint config for `frontend` (the `lint` script has none); add tests to CI.
+
+---
+
+## Rollout order
+
+1. Phase 0 (you) → 2. Phase 2.2 (trigger + revoke) → 3. Phase 1.4 frontend → 4. Phase 1.1–1.3 backend, with temporary auth-path logging → 5. Phase 1.5–1.11 → 6. Phase 2.1, 2.3–2.5 → 7. Phase 3, then key rotation → 8. Phases 4–7.
+
+Each step is a small commit on this branch; every commit keeps `backend-ts` typecheck/build and `frontend` build green.
+
+## Decisions needed
+
+- **D1** AI Hub risk-analysis / cargo-monitoring: remove the buttons (recommended; even the Python version used hardcoded sensor data), or port as a new LLM feature on real telemetry.
+- **D2** Metrics with no real source (on-time trend deltas, fuel cost, reroute counts, profitability scores): remove the tiles/fields (recommended), or add snapshot tables to compute them.
+- **D3** Customer app: strip fabricated content now (recommended), or leave until the booking feature is built.
+- **D4** Proof of delivery: per-shipment OTP sent to the consignee (real feature), or restrict `/cargo/verify-pod` to staff and remove the demo codes (minimal).
+- **D5** Driver POD "signature": real signature capture, or relabel as "Receiver name".
