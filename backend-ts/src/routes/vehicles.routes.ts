@@ -126,6 +126,7 @@ router.get('/summary', requireAuth, async (_req: Request, res: Response) => {
       idle: (counts['idle'] || 0) + (counts['available'] || 0),
       maintenance: counts['maintenance'] || 0,
       offline: counts['offline'] || 0,
+      archived: counts['archived'] || 0,
     });
   } catch (e: any) {
     res.status(500).json({ detail: e.message });

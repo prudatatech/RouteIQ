@@ -73,6 +73,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const [vendorBadge, setVendorBadge] = useState(0)
   const [tplBadge, setTplBadge] = useState(0)
+  const [fleetBadge, setFleetBadge] = useState(0)
   const queryClient = useQueryClient()
 
   // Collapsible sidebar state with localStorage persistence
@@ -156,6 +157,12 @@ export default function AppLayout() {
     }
     fetchTplBadge()
 
+    const fetchFleetBadge = async () => {
+      const { data } = await supabase.from('vehicles').select('id').eq('status', 'archived');
+      setFleetBadge(data?.length || 0);
+    }
+    fetchFleetBadge()
+
     // Realtime subscription for new vendor requests
     const sub = supabase.channel('layout_vendor_badge')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, fetchBadge)
@@ -166,9 +173,15 @@ export default function AppLayout() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tpl_partners' }, fetchTplBadge)
       .subscribe()
 
+    // Realtime subscription for fleet drafts
+    const sub3 = supabase.channel('layout_fleet_badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, fetchFleetBadge)
+      .subscribe()
+
     return () => { 
       supabase.removeChannel(sub) 
       supabase.removeChannel(sub2)
+      supabase.removeChannel(sub3)
     }
   }, [role])
 
@@ -251,7 +264,8 @@ export default function AppLayout() {
 
                 {sectionItems.map(({ to, icon: Icon, label, external }) => {
                   const itemBadge = (to === '/dashboard' && vendorBadge > 0) ? vendorBadge : 
-                                    (to === '/3pl-network' && tplBadge > 0) ? tplBadge : undefined
+                                    (to === '/3pl-network' && tplBadge > 0) ? tplBadge : 
+                                    (to === '/fleet' && fleetBadge > 0) ? fleetBadge : undefined
                   if (external) {
                     return (
                       <button

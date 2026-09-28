@@ -352,6 +352,16 @@ export default function FleetPage() {
     queryFn: vehiclesAPI.summary,
   })
 
+  // Fallback for archived count if backend summary hasn't updated yet
+  const { data: archivedCount } = useQuery({
+    queryKey: ['archived-vehicles-count'],
+    queryFn: async () => {
+      const { data } = await supabase.from('vehicles').select('id').eq('status', 'archived');
+      return data?.length || 0;
+    },
+    refetchInterval: 15_000,
+  })
+
   const filtered = vehicles.filter((v: any) =>
     v.plate_number.toLowerCase().includes(search.toLowerCase())
   )
@@ -406,18 +416,27 @@ export default function FleetPage() {
           />
         </div>
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-          {STATUS_OPTIONS.map(s => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={clsx(
-                "px-4 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all",
-                filter === s ? "bg-white text-slate-900 shadow-sm border border-slate-200" : "text-muted hover:text-slate-700"
-              )}
-            >
-              {s.replace('_', ' ')}
-            </button>
-          ))}
+          {STATUS_OPTIONS.map(s => {
+            const isArchived = s === 'archived';
+            const badgeValue = summary?.archived ?? archivedCount ?? 0;
+            return (
+              <button
+                key={s}
+                onClick={() => setFilter(s)}
+                className={clsx(
+                  "px-4 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all flex items-center gap-2",
+                  filter === s ? "bg-white text-slate-900 shadow-sm border border-slate-200" : "text-muted hover:text-slate-700"
+                )}
+              >
+                {s.replace('_', ' ')}
+                {isArchived && badgeValue > 0 && (
+                  <span className="bg-slate-900 text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold">
+                    {badgeValue}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
