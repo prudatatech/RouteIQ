@@ -1,1 +1,0 @@
-﻿import * as dotenv from 'dotenv'; dotenv.config(); import { AnalyticsService } from './src/services/analytics.service'; AnalyticsService.getDriverPerformance().then(r => console.log(JSON.stringify(r))).catch(console.error);
