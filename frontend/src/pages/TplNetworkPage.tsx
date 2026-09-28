@@ -11,49 +11,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
 import clsx from 'clsx'
 
-// Enhanced Mock Data
-const partners = [
-  { 
-    id: '3PL-001', 
-    name: 'Rivigo Freight', 
-    gst: '07AABCR1234F1Z5', 
-    status: 'active', 
-    rating: 4.8,
-    acceptRate: '94%',
-    slaBreaches: 2,
-    details: [
-      { corridor: 'DEL-BOM', rate: 'Base + 12%', expiry: '2027-01-15', vehicles: ['32ft SXL', '24ft MXL'], priority: 1 },
-      { corridor: 'DEL-BLR', rate: 'Base + 15%', expiry: '2026-11-30', vehicles: ['32ft SXL'], priority: 2 }
-    ]
-  },
-  { 
-    id: '3PL-002', 
-    name: 'Delhivery B2B', 
-    gst: '27AADCB2230M1Z8', 
-    status: 'active', 
-    rating: 4.5,
-    acceptRate: '88%',
-    slaBreaches: 5,
-    details: [
-      { corridor: 'BOM-BLR', rate: 'Base + 14%', expiry: '2026-12-31', vehicles: ['20ft', '24ft MXL'], priority: 1 },
-      { corridor: 'PUN-HYD', rate: 'Base + 16%', expiry: '2026-12-31', vehicles: ['32ft SXL'], priority: 1 }
-    ]
-  },
-  { 
-    id: '3PL-003', 
-    name: 'VRL Logistics', 
-    gst: '29AAACV5678Q1Z2', 
-    status: 'paused', 
-    pauseReason: 'SLA breach limit exceeded in Q3',
-    rating: 4.2,
-    acceptRate: '65%',
-    slaBreaches: 12,
-    details: [
-      { corridor: 'BLR-MAA', rate: 'Fixed ₹45/km', expiry: '2026-10-01', vehicles: ['20ft'], priority: 3 }
-    ]
-  },
-]
-
 const queueData = [
   { id: 'ORD-8821', corridor: 'DEL-BOM', reason: '0 trucks in 50km radius', type: 'Heavy Duty', status: 'Pending Approval', estClientRate: '₹42,500', age: '5m', urgency: 'high', trail: [] },
   { id: 'ORD-8819', corridor: 'PUN-HYD', reason: 'Tier 1 TTL Expired', type: 'Refrigerated', status: 'Broadcasting', estClientRate: '₹68,000', age: '22m', urgency: 'medium', trail: ['Rivigo (Declined)', 'Delhivery (Pending)'] },

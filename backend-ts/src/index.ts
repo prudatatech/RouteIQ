@@ -20,7 +20,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { settings } from './core/config';
 import { redis } from './core/redis';
-import dashboardRoutes from './routes/dashboard.routes';
 import { wsManager } from './core/websocket';
 import apiRouter from './routes';
 import { fleetHealthMonitor } from './services/fleet-health.service';

@@ -33,18 +33,3 @@ export const supabase: SupabaseClient = createClient(
     },
   }
 );
-
-/**
- * Anon client — respects RLS.
- * Use for verifying user auth tokens.
- */
-export const supabaseAnon: SupabaseClient = createClient(
-  settings.SUPABASE_URL,
-  settings.SUPABASE_ANON_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-);
