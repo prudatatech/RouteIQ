@@ -7,11 +7,10 @@ import {
   ScrollView,
   Dimensions,
   StatusBar,
-  Image,
   DeviceEventEmitter,
   Platform
 } from 'react-native';
-import { Feather, MaterialCommunityIcons, Ionicons, Octicons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, STORAGE_KEYS } from '../services/api';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
@@ -32,7 +31,7 @@ const COLORS = {
 };
 
 export default function HomeScreen({ navigation, route }: any) {
-  const [customerName, setCustomerName] = useState('Maya');
+  const [customerName, setCustomerName] = useState<string | null>(null);
   const [loadType, setLoadType] = useState<'full' | 'part'>('full');
   
   // Dynamic Locations
@@ -92,8 +91,8 @@ export default function HomeScreen({ navigation, route }: any) {
         const infoStr = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMER_INFO);
         if (infoStr) {
           const info = JSON.parse(infoStr);
-          const name = info.full_name?.split(' ')[0] || 'Customer';
-          setCustomerName(name.charAt(0).toUpperCase() + name.slice(1));
+          const name = info.full_name?.split(' ')[0];
+          if (name) setCustomerName(name.charAt(0).toUpperCase() + name.slice(1));
         }
       } catch (e) {
         console.error(e);
@@ -129,7 +128,9 @@ export default function HomeScreen({ navigation, route }: any) {
               <View style={styles.brandDot} />
               <Text style={styles.brandText}>MARGIX</Text>
             </View>
-            <Text style={styles.greetingText}>{getGreeting()}, {customerName}</Text>
+            <Text style={styles.greetingText}>
+              {customerName ? `${getGreeting()}, ${customerName}` : getGreeting()}
+            </Text>
           </View>
 
           <View style={styles.headerRight}>
@@ -172,10 +173,6 @@ export default function HomeScreen({ navigation, route }: any) {
         <View style={styles.bookingCard}>
           <View style={styles.bookingHeader}>
             <Text style={styles.bookingTitle}>Plan a shipment</Text>
-            <View style={styles.etaPill}>
-              <View style={styles.etaDot} />
-              <Text style={styles.etaText}>12–18 min</Text>
-            </View>
           </View>
 
           <View style={styles.locationsContainer}>
@@ -281,42 +278,6 @@ export default function HomeScreen({ navigation, route }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* --- PROMO CARD --- */}
-        <View style={styles.promoCard}>
-          <View style={styles.promoContent}>
-            <View style={styles.promoBadge}>
-              <Text style={styles.promoBadgeText}>NEW • MARGIX LITE</Text>
-            </View>
-            <Text style={styles.promoTitleText}>City runs, made{"\n"}lighter.</Text>
-            <Text style={styles.promoDescText}>Same-day logistics from ₹499{"\n"}with compact electric trucks.</Text>
-
-            <TouchableOpacity style={styles.promoLink}>
-              <Text style={styles.promoLinkText}>See how it works</Text>
-              <Feather name="arrow-right" size={14} color={COLORS.primaryDark} style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.promoGraphic}>
-            <Image
-              source={require('../../assets/tata_truck.jpg')}
-              style={styles.truckImage}
-              resizeMode="contain"
-            />
-          </View>
-        </View>
-
-        {/* --- REWARDS CARD --- */}
-        <TouchableOpacity style={styles.rewardsCard} activeOpacity={0.8}>
-          <View style={styles.rewardsIconBg}>
-            <Octicons name="sparkle" size={20} color={COLORS.primaryDark} />
-          </View>
-          <View style={styles.rewardsTextContainer}>
-            <Text style={styles.rewardsTitle}>240 Margix Miles</Text>
-            <Text style={styles.rewardsSubText}>Save ₹120 on your next trip</Text>
-          </View>
-          <Feather name="chevron-right" size={20} color={COLORS.textMuted} />
-        </TouchableOpacity>
-
         <View style={{ height: 120 }} />
       </ScrollView>
 
@@ -327,18 +288,10 @@ export default function HomeScreen({ navigation, route }: any) {
           <Feather name="home" size={24} color={COLORS.primaryDark} />
           <Text style={styles.tabTextActive}>Home</Text>
         </View>
-        <View style={styles.tabItem}>
-          <Feather name="file-text" size={24} color={COLORS.textMuted} />
-          <Text style={styles.tabText}>Bookings</Text>
-        </View>
-        <View style={styles.tabItem}>
-          <Feather name="gift" size={24} color={COLORS.textMuted} />
-          <Text style={styles.tabText}>Rewards</Text>
-        </View>
-        <View style={styles.tabItem}>
-          <Feather name="user" size={24} color={COLORS.textMuted} />
-          <Text style={styles.tabText}>Profile</Text>
-        </View>
+        <TouchableOpacity style={styles.tabItem} onPress={handleLogout} activeOpacity={0.7}>
+          <Feather name="log-out" size={24} color={COLORS.textMuted} />
+          <Text style={styles.tabText}>Log out</Text>
+        </TouchableOpacity>
       </View>
 
       {/* --- FULL SCREEN MAP MODAL --- */}

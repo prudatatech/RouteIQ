@@ -41,7 +41,7 @@ export default function LoginScreen({ navigation }: any) {
   }, []);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (step === 'otp' && timer > 0) {
       interval = setInterval(() => {
         setTimer((prev) => prev - 1);

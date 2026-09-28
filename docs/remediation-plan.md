@@ -143,6 +143,8 @@ The driver app ships the Supabase **service_role** key (bypasses all RLS). It ca
 
 Only login talks to the backend. Remove fabricated content (default name "Maya", static rewards, static notifications, dead "Continue to Pricing" button, dead Bookings/Rewards/Profile tabs) or show honest empty states; read `EXPO_PUBLIC_API_URL`; remove the unused Supabase client; add `eas.json`. The booking/pricing/tracking flow is a feature that needs new backend endpoints — scoped separately.
 
+**Status: implemented on this branch.** Fabricated content removed (default name, ETA pill, rewards and promo cards, sample notifications, dead tabs and booking add-ons); "Continue to Pricing" is disabled with a "Booking is coming soon" note. API URL and Maps key from `EXPO_PUBLIC_*` env (no hardcoded fallback), unused Supabase client and dependencies removed, tokens in expo-secure-store (legacy tokens migrated) with refresh on 401, iOS bundle identifier, `eas.json`. Owner: remove the `EXPO_PUBLIC_SUPABASE_*` lines from the local `customer-app/.env` (one holds the service-role key) and run `eas init` to link an EAS project. The booking flow (quotes, booking submission, tracking, payments) remains a separate feature.
+
 ## Phase 7 — Tests and CI
 
 - Split `backend-ts/src/app.ts` (`createApp()`) from `index.ts` (listen/ws/jobs); add `vitest` + `supertest`; cover the auth matrix (forged/unsigned token, ES256 user, backend HS256, refresh-as-access, forbidden role per router).

@@ -166,35 +166,11 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </View>
           </View>
 
-          <View style={styles.routeActions}>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Feather name="plus" size={14} color={COLORS.primaryDark} />
-              <Text style={styles.actionBtnText}>Add Stop</Text>
-            </TouchableOpacity>
-            <View style={styles.actionDivider} />
-            <TouchableOpacity style={styles.actionBtn}>
-              <Feather name="users" size={14} color={COLORS.primaryDark} />
-              <Text style={styles.actionBtnText}>Loading Crew</Text>
-            </TouchableOpacity>
-            <View style={styles.actionDivider} />
-            <View style={styles.etaContainer}>
-              <Feather name="clock" size={12} color={COLORS.textMuted} />
-              <Text style={styles.etaText}>Calc. route...</Text>
-            </View>
-          </View>
         </View>
 
-        {/* PROGRESS INDICATOR */}
+        {/* SECTION LABEL */}
         <View style={styles.progressRow}>
-          <Text style={styles.progressText}>
-            <Text style={{ fontWeight: '700', color: COLORS.primaryDark }}>STEP 2 OF 4</Text> · Weight & Fleet Allocation
-          </Text>
-          <View style={styles.progressDots}>
-            <View style={[styles.progDot, styles.progDotActive, { width: 16 }]} />
-            <View style={[styles.progDot, styles.progDotActive, { width: 16 }]} />
-            <View style={styles.progDot} />
-            <View style={styles.progDot} />
-          </View>
+          <Text style={styles.progressText}>Weight & Fleet Allocation</Text>
         </View>
 
         {/* BOTTOM SHEET SIMULATION */}
@@ -320,10 +296,10 @@ export default function CargoConfigScreen({ navigation, route }: any) {
       
       {/* FIXED CONTINUE BUTTON */}
       <View style={styles.bottomFixedBar}>
-        <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9}>
+        <TouchableOpacity style={[styles.continueBtn, styles.continueBtnDisabled]} disabled>
           <Text style={styles.continueBtnText}>Continue to Pricing</Text>
-          <Feather name="arrow-right" size={20} color="#FFFFFF" />
         </TouchableOpacity>
+        <Text style={styles.comingSoonText}>Booking is coming soon</Text>
       </View>
     </View>
   );
@@ -473,29 +449,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  routeActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    paddingTop: 16,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.primaryDark,
-    marginLeft: 6,
-  },
-  actionDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 12,
   },
   etaContainer: {
     flexDirection: 'row',
@@ -824,10 +777,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  continueBtnDisabled: {
+    opacity: 0.4,
+  },
   continueBtnText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
     marginRight: 8,
+  },
+  comingSoonText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

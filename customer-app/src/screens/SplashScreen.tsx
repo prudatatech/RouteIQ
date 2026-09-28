@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Image, Animated, StyleSheet, Dimensions, Easing } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, STORAGE_KEYS } from '../services/api';
+import { api } from '../services/api';
 const { width, height } = Dimensions.get('window');
 
 export default function SplashScreen({ navigation }: any) {
@@ -55,23 +54,20 @@ export default function SplashScreen({ navigation }: any) {
     }).start();
 
     const checkAuth = async () => {
-      // Simulate minimum splash screen time
-      await new Promise(resolve => setTimeout(resolve, 2800));
-      
-      const token = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      
+      // Simulate minimum splash screen time, and initialize the API client
+      // (migrates legacy tokens and loads the session) in parallel.
+      const [, hasSession] = await Promise.all([
+        new Promise(resolve => setTimeout(resolve, 2800)),
+        api.hasSession(),
+      ]);
+
       // Smooth fade out before navigating
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
       }).start(() => {
-        if (token) {
-          // Initialize API token in memory so API calls work right away
-          api.init().then(() => navigation.replace('Home'));
-        } else {
-          navigation.replace('Login');
-        }
+        navigation.replace(hasSession ? 'Home' : 'Login');
       });
     };
 
