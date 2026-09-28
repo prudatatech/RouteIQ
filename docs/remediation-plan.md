@@ -125,6 +125,11 @@ The driver app ships the Supabase **service_role** key (bypasses all RLS). It ca
 
 ---
 
+**Status: implemented on this branch.** Notes:
+- 4.2: the automatic window resolver was removed on purpose earlier (bids wait for manual approval), so it was deleted together with the mock stop injector rather than scheduled. The driver-confirmation timeout job (2/15 min auto-accept, already shown in the admin UI) now runs every minute.
+- The vendor bidding flow was completed as part of this phase: Live Corridors → Place Bid opens a bid form (floor price, capacity, drop-off search, e-way bill, load type); bids are validated server-side (open window, KYC approved, no duplicate pending bid) and vendors are notified when a bid is accepted, rejected or outbid.
+- Follow-up for Phase 5: the cargo network page's "Simulate Hardware Alarms" sends hardcoded demo plate numbers; trigger-alert now requires a real vehicle, so that simulation returns 400 until it is removed or pointed at a real vehicle.
+
 ## Phase 5 — Replace fabricated data and fix the web app — M
 
 - **Backend mock/random data** (decision D2): `cargo.routes.ts` (static `SCENARIOS`, random scores and coordinates, `profitability_index: 92.5`), `analytics.service.ts` (random on-time rate, invented deltas, "all-time mock" overview), `dashboard.routes.ts` (95 % fallback, invented fuel/reroute figures), `traffic.routes.ts` (random minutes saved), `marketplace.routes.ts` (mock `price_usd`), `spark-gps.service.ts` (hardcoded plates, `mockSyncForDemo` writing fake telemetry), `telemetry.routes.ts` (mock SOS config), earnings invoices all marked `paid`.
