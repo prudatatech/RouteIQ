@@ -82,9 +82,10 @@ export default function DashboardPage() {
   }, [])
 
   // ── Derived Data ──────────────────────────────────────────────
-  const reportingVehicles = vehicles.filter((v: any) => v.status !== 'offline' && v.status !== 'maintenance')
-  const offlineVehicles = vehicles.filter((v: any) => v.status === 'offline')
-  const incidentVehicles = vehicles.filter((v: any) => v.status === 'maintenance')
+  const activeVehicles = vehicles.filter((v: any) => v.status !== 'archived')
+  const reportingVehicles = activeVehicles.filter((v: any) => v.status !== 'offline' && v.status !== 'maintenance')
+  const offlineVehicles = activeVehicles.filter((v: any) => v.status === 'offline')
+  const incidentVehicles = activeVehicles.filter((v: any) => v.status === 'maintenance')
   const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
   const onTimeRate = kpis?.on_time_rate_pct?.toFixed(0) || '95'
   const openIncidents = sosAlerts.filter((a: any) => a.status !== 'resolved').length
@@ -146,7 +147,7 @@ export default function DashboardPage() {
   })
 
   // Fleet table data
-  const fleetTableData = vehicles
+  const fleetTableData = activeVehicles
     .filter((v: any) => !fleetSearch || v.plate_number.toLowerCase().includes(fleetSearch.toLowerCase()))
     .slice(0, 20)
 
@@ -194,7 +195,7 @@ export default function DashboardPage() {
           },
           {
             label: 'Tracked vehicles',
-            value: kpisLoading ? '—' : String(vehicles.length),
+            value: kpisLoading ? '—' : String(activeVehicles.length),
             sub: `${reportingVehicles.length} reporting · ${offlineVehicles.length} offline`,
             highlight: false,
             color: 'indigo',
@@ -281,7 +282,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="h-[440px] relative">
-            <LiveMap vehicles={vehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
+            <LiveMap vehicles={activeVehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
           </div>
           <div className="flex items-center gap-5 px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">
             <div className="flex items-center gap-1.5">
@@ -393,7 +394,7 @@ export default function DashboardPage() {
             <div className="border-t border-slate-200 px-5 py-3">
               <h3 className="text-xs font-semibold text-slate-900 mb-3">Recent fleet events</h3>
               <div className="space-y-2.5">
-                {[...vehicles]
+                {[...activeVehicles]
                   .filter((v: any) => v.last_sync)
                   .sort((a: any, b: any) => new Date(b.last_sync).getTime() - new Date(a.last_sync).getTime())
                   .slice(0, 4)
@@ -429,7 +430,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-slate-900">Fleet status</h2>
-            <span className="text-xs text-slate-400">{vehicles.length} vehicles</span>
+            <span className="text-xs text-slate-400">{activeVehicles.length} vehicles</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus-within:border-slate-300 transition-colors">

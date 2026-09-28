@@ -166,14 +166,21 @@ function SettingsDropdown({
   const deleteMutation = useMutation({
     mutationFn: () => vehiclesAPI.delete(vehicle.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
-      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success(`${vehicle.plate_number} deleted`)
-      setOpen(false)
-      setConfirmDelete(false)
+      // Optimistically remove from all cached lists to bypass backend Redis cache delays
+      queryClient.setQueriesData({ queryKey: ['vehicles'] }, (oldData: any) => {
+        if (!Array.isArray(oldData)) return oldData;
+        return oldData.filter((v: any) => v.id !== vehicle.id);
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] });
+      toast.success(`${vehicle.plate_number} deleted`);
+      setOpen(false);
+      setConfirmDelete(false);
+      if (onDelete) onDelete();
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.detail || 'Failed to delete vehicle')
+      toast.error(err.response?.data?.detail || 'Failed to delete vehicle');
     }
   })
 
