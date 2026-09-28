@@ -14,7 +14,7 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import clsx from 'clsx'
 
-const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', 'offline']
+const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', 'offline', 'archived']
 const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
 const FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
 const STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
