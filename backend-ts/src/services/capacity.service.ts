@@ -1,6 +1,12 @@
 import { supabase } from '../core/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
+import { notificationService } from './notification.service';
+
+/** Notifications are informative; a failure must not undo the bid operation. */
+function notify(send: () => Promise<unknown>) {
+  send().catch((e) => console.error('[capacity] Notification failed:', e));
+}
 
 export const capacityService = {
   /**
@@ -14,7 +20,7 @@ export const capacityService = {
 
     const { data: window, error: windowErr } = await supabase
       .from('capacity_windows')
-      .select('id, opens_at, closes_at, floor_price, winning_bid_id, vehicles(latitude, longitude, city, available_capacity_kg)')
+      .select('id, opens_at, closes_at, floor_price, winning_bid_id, vehicles(plate_number, latitude, longitude, city, available_capacity_kg)')
       .eq('id', data.window_id)
       .maybeSingle();
     if (windowErr) throw new Error(`Failed to load window ${data.window_id}: ${windowErr.message}`);
@@ -92,6 +98,13 @@ export const capacityService = {
     }).select().single();
 
     if (error) throw new Error(error.message);
+
+    notify(() => notificationService.notifySuperAdmins(
+      'New Capacity Bid',
+      `A vendor bid ₹${bidAmount} for ${weightKg} kg on ${windowVehicle?.plate_number ?? 'a vehicle'}.`,
+      'capacity_bid',
+      { bid_id: bid.id, window_id: data.window_id }
+    ));
     return bid;
   },
 
@@ -222,7 +235,12 @@ export const capacityService = {
     }
 
     // 3. Remaining pending bids on the window lose
-    const { error: loseErr } = await supabase.from('capacity_bids').update({ status: 'lost' }).eq('window_id', windowId).eq('status', 'pending');
+    const { data: losingBids, error: loseErr } = await supabase
+      .from('capacity_bids')
+      .update({ status: 'lost' })
+      .eq('window_id', windowId)
+      .eq('status', 'pending')
+      .select('id, vendor_id');
     if (loseErr) throw new Error(`Failed to close other bids: ${loseErr.message}`);
 
     // 4. The space is now occupied
@@ -409,6 +427,23 @@ export const capacityService = {
     // 8. Turn off the bidding_window_open flag
     await supabase.from('vehicles').update({ bidding_window_open: false, bidding_window_closes_at: null }).eq('id', window.vehicle_id);
 
+    notify(() => notificationService.sendNotification(
+      bid.vendor_id,
+      'Bid Accepted',
+      `Your bid of ₹${bid.bid_amount} for ${bid.weight_kg} kg was accepted. The truck has been routed to your pickup.`,
+      'bid_accepted',
+      { bid_id: bid.id, shipment_id: finalShipmentId }
+    ));
+    for (const lost of losingBids ?? []) {
+      notify(() => notificationService.sendNotification(
+        lost.vendor_id,
+        'Bid Not Selected',
+        'Another bid was accepted for this truck. Watch Live Corridors for new capacity.',
+        'bid_lost',
+        { bid_id: lost.id }
+      ));
+    }
+
     return bid;
   },
 
@@ -433,7 +468,7 @@ export const capacityService = {
       .update({ status: 'rejected' })
       .eq('id', bidId)
       .eq('status', 'pending')
-      .select('id')
+      .select('id, vendor_id, bid_amount')
       .maybeSingle();
     if (rejectErr) throw new Error(`Failed to reject bid ${bidId}: ${rejectErr.message}`);
     if (!bid) {
@@ -442,6 +477,13 @@ export const capacityService = {
       throw new HttpError(409, `Bid is already ${existing.status}`);
     }
 
+    notify(() => notificationService.sendNotification(
+      bid.vendor_id,
+      'Bid Rejected',
+      `Your bid of ₹${bid.bid_amount} was not accepted.`,
+      'bid_rejected',
+      { bid_id: bid.id }
+    ));
     return { id: bidId, status: 'rejected' };
   },
 

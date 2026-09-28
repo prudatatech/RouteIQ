@@ -155,12 +155,24 @@ export const cargoAPI = {
 export const capacityAPI = {
   getNearbyVendors: (params: { lat: number, lng: number, radius?: number }) =>
     api.get('/capacity/nearby-vendors', { params }).then(r => r.data),
+  placeBid: (data: {
+    window_id: string
+    bid_amount: number
+    weight_kg: number
+    dropoff_name: string
+    dropoff_address: string
+    dropoff_lat: number
+    dropoff_lng: number
+    eway_bill_ref?: string
+    load_configuration?: string
+  }) => api.post('/capacity/bids', data).then(r => r.data),
   pendingBids: () => api.get('/capacity/bids/pending').then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
 }
 
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
+  passingRoutes: () => api.get('/vendor/passing-routes').then(r => ensureArray(r.data)),
   createShipmentRequest: (data: any) => api.post('/vendor/shipment-request', data).then(r => r.data),
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),

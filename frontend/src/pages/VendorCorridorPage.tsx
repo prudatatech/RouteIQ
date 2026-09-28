@@ -5,11 +5,14 @@ import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { formatEta } from '@/utils/timeFormat'
 import toast from 'react-hot-toast'
+import { vendorAPI } from '@/services/api'
+import PlaceBidModal from '@/components/vendor/PlaceBidModal'
 
 export default function VendorCorridorPage() {
   const [windows, setWindows] = useState<any[]>([])
   const [passingRoutes, setPassingRoutes] = useState<any[]>([])
   const [myBids, setMyBids] = useState<any[]>([])
+  const [biddingWindow, setBiddingWindow] = useState<any>(null)
   
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
@@ -38,9 +41,7 @@ export default function VendorCorridorPage() {
     try {
       const wPromise = supabase.from('capacity_windows').select('*, vehicles(plate_number, available_capacity_kg, vehicle_type)').gt('closes_at', new Date().toISOString()).is('winning_bid_id', null).order('opens_at', { ascending: false })
       let bPromise: any = Promise.resolve({ data: [] })
-      let pPromise = fetch(`${import.meta.env.VITE_API_URL || '/api/v1'}/vendor/passing-routes`, { 
-        headers: session ? { 'Authorization': `Bearer ${session.access_token}` } : {} 
-      }).then(r => r.json().catch(() => []))
+      const pPromise = session ? vendorAPI.passingRoutes().catch(() => []) : Promise.resolve([])
 
       if (userId) {
         bPromise = supabase.from('capacity_bids').select('window_id').eq('vendor_id', userId)
@@ -73,9 +74,7 @@ export default function VendorCorridorPage() {
       navigate('/vendor/documents')
       return
     }
-    // We could implement an inline modal here, or navigate to a dedicated bid page. 
-    // For now, we will navigate to request page with the capacity window context
-    navigate(`/vendor/request?query=${encodeURIComponent('Current')}`)
+    setBiddingWindow(w)
   }
 
   return (
@@ -209,6 +208,9 @@ export default function VendorCorridorPage() {
             )}
         </section>
       </div>
+      {biddingWindow && (
+        <PlaceBidModal window={biddingWindow} onClose={() => setBiddingWindow(null)} onPlaced={fetchData} />
+      )}
     </div>
   )
 }
