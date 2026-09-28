@@ -42,9 +42,25 @@ The Supabase project signs user tokens with **ES256** (verified via its public J
 | 1.10 | Replace the 137 raw `e.message` responses with `sendError`; delete the `pings_debug.log` write on every driver ping | `routes/*`, `telemetry.routes.ts` | M | M |
 | 1.11 | Remove the master POD OTP (`'2026'` / id-prefix) from `/cargo/verify-pod` and the UI copy that tells users to enter it (see decision D4) | `cargo.routes.ts`, `CargoNetworkPage.tsx` | C | S–M |
 
-Railway env to add with this phase: `CORS_ORIGIN_PATTERNS` (optional), `SPARK_GPS_PUSH_SECRET` (if push is used), `ALLOWED_ORIGINS` including the Vercel and `margixindia.com` origins.
+**Status: implemented on this branch** (1.1–1.11). Verified with typecheck/build and local end-to-end checks against a mock Supabase: forged/unsigned/wrong-issuer tokens rejected, ES256 tokens verified via JWKS with roles from the database, every locked endpoint returns 401/403 for anonymous or wrong-role callers, WebSocket requires a staff token, OTP limits and lockout behave as specified.
 
----
+### Deploy checklist for Phase 1
+
+Deploy the **frontend and backend together** (the frontend now sends tokens on calls the backend newly requires them for). Before deploying backend-ts, on Railway (names only — do not paste values anywhere):
+
+| Variable | Required | Notes |
+|---|---|---|
+| `SUPABASE_URL` | yes | JWKS for ES256 verification is fetched from it; startup fails in production without it |
+| `SUPABASE_JWT_SECRET` or `SECRET_KEY` | yes | ≥ 32 characters; signs driver/customer OTP tokens. Keep the current value so existing driver sessions stay valid; startup fails in production if missing/weak |
+| `ALLOWED_ORIGINS` | yes | Must include `https://margixindia.vercel.app` (and any custom frontend domain). `*.vercel.app` is no longer allowed implicitly |
+| `CORS_ORIGIN_PATTERNS` | optional | Regex for this project's Vercel preview URLs |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_PHONE_NUMBER` | yes | In production, OTP requests now return 503 instead of silently logging the code when these are missing |
+| `RESEND_API_KEY` | yes (3PL) | 3PL password-setup emails return 503 in production without it |
+| `SPARK_GPS_PUSH_SECRET` | if push is used (0.5) | Give the same value to Roadcast; `/spark-gps` returns 503 in production without it |
+
+Production mode is detected from `APP_ENV=production`, `NODE_ENV=production` or Railway's `RAILWAY_ENVIRONMENT_NAME=production`.
+
+Behaviour changes users may notice: 3PL applicants enter their PAN to edit an application and receive a 6-digit code; the password minimum is 10 characters; drivers/vendors lose access to fleet-wide screens they were never meant to see; the control tower's POD panel is now a plain "confirm delivery" form. In the current driver app build, the backhaul bid counter shows 0 (it calls an endpoint that now requires a token without sending one) until the Phase 3 release.
 
 ## Phase 2 — Database: reproducible schema and row-level security — C
 
