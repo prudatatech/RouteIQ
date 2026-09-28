@@ -36,19 +36,6 @@ const T = {
 const fontDisplay = "'Space Grotesk', 'Sora', sans-serif";
 const fontBody = "'Inter', sans-serif";
 
-/* ─── Mock trend data ────────────────────────────────────────────────────── */
-const WEEKS = ["W1","W2","W3","W4","W5","W6","W7","W8"];
-let _s = 7421;
-const rand = () => { _s |= 0; _s = (_s + 0x6d2b79f5) | 0; let t = Math.imul(_s ^ (_s >>> 15), 1 | _s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-const driverTrend = WEEKS.map((w, i) => ({ week: w, onTime: Number((88 + Math.sin(i / 1.6) * 4 + rand() * 3 - 1.5).toFixed(1)) }));
-const vendorTrend  = WEEKS.map((w, i) => ({ week: w, sla: Number((90 + Math.cos(i / 1.8) * 3.5 + rand() * 2.4 - 1.2).toFixed(1)) }));
-
-const DATE_RANGES = [
-  { id: "7d",  label: "Last 7 days",  mult: 0.24 },
-  { id: "30d", label: "Last 30 days", mult: 1 },
-  { id: "90d", label: "Last 90 days", mult: 2.9 },
-];
-
 const REGIONS = [
   "North India (Delhi, Punjab, UP)",
   "South India (Karnataka, TN, Kerala)",
@@ -97,8 +84,11 @@ function StatusPill({ status }: { status: string }) {
     idle:        { bg: T.panel2,     color: T.sub },
     maintenance: { bg: T.redSoft,    color: T.red },
     offline:     { bg: T.panel2,     color: T.mute },
-    Active:      { bg: T.greenSoft,  color: T.green },
-    "Under review": { bg: T.amberSoft, color: T.amber },
+    Approved:    { bg: T.greenSoft,  color: T.green },
+    Verified:    { bg: T.greenSoft,  color: T.green },
+    Submitted:   { bg: T.amberSoft,  color: T.amber },
+    Pending:     { bg: T.panel2,     color: T.sub },
+    Rejected:    { bg: T.redSoft,    color: T.red },
   };
   const c = map[status] || map.available;
   return (
@@ -144,13 +134,11 @@ const lightTt = {
    DRIVER ANALYTICS — standalone
 ═══════════════════════════════════════════════════════════════════════════════ */
 function DriverAnalyticsView() {
-  const [dateRange, setDateRange] = useState("30d");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [[sortKey, sortDir], setSort] = useState<[string, "asc" | "desc"]>(["completed_routes", "desc"]);
 
   const { data: raw = [] } = useQuery({ queryKey: ["driver-performance"], queryFn: () => analyticsAPI.driverPerformance().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: 30_000 });
-  const mult = DATE_RANGES.find(d => d.id === dateRange)?.mult || 1;
 
   const drivers = useMemo(() =>
     (raw as any[])
@@ -165,17 +153,26 @@ function DriverAnalyticsView() {
 
   const toggle = (k: string) => setSort([k, sortKey === k && sortDir === "desc" ? "asc" : "desc"]);
 
+  // All-time aggregates from the real driver-performance rows — no
+  // "incidents" figure (no incident data source exists) and no date-range
+  // multiplier faking a time filter the API does not support.
   const kpis = {
-    trips:     Math.round(drivers.reduce((s: number, d: any) => s + d.completed_routes, 0) * mult),
-    onTime:    Number((drivers.reduce((s: number, d: any) => s + d.on_time_pct, 0) / (drivers.length || 1)).toFixed(1)),
-    rating:    Number((drivers.reduce((s: number, d: any) => s + d.rating, 0) / (drivers.length || 1)).toFixed(2)),
-    incidents: Math.round(drivers.length * 0.5 * mult),
-    distance:  Math.round(drivers.reduce((s: number, d: any) => s + d.total_distance_km, 0) * mult),
+    trips:    Math.round(drivers.reduce((s: number, d: any) => s + d.completed_routes, 0)),
+    onTime:   Number((drivers.reduce((s: number, d: any) => s + d.on_time_pct, 0) / (drivers.length || 1)).toFixed(1)),
+    rating:   Number((drivers.reduce((s: number, d: any) => s + d.rating, 0) / (drivers.length || 1)).toFixed(2)),
+    distance: Math.round(drivers.reduce((s: number, d: any) => s + d.total_distance_km, 0)),
   };
 
   const barData = drivers.slice(0, 8).map((d: any) => ({
     name: d.name !== "Unassigned" ? d.name.split(" ")[0] : d.vehicle,
-    trips: Math.round(d.completed_routes * mult),
+    trips: d.completed_routes,
+  }));
+
+  // Real per-driver on-time % (not a fabricated weekly time series — the API
+  // returns a current snapshot, not history).
+  const onTimeByDriver = drivers.slice(0, 8).map((d: any) => ({
+    name: d.name !== "Unassigned" ? d.name.split(" ")[0] : d.vehicle,
+    onTime: d.on_time_pct,
   }));
 
   const selectStyle: React.CSSProperties = {
@@ -191,13 +188,6 @@ function DriverAnalyticsView() {
         <div style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "10px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", flex: 1, minWidth: 200 }}>
           <Filter size={15} color={T.mute} />
           <span style={{ fontSize: 13, fontWeight: 700, color: T.text, marginRight: "auto" }}>Advanced filters</span>
-          <div style={{ position: "relative" }}>
-            <Calendar size={13} style={{ position: "absolute", left: 8, top: 9, color: T.mute, pointerEvents: "none" }} />
-            <select value={dateRange} onChange={e => setDateRange(e.target.value)} style={{ ...selectStyle, paddingLeft: 26 }}>
-              {DATE_RANGES.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
-            <ChevronDown size={11} style={{ position: "absolute", right: 6, top: 10, color: T.mute, pointerEvents: "none" }} />
-          </div>
           <div style={{ position: "relative" }}>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
               <option value="All">Fleet: All</option>
@@ -218,8 +208,8 @@ function DriverAnalyticsView() {
             style={{ width: "100%", background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "11px 14px 11px 36px", fontSize: 13, color: T.text, outline: "none", fontFamily: fontBody, boxSizing: "border-box" }}
           />
         </div>
-        {(search || statusFilter !== "All" || dateRange !== "30d") && (
-          <button onClick={() => { setSearch(""); setStatusFilter("All"); setDateRange("30d"); }} style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "0 16px", color: T.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        {(search || statusFilter !== "All") && (
+          <button onClick={() => { setSearch(""); setStatusFilter("All"); }} style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "0 16px", color: T.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <RotateCcw size={13} /> Reset
           </button>
         )}
@@ -230,7 +220,6 @@ function DriverAnalyticsView() {
         <MetricCard icon={Route} label="Trips Completed" value={kpis.trips.toLocaleString("en-IN")} />
         <MetricCard icon={Clock} label="On-time %" value={kpis.onTime + "%"} />
         <MetricCard icon={Star} label="Avg Driver Rating" value={kpis.rating} />
-        <MetricCard icon={AlertTriangle} label="Incidents" value={kpis.incidents} />
         <MetricCard icon={Gauge} label="Total Distance" value={`${kpis.distance.toLocaleString("en-IN")} km`} />
       </div>
 
@@ -252,21 +241,21 @@ function DriverAnalyticsView() {
         {/* Charts */}
         <div style={{ display: "flex", gap: 18, height: 260, marginBottom: 20 }}>
           <div style={{ flex: 1, background: '#fff', borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <h4 style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>Weekly Punctuality Trend</h4>
+            <h4 style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>On-time % by Driver</h4>
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={driverTrend} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
+              <BarChart data={onTimeByDriver} margin={{ top: 5, right: 8, left: -10, bottom: 0 }} barCategoryGap="30%">
                 <defs>
                   <linearGradient id="drvGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#fde68a" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#fde68a" stopOpacity={0.7} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[75, 100]} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} unit="%" />
+                <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} unit="%" />
                 <Tooltip contentStyle={{ ...lightTt, fontSize: 13 }} formatter={(v: any) => [`${v}%`, 'On-time']} />
-                <Area type="monotone" dataKey="onTime" stroke="#f59e0b" strokeWidth={3} fill="url(#drvGrad)" name="On-time %" dot={{ r: 3, fill: '#f59e0b', strokeWidth: 0 }} activeDot={{ r: 6, fill: '#d97706' }} />
-              </AreaChart>
+                <Bar dataKey="onTime" fill="url(#drvGrad)" radius={[6, 6, 0, 0]} name="On-time %" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
           <div style={{ flex: 1, background: '#fff', borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -331,12 +320,10 @@ function DriverAnalyticsView() {
    VENDOR ANALYTICS — standalone
 ═══════════════════════════════════════════════════════════════════════════════ */
 function VendorAnalyticsView() {
-  const [dateRange, setDateRange] = useState("30d");
   const [search, setSearch] = useState("");
   const [[sortKey, sortDir], setSort] = useState<[string, "asc" | "desc"]>(["deliveries", "desc"]);
 
   const { data: raw = [] } = useQuery({ queryKey: ["vendor-performance"], queryFn: () => analyticsAPI.vendorPerformance().then((d: any) => Array.isArray(d) ? d : []), refetchInterval: 30_000 });
-  const mult = DATE_RANGES.find(d => d.id === dateRange)?.mult || 1;
 
   const vendors = useMemo(() =>
     (raw as any[])
@@ -349,14 +336,22 @@ function VendorAnalyticsView() {
 
   const toggle = (k: string) => setSort([k, sortKey === k && sortDir === "desc" ? "asc" : "desc"]);
 
+  // All-time aggregates from the real vendor-performance rows. SLA and
+  // cost-per-delivery are averaged only over vendors that have a real value
+  // (no fulfilled/assigned requests yet -> null, excluded rather than
+  // treated as 0). No date-range multiplier and no damage-rate figure (no
+  // damage-tracking data source exists — see D2).
+  const vendorsWithSla = vendors.filter((v: any) => v.sla !== null);
+  const vendorsWithCost = vendors.filter((v: any) => v.costPerDelivery !== null);
   const kpis = {
-    deliveries: Math.round(vendors.reduce((s: number, v: any) => s + v.deliveries, 0) * mult),
-    sla:        Number((vendors.reduce((s: number, v: any) => s + v.sla, 0) / (vendors.length || 1)).toFixed(1)),
-    cost:       Number((vendors.reduce((s: number, v: any) => s + v.costPerDelivery, 0) / (vendors.length || 1)).toFixed(0)),
-    damage:     Number((vendors.reduce((s: number, v: any) => s + v.damageRate, 0) / (vendors.length || 1)).toFixed(2)),
+    deliveries: Math.round(vendors.reduce((s: number, v: any) => s + v.deliveries, 0)),
+    sla:        vendorsWithSla.length > 0 ? Number((vendorsWithSla.reduce((s: number, v: any) => s + v.sla, 0) / vendorsWithSla.length).toFixed(1)) : null,
+    cost:       vendorsWithCost.length > 0 ? Number((vendorsWithCost.reduce((s: number, v: any) => s + v.costPerDelivery, 0) / vendorsWithCost.length).toFixed(0)) : null,
   };
 
-  const barData = vendors.slice(0, 8).map((v: any) => ({ name: v.name.slice(0, 10), cost: v.costPerDelivery }));
+  const barData = vendorsWithCost.slice(0, 8).map((v: any) => ({ name: v.name.slice(0, 10), cost: v.costPerDelivery }));
+  // Real per-vendor SLA % (a current snapshot, not a fabricated weekly trend).
+  const slaByVendor = vendorsWithSla.slice(0, 8).map((v: any) => ({ name: v.name.slice(0, 10), sla: v.sla }));
 
   const selectStyle: React.CSSProperties = {
     background: T.panel, border: "none", fontSize: 13,
@@ -371,13 +366,6 @@ function VendorAnalyticsView() {
         <div style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "10px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", flex: 1, minWidth: 200 }}>
           <Filter size={15} color={T.mute} />
           <span style={{ fontSize: 13, fontWeight: 700, color: T.text, marginRight: "auto" }}>Advanced filters</span>
-          <div style={{ position: "relative" }}>
-            <Calendar size={13} style={{ position: "absolute", left: 8, top: 9, color: T.mute, pointerEvents: "none" }} />
-            <select value={dateRange} onChange={e => setDateRange(e.target.value)} style={{ ...selectStyle, paddingLeft: 26 }}>
-              {DATE_RANGES.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
-            <ChevronDown size={11} style={{ position: "absolute", right: 6, top: 10, color: T.mute, pointerEvents: "none" }} />
-          </div>
         </div>
         <div style={{ position: "relative", flex: 2, minWidth: 220 }}>
           <Search size={15} color={T.mute} style={{ position: "absolute", left: 13, top: 12 }} />
@@ -387,8 +375,8 @@ function VendorAnalyticsView() {
             style={{ width: "100%", background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "11px 14px 11px 36px", fontSize: 13, color: T.text, outline: "none", fontFamily: fontBody, boxSizing: "border-box" }}
           />
         </div>
-        {(search || dateRange !== "30d") && (
-          <button onClick={() => { setSearch(""); setDateRange("30d"); }} style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "0 16px", color: T.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        {search && (
+          <button onClick={() => setSearch("")} style={{ background: T.panel, border: `1px solid ${T.borderSoft}`, borderRadius: 14, padding: "0 16px", color: T.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             <RotateCcw size={13} /> Reset
           </button>
         )}
@@ -397,9 +385,8 @@ function VendorAnalyticsView() {
       {/* ── KPI cards ── */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
         <MetricCard icon={Package}      label="Total Deliveries"  value={kpis.deliveries.toLocaleString("en-IN")} />
-        <MetricCard icon={ShieldCheck}  label="SLA Compliance"    value={kpis.sla + "%"} />
-        <MetricCard icon={DollarSign}   label="Avg Cost / Delivery" value={`₹${kpis.cost.toLocaleString("en-IN")}`} />
-        <MetricCard icon={AlertTriangle} label="Damage Rate"       value={kpis.damage + "%"} />
+        <MetricCard icon={ShieldCheck}  label="SLA Compliance"    value={kpis.sla !== null ? kpis.sla + "%" : "—"} />
+        <MetricCard icon={DollarSign}   label="Avg Cost / Delivery" value={kpis.cost !== null ? `₹${kpis.cost.toLocaleString("en-IN")}` : "—"} />
         <MetricCard icon={Building2}    label="Active Vendors"    value={vendors.length} />
       </div>
 
@@ -421,21 +408,21 @@ function VendorAnalyticsView() {
         {/* Charts */}
         <div style={{ display: "flex", gap: 18, height: 260, marginBottom: 20 }}>
           <div style={{ flex: 1, background: '#fff', borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <h4 style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>SLA Compliance Trend</h4>
+            <h4 style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>SLA % by Vendor</h4>
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={vendorTrend} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
+              <BarChart data={slaByVendor} margin={{ top: 5, right: 8, left: -10, bottom: 0 }} barCategoryGap="30%">
                 <defs>
                   <linearGradient id="vndGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.04} />
+                    <stop offset="0%" stopColor="#0ea5e9" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.75} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="week" tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[80, 100]} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} unit="%" />
+                <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} unit="%" />
                 <Tooltip contentStyle={{ ...lightTt, fontSize: 13 }} formatter={(v: any) => [`${v}%`, 'SLA']} />
-                <Area type="monotone" dataKey="sla" stroke="#0ea5e9" strokeWidth={3} fill="url(#vndGrad)" name="SLA %" dot={{ r: 3, fill: '#0ea5e9', strokeWidth: 0 }} activeDot={{ r: 6, fill: '#0284c7' }} />
-              </AreaChart>
+                <Bar dataKey="sla" fill="url(#vndGrad)" radius={[6, 6, 0, 0]} name="SLA %" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
           <div style={{ flex: 1, background: '#fff', borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -481,8 +468,8 @@ function VendorAnalyticsView() {
                   <td style={{ padding: "10px 14px", fontWeight: 800, color: T.text }}>{v.name}</td>
                   <td style={{ padding: "10px 14px", color: T.sub }}>{v.region}</td>
                   <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700 }}>{v.deliveries}</td>
-                  <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: v.sla >= 90 ? T.green : v.sla >= 75 ? T.amber : T.red }}>{v.sla}%</td>
-                  <td style={{ padding: "10px 14px", textAlign: "right" }}>₹{v.costPerDelivery}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: v.sla === null ? T.mute : v.sla >= 90 ? T.green : v.sla >= 75 ? T.amber : T.red }}>{v.sla !== null ? `${v.sla}%` : "—"}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>{v.costPerDelivery !== null ? `₹${v.costPerDelivery}` : "—"}</td>
                   <td style={{ padding: "10px 14px" }}><StatusPill status={v.status} /></td>
                 </tr>
               ))}

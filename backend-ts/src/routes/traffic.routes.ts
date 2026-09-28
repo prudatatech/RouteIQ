@@ -34,6 +34,18 @@ router.post('/event', requireAuth, async (req: Request, res: Response) => {
     const severity = eventData.severity || 0.5;
     const eventType = eventData.event_type || 'jam';
 
+    // Haversine distance in km between two lat/lng points.
+    const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+      const R = 6371;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLng = ((lng2 - lng1) * Math.PI) / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+    // Same driving-speed assumption used by the optimization service's
+    // reoptimize fallback (backend-ts/src/routes/optimization.routes.ts).
+    const AVG_SPEED_KMPH = 40;
+
     // Fetch active routes with vehicles and stops
     const { data: activeRoutes } = await supabase
       .from('routes')
@@ -57,18 +69,59 @@ router.post('/event', requireAuth, async (req: Request, res: Response) => {
             .filter((s: any) => s.status === 'pending')
             .sort((a: any, b: any) => a.sequence - b.sequence);
 
-          if (pendingStops.length > 1) {
-            // Simulate a reroute: reverse the next two pending stops
-            const savedMinutes = Math.round(5 + severity * 20 + Math.random() * 10);
-            const newSequence = pendingStops.map((s: any) => s.delivery_point_id).reverse();
+          if (pendingStops.length > 1 && vehicleLat && vehicleLng) {
+            const stopCoord = (s: any) => {
+              const dp = s.delivery_points || {};
+              return { lat: dp.latitude ?? dp.lat ?? 0, lng: dp.longitude ?? dp.lng ?? 0 };
+            };
 
-            decisions.push({
-              vehicle_id: route.vehicle_id,
-              route_id: route.id,
-              trigger: `${eventType} detected at (${eventLat.toFixed(4)}, ${eventLng.toFixed(4)})`,
-              saved_minutes: savedMinutes,
-              new_stop_sequence: newSequence,
-            });
+            // Distance of the current (pre-event) stop order, starting from
+            // the vehicle's live position.
+            let originalKm = 0;
+            {
+              let curLat = vehicleLat, curLng = vehicleLng;
+              for (const s of pendingStops) {
+                const c = stopCoord(s);
+                if (c.lat && c.lng) { originalKm += haversineKm(curLat, curLng, c.lat, c.lng); curLat = c.lat; curLng = c.lng; }
+              }
+            }
+
+            // Real re-sequencing: greedy nearest-neighbour from the
+            // vehicle's live position, same approach as the optimization
+            // service's reoptimize fallback (read-only here — this only
+            // proposes a suggestion, it does not write the new sequence).
+            const unvisited = [...pendingStops];
+            const newSequence: string[] = [];
+            let optimizedKm = 0;
+            let curLat = vehicleLat, curLng = vehicleLng;
+            while (unvisited.length > 0) {
+              let bestIdx = 0, bestDist = Infinity;
+              for (let i = 0; i < unvisited.length; i++) {
+                const c = stopCoord(unvisited[i]);
+                if (!c.lat || !c.lng) continue;
+                const d = haversineKm(curLat, curLng, c.lat, c.lng);
+                if (d < bestDist) { bestDist = d; bestIdx = i; }
+              }
+              const next = unvisited.splice(bestIdx, 1)[0];
+              const c = stopCoord(next);
+              if (c.lat && c.lng) { optimizedKm += bestDist === Infinity ? 0 : bestDist; curLat = c.lat; curLng = c.lng; }
+              newSequence.push(next.delivery_point_id);
+            }
+
+            const savedKm = originalKm - optimizedKm;
+            const savedMinutes = Math.round((savedKm / AVG_SPEED_KMPH) * 60);
+
+            // Only surface a suggestion when the recomputed order is a real
+            // improvement — no fabricated minimum savings.
+            if (savedMinutes > 0) {
+              decisions.push({
+                vehicle_id: route.vehicle_id,
+                route_id: route.id,
+                trigger: `${eventType} detected at (${eventLat.toFixed(4)}, ${eventLng.toFixed(4)})`,
+                saved_minutes: savedMinutes,
+                new_stop_sequence: newSequence,
+              });
+            }
           }
         }
       }

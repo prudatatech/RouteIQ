@@ -7,6 +7,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { sendError } from '../core/errors';
+import { FUEL_PRICE_PER_LITER } from '../services/analytics.service';
 
 const router = Router();
 
@@ -56,19 +57,23 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
 
     const totalDeliveries = routesToday.length;
     const completed = routesToday.filter((r: any) => r.status === 'completed').length;
-    const onTimeRate = totalDeliveries > 0 ? (completed / totalDeliveries) * 100 : 95.0;
-    const fuelToday = routesToday.reduce((sum: number, r: any) => sum + (r.estimated_fuel_liters || 0), 0) * 95;
+    // No fabricated default: with zero routes today there is nothing real
+    // to report an on-time rate for.
+    const onTimeRate = totalDeliveries > 0 ? (completed / totalDeliveries) * 100 : null;
+    const fuelToday = routesToday.reduce((sum: number, r: any) => sum + (r.estimated_fuel_liters || 0), 0) * FUEL_PRICE_PER_LITER;
     const avgScore = routesToday.reduce((sum: number, r: any) => sum + (r.optimization_score || 0.8), 0) / Math.max(1, routesToday.length);
     const fuelSavedPct = avgScore * 20;
 
+    // avg_eta_accuracy_pct and rerouting_events_today were derived from
+    // on_time_rate_pct / total_deliveries_today via arbitrary constants with
+    // no real backing data (no per-stop ETA vs actual-arrival timestamps,
+    // no persisted reroute-event log) — removed rather than faked (see D2).
     res.json({
       active_vehicles: activeVehicles,
-      on_time_rate_pct: parseFloat(onTimeRate.toFixed(1)),
+      on_time_rate_pct: onTimeRate !== null ? parseFloat(onTimeRate.toFixed(1)) : null,
       fuel_cost_today: parseFloat(fuelToday.toFixed(2)),
       fuel_saved_pct: parseFloat(fuelSavedPct.toFixed(1)),
       total_deliveries_today: totalDeliveries,
-      avg_eta_accuracy_pct: parseFloat((onTimeRate * 0.95).toFixed(1)),
-      rerouting_events_today: Math.max(0, Math.floor(totalDeliveries / 8)),
     });
   } catch (e: any) {
     sendError(req, res, e);

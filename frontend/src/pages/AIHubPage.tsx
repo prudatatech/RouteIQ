@@ -27,20 +27,16 @@ export default function AIHubPage() {
 
   const trafficMutation = useMutation({
     mutationFn: () => {
-      // Pick an active mission's current location to inject traffic, 
-      // otherwise fallback to a generic region if no missions are active.
-      const mission = activeMissions.length > 0 
-        ? activeMissions[Math.floor(Math.random() * activeMissions.length)]
-        : null;
-        
+      // Inject the simulated event at a real, currently-tracked vehicle's
+      // live position — the first active mission — rather than a random
+      // pick with a randomized offset, so the "affected vehicle" radius
+      // check in the backend is checked against a real location.
+      const mission = activeMissions.length > 0 ? activeMissions[0] : null;
+
       const lat = mission?.last_location ? mission.last_location[0] : 28.6139;
       const lng = mission?.last_location ? mission.last_location[1] : 77.2090;
-      
-      // Inject traffic anomaly near the vehicle (within ~1km radius)
-      const eventLat = lat + (Math.random() - 0.5) * 0.01;
-      const eventLng = lng + (Math.random() - 0.5) * 0.01;
-      
-      return trafficAPI.simulateEvent(eventLat, eventLng, 'accident', 0.8);
+
+      return trafficAPI.simulateEvent(lat, lng, 'accident', 0.8);
     },
     onSuccess: (data: any) => {
       toast.success(`Traffic Anomaly Injected! Agents calculating reroute...`);
@@ -74,30 +70,8 @@ export default function AIHubPage() {
     }
   });
 
-  const riskMutation = useMutation({
-    mutationFn: (vehicleId: string) => optimizationAPI.runRiskAnalysis(vehicleId),
-    onSuccess: (data: any) => {
-      toast.success('Risk Analysis Complete');
-      queryClient.invalidateQueries({ queryKey: ['ai-insights'] });
-    }
-  });
+  const tickerAlerts = insights.map((ins: any) => ins.insight);
 
-  const cargoMutation = useMutation({
-    mutationFn: (shipmentId: string) => optimizationAPI.runCargoMonitoring(shipmentId),
-    onSuccess: (data: any) => {
-      toast.success('Cargo Integrity Verified');
-      queryClient.invalidateQueries({ queryKey: ['ai-insights'] });
-    }
-  });
-
-  const tickerAlerts = insights.length > 0 
-    ? insights.map((ins: any) => ins.insight) 
-    : [
-        "SYSTEM: Synchronizing route clusters for zone BX-04...",
-        "FLEET: Predictive maintenance vector applied to vehicle ID #4002",
-        "GLOBAL: Calibrating demand distribution model v2.4"
-      ];
-  
   const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
   const isSparkGPSActive = !!activeMissions.length;
 
@@ -144,12 +118,19 @@ export default function AIHubPage() {
           </span>
         </div>
         <div className="flex animate-infinite-scroll whitespace-nowrap gap-16 items-center px-12">
-          {tickerAlerts.concat(tickerAlerts).map((alert: string, i: number) => (
-            <span key={i} className="text-text/90 text-xs font-bold tracking-tight flex items-center gap-4">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-              {alert}
+          {tickerAlerts.length > 0 ? (
+            tickerAlerts.concat(tickerAlerts).map((alert: string, i: number) => (
+              <span key={i} className="text-text/90 text-xs font-bold tracking-tight flex items-center gap-4">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                {alert}
+              </span>
+            ))
+          ) : (
+            <span className="text-muted text-xs font-bold tracking-tight flex items-center gap-4">
+              <div className="w-1.5 h-1.5 rounded-full bg-muted" />
+              No active alerts — fleet operating nominally
             </span>
-          ))}
+          )}
         </div>
       </div>
 
@@ -267,18 +248,10 @@ export default function AIHubPage() {
             />
           ))
         ) : (
-          <>
-            <AIInsightCard 
-              title="Global Optimization"
-              insight="Analyzing route clusters for efficiency leaks. Current aggregate performance: 94.2%."
-              score={94.2}
-              trend="up"
-            />
-            <div className="rounded-[2.5rem] bg-slate-50 border border-slate-200 border-dashed p-10 flex flex-col items-center justify-center text-center">
-              <Loader2 className="w-8 h-8 text-muted animate-spin mb-3" />
-              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Scanning next sector...</p>
-            </div>
-          </>
+          <div className="md:col-span-3 rounded-[2.5rem] bg-slate-50 border border-slate-200 border-dashed p-10 flex flex-col items-center justify-center text-center">
+            <ShieldCheck className="w-8 h-8 text-muted mb-3" />
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">No active anomalies — nothing to report</p>
+          </div>
         )}
       </div>
 

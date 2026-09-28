@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { vendorService } from '../services/vendor.service';
 
 const router = Router();
 
@@ -20,28 +21,36 @@ router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), as
 
     if (error) throw error;
 
-    // Format for mobile app
-    const openLoads = shipments?.map(s => {
-      const dp = Array.isArray(s.delivery_points) ? s.delivery_points[0] : s.delivery_points;
-      
-      // Calculate a mock price based on weight (e.g. $0.50 per kg)
-      const mockPrice = Math.round((s.total_weight_kg || 500) * 0.50);
-      
-      return {
-        id: s.id,
-        origin_name: s.origin_name || 'Warehouse Alpha',
-        origin_address: s.origin_address || 'Industrial Area',
-        origin_lat: s.origin_lat || 19.0760,
-        origin_lng: s.origin_lng || 72.8777,
-        destination_name: dp?.name || 'Customer Location',
-        destination_address: dp?.address || 'Unknown Address',
-        destination_lat: dp?.latitude || 19.1,
-        destination_lng: dp?.longitude || 72.9,
-        weight_kg: s.total_weight_kg || dp?.demand_kg || 100,
-        price_usd: mockPrice,
-        priority: s.priority
-      };
-    }) || [];
+    // Real market rate (₹/kg), derived from recent assigned vendor shipments
+    // (falls back to a documented default inside vendorService when there's
+    // no recent data — see getMarketRates).
+    const { avg_cost_per_kg: ratePerKg } = await vendorService.getMarketRates();
+
+    // Only surface loads that have real pickup/drop-off coordinates — no
+    // invented default location.
+    const openLoads = (shipments || [])
+      .map(s => {
+        const dp = Array.isArray(s.delivery_points) ? s.delivery_points[0] : s.delivery_points;
+        return { s, dp };
+      })
+      .filter(({ s, dp }) => s.origin_lat != null && s.origin_lng != null && dp?.latitude != null && dp?.longitude != null)
+      .map(({ s, dp }) => {
+        const weightKg = s.total_weight_kg || dp?.demand_kg || 100;
+        return {
+          id: s.id,
+          origin_name: s.origin_name || 'Warehouse Alpha',
+          origin_address: s.origin_address || 'Industrial Area',
+          origin_lat: s.origin_lat,
+          origin_lng: s.origin_lng,
+          destination_name: dp?.name || 'Customer Location',
+          destination_address: dp?.address || 'Unknown Address',
+          destination_lat: dp.latitude,
+          destination_lng: dp.longitude,
+          weight_kg: weightKg,
+          price_inr: Math.round(weightKg * ratePerKg),
+          priority: s.priority
+        };
+      });
 
     res.json({ loads: openLoads });
   } catch (e: any) {

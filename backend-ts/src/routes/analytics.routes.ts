@@ -104,8 +104,7 @@ router.post('/sync-sparkgps', requireAuth, requireRole(...STAFF_ROLES), async (r
       await SparkGPSService.fetchAndSync();
       res.json({ status: 'success', message: 'SparkGPS live sync complete' });
     } else {
-      await SparkGPSService.mockSyncForDemo();
-      res.json({ status: 'success', message: 'SparkGPS Mock Sync (Demonstration Mode) complete' });
+      res.json({ status: 'not_configured', message: 'SparkGPS credentials are not configured; no sync was performed.' });
     }
   } catch (e: any) {
     sendError(req, res, e);

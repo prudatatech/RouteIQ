@@ -3,7 +3,8 @@
  * Ports: backend/app/services/spark_gps_service.py
  * 
  * Handles integration with the SparkGPS (Roadcast) API.
- * Includes real-time telemetry sync and mock mode for demo.
+ * When credentials are not configured, sync is a no-op — nothing is
+ * written to the database.
  */
 import { supabase } from '../core/supabase';
 import { TelemetryService } from './telemetry.service';
@@ -24,8 +25,7 @@ export class SparkGPSService {
     }
 
     if (!token) {
-      console.warn('SparkGPS API Token or credentials missing. Falling back to mock sync.');
-      await SparkGPSService.mockSyncForDemo();
+      console.warn('SparkGPS API Token or credentials missing. Sync skipped — nothing written.');
       return;
     }
 
@@ -50,7 +50,6 @@ export class SparkGPSService {
 
       // 3. Process and ingest
       let syncedCount = 0;
-      const targetPlates = new Set(['HR38AC1276', 'HR38AC1658']);
 
       for (const item of externalData) {
         const deviceId = item.device_id || item.imei;
@@ -65,10 +64,6 @@ export class SparkGPSService {
         }
 
         if (vehicle) {
-          if (targetPlates.has(plate)) {
-            console.log(`MATCH: Found hardware data for target vehicle ${rawPlate}`);
-          }
-
           const telemetryData = {
             vehicle_id: vehicle.id,
             latitude: parseFloat(item.lat || '0'),
@@ -91,8 +86,6 @@ export class SparkGPSService {
 
           await TelemetryService.ingestTelemetry(telemetryData);
           syncedCount++;
-        } else if (targetPlates.has(plate)) {
-          console.warn(`MISS: Target plate ${rawPlate} found in API but no vehicle matched in database.`);
         }
       }
 
@@ -161,81 +154,5 @@ export class SparkGPSService {
       console.error(`HTTP Request to SparkGPS failed: ${e.message}`);
     }
     return [];
-  }
-
-  /**
-   * Simulates SparkGPS data for local testing.
-   * Moves vehicles towards their next pending stop on active routes.
-   */
-  static async mockSyncForDemo(): Promise<void> {
-    // Fetch active routes with vehicle and stops
-    const { data: activeRoutes } = await supabase
-      .from('routes')
-      .select('*, vehicles(*), route_stops(*, delivery_points(*))')
-      .eq('status', 'active');
-
-    if (!activeRoutes || activeRoutes.length === 0) {
-      console.log('No active routes found for mock sync.');
-      return;
-    }
-
-    for (const route of activeRoutes) {
-      // 1. Get current location from latest telemetry
-      const { data: telData } = await supabase
-        .from('telemetry')
-        .select('latitude, longitude')
-        .eq('vehicle_id', route.vehicle_id)
-        .order('timestamp', { ascending: false })
-        .limit(1);
-
-      const latestTele = telData?.[0];
-      let currLat = latestTele?.latitude || route.vehicles?.latitude || 28.6139;
-      let currLng = latestTele?.longitude || route.vehicles?.longitude || 77.2090;
-
-      // 2. Find next pending stop
-      const stops = (route.route_stops || []).sort((a: any, b: any) => a.sequence - b.sequence);
-      const nextStop = stops.find((s: any) => s.status === 'pending');
-
-      let newLat: number, newLng: number, speed: number;
-
-      if (nextStop?.delivery_points) {
-        const targetLat = nextStop.delivery_points.latitude;
-        const targetLng = nextStop.delivery_points.longitude;
-
-        // Move slightly towards target (0.1 * distance per tick, capped)
-        const stepLat = (targetLat - currLat) * 0.1;
-        const stepLng = (targetLng - currLng) * 0.1;
-        const limit = 0.005;
-
-        newLat = currLat + Math.max(-limit, Math.min(limit, stepLat));
-        newLng = currLng + Math.max(-limit, Math.min(limit, stepLng));
-        speed = 45.0 + Math.floor(Math.random() * 25);
-      } else {
-        // No next stop — idle
-        newLat = currLat + (Math.random() - 0.5) * 0.0002;
-        newLng = currLng + (Math.random() - 0.5) * 0.0002;
-        speed = 0;
-      }
-
-      // 3. Update vehicle and ingest telemetry
-      await supabase
-        .from('vehicles')
-        .update({
-          latitude: newLat,
-          longitude: newLng,
-          last_sync: new Date().toISOString(),
-        })
-        .eq('id', route.vehicle_id);
-
-      await TelemetryService.ingestTelemetry({
-        vehicle_id: route.vehicle_id,
-        latitude: newLat,
-        longitude: newLng,
-        speed_kmph: speed,
-        heading: Math.random() * 360,
-      });
-    }
-
-    console.log(`Mock sync complete for ${activeRoutes.length} active routes.`);
   }
 }

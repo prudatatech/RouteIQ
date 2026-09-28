@@ -87,7 +87,9 @@ export default function DashboardPage() {
   const offlineVehicles = activeVehicles.filter((v: any) => v.status === 'offline')
   const incidentVehicles = activeVehicles.filter((v: any) => v.status === 'maintenance')
   const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
-  const onTimeRate = kpis?.on_time_rate_pct?.toFixed(0) || '95'
+  // No fabricated fallback: on_time_rate_pct is null when there is no route
+  // data for today to compute a real rate from.
+  const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
   const openIncidents = sosAlerts.filter((a: any) => a.status !== 'resolved').length
 
   // Needs attention items
@@ -211,8 +213,8 @@ export default function DashboardPage() {
           },
           {
             label: 'On-time delivery',
-            value: `${onTimeRate}%`,
-            sub: 'Last 30 days',
+            value: kpisLoading ? '—' : (onTimeRate !== null ? `${onTimeRate}%` : '—'),
+            sub: 'Today',
             highlight: false,
             color: 'emerald',
             icon: Clock,

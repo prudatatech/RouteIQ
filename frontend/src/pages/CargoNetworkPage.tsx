@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Network, Truck, Shield, Zap, TrendingUp, BarChart3, Clock, Lock, 
-  AlertTriangle, MapPin, User, FileCheck, RefreshCw, Play, Check, 
-  HelpCircle, Activity, FileText, CloudRain, Loader2, Thermometer,
-  ShieldAlert, LockKeyhole, Landmark, Info
+import {
+  Network, Truck, Shield, Zap, TrendingUp, BarChart3,
+  AlertTriangle, FileCheck, RefreshCw, Play, Check,
+  FileText, Loader2, Thermometer,
+  ShieldAlert, LockKeyhole
 } from 'lucide-react'
 import { cargoAPI, vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import LiveMap from '@/components/map/LiveMap'
-import { useCargoStore } from '@/store/cargoStore'
 import { useAuthStore } from '@/store/authStore'
+
+interface CargoVehicle {
+  id: string
+  plate_number: string
+  latitude?: number | null
+  longitude?: number | null
+  status: string
+  vehicle_type?: string
+  cargo_types?: string[]
+}
 
 export default function CargoNetworkPage() {
   const queryClient = useQueryClient()
@@ -29,9 +38,9 @@ export default function CargoNetworkPage() {
   })
 
   // Fetch live vehicles for the map
-  const { data: vehiclesData = [] } = useQuery({
+  const { data: vehiclesData = [] } = useQuery<CargoVehicle[]>({
     queryKey: ['live-vehicles'],
-    queryFn: vehiclesAPI.getAll,
+    queryFn: vehiclesAPI.list,
     refetchInterval: 10000,
   })
 
@@ -51,13 +60,22 @@ export default function CargoNetworkPage() {
     }
   })
 
-  // 4. Mutation: Trigger simulated alert
+  // 4. Mutation: Trigger a manual security alert against a real vehicle
+  const [alertVehicleId, setAlertVehicleId] = useState('')
+  useEffect(() => {
+    if (vehiclesData.length > 0 && !alertVehicleId) {
+      setAlertVehicleId(vehiclesData[0].id)
+    }
+  }, [vehiclesData])
   const triggerAlertMutation = useMutation({
-    mutationFn: (payload: { type: string, plate_number: string, message: string }) => 
-      cargoAPI.triggerAlert(payload.type, payload.plate_number, payload.message),
+    mutationFn: (payload: { type: string, vehicle_id: string, message: string }) =>
+      cargoAPI.triggerAlert(payload.type, payload.vehicle_id, payload.message),
     onSuccess: (data) => {
       toast.error(`Control Tower Alert: ${data.alert.message}`)
       queryClient.invalidateQueries({ queryKey: ['cargo-alerts'] })
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to trigger alert')
     }
   })
 
@@ -314,8 +332,7 @@ export default function CargoNetworkPage() {
                       </div>
                       <p className="text-[11px] text-text-muted mt-1 leading-snug">{alert.message}</p>
                       
-                      <div className="mt-2.5 flex justify-between items-center">
-                        <span className="text-[9px] font-bold text-primary">CARGO: {alert.cargo_id}</span>
+                      <div className="mt-2.5 flex justify-end items-center">
                         {alert.status === 'active' ? (
                           <button
                             onClick={() => resolveAlertMutation.mutate(alert.id)}
@@ -344,27 +361,19 @@ export default function CargoNetworkPage() {
           {activeTab === 'control-tower' && (
             <div className="space-y-6">
               
-              {/* Fleet-wide optimization KPIs */}
+              {/* Live fleet & cargo-security KPIs — computed from real, already-fetched data */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { title: 'Fill utilization', value: '88.4%', change: '+12%', icon: BarChart3, trend: 'up' },
-                  { title: 'Backhaul matches', value: '74.2%', change: '+34%', icon: TrendingUp, trend: 'up' },
-                  { title: 'Tamper frequency', value: '0.04%', change: '-90%', icon: Shield, trend: 'down' },
-                  { title: 'CO2 reduced', value: '14.2 tons', change: 'Live', icon: Clock, trend: 'up' }
+                  { title: 'Live vehicles', value: String(vehiclesData.length), icon: Truck },
+                  { title: 'Active security alerts', value: String(alerts.length), icon: Shield },
+                  { title: 'Critical alerts', value: String(alerts.filter((a: any) => a.severity === 'critical').length), icon: AlertTriangle },
+                  { title: 'Pooling demands (live)', value: String(scenarios?.pooling?.demands?.length || 0), icon: Network }
                 ].map((kpi, i) => {
                   const Icon = kpi.icon
                   return (
                     <div key={i} className="p-4 rounded-2xl bg-surface border border-border relative overflow-hidden">
                       <div className="text-[9px] font-black text-text-muted uppercase tracking-wider mb-2">{kpi.title}</div>
-                      <div className="flex items-baseline justify-between">
-                        <div className="text-xl font-black text-text font-heading">{kpi.value}</div>
-                        <span className={clsx(
-                          "text-[9px] font-black px-1.5 py-0.5 rounded-md",
-                          kpi.trend === 'up' ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
-                        )}>
-                          {kpi.change}
-                        </span>
-                      </div>
+                      <div className="text-xl font-black text-text font-heading">{kpi.value}</div>
                       <div className="absolute right-2 bottom-2 opacity-5">
                         <Icon size={40} className="text-text" />
                       </div>
@@ -373,113 +382,36 @@ export default function CargoNetworkPage() {
                 })}
               </div>
 
-              {/* Real-time Load Matching Grid */}
+              {/* Real-time backhaul opportunities, sourced from live shipment data */}
               <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl">
                 <div className="flex justify-between items-center mb-6">
                   <div>
-                    <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none">Dynamic Matching Engine</h2>
-                    <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mt-2">Active Shipper Demands & Capacity Pairs</p>
+                    <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none">Live Backhaul Opportunities</h2>
+                    <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mt-2">Pending shipments eligible for return-trip matching</p>
                   </div>
                   <span className="px-3 py-1 bg-primary/10 border border-primary/20 text-primary text-[9px] font-mono rounded-full tracking-widest uppercase">
-                    34 active orders
+                    {scenarios?.backhaul?.opportunities?.length || 0} open
                   </span>
                 </div>
 
-                <div className="space-y-3">
-                  {[
-                    { shipper: 'Glaxo Pharma', weight: '2,800 kg', route: 'Surat ➔ Delhi', type: 'Cold-Chain (Pharma)', match: 98, status: 'Matching opportunity' },
-                    { shipper: 'Jaipur Crafts', weight: '1,200 kg', route: 'Jaipur ➔ Ahmedabad', type: 'General Dry Bulk', match: 89, status: 'Secondary corridor fit' },
-                    { shipper: 'Ajmer Textiles', weight: '3,500 kg', route: 'Ajmer ➔ Gurgaon', type: 'Dry Bulk Cargo', match: 92, status: 'Return trip match' },
-                    { shipper: 'Indo-Steel Corp', weight: '12,500 kg', route: 'Vadodara ➔ Mumbai', type: 'Heavy Industrial', match: 42, status: 'Volume Limit exceeded' }
-                  ].map((item, i) => (
-                    <div key={i} className="p-4 rounded-2xl bg-surface2/30 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-primary/40 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className={clsx(
-                          "w-11 h-11 rounded-xl flex items-center justify-center font-bold text-xs shadow-md border",
-                          item.match > 90 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                          item.match > 80 ? "bg-primary/10 text-primary border-primary/20" :
-                          "bg-red-500/10 text-red-400 border-red-500/20"
-                        )}>
-                          {item.match}%
-                        </div>
+                {scenarios?.backhaul?.opportunities?.length ? (
+                  <div className="space-y-3">
+                    {scenarios.backhaul.opportunities.map((item: any) => (
+                      <div key={item.id} className="p-4 rounded-2xl bg-surface2/30 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-primary/40 transition-colors">
                         <div>
                           <div className="text-xs font-black text-text uppercase tracking-tight">{item.shipper}</div>
-                          <div className="text-[10px] text-text-muted mt-1 font-mono uppercase">{item.route} · {item.weight} · {item.type}</div>
+                          <div className="text-[10px] text-text-muted mt-1 font-mono uppercase">{item.origin} ➔ {item.destination} · {item.weight_kg} kg · {item.cargo_type}</div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between md:justify-end gap-4">
                         <div className="text-right">
-                          <div className="text-[9px] font-black text-text-muted uppercase tracking-widest">Engine Status</div>
-                          <div className={clsx(
-                            "text-[10px] font-bold mt-0.5",
-                            item.match > 90 ? "text-emerald-400" : item.match > 80 ? "text-primary" : "text-red-400"
-                          )}>
-                            {item.status}
-                          </div>
+                          <div className="text-[9px] font-black text-text-muted uppercase tracking-widest">Est. Revenue</div>
+                          <div className="text-xs font-bold text-primary">₹{item.revenue?.toLocaleString()}</div>
                         </div>
-                        <button className="px-4 py-2 bg-surface2 hover:bg-surface border border-border text-text text-[10px] font-black uppercase rounded-xl tracking-tight transition-colors">
-                          Inspect Match
-                        </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Smart Warehouse-to-Truck Coordination */}
-              <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none">Smart Warehouse Coordination</h2>
-                    <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mt-2">Loading Dock Scheduling & Queue Optimization</p>
+                    ))}
                   </div>
-                  <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full font-mono uppercase tracking-widest">
-                    Opt-mode: Active
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[
-                    { dock: 'Dock Bay 01', truck: 'HR-55A-1102', status: 'Loading', progress: 85, eta: '12m remain' },
-                    { dock: 'Dock Bay 02', truck: 'MH-02Q-9908', status: 'Pre-Staging', progress: 40, eta: '28m remain' },
-                    { dock: 'Dock Bay 03', truck: 'KA-51N-3421', status: 'Queued (Ready)', progress: 0, eta: 'Auto-Dock' }
-                  ].map((bay, i) => (
-                    <div key={i} className="p-4 rounded-xl bg-surface2/50 border border-border flex flex-col justify-between">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-xs font-black text-text uppercase">{bay.dock}</span>
-                        <span className={clsx(
-                          "px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider",
-                          bay.status === 'Loading' ? "bg-amber-500/10 text-amber-400" :
-                          bay.status === 'Pre-Staging' ? "bg-primary/10 text-primary" :
-                          "bg-emerald-500/10 text-emerald-400"
-                        )}>
-                          {bay.status}
-                        </span>
-                      </div>
-                      
-                      <div className="text-[10px] font-mono text-text-muted mb-4">
-                        Truck Plate: <span className="text-text font-bold">{bay.truck}</span>
-                      </div>
-
-                      {bay.progress > 0 && (
-                        <div className="space-y-1.5 mb-3">
-                          <div className="flex justify-between text-[8px] text-text-muted uppercase">
-                            <span>Loading Bar</span>
-                            <span>{bay.progress}%</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden border border-border">
-                            <div className="h-full bg-primary" style={{ width: `${bay.progress}%` }} />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="text-[9px] font-mono text-text-muted border-t border-border/40 pt-2 text-right">
-                        Action ETA: <span className="text-text font-bold">{bay.eta}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                ) : (
+                  <div className="py-8 text-center text-text-muted text-xs uppercase font-mono tracking-widest opacity-40">No pending shipments available for backhaul matching.</div>
+                )}
               </div>
             </div>
           )}
@@ -658,13 +590,8 @@ export default function CargoNetworkPage() {
                         
                         <div className="text-right">
                           <div className="text-xs font-black text-text">₹{opp.revenue.toLocaleString()}</div>
-                          <div className={clsx(
-                            "text-[8px] font-black uppercase mt-1",
-                            opp.profitability_score > 90 ? "text-emerald-400" :
-                            opp.profitability_score > 70 ? "text-yellow-500" :
-                            "text-red-500"
-                          )}>
-                            Match: {opp.profitability_score}%
+                          <div className="text-[8px] font-black uppercase mt-1 text-text-muted">
+                            {opp.weight_kg} kg
                           </div>
                         </div>
                       </div>
@@ -680,7 +607,7 @@ export default function CargoNetworkPage() {
                         <div className="flex justify-between items-center border-b border-border/40 pb-3">
                           <span className="text-xs font-black uppercase text-text tracking-widest">Matched Vector Details</span>
                           <span className="text-[10px] font-black uppercase text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">
-                            Profitability Index: {backhaulResult.profitability_score}%
+                            Net Profit: ₹{backhaulResult.net_profit_inr?.toLocaleString()}
                           </span>
                         </div>
 
@@ -842,45 +769,62 @@ export default function CargoNetworkPage() {
                 </div>
               </div>
 
-              {/* Geo-fencing, Deviations, and Tamper Control Simulator */}
+              {/* Manual security alert — a real operator action against a real vehicle */}
               {(role === 'admin' || role === 'superadmin') && (
                 <div className="p-8 rounded-[2.5rem] bg-surface border border-border shadow-2xl relative">
-                  <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none mb-2">Simulate Hardware Alarms</h2>
-                  <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mb-6">Operator intervention portal: trigger anomalies to inspect agent response</p>
-  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                      onClick={() => {
-                        triggerAlertMutation.mutate({
-                          type: 'tamper_detected',
-                          plate_number: 'MH-12Q-4491',
-                          message: 'Intrusion Alert: Lock seal breached at coordinate (19.0760, 72.8777).'
-                        })
-                        setMapSimulation('deviation')
-                      }}
-                      disabled={triggerAlertMutation.isPending}
-                      className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
-                    >
-                      <LockKeyhole size={16} />
-                      Trigger Lock Tamper Alarm
-                    </button>
-  
-                    <button
-                      onClick={() => {
-                        triggerAlertMutation.mutate({
-                          type: 'geo_fence_breach',
-                          plate_number: 'HR-55B-9022',
-                          message: 'Geo-fence deviation detected: Truck shifted off highway corridor NH-48 near Vadodara.'
-                        })
-                        setMapSimulation('deviation')
-                      }}
-                      disabled={triggerAlertMutation.isPending}
-                      className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
-                    >
-                      <ShieldAlert size={16} />
-                      Trigger Geo-Fence Deviation
-                    </button>
-                  </div>
+                  <h2 className="text-xl font-black text-text uppercase tracking-tight leading-none mb-2">Raise Manual Security Alert</h2>
+                  <p className="text-[10px] text-text-muted font-bold tracking-[0.2em] uppercase mb-6">Operator intervention: log a tamper or geo-fence anomaly against a live vehicle</p>
+
+                  {vehiclesData.length === 0 ? (
+                    <div className="py-6 text-center text-text-muted text-xs uppercase font-mono tracking-widest opacity-40">No live vehicles available</div>
+                  ) : (
+                    <>
+                      <div className="mb-4">
+                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest block mb-2">Vehicle</label>
+                        <select
+                          value={alertVehicleId}
+                          onChange={e => setAlertVehicleId(e.target.value)}
+                          className="w-full h-11 bg-surface2 border border-border rounded-xl px-3 text-xs font-bold text-text focus:outline-none focus:border-primary"
+                        >
+                          {vehiclesData.map((v: CargoVehicle) => (
+                            <option key={v.id} value={v.id}>{v.plate_number}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button
+                          onClick={() => {
+                            triggerAlertMutation.mutate({
+                              type: 'tamper_detected',
+                              vehicle_id: alertVehicleId,
+                              message: 'Lock tamper alarm raised by operator.'
+                            })
+                          }}
+                          disabled={triggerAlertMutation.isPending || !alertVehicleId}
+                          className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 disabled:opacity-50 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
+                        >
+                          <LockKeyhole size={16} />
+                          Log Lock Tamper Alert
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            triggerAlertMutation.mutate({
+                              type: 'geo_fence_breach',
+                              vehicle_id: alertVehicleId,
+                              message: 'Geo-fence breach raised by operator.'
+                            })
+                          }}
+                          disabled={triggerAlertMutation.isPending || !alertVehicleId}
+                          className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 disabled:opacity-50 rounded-2xl font-black text-[11px] tracking-widest uppercase transition-all flex items-center justify-center gap-3"
+                        >
+                          <ShieldAlert size={16} />
+                          Log Geo-Fence Alert
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

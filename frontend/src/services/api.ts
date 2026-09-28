@@ -109,10 +109,6 @@ export const optimizationAPI = {
   predictETA: (data: any) => api.post('/optimize/eta', data).then(r => r.data),
   incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`).then(r => r.data),
   reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`).then(r => r.data),
-  runRiskAnalysis: (vehicleId: string) =>
-    api.post(`/agents/risk-analysis/${vehicleId}`).then(r => r.data),
-  runCargoMonitoring: (shipmentId: string) =>
-    api.post(`/agents/cargo-monitoring/${shipmentId}`).then(r => r.data),
 }
 
 export const dashboardAPI = {
@@ -138,8 +134,8 @@ export const trafficAPI = {
 export const cargoAPI = {
   scenarios: () => api.get('/cargo/scenarios').then(r => r.data),
   securityAlerts: () => api.get('/cargo/security-alerts').then(r => r.data),
-  triggerAlert: (type: string, plateNumber: string, message: string) =>
-    api.post('/cargo/trigger-alert', { type, plate_number: plateNumber, message }).then(r => r.data),
+  triggerAlert: (type: string, vehicleId: string, message: string) =>
+    api.post('/cargo/trigger-alert', { type, vehicle_id: vehicleId, message }).then(r => r.data),
   resolveAlert: (alertId: string) =>
     api.post(`/cargo/resolve-alert/${alertId}`).then(r => r.data),
   optimizePooling: (demands: any[]) =>

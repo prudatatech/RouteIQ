@@ -15,36 +15,22 @@ import { MapplsService } from '../services/mappls.service';
 
 const router = Router();
 
-// ── Static simulation scenarios (identical to Python) ──────
-const SCENARIOS = {
-  backhaul: {
-    title: 'Delhi-Mumbai Return Corridor Optimization',
-    description: 'A 20-ton truck carrying cargo from Delhi to Mumbai delivers 15 tons, leaving 5 tons of available capacity for its return journey. The engine matches backhaul orders returning along the corridor.',
-    truck: {
-      plate_number: 'DL-1GC-4922',
-      capacity_kg: 20000,
-      used_capacity_kg: 15000,
-      available_capacity_kg: 5000,
-      route: 'Delhi ➔ Mumbai (Return via Surat, Vadodara, Jaipur)',
-      cargo_type: 'cold_chain',
-    },
-    opportunities: [
-      { id: 'opp-01', shipper: 'Astra Pharma', origin: 'Surat', destination: 'Jaipur', weight_kg: 3000, cargo_type: 'cold_chain', revenue: 45000, deviation_km: 18, profitability_score: 96, compatibility: 'Excellent (Cold-Chain Verified & Capacity Fits)' },
-      { id: 'opp-02', shipper: 'Veda Logistics', origin: 'Vadodara', destination: 'Delhi', weight_kg: 4500, cargo_type: 'cold_chain', revenue: 68000, deviation_km: 5, profitability_score: 98, compatibility: 'Excellent (High Revenue, Almost Direct Route)' },
-      { id: 'opp-03', shipper: 'Apex Heavy Machinery', origin: 'Mumbai Outskirts', destination: 'Gurgaon', weight_kg: 8000, cargo_type: 'heavy_machinery', revenue: 110000, deviation_km: 35, profitability_score: 0, compatibility: 'Incompatible (Exceeds 5-Ton Limit & Cargo Class Mismatch)' },
-      { id: 'opp-04', shipper: 'Nataraj Textiles', origin: 'Ahmedabad', destination: 'Jaipur', weight_kg: 2500, cargo_type: 'dry_bulk', revenue: 22000, deviation_km: 40, profitability_score: 74, compatibility: 'Good (Requires ventilation, minor route adjustment)' },
-    ],
-  },
-  pooling: {
-    title: 'Delhi-Rajasthan Collaborative Freight Pooling',
-    description: 'Consolidate three smaller shipments from different companies heading along the same corridor into a single multi-stop vehicle instead of dispatching three separate trucks.',
-    demands: [
-      { id: 'pool-dem-01', company: 'Company A (Aero Parts)', origin: 'Delhi', destination: 'Jaipur', weight_tons: 3.0, volume_cbm: 8.5, value_inr: 450000, urgency: 'High' },
-      { id: 'pool-dem-02', company: 'Company B (Bazaar Retail)', origin: 'Delhi', destination: 'Ajmer', weight_tons: 2.0, volume_cbm: 6.0, value_inr: 180000, urgency: 'Medium' },
-      { id: 'pool-dem-03', company: 'Company C (Craft Exports)', origin: 'Delhi', destination: 'Udaipur', weight_tons: 5.0, volume_cbm: 15.0, value_inr: 890000, urgency: 'Standard' },
-    ],
-  },
-};
+/**
+ * Fetch a real depot to use as the reference point for pooling/backhaul
+ * distance math. Returns null when no depot is configured — callers must
+ * treat that as "cannot compute" rather than falling back to a guessed
+ * location.
+ */
+async function getReferenceDepot(): Promise<{ id: string; name: string; latitude: number; longitude: number } | null> {
+  const { data } = await supabase
+    .from('depots')
+    .select('id, name, latitude, longitude')
+    .not('latitude', 'is', null)
+    .not('longitude', 'is', null)
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
 
 // ── GET /shipments ─────────────────────────────────────────
 router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
@@ -58,7 +44,7 @@ router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (req: R
 });
 
 // ── GET /scenarios ─────────────────────────────────────────
-router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (_req: Request, res: Response) => {
+router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { data: shipments, error } = await supabase
       .from('shipments')
@@ -104,9 +90,6 @@ router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (_req: 
       weight_kg: s.total_weight_kg || 3000,
       cargo_type: s.load_type === 'full' ? 'heavy_machinery' : 'dry_bulk',
       revenue: (s.total_weight_kg || 3000) * 15,
-      deviation_km: Math.floor(Math.random() * 50) + 5,
-      profitability_score: Math.floor(Math.random() * 30) + 70,
-      compatibility: 'Good',
       origin_lat: s.origin_lat,
       origin_lng: s.origin_lng,
       dest_lat: s.dest_lat,
@@ -117,28 +100,27 @@ router.get('/scenarios', requireAuth, requireRole(...STAFF_ROLES), async (_req: 
     const truck = v ? {
       plate_number: v.plate_number,
       capacity_kg: v.capacity_kg,
-      used_capacity_kg: Math.floor(v.capacity_kg * 0.75),
-      available_capacity_kg: Math.floor(v.capacity_kg * 0.25),
+      used_capacity_kg: Math.max(0, v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg)),
+      available_capacity_kg: v.available_capacity_kg ?? v.capacity_kg,
       route: 'Active Route',
       cargo_type: 'general',
-    } : SCENARIOS.backhaul.truck;
+    } : null;
 
     res.json({
       backhaul: {
         title: 'Dynamic Backhaul Matching',
         description: 'Live matching based on active vehicles and pending orders.',
         truck,
-        opportunities: backhaulOpportunities.length > 0 ? backhaulOpportunities : SCENARIOS.backhaul.opportunities
+        opportunities: backhaulOpportunities
       },
       pooling: {
         title: 'Dynamic Freight Pooling',
         description: 'Consolidate multiple active LTL orders into a single multi-stop run.',
-        demands: poolingDemands.length > 0 ? poolingDemands : SCENARIOS.pooling.demands
+        demands: poolingDemands
       }
     });
   } catch (e: any) {
-    // fallback
-    res.json(SCENARIOS);
+    sendError(req, res, e);
   }
 });
 
@@ -147,7 +129,7 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
   try {
     const { data: alerts, error } = await supabase
       .from('maintenance_alerts')
-      .select('*')
+      .select('*, vehicles(plate_number)')
       .eq('is_resolved', false);
 
     if (error) throw error;
@@ -157,6 +139,7 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
         id: a.id,
         timestamp: a.created_at,
         vehicle_id: a.vehicle_id,
+        plate_number: a.vehicles?.plate_number || null,
         type: a.alert_type,
         severity: a.severity,
         message: a.description,
@@ -187,9 +170,8 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
     }
 
     const alertType = req.body.type || 'tamper_detected';
-    const message = req.body.message || 'Simulated security alert triggered by operator.';
+    const message = req.body.message || 'Manual security alert triggered by operator.';
     const severity = alertType === 'tamper_detected' ? 'critical' : 'high';
-    const cargoId = `SH-${Math.floor(10000 + Math.random() * 90000)}`;
 
     const { data: inserted, error } = await supabase
       .from('maintenance_alerts')
@@ -214,7 +196,6 @@ router.post('/trigger-alert', requireAuth, requireRole('admin', 'superadmin', 'm
         type: alertType,
         severity,
         message,
-        cargo_id: cargoId,
         status: 'active',
       },
     });
@@ -261,24 +242,38 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       return;
     }
 
+    const missingCoords = demands.filter((d: any) => d.dest_lat == null || d.dest_lng == null);
+    if (missingCoords.length > 0) {
+      res.status(422).json({
+        detail: `Cannot compute a pooling route: missing destination coordinates for ${missingCoords.map((d: any) => d.company || d.id).join(', ')}`,
+      });
+      return;
+    }
+
+    const depot = await getReferenceDepot();
+    if (!depot) {
+      res.status(422).json({ detail: 'No depot is configured; cannot compute a pooling route.' });
+      return;
+    }
+
     const totalWeight = demands.reduce((s: number, d: any) => s + (d.weight_tons || 0), 0);
     const totalVolume = demands.reduce((s: number, d: any) => s + (d.volume_cbm || 0), 0);
 
     const mlPayload = {
       locations: [
-        { id: 'depot', lat: 28.6139, lng: 77.2090, demand_kg: 0 },
-        ...demands.map(d => ({
+        { id: 'depot', lat: depot.latitude, lng: depot.longitude, demand_kg: 0 },
+        ...demands.map((d: any) => ({
           id: d.id,
-          lat: d.dest_lat || (Math.random() * 2 + 25),
-          lng: d.dest_lng || (Math.random() * 2 + 73),
+          lat: d.dest_lat,
+          lng: d.dest_lng,
           demand_kg: (d.weight_tons || 1) * 1000
         }))
       ],
       vehicles: [{
         id: 'pool-truck',
         capacity_kg: 20000,
-        start_lat: 28.6139,
-        start_lng: 77.2090
+        start_lat: depot.latitude,
+        start_lng: depot.longitude
       }],
       algorithm: "ortools"
     };
@@ -293,36 +288,37 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       });
       if (resp.ok) mlData = await resp.json();
     } catch (e) {
-      console.warn('ML Service unreachable, using fallback calculations');
+      console.warn('ML Service unreachable for pooling optimization');
     }
 
     // Calculate real distances using Mappls
-    let separateTripsDistance = 1330.0;
-    let consolidatedDistance = mlData?.total_distance_km || 670.0;
+    let separateTripsDistance: number | null = null;
+    let consolidatedDistance: number | null = mlData?.total_distance_km ?? null;
+    const depotCoord = `${depot.longitude},${depot.latitude}`;
 
     try {
-      const coords = [`77.2090,28.6139`, ...demands.map((d: any) => `${d.dest_lng || 77.2},${d.dest_lat || 28.6}`)];
-      
+      const coords = [depotCoord, ...demands.map((d: any) => `${d.dest_lng},${d.dest_lat}`)];
+
       // 1. Separate trips: sum of distances from depot to each destination
-      const sepMatrix = await MapplsService.getDistanceMatrix(coords, [0], demands.map((_, i) => i + 1));
+      const sepMatrix = await MapplsService.getDistanceMatrix(coords, [0], demands.map((_: any, i: number) => i + 1));
       if (sepMatrix?.distances?.[0]) {
-        separateTripsDistance = sepMatrix.distances[0].reduce((sum: number, dist: number) => sum + (dist / 1000), 0);
+        const oneWay = sepMatrix.distances[0].reduce((sum: number, dist: number) => sum + (dist / 1000), 0);
         // Multiply by 2 for round trips if each truck must return to depot
-        separateTripsDistance *= 2; 
+        separateTripsDistance = oneWay * 2;
       }
 
       // 2. Consolidated route distance
       if (mlData?.routes?.[0]?.stop_ids) {
         const stopIds = mlData.routes[0].stop_ids;
         const routeCoords = stopIds.map((id: string) => {
-          if (id === 'depot') return `77.2090,28.6139`;
+          if (id === 'depot') return depotCoord;
           const d = demands.find((x: any) => x.id === id);
-          return `${d?.dest_lng || 77.2},${d?.dest_lat || 28.6}`;
+          return `${d?.dest_lng},${d?.dest_lat}`;
         });
-        
+
         const sources = Array.from({length: routeCoords.length - 1}, (_, i) => i);
         const destinations = Array.from({length: routeCoords.length - 1}, (_, i) => i + 1);
-        
+
         const poolMatrix = await MapplsService.getDistanceMatrix(routeCoords, sources, destinations);
         if (poolMatrix?.distances) {
           let totalDist = 0;
@@ -336,26 +332,38 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       console.warn('Mappls Distance Matrix error:', e.message);
     }
 
-    const separateTripsCost = separateTripsDistance * 42.0;
-    const consolidatedCost = consolidatedDistance * 52.0;
-    const distanceSaved = separateTripsDistance - consolidatedDistance;
+    if (separateTripsDistance == null || consolidatedDistance == null) {
+      res.status(502).json({ detail: 'Distance calculation is unavailable right now (ML/Mappls services unreachable). Try again shortly.' });
+      return;
+    }
+    const finalSeparateTripsDistance: number = separateTripsDistance;
+    const finalConsolidatedDistance: number = consolidatedDistance;
+
+    const separateTripsCost = finalSeparateTripsDistance * 42.0;
+    const consolidatedCost = finalConsolidatedDistance * 52.0;
+    const distanceSaved = finalSeparateTripsDistance - finalConsolidatedDistance;
     const costSaved = separateTripsCost - consolidatedCost;
     const savingsPct = costSaved > 0 ? ((costSaved / separateTripsCost) * 100.0) : 0;
     const co2SavedKg = distanceSaved * 0.85;
 
-    const stopsSequence = mlData?.routes?.[0]?.stop_ids?.map((id: string, idx: number) => {
-      if (id === 'depot') return { name: 'Origin Depot', type: 'Origin Pickup', load_in_kg: totalWeight * 1000 };
-      const d = demands.find(x => x.id === id);
-      return { 
-        name: d ? (d.destination || d.company) : id, 
-        type: 'Unload', 
-        unload_in_kg: d ? (d.weight_tons * 1000) : 0 
-      };
-    }) || [
-      { name: 'Delhi Depot', type: 'Origin Pickup', load_in_kg: totalWeight * 1000 },
-      { name: 'Destination 1', type: 'Partial Unload', unload_in_kg: 3000 },
-      { name: 'Final Unload', type: 'Final Unload', unload_in_kg: 2000 },
-    ];
+    const stopsSequence = mlData?.routes?.[0]?.stop_ids
+      ? mlData.routes[0].stop_ids.map((id: string) => {
+          if (id === 'depot') return { name: depot.name, type: 'Origin Pickup', load_in_kg: totalWeight * 1000 };
+          const d = demands.find((x: any) => x.id === id);
+          return {
+            name: d ? (d.destination || d.company) : id,
+            type: 'Unload',
+            unload_in_kg: d ? (d.weight_tons || 0) * 1000 : 0
+          };
+        })
+      : [
+          { name: depot.name, type: 'Origin Pickup', load_in_kg: totalWeight * 1000 },
+          ...demands.map((d: any) => ({
+            name: d.destination || d.company,
+            type: 'Unload',
+            unload_in_kg: (d.weight_tons || 0) * 1000
+          })),
+        ];
 
     const sharedDiscounts = demands.map((d: any) => {
       const origPrice = (d.weight_tons || 1) * 8000;
@@ -372,8 +380,8 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
     res.json({
       total_weight_tons: totalWeight,
       total_volume_cbm: totalVolume,
-      separate_trips_distance_km: parseFloat(separateTripsDistance.toFixed(1)),
-      consolidated_distance_km: parseFloat(consolidatedDistance.toFixed(1)),
+      separate_trips_distance_km: parseFloat(finalSeparateTripsDistance.toFixed(1)),
+      consolidated_distance_km: parseFloat(finalConsolidatedDistance.toFixed(1)),
       distance_saved_km: parseFloat(distanceSaved.toFixed(1)),
       separate_trips_cost_inr: parseFloat(separateTripsCost.toFixed(2)),
       consolidated_cost_inr: parseFloat(consolidatedCost.toFixed(2)),
@@ -382,7 +390,6 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       co2_saved_kg: parseFloat(co2SavedKg.toFixed(1)),
       stops_sequence: stopsSequence,
       shared_pricing: sharedDiscounts,
-      profitability_index: 92.5,
     });
   } catch (e: any) {
     sendError(req, res, e);
@@ -395,58 +402,68 @@ router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (
     const opportunityId = req.body.opportunity_id;
     const availableCapacityKg = req.body.available_capacity_kg || 5000;
 
-    let opp: any = SCENARIOS.backhaul.opportunities.find((o) => o.id === opportunityId);
-    
-    // Attempt to fetch from DB if not in static scenarios
-    if (!opp) {
-      const { data } = await supabase.from('shipments').select('*').eq('id', opportunityId).single();
-      if (data) {
-        opp = {
-          id: data.id,
-          shipper: data.origin_name || 'Unknown Shipper',
-          origin: data.origin_address?.split(',')[0] || 'Unknown',
-          destination: data.dest_address?.split(',')[0] || 'Unknown',
-          weight_kg: data.total_weight_kg || 3000,
-          cargo_type: data.load_type === 'full' ? 'heavy_machinery' : 'dry_bulk',
-          revenue: (data.total_weight_kg || 3000) * 15,
-          deviation_km: Math.floor(Math.random() * 50) + 5,
-          profitability_score: Math.floor(Math.random() * 30) + 70,
-        };
-      }
-    }
-
-    if (!opp) {
+    const { data } = await supabase.from('shipments').select('*').eq('id', opportunityId).maybeSingle();
+    if (!data) {
       res.status(404).json({ detail: 'Opportunity not found' });
       return;
     }
+
+    const opp: any = {
+      id: data.id,
+      shipper: data.origin_name || 'Unknown Shipper',
+      origin: data.origin_address?.split(',')[0] || 'Unknown',
+      destination: data.dest_address?.split(',')[0] || 'Unknown',
+      weight_kg: data.total_weight_kg || 3000,
+      cargo_type: data.load_type === 'full' ? 'heavy_machinery' : 'dry_bulk',
+      revenue: (data.total_weight_kg || 3000) * 15,
+      origin_lat: data.origin_lat,
+      origin_lng: data.origin_lng,
+      dest_lat: data.dest_lat,
+      dest_lng: data.dest_lng,
+    };
 
     if (opp.weight_kg > availableCapacityKg) {
       res.json({
         status: 'rejected',
         reason: `Capacity Overload: Opportunity weight ${opp.weight_kg}kg exceeds remaining vehicle capacity of ${availableCapacityKg}kg.`,
-        profitability_score: 0,
       });
       return;
     }
 
-    // Call ML service for true route deviation or ETA prediction
-    let deviationKm = opp.deviation_km || 20;
+    // Real added-distance: driving distance from the reference depot to the
+    // opportunity's origin/destination via Mappls. No route data + no
+    // coordinates means we cannot honestly report a deviation.
+    if (opp.origin_lat == null || opp.origin_lng == null || opp.dest_lat == null || opp.dest_lng == null) {
+      res.status(422).json({ detail: 'Cannot compute backhaul match: opportunity is missing origin/destination coordinates.' });
+      return;
+    }
+
+    const depot = await getReferenceDepot();
+    if (!depot) {
+      res.status(422).json({ detail: 'No depot is configured; cannot compute a backhaul match.' });
+      return;
+    }
+
+    let deviationKm: number | null = null;
     try {
-      const mlResp = await fetch(`${settings.ML_SERVICE_URL}/predict-eta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          distance_km: opp.deviation_km || 20,
-          vehicle_type: 'truck'
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (mlResp.ok) {
-        // Just as an example, we can use the ML response to adjust our profitability score based on time
-        const mlData = await mlResp.json();
+      const coords = [
+        `${depot.longitude},${depot.latitude}`,
+        `${opp.origin_lng},${opp.origin_lat}`,
+        `${opp.dest_lng},${opp.dest_lat}`,
+      ];
+      const matrix = await MapplsService.getDistanceMatrix(coords, [0, 1], [1, 2]);
+      const depotToOrigin = matrix?.distances?.[0]?.[0];
+      const originToDest = matrix?.distances?.[1]?.[0];
+      if (typeof depotToOrigin === 'number' && typeof originToDest === 'number') {
+        deviationKm = (depotToOrigin + originToDest) / 1000;
       }
-    } catch (e) {
-      console.warn("ML service for backhaul unreachable, using fast heuristic");
+    } catch (e: any) {
+      console.warn('Mappls Distance Matrix error (backhaul-match):', e.message);
+    }
+
+    if (deviationKm == null) {
+      res.status(502).json({ detail: 'Route distance calculation is unavailable right now (Mappls unreachable). Try again shortly.' });
+      return;
     }
 
     const additionalFuelLiters = deviationKm / 4.0;
@@ -460,17 +477,15 @@ router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (
       cargo_type: opp.cargo_type,
       weight_kg: opp.weight_kg,
       revenue_gained_inr: opp.revenue,
-      added_distance_km: deviationKm,
+      added_distance_km: parseFloat(deviationKm.toFixed(1)),
       added_fuel_liters: parseFloat(additionalFuelLiters.toFixed(1)),
       fuel_cost_inr: parseFloat(fuelCost.toFixed(1)),
       net_profit_inr: parseFloat(netProfit.toFixed(1)),
       new_route_waypoints: [
-        'Mumbai (Unload Original)',
+        `${depot.name} (Return Route Start)`,
         `${opp.origin} (Pickup shared-load from ${opp.shipper})`,
         `${opp.destination} (Deliver shared-load)`,
-        'Delhi Depot (Final Return Terminus)',
       ],
-      profitability_score: opp.profitability_score || 85,
     });
   } catch (e: any) {
     sendError(req, res, e);

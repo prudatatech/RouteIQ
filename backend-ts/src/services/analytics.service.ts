@@ -5,7 +5,7 @@
 import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
 
-const FUEL_PRICE_PER_LITER = 92; // INR
+export const FUEL_PRICE_PER_LITER = 92; // INR
 const MAINT_COST_PER_ROUTE = 150; // flat INR per route
 
 export class AnalyticsService {
@@ -13,10 +13,11 @@ export class AnalyticsService {
   // FLEET OVERVIEW — all financial + operational KPIs in one shot
   // ──────────────────────────────────────────────────────────────────────────
   static async getFleetOverview(): Promise<Record<string, any>> {
-    // Removed todayISO filter for demo purposes to show all-time mock data
-    // const today = new Date();
-    // today.setHours(0, 0, 0, 0);
-    // const todayISO = today.toISOString();
+    // "Today" scoping restored: every *_today figure below is filtered to
+    // rows created since local midnight, matching its label.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
 
     // Vehicle counts
     const [
@@ -29,15 +30,16 @@ export class AnalyticsService {
       supabase.from('vehicles').select('id', { count: 'exact', head: true }),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']),
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', todayISO),
+      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', todayISO),
     ]);
 
     // Revenue today from paid invoices
     const { data: invoicesToday } = await supabase
       .from('invoices')
       .select('amount')
-      .eq('status', 'paid');
+      .eq('status', 'paid')
+      .gte('created_at', todayISO);
 
     const dailyRevenue = (invoicesToday || []).reduce((s: number, i: any) => s + (i.amount || 0), 0);
 
@@ -45,7 +47,8 @@ export class AnalyticsService {
     const { data: routesToday } = await supabase
       .from('routes')
       .select('estimated_fuel_liters, total_distance_km, vehicle_id')
-      .in('status', ['active', 'completed']);
+      .in('status', ['active', 'completed'])
+      .gte('created_at', todayISO);
 
     const fuelExpenses = (routesToday || []).reduce((s: number, r: any) => s + ((r.estimated_fuel_liters || 0) * FUEL_PRICE_PER_LITER), 0);
     const maintenanceExpenses = (routesToday || []).length * MAINT_COST_PER_ROUTE;
@@ -55,7 +58,8 @@ export class AnalyticsService {
     const { data: backhaulData } = await supabase
       .from('vendor_shipment_requests')
       .select('cost')
-      .in('status', ['fulfilled', 'assigned']);
+      .in('status', ['fulfilled', 'assigned'])
+      .gte('created_at', todayISO);
 
     const backhaulRevenue = (backhaulData || []).reduce((s: number, b: any) => s + (b.cost || 0), 0);
 
@@ -418,20 +422,9 @@ export class AnalyticsService {
       });
     }
 
-    // 5. Default efficiency insight if nothing else
-    if (insights.length === 0) {
-      insights.push({
-        id: crypto.randomUUID(),
-        type: 'efficiency',
-        title: 'Fleet Optimization High',
-        insight: 'Current global route cluster BX-04 operating at 98.4% efficiency with no predicted bottlenecks.',
-        score: 98.4,
-        trend: 'up',
-        severity: 'low',
-        icon: 'check',
-      });
-    }
-
+    // No synthetic "all clear" insight is injected when there is nothing to
+    // report — an empty list here means no real anomaly was found, and the
+    // UI is responsible for its own empty state (see D2).
     return insights;
   }
 
@@ -439,34 +432,35 @@ export class AnalyticsService {
   // FLEET STATS — original method kept for backward compat
   // ──────────────────────────────────────────────────────────────────────────
   static async getFleetStats(): Promise<Record<string, any>> {
-    const { count: deliveredCount } = await supabase
-      .from('shipments')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'delivered');
-
-    const { count: activeVehicleCount } = await supabase
-      .from('vehicles')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'on_route');
+    const [
+      { count: deliveredCount },
+      { count: activeVehicleCount },
+      { count: totalRoutesCount },
+      { count: completedRoutesCount },
+    ] = await Promise.all([
+      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+      supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
+      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']),
+      supabase.from('routes').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+    ]);
 
     const totalDelivered = deliveredCount || 0;
     const activeVehicles = activeVehicleCount || 0;
+    const totalRoutes = totalRoutesCount || 0;
 
-    const baseSavings = 15.0;
-    const dynamicSavings = Math.min(25.0, baseSavings + activeVehicles * 0.5);
-    const roiToday = 150000 + totalDelivered * 2500;
+    // On-time rate is approximated as the completion rate of dispatched
+    // routes (no per-stop ETA/actual-arrival timestamps exist to compute a
+    // true on-time %). Null — never a fabricated default — when there is no
+    // route data yet.
+    const onTimeRatePct = totalRoutes > 0 ? ((completedRoutesCount || 0) / totalRoutes) * 100 : null;
 
+    // fuel savings %, fuel cost, CO2 saved and week-over-week deltas have no
+    // real data source (no baseline-vs-actual fuel comparison, no historical
+    // snapshot to diff against) — removed rather than fabricated (see D2).
     return {
       total_deliveries: totalDelivered,
       active_vehicles: activeVehicles,
-      on_time_rate_pct: 94.2 + (Math.random() * 2 - 1),
-      fuel_saved_pct: parseFloat(dynamicSavings.toFixed(1)),
-      fuel_cost_today: roiToday,
-      co2_saved_kg: parseFloat((activeVehicles * 1.2).toFixed(1)),
-      delta_vehicles: '+4.2%',
-      delta_efficiency: '+1.2%',
-      delta_roi: '+12.4%',
-      delta_fuel: '+3.1%',
+      on_time_rate_pct: onTimeRatePct !== null ? parseFloat(onTimeRatePct.toFixed(1)) : null,
     };
   }
 
@@ -649,7 +643,7 @@ export class AnalyticsService {
   static async getVendorPerformance(): Promise<any[]> {
     const { data: vendors, error } = await supabase
       .from('vendor_profiles')
-      .select('id, company_name, city');
+      .select('id, company_name, city, is_verified, kyc_status');
 
     if (error || !vendors) return [];
 
@@ -663,18 +657,27 @@ export class AnalyticsService {
       const fulfilled = vendorReqs.filter((r: any) => r.status === 'fulfilled' || r.status === 'assigned').length;
       const costs = vendorReqs.filter((r: any) => r.cost).map((r: any) => r.cost);
       const avgCost = costs.length > 0 ? costs.reduce((a: number, b: number) => a + b, 0) / costs.length : 0;
-      const sla = total > 0 ? (fulfilled / total) * 100 : 100;
+      // SLA needs an attempted-vs-fulfilled base; with no requests yet there
+      // is nothing real to report, so leave it null rather than a fake 100%.
+      const sla = total > 0 ? (fulfilled / total) * 100 : null;
+
+      // Real vendor status from the KYC workflow (pending/submitted/approved/
+      // rejected), falling back to verification flag. No damage-rate or
+      // carrier-category data exists anywhere, so those fields are removed
+      // (see D2) instead of being hardcoded.
+      const kycStatus: string | undefined = v.kyc_status;
+      const status = kycStatus
+        ? kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)
+        : (v.is_verified ? 'Verified' : 'Pending');
 
       return {
         id: v.id,
         name: v.company_name,
-        category: 'Carrier',
         region: v.city || 'Central',
         deliveries: fulfilled,
-        sla: parseFloat(sla.toFixed(1)),
-        costPerDelivery: Math.round(avgCost),
-        damageRate: 0.0,
-        status: 'Active',
+        sla: sla !== null ? parseFloat(sla.toFixed(1)) : null,
+        costPerDelivery: costs.length > 0 ? Math.round(avgCost) : null,
+        status,
       };
     });
   }

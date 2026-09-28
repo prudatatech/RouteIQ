@@ -192,10 +192,6 @@ class ApiClient {
 
   // ── Route ──────────────────────────────────────────────────
 
-  async getSosConfig(): Promise<any> {
-    return this.request('GET', '/telemetry/sos/config');
-  }
-
   async triggerSos(lat: number, lng: number): Promise<any> {
     return this.request('POST', '/telemetry/sos/trigger', { lat, lng });
   }

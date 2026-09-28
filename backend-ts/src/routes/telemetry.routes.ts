@@ -89,17 +89,6 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), async (
   }
 });
 
-// ── GET /sos/config ───────────────────────────────────────────
-router.get('/sos/config', requireAuth, async (req: Request, res: Response) => {
-  // Mock config for driver app
-  res.json({
-    status: 'success',
-    emergency_contacts: ['112', '100', '108'],
-    escalation_timeout_mins: 5,
-    auto_record_audio: false
-  });
-});
-
 // ── POST /sos/trigger ─────────────────────────────────────────
 router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => {
   try {
