@@ -179,25 +179,14 @@ export const vendorService = {
       .single();
     if (reqErr) throw new Error(reqErr.message);
 
-    // Update request status. Since 'assigned' might violate CHECK constraint if migration 018 wasn't run,
-    // we use 'fulfilled' which is a valid status in the original schema and removes it from the pending list.
-    const updatePayload: any = {
-      status: 'fulfilled', // Workaround for check constraint
-      updated_at: new Date().toISOString()
-    };
-    
-    // Try setting assigned_vehicle_id if column exists
-    try {
-      await supabase.from('vendor_shipment_requests').update({
-        ...updatePayload,
-        assigned_vehicle_id: vehicleId,
-        ...(cost !== undefined ? { cost } : {}),
-        ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
-      }).eq('id', requestId);
-    } catch (_) { 
-      // Column may not exist, fall back to simple update
-      await supabase.from('vendor_shipment_requests').update(updatePayload).eq('id', requestId);
-    }
+    const { error: updateErr } = await supabase.from('vendor_shipment_requests').update({
+      status: 'assigned',
+      assigned_vehicle_id: vehicleId,
+      updated_at: new Date().toISOString(),
+      ...(cost !== undefined ? { cost } : {}),
+      ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
+    }).eq('id', requestId);
+    if (updateErr) throw new Error(`Failed to update vendor request ${requestId}: ${updateErr.message}`);
 
     // Insert into cargo_manifest
     const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
@@ -308,7 +297,7 @@ export const vendorService = {
     const { data: recent } = await supabase
       .from('vendor_shipment_requests')
       .select('cost, cost_per_km, required_capacity_kg')
-      .eq('status', 'assigned')
+      .in('status', ['assigned', 'fulfilled'])
       .order('updated_at', { ascending: false })
       .limit(20);
 
@@ -332,7 +321,7 @@ export const vendorService = {
     const { count: fleetCount } = await supabase
       .from('vehicles')
       .select('id', { count: 'exact', head: true })
-      .eq('status', 'active');
+      .in('status', ['available', 'on_route', 'idle']);
 
     return {
       avg_cost_per_km: avgCostPerKm,
