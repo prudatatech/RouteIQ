@@ -134,15 +134,30 @@ export default function VendorShipmentRequestPage() {
   }, [token, location.search]);
 
   // Geocoding Search
-  const searchMapbox = async (query: string, setSuggestions: any) => {
+  const searchArcGIS = async (query: string, setSuggestions: any) => {
     if (!query || query.length < 3) {
       setSuggestions([]);
       return;
     }
     try {
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?country=in&types=place,locality,address&limit=5&access_token=${MAPBOX_TOKEN}`);
+      const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query)}&countryCode=IND&maxSuggestions=5&f=json`;
+      const res = await fetch(url);
       const data = await res.json();
-      setSuggestions(data.features || []);
+      
+      if (data.suggestions) {
+        const mapped = data.suggestions.map((s: any) => {
+          const parts = s.text.split(', ');
+          return {
+            id: s.magicKey,
+            text: parts[0],
+            place_name: s.text,
+            magicKey: s.magicKey
+          };
+        });
+        setSuggestions(mapped);
+      } else {
+        setSuggestions([]);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -153,7 +168,7 @@ export default function VendorShipmentRequestPage() {
       setPickupSuggestions([]);
       return;
     }
-    const timer = setTimeout(() => searchMapbox(pickupSearch, setPickupSuggestions), 500);
+    const timer = setTimeout(() => searchArcGIS(pickupSearch, setPickupSuggestions), 500);
     return () => clearTimeout(timer);
   }, [pickupSearch, pickupLocation]);
 
@@ -162,7 +177,7 @@ export default function VendorShipmentRequestPage() {
       setDropSuggestions([]);
       return;
     }
-    const timer = setTimeout(() => searchMapbox(dropSearch, setDropSuggestions), 500);
+    const timer = setTimeout(() => searchArcGIS(dropSearch, setDropSuggestions), 500);
     return () => clearTimeout(timer);
   }, [dropSearch, dropLocation]);
 
@@ -185,28 +200,64 @@ export default function VendorShipmentRequestPage() {
     }
   };
 
-  const handleSelectPickup = (feature: any) => {
-    const newLoc = {
-      address: feature.place_name,
-      lng: feature.center[0],
-      lat: feature.center[1]
-    };
-    setPickupLocation(newLoc);
+  const handleSelectPickup = async (feature: any) => {
     setPickupSearch(feature.place_name);
     setPickupSuggestions([]);
-    updateMapBounds(newLoc, dropLocation);
+    
+    try {
+      let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${feature.magicKey}&f=json`;
+      let res = await fetch(url);
+      let data = await res.json();
+      
+      if (!data.candidates || data.candidates.length === 0) {
+        url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(feature.place_name)}&f=json`;
+        res = await fetch(url);
+        data = await res.json();
+      }
+      
+      if (data.candidates && data.candidates.length > 0) {
+        const loc = data.candidates[0].location;
+        const newLoc = {
+          address: feature.place_name,
+          lng: loc.x,
+          lat: loc.y
+        };
+        setPickupLocation(newLoc);
+        updateMapBounds(newLoc, dropLocation);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleSelectDrop = (feature: any) => {
-    const newLoc = {
-      address: feature.place_name,
-      lng: feature.center[0],
-      lat: feature.center[1]
-    };
-    setDropLocation(newLoc);
+  const handleSelectDrop = async (feature: any) => {
     setDropSearch(feature.place_name);
     setDropSuggestions([]);
-    updateMapBounds(pickupLocation, newLoc);
+    
+    try {
+      let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${feature.magicKey}&f=json`;
+      let res = await fetch(url);
+      let data = await res.json();
+      
+      if (!data.candidates || data.candidates.length === 0) {
+        url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(feature.place_name)}&f=json`;
+        res = await fetch(url);
+        data = await res.json();
+      }
+      
+      if (data.candidates && data.candidates.length > 0) {
+        const loc = data.candidates[0].location;
+        const newLoc = {
+          address: feature.place_name,
+          lng: loc.x,
+          lat: loc.y
+        };
+        setDropLocation(newLoc);
+        updateMapBounds(pickupLocation, newLoc);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleMarkerDrag = async (evt: any, type: 'pickup' | 'drop') => {

@@ -13,21 +13,33 @@ export default function VendorPortalPage() {
   const { vendorProfile } = useOutletContext<any>() || {}
 
   useEffect(() => {
-    const searchHeroMapbox = async () => {
+    const searchHeroArcGIS = async () => {
       if (!heroSearchTerm || heroSearchTerm.length < 3) {
         setHeroSuggestions([])
         return
       }
       try {
-        const token = import.meta.env.VITE_MAPBOX_TOKEN
-        const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(heroSearchTerm)}.json?country=in&types=place,locality,address&limit=5&access_token=${token}`)
+        const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(heroSearchTerm)}&countryCode=IND&maxSuggestions=5&f=json`;
+        const res = await fetch(url)
         const data = await res.json()
-        setHeroSuggestions(data.features || [])
+        if (data.suggestions) {
+          const mapped = data.suggestions.map((s: any) => {
+            const parts = s.text.split(', ')
+            return {
+              id: s.magicKey,
+              place_name: s.text,
+              magicKey: s.magicKey
+            }
+          })
+          setHeroSuggestions(mapped)
+        } else {
+          setHeroSuggestions([])
+        }
       } catch (e) {
         console.error(e)
       }
     }
-    const delay = setTimeout(searchHeroMapbox, 400)
+    const delay = setTimeout(searchHeroArcGIS, 400)
     return () => clearTimeout(delay)
   }, [heroSearchTerm])
 
