@@ -8,6 +8,7 @@
  *   - Logout (no-op convenience endpoint)
  */
 import { Router, Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../core/supabase';
 import { authenticateToken, createAccessToken, createRefreshToken, requireAuth, requireRole } from '../core/auth';
 import { settings } from '../core/config';
@@ -55,6 +56,38 @@ function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+/**
+ * Create a real Supabase Auth session for a user who has just proven their
+ * phone number, so the mobile app can call Supabase directly under row-level
+ * security (and the API with the same token). Uses an admin-generated
+ * magic-link token that is verified server-side; no email is sent.
+ * Returns null when a session cannot be created (older app builds only need
+ * the backend-issued tokens).
+ */
+async function createSupabaseSession(email: string | undefined | null) {
+  if (!email) return null;
+  const { data: link, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email });
+  const tokenHash = link?.properties?.hashed_token;
+  if (linkErr || !tokenHash) {
+    console.error(`[auth] Could not generate session link: ${linkErr?.message ?? 'no token'}`);
+    return null;
+  }
+
+  const client = createClient(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY || settings.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+  if (error || !data.session) {
+    console.error(`[auth] Could not create Supabase session: ${error?.message ?? 'no session'}`);
+    return null;
+  }
+  return {
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    expires_at: data.session.expires_at,
+  };
 }
 
 /**
@@ -293,6 +326,8 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
       token_type: 'bearer',
       role: 'driver',
       user_id: driver.id,
+      // Supabase session for direct, RLS-governed access (current driver app)
+      supabase_session: await createSupabaseSession(authUser?.user?.email),
       driver: {
         id: driver.id,
         phone: driver.phone,
