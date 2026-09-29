@@ -133,3 +133,15 @@ export async function removeStoredFiles(paths: Array<string | null | undefined>)
   const { error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).remove(list);
   if (error) console.error('[people] could not delete stored files:', error.message);
 }
+
+/** Plain-language text for the soft warning codes the people endpoints return in `warnings`. */
+export const WARNING_TEXT: Record<string, string> = {
+  licence_number_format: "This licence number doesn't look like the usual state code plus digits. It was saved. Check it against the card.",
+  name_mismatch: "The name on the document doesn't match the profile name. It was saved. Add a note when you verify it.",
+  account_holder_mismatch: "The account holder name doesn't match the person. It was saved. Add a note when you verify it.",
+};
+
+/** `warnings` (codes) plus `warning_messages` (text) for an endpoint response. */
+export const withWarnings = <T extends object>(out: T, warnings: string[]) => ({
+  ...out, warnings, warning_messages: warnings.map(w => WARNING_TEXT[w] ?? w),
+});

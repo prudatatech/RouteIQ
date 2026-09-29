@@ -73,7 +73,11 @@ export function UploadDocModal({ detail, types, replacing, onClose, onDone }: {
         ...(Object.keys(metadata).length ? { metadata } : {}),
       })
     },
-    onSuccess: () => { toast.success('Document uploaded. It is waiting for review'); onDone(); onClose() },
+    onSuccess: saved => {
+      toast.success('Document uploaded. It is waiting for review')
+      for (const message of saved.warning_messages ?? []) toast(message, { duration: 9000 })
+      onDone(); onClose()
+    },
     onError: err => toast.error(errorMessage(err, 'We could not save the document. Try again.')),
   })
 

@@ -18,7 +18,7 @@ import {
   normalizeCode, normalizePan, sameName,
 } from '../utils/people-validators';
 import {
-  Actor, PersonRow, assertCanModify, assertFresh, isPeoplePathFor, logActivity, nowIso, parseRequiredText,
+  Actor, PersonRow, assertCanModify, assertFresh, isPeoplePathFor, logActivity, nowIso, parseRequiredText, withWarnings,
 } from './people-common';
 import {
   DOC_LABELS, DOC_NEEDS_EXPIRY, DOC_NEEDS_NUMBER, DOC_TYPES, DocRow, DocType, addDays, daysBetween, effectiveStatus,
@@ -289,7 +289,7 @@ export async function createDocument(actor: Actor, subject: PersonRow, body: Rec
   const ctx = await documentContext(subject);
   const out = serializeDocument(created, ctx);
   if (out.name_mismatch) warnings.push('name_mismatch');
-  return { ...out, warnings };
+  return withWarnings(out, warnings);
 }
 
 // ── Review and edit ────────────────────────────────────────
@@ -416,7 +416,7 @@ export async function updateDocument(actor: Actor, subject: PersonRow, docId: st
   }
   const out = serializeDocument(updated, await documentContext(subject));
   if (out.name_mismatch) warnings.push('name_mismatch');
-  return { ...out, warnings };
+  return withWarnings(out, warnings);
 }
 
 // ── Files and archive ──────────────────────────────────────

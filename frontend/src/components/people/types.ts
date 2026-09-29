@@ -166,6 +166,8 @@ export interface PersonProfile {
 }
 
 export interface PersonDocument {
+  /** Plain-language soft warnings the server returns when it saves a document (for example an odd licence number). */
+  warning_messages?: string[]
   id: string
   user_id: string
   doc_type: string
