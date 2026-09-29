@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { MAP_TONES, stopStatusStyle, vehicleStatusStyle } from '@/config/mapConfig'
 import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { POINT_TONES } from './layers'
+import type { VehicleCluster } from './cluster'
 import type { LatLng, MapPoint, MapPointKind, MapRouteStop, MapVehicle } from './types'
 
 /** How long a vehicle takes to glide to a new position. */
@@ -169,6 +170,26 @@ export const StopMarker = memo(function StopMarker({ stop: routeStop }: { stop: 
       >
         {routeStop.sequence}
       </span>
+    </Marker>
+  )
+})
+
+/** A count of nearby vehicles. Activating it zooms in on the group. */
+export const ClusterMarker = memo(function ClusterMarker({ cluster, onOpen }: {
+  cluster: VehicleCluster
+  onOpen: (cluster: VehicleCluster) => void
+}) {
+  return (
+    <Marker longitude={cluster.position.lng} latitude={cluster.position.lat} anchor="center" style={{ zIndex: 2 }}>
+      <button
+        type="button"
+        aria-label={`${cluster.count} vehicles close together. Zoom in to see them.`}
+        title={`${cluster.count} vehicles`}
+        onClick={(e) => { stop(e); onOpen(cluster) }}
+        className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-surface bg-brand-fill text-sm font-semibold text-white shadow-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        {cluster.count.toLocaleString('en-IN')}
+      </button>
     </Marker>
   )
 })

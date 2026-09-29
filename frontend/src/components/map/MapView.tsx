@@ -22,7 +22,8 @@ import {
   routeLineLayer,
   withValidPosition,
 } from './layers'
-import { PointMarker, StopMarker, VehicleMarker } from './markers'
+import { clusterVehicles, type VehicleCluster } from './cluster'
+import { ClusterMarker, PointMarker, StopMarker, VehicleMarker } from './markers'
 import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
 import type { LatLng, MapControls, MapFit, MapMode, MapViewHandle, MapViewProps } from './types'
 
@@ -171,6 +172,23 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     }
   }, [])
 
+  // Zoom level, so large fleets can be grouped while zoomed out.
+  const [zoom, setZoom] = useState<number>(initialZoom ?? MAP_DEFAULTS.ZOOM)
+  const { singles, clusters } = useMemo(
+    () => clusterVehicles(vehicles, zoom, selectedId),
+    [vehicles, zoom, selectedId],
+  )
+  const openCluster = useCallback((cluster: VehicleCluster) => {
+    const map = mapRef.current
+    if (!map) return
+    const [[minLng, minLat], [maxLng, maxLat]] = cluster.bounds
+    if (minLng === maxLng && minLat === maxLat) {
+      map.easeTo({ center: [minLng, minLat], zoom: map.getZoom() + 2, duration: 600 })
+    } else {
+      map.fitBounds(cluster.bounds, { padding: 64, maxZoom: FIT_MAX_ZOOM, duration: 600 })
+    }
+  }, [])
+
   const flyTo = useCallback((position: LatLng, zoom = FOCUS_ZOOM) => {
     mapRef.current?.flyTo({ center: [position.lng, position.lat], zoom, duration: 1200 })
   }, [])
@@ -279,7 +297,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
           interactive={interactive}
           cursor={onPick ? 'crosshair' : undefined}
           style={{ position: 'absolute', inset: 0 }}
-          onLoad={() => setLoad({ status: 'ready' })}
+          onLoad={(e) => { setZoom(e.target.getZoom()); setLoad({ status: 'ready' }) }}
+          onZoomEnd={(e) => setZoom(e.viewState.zoom)}
           onError={handleError}
           onClick={onPick ? handleClick : undefined}
           onDragStart={() => setFollowing(false)}
@@ -314,7 +333,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             />
           ))}
 
-          {vehicles.map((v) => (
+          {clusters.map((c) => <ClusterMarker key={c.id} cluster={c} onOpen={openCluster} />)}
+
+          {singles.map((v) => (
             <VehicleMarker
               key={v.id}
               vehicle={v}
