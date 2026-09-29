@@ -224,15 +224,14 @@ export const telemetryAPI = {
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
   metrics: () => api.get('/analytics/metrics').then(r => r.data),
-  activeMissions: () => api.get('/analytics/active-missions').then(r => r.data),
+  activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
   syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data),
   auditLogs: () => api.get('/analytics/audit-logs').then(r => r.data),
-  driverPerformance: () => api.get('/analytics/driver-performance').then(r => r.data),
-  financials: () => api.get('/analytics/financials').then(r => r.data),
-  vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => r.data),
+  driverPerformance: () => api.get('/analytics/driver-performance').then(r => ensureArray(r.data)),
+  vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => ensureArray(r.data)),
   fleetOverview: () => api.get('/analytics/fleet-overview').then(r => r.data),
-  vehicleHealth: () => api.get('/analytics/vehicle-health').then(r => r.data),
-  profitableRoutes: () => api.get('/analytics/profitable-routes').then(r => r.data),
+  /** Trips dispatched and deliveries per day, oldest first. */
+  dailyActivity: (days = 14) => api.get('/analytics/daily-activity', { params: { days } }).then(r => ensureArray(r.data)),
 }
 
 export const tplAPI = {
