@@ -42,6 +42,11 @@ export function fill(text: string, vars?: Record<string, string | number>): stri
   return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
 }
 
+/** True when English has text for this key, so a server-sent code we do not know can fall back to the server's own label. */
+export function hasTranslation(key: string): boolean {
+  return key in translations.en;
+}
+
 /** Looks a key up in the current language, falling back to English. */
 export function translateNow(key: string, vars?: Record<string, string | number>): string {
   const dict = translations[currentLanguage] as Record<string, string>;

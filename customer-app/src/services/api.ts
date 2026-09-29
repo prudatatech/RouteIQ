@@ -312,7 +312,8 @@ export interface Quote {
   suggested: number | null;
   high: number | null;
   distance_km: number | null;
-  factors: { label: string; detail: string }[];
+  /** `code` is a stable id the app translates; `label` is the server's English fallback. */
+  factors: { code?: string; label: string; detail: string }[];
   message?: string;
 }
 
