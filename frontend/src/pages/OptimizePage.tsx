@@ -8,7 +8,7 @@ import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeH
 import { formatEta } from '@/utils/timeFormat'
 import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
 import {
-  Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Stat,
+  Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert,
 } from '@/components/ui'
 
@@ -110,6 +110,7 @@ export default function OptimizePage() {
   const routeIdToReoptimize = location.state?.routeId
 
   const [algorithm, setAlgorithm] = useState<'ortools' | 'ga'>('ortools')
+  const [solveTime, setSolveTime] = useState(30)
   const [considerTraffic, setConsiderTraffic] = useState(true)
   const [considerWeather, setConsiderWeather] = useState(true)
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set())
@@ -193,7 +194,7 @@ export default function OptimizePage() {
         algorithm,
         consider_traffic: considerTraffic,
         consider_weather: considerWeather,
-        max_solve_time_seconds: 30,
+        max_solve_time_seconds: solveTime,
       })
     },
     onSuccess: (data) => {
@@ -340,6 +341,20 @@ export default function OptimizePage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="border-t border-border pt-4">
+                <Select
+                  label="Solve time"
+                  hint="Longer searches can find shorter routes but take more time."
+                  value={String(solveTime)}
+                  onChange={e => setSolveTime(Number(e.target.value))}
+                  options={[
+                    { value: '10', label: '10 seconds' },
+                    { value: '30', label: '30 seconds (default)' },
+                    { value: '60', label: '60 seconds' },
+                  ]}
+                />
               </div>
 
               <div className="space-y-2 border-t border-border pt-4">
