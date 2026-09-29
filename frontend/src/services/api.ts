@@ -253,6 +253,8 @@ export const telemetryAPI = {
 
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
+  /** Open loads vs available vehicles per pickup city, and a 7-day load forecast per corridor. */
+  demand: () => api.get('/analytics/demand').then(r => r.data),
   /** Pulls the latest positions from the SparkGPS provider. Staff only. */
   syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data as { status: string; message?: string }),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
