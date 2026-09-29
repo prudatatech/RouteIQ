@@ -77,4 +77,6 @@ export interface VehicleOption {
   longitude?: number | null
   /** Straight-line distance to the pickup, when both positions are known. */
   distance_km?: number | null
+  /** State of the assigned driver's licence: valid, expiring, expired or missing. */
+  driver_licence_status?: 'valid' | 'expiring' | 'expired' | 'missing' | null
 }

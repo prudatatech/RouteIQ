@@ -10,6 +10,9 @@ import {
 } from '@/components/ui'
 import { isDraftVehicle } from '@/utils/vehicles'
 import { errorMessage, formatDate, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
+import { licenceSuffix } from '@/components/people/docs'
+import { useVehicleLicences } from '@/components/people/useVehicleLicences'
 
 const TAB_IDS = ['new', 'active', 'done', 'cancelled', 'all'] as const
 type TabId = typeof TAB_IDS[number]
@@ -275,6 +278,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
   const canCancel = !!booking && ['requested', 'confirmed', 'assigned'].includes(booking.status)
 
   const vehicles = useQuery({ queryKey: ['assignable-vehicles'], queryFn: loadVehicles, enabled: canAssign })
+  const licences = useVehicleLicences(canAssign)
   const withSpace = useMemo(
     () => (vehicles.data ?? []).filter(v => v.status !== 'maintenance' && !isDraftVehicle(v) && Number(v.available_capacity_kg ?? 0) >= Number(booking?.weight_kg ?? 0)),
     [vehicles.data, booking?.weight_kg],
@@ -361,9 +365,10 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
                   placeholder={vehicles.isLoading ? 'Loading vehicles' : withSpace.length === 0 ? 'No vehicle has enough space' : 'Choose a vehicle'}
                   value={vehicleId}
                   onChange={e => setVehicleChoice({ bookingId: booking.id, vehicleId: e.target.value })}
-                  options={withSpace.map(v => ({ value: v.id, label: `${v.plate_number}${v.vehicle_type ? ` · ${humanize(v.vehicle_type)}` : ''} · ${formatKg(v.available_capacity_kg)} free` }))}
+                  options={withSpace.map(v => ({ value: v.id, label: `${v.plate_number}${v.vehicle_type ? ` · ${humanize(v.vehicle_type)}` : ''} · ${formatKg(v.available_capacity_kg)} free${licenceSuffix(licences.get(v.id))}` }))}
                 />
               )}
+              {vehicleId && <div><DriverLicenceBadge status={licences.get(vehicleId)} /></div>}
               <Alert tone="info">Assigning puts the shipment on the vehicle’s route and tells the customer.</Alert>
             </section>
           )}

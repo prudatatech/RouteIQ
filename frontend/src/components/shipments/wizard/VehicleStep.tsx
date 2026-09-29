@@ -13,6 +13,8 @@ import { apiErrorMessage, freeCapacityKg, haversineKm } from '../format'
 import type { VehicleOption } from '../types'
 import type { StepProps } from './stepProps'
 import { formatKg, formatKm } from '@/utils/display'
+import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
+import { licenceSuffix } from '@/components/people/docs'
 
 const BIDDING_WINDOWS = [5, 10, 15, 30]
 
@@ -59,7 +61,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
     if (v.distance_km != null) parts.push(`${formatKm(v.distance_km)} away`)
     if (v.capacity_kg != null) parts.push(`${formatKg(freeCapacityKg(v))} of ${formatKg(v.capacity_kg)} free`)
     if (v.status && v.status !== 'available') parts.push(statusToLabel(v.status))
-    return parts.join(' · ')
+    return parts.join(' · ') + licenceSuffix(v.driver_licence_status)
   }
 
   const setPickupFromVehicle = async () => {
@@ -167,6 +169,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
             {options.map(v => <option key={v.id} value={v.id}>{vehicleLabel(v)}</option>)}
           </Select>
         )}
+        {selected?.driver_licence_status && <div><DriverLicenceBadge status={selected.driver_licence_status} /></div>}
 
         {mapVehicles.length > 0 && (
           <div className="hidden h-64 overflow-hidden rounded-card border border-border sm:block">

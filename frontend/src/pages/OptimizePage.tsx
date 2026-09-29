@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { isDraftVehicle } from '@/utils/vehicles'
+import { licenceSuffix } from '@/components/people/docs'
 import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { formatMinutes, formatKm } from '@/utils/display'
 import {
@@ -32,6 +33,7 @@ interface Vehicle {
   status: string
   latitude?: number | null
   longitude?: number | null
+  driver_licence_status?: 'valid' | 'expiring' | 'expired' | 'missing' | null
 }
 
 interface DeliveryPoint {
@@ -418,7 +420,7 @@ export default function OptimizePage() {
                     {vehicles.map(v => (
                       <Checkbox
                         key={v.id}
-                        label={v.plate_number || 'Unnamed vehicle'}
+                        label={`${v.plate_number || 'Unnamed vehicle'}${licenceSuffix(v.driver_licence_status)}`}
                         checked={effectiveVehicleIds.has(v.id)}
                         onChange={() => toggleVehicle(v.id)}
                       />

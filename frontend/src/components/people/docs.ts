@@ -105,3 +105,9 @@ export function maskedNumber(doc: PersonDocument) {
   if (!doc.doc_number && !doc.number_last4) return null
   return doc.doc_type === 'aadhaar' ? maskAadhaar(doc.doc_number, doc.number_last4) : doc.doc_number
 }
+
+/** The same warning as plain text, for places that only take text (a dropdown option). */
+export function licenceSuffix(status: DriverLicenceStatus): string {
+  const warning = licenceWarning(status)
+  return warning ? ` · ${warning.text}` : ''
+}

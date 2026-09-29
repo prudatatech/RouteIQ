@@ -6,7 +6,7 @@ import { Button, Card, CardBody, CardHeader, ErrorState, Input, Select, Skeleton
 import { errorMessage } from '@/utils/display'
 import type { EnforcementMode, PeopleSettings } from './types'
 
-export const ENFORCEMENT_OPTIONS: { value: EnforcementMode; label: string }[] = [
+const ENFORCEMENT_OPTIONS: { value: EnforcementMode; label: string }[] = [
   { value: 'off', label: 'Off: no checks' },
   { value: 'warn', label: 'Warn: show a warning, allow the assignment' },
   { value: 'block', label: 'Block: refuse the assignment' },

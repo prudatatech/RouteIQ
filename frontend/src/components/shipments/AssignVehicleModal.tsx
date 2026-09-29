@@ -6,6 +6,8 @@ import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, freeCapacityKg, knownDistance } from './format'
 import type { ShipmentRow, VehicleOption } from './types'
 import { formatKg, formatKm } from '@/utils/display'
+import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
+import { useVehicleLicences } from '@/components/people/useVehicleLicences'
 
 /** Pick a vehicle for a shipment that has none. Vehicles nearest the pickup come first. */
 export default function AssignVehicleModal({ shipment, onClose }: { shipment: ShipmentRow | null; onClose: () => void }) {
@@ -16,6 +18,8 @@ export default function AssignVehicleModal({ shipment, onClose }: { shipment: Sh
     queryFn: () => shipmentsAPI.getAssignOptions(shipment!.id, 'near'),
     enabled: !!shipment,
   })
+
+  const licences = useVehicleLicences(!!shipment)
 
   const assign = useMutation({
     mutationFn: (vehicleId: string) => shipmentsAPI.assignDriver(shipment!.id, vehicleId),
@@ -38,6 +42,7 @@ export default function AssignVehicleModal({ shipment, onClose }: { shipment: Sh
         <div className="min-w-0">
           <div className="font-mono font-medium">{v.plate_number}</div>
           {(v.vehicle_model || v.vehicle_type) && <div className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type!)}</div>}
+          <DriverLicenceBadge status={v.driver_licence_status ?? licences.get(v.id)} className="mt-1" />
         </div>
       ),
     },
