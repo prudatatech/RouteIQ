@@ -174,6 +174,7 @@ export default function VendorDocumentsPage() {
     if (!form.city.trim()) errors[1].city = 'Enter the city'
     if (!form.state.trim()) errors[1].state = 'Enter the state'
     if (!form.postalCode.trim()) errors[1].postalCode = 'Enter the postal code'
+    else if (!/^\d{6}$/.test(form.postalCode.trim())) errors[1].postalCode = 'PIN code must be exactly 6 digits'
     if (!form.latitude || !form.longitude) errors[1].location = 'Set your operating base on the map'
 
     if (!form.beneficiaryAccountName.trim()) errors[2].beneficiaryAccountName = 'Enter the account holder name'
@@ -261,9 +262,15 @@ export default function VendorDocumentsPage() {
   // --- Location ---------------------------------------------------------
   const onAddressPicked = (place: ResolvedPlace | null) => {
     if (!place) return
-    setField('addressLine1', place.address)
-    setField('latitude', String(place.lat))
-    setField('longitude', String(place.lng))
+    setForm(prev => ({
+      ...prev,
+      addressLine1: place.address,
+      latitude: String(place.lat),
+      longitude: String(place.lng),
+      city: place.parts?.city || prev.city,
+      state: place.parts?.state || prev.state,
+      postalCode: place.parts?.pincode || prev.postalCode,
+    }))
   }
 
   // --- Submit -------------------------------------------------------------
@@ -398,7 +405,12 @@ export default function VendorDocumentsPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Input label="City" required value={form.city} onChange={e => setField('city', e.target.value)} error={err(1, 'city')} />
                 <Input label="State" required value={form.state} onChange={e => setField('state', e.target.value)} error={err(1, 'state')} />
-                <Input label="Postal code" required value={form.postalCode} onChange={e => setField('postalCode', e.target.value)} error={err(1, 'postalCode')} />
+                <Input
+                  label="Postal code" required value={form.postalCode}
+                  onChange={e => setField('postalCode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  error={err(1, 'postalCode')}
+                  inputMode="numeric" maxLength={6}
+                />
               </div>
             </div>
           )}
