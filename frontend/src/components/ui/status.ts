@@ -22,15 +22,15 @@ const statusTone: Record<string, Tone> = {
   // Moving / assigned
   in_transit: 'info', on_route: 'info', assigned: 'info', scheduled: 'info', in_progress: 'info', dispatched: 'info',
   picked_up: 'info', out_for_delivery: 'info', escrow_held: 'info', bidded: 'info', submitted: 'info', planned: 'info',
-  open: 'info', tracking: 'info',
+  open: 'info', tracking: 'info', escalated: 'info', assigned_to_partner: 'info', offered: 'warning',
   // Needs attention
   pending: 'warning', delayed: 'warning', maintenance: 'warning', paused: 'warning', notified: 'warning',
   pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', low: 'warning',
   // Failed / blocked
-  failed: 'danger', rejected: 'danger', cancelled: 'danger', offline: 'danger', exception: 'danger', error: 'danger',
+  failed: 'danger', rejected: 'danger', declined: 'danger', cancelled: 'danger', offline: 'danger', exception: 'danger', error: 'danger',
   sos: 'danger', escrow_failed: 'danger', gps_off: 'danger', expired: 'danger', critical: 'danger', denied: 'danger',
   // Neutral
-  idle: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
+  taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
   unknown: 'neutral',
 }
 
@@ -49,6 +49,10 @@ const statusLabel: Record<string, string> = {
   bidded: 'Bid placed',
   under_review: 'Under review',
   on_hold: 'On hold',
+  escalated: 'With 3PL partners',
+  assigned_to_partner: 'Assigned to partner',
+  offered: 'Waiting for answer',
+  taken: 'Taken by another partner',
 }
 
 /** "in_transit" → "In transit". */

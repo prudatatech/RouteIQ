@@ -10,6 +10,7 @@ import {
   Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Input, Page, PageHeader, Select, SearchInput,
   Skeleton, StatusPill, Tabs, TabPanel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
+import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -75,8 +76,8 @@ const TAB_IDS = ['open', 'assigned', 'completed', 'rejected', 'all'] as const
 type TabId = typeof TAB_IDS[number]
 
 const tabStatuses: Record<Exclude<TabId, 'all'>, string[]> = {
-  open: ['pending', 'approved'],
-  assigned: ['assigned'],
+  open: ['pending', 'approved', 'escalated'],
+  assigned: ['assigned', 'assigned_to_partner'],
   completed: ['completed', 'fulfilled'],
   rejected: ['rejected', 'cancelled'],
 }
@@ -85,6 +86,8 @@ const statusLabels: Record<string, string> = {
   pending: 'New',
   approved: 'Approved',
   assigned: 'Vehicle assigned',
+  escalated: 'With 3PL partners',
+  assigned_to_partner: 'Assigned to partner',
   fulfilled: 'Completed',
 }
 
@@ -492,6 +495,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
   const flat = parsePrice(flatPrice)
   const perKm = parsePrice(ratePerKm)
   const canAssign = !!request && (request.status === 'pending' || request.status === 'approved')
+  const showPartners = !!request && ['pending', 'approved', 'escalated', 'assigned_to_partner', 'completed'].includes(request.status)
 
   useEffect(() => { setVehicleId(''); setFlatPrice(''); setRatePerKm('') }, [request?.id])
 
@@ -596,6 +600,10 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
               ...(request.assigned_vehicle_id ? [{ label: 'Vehicle', value: <span className="font-mono">{assignedPlate ?? 'Assigned'}</span> }] : []),
             ]}
           />
+
+          {showPartners && request && (
+            <EscalationPanel key={request.id} source={{ request_id: request.id }} canEscalate={canAssign || request.status === 'escalated'} />
+          )}
 
           {canAssign && (
             <section aria-labelledby="assign-heading" className="space-y-3">

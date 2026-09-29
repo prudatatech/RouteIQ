@@ -9,6 +9,8 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, useConfirm,
 } from '@/components/ui'
+import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
+import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
@@ -261,7 +263,7 @@ export default function TplPartnerDetailPage() {
               items={[
                 { label: 'Company PAN', value: <span className="font-mono">{partner.pan_number}</span> },
                 { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || partner.id.split('-')[0]}</span> },
-                { label: 'GSTIN', value: <span className="font-mono">{partner.gstin}</span> },
+                { label: 'GSTIN', value: partner.gstin ? <div><span className="font-mono">{partner.gstin}</span><GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} /></div> : '—' },
                 { label: 'GTA tax treatment', value: partner.tax_treatment || '—' },
                 { label: 'MSME status', value: partner.msme_status || '—' },
                 { label: 'Bank account', value: partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—' },
@@ -334,6 +336,10 @@ export default function TplPartnerDetailPage() {
           </div>
         </Card>
       </div>
+
+      {(partner.status === 'active' || partner.status === 'paused') && (
+        <TplPartnerPerformance partnerId={partner.id} slaCommitment={partner.sla_commitment} />
+      )}
 
       {partner.status === 'pending' && (
         <Card padded className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">

@@ -11,6 +11,7 @@ import {
   buttonClasses, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatRelative } from '@/utils/display'
 
@@ -388,7 +389,7 @@ function KycDrawer({ vendor, onClose, pending, onDecide }: {
               <DetailList items={[
                 { label: 'PAN', value: mono(f.panNumber) },
                 { label: 'TAN', value: mono(f.tanNumber) },
-                { label: 'GST number', value: f.gstNumber ? mono(f.gstNumber) : text(f.reasonNoGst ? `None: ${f.reasonNoGst}` : undefined) },
+                { label: 'GST number', value: f.gstNumber ? <div>{mono(f.gstNumber)}<GstinStatus gstin={f.gstNumber} pan={f.panNumber} /></div> : text(f.reasonNoGst ? `None: ${f.reasonNoGst}` : undefined) },
                 { label: 'MSME', value: text([f.msmeStatus, f.msmeRegNumber].filter(Boolean).join(', ')) },
               ]} />
             </section>

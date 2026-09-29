@@ -12,6 +12,8 @@ import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
+import { GstinStatus } from '@/components/tpl/GstinStatus'
+import { gstinError } from '@/utils/gstin'
 
 type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected'
 
@@ -209,7 +211,10 @@ export default function VendorDocumentsPage() {
     if (!form.name.trim()) errors[0].name = 'Enter your company name'
     if (!form.panNumber.trim()) errors[0].panNumber = 'Enter the company PAN'
     else if (!/^[A-Z]{5}\d{4}[A-Z]$/i.test(form.panNumber.trim())) errors[0].panNumber = 'PAN looks incorrect (e.g. AAAAA0000A)'
-    if (form.gstNumber && !/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z]\d$/i.test(form.gstNumber.trim())) errors[0].gstNumber = 'GST number looks incorrect'
+    if (form.gstNumber.trim()) {
+      const gstProblem = gstinError(form.gstNumber, form.panNumber)
+      if (gstProblem) errors[0].gstNumber = gstProblem
+    }
 
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
     if (!form.emailAddress.trim()) errors[1].emailAddress = 'Enter a contact email'
@@ -456,7 +461,10 @@ export default function VendorDocumentsPage() {
                 <Input label="Company name" required value={form.name} onChange={e => setField('name', e.target.value)} error={err(0, 'name')} />
                 <Select label="Vendor type" required options={VENDOR_TYPES} value={form.vendorType} onChange={e => setField('vendorType', e.target.value)} />
                 <Input label="PAN number" required value={form.panNumber} onChange={e => setField('panNumber', e.target.value.toUpperCase())} error={err(0, 'panNumber')} inputClassName="uppercase" hint="10-character company or proprietor PAN" />
-                <Input label="GST number" value={form.gstNumber} onChange={e => setField('gstNumber', e.target.value.toUpperCase())} error={err(0, 'gstNumber')} inputClassName="uppercase" hint="Leave blank if not GST-registered" />
+                <div>
+                  <Input label="GST number" value={form.gstNumber} onChange={e => setField('gstNumber', e.target.value.toUpperCase())} error={err(0, 'gstNumber')} inputClassName="uppercase" hint="Leave blank if not GST-registered" />
+                  <GstinStatus gstin={form.gstNumber} pan={form.panNumber} />
+                </div>
                 <Select label="MSME status" options={MSME_STATUSES} value={form.msmeStatus} onChange={e => setField('msmeStatus', e.target.value)} />
                 {form.msmeStatus !== 'Not applicable' && (
                   <Input label="MSME registration number" value={form.msmeRegNumber} onChange={e => setField('msmeRegNumber', e.target.value)} />

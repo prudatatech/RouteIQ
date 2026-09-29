@@ -8,7 +8,7 @@ const VENDOR = 'vendor-1';
 
 const PAYLOAD = {
   companyName: 'Acme Logistics',
-  gstNumber: '27ABCDE1234F1Z5',
+  gstNumber: '27ABCDE1234F1Z0',
   city: 'Pune',
   address: '1 MG Road, Pune',
   lat: 18.5,

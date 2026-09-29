@@ -80,6 +80,7 @@ Object.assign(process.env, {
   EWAYBILL_GSP_USERNAME: '',
   EWAYBILL_GSP_PASSWORD: '',
   EWAYBILL_GSP_CLIENT_ID: '',
+  EWAYBILL_GSP_BASE_URL: '',
   AWS_S3_BUCKET: '',
 });
 

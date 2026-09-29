@@ -1,5 +1,16 @@
 import { supabase } from '../core/supabase';
 import { ShipmentService } from './shipment.service';
+import { tplNetworkService } from './tpl-network.service';
+import { HttpError } from '../core/errors';
+
+const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
+
+/** True only when staff have turned on automatic 3PL escalation. */
+async function autoEscalationEnabled(): Promise<boolean> {
+  const { data } = await supabase.from('system_settings').select('value').eq('key', AUTO_ESCALATE_KEY).maybeSingle();
+  const value = data?.value as unknown;
+  return value === true || (typeof value === 'object' && value !== null && (value as { enabled?: unknown }).enabled === true);
+}
 
 export const matchingService = {
   /**
@@ -120,19 +131,17 @@ export const matchingService = {
       // Low confidence -> Escalate to Tier 2 (3PL Network)
       escalationLevel = 'Tier 2';
 
-      // Find 3PL partners matching the corridor
-      // Assuming origin and dest are stored in shipment or we do a text match
-      // Corridors are named by city codes (e.g. DEL-BOM). Without both cities there is
-      // no corridor to match, so nothing is broadcast (no guessed default corridor).
-      const origin: string | undefined = shipment.origin_city;
-      const dest: string | undefined = shipment.destination_city;
-      if (origin && dest) {
-        const corridor = `${origin.substring(0, 3).toUpperCase()}-${dest.substring(0, 3).toUpperCase()}`;
-        const { data: corridors } = await supabase
-          .from('tpl_corridors')
-          .select('partner_id, proposed_rate')
-          .eq('corridor_name', corridor);
-        broadcastedTo = corridors?.length || 0;
+      // Offer the load to every active 3PL partner whose corridor runs from the pickup to the
+      // drop (matched on city or state names), but only when staff have switched automatic
+      // escalation on (system_settings.auto_escalate_3pl). Off by default: staff escalate by
+      // hand from the console, so partners aren't flooded while the own fleet is small.
+      if (await autoEscalationEnabled()) {
+        try {
+          const result = await tplNetworkService.escalate('shipment', shipmentId, null);
+          broadcastedTo = result.created;
+        } catch (e) {
+          if (!(e instanceof HttpError)) console.error('Cascade Matcher - 3PL escalation failed:', e);
+        }
       }
     }
 

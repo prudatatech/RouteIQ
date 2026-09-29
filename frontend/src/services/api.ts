@@ -334,6 +334,131 @@ export const tplAPI = {
   setupPassword: (email: string, otp: string, password: string) => api.post('/tpl/auth/setup-password', { email, otp, password }).then(r => r.data),
 }
 
+export interface OnlineGstin {
+  status: 'not_configured' | 'active' | 'inactive' | 'not_found' | 'unavailable'
+  legal_name?: string | null
+  trade_name?: string | null
+  gst_status?: string | null
+}
+
+export interface GstinVerification {
+  gstin: string
+  valid: boolean
+  problem?: 'empty' | 'format' | 'checksum'
+  message?: string
+  stateCode?: string
+  pan?: string
+  online: OnlineGstin
+  /** One plain sentence for the person looking at the screen. */
+  summary: string
+}
+
+export const gstinAPI = {
+  /** Checksum and PAN check on the server, plus the online lookup when the GSP is configured. */
+  verify: (gstin: string, pan?: string): Promise<GstinVerification> =>
+    api.post('/gstin/verify', { gstin, pan }).then(r => r.data),
+}
+
+export type TplSource = { request_id: string } | { shipment_id: string }
+
+export interface TplOffer {
+  id: string
+  partner_id: string
+  partner_name?: string | null
+  source_type: 'request' | 'shipment'
+  request_id: string | null
+  shipment_id: string | null
+  corridor_name: string | null
+  pickup_location: string | null
+  drop_location: string | null
+  weight_kg: number | null
+  proposed_price: number | null
+  status: 'offered' | 'accepted' | 'declined' | 'taken' | 'withdrawn'
+  pickup_eta: string | null
+  decline_reason: string | null
+  offered_at: string
+  responded_at: string | null
+}
+
+export interface TplOrder {
+  id: string
+  offer_id: string
+  partner_id: string
+  partner_name?: string | null
+  source_type: 'request' | 'shipment'
+  request_id: string | null
+  shipment_id: string | null
+  pickup_location: string | null
+  drop_location: string | null
+  weight_kg: number | null
+  agreed_amount: number
+  status: 'accepted' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled'
+  pickup_eta: string | null
+  due_by: string | null
+  accepted_at: string
+  picked_up_at: string | null
+  delivered_at: string | null
+  pod_note: string | null
+  paid_at: string | null
+  paid_reference: string | null
+  rating: number | null
+  rating_note: string | null
+}
+
+export interface TplPartnerStats {
+  offers_received: number
+  offers_accepted: number
+  offers_declined: number
+  offers_taken: number
+  acceptance_rate: number | null
+  avg_response_minutes: number | null
+  orders_completed: number
+  orders_active: number
+  sla_breaches: number
+  sla_measured: number
+  rating_avg: number | null
+  rating_count: number
+}
+
+export interface TplEarnings {
+  totals: { total: number; paid: number; unpaid: number }
+  months: { month: string; total: number; paid: number; unpaid: number; orders: TplOrder[] }[]
+}
+
+const sourceParams = (source: TplSource) => ({ ...source })
+
+export const tplNetworkAPI = {
+  settings: (): Promise<{ auto_escalate: boolean }> => api.get('/tpl-network/settings').then(r => r.data),
+  saveSettings: (auto_escalate: boolean): Promise<{ auto_escalate: boolean }> => api.put('/tpl-network/settings', { auto_escalate }).then(r => r.data),
+  // Staff
+  escalations: (source: TplSource): Promise<{ offers: TplOffer[]; order: TplOrder | null }> =>
+    api.get('/tpl-network/escalations', { params: sourceParams(source) }).then(r => r.data),
+  preview: (source: TplSource): Promise<{ pickup: string; drop: string; partners: { partner_id: string; company_name: string; corridor_name: string; price: number | null }[] }> =>
+    api.get('/tpl-network/escalations/preview', { params: sourceParams(source) }).then(r => r.data),
+  escalate: (source: TplSource): Promise<{ created: number; already_offered: number; matched: number }> =>
+    api.post('/tpl-network/escalations', source).then(r => r.data),
+  withdrawAll: (source: TplSource) => api.post('/tpl-network/escalations/withdraw', source).then(r => r.data),
+  withdrawOffer: (offerId: string) => api.post(`/tpl-network/offers/${offerId}/withdraw`).then(r => r.data),
+  orders: (partnerId?: string): Promise<TplOrder[]> =>
+    api.get('/tpl-network/orders', { params: partnerId ? { partner_id: partnerId } : undefined }).then(r => r.data),
+  rateOrder: (orderId: string, rating: number, note?: string) =>
+    api.post(`/tpl-network/orders/${orderId}/rate`, { rating, note }).then(r => r.data),
+  markPaid: (orderId: string, paid: boolean, reference?: string) =>
+    api.post(`/tpl-network/orders/${orderId}/paid`, { paid, reference }).then(r => r.data),
+  allStats: (): Promise<Record<string, TplPartnerStats>> => api.get('/tpl-network/partners/stats').then(r => r.data),
+  partnerStats: (partnerId: string): Promise<TplPartnerStats> => api.get(`/tpl-network/partners/${partnerId}/stats`).then(r => r.data),
+  // Partner
+  myOffers: (): Promise<TplOffer[]> => api.get('/tpl-network/my/offers').then(r => r.data),
+  accept: (offerId: string, data: { pickup_eta?: string; delivery_eta?: string; agreed_amount?: number }): Promise<TplOrder> =>
+    api.post(`/tpl-network/my/offers/${offerId}/accept`, data).then(r => r.data),
+  decline: (offerId: string, reason: string) => api.post(`/tpl-network/my/offers/${offerId}/decline`, { reason }).then(r => r.data),
+  myOrders: (): Promise<TplOrder[]> => api.get('/tpl-network/my/orders').then(r => r.data),
+  updateOrder: (orderId: string, status: 'picked_up' | 'in_transit' | 'delivered', note?: string): Promise<TplOrder> =>
+    api.post(`/tpl-network/my/orders/${orderId}/status`, { status, note }).then(r => r.data),
+  myEarnings: (): Promise<TplEarnings> => api.get('/tpl-network/my/earnings').then(r => r.data),
+  myStats: (): Promise<TplPartnerStats> => api.get('/tpl-network/my/stats').then(r => r.data),
+}
+
 export const telemetryWS = {
   /** WebSocket URL on the same backend the REST client uses (Vercel rewrites cannot proxy WebSockets). */
   getURL: () => {

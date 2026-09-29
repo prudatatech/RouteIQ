@@ -6,6 +6,7 @@ import { Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Page
 import { errorMessage, formatRupees } from '@/utils/display'
 import { useAuthStore } from '@/store/authStore'
 import { AlarmSettingsSection } from '@/components/fleet/AlarmSettings'
+import { AutoEscalationSetting } from '@/components/tpl/AutoEscalationSetting'
 
 /** Numbers costs and pricing are worked out from, and (for superadmins) fleet alarm rules. */
 export default function SettingsPage() {
@@ -93,6 +94,12 @@ export default function SettingsPage() {
         <section aria-labelledby="alarm-settings" className="space-y-4">
           <h2 id="alarm-settings" className="text-lg font-semibold text-text">Fleet alarms</h2>
           <AlarmSettingsSection />
+        </section>
+      )}
+
+      {isSuperadmin && (
+        <section aria-label="Partner network" className="space-y-4">
+          <AutoEscalationSetting />
         </section>
       )}
     </Page>
