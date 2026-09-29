@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
-import { createApp } from '../src/app';
+import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 
-const app = createApp();
+const app = testApp();
 
 const VENDOR = 'vendor-1';
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });

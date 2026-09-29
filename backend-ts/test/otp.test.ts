@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
-import { createApp } from '../src/app';
+import { testApp } from './support/test-app';
 import { authenticateToken } from '../src/core/auth';
 
-const app = createApp();
+const app = testApp();
 
 // Outside production without Twilio, the SMS body is logged with console.warn
 let warn: MockInstance<typeof console.warn>;

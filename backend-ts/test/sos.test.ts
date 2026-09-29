@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
-import { createApp } from '../src/app';
+import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 
-const app = createApp();
+const app = testApp();
 const VEHICLE = '33333333-3333-3333-3333-333333333333';
 const driver = createAccessToken({ sub: 'driver-1', role: 'driver' });
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });

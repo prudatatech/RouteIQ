@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { createApp } from '../src/app';
+import { testApp } from './support/test-app';
 
-const app = createApp();
+const app = testApp();
 const preflight = (origin: string) =>
   request(app).options('/api/v1/dashboard/kpis').set('Origin', origin).set('Access-Control-Request-Method', 'GET');
 
