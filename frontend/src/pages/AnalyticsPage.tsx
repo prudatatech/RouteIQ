@@ -5,12 +5,14 @@ import OverviewTab from '@/components/analytics/OverviewTab'
 import LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
 import DriversTab from '@/components/analytics/DriversTab'
 import VendorsTab from '@/components/analytics/VendorsTab'
+import FinanceTab from '@/components/analytics/FinanceTab'
 
-const TAB_IDS = ['overview', 'vehicles', 'drivers', 'vendors'] as const
+const TAB_IDS = ['overview', 'finance', 'vehicles', 'drivers', 'vendors'] as const
 type TabId = typeof TAB_IDS[number]
 
 const TABS: TabItem<TabId>[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'finance', label: 'Finance' },
   { id: 'vehicles', label: 'Vehicles' },
   { id: 'drivers', label: 'Drivers' },
   { id: 'vendors', label: 'Vendors' },
@@ -38,6 +40,7 @@ export default function AnalyticsPage() {
       </PageHeader>
       <TabPanel id={tab}>
         {tab === 'overview' && <OverviewTab />}
+        {tab === 'finance' && <FinanceTab />}
         {tab === 'vehicles' && <LiveTelemetryTab vehicleId={vehicleId} onVehicleChange={setVehicle} />}
         {tab === 'drivers' && <DriversTab />}
         {tab === 'vendors' && <VendorsTab />}

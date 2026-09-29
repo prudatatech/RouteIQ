@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { IndianRupee, PackageCheck, Route, Truck } from 'lucide-react'
+import { IndianRupee, PackageCheck, Route, Scale, Truck, Wallet } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { Alert, Button, DateRangeControl, presetRange, Stat, type DateRangeValue } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
 import { formatDay, formatNumber, formatRupees } from './format'
+import { useFinanceSummary } from './useFinanceSummary'
 
 interface FleetOverview {
   trips_today: number
@@ -41,6 +42,8 @@ export default function OverviewTab() {
     refetchInterval: REFRESH_MS,
   })
 
+  const finance = useFinanceSummary(range)
+  const fin = finance.data
   const ov = overview.data
   const loading = overview.isLoading
   const days = activity.data ?? []
@@ -94,6 +97,40 @@ export default function OverviewTab() {
                 ? `${formatNumber(ov.backhaul_loads_today)} vendor load${ov.backhaul_loads_today === 1 ? '' : 's'} assigned`
                 : 'No vendor loads assigned in this range')
               : undefined}
+          />
+        </section>
+      )}
+
+      {!finance.isError && (
+        <section aria-label={`Money for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          <Stat
+            label="Revenue"
+            icon={<IndianRupee size={18} />}
+            loading={finance.isLoading}
+            value={fin ? formatRupees(Math.round(fin.revenue)) : '—'}
+            hint={fin ? (fin.invoice_count > 0 ? `${formatNumber(fin.invoice_count)} invoice${fin.invoice_count === 1 ? '' : 's'}, before GST` : 'No invoices in this range') : undefined}
+          />
+          <Stat
+            label="Costs"
+            icon={<Wallet size={18} />}
+            loading={finance.isLoading}
+            value={fin ? formatRupees(Math.round(fin.costs.total)) : '—'}
+            hint={fin ? (fin.costs.total > 0 ? 'Expenses and estimated fuel' : 'No expenses in this range') : undefined}
+          />
+          <Stat
+            label="Net profit"
+            icon={<Scale size={18} />}
+            loading={finance.isLoading}
+            value={fin ? formatRupees(Math.round(fin.net_profit)) : '—'}
+            tone={fin ? (fin.net_profit < 0 ? 'danger' : fin.net_profit > 0 ? 'success' : 'default') : 'default'}
+            hint="Revenue minus costs"
+          />
+          <Stat
+            label="Profit per truck"
+            icon={<Truck size={18} />}
+            loading={finance.isLoading}
+            value={fin?.profit_per_truck != null ? formatRupees(Math.round(fin.profit_per_truck)) : '—'}
+            hint={fin ? (fin.active_trucks > 0 ? `${formatNumber(fin.active_trucks)} truck${fin.active_trucks === 1 ? '' : 's'} worked` : 'No truck activity in this range') : undefined}
           />
         </section>
       )}
