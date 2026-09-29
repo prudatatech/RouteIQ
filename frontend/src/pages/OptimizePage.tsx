@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { formatEta } from '@/utils/timeFormat'
+import { isDraftVehicle } from '@/utils/vehicles'
 import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
@@ -144,13 +145,17 @@ export default function OptimizePage() {
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'optimizable'],
     queryFn: () => (vehiclesAPI.list({ limit: 500 }) as Promise<Vehicle[]>).then((list: Vehicle[]) =>
-      list.filter(v => ['available', 'idle', 'on_route', 'offline'].includes(v.status)),
+      // Same rule as the server: vehicles in service, never a placeholder (TEMP-/DRFT- plate)
+      list.filter(v => ['available', 'idle', 'on_route', 'offline'].includes(v.status) && !isDraftVehicle(v)),
     ),
   })
 
   const { data: pendingShipments = [], isLoading: shipmentsLoading } = useQuery<Shipment[]>({
     queryKey: ['shipments', 'pending'],
-    queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: Shipment & { status: string; vehicle_id?: string | null }) => s.status === 'created' && !s.vehicle_id)),
+    queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: Shipment & { status: string; vehicle_id?: string | null }) =>
+      // New loads, and failed deliveries waiting for another attempt (the server plans both)
+      (s.status === 'created' && !s.vehicle_id) || s.status === 'exception',
+    )),
   })
 
   // Every vehicle and shipment is available to pick from; default to all selected
@@ -299,7 +304,8 @@ export default function OptimizePage() {
   const mapStops: MapRouteStop[] = useMemo(() => {
     if (!result?.routes?.length) {
       return pendingShipments.flatMap(s => {
-        const dp = s.delivery_points?.[0]
+        // The final drop is the last point, as everywhere else
+        const dp = s.delivery_points?.[s.delivery_points.length - 1]
         return dp?.latitude != null && dp?.longitude != null
           ? [{ id: s.id, sequence: 0, label: dp.name || dp.address || s.tracking_id || undefined, position: { lat: dp.latitude, lng: dp.longitude } }]
           : []

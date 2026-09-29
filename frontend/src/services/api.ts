@@ -370,6 +370,8 @@ export interface CustomerBooking {
   pickup_date: string
   quoted_price: number | null
   status: 'requested' | 'confirmed' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled'
+  /** Status of the linked shipment; `exception` is a failed delivery attempt (the booking status has no state for it). */
+  shipment_status?: string | null
   shipment_id: string | null
   tracking_id: string | null
   vehicle_id: string | null
@@ -382,8 +384,8 @@ export interface CustomerBooking {
 /** Bookings made by customers in the mobile app. */
 export const bookingsAPI = {
   list: () => api.get('/bookings').then(r => ensureArray(r.data) as CustomerBooking[]),
-  /** Creates the shipment, so the booking can be dispatched like any other load. */
-  confirm: (id: string) => api.post(`/bookings/${id}/confirm`).then(r => r.data),
+  /** Creates the shipment, so the booking can be dispatched like any other load. `price` (rupees before GST) overrides the customer's quote. */
+  confirm: (id: string, price?: number | null) => api.post(`/bookings/${id}/confirm`, price == null ? {} : { price }).then(r => r.data),
   assign: (id: string, vehicle_id: string) => api.post(`/bookings/${id}/assign`, { vehicle_id }).then(r => r.data),
   cancel: (id: string, reason: string) => api.post(`/bookings/${id}/cancel`, { reason }).then(r => r.data),
 }

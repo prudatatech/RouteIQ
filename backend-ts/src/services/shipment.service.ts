@@ -7,7 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
 import { SecurityService } from './security.service';
 import { InvoiceService } from './invoice.service';
-import { SHIPMENT_TRANSITIONS, assertTransition } from '../core/transitions';
+import { OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertTransition } from '../core/transitions';
+import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
+import { notificationService } from './notification.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 
@@ -76,6 +78,117 @@ export interface PublicHistoryEvent {
   at: string;
 }
 
+/** Vehicles that have a route stop for any of these delivery points. */
+async function vehiclesOnStopsOf(dpIds: string[]): Promise<string[]> {
+  if (dpIds.length === 0) return [];
+  const { data: stops } = await supabase.from('route_stops').select('route_id').in('delivery_point_id', dpIds);
+  const routeIds = Array.from(new Set((stops || []).map((st: any) => st.route_id)));
+  if (routeIds.length === 0) return [];
+  const { data: routes } = await supabase.from('routes').select('vehicle_id').in('id', routeIds);
+  return Array.from(new Set((routes || []).map((r: any) => r.vehicle_id).filter(Boolean)));
+}
+
+/**
+ * Starts a pending route through the route service, so the vehicle goes on_route,
+ * planned arrivals are stamped and the driver is told. A route that cannot be started
+ * (the vehicle went into maintenance meanwhile) stays pending for dispatch to start.
+ */
+async function dispatchRoute(routeId: string): Promise<void> {
+  try {
+    const { routeService } = await import('./route.service');
+    await routeService.changeStatus(routeId, 'active');
+  } catch (e) {
+    console.error(`[shipment] route ${routeId} could not be dispatched:`, e);
+  }
+}
+
+/**
+ * The one way a shipment becomes `assigned`: whether dispatch picked a vehicle, the shipment
+ * was created with one, a customer booking was assigned or the optimizer planned it.
+ * Follows the transition rules (a failed delivery can be assigned again), writes the status
+ * log with the vehicle and route, and moves the linked customer booking to `assigned`.
+ * The caller has already checked the vehicle and created the route stops.
+ */
+export async function markAssigned(
+  shipment: { id: string; status: string; origin_lat?: number | null; origin_lng?: number | null },
+  vehicle: { id: string },
+  route: { id: string },
+  actor?: LogActor | null,
+): Promise<void> {
+  if (shipment.status !== 'assigned') {
+    assertTransition(SHIPMENT_TRANSITIONS, 'shipment', shipment.status, 'assigned');
+    const { data: moved, error } = await supabase
+      .from('shipments')
+      .update({ status: 'assigned' })
+      .eq('id', shipment.id)
+      .eq('status', shipment.status)
+      .select('id')
+      .maybeSingle();
+    if (error) throw new Error(`Failed to assign shipment: ${error.message}`);
+    if (!moved) throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
+  }
+  await ShipmentService.recordShipmentLog(
+    shipment.id, 'assigned', shipment.origin_lat, shipment.origin_lng,
+    { vehicle_id: vehicle.id, route_id: route.id }, actor,
+  );
+  try {
+    const { onShipmentStatus } = await import('./customer-bookings.service');
+    await onShipmentStatus(shipment.id, 'assigned', { vehicle_id: vehicle.id });
+  } catch (e) {
+    console.error('Failed to update the customer booking:', e);
+  }
+}
+
+/**
+ * Called when a route is cancelled or deleted: its shipments that have not been picked up go
+ * back to `created` (logged, the customer booking back to `confirmed`) and their stops on
+ * that route are cancelled, so they can be assigned again. Shipments already picked up,
+ * in transit, failed or delivered are left as they are. Returns the ids released.
+ */
+export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActor | null): Promise<string[]> {
+  const { data: route } = await supabase.from('routes').select('vehicle_id').eq('id', routeId).maybeSingle();
+  const { data: stops, error } = await supabase.from('route_stops').select('id, delivery_point_id, status').eq('route_id', routeId);
+  if (error) throw new Error(`Failed to read the route's stops: ${error.message}`);
+  const dpIds = Array.from(new Set((stops || []).map((st: any) => st.delivery_point_id)));
+  if (dpIds.length === 0) return [];
+
+  const { data: dps } = await supabase.from('delivery_points').select('id, shipment_id').in('id', dpIds);
+  const shipmentIds = Array.from(new Set((dps || []).map((dp: any) => dp.shipment_id).filter(Boolean))) as string[];
+  if (shipmentIds.length === 0) return [];
+  const { data: shipments } = await supabase.from('shipments').select('id, status, origin_lat, origin_lng').in('id', shipmentIds);
+
+  const released: string[] = [];
+  for (const shipment of shipments || []) {
+    if (shipment.status !== 'assigned') continue;
+    const { data: moved } = await supabase
+      .from('shipments')
+      .update({ status: 'created' })
+      .eq('id', shipment.id)
+      .eq('status', 'assigned')
+      .select('id')
+      .maybeSingle();
+    if (!moved) continue;
+    released.push(shipment.id);
+    await ShipmentService.recordShipmentLog(
+      shipment.id, 'created', shipment.origin_lat, shipment.origin_lng,
+      { released_from_route: routeId, reason: 'route_cancelled' }, actor,
+    );
+    try {
+      const { onShipmentStatus } = await import('./customer-bookings.service');
+      await onShipmentStatus(shipment.id, 'created');
+    } catch (e) {
+      console.error('Failed to update the customer booking:', e);
+    }
+    const releasedDpIds = (dps || []).filter((dp: any) => dp.shipment_id === shipment.id).map((dp: any) => dp.id);
+    await supabase.from('route_stops').update({ status: 'cancelled' }).eq('route_id', routeId).in('delivery_point_id', releasedDpIds).eq('status', 'pending');
+  }
+  if (released.length > 0 && route?.vehicle_id) await ShipmentService.recalculateVehicleCapacity(route.vehicle_id);
+  return released;
+}
+
+/** The vehicle classes the database knows (vehicles.vehicle_type). */
+const VEHICLE_CLASSES = ['truck', 'van', 'bike', 'car'] as const;
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -141,79 +254,103 @@ export class ShipmentService {
   }
 
   /**
-   * Recalculates available capacity for a specific vehicle based on active shipments.
+   * Kilograms of load a vehicle is carrying or has been given: shipments that are
+   * created, assigned, picked up, in transit or failed (exception) and still on one of
+   * its pending or active routes. `excludeShipmentId` leaves one shipment out, for
+   * checking whether it would fit.
    */
-  static async recalculateVehicleCapacity(vehicleId: string): Promise<void> {
-    if (!vehicleId) return;
-
-    // 1. Get vehicle total capacity
-    const { data: vehicle } = await supabase
-      .from('vehicles')
-      .select('capacity_kg')
-      .eq('id', vehicleId)
-      .single();
-
-    if (!vehicle) return;
-
-    // 2. Sum declared load of active shipments for this vehicle
-    // We find shipments that are tied to this vehicle via routes/route_stops
-    // For simplicity, if shipments have a vehicle_id, we'd use that, but shipments are linked via routes.
-    // Let's get active routes for the vehicle, then stops, then delivery points, then shipments
+  static async activeLoadKg(vehicleId: string, excludeShipmentId?: string): Promise<number> {
     const { data: routes } = await supabase
       .from('routes')
       .select('id')
       .eq('vehicle_id', vehicleId)
       .in('status', ['active', 'pending']);
+    if (!routes || routes.length === 0) return 0;
 
-    let totalLoad = 0;
-    if (routes && routes.length > 0) {
-      const routeIds = routes.map((r: any) => r.id);
-      const { data: stops } = await supabase
-        .from('route_stops')
-        .select('delivery_point_id')
-        .in('route_id', routeIds)
-        .in('status', ['pending']);
+    // A failed stop belongs to an exception shipment whose load is still on the vehicle
+    const { data: stops } = await supabase
+      .from('route_stops')
+      .select('delivery_point_id')
+      .in('route_id', routes.map((r: any) => r.id))
+      .in('status', ['pending', 'failed']);
+    if (!stops || stops.length === 0) return 0;
 
-      if (stops && stops.length > 0) {
-        const dpIds = stops.map((s: any) => s.delivery_point_id);
-        const { data: dps } = await supabase
-          .from('delivery_points')
-          .select('shipment_id')
-          .in('id', dpIds);
+    const { data: dps } = await supabase
+      .from('delivery_points')
+      .select('shipment_id')
+      .in('id', stops.map((s: any) => s.delivery_point_id));
+    const shipmentIds = Array.from(new Set((dps || []).map((dp: any) => dp.shipment_id).filter((id: any) => id && id !== excludeShipmentId)));
+    if (shipmentIds.length === 0) return 0;
 
-        if (dps && dps.length > 0) {
-          const shipmentIds = dps.map((dp: any) => dp.shipment_id).filter(Boolean);
-          if (shipmentIds.length > 0) {
-            const { data: activeShipments } = await supabase
-              .from('shipments')
-              .select('total_weight_kg') // Reverted declared_load_kg due to schema cache issues
-              .in('id', shipmentIds)
-              .in('status', ['created', 'picked_up', 'in_transit']);
+    const { data: shipments } = await supabase
+      .from('shipments')
+      .select('total_weight_kg')
+      .in('id', shipmentIds as string[])
+      .in('status', [...ShipmentService.LOAD_STATUSES]);
+    return (shipments || []).reduce((sum: number, s: any) => sum + (Number(s.total_weight_kg) || 0), 0);
+  }
 
-            if (activeShipments) {
-              totalLoad = activeShipments.reduce((sum: number, s: any) => sum + (s.total_weight_kg || 0), 0);
-            }
-          }
-        }
-      }
-    }
+  /** Shipment statuses whose weight counts against the vehicle carrying them. */
+  static readonly LOAD_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'exception'] as const;
 
+  /**
+   * Recalculates available capacity for a specific vehicle based on active shipments.
+   * A vehicle in maintenance or archived is never moved, and one with a running route
+   * stays on_route; only a vehicle stuck on_route with nothing left to run is freed.
+   */
+  static async recalculateVehicleCapacity(vehicleId: string): Promise<void> {
+    if (!vehicleId) return;
+
+    const { data: vehicle } = await supabase
+      .from('vehicles')
+      .select('capacity_kg')
+      .eq('id', vehicleId)
+      .single();
+    if (!vehicle) return;
+
+    const totalLoad = await ShipmentService.activeLoadKg(vehicleId);
     const available = Math.max(0, vehicle.capacity_kg - totalLoad);
 
-    const updatePayload: any = {
-      available_capacity_kg: available,
-      capacity_updated_at: new Date().toISOString()
-    };
-
-    if (available === vehicle.capacity_kg) {
-      updatePayload.status = 'available';
-    }
-
-    // 3. Update vehicle
     await supabase
       .from('vehicles')
-      .update(updatePayload)
+      .update({ available_capacity_kg: available, capacity_updated_at: new Date().toISOString() })
       .eq('id', vehicleId);
+
+    if (available === vehicle.capacity_kg) {
+      const { data: running } = await supabase.from('routes').select('id').eq('vehicle_id', vehicleId).eq('status', 'active').limit(1);
+      if (!running || running.length === 0) {
+        await supabase.from('vehicles').update({ status: 'available' }).eq('id', vehicleId).eq('status', 'on_route');
+      }
+    }
+  }
+
+  /**
+   * The one check every way of putting a shipment on a vehicle goes through: the vehicle
+   * must be in service, be the type the load asks for, and have room for it.
+   */
+  static async assertVehicleCanTake(vehicleId: string, weightKg: number, requiredType?: string | null, excludeShipmentId?: string): Promise<void> {
+    const { data: vehicle } = await supabase
+      .from('vehicles')
+      .select('id, status, vehicle_type, capacity_kg')
+      .eq('id', vehicleId)
+      .maybeSingle();
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
+      throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a shipment.`);
+    }
+    // Vehicles have a plain class (truck, van, ...); a booking may name a marketing model instead
+    // ("Tata Ace"), which cannot be compared, so only a class is enforced (capacity covers the rest).
+    const isClass = !!requiredType && (VEHICLE_CLASSES as readonly string[]).includes(requiredType.toLowerCase());
+    if (isClass && vehicle.vehicle_type && String(vehicle.vehicle_type).toLowerCase() !== requiredType!.toLowerCase()) {
+      throw new HttpError(409, `This load needs a ${requiredType}, and that vehicle is a ${vehicle.vehicle_type}.`);
+    }
+    const capacity = Number(vehicle.capacity_kg);
+    if (weightKg > 0 && capacity > 0) {
+      const free = capacity - (await ShipmentService.activeLoadKg(vehicleId, excludeShipmentId));
+      if (weightKg > free) {
+        throw new HttpError(409, `That vehicle has ${Math.max(0, Math.round(free))} kg free and this load is ${Math.round(weightKg)} kg.`);
+      }
+    }
   }
 
   /**
@@ -221,6 +358,11 @@ export class ShipmentService {
    */
   static async createShipment(shipmentIn: ShipmentCreate, actor?: LogActor | null): Promise<Shipment> {
     const trackingId = shipmentIn.tracking_id || `RTX-${uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
+
+    // A load put on a vehicle at creation must fit that vehicle, like any other assignment
+    if (shipmentIn.vehicle_id && !shipmentIn.open_bidding) {
+      await ShipmentService.assertVehicleCanTake(shipmentIn.vehicle_id, Number(shipmentIn.total_weight_kg) || 0);
+    }
 
     // 1. Insert shipment
     const shipmentId = uuidv4();
@@ -309,10 +451,14 @@ export class ShipmentService {
     }
     
     if (dpRows.length > 0) {
+      // Rising timestamps keep the creation order exact: the last point is the final drop
+      const base = Date.now();
+      dpRows.forEach((row: any, i: number) => { row.created_at = new Date(base + i).toISOString(); });
       await supabase.from('delivery_points').upsert(dpRows);
     }
 
     // 4. Create Route if vehicle_id is provided
+    let routeIdForVehicle: string | null = null;
     if (shipmentIn.vehicle_id && createdDpIds.length > 0) {
       let initialDistKm = 0;
       let currLat = shipmentIn.origin_lat || 0;
@@ -338,10 +484,14 @@ export class ShipmentService {
       const initialFuelLiters = parseFloat((initialDistKm / 4.0).toFixed(1));
 
       const routeId = uuidv4();
+      routeIdForVehicle = routeId;
+      // A bidding shipment only holds the vehicle's spare capacity open and never runs on it,
+      // so its route starts active as before. Every other route is created pending and
+      // dispatched through the route service once the shipment is marked assigned.
       const { data: dbRoute } = await supabase.from('routes').insert({
         id: routeId,
         vehicle_id: shipmentIn.vehicle_id,
-        status: 'active',
+        status: shipmentIn.open_bidding ? 'active' : 'pending',
         total_distance_km: parseFloat(initialDistKm.toFixed(1)),
         total_duration_minutes: initialDurationMins,
         estimated_fuel_liters: initialFuelLiters,
@@ -403,6 +553,17 @@ export class ShipmentService {
     // 5. Create tamper-evident log
     await ShipmentService.recordShipmentLog(dbShipment.id, 'created', null, null, undefined, actor);
 
+    // 5.5 A shipment created with a vehicle is assigned to it and its route dispatched
+    if (shipmentIn.vehicle_id && !shipmentIn.open_bidding && createdDpIds.length > 0) {
+      await markAssigned(
+        { id: dbShipment.id, status: 'created', origin_lat: shipmentIn.origin_lat ?? null, origin_lng: shipmentIn.origin_lng ?? null },
+        { id: shipmentIn.vehicle_id },
+        { id: routeIdForVehicle! },
+        actor,
+      );
+      await dispatchRoute(routeIdForVehicle!);
+    }
+
     // 6. Recalculate vehicle capacity if vehicle assigned
     if (shipmentIn.vehicle_id) {
       await ShipmentService.recalculateVehicleCapacity(shipmentIn.vehicle_id);
@@ -423,7 +584,9 @@ export class ShipmentService {
   }
 
   /**
-   * Assign a driver/vehicle to an existing shipment.
+   * Assign a driver/vehicle to an existing shipment. Also puts a failed delivery
+   * (exception) back on a vehicle. The route is created pending and dispatched through
+   * the route service, so the vehicle goes on_route and the driver is told.
    */
   static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
@@ -432,15 +595,20 @@ export class ShipmentService {
     if (['picked_up', 'in_transit', 'delivered', 'cancelled'].includes(String(shipment.status))) {
       throw new HttpError(409, `This shipment is ${String(shipment.status).replace('_', ' ')} and can't be assigned to a vehicle.`);
     }
-    const { data: assignee } = await supabase.from('vehicles').select('id, status').eq('id', vehicleId).maybeSingle();
-    if (!assignee) throw new HttpError(404, 'Vehicle not found');
-    if (['maintenance', 'archived'].includes(String(assignee.status))) {
-      throw new HttpError(409, `That vehicle is in ${assignee.status} and can't take a shipment.`);
-    }
+    await ShipmentService.assertVehicleCanTake(
+      vehicleId,
+      Number(shipment.total_weight_kg) || 0,
+      (shipment as any).required_vehicle_type ?? null,
+      shipmentId,
+    );
 
     // Clean up any existing route stops for these delivery points
-    const dpIds = shipment.delivery_points.map(dp => dp.id);
+    const deliveryPoints = sortDeliveryPoints(shipment.delivery_points);
+    const dpIds = deliveryPoints.map(dp => dp.id);
+    const previousVehicles = await vehiclesOnStopsOf(dpIds);
     await supabase.from('route_stops').delete().in('delivery_point_id', dpIds);
+    // A failed stop is tried again, so its delivery point is pending once more
+    await supabase.from('delivery_points').update({ status: 'pending' }).in('id', dpIds);
 
     // Find active or pending route for this vehicle
     const { data: existingRoutes } = await supabase
@@ -452,14 +620,16 @@ export class ShipmentService {
       .limit(1);
 
     let routeId = existingRoutes?.[0]?.id;
+    let routeStatus: string | undefined = existingRoutes?.[0]?.status;
 
     if (!routeId) {
-      // Create new route
+      // Create new route, pending until it is dispatched below
       routeId = uuidv4();
+      routeStatus = 'pending';
       const { error: routeErr } = await supabase.from('routes').insert({
         id: routeId,
         vehicle_id: vehicleId,
-        status: 'active',
+        status: 'pending',
         total_distance_km: 0,
         total_duration_minutes: 0,
         estimated_fuel_liters: 0,
@@ -470,20 +640,30 @@ export class ShipmentService {
       if (routeErr) throw new Error(`Failed to create route: ${routeErr.message}`);
     }
 
-    // Add route stops
-    const routeStops = shipment.delivery_points.map((dp, index) => ({
+    // Add route stops after any the route already has
+    const { data: taken } = await supabase.from('route_stops').select('sequence').eq('route_id', routeId);
+    const firstSequence = (taken || []).reduce((max: number, r: any) => Math.max(max, Number(r.sequence) || 0), 0) + 1;
+    const routeStops = deliveryPoints.map((dp, index) => ({
       id: uuidv4(),
       route_id: routeId,
       delivery_point_id: dp.id,
-      sequence: index + 1,
+      sequence: firstSequence + index,
       status: 'pending'
     }));
     const { error: stopErr } = await supabase.from('route_stops').insert(routeStops);
 
     if (stopErr) throw new Error(`Failed to create route stops: ${stopErr.message}`);
 
+    await markAssigned(
+      { id: shipmentId, status: String(shipment.status), origin_lat: shipment.origin_lat ?? null, origin_lng: shipment.origin_lng ?? null },
+      { id: vehicleId },
+      { id: routeId },
+      actor,
+    );
+    if (routeStatus === 'pending') await dispatchRoute(routeId);
+
     // Optionally trigger vendor match
-    const lastStop = shipment.delivery_points[shipment.delivery_points.length - 1];
+    const lastStop = finalDeliveryPoint<any>(deliveryPoints)!;
     if (shipment.origin_lat && shipment.origin_lng && lastStop.latitude && lastStop.longitude) {
       import('./vendor.service').then(({ vendorService }) => {
         vendorService.matchRouteToVendors(
@@ -497,8 +677,10 @@ export class ShipmentService {
       });
     }
 
-    await this.recordShipmentLog(shipmentId, 'assigned', shipment.origin_lat, shipment.origin_lng, { vehicle_id: vehicleId }, actor);
     await this.recalculateVehicleCapacity(vehicleId);
+    for (const previous of previousVehicles) {
+      if (previous !== vehicleId) await this.recalculateVehicleCapacity(previous);
+    }
 
     return this.getShipment(shipmentId);
   }
@@ -689,7 +871,7 @@ export class ShipmentService {
     // Map to our interface shape
     const shipment: Shipment = {
       ...data,
-      delivery_points: data.delivery_points || [],
+      delivery_points: sortDeliveryPoints(data.delivery_points),
       parcels: data.parcels || [],
       logs: data.shipment_logs || [],
       is_verified: SecurityService.verifyChain(data.shipment_logs || []),
@@ -704,7 +886,7 @@ export class ShipmentService {
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
+      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
       .order('created_at', { ascending: false })
       .range(skip, skip + limit - 1);
 
@@ -726,9 +908,11 @@ export class ShipmentService {
 
     const mappedShipments = data.map((d: any) => {
       const bidWindow = biddingByShipment.get(d.id);
-      const deliveryPoints = d.delivery_points || [];
-      const primaryDp = deliveryPoints[0];
-      const activeRouteStop = primaryDp?.route_stops?.find((rs: any) => rs.routes);
+      const deliveryPoints = sortDeliveryPoints(d.delivery_points);
+      // Any stop with a route tells which vehicle carries it, whichever point it is on
+      const activeRouteStop = deliveryPoints
+        .flatMap((dp: any) => dp.route_stops || [])
+        .find((rs: any) => rs.routes && rs.routes.status !== 'cancelled');
       const vehicleInfo = activeRouteStop?.routes?.vehicles;
       let vehicleId = activeRouteStop?.routes?.vehicle_id || null;
       let driverName = vehicleInfo?.users?.full_name || null;
@@ -840,6 +1024,79 @@ export class ShipmentService {
     return await this.getShipment(shipmentId);
   }
 
+  private static async deliveryPointIds(shipmentId: string): Promise<string[]> {
+    const { data } = await supabase.from('delivery_points').select('id').eq('shipment_id', shipmentId);
+    return (data || []).map((dp: any) => dp.id);
+  }
+
+  /**
+   * When dispatch cancels, un-assigns or delivers a shipment, its stops that are still
+   * pending on a route are closed (cancelled, or completed for a delivery), the route is
+   * finished if nothing is left to do on it, and the driver is told. Returns the vehicles
+   * affected. A driver completing their own stop has already closed it, so nothing changes.
+   */
+  private static async closeRouteStops(shipmentId: string, status: string, actor?: LogActor | null): Promise<Set<string>> {
+    const vehicles = new Set<string>();
+    if (status !== 'cancelled' && status !== 'delivered' && status !== 'created') return vehicles;
+    // A driver delivering settles their own stop (complete-stop), and the route with it
+    if (status === 'delivered' && actor?.role === 'driver') return vehicles;
+
+    const { data: dps } = await supabase.from('delivery_points').select('id, name').eq('shipment_id', shipmentId);
+    const dpIds = (dps || []).map((dp: any) => dp.id);
+    if (dpIds.length === 0) return vehicles;
+    const { data: pending } = await supabase
+      .from('route_stops')
+      .select('id, route_id')
+      .in('delivery_point_id', dpIds)
+      .eq('status', 'pending');
+    if (!pending || pending.length === 0) return vehicles;
+
+    const now = new Date().toISOString();
+    const stopPatch = status === 'delivered' ? { status: 'completed', actual_arrival_at: now } : { status: 'cancelled' };
+    await supabase.from('route_stops').update(stopPatch).in('id', pending.map((st: any) => st.id)).eq('status', 'pending');
+
+    const routeIds = Array.from(new Set(pending.map((st: any) => st.route_id))) as string[];
+    const { data: routes } = await supabase.from('routes').select('id, status, vehicle_id').in('id', routeIds);
+    const destination = finalDeliveryPoint<any>(dps as any[])?.name || 'the drop-off';
+    const byStaff = actor?.role !== 'driver';
+
+    for (const route of routes || []) {
+      if (route.vehicle_id) vehicles.add(route.vehicle_id);
+
+      // Nothing left to do on the route: finish it (or cancel it when no stop was ever completed)
+      if (['pending', 'active'].includes(String(route.status))) {
+        const { data: open } = await supabase.from('route_stops').select('id').eq('route_id', route.id).eq('status', 'pending').limit(1);
+        if (!open || open.length === 0) {
+          const { data: done } = await supabase.from('route_stops').select('id').eq('route_id', route.id).eq('status', 'completed').limit(1);
+          try {
+            const { routeService } = await import('./route.service');
+            await routeService.changeStatus(route.id, done && done.length > 0 ? 'completed' : 'cancelled');
+          } catch (e) {
+            console.error(`[shipment] route ${route.id} could not be closed:`, e);
+          }
+        }
+      }
+
+      // Tell the driver, unless the driver is the one who made the change
+      if (byStaff && route.vehicle_id) {
+        try {
+          const { data: vehicle } = await supabase.from('vehicles').select('driver_id').eq('id', route.vehicle_id).maybeSingle();
+          if (vehicle?.driver_id) {
+            const text =
+              status === 'delivered' ? ['Delivery marked done', `Dispatch marked the delivery to ${destination} as delivered.`]
+              : status === 'created' ? ['Delivery removed', `Dispatch took the delivery to ${destination} off your route.`]
+              : actor?.role === 'customer' ? ['Delivery cancelled', `The customer cancelled the delivery to ${destination}.`]
+              : ['Delivery cancelled', `Dispatch cancelled the delivery to ${destination}.`];
+            await notificationService.sendNotification(vehicle.driver_id, text[0], text[1], 'shipment_' + (status === 'delivered' ? 'delivered' : 'cancelled'), { shipment_id: shipmentId, route_id: route.id });
+          }
+        } catch (e) {
+          console.warn('Failed to tell the driver about the change:', e);
+        }
+      }
+    }
+    return vehicles;
+  }
+
   /**
    * Update shipment status with optional POD data.
    */
@@ -905,36 +1162,16 @@ export class ShipmentService {
       console.error('Failed to update the customer booking:', e);
     }
 
-    // Find vehicle to recalculate capacity
-    const { data: dp } = await supabase
-      .from('delivery_points')
-      .select('id')
-      .eq('shipment_id', shipmentId)
-      .single();
-
-    if (dp) {
-      const { data: stop } = await supabase
-        .from('route_stops')
-        .select('route_id')
-        .eq('delivery_point_id', dp.id)
-        .limit(1)
-        .single();
-
-      if (stop) {
-        const { data: route } = await supabase
-          .from('routes')
-          .select('vehicle_id')
-          .eq('id', stop.route_id)
-          .single();
-
-        if (route && route.vehicle_id) {
-          await ShipmentService.recalculateVehicleCapacity(route.vehicle_id);
-
-          // Note: Automatic backhaul bidding was disabled in favor of Driver-triggered bidding.
-          // The driver will now trigger `openBackhaulWindow` from the driver app.
-        }
-      }
+    // A cancelled, delivered or un-assigned shipment leaves its route: close its pending
+    // stops, tell the driver, and free the vehicle's capacity.
+    const vehicles = await ShipmentService.closeRouteStops(shipmentId, status, actor);
+    if (vehicles.size === 0) {
+      for (const v of await vehiclesOnStopsOf(await ShipmentService.deliveryPointIds(shipmentId))) vehicles.add(v);
     }
+    for (const vehicleId of vehicles) await ShipmentService.recalculateVehicleCapacity(vehicleId);
+
+    // Note: Automatic backhaul bidding was disabled in favor of Driver-triggered bidding.
+    // The driver will now trigger `openBackhaulWindow` from the driver app.
 
     return ShipmentService.getShipment(shipmentId);
   }
@@ -953,7 +1190,8 @@ export class ShipmentService {
     // like change through their own rules (updateShipmentStatus, assignDriver).
     const filtered: Record<string, any> = {};
     for (const [key, value] of Object.entries(updateData)) {
-      if (value !== null && value !== undefined && ShipmentService.EDITABLE_FIELDS.includes(key)) {
+      // A price can be cleared (null); the other details cannot be emptied
+      if (value !== undefined && (value !== null || key === 'freight_charge') && ShipmentService.EDITABLE_FIELDS.includes(key)) {
         filtered[key] = value;
       }
     }
@@ -1251,7 +1489,7 @@ export class ShipmentService {
 
     if (!shipment) return null;
 
-    const dp = shipment.delivery_points?.[0];
+    const dp = finalDeliveryPoint<any>(shipment.delivery_points);
 
     const trackingInfo: Record<string, any> = {
       id: shipment.id,
@@ -1271,15 +1509,16 @@ export class ShipmentService {
       eta_minutes: null,
     };
 
-    // Find vehicle via route stops
-    if (dp) {
+    // Find the vehicle via the route stops of any of its points, preferring a route that is running
+    const pointIds = (shipment.delivery_points || []).map((p: any) => p.id);
+    if (dp && pointIds.length > 0) {
       const { data: routeStops } = await supabase
         .from('route_stops')
         .select('*, routes(*, vehicles(*))')
-        .eq('delivery_point_id', dp.id)
-        .limit(1);
+        .in('delivery_point_id', pointIds);
 
-      const stop = routeStops?.[0];
+      const usable = (routeStops || []).filter((st: any) => st.routes && st.routes.status !== 'cancelled');
+      const stop = usable.find((st: any) => ['active', 'pending'].includes(st.routes.status)) ?? usable[0];
       if (stop?.routes) {
         const route = stop.routes;
         const vehicle = route.vehicles;

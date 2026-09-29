@@ -22,11 +22,13 @@ export const ROUTE_TRANSITIONS: TransitionMap = {
 export const ROUTE_STATUSES = Object.keys(ROUTE_TRANSITIONS);
 
 export const SHIPMENT_TRANSITIONS: TransitionMap = {
-  created: ['picked_up', 'in_transit', 'delivered', 'exception', 'cancelled'],
-  assigned: ['picked_up', 'in_transit', 'delivered', 'exception', 'cancelled'],
+  created: ['assigned', 'picked_up', 'in_transit', 'delivered', 'exception', 'cancelled'],
+  // assigned -> created: the route it was on was cancelled or deleted, so it is waiting for a vehicle again
+  assigned: ['created', 'picked_up', 'in_transit', 'delivered', 'exception', 'cancelled'],
   picked_up: ['in_transit', 'delivered', 'exception'],
   in_transit: ['delivered', 'exception'],
-  exception: ['picked_up', 'in_transit', 'delivered', 'cancelled'],
+  // exception -> assigned: dispatch put a failed delivery on a vehicle again
+  exception: ['assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled'],
   delivered: [],
   cancelled: [],
 };

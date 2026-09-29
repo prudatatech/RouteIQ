@@ -6,10 +6,53 @@ import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
 import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { getVehicleDriverStats } from './driver-performance.service';
+import { selectIn } from './finance.service';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
 
 export class AnalyticsService {
+  /**
+   * When each delivery happened in `[startISO, endISO)`: shipments by the time their `delivered`
+   * status was logged (a later edit to the row does not move it; a shipment with no log at all falls back
+   * to its last update), plus vendor loads (cargo manifests) delivered in the range.
+   */
+  static async deliveryTimes(startISO: string, endISO: string): Promise<string[]> {
+    const { data: logs, error: logErr } = await supabase
+      .from('shipment_logs')
+      .select('shipment_id, timestamp')
+      .eq('status', 'delivered')
+      .gte('timestamp', startISO)
+      .lt('timestamp', endISO);
+    if (logErr) throw logErr;
+    const times = new Map<string, string>();
+    for (const l of logs || []) if (!times.has(l.shipment_id)) times.set(l.shipment_id, l.timestamp);
+
+    // Delivered shipments changed in range that have no delivered log at all (older data)
+    const { data: recent, error: recentErr } = await supabase
+      .from('shipments')
+      .select('id, updated_at')
+      .eq('status', 'delivered')
+      .gte('updated_at', startISO)
+      .lt('updated_at', endISO);
+    if (recentErr) throw recentErr;
+    const unlogged = (recent || []).filter((r: any) => !times.has(r.id));
+    if (unlogged.length > 0) {
+      const logged = await selectIn<{ shipment_id: string }>('shipment_logs', 'shipment_id', unlogged.map((r: any) => r.id), 'shipment_id', q => q.eq('status', 'delivered'));
+      const hasLog = new Set(logged.map(l => l.shipment_id));
+      for (const r of unlogged) if (!hasLog.has(r.id)) times.set(r.id, r.updated_at);
+    }
+
+    const { data: manifests, error: manifestErr } = await supabase
+      .from('cargo_manifest')
+      .select('id, updated_at')
+      .in('status', ['delivered', 'completed'])
+      .gte('updated_at', startISO)
+      .lt('updated_at', endISO);
+    if (manifestErr) throw manifestErr;
+    for (const m of manifests || []) times.set(`manifest:${m.id}`, m.updated_at);
+    return [...times.values()];
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // FLEET OVERVIEW — today's operational figures, all counted from real rows
   // ──────────────────────────────────────────────────────────────────────────
@@ -24,13 +67,13 @@ export class AnalyticsService {
       { count: runningVehicles },
       { count: idleVehicles },
       { count: tripsToday },
-      { count: deliveredToday },
+      deliveredTimes,
     ] = await Promise.all([
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+      AnalyticsService.deliveryTimes(startISO, endISO),
     ]);
 
     // Planned distance of the routes dispatched in range
@@ -42,11 +85,11 @@ export class AnalyticsService {
       .lt('created_at', endISO);
     const totalDistanceToday = (routesToday || []).reduce((s: number, r: any) => s + (r.total_distance_km || 0), 0);
 
-    // Backhaul revenue: agreed cost of vendor loads assigned or fulfilled in range
+    // Backhaul revenue: agreed cost of vendor loads assigned or completed in range
     const { data: backhaulData } = await supabase
       .from('vendor_shipment_requests')
       .select('cost')
-      .in('status', ['fulfilled', 'assigned'])
+      .in('status', ['completed', 'assigned'])
       .gte('created_at', startISO)
       .lt('created_at', endISO);
     const backhaulLoads = (backhaulData || []).filter((b: any) => b.cost != null);
@@ -57,7 +100,7 @@ export class AnalyticsService {
     // always ₹0 or invented.
     return {
       trips_today: tripsToday || 0,
-      deliveries_today: deliveredToday || 0,
+      deliveries_today: deliveredTimes.length,
       running_vehicles: runningVehicles || 0,
       idle_vehicles: idleVehicles || 0,
       total_vehicles: totalVehicles || 0,
@@ -88,12 +131,11 @@ export class AnalyticsService {
     const untilISO = end.toISOString();
     const dayCount = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
 
-    const [{ data: routes, error: routesErr }, { data: shipments, error: shipmentsErr }] = await Promise.all([
+    const [{ data: routes, error: routesErr }, deliveredAt] = await Promise.all([
       supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', sinceISO).lt('created_at', untilISO),
-      supabase.from('shipments').select('updated_at').eq('status', 'delivered').gte('updated_at', sinceISO).lt('updated_at', untilISO),
+      AnalyticsService.deliveryTimes(sinceISO, untilISO),
     ]);
     if (routesErr) throw routesErr;
-    if (shipmentsErr) throw shipmentsErr;
 
     const buckets = new Map<string, { trips: number; deliveries: number }>();
     for (let i = 0; i < dayCount; i++) {
@@ -103,8 +145,8 @@ export class AnalyticsService {
       const b = buckets.get(indianDateKey(new Date(r.created_at)));
       if (b) b.trips++;
     });
-    (shipments || []).forEach((sh: any) => {
-      const b = buckets.get(indianDateKey(new Date(sh.updated_at)));
+    deliveredAt.forEach((at: string) => {
+      const b = buckets.get(indianDateKey(new Date(at)));
       if (b) b.deliveries++;
     });
     return Array.from(buckets, ([date, v]) => ({ date, ...v }));
@@ -407,7 +449,7 @@ export class AnalyticsService {
     return vendors.map((v: any) => {
       const vendorReqs = (requests || []).filter((r: any) => r.vendor_id === v.id);
       const total = vendorReqs.length;
-      const fulfilled = vendorReqs.filter((r: any) => r.status === 'fulfilled' || r.status === 'assigned').length;
+      const fulfilled = vendorReqs.filter((r: any) => r.status === 'completed' || r.status === 'assigned').length;
       const costs = vendorReqs.filter((r: any) => r.cost).map((r: any) => r.cost);
       const avgCost = costs.length > 0 ? costs.reduce((a: number, b: number) => a + b, 0) / costs.length : 0;
       // SLA needs an attempted-vs-fulfilled base; with no requests yet there

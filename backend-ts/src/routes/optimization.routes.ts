@@ -19,6 +19,15 @@ import { sendError, HttpError } from '../core/errors';
 import { liveWeatherAt } from '../services/weather.service';
 import { isValidPoint, LatLng } from '../services/geo';
 import { parseNumberInRange } from '../core/validate';
+import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
+import { markAssigned } from '../services/shipment.service';
+
+/** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
+const isPlaceholderPlate = (plate: unknown) => /^(TEMP|DRFT)-/i.test(String(plate ?? ''));
+
+/** Shipment statuses the optimizer plans: new loads and failed deliveries waiting for another attempt. */
+const PLANNABLE_STATUSES = ['created', 'exception'];
 
 const router = Router();
 
@@ -57,14 +66,16 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     }
 
     // ── Load vehicles ──
-    let vehicleQuery;
+    // Only vehicles that take part in dispatch: not in maintenance or archived, and not a placeholder
+    let vehicleQuery = supabase.from('vehicles').select('*').in('status', [...OPERATING_VEHICLE_STATUSES]);
     if (payload.vehicle_ids.length > 0) {
-      vehicleQuery = supabase.from('vehicles').select('*').in('id', payload.vehicle_ids);
+      vehicleQuery = vehicleQuery.in('id', payload.vehicle_ids);
     } else {
-      vehicleQuery = supabase.from('vehicles').select('*').limit(20);
+      vehicleQuery = vehicleQuery.limit(50);
     }
-    const { data: vehicles } = await vehicleQuery;
-    if (!vehicles || vehicles.length === 0) {
+    const { data: vehicleRows } = await vehicleQuery;
+    const vehicles = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number)).slice(0, 20);
+    if (vehicles.length === 0) {
       res.status(400).json({ detail: 'No available vehicles found.' });
       return;
     }
@@ -72,12 +83,14 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     // ── Load shipments ──
     let dpQuery;
     if (payload.shipment_ids && payload.shipment_ids.length > 0) {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids);
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids).in('status', PLANNABLE_STATUSES);
     } else {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').eq('status', 'created').limit(100);
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('status', PLANNABLE_STATUSES).limit(100);
     }
-    const { data: shipments, error: dpErr } = await dpQuery;
-    if (dpErr || !shipments || shipments.length === 0) {
+    const { data: shipmentRows, error: dpErr } = await dpQuery;
+    // The final drop is the destination (see core/destination)
+    const shipments = (shipmentRows || []).map((sh: any) => ({ ...sh, delivery_points: sortDeliveryPoints<any>(sh.delivery_points) }));
+    if (dpErr || shipments.length === 0) {
       res.status(400).json({ detail: dpErr ? dpErr.message : 'No pending shipments found.' });
       return;
     }
@@ -91,7 +104,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         weatherInfo = { source: 'manual', severity: weatherSeverity, description: null };
       } else {
         const stopPoints = shipments
-          .map((s: any) => ({ lat: Number(s.delivery_points?.[0]?.latitude), lng: Number(s.delivery_points?.[0]?.longitude) }))
+          .map((s: any) => ({ lat: Number(finalDeliveryPoint<any>(s.delivery_points)?.latitude), lng: Number(finalDeliveryPoint<any>(s.delivery_points)?.longitude) }))
           .filter(isValidPoint);
         const points: LatLng[] = [];
         if (isValidPoint({ lat: Number(depot.latitude), lng: Number(depot.longitude) })) points.push({ lat: Number(depot.latitude), lng: Number(depot.longitude) });
@@ -126,8 +139,8 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         },
         ...shipments.map((s: any) => ({
           id: s.id,
-          lat: s.delivery_points?.[0]?.latitude || s.delivery_points?.[0]?.lat || 0,
-          lng: s.delivery_points?.[0]?.longitude || s.delivery_points?.[0]?.lng || 0,
+          lat: finalDeliveryPoint<any>(s.delivery_points)?.latitude || 0,
+          lng: finalDeliveryPoint<any>(s.delivery_points)?.longitude || 0,
           demand_kg: s.total_weight_kg || s.weight_kg || 0,
           required_cargo_types: [],
           time_window_start: 0,
@@ -193,39 +206,58 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
 
       if (routeErr || !routeRow) continue;
 
-      // Save stops. Only stops with a real delivery_point_id can be persisted
-      // (the column is a FK into delivery_points); skip any shipment without one.
+      // Save stops, numbered from 1 like every other way of building a route. Only stops with a
+      // real delivery point can be saved (the column is a FK); a shipment with several points
+      // gets a stop for each, in order, so its final drop is the last of them.
       const stops: any[] = [];
-      let seq = 0;
+      const plannedShipments: any[] = [];
+      let seq = 1;
       for (const shipmentId of optRoute.stop_ids) {
         const s = shipments.find((x: any) => x.id === shipmentId);
-        const deliveryPointId = s?.delivery_points?.[0]?.id;
-        if (!deliveryPointId) {
+        const points = sortDeliveryPoints<any>(s?.delivery_points);
+        if (points.length === 0) {
           console.warn(`Skipping stop for shipment ${shipmentId}: no delivery point found.`);
           continue;
         }
-        stops.push({
-          route_id: routeRow.id,
-          delivery_point_id: deliveryPointId,
-          sequence: seq++,
-          status: 'pending',
-        });
+        plannedShipments.push(s);
+        for (const point of points) {
+          stops.push({
+            route_id: routeRow.id,
+            delivery_point_id: point.id,
+            sequence: seq++,
+            status: 'pending',
+          });
+        }
       }
       if (stops.length > 0) {
         const { error: stopsErr } = await supabase.from('route_stops').insert(stops);
         if (stopsErr) console.error('Failed to insert route stops:', stopsErr);
       }
 
-      // Update shipments to 'assigned' status
-      const { error: shipUpdateErr } = await supabase.from('shipments')
-        .update({ status: 'assigned' })
-        .in('id', optRoute.stop_ids);
-      
-      if (shipUpdateErr) {
-        console.error('Failed to update shipment status:', shipUpdateErr);
+      // Each planned shipment becomes assigned through the same helper as every other assignment
+      // (transition checked, logged, its customer booking moved). A failed delivery is planned again too.
+      for (const planned of plannedShipments) {
+        try {
+          await markAssigned(
+            { id: planned.id, status: String(planned.status), origin_lat: planned.origin_lat ?? null, origin_lng: planned.origin_lng ?? null },
+            { id: routeRow.vehicle_id },
+            { id: routeRow.id },
+            { id: req.user!.user_id, role: req.user!.role },
+          );
+        } catch (assignErr) {
+          console.error(`Failed to assign shipment ${planned.id} to its route:`, assignErr);
+        }
+      }
+      // A failed delivery being planned again leaves its old stops behind: they go with the new plan
+      const plannedPointIds = plannedShipments.flatMap((sh: any) => (sh.delivery_points || []).map((dp: any) => dp.id));
+      if (plannedPointIds.length > 0) {
+        await supabase.from('route_stops').delete().in('delivery_point_id', plannedPointIds).neq('route_id', routeRow.id);
+        await supabase.from('delivery_points').update({ status: 'pending' }).in('id', plannedPointIds);
       }
 
-      // Notify the driver about the new route assignment
+      // The route stays pending: the console shows the plan for review, and dispatching it from the
+      // Routes page (routeService.changeStatus) puts the vehicle on route and stamps planned arrivals.
+      // The driver hears about the plan now.
       try {
         const { data: vehicle } = await supabase
           .from('vehicles')
@@ -611,8 +643,9 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
 
       for (const idx of unvisited) {
         const dp = deliveryPoints[idx];
-        const dpLat = dp.delivery_points?.[0]?.latitude || dp.delivery_points?.[0]?.lat || dp.latitude;
-        const dpLng = dp.delivery_points?.[0]?.longitude || dp.delivery_points?.[0]?.lng || dp.longitude;
+        const drop = finalDeliveryPoint<any>(dp.delivery_points);
+        const dpLat = drop?.latitude || dp.latitude;
+        const dpLng = drop?.longitude || dp.longitude;
         if (!dpLat || !dpLng) continue;
         const d = haversineKm(currentLat, currentLng, dpLat, dpLng);
         if (d < nearestDist) {
@@ -630,8 +663,9 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
       load += dpDemand;
       stopIds.push(dp.id);
       unvisited.delete(nearestIdx);
-      currentLat = dp.delivery_points?.[0]?.latitude || dp.delivery_points?.[0]?.lat || dp.latitude;
-      currentLng = dp.delivery_points?.[0]?.longitude || dp.delivery_points?.[0]?.lng || dp.longitude;
+      const dropOff = finalDeliveryPoint<any>(dp.delivery_points);
+      currentLat = dropOff?.latitude || dp.latitude;
+      currentLng = dropOff?.longitude || dp.longitude;
     }
 
     // Return to depot

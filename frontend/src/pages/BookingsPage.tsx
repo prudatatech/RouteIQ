@@ -5,9 +5,10 @@ import { ArrowRight, Check, Truck, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { bookingsAPI, type CustomerBooking } from '@/services/api'
 import {
-  Alert, Button, DataTable, DetailList, Drawer, ErrorState, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
+  Alert, Button, DataTable, DetailList, Drawer, ErrorState, Input, Modal, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
   humanize, useConfirm, useTabParam, useUrlState, type Column, type Tone,
 } from '@/components/ui'
+import { isDraftVehicle } from '@/utils/vehicles'
 import { errorMessage, formatDate, formatKg, formatRelative, formatRupees } from '@/utils/display'
 
 const TAB_IDS = ['new', 'active', 'done', 'cancelled', 'all'] as const
@@ -28,6 +29,21 @@ const statusInfo: Record<CustomerBooking['status'], { label: string; tone: Tone 
   delivered: { label: 'Delivered', tone: 'success' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
 }
+
+/**
+ * What staff and the customer see for a booking. A failed delivery has no booking status of its own,
+ * so it shows from the shipment's status.
+ */
+function statusOf(b: CustomerBooking): { label: string; tone: Tone } {
+  if (b.shipment_status === 'exception' && !['delivered', 'cancelled'].includes(b.status)) {
+    return { label: 'Delivery attempt failed', tone: 'danger' }
+  }
+  return statusInfo[b.status]
+}
+
+/** A booking whose vehicle can be chosen: waiting for one, already has one, or its delivery failed. */
+const canAssignVehicle = (b: CustomerBooking) =>
+  b.status === 'confirmed' || b.status === 'assigned' || (b.status === 'in_transit' && b.shipment_status === 'exception')
 
 interface Vehicle {
   id: string
@@ -52,7 +68,7 @@ async function loadVehicles(): Promise<Vehicle[]> {
 
 export default function BookingsPage() {
   const queryClient = useQueryClient()
-  const { prompt, confirm } = useConfirm()
+  const { prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'new')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -66,9 +82,10 @@ export default function BookingsPage() {
     queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
   }
 
+  const [confirming, setConfirming] = useState<CustomerBooking | null>(null)
   const confirmBooking = useMutation({
-    mutationFn: (id: string) => bookingsAPI.confirm(id),
-    onSuccess: () => toast.success('Booking confirmed. A shipment was created and the customer has been told.'),
+    mutationFn: ({ id, price }: { id: string; price: number | null }) => bookingsAPI.confirm(id, price),
+    onSuccess: () => { toast.success('Booking confirmed. A shipment was created and the customer has been told.'); setConfirming(null) },
     onError: err => toast.error(errorMessage(err, 'We could not confirm this booking. Try again.')),
     onSettled: refresh,
   })
@@ -113,14 +130,7 @@ export default function BookingsPage() {
     if (reason) cancelBooking.mutate({ id: b.id, reason })
   }
 
-  const askConfirm = async (b: CustomerBooking) => {
-    const ok = await confirm({
-      title: 'Confirm this booking?',
-      message: 'This creates a shipment for dispatch and tells the customer their tracking ID.',
-      confirmLabel: 'Confirm booking',
-    })
-    if (ok) confirmBooking.mutate(b.id)
-  }
+  const askConfirm = (b: CustomerBooking) => setConfirming(b)
 
   const columns: Column<CustomerBooking>[] = [
     { key: 'customer', header: 'Customer', cell: b => <span className="font-medium">{customerName(b)}</span>, sortValue: b => customerName(b) },
@@ -136,8 +146,8 @@ export default function BookingsPage() {
     },
     { key: 'weight', header: 'Weight', align: 'right', cell: b => <span className="tabular">{formatKg(b.weight_kg)}</span>, sortValue: b => Number(b.weight_kg) },
     { key: 'pickup', header: 'Pickup date', hideBelow: 'lg', cell: b => formatDate(`${b.pickup_date}T12:00:00+05:30`), sortValue: b => b.pickup_date },
-    { key: 'price', header: 'Quoted', align: 'right', hideBelow: 'lg', cell: b => (b.quoted_price != null ? <span className="tabular">{formatRupees(b.quoted_price)}</span> : <span className="text-muted">Not priced</span>), sortValue: b => b.quoted_price },
-    { key: 'status', header: 'Status', cell: b => <StatusPill tone={statusInfo[b.status].tone}>{statusInfo[b.status].label}</StatusPill>, sortValue: b => b.status },
+    { key: 'price', header: 'Price', align: 'right', hideBelow: 'lg', cell: b => (b.quoted_price != null ? <span className="tabular">{formatRupees(b.quoted_price)}</span> : <span className="text-muted">Not priced</span>), sortValue: b => b.quoted_price },
+    { key: 'status', header: 'Status', cell: b => <StatusPill tone={statusOf(b).tone}>{statusOf(b).label}</StatusPill>, sortValue: b => b.status },
   ]
 
   const tabs = [
@@ -190,13 +200,72 @@ export default function BookingsPage() {
       <BookingDrawer
         booking={selected}
         onClose={() => setSelectedId(null)}
-        confirming={confirmBooking.isPending && confirmBooking.variables === selected?.id}
+        confirming={confirmBooking.isPending && confirmBooking.variables?.id === selected?.id}
         cancelling={cancelBooking.isPending && cancelBooking.variables?.id === selected?.id}
         onConfirm={askConfirm}
         onCancel={askCancel}
         onAssigned={refresh}
       />
+      <ConfirmBookingModal
+        booking={confirming}
+        loading={confirmBooking.isPending}
+        onClose={() => setConfirming(null)}
+        onConfirm={(b, price) => confirmBooking.mutate({ id: b.id, price })}
+      />
     </Page>
+  )
+}
+
+/** Confirm a booking and set its price: the customer's quote, or what staff agreed with them. */
+function ConfirmBookingModal({ booking, loading, onClose, onConfirm }: {
+  booking: CustomerBooking | null
+  loading: boolean
+  onClose: () => void
+  onConfirm: (b: CustomerBooking, price: number | null) => void
+}) {
+  const [entered, setEntered] = useState<{ id: string; price: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  if (!booking) return <Modal open={false} onClose={onClose} title="Confirm this booking?" />
+  const quote = booking.quoted_price != null ? String(booking.quoted_price) : ''
+  const price = entered && entered.id === booking.id ? entered.price : quote
+
+  const submit = () => {
+    const text = price.trim()
+    if (text && !(Number(text) >= 0)) { setError('Enter a price of 0 or more, or leave it empty.'); return }
+    setError(null)
+    onConfirm(booking, text ? Number(text) : null)
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Confirm this booking?"
+      description="This creates a shipment for dispatch and tells the customer their tracking ID."
+      size="sm"
+      onSubmit={submit}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>Not yet</Button>
+          <Button type="submit" loading={loading}>Confirm booking</Button>
+        </>
+      )}
+    >
+      <Input
+        label="Price (₹)"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.01"
+        leading="₹"
+        value={price}
+        error={error ?? undefined}
+        hint={booking.quoted_price != null
+          ? 'Starts at the customer\u2019s quote, before GST. Change it if you agreed another price. The delivery is invoiced at this price.'
+          : 'No quote was given. Enter the agreed price, before GST, so the delivery can be invoiced.'}
+        onChange={e => setEntered({ id: booking.id, price: e.target.value })}
+      />
+    </Modal>
   )
 }
 
@@ -211,12 +280,12 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
 }) {
   const [vehicleChoice, setVehicleChoice] = useState<{ bookingId: string; vehicleId: string } | null>(null)
   const vehicleId = vehicleChoice && vehicleChoice.bookingId === booking?.id ? vehicleChoice.vehicleId : ''
-  const canAssign = !!booking && (booking.status === 'confirmed' || booking.status === 'assigned')
+  const canAssign = !!booking && canAssignVehicle(booking)
   const canCancel = !!booking && ['requested', 'confirmed', 'assigned'].includes(booking.status)
 
   const vehicles = useQuery({ queryKey: ['assignable-vehicles'], queryFn: loadVehicles, enabled: canAssign })
   const withSpace = useMemo(
-    () => (vehicles.data ?? []).filter(v => v.status !== 'maintenance' && v.status !== 'archived' && Number(v.available_capacity_kg ?? 0) >= Number(booking?.weight_kg ?? 0)),
+    () => (vehicles.data ?? []).filter(v => v.status !== 'maintenance' && !isDraftVehicle(v) && Number(v.available_capacity_kg ?? 0) >= Number(booking?.weight_kg ?? 0)),
     [vehicles.data, booking?.weight_kg],
   )
 
@@ -235,9 +304,9 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
       onClose={onClose}
       title={booking ? (booking.customer?.name || 'Customer booking') : 'Booking'}
       description={booking ? `${shortPlace(booking.pickup_name)} to ${shortPlace(booking.drop_name)}` : undefined}
-      footer={booking && canCancel ? (
+      footer={booking && (canCancel || canAssign) ? (
         <>
-          <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={cancelling} onClick={() => onCancel(booking)}>Cancel booking</Button>
+          {canCancel && <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={cancelling} onClick={() => onCancel(booking)}>Cancel booking</Button>}
           {booking.status === 'requested' && (
             <Button icon={<Check size={16} />} disabled={busy} loading={confirming} onClick={() => onConfirm(booking)}>Confirm booking</Button>
           )}
@@ -257,9 +326,15 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
       {booking && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={statusInfo[booking.status].tone}>{statusInfo[booking.status].label}</StatusPill>
+            <StatusPill tone={statusOf(booking).tone}>{statusOf(booking).label}</StatusPill>
             <span className="text-sm text-muted">Booked {formatRelative(booking.created_at)}</span>
           </div>
+
+          {booking.shipment_status === 'exception' && booking.status !== 'delivered' && booking.status !== 'cancelled' && (
+            <Alert tone="danger" title="The delivery attempt failed">
+              The driver could not deliver this load. The customer has been told. Choose a vehicle to try again.
+            </Alert>
+          )}
 
           {booking.status === 'cancelled' && (
             <Alert tone="danger" title={booking.cancelled_by === 'customer' ? 'Cancelled by the customer' : 'Cancelled by staff'}>
@@ -276,7 +351,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
               { label: 'Weight', value: <span className="tabular">{formatKg(booking.weight_kg)}</span> },
               { label: 'Load', value: booking.load_type === 'part' ? 'Part load' : 'Full truck' },
               ...(booking.vehicle_type ? [{ label: 'Vehicle asked for', value: humanize(booking.vehicle_type) }] : []),
-              { label: 'Quoted price', value: booking.quoted_price != null ? <span className="tabular">{formatRupees(booking.quoted_price)}</span> : 'Not priced. Quote the customer directly.' },
+              { label: 'Quoted price', value: booking.quoted_price != null ? <span className="tabular">{formatRupees(booking.quoted_price)}, before GST</span> : 'Not priced. Quote the customer directly.' },
               ...(booking.tracking_id ? [{ label: 'Tracking ID', value: <span className="font-mono">{booking.tracking_id}</span> }] : []),
             ]}
           />

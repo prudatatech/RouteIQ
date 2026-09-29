@@ -18,7 +18,7 @@ function reset() {
   supabaseMock.reset({
     users: [{ id: 'admin-1', role: 'admin', is_active: true }],
     depots: [{ id: DEPOT, name: 'Depot', latitude: 21.14, longitude: 79.08 }],
-    vehicles: [{ id: VEH, capacity_kg: 5000, fuel_efficiency_kmpl: 5, driver_id: null }],
+    vehicles: [{ id: VEH, plate_number: 'MH12AB1234', status: 'available', capacity_kg: 5000, fuel_efficiency_kmpl: 5, driver_id: null }],
     shipments: [{ id: '00000000-0000-4000-8000-000000000000', status: 'created', total_weight_kg: 100, delivery_points: [{ id: 'dp1', latitude: 21.2, longitude: 79.1 }] }],
     routes: [],
     route_stops: [],

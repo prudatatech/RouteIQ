@@ -7,7 +7,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessShipment, isStaff } from '../core/ownership';
 import { ShipmentCreateSchema, ShipmentEditSchema } from '../schemas';
-import { DRIVER_SHIPMENT_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
+import { DRIVER_SHIPMENT_STATUSES, OPERATING_VEHICLE_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
 import { parseCoordinate, parseNumberInRange, parseOptionalText } from '../core/validate';
 import { rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { ShipmentService } from '../services/shipment.service';
@@ -314,11 +314,11 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
       return;
     }
 
-    // Fetch all vehicles
-    const { data: vehicles, error } = await supabase.from('vehicles').select('*').in('status', ['available', 'idle', 'on_route']);
+    // Vehicles that take part in dispatch (not in maintenance or archived), never a TEMP-/DRFT- placeholder
+    const { data: vehicles, error } = await supabase.from('vehicles').select('*').in('status', [...OPERATING_VEHICLE_STATUSES]);
     if (error) throw error;
 
-    let options = vehicles || [];
+    let options = (vehicles || []).filter((v: any) => !/^(TEMP|DRFT)-/i.test(String(v.plate_number ?? '')));
 
     if (mode === 'near' && shipment.origin_lat && shipment.origin_lng) {
       // Calculate haversine distance

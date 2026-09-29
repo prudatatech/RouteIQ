@@ -6,16 +6,20 @@
  *   - shipment: the accepted bid on it (shipments.bid_id -> capacity_bids.bid_amount),
  *     or, when there is no winning bid, the freight charge staff entered on it
  *   - cargo manifest: the agreed cost of the vendor request it carries out
- *     (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost)
+ *     (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost), or, when only a
+ *     rate per km was agreed, that rate times the trip's road distance; GST is the rate the
+ *     vendor entered on the request
  * With no price no invoice is written; the delivery shows up under "unpriced
  * deliveries" in Finance instead. Money is rupees; the amount is before GST.
  */
 import { supabase } from '../core/supabase';
+import { haversineKm, isValidPoint, ROAD_FACTOR } from './geo';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRICE_SOURCE_BID = 'bid';
 const PRICE_SOURCE_FREIGHT = 'freight_charge';
 const PRICE_SOURCE_REQUEST = 'vendor_request';
+const PRICE_SOURCE_RATE = 'vendor_rate_per_km';
 
 export interface InvoiceResult {
   status: 'created' | 'exists' | 'unpriced' | 'skipped';
@@ -133,26 +137,46 @@ export const InvoiceService = {
     const { data: existing } = await supabase.from('invoices').select('id').eq('manifest_id', manifestId).neq('status', 'void').maybeSingle();
     if (existing) return { status: 'exists', invoiceId: existing.id };
 
-    const { data: manifest, error } = await supabase.from('cargo_manifest').select('id, vendor_request_id').eq('id', manifestId).maybeSingle();
+    const { data: manifest, error } = await supabase
+      .from('cargo_manifest')
+      .select('id, vendor_request_id, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .eq('id', manifestId)
+      .maybeSingle();
     if (error) throw new Error(`Failed to read manifest: ${error.message}`);
     // A manifest made from a won bid is invoiced through its shipment, not here
     if (!manifest || !manifest.vendor_request_id) return { status: 'skipped' };
 
     const { data: request, error: reqErr } = await supabase
       .from('vendor_shipment_requests')
-      .select('id, vendor_id, cost')
+      .select('id, vendor_id, cost, cost_per_km, metadata')
       .eq('id', manifest.vendor_request_id)
       .maybeSingle();
     if (reqErr) throw new Error(`Failed to read vendor request: ${reqErr.message}`);
-    const amount = Number(request?.cost);
-    if (!request || !Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
+    if (!request) return { status: 'unpriced' };
+
+    // An agreed cost wins; with only a rate per km, the price is that rate over the trip's road distance
+    let amount = Number(request.cost);
+    let priceSource = PRICE_SOURCE_REQUEST;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      const rate = Number(request.cost_per_km);
+      const from = { lat: Number(manifest.pickup_lat), lng: Number(manifest.pickup_lng) };
+      const to = { lat: Number(manifest.drop_lat), lng: Number(manifest.drop_lng) };
+      if (!(rate > 0) || !isValidPoint(from) || !isValidPoint(to)) return { status: 'unpriced' };
+      amount = rate * Math.round(haversineKm(from, to) * ROAD_FACTOR);
+      priceSource = PRICE_SOURCE_RATE;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
+
+    // The GST rate the vendor entered with the cargo details
+    const enteredGst = Number(request.metadata?.cargo?.gstRate);
+    const gstRate = Number.isFinite(enteredGst) && enteredGst > 0 && enteredGst <= 100 ? enteredGst : 0;
 
     const invoiceId = await insertInvoice({
       manifest_id: manifestId,
       vendor_id: request.vendor_id ?? null,
       amount,
-      gst_rate: 0,
-      price_source: PRICE_SOURCE_REQUEST,
+      gst_rate: gstRate,
+      price_source: priceSource,
     });
     return { status: 'created', invoiceId };
   },

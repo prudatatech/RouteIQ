@@ -7,7 +7,7 @@ import { TrackingMap } from '../components/TrackingMap';
 import { colors, fontFamily, radius, size, space } from '../theme';
 import { api, type BookingDetail } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
-import { BOOKING_STATUS, BOOKING_STEPS, canCancel, formatMinutes } from '../utils/bookingStatus';
+import { BOOKING_STEPS, bookingStatusInfo, canCancel, deliveryFailed, formatMinutes } from '../utils/bookingStatus';
 import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
 
@@ -32,7 +32,7 @@ export default function BookingDetailScreen({ navigation, route }: any) {
   const { data, loading, error, reload } = useRemote(() => api.getBooking(id), id, t('booking_load_failed'));
 
   const status = data?.booking.status;
-  const live = !!data?.tracking && (status === 'assigned' || status === 'in_transit');
+  const live = !!data?.tracking && (status === 'assigned' || status === 'in_transit' || data.booking.shipment_status === 'exception');
   useEffect(() => {
     if (!live) return;
     const timer = setInterval(reload, LIVE_REFRESH_MS);
@@ -56,7 +56,7 @@ export default function BookingDetailScreen({ navigation, route }: any) {
 function Details({ detail, error, reload, loading }: { detail: BookingDetail; error?: string; reload: () => void; loading: boolean }) {
   const { t } = useTranslation();
   const { booking, tracking } = detail;
-  const status = BOOKING_STATUS[booking.status];
+  const status = bookingStatusInfo(booking);
   const times = stepTimes(detail);
   const cancelled = booking.status === 'cancelled';
   const reached = BOOKING_STEPS.findIndex((s) => s.status === booking.status);
@@ -134,6 +134,8 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
           {booking.tracking_id ? <Fact label={t('fact_tracking')} value={booking.tracking_id} mono /> : null}
         </View>
       </Card>
+
+      {deliveryFailed(booking) ? <Banner tone="warning" icon="alert-triangle" message={t('delivery_failed_note')} /> : null}
 
       {cancelled ? (
         <Banner tone="warning" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />

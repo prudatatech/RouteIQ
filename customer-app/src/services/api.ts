@@ -284,6 +284,8 @@ export interface Booking {
   pickup_date: string;
   quoted_price: number | null;
   status: BookingStatus;
+  /** Status of the linked shipment. `exception` means a delivery attempt failed (a booking has no status for it). */
+  shipment_status?: string | null;
   tracking_id: string | null;
   cancel_reason: string | null;
   created_at: string;
