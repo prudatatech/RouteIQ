@@ -31,7 +31,7 @@ select policyname, cmd, roles, qual, with_check from pg_policies where schemanam
 
 ## 1b. Follow-up migrations (`20260929*`)
 
-Applied to the live project on 2026-09-29 (000000–000800, in order; checks below passed). 000600 adds columns the code already used (vehicles.cargo_types, vehicles.current_location_name, shipments.required_vehicle_type), 000700 restores own-row read/update on notifications, 000800 adds tpl_partners.phone. The project has no `supabase_migrations` history table yet, so step 4 of the CLI adoption below still has to stamp them.
+Applied to the live project on 2026-09-29 (000000–000900, in order; checks below passed). 000600 adds columns the code already used (vehicles.cargo_types, vehicles.current_location_name, shipments.required_vehicle_type), 000700 restores own-row read/update on notifications, 000800 adds tpl_partners.phone, 000900 adds sos_alerts.severity. The project has no `supabase_migrations` history table yet, so step 4 of the CLI adoption below still has to stamp them.
 
 Deploy backend-ts and the web app from the same branch **first** (the web app then reads vendor views through the backend), then run, in order:
 
@@ -86,7 +86,7 @@ Then, in one commit:
 1. Move every migration older than the baseline (everything before `20260927000000`, and the unversioned `add_phone_to_users.sql`; not the `20260928*` files), plus `../scripts/supabase_init.sql`, `../backend-ts/kyc_migration.sql` and `../backend-ts/scripts/*.sql`, into `migrations/_archive/` (history only, never applied again).
 2. The `storage` schema is managed by Supabase and is not dumped; the `kyc_documents` bucket policies live in `20260928000200_row_level_security.sql`.
 3. Grep the baseline for `tpl_partners`, `customers`, `cargo_manifest`, `sos_alerts`, `system_settings`, `kyc_profiles` to confirm they were captured.
-4. Mark the baseline and the `20260928*`/`20260929*` migrations that have been applied as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300 20260928000400 20260929000000 20260929000100 20260929000200 20260929000300 20260929000400 20260929000500 20260929000600 20260929000700 20260929000800`.
+4. Mark the baseline and the `20260928*`/`20260929*` migrations that have been applied as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300 20260928000400 20260929000000 20260929000100 20260929000200 20260929000300 20260929000400 20260929000500 20260929000600 20260929000700 20260929000800 20260929000900`.
 
 The baseline is stamped just before the `20260928*` and `20260929*` files; those are idempotent, so on a fresh `supabase db reset` they re-apply cleanly on top of it (and add the storage policies, which the dump does not contain).
 
