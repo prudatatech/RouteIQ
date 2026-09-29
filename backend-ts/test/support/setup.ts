@@ -8,13 +8,28 @@
  * or a real Supabase project, whatever the developer's shell or .env holds.
  */
 import http from 'node:http';
+import { Agent, setGlobalDispatcher } from 'undici';
 import { afterAll, vi } from 'vitest';
 import { supabaseMock } from './mock-supabase';
 
-// Tests make many short requests to local servers. Reused keep-alive sockets
-// raced with the servers closing them ("socket hang up" / ECONNRESET in random
-// tests), so node's http clients (supertest, JWKS fetches) open a fresh
-// connection per request.
+// supabase-js (PostgREST, GoTrue/JWKS, Storage) all call the global fetch(),
+// which Node implements with undici — a client with its own keep-alive
+// connection pool, completely separate from node:http's Agent. Each test
+// file's mock Supabase server is short-lived (a fresh instance on a fresh
+// port per file, per `test/support/mock-supabase.ts`), so a socket undici
+// keeps pooled past the moment the server considers a response finished
+// (or the file ends and the server closes) is a socket that can be handed
+// back out for a later request and get ECONNRESET, "socket hang up", or a
+// desynced HTTP parse ("Parse Error: Expected HTTP/...") when reused.
+// Disabling pooling means every fetch() opens its own connection, so there
+// is never a stale socket to race against.
+setGlobalDispatcher(new Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 }));
+
+// supertest's requests to the app (superagent, via node:http with
+// `agent: false`) and the 'ws' package's WebSocket handshake already open a
+// fresh connection per request/handshake, so this has no effect on pooling
+// for them — it's set only so nothing in this process falls back to a
+// pooled http.globalAgent connection by accident.
 http.globalAgent = new http.Agent({ keepAlive: false });
 
 // Never load a developer's backend-ts/.env into tests

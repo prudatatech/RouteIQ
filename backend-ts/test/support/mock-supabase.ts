@@ -184,12 +184,18 @@ class MockSupabase {
   private readonly keys = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
 
   async start(): Promise<string> {
-    // One connection per request: reusing idle keep-alive sockets raced with the server
-    // closing them and failed random tests with ECONNRESET.
-    this.server = http.createServer((req, res) => {
-      res.shouldKeepAlive = false;
-      this.handle(req, res);
-    });
+    // Plain HTTP/1.1 keep-alive. An earlier attempt at "one connection per
+    // request" (res.shouldKeepAlive = false here, keepAlive: false on
+    // http.globalAgent) destroyed the socket the instant each response
+    // finished. That raced with the app's *actual* HTTP client — supabase-js
+    // calls fetch(), i.e. undici, which has its own connection pool entirely
+    // separate from http.globalAgent — so undici would sometimes dispatch
+    // the next request onto a socket this server had just torn down,
+    // producing "socket hang up" / ECONNRESET / an HTTP parse error at
+    // random. The real fix is on the client: see setGlobalDispatcher in
+    // test/support/setup.ts, which disables undici's connection reuse so it
+    // never has a pooled socket to race against.
+    this.server = http.createServer((req, res) => this.handle(req, res));
     await new Promise<void>(resolve => this.server!.listen(0, '127.0.0.1', resolve));
     this.url = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
     return this.url;
