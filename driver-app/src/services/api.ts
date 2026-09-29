@@ -83,6 +83,51 @@ export interface MyPeople {
   emergency_contacts: EmergencyContact[];
 }
 
+/** Where the driver's own vehicle registration stands. */
+export type VehicleRegistrationState = 'none' | 'pending' | 'approved' | 'rejected';
+
+export type VehiclePhotoSlot = 'front' | 'side' | 'back' | 'interior' | 'cargo';
+
+export type VehicleKind = 'truck' | 'van' | 'bike' | 'car';
+
+/** The vehicle a driver registered; only the fields the app shows or sends back. */
+export interface RegisteredVehicle {
+  id: string;
+  plate_number: string;
+  vehicle_type: VehicleKind;
+  capacity_kg: number | null;
+  vehicle_model?: string | null;
+  rc_number?: string | null;
+  insurance_number?: string | null;
+  status: string;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+}
+
+/** A stored photo; `url` is a short-lived signed link. */
+export interface VehiclePhotoInfo {
+  slot: VehiclePhotoSlot;
+  url: string | null;
+  updated_at: string | null;
+}
+
+export interface MyVehicleRegistration {
+  state: VehicleRegistrationState;
+  vehicle: RegisteredVehicle | null;
+  photos: VehiclePhotoInfo[];
+}
+
+/** What the driver sends to register a vehicle. Empty optional fields are left out. */
+export interface VehicleRegistrationInput {
+  plate_number: string;
+  vehicle_type: VehicleKind;
+  capacity_kg: number;
+  vehicle_model?: string;
+  rc_number?: string;
+  insurance_number?: string;
+}
+
 /** A text message between the driver and dispatch. */
 export interface ChatMessage {
   id: string;
@@ -281,6 +326,35 @@ class ApiClient {
       await AsyncStorage.setItem(STORAGE_KEYS.DRIVER_INFO, JSON.stringify(info));
     }
     return res;
+  }
+
+  // ── Vehicle registration (staff approve it before it takes work) ──
+
+  async getMyVehicleRegistration(): Promise<MyVehicleRegistration> {
+    const data = await this.request('GET', '/vehicles/my-registration');
+    return {
+      state: data?.state ?? 'none',
+      vehicle: data?.vehicle ?? null,
+      photos: Array.isArray(data?.photos) ? data.photos : [],
+    };
+  }
+
+  /** Registers the vehicle, or corrects and resubmits it. It waits for approval. */
+  async registerVehicle(data: VehicleRegistrationInput): Promise<RegisteredVehicle> {
+    return this.request('POST', '/vehicles/register', data);
+  }
+
+  /** A signed URL to upload one vehicle photo (JPG or PNG, up to 5 MB). */
+  async getVehiclePhotoUploadUrl(
+    vehicleId: string,
+    data: { slot: VehiclePhotoSlot; content_type: string; size: number },
+  ): Promise<{ path: string; signed_url: string; token: string }> {
+    return this.request('POST', `/vehicles/${encodeURIComponent(vehicleId)}/photos/upload-url`, data);
+  }
+
+  /** Records an uploaded file as the vehicle's photo for that slot, replacing the old one. */
+  async saveVehiclePhoto(vehicleId: string, slot: VehiclePhotoSlot, filePath: string): Promise<VehiclePhotoInfo> {
+    return this.request('PUT', `/vehicles/${encodeURIComponent(vehicleId)}/photos/${slot}`, { file_path: filePath });
   }
 
   async getDriverEarnings(): Promise<any> {

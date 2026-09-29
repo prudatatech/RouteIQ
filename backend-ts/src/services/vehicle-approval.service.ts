@@ -4,9 +4,12 @@
  * A vehicle a driver registers from the app (first-login onboarding or "add a
  * vehicle") is `pending_approval` until admin or manager decides:
  *  - approve -> `available`, the vehicle joins dispatch;
- *  - reject  -> `archived`, with the reason kept on the row. The driver stays
- *    linked so the app can show the reason; they fix the details and submit
- *    again, which puts the same vehicle back to `pending_approval`.
+ *  - reject  -> `archived`, with the reason kept on the row. Archiving frees the
+ *    driver link like any archive (one live vehicle per driver, and endpoints
+ *    that look up "the driver's vehicle" never see it), so the vehicle stays tied
+ *    to the driver through `submitted_by`: the app shows the reason, and when
+ *    they fix the details and submit again the same vehicle goes back to
+ *    `pending_approval` and is linked to them again.
  * Who decided and when is recorded on the vehicle and in the audit log, and
  * the driver gets a notification. Vehicles staff create on the web skip all
  * this (they are approved when created).
@@ -57,29 +60,23 @@ export async function registerDriverVehicle(driverId: string, input: DriverVehic
   if (meErr) throw meErr;
   if (!me) throw new HttpError(404, 'Driver account not found');
 
-  const { data: mineRows, error: mineErr } = await supabase.from('vehicles').select('*').eq('driver_id', driverId);
-  if (mineErr) throw mineErr;
-  const mine: Row[] = mineRows ?? [];
-  const live = mine.filter(v => v.status !== 'archived');
+  const { live: liveRows, rejected: rejectedRows } = await loadDriverVehicles(driverId);
+  const live = liveRows;
   const approved = live.find(v => !isTempPlate(v.plate_number) && v.status !== PENDING_VEHICLE_STATUS);
   if (approved) throw new HttpError(409, `You already have an approved vehicle (${approved.plate_number}). Ask dispatch if it has to be changed.`);
   const pending = live.find(v => v.status === PENDING_VEHICLE_STATUS);
   const temp = live.find(v => isTempPlate(v.plate_number));
 
-  const { data: same, error: sameErr } = await supabase.from('vehicles').select('id, driver_id, status, review_decision').eq('plate_number', plate).maybeSingle();
+  const { data: same, error: sameErr } = await supabase.from('vehicles').select('id').eq('plate_number', plate).maybeSingle();
   if (sameErr) throw sameErr;
-  if (same && same.driver_id !== driverId) throw new HttpError(409, PLATE_TAKEN);
-  // The plate of one of the driver's own earlier vehicles: only a rejected one can be submitted again
-  if (same && same.status === 'archived' && !isRejected(same)) throw new HttpError(409, PLATE_TAKEN);
+  // The plate must be the driver's own request (waiting), or one of theirs that was rejected and comes back
+  if (same && !live.some(v => v.id === same.id) && !rejectedRows.some(v => v.id === same.id)) throw new HttpError(409, PLATE_TAKEN);
 
-  const rejected = mine
-    .filter(v => isRejected(v))
-    .sort((a, b) => Date.parse(String(b.reviewed_at ?? 0)) - Date.parse(String(a.reviewed_at ?? 0)))[0];
-  let target: Row | undefined = pending ?? temp ?? rejected;
+  let target: Row | undefined = pending ?? temp ?? rejectedRows[0];
   if (same && same.id !== pending?.id) {
     // The plate of a rejected vehicle of theirs comes back as that vehicle, whichever row would be used otherwise
     if (pending) throw new HttpError(409, 'You already have a vehicle request waiting for approval. Wait for the decision first.');
-    target = mine.find(v => v.id === same.id);
+    target = rejectedRows.find(v => v.id === same.id);
   }
 
   const now = new Date().toISOString();
@@ -129,6 +126,24 @@ export async function registerDriverVehicle(driverId: string, input: DriverVehic
   return { vehicle, created, resubmitted: !!target && !wasPending && isRejected(target) };
 }
 
+/**
+ * A driver's vehicles: those they drive now (driver_id, not archived), and the
+ * ones staff rejected (archived, tied to them by submitted_by), newest decision first.
+ */
+async function loadDriverVehicles(driverId: string): Promise<{ live: Row[]; rejected: Row[] }> {
+  const [driving, submitted] = await Promise.all([
+    supabase.from('vehicles').select('*').eq('driver_id', driverId),
+    supabase.from('vehicles').select('*').eq('submitted_by', driverId),
+  ]);
+  if (driving.error) throw driving.error;
+  if (submitted.error) throw submitted.error;
+  const live = ((driving.data ?? []) as Row[]).filter(v => v.status !== 'archived');
+  const rejected = ((submitted.data ?? []) as Row[])
+    .filter(v => isRejected(v))
+    .sort((a, b) => Date.parse(String(b.reviewed_at ?? 0)) - Date.parse(String(a.reviewed_at ?? 0)));
+  return { live, rejected };
+}
+
 export type RegistrationState = 'none' | 'pending' | 'approved' | 'rejected';
 
 /**
@@ -137,14 +152,8 @@ export type RegistrationState = 'none' | 'pending' | 'approved' | 'rejected';
  * a TEMP-… placeholder has not registered yet ('none').
  */
 export async function getMyRegistration(driverId: string): Promise<{ state: RegistrationState; vehicle: Row | null; photos: VehiclePhoto[] }> {
-  const { data, error } = await supabase.from('vehicles').select('*').eq('driver_id', driverId);
-  if (error) throw error;
-  const rows: Row[] = data ?? [];
-  const live = rows.find(v => v.status !== 'archived' && !isTempPlate(v.plate_number));
-  const rejected = rows
-    .filter(v => isRejected(v))
-    .sort((a, b) => Date.parse(String(b.reviewed_at ?? 0)) - Date.parse(String(a.reviewed_at ?? 0)))[0];
-  const vehicle = live ?? rejected ?? null;
+  const { live: liveRows, rejected: rejectedRows } = await loadDriverVehicles(driverId);
+  const vehicle = liveRows.find(v => !isTempPlate(v.plate_number)) ?? rejectedRows[0] ?? null;
   if (!vehicle) return { state: 'none', vehicle: null, photos: [] };
   const state: RegistrationState = vehicle.status === PENDING_VEHICLE_STATUS ? 'pending' : vehicle.status === 'archived' ? 'rejected' : 'approved';
   return { state, vehicle, photos: await listVehiclePhotos(vehicle.id) };
@@ -204,10 +213,10 @@ async function loadReviewable(vehicleId: string): Promise<Row> {
   return data;
 }
 
-function notifyDriver(vehicle: Row, title: string, body: string, decision: 'approved' | 'rejected') {
-  if (!vehicle.driver_id) return;
+function notifyDriver(vehicle: Row, driverId: string | null, title: string, body: string, decision: 'approved' | 'rejected') {
+  if (!driverId) return;
   notificationService
-    .sendNotification(vehicle.driver_id, title, body, 'vehicle_approval', { vehicle_id: vehicle.id, decision })
+    .sendNotification(driverId, title, body, 'vehicle_approval', { vehicle_id: vehicle.id, decision })
     .catch(e => console.error('[vehicles] driver notification failed:', e));
 }
 
@@ -222,15 +231,17 @@ export async function approveVehicle(vehicleId: string, actor: Actor): Promise<R
   if (from !== PENDING_VEHICLE_STATUS && !isRejected(vehicle)) throw new HttpError(409, 'This vehicle is not waiting for approval.');
   assertTransition(VEHICLE_REVIEW_TRANSITIONS, 'vehicle', from, 'available');
 
-  if (vehicle.driver_id) {
-    const placeholderId = await findDriverPlaceholder(vehicle.driver_id, vehicle.id);
+  // A rejected vehicle was freed from its driver; approving it links them again
+  const driverId: string | null = vehicle.driver_id ?? (isRejected(vehicle) ? vehicle.submitted_by ?? null : null);
+  if (driverId) {
+    const placeholderId = await findDriverPlaceholder(driverId, vehicle.id);
     if (placeholderId) await changeVehicleStatus(placeholderId, 'archived');
   }
 
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('vehicles')
-    .update({ status: 'available', reviewed_by: actor.user_id, reviewed_at: now, review_decision: 'approved', rejection_reason: null })
+    .update({ status: 'available', driver_id: driverId, reviewed_by: actor.user_id, reviewed_at: now, review_decision: 'approved', rejection_reason: null })
     .eq('id', vehicleId)
     .eq('status', from)
     .select('*')
@@ -239,7 +250,7 @@ export async function approveVehicle(vehicleId: string, actor: Actor): Promise<R
   if (error) throw error;
   if (!data) throw new HttpError(409, 'This vehicle was already decided by someone else.');
 
-  notifyDriver(data, 'Vehicle approved', `${data.plate_number} is approved. You can now receive work.`, 'approved');
+  notifyDriver(data, driverId, 'Vehicle approved', `${data.plate_number} is approved. You can now receive work.`, 'approved');
   await auditService.record('staff-console', actor, 'vehicle_approved', { vehicle_id: vehicleId, plate_number: data.plate_number });
   return data;
 }
@@ -258,7 +269,7 @@ export async function rejectVehicle(vehicleId: string, actor: Actor, rawReason: 
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('vehicles')
-    .update({ status: 'archived', reviewed_by: actor.user_id, reviewed_at: now, review_decision: 'rejected', rejection_reason: reason })
+    .update({ status: 'archived', driver_id: null, reviewed_by: actor.user_id, reviewed_at: now, review_decision: 'rejected', rejection_reason: reason })
     .eq('id', vehicleId)
     .eq('status', PENDING_VEHICLE_STATUS)
     .select('*')
@@ -266,7 +277,7 @@ export async function rejectVehicle(vehicleId: string, actor: Actor, rawReason: 
   if (error) throw error;
   if (!data) throw new HttpError(409, 'This vehicle was already decided by someone else.');
 
-  notifyDriver(data, 'Vehicle not approved', `${data.plate_number} was not approved: ${reason}`, 'rejected');
+  notifyDriver(data, vehicle.driver_id ?? vehicle.submitted_by ?? null, 'Vehicle not approved', `${data.plate_number} was not approved: ${reason}`, 'rejected');
   await auditService.record('staff-console', actor, 'vehicle_rejected', { vehicle_id: vehicleId, plate_number: data.plate_number }, reason);
   return data;
 }

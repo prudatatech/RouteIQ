@@ -8,11 +8,13 @@
 --        them without further changes;
 --      * approving moves it to `available`; rejecting moves it to `archived`
 --        with the reason kept on the row, where the Fleet's archived filter
---        shows it and the driver can fix the details and resubmit (which puts it
---        back to `pending_approval`);
+--        shows it. Like any archive it frees the driver link, so the vehicle
+--        stays tied to the driver through `submitted_by`; the driver sees the
+--        reason in the app, fixes the details and resubmits (the same vehicle goes
+--        back to `pending_approval` and is linked to them again);
 --      * who reviewed it, when, and the decision are recorded on the vehicle.
 --    Vehicles staff create on the web are approved at once: they never enter
---    `pending_approval`, and carry no review data.
+--    `pending_approval`, and are recorded as approved by whoever created them.
 --
 --    The driver status guard (vehicles_driver_status_guard, 20260930008400) needs
 --    no change: a driver's own write may only move a vehicle between operating
@@ -54,6 +56,7 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_vehicles_submitted_at ON public.vehicles (submitted_at DESC) WHERE submitted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_vehicles_submitted_by ON public.vehicles (submitted_by) WHERE submitted_by IS NOT NULL;
 
 -- ── Photos ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.vehicle_photos (

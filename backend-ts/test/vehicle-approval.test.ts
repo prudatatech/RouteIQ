@@ -30,7 +30,12 @@ function reset(vehicles: Record<string, unknown>[] = [], extra: Record<string, R
 
 const pendingVehicle = (over: Record<string, unknown> = {}) => ({
   id: 'veh-p', plate_number: 'MH12AB1234', vehicle_type: 'truck', capacity_kg: 5000, status: 'pending_approval',
-  driver_id: 'driver-1', driver_name: 'Ravi Driver', driver_phone: '+919876543210', submitted_at: '2026-09-29T08:00:00.000Z', ...over,
+  driver_id: 'driver-1', submitted_by: 'driver-1', driver_name: 'Ravi Driver', driver_phone: '+919876543210', submitted_at: '2026-09-29T08:00:00.000Z', ...over,
+});
+
+/** A vehicle staff rejected: archived, freed from its driver, still tied to them by submitted_by. */
+const rejectedVehicle = (over: Record<string, unknown> = {}) => pendingVehicle({
+  status: 'archived', driver_id: null, review_decision: 'rejected', rejection_reason: 'Wrong plate', reviewed_by: 'admin-1', reviewed_at: '2026-09-29T09:00:00.000Z', ...over,
 });
 
 const register = (body: Record<string, unknown> = REGISTRATION, who = driver()) => request(app).post('/api/v1/vehicles/register').set(who).send(body);
@@ -148,7 +153,8 @@ describe('the review', () => {
   it('reject archives the vehicle with the reason, keeps the driver and shows it in the archived filter', async () => {
     const res = await request(app).post('/api/v1/vehicles/veh-p/reject').set(admin()).send({ reason: 'RC photo is unreadable' });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: 'archived', review_decision: 'rejected', rejection_reason: 'RC photo is unreadable', reviewed_by: 'admin-1', driver_id: 'driver-1' });
+    // Like any archive it frees the driver link; the vehicle stays tied to them by submitted_by
+    expect(res.body).toMatchObject({ status: 'archived', review_decision: 'rejected', rejection_reason: 'RC photo is unreadable', reviewed_by: 'admin-1', driver_id: null, submitted_by: 'driver-1' });
 
     const archived = await request(app).get('/api/v1/vehicles?status=archived').set(admin());
     expect(archived.body[0]).toMatchObject({ id: 'veh-p', rejection_reason: 'RC photo is unreadable' });
@@ -208,11 +214,12 @@ describe('the review', () => {
 });
 
 describe('a driver submits again after a rejection', () => {
-  beforeEach(() => reset([pendingVehicle({ status: 'archived', review_decision: 'rejected', rejection_reason: 'Wrong plate', reviewed_by: 'admin-1', reviewed_at: '2026-09-29T09:00:00.000Z' })]));
+  beforeEach(() => reset([rejectedVehicle()]));
 
   it('puts the same vehicle back to pending and clears the decision', async () => {
     const res = await register({ ...REGISTRATION, plate_number: 'MH12AB4321' });
     expect(res.status).toBe(200);
+    // Linked to the driver again, decision cleared
     expect(res.body).toMatchObject({ id: 'veh-p', status: 'pending_approval', plate_number: 'MH12AB4321', resubmitted: true, review_decision: null, rejection_reason: null, reviewed_by: null, driver_id: 'driver-1' });
     expect(res.body.submitted_at).not.toBe('2026-09-29T08:00:00.000Z');
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);
@@ -227,12 +234,32 @@ describe('a driver submits again after a rejection', () => {
 
   it('the TEMP placeholder does not become a second live vehicle', async () => {
     reset([
-      pendingVehicle({ status: 'archived', review_decision: 'rejected', rejection_reason: 'Wrong plate', reviewed_at: '2026-09-29T09:00:00.000Z' }),
+      rejectedVehicle(),
       { id: 'veh-t', plate_number: 'TEMP-ABC123', vehicle_type: 'truck', capacity_kg: 1000, status: 'idle', driver_id: 'driver-1' },
     ]);
     const res = await register();
     expect(res.body.id).toBe('veh-p');
     expect(vehicleRow('veh-t')).toMatchObject({ status: 'archived', driver_id: null });
+  });
+});
+
+describe('a driver with a rejected vehicle and a new one', () => {
+  it('has one live vehicle for the endpoints that look up the driver\'s vehicle', async () => {
+    reset([rejectedVehicle(), { id: 'veh-a', plate_number: 'DL01AA0001', vehicle_type: 'truck', capacity_kg: 9000, status: 'available', driver_id: 'driver-1' }]);
+    const list = await request(app).get('/api/v1/vehicles').set(driver());
+    expect(list.body.map((v: any) => v.id)).toEqual(['veh-a']);
+    const mine = await request(app).get('/api/v1/vehicles/my-registration').set(driver());
+    expect(mine.body).toMatchObject({ state: 'approved', vehicle: { id: 'veh-a' } });
+  });
+
+  it('approving a rejected vehicle links the driver again, unless they have another live vehicle', async () => {
+    reset([rejectedVehicle(), { id: 'veh-a', plate_number: 'DL01AA0001', vehicle_type: 'truck', capacity_kg: 9000, status: 'available', driver_id: 'driver-1' }]);
+    const blocked = await request(app).post('/api/v1/vehicles/veh-p/approve').set(admin());
+    expect(blocked.status).toBe(409);
+    reset([rejectedVehicle()]);
+    const ok = await request(app).post('/api/v1/vehicles/veh-p/approve').set(admin());
+    expect(ok.status).toBe(200);
+    expect(vehicleRow('veh-p')).toMatchObject({ status: 'available', driver_id: 'driver-1' });
   });
 });
 
@@ -256,7 +283,7 @@ describe('who can see and decide requests', () => {
   });
 
   it('only pending vehicles are listed', async () => {
-    reset([pendingVehicle(), { id: 'veh-a', plate_number: 'DL01AA0001', vehicle_type: 'truck', capacity_kg: 9000, status: 'available' }, pendingVehicle({ id: 'veh-r', plate_number: 'DL01AA0002', status: 'archived', review_decision: 'rejected' })]);
+    reset([pendingVehicle(), { id: 'veh-a', plate_number: 'DL01AA0001', vehicle_type: 'truck', capacity_kg: 9000, status: 'available' }, rejectedVehicle({ id: 'veh-r', plate_number: 'DL01AA0002' })]);
     const res = await request(app).get('/api/v1/vehicles/requests').set(admin());
     expect(res.body.requests.map((r: any) => r.vehicle.id)).toEqual(['veh-p']);
   });
@@ -384,13 +411,14 @@ describe('vehicle photos', () => {
     expect(supabaseMock.rows('vehicle_photos')).toHaveLength(0);
   });
 
-  it('a photo can be removed, and a rejected vehicle\'s driver can still add one', async () => {
+  it('a photo can be removed; once rejected only staff change the photos until the driver submits again', async () => {
     const path = (await uploadUrl('cargo')).body.path as string;
     await request(app).put('/api/v1/vehicles/veh-p/photos/cargo').set(driver()).send({ file_path: path });
     expect((await request(app).delete('/api/v1/vehicles/veh-p/photos/cargo').set(driver())).status).toBe(204);
     expect((await request(app).delete('/api/v1/vehicles/veh-p/photos/cargo').set(driver())).status).toBe(404);
 
     await request(app).post('/api/v1/vehicles/veh-p/reject').set(admin()).send({ reason: 'Add clear photos' });
-    expect((await uploadUrl('front')).status).toBe(200);
+    expect((await uploadUrl('front')).status).toBe(403);
+    expect((await uploadUrl('front', admin())).status).toBe(200);
   });
 });
