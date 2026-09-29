@@ -94,8 +94,9 @@ export default function DashboardPage() {
       const { data } = await supabase
         .from('sos_alerts')
         .select('*')
+        .neq('status', 'resolved')
         .order('created_at', { ascending: false })
-        .limit(10)
+        .limit(50)
       return data || []
     },
     refetchInterval: 15_000,
