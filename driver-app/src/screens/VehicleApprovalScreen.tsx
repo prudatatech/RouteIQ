@@ -154,6 +154,7 @@ const styles = StyleSheet.create({
   gap: { gap: space[2] },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space[3], padding: space[4] },
   rowBorder: { borderTopWidth: size.border, borderTopColor: colors.border },
-  label: { flexShrink: 0 },
+  // Both sides may wrap: long Indian-language labels no longer squeeze the value off the row
+  label: { flex: 1 },
   value: { flex: 1, textAlign: 'right' },
 });

@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import { useTranslation } from '../hooks/useTranslation';
 import { api, type FuelLog, type FuelPaymentMode } from '../services/api';
 import { compressBill, uploadBill } from '../services/fuelBill';
-import { Button, Card, ErrorBanner, ScreenHeader, StatusPill, Text, TextField } from '../components/ui';
-import { colors, radius, size, space } from '../theme';
+import { Button, Card, Chip, ErrorBanner, ScreenHeader, StatusPill, Text, TextField } from '../components/ui';
+import { colors, radius, space } from '../theme';
 import { deriveAmounts, sendableAmounts, type AmountField, type AmountValues } from '../utils/fuel';
 import { errorMessage } from '../utils/errors';
 import { formatDate, formatINR, formatNumber } from '../utils/format';
@@ -48,12 +48,18 @@ export default function FuelLogScreen({ vehicleId, location, onClose, headerRigh
   const [billBusy, setBillBusy] = useState(false);
   const [billError, setBillError] = useState('');
   const [error, setError] = useState('');
+  const [amountsError, setAmountsError] = useState('');
+  const [odometerError, setOdometerError] = useState('');
   const [saving, setSaving] = useState(false);
   const [recent, setRecent] = useState<FuelLog[] | null>(null);
   const [recentFailed, setRecentFailed] = useState(false);
   // One key per form: a resend after a lost reply is applied once
   const keyRef = useRef(Crypto.randomUUID());
   const odometerTouched = useRef(false);
+  const priceRef = useRef<TextInput>(null);
+  const totalRef = useRef<TextInput>(null);
+  const odometerRef = useRef<TextInput>(null);
+  const stationRef = useRef<TextInput>(null);
 
   const loadRecent = useCallback(async () => {
     setRecentFailed(false);
@@ -108,14 +114,16 @@ export default function FuelLogScreen({ vehicleId, location, onClose, headerRigh
 
   const save = async () => {
     setError('');
+    setAmountsError('');
+    setOdometerError('');
     const figures = sendableAmounts(amounts, edited);
     if (!figures) {
-      setError(t('fuel_amounts_needed'));
+      setAmountsError(t('fuel_amounts_needed'));
       return;
     }
     const odo = odometer.trim() === '' ? null : Number(odometer);
     if (odo != null && !(Number.isFinite(odo) && odo >= 0)) {
-      setError(t('fuel_odometer_invalid'));
+      setOdometerError(t('fuel_odometer_invalid'));
       return;
     }
     setSaving(true);
@@ -153,20 +161,66 @@ export default function FuelLogScreen({ vehicleId, location, onClose, headerRigh
             {t('fuel_any_two')}
           </Text>
 
-          <TextField label={t('fuel_litres')} keyboardType="decimal-pad" value={amounts.litres} onChangeText={(v) => setAmount('litres', v)} />
-          <TextField label={t('fuel_price')} keyboardType="decimal-pad" value={amounts.price} onChangeText={(v) => setAmount('price', v)} />
-          <TextField label={t('fuel_total')} keyboardType="decimal-pad" value={amounts.total} onChangeText={(v) => setAmount('total', v)} />
           <TextField
+            label={t('fuel_litres')}
+            keyboardType="decimal-pad"
+            value={amounts.litres}
+            onChangeText={(v) => setAmount('litres', v)}
+            editable={!saving}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => priceRef.current?.focus()}
+          />
+          <TextField
+            ref={priceRef}
+            label={t('fuel_price')}
+            keyboardType="decimal-pad"
+            value={amounts.price}
+            onChangeText={(v) => setAmount('price', v)}
+            editable={!saving}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => totalRef.current?.focus()}
+          />
+          <TextField
+            ref={totalRef}
+            label={t('fuel_total')}
+            keyboardType="decimal-pad"
+            value={amounts.total}
+            onChangeText={(v) => setAmount('total', v)}
+            error={amountsError || undefined}
+            editable={!saving}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => odometerRef.current?.focus()}
+          />
+          <TextField
+            ref={odometerRef}
             label={t('fuel_odometer')}
-            hint={odometerFromVehicle ? t('fuel_odometer_hint') : undefined}
+            hint={odometerFromVehicle ? t('fuel_odometer_hint') : t('vehicle_optional')}
+            error={odometerError || undefined}
             keyboardType="number-pad"
             value={odometer}
             onChangeText={(v) => {
               odometerTouched.current = true;
               setOdometer(v);
+              if (odometerError) setOdometerError('');
             }}
+            editable={!saving}
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => stationRef.current?.focus()}
           />
-          <TextField label={t('fuel_station')} value={station} onChangeText={setStation} maxLength={120} />
+          <TextField
+            ref={stationRef}
+            label={t('fuel_station')}
+            hint={t('vehicle_optional')}
+            value={station}
+            onChangeText={setStation}
+            maxLength={120}
+            editable={!saving}
+            returnKeyType="done"
+          />
 
           <Card style={styles.row}>
             <View style={styles.flex}>
@@ -186,23 +240,10 @@ export default function FuelLogScreen({ vehicleId, location, onClose, headerRigh
 
           <View style={styles.group}>
             <Text variant="bodySmallMedium">{t('fuel_payment')}</Text>
-            <View style={styles.chips}>
-              {PAYMENT_MODES.map((mode) => {
-                const selected = payment === mode;
-                return (
-                  <Pressable
-                    key={mode}
-                    onPress={() => setPayment(mode)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                  >
-                    <Text variant="bodySmallMedium" color={selected ? 'onAccentFill' : 'text'}>
-                      {t(PAYMENT_KEY[mode])}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            <View style={styles.chips} accessibilityRole="radiogroup">
+              {PAYMENT_MODES.map((mode) => (
+                <Chip key={mode} label={t(PAYMENT_KEY[mode])} selected={payment === mode} onPress={() => setPayment(mode)} disabled={saving} />
+              ))}
             </View>
           </View>
 
@@ -218,14 +259,9 @@ export default function FuelLogScreen({ vehicleId, location, onClose, headerRigh
               </View>
             ) : (
               <>
-                <View style={styles.billButtons}>
-                  <View style={styles.flex}>
-                    <Button title={t('fuel_bill_take')} variant="secondary" loading={billBusy} onPress={() => pickBill('camera')} disabled={saving} />
-                  </View>
-                  <View style={styles.flex}>
-                    <Button title={t('fuel_bill_pick')} variant="secondary" onPress={() => pickBill('gallery')} disabled={saving || billBusy} />
-                  </View>
-                </View>
+                {/* Stacked, not side by side: "Take a photo of the bill" does not fit half a 360dp screen */}
+                <Button title={t('fuel_bill_take')} variant="secondary" loading={billBusy} onPress={() => pickBill('camera')} disabled={saving} />
+                <Button title={t('fuel_bill_pick')} variant="secondary" onPress={() => pickBill('gallery')} disabled={saving || billBusy} />
                 <Text variant="caption" color="textMuted">
                   {t('fuel_no_bill_note')}
                 </Text>
@@ -283,19 +319,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   group: { gap: space[2] },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  chip: {
-    minHeight: size.control,
-    paddingHorizontal: space[4],
-    borderRadius: radius.control,
-    borderWidth: size.border,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipSelected: { backgroundColor: colors.accentFill, borderColor: colors.accentFill },
   billRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  billButtons: { flexDirection: 'row', gap: space[2] },
   thumb: { width: THUMB, height: THUMB, borderRadius: radius.control, backgroundColor: colors.surfaceSubtle },
   recent: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
 });

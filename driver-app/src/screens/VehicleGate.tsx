@@ -12,7 +12,7 @@
  * driver is let in rather than locked out.
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
@@ -92,7 +92,7 @@ export default function VehicleGate({ onLogout, children }: { onLogout: () => vo
 
   if (skipped === null || cachedApproved === null || (registration.isLoading && !registration.data)) {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView style={styles.center} edges={['top', 'bottom']}>
         <ActivityIndicator color={colors.accent} accessibilityLabel={t('loading')} />
       </SafeAreaView>
     );
@@ -103,15 +103,17 @@ export default function VehicleGate({ onLogout, children }: { onLogout: () => vo
     // Could not ask. A driver last known as approved carries on with what is saved on the phone.
     if (cachedApproved) return <GateContext.Provider value={context}>{children}</GateContext.Provider>;
     return (
-      <SafeAreaView style={styles.center}>
-        <View style={styles.errorBox}>
-          <Text variant="heading" align="center">
-            {t('vehicle_load_failed')}
-          </Text>
-          <ErrorBanner message={registration.error instanceof Error ? registration.error.message : t('vehicle_load_failed')} />
-          <Button title={t('retry')} onPress={() => registration.refetch()} loading={registration.isFetching} />
-          <Button title={t('logout')} variant="ghost" onPress={logout} />
-        </View>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <ScrollView contentContainerStyle={styles.errorScroll}>
+          <View style={styles.errorBox}>
+            <Text variant="heading" align="center">
+              {t('vehicle_load_failed')}
+            </Text>
+            <ErrorBanner message={registration.error instanceof Error ? registration.error.message : t('vehicle_load_failed')} />
+            <Button title={t('retry')} onPress={() => registration.refetch()} loading={registration.isFetching} />
+            <Button title={t('logout')} variant="ghost" onPress={logout} />
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -167,5 +169,7 @@ export default function VehicleGate({ onLogout, children }: { onLogout: () => vo
 
 const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: space[4] },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  errorScroll: { flexGrow: 1, justifyContent: 'center', padding: space[4] },
   errorBox: { alignSelf: 'stretch', gap: space[4] },
 });

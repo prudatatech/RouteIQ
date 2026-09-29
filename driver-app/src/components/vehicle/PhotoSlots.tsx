@@ -46,10 +46,10 @@ export default function PhotoSlots({ items, busy = null, onAdd }: Props) {
                 </View>
               ) : null}
             </View>
-            <Text variant="captionMedium" numberOfLines={1}>
+            <Text variant="captionMedium" numberOfLines={2}>
               {label}
             </Text>
-            <Text variant="caption" color="accent" numberOfLines={1}>
+            <Text variant="caption" color="accent" numberOfLines={2}>
               {t(uri ? 'vehicle_photo_replace' : 'vehicle_photo_add')}
             </Text>
           </Pressable>
@@ -60,8 +60,9 @@ export default function PhotoSlots({ items, busy = null, onAdd }: Props) {
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[3] },
-  tile: { width: '30%', minWidth: 92, flexGrow: 1, gap: space[1] },
+  // Two columns at every width (a 360dp phone included), so a lone last tile never stretches across the row
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space[3] },
+  tile: { width: '48%', gap: space[1] },
   pressed: { opacity: 0.7 },
   frame: {
     aspectRatio: 4 / 3,

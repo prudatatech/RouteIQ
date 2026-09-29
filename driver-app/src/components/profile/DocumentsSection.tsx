@@ -7,7 +7,7 @@ import { actionQueue, type QueuedAction } from '../../services/actionQueue';
 import { compressDocument, MAX_DOCUMENT_FILES } from '../../services/documentUpload';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { Language } from '../../locales';
-import { Button, Card, ErrorBanner, StatusPill, Text, TextField } from '../ui';
+import { Button, Card, Chip, ErrorBanner, StatusPill, Text, TextField } from '../ui';
 import { colors, radius, size, space } from '../../theme';
 import {
   DRIVER_CAN_UPLOAD,
@@ -310,15 +310,7 @@ function DocumentRow({ slot, doc, required, waiting, consentMissing, first, onCh
           {draft.step === 'source' && draft.uris.length === 0 && slot.types.length > 1 ? (
             <View style={styles.kinds} accessibilityRole="radiogroup">
               {slot.types.map((k) => (
-                <Button
-                  key={k}
-                  title={t(`doc_type_${k}`)}
-                  variant={draft.type === k ? 'primary' : 'secondary'}
-                  block={false}
-                  onPress={() => setDraft({ ...draft, type: k })}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: draft.type === k }}
-                />
+                <Chip key={k} label={t(`doc_type_${k}`)} selected={draft.type === k} onPress={() => setDraft({ ...draft, type: k })} />
               ))}
             </View>
           ) : null}
@@ -510,8 +502,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: space[1],
     right: space[1],
-    width: 24,
-    height: 24,
+    // 32 + hitSlop 8 on each side reaches the 48dp touch target
+    width: 32,
+    height: 32,
     borderRadius: radius.full,
     backgroundColor: colors.neutral,
     alignItems: 'center',

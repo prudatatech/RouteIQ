@@ -2,6 +2,7 @@ export { Text, type TextProps } from './Text';
 export { Button, type ButtonProps, type ButtonVariant } from './Button';
 export { IconButton, type IconButtonProps } from './IconButton';
 export { Card, type CardProps } from './Card';
+export { Chip, type ChipProps } from './Chip';
 export { StatusPill, TONES, type StatusPillProps, type Tone } from './StatusPill';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { Banner, ErrorBanner, OfflineBanner, type BannerProps } from './Banner';
