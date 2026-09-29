@@ -10,6 +10,7 @@ import type { RouteStop } from '../types/route';
 
 export type DriverModal =
   | { kind: 'sos' }
+  | { kind: 'sosCountdown' }
   | { kind: 'pod'; stop: RouteStop }
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
@@ -27,7 +28,7 @@ interface SystemRequests {
 
 /** Pure priority rule, kept separate so it is easy to reason about. */
 export function resolveActiveModal(driver: DriverModal | null, system: SystemRequests): ActiveModal | null {
-  if (driver?.kind === 'sos') return driver;
+  if (driver?.kind === 'sos' || driver?.kind === 'sosCountdown') return driver;
   if (system.call) return { kind: 'call' };
   if (system.assignment) return { kind: 'assignment' };
   return driver;

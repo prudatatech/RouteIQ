@@ -286,7 +286,6 @@ export const translations = {
     vehicle_save_failed: 'Could not save your vehicle. Please try again.',
     vehicle_type: 'Vehicle type',
     sos_button_label: 'Send SOS',
-    sos_button_hint: 'Sends an emergency alert with your location to your fleet manager right away',
     sos_sending_title: 'Sending SOS…',
     sos_sending_desc: 'Alerting your fleet manager with your location.',
     sos_offline: 'You are offline, so the SOS could not be sent. Call your fleet manager, or 112 in an emergency.',
@@ -305,6 +304,11 @@ export const translations = {
     offline_banner_cached: 'You are offline. Showing your last saved route.',
     sync_failed_banner: 'Could not refresh your route. Showing the copy from',
     sync_failed_cached: 'Could not refresh your route. Showing your last saved copy.',
+    sos_button_hint_hold: 'Press and hold for 1 second to send an emergency alert. A quick tap starts a 5-second countdown that you can cancel.',
+    sos_hold_label: 'Hold',
+    sos_countdown_title: 'Sending SOS…',
+    sos_countdown_desc: 'Your fleet manager will be alerted with your location in {n} seconds. Cancel if this was a mistake.',
+    sos_send_now: 'Send now',
 
   }, hi: {
     backhaul_sub: 'डिस्पैच को बताएं कि कितनी जगह खाली है',
@@ -589,7 +593,6 @@ export const translations = {
     vehicle_save_failed: 'आपका वाहन सेव नहीं हो सका। कृपया फिर से कोशिश करें।',
     vehicle_type: 'वाहन का प्रकार',
     sos_button_label: 'SOS भेजें',
-    sos_button_hint: 'आपकी लोकेशन के साथ फ्लीट मैनेजर को तुरंत आपातकालीन अलर्ट भेजता है',
     sos_sending_title: 'SOS भेजा जा रहा है…',
     sos_sending_desc: 'आपकी लोकेशन के साथ फ्लीट मैनेजर को सूचित किया जा रहा है।',
     sos_offline: 'आप ऑफ़लाइन हैं, इसलिए SOS नहीं भेजा जा सका। अपने फ्लीट मैनेजर को या आपात स्थिति में 112 पर कॉल करें।',
@@ -608,6 +611,11 @@ export const translations = {
     offline_banner_cached: 'आप ऑफ़लाइन हैं। आखिरी सेव किया गया रूट दिखाया जा रहा है।',
     sync_failed_banner: 'रूट रिफ्रेश नहीं हो सका। इस समय की कॉपी दिखाई जा रही है:',
     sync_failed_cached: 'रूट रिफ्रेश नहीं हो सका। आखिरी सेव की गई कॉपी दिखाई जा रही है।',
+    sos_button_hint_hold: 'आपातकालीन अलर्ट भेजने के लिए 1 सेकंड दबाकर रखें। हल्का टैप करने पर 5 सेकंड की उल्टी गिनती शुरू होती है, जिसे आप रद्द कर सकते हैं।',
+    sos_hold_label: 'दबाए रखें',
+    sos_countdown_title: 'SOS भेजा जा रहा है…',
+    sos_countdown_desc: '{n} सेकंड में आपकी लोकेशन के साथ फ्लीट मैनेजर को सूचित किया जाएगा। गलती से हुआ हो तो रद्द करें।',
+    sos_send_now: 'अभी भेजें',
 
   }, mr: {
 
@@ -893,7 +901,6 @@ export const translations = {
     vehicle_save_failed: 'तुमचे वाहन जतन झाले नाही. कृपया पुन्हा प्रयत्न करा.',
     vehicle_type: 'वाहनाचा प्रकार',
     sos_button_label: 'SOS पाठवा',
-    sos_button_hint: 'तुमच्या ठिकाणासह फ्लीट मॅनेजरला लगेच आणीबाणी अलर्ट पाठवते',
     sos_sending_title: 'SOS पाठवत आहे…',
     sos_sending_desc: 'तुमच्या ठिकाणासह फ्लीट मॅनेजरला कळवत आहे.',
     sos_offline: 'तुम्ही ऑफलाइन आहात, त्यामुळे SOS पाठवता आला नाही. फ्लीट मॅनेजरला किंवा आणीबाणीत 112 वर कॉल करा.',
@@ -912,6 +919,11 @@ export const translations = {
     offline_banner_cached: 'तुम्ही ऑफलाइन आहात. शेवटचा जतन केलेला मार्ग दाखवत आहे.',
     sync_failed_banner: 'मार्ग रिफ्रेश झाला नाही. या वेळची प्रत दाखवत आहे:',
     sync_failed_cached: 'मार्ग रिफ्रेश झाला नाही. शेवटची जतन केलेली प्रत दाखवत आहे.',
+    sos_button_hint_hold: 'आणीबाणी अलर्ट पाठवण्यासाठी 1 सेकंद दाबून ठेवा. हलका टॅप केल्यास 5 सेकंदांची उलटगणती सुरू होते, जी तुम्ही रद्द करू शकता.',
+    sos_hold_label: 'दाबून ठेवा',
+    sos_countdown_title: 'SOS पाठवत आहे…',
+    sos_countdown_desc: '{n} सेकंदांत तुमच्या ठिकाणासह फ्लीट मॅनेजरला कळवले जाईल. चुकून झाले असल्यास रद्द करा.',
+    sos_send_now: 'आत्ताच पाठवा',
 
   }, te: {
 
@@ -1197,7 +1209,6 @@ export const translations = {
     vehicle_save_failed: 'మీ వాహనం సేవ్ కాలేదు. దయచేసి మళ్లీ ప్రయత్నించండి.',
     vehicle_type: 'వాహన రకం',
     sos_button_label: 'SOS పంపండి',
-    sos_button_hint: 'మీ స్థానంతో ఫ్లీట్ మేనేజర్‌కు వెంటనే అత్యవసర హెచ్చరిక పంపుతుంది',
     sos_sending_title: 'SOS పంపుతోంది…',
     sos_sending_desc: 'మీ స్థానంతో ఫ్లీట్ మేనేజర్‌ను హెచ్చరిస్తోంది.',
     sos_offline: 'మీరు ఆఫ్‌లైన్‌లో ఉన్నారు, కాబట్టి SOS పంపలేకపోయాము. మీ ఫ్లీట్ మేనేజర్‌కు లేదా అత్యవసరమైతే 112కు కాల్ చేయండి.',
@@ -1216,6 +1227,11 @@ export const translations = {
     offline_banner_cached: 'మీరు ఆఫ్‌లైన్‌లో ఉన్నారు. చివరిగా సేవ్ చేసిన రూట్ చూపిస్తోంది.',
     sync_failed_banner: 'రూట్ రిఫ్రెష్ కాలేదు. ఈ సమయం నాటి కాపీ చూపిస్తోంది:',
     sync_failed_cached: 'రూట్ రిఫ్రెష్ కాలేదు. చివరిగా సేవ్ చేసిన కాపీ చూపిస్తోంది.',
+    sos_button_hint_hold: 'అత్యవసర హెచ్చరిక పంపడానికి 1 సెకను నొక్కి పట్టుకోండి. తేలికగా ట్యాప్ చేస్తే 5 సెకన్ల కౌంట్‌డౌన్ మొదలవుతుంది, దాన్ని మీరు రద్దు చేయవచ్చు.',
+    sos_hold_label: 'పట్టుకోండి',
+    sos_countdown_title: 'SOS పంపుతోంది…',
+    sos_countdown_desc: '{n} సెకన్లలో మీ స్థానంతో ఫ్లీట్ మేనేజర్‌కు తెలియజేయబడుతుంది. పొరపాటున జరిగితే రద్దు చేయండి.',
+    sos_send_now: 'ఇప్పుడే పంపండి',
 
   }, kn: {
     hello_driver: 'ನಮಸ್ಕಾರ ಚಾಲಕರೆ',
@@ -1496,7 +1512,6 @@ export const translations = {
     vehicle_save_failed: 'ನಿಮ್ಮ ವಾಹನ ಉಳಿಸಲು ಆಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
     vehicle_type: 'ವಾಹನದ ಪ್ರಕಾರ',
     sos_button_label: 'SOS ಕಳುಹಿಸಿ',
-    sos_button_hint: 'ನಿಮ್ಮ ಸ್ಥಳದೊಂದಿಗೆ ಫ್ಲೀಟ್ ಮ್ಯಾನೇಜರ್‌ಗೆ ತಕ್ಷಣ ತುರ್ತು ಎಚ್ಚರಿಕೆ ಕಳುಹಿಸುತ್ತದೆ',
     sos_sending_title: 'SOS ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ…',
     sos_sending_desc: 'ನಿಮ್ಮ ಸ್ಥಳದೊಂದಿಗೆ ಫ್ಲೀಟ್ ಮ್ಯಾನೇಜರ್‌ಗೆ ಎಚ್ಚರಿಕೆ ನೀಡಲಾಗುತ್ತಿದೆ.',
     sos_offline: 'ನೀವು ಆಫ್‌ಲೈನ್ ಇದ್ದೀರಿ, ಹಾಗಾಗಿ SOS ಕಳುಹಿಸಲು ಆಗಲಿಲ್ಲ. ನಿಮ್ಮ ಫ್ಲೀಟ್ ಮ್ಯಾನೇಜರ್‌ಗೆ ಅಥವಾ ತುರ್ತು ಸಂದರ್ಭದಲ್ಲಿ 112 ಗೆ ಕರೆ ಮಾಡಿ.',
@@ -1515,6 +1530,11 @@ export const translations = {
     offline_banner_cached: 'ನೀವು ಆಫ್‌ಲೈನ್ ಇದ್ದೀರಿ. ಕೊನೆಯದಾಗಿ ಉಳಿಸಿದ ಮಾರ್ಗ ತೋರಿಸಲಾಗುತ್ತಿದೆ.',
     sync_failed_banner: 'ಮಾರ್ಗ ರಿಫ್ರೆಶ್ ಆಗಲಿಲ್ಲ. ಈ ಸಮಯದ ಪ್ರತಿ ತೋರಿಸಲಾಗುತ್ತಿದೆ:',
     sync_failed_cached: 'ಮಾರ್ಗ ರಿಫ್ರೆಶ್ ಆಗಲಿಲ್ಲ. ಕೊನೆಯದಾಗಿ ಉಳಿಸಿದ ಪ್ರತಿ ತೋರಿಸಲಾಗುತ್ತಿದೆ.',
+    sos_button_hint_hold: 'ತುರ್ತು ಎಚ್ಚರಿಕೆ ಕಳುಹಿಸಲು 1 ಸೆಕೆಂಡ್ ಒತ್ತಿ ಹಿಡಿಯಿರಿ. ಸಣ್ಣ ಟ್ಯಾಪ್ ಮಾಡಿದರೆ 5 ಸೆಕೆಂಡಿನ ಕೌಂಟ್‌ಡೌನ್ ಆರಂಭವಾಗುತ್ತದೆ, ಅದನ್ನು ರದ್ದುಮಾಡಬಹುದು.',
+    sos_hold_label: 'ಹಿಡಿಯಿರಿ',
+    sos_countdown_title: 'SOS ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ…',
+    sos_countdown_desc: '{n} ಸೆಕೆಂಡಿನಲ್ಲಿ ನಿಮ್ಮ ಸ್ಥಳದೊಂದಿಗೆ ಫ್ಲೀಟ್ ಮ್ಯಾನೇಜರ್‌ಗೆ ತಿಳಿಸಲಾಗುತ್ತದೆ. ತಪ್ಪಾಗಿದ್ದರೆ ರದ್ದುಮಾಡಿ.',
+    sos_send_now: 'ಈಗಲೇ ಕಳುಹಿಸಿ',
 
   }, bn: {
     hello_driver: 'নমস্কার ড্রাইভার',
@@ -1795,7 +1815,6 @@ export const translations = {
     vehicle_save_failed: 'আপনার গাড়ি সেভ করা যায়নি। আবার চেষ্টা করুন।',
     vehicle_type: 'গাড়ির ধরন',
     sos_button_label: 'SOS পাঠান',
-    sos_button_hint: 'আপনার অবস্থানসহ ফ্লিট ম্যানেজারকে সঙ্গে সঙ্গে জরুরি সতর্কতা পাঠায়',
     sos_sending_title: 'SOS পাঠানো হচ্ছে…',
     sos_sending_desc: 'আপনার অবস্থানসহ ফ্লিট ম্যানেজারকে সতর্ক করা হচ্ছে।',
     sos_offline: 'আপনি অফলাইনে আছেন, তাই SOS পাঠানো যায়নি। ফ্লিট ম্যানেজারকে বা জরুরি অবস্থায় 112-এ কল করুন।',
@@ -1814,6 +1833,11 @@ export const translations = {
     offline_banner_cached: 'আপনি অফলাইনে আছেন। শেষ সেভ করা রুট দেখানো হচ্ছে।',
     sync_failed_banner: 'রুট রিফ্রেশ করা যায়নি। এই সময়ের কপি দেখানো হচ্ছে:',
     sync_failed_cached: 'রুট রিফ্রেশ করা যায়নি। শেষ সেভ করা কপি দেখানো হচ্ছে।',
+    sos_button_hint_hold: 'জরুরি সতর্কতা পাঠাতে ১ সেকেন্ড চেপে ধরে রাখুন। হালকা ট্যাপ করলে ৫ সেকেন্ডের কাউন্টডাউন শুরু হয়, যা আপনি বাতিল করতে পারেন।',
+    sos_hold_label: 'ধরে রাখুন',
+    sos_countdown_title: 'SOS পাঠানো হচ্ছে…',
+    sos_countdown_desc: '{n} সেকেন্ডের মধ্যে আপনার অবস্থানসহ ফ্লিট ম্যানেজারকে জানানো হবে। ভুল হলে বাতিল করুন।',
+    sos_send_now: 'এখনই পাঠান',
 
   },
 };

@@ -36,6 +36,7 @@ import MoreActionsSheet, { type MoreAction } from '../components/home/MoreAction
 import AssignmentDialog from '../components/modals/AssignmentDialog';
 import PodDialog from '../components/modals/PodDialog';
 import SosDialog from '../components/modals/SosDialog';
+import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
 import IncomingCallDialog from '../components/modals/IncomingCallDialog';
 import InvoiceDialog from '../components/modals/InvoiceDialog';
@@ -219,7 +220,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     return list;
   }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, t]);
 
-  const sosButton = <SosButton onPress={raiseSos} />;
+  const sosButton = <SosButton onHoldComplete={raiseSos} onTap={() => openModal({ kind: 'sosCountdown' })} />;
 
   const renderDialog = (active: ActiveModal) => {
     switch (active.kind) {
@@ -257,6 +258,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             }}
           />
         ) : null;
+      case 'sosCountdown':
+        return <SosCountdownDialog onSend={raiseSos} onCancel={closeModal} />;
       case 'sos':
         return (
           <SosDialog
