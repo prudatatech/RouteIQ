@@ -52,7 +52,7 @@ The app shell (`AppLayout`, `VendorLayout`) already provides the page width and 
 
 The design rules apply to every file under `frontend/src/**/*.{ts,tsx}` (see `frontend/eslint.config.js`):
 
-- **Colours:** theme colours only (`text`, `muted`, `brand`, `brand-fill`, `brand-soft`, `success`, `warning`, `danger`, `info`, `neutral`, `border`, `surface`, `surface-subtle`, `bg`). No palette colours (`slate-500`) and no hex values.
+- **Colours:** theme colours only (`text`, `muted`, `placeholder`, `disabled`, `brand`, `brand-fill`, `brand-soft`, `success`, `warning`, `danger`, `info`, `neutral`, `border`, `surface`, `surface-subtle`, `bg`). No palette colours (`slate-500`) and no hex values.
 - **Type:** `text-xs`, `sm`, `base`, `lg`, `2xl`, `3xl` (and `5xl` on the landing page only). Weights are `font-normal`, `font-medium` or `font-semibold`. No custom letter spacing.
 - **Shapes:** `rounded-control` (8px), `rounded-card` (16px) or `rounded-full`. Shadows are `shadow-raised` or `shadow-dialog` only. No blur and no gradients.
 - **Inline style:** no inline colour, font, radius or shadow. Runtime layout values such as a progress width are fine.
@@ -67,3 +67,7 @@ The design rules apply to every file under `frontend/src/**/*.{ts,tsx}` (see `fr
 - Error messages say what happened and what to do: "We could not load routes. Check your connection and try again."
 - Numbers use the Indian format: `toLocaleString('en-IN')`, and ₹ for money.
 - Never show a number, name or status that does not come from real data. If there is no data, show an empty state.
+
+## Text contrast
+
+Placeholders use `placeholder:text-placeholder` (`textPlaceholder` on mobile), never `disabled`; hints such as "10-digit mobile number" must stay readable outdoors. `text-disabled` is only for controls that are actually disabled. After changing colours in `design/tokens.json`, run `node design/check-contrast.mjs`: it prints every text and surface pair and fails below 4.5:1 (3:1 for disabled text).
