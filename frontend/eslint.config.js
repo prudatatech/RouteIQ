@@ -72,6 +72,10 @@ export default tseslint.config(
       'src/pages/BackhaulPage.tsx',
       'src/components/backhaul/**/*.{ts,tsx}',
       'src/store/cargoStore.ts',
+      'src/components/tracking/**/*.{ts,tsx}',
+      'src/pages/CustomerTrackingPage.tsx',
+      'src/pages/MobileTrackPage.tsx',
+      'src/pages/DriverPage.tsx',
     ],
     plugins: { design },
     rules: {
