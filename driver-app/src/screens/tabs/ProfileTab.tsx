@@ -8,6 +8,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { INDIAN_VEHICLES } from '../../constants/profile';
 import LanguagePicker from '../../components/LanguagePicker';
 import DocumentsSection from '../../components/profile/DocumentsSection';
+import EmergencyContactsSection from '../../components/profile/EmergencyContactsSection';
 import { useMyPeople } from '../../hooks/useMyPeople';
 import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
 import { colors, radius, size, space } from '../../theme';
@@ -217,6 +218,13 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
         error={people.error}
         onRetry={people.reload}
         onChanged={people.reload}
+      />
+
+      <EmergencyContactsSection
+        contacts={people.data?.emergency_contacts ?? null}
+        loading={people.loading}
+        error={people.error}
+        onRetry={people.reload}
       />
 
       <Button
