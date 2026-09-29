@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import {
   Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, Select, StatusPill, humanize, type Column,
 } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 /** The backend returns the most recent entries only. */
 const AUDIT_LIMIT = 100
@@ -70,11 +72,27 @@ export default function AuditLogPage() {
     },
   ]
 
+  const exportCsv = () => {
+    const csv = toCsv(rows.map(l => ({
+      when: l.timestamp,
+      source: l.agent ? humanize(l.agent) : '',
+      action: l.action || '',
+      result: l.status || '',
+    })), [
+      { key: 'when', header: 'When' },
+      { key: 'source', header: 'Source' },
+      { key: 'action', header: 'What happened' },
+      { key: 'result', header: 'Result' },
+    ])
+    downloadCsv(`audit-log-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
       <PageHeader
         title="Audit log"
         description={`Actions the system has taken automatically, newest first. Shows the latest ${AUDIT_LIMIT} entries.`}
+        actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <SearchInput value={search} onChange={setSearch} label="Search the audit log" placeholder="Search entries" className="sm:w-72" />

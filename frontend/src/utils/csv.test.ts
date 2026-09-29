@@ -52,7 +52,7 @@ describe('downloadCsv', () => {
   })
 
   it('creates a UTF-8 CSV blob with a BOM and triggers a download', async () => {
-    const createObjectURL = vi.fn(() => 'blob:mock-url')
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:mock-url')
     const revokeObjectURL = vi.fn()
     Object.assign(URL, { createObjectURL, revokeObjectURL })
 

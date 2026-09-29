@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
-import { Page, PageHeader, DataTable, StatusPill, SearchInput, Select, type Column } from '@/components/ui'
+import { Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, type Column } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 interface Vehicle {
   id: string
@@ -120,9 +122,39 @@ export default function RoutesPage() {
     },
   ]
 
+  const exportCsv = () => {
+    const csv = toCsv(rows.map(r => {
+      const vehicle = vehicleById.get(r.vehicle_id ?? '')
+      const full = withVehicle(r)
+      const distance = getRouteDistance(full)
+      return {
+        route_id: r.id,
+        vehicle: vehicle?.plate_number || r.vehicle_id || '',
+        status: r.status,
+        stops: r.route_stops?.length ?? 0,
+        distance_km: distance > 0 ? distance.toFixed(1) : '',
+        eta: distance > 0 ? formatEta(getRouteDuration(full, distance)) : '',
+        updated_at: r.updated_at ?? r.created_at ?? '',
+      }
+    }), [
+      { key: 'route_id', header: 'Route ID' },
+      { key: 'vehicle', header: 'Vehicle' },
+      { key: 'status', header: 'Status' },
+      { key: 'stops', header: 'Stops' },
+      { key: 'distance_km', header: 'Distance (km)' },
+      { key: 'eta', header: 'ETA' },
+      { key: 'updated_at', header: 'Updated at' },
+    ])
+    downloadCsv(`routes-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
-      <PageHeader title="Routes" description="Every planned route and where it stands.">
+      <PageHeader
+        title="Routes"
+        description="Every planned route and where it stands."
+        actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
+      >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or route ID" className="sm:max-w-xs" />
           <Select

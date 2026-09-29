@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
+import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import {
@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 interface Vehicle {
   id: string
@@ -213,13 +214,41 @@ export default function FleetPage() {
   const detailPing = detailVehicle ? lastPingAt(detailVehicle) : null
   const detailIsLive = !!detailPing && now - detailPing.getTime() <= LIVE_GPS_THRESHOLD_MS
 
+  const exportCsv = () => {
+    const csv = toCsv(filtered.map(v => ({
+      plate_number: v.plate_number,
+      type: v.vehicle_type,
+      model: v.vehicle_model || '',
+      status: v.status,
+      fuel_current_l: v.current_fuel_liters ?? '',
+      fuel_capacity_l: v.fuel_capacity_liters ?? '',
+      driver: v.driver_name || '',
+      last_seen: lastPingAt(v)?.toISOString() ?? '',
+    })), [
+      { key: 'plate_number', header: 'Plate number' },
+      { key: 'type', header: 'Type' },
+      { key: 'model', header: 'Model' },
+      { key: 'status', header: 'Status' },
+      { key: 'fuel_current_l', header: 'Fuel (L)' },
+      { key: 'fuel_capacity_l', header: 'Fuel capacity (L)' },
+      { key: 'driver', header: 'Driver' },
+      { key: 'last_seen', header: 'Last seen' },
+    ])
+    downloadCsv(`fleet-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
       <PageHeader
         title="Fleet"
         description={`${counts.all.toLocaleString('en-IN')} vehicles.`}
-        actions={role !== 'driver' && (
-          <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button>
+        actions={(
+          <>
+            <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
+            {role !== 'driver' && (
+              <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button>
+            )}
+          </>
         )}
       >
         <div className="flex flex-wrap items-center gap-3">

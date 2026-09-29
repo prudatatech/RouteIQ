@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowRight, Check, Truck, X } from 'lucide-react'
+import { ArrowRight, Check, Download, Truck, X } from 'lucide-react'
 import * as turf from '@turf/turf'
 import clsx from 'clsx'
 import { supabase } from '@/services/supabase'
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 /**
  * A vehicle can be assigned to a request only if it is within this straight-line
@@ -239,9 +240,32 @@ export default function VendorRequestsPage() {
     all: 'No vendor requests yet',
   }
 
+  const exportCsv = () => {
+    const csv = toCsv(rows.map(r => ({
+      vendor: vendorName(r),
+      pickup: r.pickup_location,
+      drop: r.drop_location,
+      weight_kg: r.required_capacity_kg,
+      status: statusLabels[r.status] ?? r.status,
+      posted_at: r.created_at,
+    })), [
+      { key: 'vendor', header: 'Vendor' },
+      { key: 'pickup', header: 'Pickup' },
+      { key: 'drop', header: 'Drop-off' },
+      { key: 'weight_kg', header: 'Weight (kg)' },
+      { key: 'status', header: 'Status' },
+      { key: 'posted_at', header: 'Posted at' },
+    ])
+    downloadCsv(`vendor-requests-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
-      <PageHeader title="Vendor requests" description="Loads posted by vendors that need a vehicle. New requests appear here as they come in.">
+      <PageHeader
+        title="Vendor requests"
+        description="Loads posted by vendors that need a vehicle. New requests appear here as they come in."
+        actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
+      >
         <div className="space-y-4">
           <Tabs label="Filter requests by status" tabs={requests.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
           <SearchInput value={search} onChange={setSearch} label="Search requests" placeholder="Search by vendor or place" className="max-w-sm" />
