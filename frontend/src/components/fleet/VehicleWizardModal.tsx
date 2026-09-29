@@ -3,7 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import { FileText, Save, Truck, User } from 'lucide-react'
-import { Modal, Button, Input, Select, type SelectOption } from '@/components/ui'
+import { Modal, Button, Input, Select, StatusPill, type SelectOption } from '@/components/ui'
+import { indianMobileError, rcNumberError } from '@/utils/validators'
+import { expiryStatus } from '@/utils/documentExpiry'
 
 // Must match backend-ts VehicleCreateSchema.vehicle_type; the server rejects anything else.
 const VEHICLE_TYPES: SelectOption[] = [
@@ -163,6 +165,8 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     if (step === 2) {
       if (!formData.driver_name.trim()) return toast.error('Driver name is required')
       if (!formData.driver_phone.trim()) return toast.error('Driver phone is required')
+      const phoneErr = indianMobileError(formData.driver_phone)
+      if (phoneErr) return toast.error(phoneErr)
     }
     setStep(s => s + 1)
   }
@@ -184,6 +188,8 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const handleFinish = () => {
     const missing = DOCS.filter(doc => !formData[docNumberKey(doc)]?.trim() || !formData[docExpiryKey(doc)]?.trim())
     if (missing.length > 0) return toast.error(`Missing details for: ${missing.map(d => d.toUpperCase()).join(', ')}`)
+    const rcErr = rcNumberError(formData.rc_number)
+    if (rcErr) return toast.error(rcErr)
     mutation.mutate(formData)
   }
 
@@ -272,7 +278,16 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
           <Input label="Spark GPS ID" hint="Optional hardware device ID" value={formData.spark_id} onChange={e => set('spark_id', e.target.value)} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Driver name" required value={formData.driver_name} onChange={e => set('driver_name', e.target.value)} />
-            <Input label="Driver phone" required placeholder="+91 98765 43210" value={formData.driver_phone} onChange={e => set('driver_phone', e.target.value)} />
+            <Input
+              label="Driver phone"
+              required
+              type="tel"
+              inputMode="tel"
+              placeholder="+91 98765 43210"
+              value={formData.driver_phone}
+              onChange={e => set('driver_phone', e.target.value)}
+              error={indianMobileError(formData.driver_phone)}
+            />
           </div>
         </div>
       )}
@@ -282,21 +297,28 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
           <p className="rounded-control border border-info/30 bg-info-soft px-4 py-3 text-sm text-text">
             Upload vehicle documents to stay compliant. If you don't have them all yet, save this as a draft and come back later.
           </p>
-          {DOCS.map(doc => (
-            <div key={doc} className="grid grid-cols-2 gap-4 rounded-control border border-border p-4">
-              <Input
-                label={`${doc.toUpperCase()} number`}
-                value={formData[docNumberKey(doc)] || ''}
-                onChange={e => set(docNumberKey(doc), e.target.value.toUpperCase())}
-              />
-              <Input
-                label="Expiry date"
-                type="date"
-                value={formData[docExpiryKey(doc)] || ''}
-                onChange={e => set(docExpiryKey(doc), e.target.value)}
-              />
-            </div>
-          ))}
+          {DOCS.map(doc => {
+            const expiry = expiryStatus(formData[docExpiryKey(doc)])
+            return (
+              <div key={doc} className="space-y-2 rounded-control border border-border p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label={`${doc.toUpperCase()} number`}
+                    value={formData[docNumberKey(doc)] || ''}
+                    onChange={e => set(docNumberKey(doc), e.target.value.toUpperCase())}
+                    error={doc === 'rc' ? rcNumberError(formData.rc_number) : undefined}
+                  />
+                  <Input
+                    label="Expiry date"
+                    type="date"
+                    value={formData[docExpiryKey(doc)] || ''}
+                    onChange={e => set(docExpiryKey(doc), e.target.value)}
+                  />
+                </div>
+                {expiry && <StatusPill tone={expiry.tone} dot={false}>{expiry.label}</StatusPill>}
+              </div>
+            )
+          })}
         </div>
       )}
     </Modal>
