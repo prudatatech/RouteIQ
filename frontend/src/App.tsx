@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, routes, routeDetails, analytics, optimize, shipments, shipmentManifest, emergency, bids,
-  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit,
+  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, adminSettings,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -28,6 +28,7 @@ const OptimizePage = optimize.Component
 const UsersPage = adminUsers.Component
 const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
+const SettingsPage = adminSettings.Component
 const BackhaulPage = backhaul.Component
 const ShipmentsPage = shipments.Component
 const ShipmentManifestPage = shipmentManifest.Component
@@ -339,6 +340,11 @@ export default function App() {
             <Route path="admin/audit" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <AuditLogPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/settings" element={
+              <PrivateRoute allowedRoles={['superadmin']}>
+                <SettingsPage />
               </PrivateRoute>
             } />
             <Route path="3pl-partners" element={

@@ -28,16 +28,6 @@ export interface BackhaulVehicle {
   available_capacity_kg?: number | null
 }
 
-export interface CargoAlert {
-  id: string
-  timestamp: string
-  vehicle_id: string
-  plate_number: string | null
-  type: string
-  severity: string | null
-  message: string | null
-}
-
 /** The route or manifest handed over by Route details → Duplicate. */
 export interface DuplicatedManifest {
   id: string
@@ -48,7 +38,6 @@ export interface DuplicatedManifest {
 
 export const backhaulKeys = {
   openLoads: ['backhaul', 'open-loads'] as const,
-  alerts: ['backhaul', 'alerts'] as const,
   vehicles: ['vehicles', 'backhaul-list'] as const,
 }
 
@@ -65,14 +54,6 @@ export function useBackhaulVehicles() {
     queryKey: backhaulKeys.vehicles,
     queryFn: () => vehiclesAPI.list({ limit: 200 }) as Promise<BackhaulVehicle[]>,
     select: rows => rows.filter(v => v.status !== 'archived'),
-  })
-}
-
-export function useCargoAlerts() {
-  return useQuery<CargoAlert[]>({
-    queryKey: backhaulKeys.alerts,
-    queryFn: () => cargoAPI.securityAlerts() as Promise<CargoAlert[]>,
-    refetchInterval: 30_000,
   })
 }
 

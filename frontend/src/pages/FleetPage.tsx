@@ -7,7 +7,7 @@ import { formatTimeAgo } from '@/utils/timeFormat'
 import { formatDateTime } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
-  parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
+  Tabs, TabPanel, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
 } from '@/components/ui'
 import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
@@ -16,6 +16,14 @@ import { supabase } from '@/services/supabase'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { expiryStatus } from '@/utils/documentExpiry'
+import { fleetAPI } from '@/services/api'
+import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
+import AlertsView from '@/components/fleet/AlertsView'
+import ServiceDueView from '@/components/fleet/ServiceDueView'
+import { bandLabel, bandTone, fleetKeys, formatOdometer, type HealthBand } from '@/components/fleet/health'
+import { useFleetHealth } from '@/components/fleet/useFleetHealth'
+
+const VIEW_IDS = ['vehicles', 'alerts', 'service'] as const
 
 interface Vehicle {
   id: string
@@ -45,6 +53,7 @@ interface Vehicle {
   fitness_expiry?: string | null
   permit_expiry?: string | null
   puc_expiry?: string | null
+  odometer_km?: number | null
 }
 
 const DOCUMENT_EXPIRY_LABELS: Record<string, string> = {
@@ -88,6 +97,7 @@ export default function FleetPage() {
   const { confirm } = useConfirm()
   const queryClient = useQueryClient()
 
+  const [view, setView] = useTabParam(VIEW_IDS, 'vehicles')
   const [filter, setFilter] = useTabParam(STATUS_FILTERS, 'all', 'status')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [sortParam, setSortParam] = useUrlState('sort')
@@ -156,6 +166,26 @@ export default function FleetPage() {
     setSearchParams(params => { params.delete('open'); return params }, { replace: true })
   }, [searchParams, setSearchParams, vehicles, isLoading])
 
+  const healthQuery = useFleetHealth()
+  const healthById = useMemo(() => new Map((healthQuery.data ?? []).map(h => [h.vehicle_id, h])), [healthQuery.data])
+
+  const alertSummary = useQuery<{ open: number; acknowledged: number }>({
+    queryKey: fleetKeys.alertSummary,
+    queryFn: () => fleetAPI.alertSummary(),
+    refetchInterval: 30_000,
+  })
+  const serviceDue = useQuery<unknown[]>({
+    queryKey: fleetKeys.serviceDue,
+    queryFn: () => fleetAPI.serviceDue(),
+    refetchInterval: 60_000,
+  })
+
+  const openVehicle = (id: string) => {
+    const match = vehicles.find(v => v.id === id)
+    if (match) setDetailVehicle(match)
+    else toast.error('That vehicle is not in the current list. Clear the filters and try again.')
+  }
+
   const counts: Record<string, number> = {
     all: summary?.total ?? 0,
     on_route: summary?.active ?? 0,
@@ -206,6 +236,22 @@ export default function FleetPage() {
     { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span className="capitalize">{v.vehicle_type}</span> },
     { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
     {
+      key: 'health',
+      header: 'Health',
+      sortValue: v => healthById.get(v.id)?.score ?? -1,
+      cell: v => {
+        const h = healthById.get(v.id)
+        if (!h) return <span className="text-muted">{healthQuery.isLoading ? '…' : '—'}</span>
+        if (h.score == null) return <span className="text-sm text-muted">Not enough data</span>
+        return (
+          <span className="inline-flex items-center gap-2">
+            <span className="w-7 text-right font-semibold tabular text-text">{h.score}</span>
+            <StatusPill tone={bandTone[h.band as HealthBand]}>{bandLabel[h.band as HealthBand]}</StatusPill>
+          </span>
+        )
+      },
+    },
+    {
       key: 'capacity',
       header: 'Capacity',
       hideBelow: 'md',
@@ -236,14 +282,15 @@ export default function FleetPage() {
       header: 'Fuel',
       hideBelow: 'lg',
       cell: v => {
-        const capacity = v.fuel_capacity_liters || 0
-        const current = v.current_fuel_liters || 0
-        const pct = capacity > 0 ? Math.round((current / capacity) * 100) : null
+        if (!v.fuel_capacity_liters || v.current_fuel_liters == null) return <span className="text-muted">Unknown</span>
+        const capacity = v.fuel_capacity_liters
+        const current = v.current_fuel_liters
+        const pct = Math.round((current / capacity) * 100)
         return (
           <span className="inline-flex items-center gap-1.5 text-sm text-text">
             <Fuel size={14} className="text-muted" aria-hidden="true" />
-            {current.toLocaleString('en-IN')} / {capacity.toLocaleString('en-IN')} L
-            {pct !== null && <span className="text-xs text-muted">({pct}%)</span>}
+            {current.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / {capacity.toLocaleString('en-IN')} L
+            <span className="text-xs text-muted">({pct}%)</span>
           </span>
         )
       },
@@ -282,6 +329,12 @@ export default function FleetPage() {
         </div>
       ),
     },
+  ]
+
+  const viewTabs: TabItem<(typeof VIEW_IDS)[number]>[] = [
+    { id: 'vehicles', label: 'Vehicles' },
+    { id: 'alerts', label: 'Alerts', count: alertSummary.data ? alertSummary.data.open + alertSummary.data.acknowledged : undefined },
+    { id: 'service', label: 'Service due', count: serviceDue.data?.length },
   ]
 
   const detailPing = detailVehicle ? lastPingAt(detailVehicle) : null
@@ -324,6 +377,8 @@ export default function FleetPage() {
           </>
         )}
       >
+        <Tabs tabs={viewTabs} value={view} onChange={setView} label="Fleet sections" />
+        {view === 'vehicles' && (
         <div className="flex flex-wrap items-center gap-3">
           <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" className="max-w-xs" />
           <div className="flex flex-wrap gap-1.5">
@@ -343,8 +398,13 @@ export default function FleetPage() {
             ))}
           </div>
         </div>
+        )}
       </PageHeader>
 
+      <TabPanel id={view}>
+      {view === 'alerts' && <AlertsView />}
+      {view === 'service' && <ServiceDueView onOpenVehicle={openVehicle} />}
+      {view === 'vehicles' && (
       <DataTable
         caption="Fleet vehicles"
         columns={columns}
@@ -364,6 +424,8 @@ export default function FleetPage() {
         sort={sort}
         onSortChange={s => setSortParam(serializeSort(s))}
       />
+      )}
+      </TabPanel>
 
       <VehicleWizardModal
         isOpen={isAddOpen || !!editingVehicle}
@@ -425,8 +487,11 @@ export default function FleetPage() {
                 },
                 {
                   label: 'Fuel',
-                  value: `${(detailVehicle.current_fuel_liters ?? 0).toLocaleString('en-IN')} / ${(detailVehicle.fuel_capacity_liters ?? 0).toLocaleString('en-IN')} L`,
+                  value: detailVehicle.fuel_capacity_liters
+                    ? `${(detailVehicle.current_fuel_liters ?? 0).toLocaleString('en-IN')} / ${detailVehicle.fuel_capacity_liters.toLocaleString('en-IN')} L`
+                    : 'Tank size not recorded',
                 },
+                { label: 'Odometer', value: formatOdometer(detailVehicle.odometer_km) },
               ]}
             />
             {(() => {
@@ -445,6 +510,7 @@ export default function FleetPage() {
                 </div>
               )
             })()}
+            <VehicleHealthPanel key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} />
           </div>
         )}
       </Drawer>

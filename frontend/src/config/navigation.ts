@@ -1,6 +1,6 @@
 import {
   BarChart3, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
-  Package, Route, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
+  Package, Route, Settings, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin'
@@ -64,6 +64,7 @@ export const navSections: NavSection[] = [
       { to: '/admin/users', label: 'Users', icon: Users, roles: superadmin },
       { to: '/admin/kyc', label: 'KYC review', icon: FileCheck2, roles: superadmin, badge: 'pendingKyc' },
       { to: '/admin/audit', label: 'Audit log', icon: History, roles: superadmin },
+      { to: '/admin/settings', label: 'Settings', icon: Settings, roles: superadmin },
     ],
   },
 ]

@@ -32,6 +32,7 @@ export const tplPartnerDetail = page(() => import('@/pages/TplPartnerDetailPage'
 export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminKyc = page(() => import('@/pages/admin/KycReviewPage'))
 export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
+export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
 
 // Behind VendorLayout
 export const vendorPortal = page(() => import('@/pages/VendorPortalPage'))
@@ -72,6 +73,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/admin/users': adminUsers.preload,
   '/admin/kyc': adminKyc.preload,
   '/admin/audit': adminAudit.preload,
+  '/admin/settings': adminSettings.preload,
   '/track': customerTracking.preload,
   '/vendor': vendorPortal.preload,
   '/vendor/corridor': vendorCorridor.preload,

@@ -143,15 +143,33 @@ export const searchAPI = {
 export const cargoAPI = {
   /** Created shipments that are not on a route yet. */
   openLoads: () => api.get('/cargo/open-loads').then(r => ensureArray(r.data)),
-  securityAlerts: () => api.get('/cargo/security-alerts').then(r => ensureArray(r.data)),
-  resolveAlert: (alertId: string) =>
-    api.post(`/cargo/resolve-alert/${alertId}`).then(r => r.data),
   optimizePooling: (shipmentIds: string[], vehicleId: string) =>
     api.post('/cargo/optimize-pooling', { shipment_ids: shipmentIds, vehicle_id: vehicleId }).then(r => r.data),
   backhaulMatch: (opportunityId: string, availableCapacityKg: number) =>
     api.post('/cargo/backhaul-match', { opportunity_id: opportunityId, available_capacity_kg: availableCapacityKg }).then(r => r.data),
   verifyPod: (data: { tracking_id: string, recipient_name: string }) =>
     api.post('/cargo/verify-pod', data).then(r => r.data),
+}
+
+export const fleetAPI = {
+  health: () => api.get('/fleet/health').then(r => ensureArray(r.data)),
+  vehicleHealth: (id: string) => api.get(`/fleet/vehicles/${id}/health`).then(r => r.data),
+  setOdometer: (id: string, odometerKm: number) =>
+    api.put(`/fleet/vehicles/${id}/odometer`, { odometer_km: odometerKm }).then(r => r.data),
+  servicePlans: (id: string) => api.get(`/fleet/vehicles/${id}/service-plans`).then(r => ensureArray(r.data)),
+  savePlan: (id: string, plan: object) => api.post(`/fleet/vehicles/${id}/service-plans`, plan).then(r => r.data),
+  deletePlan: (planId: string) => api.delete(`/fleet/service-plans/${planId}`).then(r => r.data),
+  serviceLog: (id: string) => api.get(`/fleet/vehicles/${id}/service-log`).then(r => ensureArray(r.data)),
+  logService: (id: string, entry: object) => api.post(`/fleet/vehicles/${id}/service-log`, entry).then(r => r.data),
+  serviceDue: () => api.get('/fleet/service-due').then(r => ensureArray(r.data)),
+  alerts: (status: 'active' | 'resolved' | 'all') => api.get('/fleet/alerts', { params: { status } }).then(r => ensureArray(r.data)),
+  alertSummary: () => api.get('/fleet/alerts/summary').then(r => r.data),
+  acknowledgeAlert: (id: string) => api.post(`/fleet/alerts/${id}/acknowledge`).then(r => r.data),
+  resolveAlert: (id: string) => api.post(`/fleet/alerts/${id}/resolve`).then(r => r.data),
+  alertSettings: () => api.get('/fleet/alert-settings').then(r => r.data),
+  saveAlertSettings: (values: object) => api.put('/fleet/alert-settings', values).then(r => r.data),
+  sendTestAlarm: (vehicleId: string, event: string) =>
+    api.post('/telematics/test-alarm', { vehicle_id: vehicleId, event }).then(r => r.data),
 }
 
 export const capacityAPI = {
