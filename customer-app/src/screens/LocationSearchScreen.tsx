@@ -10,13 +10,15 @@ import {
   LayoutAnimation,
   UIManager,
   DeviceEventEmitter,
+  Linking,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import MapView, { PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Button, IconButton, Text } from '../components/ui';
+import { Button, ErrorBanner, IconButton, Text } from '../components/ui';
 import { colors, radius, size, space, type } from '../theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -34,6 +36,25 @@ type Prediction = {
 
 const PIN_SIZE = 46;
 
+/** Why a location could not be used, shown to the customer with a way forward. */
+type LocationProblem =
+  | { kind: 'permission' }
+  | { kind: 'services' }
+  | { kind: 'no_fix' }
+  | { kind: 'no_address' }
+  | { kind: 'search' }
+  | { kind: 'place' };
+
+const PROBLEM_MESSAGES: Record<LocationProblem['kind'], string> = {
+  permission:
+    'Location access is off for MargixIndia. Allow it in Settings to use your current location, or type the address instead.',
+  services: 'Location services are turned off on this phone. Turn them on in Settings, or type the address instead.',
+  no_fix: 'Could not get your position. Move to an open area and try again, or type the address instead.',
+  no_address: 'We found your position but not an address for it. Drag the map to adjust, or type the address.',
+  search: 'Could not search right now. Check your internet connection and try again.',
+  place: 'Could not open that place. Try again, or choose it on the map.',
+};
+
 export default function LocationSearchScreen({ navigation, route }: any) {
   const { type: locationType } = route.params || { type: 'pickup' }; // 'pickup' or 'dropoff'
   const isPickup = locationType === 'pickup';
@@ -41,7 +62,8 @@ export default function LocationSearchScreen({ navigation, route }: any) {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [problem, setProblem] = useState<LocationProblem | null>(null);
+  const [searchedQuery, setSearchedQuery] = useState('');
   const [history, setHistory] = useState<Prediction[]>([]);
 
   // Map State
@@ -82,7 +104,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
 
   const fetchPlaces = useCallback(async (text: string) => {
     setLoading(true);
-    setErrorMessage('');
+    setProblem((current) => (current?.kind === 'search' ? null : current));
 
     try {
       // Esri ArcGIS World Geocoding: the Google key is restricted to the native
@@ -112,8 +134,10 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       } else {
         setPredictions([]);
       }
+      setSearchedQuery(text);
     } catch (error) {
       console.error('Error fetching places:', error);
+      setProblem({ kind: 'search' });
     } finally {
       setLoading(false);
     }
@@ -166,12 +190,16 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       if (data.candidates && data.candidates.length > 0) {
         const loc = data.candidates[0].location;
         const coord = { latitude: loc.y, longitude: loc.x };
+        setProblem(null);
         setSelectedCoord(coord);
         setConfirmedAddress(place.description);
         setShowMap(true);
+      } else {
+        setProblem({ kind: 'place' });
       }
     } catch (e) {
       console.error('Error finding address coordinates:', e);
+      setProblem({ kind: 'place' });
     }
   };
 
@@ -215,25 +243,38 @@ export default function LocationSearchScreen({ navigation, route }: any) {
     navigation.goBack();
   };
 
-  const handleCurrentLocation = async () => {
+  const handleCurrentLocation = useCallback(async () => {
     setGpsLoading(true);
-    setErrorMessage('');
+    setProblem(null);
 
     try {
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setErrorMessage('Location access denied. Please type your address manually.');
-        setGpsLoading(false);
+        setProblem({ kind: 'permission' });
         return;
       }
 
-      let location = await Location.getCurrentPositionAsync({});
-      const coord = { latitude: location.coords.latitude, longitude: location.coords.longitude };
+      if (!(await Location.hasServicesEnabledAsync())) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setProblem({ kind: 'services' });
+        return;
+      }
 
+      let location: Location.LocationObject;
+      try {
+        location = await Location.getCurrentPositionAsync({});
+      } catch (error: any) {
+        console.error('GPS error:', error);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setProblem({ kind: error?.message?.includes('unsatisfied device settings') ? 'services' : 'no_fix' });
+        return;
+      }
+
+      const coord = { latitude: location.coords.latitude, longitude: location.coords.longitude };
       setSelectedCoord(coord);
       setPredictions([]); // hide list
-      setShowMap(true); // force map open when getting current location
+      setShowMap(true); // open the map on the current location
 
       mapRef.current?.animateToRegion(
         {
@@ -244,30 +285,79 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         1000,
       );
 
-      const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?location=${location.coords.longitude},${location.coords.latitude}&f=json`;
-      const response = await fetch(url);
-      const data = await response.json();
+      try {
+        const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?location=${coord.longitude},${coord.latitude}&f=json`;
+        const response = await fetch(url);
+        const data = await response.json();
 
-      if (data.address) {
-        const preciseAddress = data.address.LongLabel || data.address.Match_addr;
-        const cleanedAddress = preciseAddress.replace(/, IND$/, '');
-        setQuery(cleanedAddress);
-        setConfirmedAddress(cleanedAddress);
-      } else {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setErrorMessage('Could not find a valid address for your location.');
-      }
-    } catch (error: any) {
-      console.error('GPS Error:', error);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      if (error.message && error.message.includes('unsatisfied device settings')) {
-        setErrorMessage('Please turn on GPS/Location Services in your phone settings.');
-      } else {
-        setErrorMessage('Could not find GPS signal. Please type your address manually.');
+        if (data.address) {
+          const preciseAddress = data.address.LongLabel || data.address.Match_addr;
+          const cleanedAddress = preciseAddress.replace(/, IND$/, '');
+          setQuery(cleanedAddress);
+          setConfirmedAddress(cleanedAddress);
+        } else {
+          setProblem({ kind: 'no_address' });
+        }
+      } catch (error) {
+        console.error('Reverse geocode error:', error);
+        setProblem({ kind: 'no_address' });
       }
     } finally {
       setGpsLoading(false);
     }
+  }, []);
+
+  // Coming back from Settings: if access or location services were fixed,
+  // carry on without making the customer tap again.
+  useEffect(() => {
+    if (problem?.kind !== 'permission' && problem?.kind !== 'services') return;
+    const subscription = AppState.addEventListener('change', async (state) => {
+      if (state !== 'active') return;
+      const { status } = await Location.getForegroundPermissionsAsync();
+      const servicesOn = await Location.hasServicesEnabledAsync();
+      if (status === 'granted' && servicesOn) handleCurrentLocation();
+    });
+    return () => subscription.remove();
+  }, [problem, handleCurrentLocation]);
+
+  const renderProblem = () => {
+    if (!problem) return null;
+    const needsSettings = problem.kind === 'permission' || problem.kind === 'services';
+    const canRetryGps = needsSettings || problem.kind === 'no_fix';
+    return (
+      <View style={styles.problem}>
+        <ErrorBanner
+          message={PROBLEM_MESSAGES[problem.kind]}
+          action={
+            problem.kind === 'search' && trimmedQuery.length >= 3
+              ? { label: 'Try again', onPress: () => fetchPlaces(trimmedQuery) }
+              : undefined
+          }
+        />
+        {canRetryGps ? (
+          <View style={styles.problemActions}>
+            {needsSettings ? (
+              <Button
+                title="Open settings"
+                variant="secondary"
+                block={false}
+                style={styles.flex}
+                onPress={() => Linking.openSettings()}
+                icon={(color) => <Feather name="settings" size={size.icon.sm} color={color} />}
+              />
+            ) : null}
+            <Button
+              title="Try again"
+              variant="ghost"
+              block={false}
+              style={styles.flex}
+              loading={gpsLoading}
+              onPress={handleCurrentLocation}
+            />
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   const renderItem = ({ item, isHistory }: { item: Prediction; isHistory?: boolean }) => (
@@ -355,6 +445,8 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         </Text>
       </Pressable>
 
+      {renderProblem()}
+
       <View style={styles.divider} />
 
       {/* --- PREDICTIONS OR HISTORY --- */}
@@ -370,6 +462,10 @@ export default function LocationSearchScreen({ navigation, route }: any) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.listContent}
         />
+      ) : !showMap && trimmedQuery.length >= 3 && searchedQuery === trimmedQuery && !problem ? (
+        <Text variant="bodySmall" color="textMuted" style={styles.noResults} accessibilityLiveRegion="polite">
+          No matching places. Try a different search, or choose the place on the map.
+        </Text>
       ) : query.length === 0 && history.length > 0 && !showMap ? (
         <View style={styles.flex}>
           <Text variant="bodySmallMedium" color="textMuted" style={styles.historyTitle} accessibilityRole="header">
@@ -505,6 +601,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingContainer: { padding: space[6], alignItems: 'center' },
+  noResults: { padding: space[4] },
+  problem: { gap: space[2], paddingHorizontal: space[4], paddingBottom: space[3] },
+  problemActions: { flexDirection: 'row', gap: space[2] },
   mapContainer: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden' },
   centerPin: {
     position: 'absolute',
