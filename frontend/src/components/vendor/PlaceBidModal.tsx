@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { capacityAPI } from '@/services/api'
-import { Alert, Button, Input, Modal, PlaceSearch, Select } from '@/components/ui'
+import { Alert, Button, Input, Modal, Select } from '@/components/ui'
+import AddressPicker from '@/components/map/AddressPicker'
 import type { ResolvedPlace } from '@/services/geocoding'
 
 const LOAD_CONFIGURATIONS = [
@@ -125,11 +126,13 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
           />
         </div>
 
-        <PlaceSearch
+        <AddressPicker
           label="Drop-off location" required placeholder="Search the delivery address"
           value={dropoff}
           onChange={place => { setDropoff(place); setDropoffTouched(true) }}
           error={dropoffTouched ? errors.dropoff : undefined}
+          showMap
+          mapHeight={170}
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -177,6 +177,7 @@ export const capacityAPI = {
 
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
+  submitKyc: (data: Record<string, unknown>) => api.post('/vendor/kyc/submit', data).then(r => r.data),
   passingRoutes: () => api.get('/vendor/passing-routes').then(r => ensureArray(r.data)),
   createShipmentRequest: (data: Record<string, unknown>) => api.post('/vendor/shipment-request', data).then(r => r.data),
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),

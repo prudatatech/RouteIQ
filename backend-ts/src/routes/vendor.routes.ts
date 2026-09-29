@@ -39,6 +39,19 @@ router.post('/profile', requireAuth, requireRole('vendor'), async (req: any, res
   }
 });
 
+// Submit (or resubmit) the full KYC wizard — always notifies staff (D2)
+router.post('/kyc/submit', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    const { companyName, gstNumber, city, address, lat, lng, companyLogo, kycData } = req.body;
+    const profile = await vendorService.submitKyc(req.user.user_id, {
+      companyName, gstNumber, city, address, lat, lng, companyLogo, kycData,
+    });
+    res.json(profile);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // Create shipment request (Vendor)
 router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {

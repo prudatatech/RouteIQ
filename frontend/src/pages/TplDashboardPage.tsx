@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileText, IndianRupee, MapPin, Calendar, CheckCircle2,
   Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
 import {
-  Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
+  Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -63,6 +63,7 @@ export default function TplDashboardPage() {
   const navigate = useNavigate()
   const { confirm } = useConfirm()
   const [tab, setTab] = useTabParam<Tab>(TABS, 'overview')
+  const [corridorSearch, setCorridorSearch] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +71,14 @@ export default function TplDashboardPage() {
   const [corridors, setCorridors] = useState<Corridor[]>([])
   const [documents, setDocuments] = useState<TplDocument[]>([])
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
+
+  const filteredCorridors = useMemo(() => {
+    const q = corridorSearch.trim().toLowerCase()
+    if (!q) return corridors
+    return corridors.filter(c => [
+      c.corridor_name, Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : c.vehicle_types,
+    ].some(v => v?.toLowerCase().includes(q)))
+  }, [corridors, corridorSearch])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -183,6 +192,14 @@ export default function TplDashboardPage() {
 
   const handleSaveSettings = async () => {
     if (!settingsForm) return
+    const ok = await confirm({
+      title: 'Save these settings?',
+      message: "Saving these changes will send your profile back for approval and pause any active operations until it's reviewed again.",
+      confirmLabel: 'Save and resubmit',
+      tone: 'danger',
+    })
+    if (!ok) return
+
     setIsSubmittingSettings(true)
     try {
       const updates = {
@@ -230,7 +247,7 @@ export default function TplDashboardPage() {
   }
 
   const corridorColumns: Column<Corridor>[] = [
-    { key: 'name', header: 'Route', cell: c => <span className="font-medium">{c.corridor_name}</span> },
+    { key: 'name', header: 'Route', cell: c => <span className="font-medium">{c.corridor_name}</span>, sortValue: c => c.corridor_name },
     {
       key: 'vehicles', header: 'Vehicle types', cell: c => (
         <div className="flex flex-wrap gap-1">
@@ -240,8 +257,8 @@ export default function TplDashboardPage() {
         </div>
       ),
     },
-    { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span> },
-    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span className="tabular">₹{c.proposed_rate || '—'}</span> },
+    { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span>, sortValue: c => c.priority ?? null },
+    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span className="tabular">₹{c.proposed_rate || '—'}</span>, sortValue: c => c.proposed_rate ?? null },
   ]
 
   return (
@@ -340,13 +357,16 @@ export default function TplDashboardPage() {
           )}
 
           {tab === 'coverage' && (
-            <DataTable
-              caption="Approved corridors"
-              columns={corridorColumns}
-              rows={corridors}
-              rowKey={c => c.id}
-              empty={{ title: 'No corridors configured', description: 'Contact an admin to modify your operational corridors.' }}
-            />
+            <div className="space-y-3">
+              <SearchInput value={corridorSearch} onChange={setCorridorSearch} placeholder="Search by route or vehicle type" className="max-w-xs" />
+              <DataTable
+                caption="Approved corridors"
+                columns={corridorColumns}
+                rows={filteredCorridors}
+                rowKey={c => c.id}
+                empty={{ title: 'No corridors configured', description: 'Contact an admin to modify your operational corridors.' }}
+              />
+            </div>
           )}
 
           {tab === 'documents' && (

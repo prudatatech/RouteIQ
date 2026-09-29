@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Check, FileText, Navigation, Trash2, Upload } from 'lucide-react'
+import { Check, FileText, Trash2, Upload } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
-import { MapView, type MapPoint } from '@/components/map'
+import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
-import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, PlaceSearch, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 
 type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected'
@@ -112,6 +113,8 @@ export default function VendorDocumentsPage() {
   const [otherDocs, setOtherDocs] = useState<DocRef[]>([])
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const draftRestoredRef = useRef(false)
 
   const setField = <K extends keyof KycFormData>(key: K, value: KycFormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
@@ -157,6 +160,45 @@ export default function VendorDocumentsPage() {
     return () => { cancelled = true; supabase.removeChannel(channel) }
   }, [userId])
 
+  // --- Draft autosave (localStorage) ---------------------------------------
+  // Files themselves are never restorable from localStorage — only the storage
+  // paths of documents already uploaded, plus the form fields and step reached.
+  const draftKey = userId ? `vendor-kyc-draft-${userId}` : null
+
+  useEffect(() => {
+    if (!draftKey || loading || draftRestoredRef.current) return
+    draftRestoredRef.current = true
+    if (hasProfile) return // a saved server profile takes priority over a local draft
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw) as { form?: Partial<KycFormData>; otherDocs?: DocRef[]; step?: number }
+      if (draft.form) setForm(prev => ({ ...prev, ...draft.form }))
+      if (draft.otherDocs) setOtherDocs(draft.otherDocs)
+      if (typeof draft.step === 'number') setStep(draft.step)
+      toast('Restored your saved draft. Files must be re-attached.', { icon: '📝' })
+    } catch (e) {
+      console.error('Failed to restore draft', e)
+    }
+  }, [draftKey, loading, hasProfile])
+
+  useEffect(() => {
+    if (!draftKey || loading) return
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({ form, otherDocs, step }))
+        setDraftSavedAt(Date.now())
+      } catch (e) {
+        console.error('Failed to save draft', e)
+      }
+    }, 400)
+    return () => window.clearTimeout(id)
+  }, [draftKey, loading, form, otherDocs, step])
+
+  const clearDraft = () => {
+    if (draftKey) { try { localStorage.removeItem(draftKey) } catch { /* ignore */ } }
+  }
+
   const readOnly = mode === 'documents' && hasProfile && (kycStatus === 'submitted' || kycStatus === 'approved') && !isEditing
 
   // --- Step validation -----------------------------------------------------
@@ -170,10 +212,13 @@ export default function VendorDocumentsPage() {
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
     if (!form.emailAddress.trim()) errors[1].emailAddress = 'Enter a contact email'
     if (!form.mobileNumber.trim()) errors[1].mobileNumber = 'Enter a mobile number'
+    else if (!/^[6-9]\d{9}$/.test(form.mobileNumber.trim())) errors[1].mobileNumber = 'Enter a valid 10-digit mobile number'
+    if (form.telephone.trim() && !/^[6-9]\d{9}$/.test(form.telephone.trim())) errors[1].telephone = 'Enter a valid 10-digit number'
     if (!form.addressLine1.trim()) errors[1].addressLine1 = 'Search for the registered address'
     if (!form.city.trim()) errors[1].city = 'Enter the city'
     if (!form.state.trim()) errors[1].state = 'Enter the state'
     if (!form.postalCode.trim()) errors[1].postalCode = 'Enter the postal code'
+    else if (!/^\d{6}$/.test(form.postalCode.trim())) errors[1].postalCode = 'PIN code must be exactly 6 digits'
     if (!form.latitude || !form.longitude) errors[1].location = 'Set your operating base on the map'
 
     if (!form.beneficiaryAccountName.trim()) errors[2].beneficiaryAccountName = 'Enter the account holder name'
@@ -202,7 +247,20 @@ export default function VendorDocumentsPage() {
     setUploadingKey(key)
     try {
       const path = await uploadKycDocument(userId, key, file)
-      setField('docUrls', { ...form.docUrls, [key]: path })
+      const updatedUrls = { ...form.docUrls, [key]: path }
+      setField('docUrls', updatedUrls)
+      // Persist the storage path immediately (mirrors uploadOtherDoc below) so the
+      // upload is not lost if the vendor closes the tab before hitting submit.
+      if (hasProfile) {
+        try {
+          const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
+          const kycData = (profile?.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] }) || { data: form, otherDocs }
+          kycData.data = { ...(kycData.data ?? {}), docUrls: updatedUrls }
+          await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
+        } catch (e) {
+          console.error('Failed to persist document reference', e)
+        }
+      }
       toast.success('Document uploaded')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to upload document')
@@ -261,23 +319,15 @@ export default function VendorDocumentsPage() {
   // --- Location ---------------------------------------------------------
   const onAddressPicked = (place: ResolvedPlace | null) => {
     if (!place) return
-    setField('addressLine1', place.address)
-    setField('latitude', String(place.lat))
-    setField('longitude', String(place.lng))
-  }
-
-  const useCurrentLocation = () => {
-    if (!('geolocation' in navigator)) { toast.error('Your browser does not support location.'); return }
-    toast.loading('Finding your location…', { id: 'geo' })
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setField('latitude', String(pos.coords.latitude))
-        setField('longitude', String(pos.coords.longitude))
-        toast.success('Location set', { id: 'geo' })
-      },
-      () => toast.error('Could not get your location.', { id: 'geo' }),
-      { enableHighAccuracy: true, timeout: 10000 },
-    )
+    setForm(prev => ({
+      ...prev,
+      addressLine1: place.address,
+      latitude: String(place.lat),
+      longitude: String(place.lng),
+      city: place.parts?.city || prev.city,
+      state: place.parts?.state || prev.state,
+      postalCode: place.parts?.pincode || prev.postalCode,
+    }))
   }
 
   // --- Submit -------------------------------------------------------------
@@ -297,22 +347,21 @@ export default function VendorDocumentsPage() {
     setSubmitting(true)
     try {
       const kycData = { data: form, otherDocs }
-      // upsert() targets the primary key, so this both creates the profile on a
-      // first-time save (onboarding) and updates it on every later save.
-      const { error } = await supabase.from('vendor_profiles').upsert({
-        id: userId,
-        company_name: form.name,
-        gst_number: form.gstNumber || '',
+      // Goes through the backend so staff are notified (vendorService.submitKyc
+      // calls notificationService.notifyStaff) instead of writing to Supabase
+      // directly from the client.
+      await vendorAPI.submitKyc({
+        companyName: form.name,
+        gstNumber: form.gstNumber || '',
         city: form.city,
         address: form.addressLine1,
-        latitude: Number(form.latitude),
-        longitude: Number(form.longitude),
-        company_logo: form.docUrls.companyLogo || null,
-        kyc_data: kycData,
-        kyc_status: 'submitted',
+        lat: Number(form.latitude),
+        lng: Number(form.longitude),
+        companyLogo: form.docUrls.companyLogo || null,
+        kycData,
       })
-      if (error) throw error
 
+      clearDraft()
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
       setKycStatus('submitted')
@@ -344,11 +393,6 @@ export default function VendorDocumentsPage() {
   const description = mode === 'onboarding'
     ? 'Tell us about your company so we can verify it and open up bidding and posting loads.'
     : 'Your company details and KYC documents. Changing them sends an approved company back for review.'
-
-  const pos = form.latitude && form.longitude ? { lat: Number(form.latitude), lng: Number(form.longitude) } : null
-  const mapPoints: MapPoint[] = pos
-    ? [{ id: 'base', kind: 'hub', label: `Operating base: ${form.city || form.name || 'your base'}`, position: pos, radiusKm: 50, draggable: true }]
-    : []
 
   return (
     <Page width="form">
@@ -398,43 +442,39 @@ export default function VendorDocumentsPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input label="Contact person" required value={form.contactPerson} onChange={e => setField('contactPerson', e.target.value)} error={err(1, 'contactPerson')} />
                 <Input label="Contact email" type="email" required value={form.emailAddress} onChange={e => setField('emailAddress', e.target.value)} error={err(1, 'emailAddress')} />
-                <Input label="Mobile number" required value={form.mobileNumber} onChange={e => setField('mobileNumber', e.target.value)} error={err(1, 'mobileNumber')} />
-                <Input label="Telephone" value={form.telephone} onChange={e => setField('telephone', e.target.value)} />
+                <Input
+                  label="Mobile number" required type="tel" inputMode="tel" maxLength={10}
+                  value={form.mobileNumber} onChange={e => setField('mobileNumber', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  error={err(1, 'mobileNumber')}
+                />
+                <Input
+                  label="Telephone" type="tel" inputMode="tel" maxLength={10}
+                  value={form.telephone} onChange={e => setField('telephone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  error={err(1, 'telephone')}
+                />
               </div>
 
-              <PlaceSearch
-                label="Registered address"
+              <AddressPicker
+                label="Registered address / operating base"
                 required
                 value={form.addressLine1 ? { address: form.addressLine1, lat: Number(form.latitude) || 0, lng: Number(form.longitude) || 0 } : null}
                 onChange={onAddressPicked}
-                error={err(1, 'addressLine1')}
+                error={err(1, 'addressLine1') || err(1, 'location')}
+                hint="Search, use your current location, or drag the pin to set the 50 km radius you want to see capacity within."
+                kind="hub"
+                mapHeight={260}
               />
               <Input label="Address line 2" value={form.addressLine2} onChange={e => setField('addressLine2', e.target.value)} hint="Suite, floor or landmark (optional)" />
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Input label="City" required value={form.city} onChange={e => setField('city', e.target.value)} error={err(1, 'city')} />
                 <Input label="State" required value={form.state} onChange={e => setField('state', e.target.value)} error={err(1, 'state')} />
-                <Input label="Postal code" required value={form.postalCode} onChange={e => setField('postalCode', e.target.value)} error={err(1, 'postalCode')} />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-text">Operating base <span className="text-danger">*</span></p>
-                  <Button type="button" variant="secondary" size="sm" icon={<Navigation size={14} />} onClick={useCurrentLocation}>
-                    Use my current location
-                  </Button>
-                </div>
-                <p className="text-xs text-muted">Click the map to set the 50&nbsp;km radius you want to see capacity within, or drag the pin.</p>
-                <div className="overflow-hidden rounded-card border border-border">
-                  <MapView
-                    mode="picker"
-                    height={260}
-                    points={mapPoints}
-                    onPick={p => { setField('latitude', String(p.lat)); setField('longitude', String(p.lng)) }}
-                    onPointMove={(_, p) => { setField('latitude', String(p.lat)); setField('longitude', String(p.lng)) }}
-                  />
-                </div>
-                {err(1, 'location') && <p className="text-xs text-danger" role="alert">{err(1, 'location')}</p>}
+                <Input
+                  label="Postal code" required value={form.postalCode}
+                  onChange={e => setField('postalCode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  error={err(1, 'postalCode')}
+                  inputMode="numeric" maxLength={6}
+                />
               </div>
             </div>
           )}
@@ -454,7 +494,10 @@ export default function VendorDocumentsPage() {
               </div>
 
               <div>
-                <p className="mb-3 text-sm font-medium text-text">Documents</p>
+                <div className="mb-3 flex items-center gap-2">
+                  <p className="text-sm font-medium text-text">Documents</p>
+                  {draftSavedAt && <span className="text-xs text-muted">Saved</span>}
+                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {DOC_FIELDS.map(f => (
                     <DocUploadField

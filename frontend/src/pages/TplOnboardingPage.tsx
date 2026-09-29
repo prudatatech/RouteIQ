@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
 import { tplAPI } from '@/services/api'
@@ -16,6 +16,10 @@ const MSME_OPTIONS = ['Not Registered', 'Micro', 'Small', 'Medium']
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
 const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/
+const MOBILE_PATTERN = /^[6-9]\d{9}$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
+const DRAFT_KEY = 'tpl-onboarding-draft'
 
 function slugify(name: string) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 15)
@@ -36,12 +40,14 @@ export default function TplOnboardingPage() {
 
   const [step, setStep] = useState(1)
   const [loadingExisting, setLoadingExisting] = useState(!!editId)
+  const [attempted, setAttempted] = useState<Record<number, boolean>>({})
 
   // Company & KYC
   const [companyName, setCompanyName] = useState('')
   const [customId, setCustomId] = useState('')
   const [customIdError, setCustomIdError] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [pan, setPan] = useState('')
   const [gst, setGst] = useState('')
   const [msmeStatus, setMsmeStatus] = useState('Not Registered')
@@ -61,6 +67,33 @@ export default function TplOnboardingPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const [trackingId, setTrackingId] = useState('')
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  // --- Step validation -------------------------------------------------
+  const stepErrors = useMemo(() => {
+    const errors: Record<number, Record<string, string>> = { 1: {}, 2: {} }
+    if (!companyName.trim()) errors[1].companyName = 'Enter your company legal name'
+    if (!editId && (!customId || customIdError)) errors[1].customId = customIdError || 'Choose a valid 3PL ID'
+    if (!email.trim()) errors[1].email = 'Enter a contact email'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors[1].email = 'Enter a valid email address'
+    if (!phone.trim()) errors[1].phone = 'Enter a mobile number'
+    else if (!MOBILE_PATTERN.test(phone.trim())) errors[1].phone = 'Enter a valid 10-digit mobile number'
+    if (!pan.trim()) errors[1].pan = 'Enter the company PAN'
+    else if (!PAN_PATTERN.test(pan.trim())) errors[1].pan = 'PAN format looks wrong (e.g. ABCDE1234F)'
+    if (!gst.trim()) errors[1].gst = 'Enter the GSTIN'
+    else if (!GST_PATTERN.test(gst.trim())) errors[1].gst = 'GSTIN format looks wrong (e.g. 07ABCDE1234F1Z5)'
+    if (!bankAccount.trim()) errors[1].bankAccount = 'Enter the bank account number'
+    else if (!ACCOUNT_PATTERN.test(bankAccount.trim())) errors[1].bankAccount = 'Account number must be 9–18 digits'
+    if (!bankIfsc.trim()) errors[1].bankIfsc = 'Enter the IFSC code'
+    else if (!IFSC_PATTERN.test(bankIfsc.trim())) errors[1].bankIfsc = 'IFSC looks wrong (e.g. HDFC0001234)'
+
+    if (!isDeclared) errors[2].declaration = 'Accept the declaration to submit'
+    return errors
+  }, [companyName, customId, customIdError, editId, email, phone, pan, gst, bankAccount, bankIfsc, isDeclared])
+
+  const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
+  const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
 
   const handleCustomIdChange = (val: string) => {
     const rawVal = val.toLowerCase().replace(/[^a-z0-9_]/g, '')
@@ -114,21 +147,60 @@ export default function TplOnboardingPage() {
     }).finally(() => setLoadingExisting(false))
   }, [editId, editPan, navigate])
 
+  // --- Draft autosave (localStorage) — only for a fresh application; an
+  // application being edited already loads its truth from the server. Only
+  // the uploaded documents' storage paths (existingDocs) can be restored —
+  // staged File objects (uploadedDocs) are never put in localStorage.
+  useEffect(() => {
+    if (editId || draftRestored) return
+    setDraftRestored(true)
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw) as Record<string, unknown>
+      if (typeof draft.companyName === 'string') setCompanyName(draft.companyName)
+      if (typeof draft.customId === 'string') setCustomId(draft.customId)
+      if (typeof draft.email === 'string') setEmail(draft.email)
+      if (typeof draft.phone === 'string') setPhone(draft.phone)
+      if (typeof draft.pan === 'string') setPan(draft.pan)
+      if (typeof draft.gst === 'string') setGst(draft.gst)
+      if (typeof draft.msmeStatus === 'string') setMsmeStatus(draft.msmeStatus)
+      if (typeof draft.bankAccount === 'string') setBankAccount(draft.bankAccount)
+      if (typeof draft.bankIfsc === 'string') setBankIfsc(draft.bankIfsc)
+      if (typeof draft.slaCommitment === 'string') setSlaCommitment(draft.slaCommitment)
+      if (typeof draft.taxTreatment === 'string') setTaxTreatment(draft.taxTreatment)
+      if (Array.isArray(draft.corridors) && draft.corridors.length > 0) setCorridors(draft.corridors as CorridorFormRow[])
+      if (typeof draft.step === 'number') setStep(draft.step)
+      toast('Restored your saved draft. Documents must be re-attached.', { icon: '📝' })
+    } catch (e) {
+      console.error('Failed to restore draft', e)
+    }
+  }, [editId, draftRestored])
+
+  useEffect(() => {
+    if (editId || !draftRestored) return
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          companyName, customId, email, phone, pan, gst, msmeStatus, bankAccount, bankIfsc,
+          slaCommitment, taxTreatment, corridors, step,
+        }))
+        setDraftSavedAt(Date.now())
+      } catch (e) {
+        console.error('Failed to save draft', e)
+      }
+    }, 400)
+    return () => window.clearTimeout(id)
+  }, [editId, draftRestored, companyName, customId, email, phone, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, step])
+
+  const clearDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+  }
+
   const handleNext = () => {
-    if (!companyName || !pan || !gst || !email) {
-      toast.error('Fill in company name, email, PAN and GST first.')
-      return
-    }
-    if (!PAN_PATTERN.test(pan)) {
-      toast.error('PAN format looks wrong. Example: ABCDE1234F')
-      return
-    }
-    if (!GST_PATTERN.test(gst)) {
-      toast.error('GSTIN format looks wrong. Example: 07ABCDE1234F1Z5')
-      return
-    }
-    if (!editId && (!customId || customIdError)) {
-      toast.error('Choose a valid 3PL ID before continuing.')
+    setAttempted(prev => ({ ...prev, 1: true }))
+    if (!stepValid(1)) {
+      toast.error('Please fix the errors before continuing.')
       return
     }
     setStep(2)
@@ -144,11 +216,17 @@ export default function TplOnboardingPage() {
   }
 
   const handleSubmit = async () => {
+    setAttempted({ 1: true, 2: true })
+    if (!stepValid(1) || !stepValid(2)) {
+      toast.error('Please fix the errors before submitting.')
+      setStep(stepValid(1) ? 2 : 1)
+      return
+    }
     setSubmitting(true)
     try {
       const payload = {
         custom_id: customId,
-        companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment,
+        companyName, email, phone, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment,
         corridors,
         // Keep documents that aren't being replaced by a new upload in this save, so
         // editing without re-uploading every file doesn't delete the untouched ones.
@@ -171,6 +249,7 @@ export default function TplOnboardingPage() {
         error: editId ? 'Failed to update application.' : 'Failed to submit application.',
       })
       setTrackingId(customId || editId || data.id)
+      clearDraft()
       setStep(3)
     } catch (err) {
       console.error(err)
@@ -224,28 +303,46 @@ export default function TplOnboardingPage() {
                 <Input label="Company legal name" required value={companyName} onChange={e => {
                   setCompanyName(e.target.value)
                   if (!editId && !customId) handleCustomIdChange(slugify(e.target.value))
-                }} placeholder="e.g. Acme Logistics Pvt Ltd" />
+                }} placeholder="e.g. Acme Logistics Pvt Ltd" error={err(1, 'companyName')} />
                 <Input
                   label="3PL ID"
                   required
                   disabled={!!editId}
                   hint={editId ? 'Cannot be changed once submitted.' : 'Lowercase letters, numbers and underscores, 5–20 characters.'}
-                  error={customIdError || undefined}
+                  error={err(1, 'customId') || customIdError || undefined}
                   value={customId}
                   onChange={e => handleCustomIdChange(e.target.value)}
                   placeholder="e.g. acme_3pl"
                 />
-                <Input label="Contact email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" />
-                <Input label="Company PAN" required value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" />
-                <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" className="font-mono" />
+                <Input label="Contact email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" error={err(1, 'email')} />
+                <Input
+                  label="Mobile number" type="tel" inputMode="tel" required maxLength={10}
+                  value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="9876543210" error={err(1, 'phone')}
+                />
+                <Input label="Company PAN" required value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" error={err(1, 'pan')} />
+                <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" className="font-mono" error={err(1, 'gst')} />
                 <Select label="MSME status" options={MSME_OPTIONS.map(o => ({ value: o, label: o }))} value={msmeStatus} onChange={e => setMsmeStatus(e.target.value)} />
               </div>
 
               <div className="border-t border-border pt-6">
-                <h3 className="mb-4 text-sm font-medium text-text">Bank details (for remittance)</h3>
+                <div className="mb-4 flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-text">Bank details (for remittance)</h3>
+                  {draftSavedAt && <span className="text-xs text-muted">Saved</span>}
+                </div>
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <Input label="Account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} />
-                  <Input label="IFSC code" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} className="font-mono" />
+                  <Input
+                    label="Account number" required value={bankAccount}
+                    onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                    error={err(1, 'bankAccount')}
+                    hint="9–18 digits"
+                  />
+                  <Input
+                    label="IFSC code" required value={bankIfsc}
+                    onChange={e => setBankIfsc(e.target.value.toUpperCase())}
+                    className="font-mono" error={err(1, 'bankIfsc')}
+                    placeholder="HDFC0001234"
+                  />
                 </div>
               </div>
             </div>
@@ -345,6 +442,7 @@ export default function TplOnboardingPage() {
                     onChange={e => setIsDeclared(e.target.checked)}
                     label="I declare that the information provided is accurate and complete."
                     description="This operational profile is subject to approval before your account is activated."
+                    error={err(2, 'declaration')}
                   />
                 </div>
               </div>

@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
-import { Navigation, Sparkles, Warehouse } from 'lucide-react'
+import { Sparkles, Warehouse } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { vendorAPI } from '@/services/api'
 import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase'
 import { MapView, type MapPoint, type MapRoute } from '@/components/map'
+import AddressPicker from '@/components/map/AddressPicker'
 import {
-  Button, Card, Checkbox, Input, Page, PageHeader, PlaceSearch, Select, Textarea,
+  Button, Card, Checkbox, Input, Page, PageHeader, Select, Textarea,
 } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 
@@ -138,19 +139,6 @@ export default function VendorShipmentRequestPage() {
     }
   }
 
-  const useCurrentLocation = () => {
-    if (!('geolocation' in navigator)) { toast.error('Your browser does not support location.'); return }
-    toast.loading('Finding your location…', { id: 'geo' })
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords
-        setPickup({ address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, lat: latitude, lng: longitude })
-        toast.success('Location set', { id: 'geo' })
-      },
-      () => toast.error('Could not get your location.', { id: 'geo' }),
-    )
-  }
-
   const onPointMove = (id: string, pos: { lat: number; lng: number }) => {
     const address = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`
     if (id === 'pickup') setPickup({ address, ...pos })
@@ -169,11 +157,22 @@ export default function VendorShipmentRequestPage() {
     const errors: Record<number, Record<string, string>> = { 0: {}, 1: {}, 2: {} }
     if (!pickup) errors[0].pickup = 'Search or pick a pickup location'
     if (!drop) errors[0].drop = 'Search or pick a drop location'
+    if (!consigneeContact.trim() && !consigneeEmail.trim()) {
+      errors[1].consigneeContact = 'Enter a contact number or email'
+      errors[1].consigneeEmail = 'Enter a contact number or email'
+    } else {
+      if (consigneeContact.trim() && !/^[6-9]\d{9}$/.test(consigneeContact.trim())) {
+        errors[1].consigneeContact = 'Enter a valid 10-digit mobile number'
+      }
+      if (consigneeEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(consigneeEmail.trim())) {
+        errors[1].consigneeEmail = 'Enter a valid email address'
+      }
+    }
     if (!productCategory) errors[1].productCategory = 'Choose a product category'
     if (!productName.trim()) errors[1].productName = 'Enter the product name'
     if (!capacity || Number(capacity) <= 0) errors[1].capacity = 'Enter the gross weight'
     return errors
-  }, [pickup, drop, productCategory, productName, capacity])
+  }, [pickup, drop, consigneeContact, consigneeEmail, productCategory, productName, capacity])
 
   const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
@@ -263,19 +262,22 @@ export default function VendorShipmentRequestPage() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-text">Pickup location <span className="text-danger">*</span></p>
-                <div className="flex gap-2">
-                  <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Warehouse</Button>
-                  <Button type="button" variant="secondary" size="sm" icon={<Navigation size={14} />} onClick={useCurrentLocation}>My location</Button>
-                </div>
+                <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Warehouse</Button>
               </div>
-              <PlaceSearch value={pickup} onChange={setPickup} placeholder="Search pickup address" error={err(0, 'pickup')} />
+              <AddressPicker
+                label="" value={pickup} onChange={setPickup} placeholder="Search pickup address"
+                error={err(0, 'pickup')} showMap={false} kind="pickup"
+              />
 
-              <PlaceSearch label="Drop location" required value={drop} onChange={setDrop} placeholder="Search drop address" error={err(0, 'drop')} />
+              <AddressPicker
+                label="Drop location" required value={drop} onChange={setDrop} placeholder="Search drop address"
+                error={err(0, 'drop')} showMap={false} kind="drop"
+              />
 
               <div className="overflow-hidden rounded-card border border-border">
                 <MapView mode="picker" height={280} points={mapPoints} route={mapRoute} onPointMove={onPointMove} />
               </div>
-              <p className="text-xs text-muted">Drag a pin to fine-tune the pickup or drop point. The dashed line and shaded circles show the 5&nbsp;km match radius.</p>
+              <p className="text-xs text-muted">Drag a pin above to fine-tune the pickup or drop point, or use "Use my location" on either field. The dashed line and shaded circles show the 5&nbsp;km match radius.</p>
             </div>
           )}
 
@@ -285,9 +287,14 @@ export default function VendorShipmentRequestPage() {
                 <p className="mb-3 text-sm font-medium text-text">Consignee (receiver)</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input label="Name" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
-                  <Input label="Contact number" value={consigneeContact} onChange={e => setConsigneeContact(e.target.value)} />
+                  <Input
+                    label="Contact number" type="tel" inputMode="tel" maxLength={10}
+                    value={consigneeContact} onChange={e => setConsigneeContact(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    error={err(1, 'consigneeContact')}
+                    hint="Give a phone number or email below"
+                  />
                   <div className="sm:col-span-2">
-                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} />
+                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} error={err(1, 'consigneeEmail')} />
                   </div>
                 </div>
               </div>

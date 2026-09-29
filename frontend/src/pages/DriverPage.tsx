@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Bell, CheckCircle2, Home, Map as MapIcon, Package, Phone, Play, Pause, ShieldAlert, User,
@@ -15,6 +15,7 @@ import { Card, DetailList } from '@/components/ui/Card'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { Select } from '@/components/ui/Field'
 import { EmptyState } from '@/components/ui/States'
+import { useConfirm } from '@/components/ui'
 
 type Point = { x: number; y: number }
 type ShiftStatus = 'offline' | 'on_duty' | 'on_mission'
@@ -70,13 +71,28 @@ function strokeColour(): string {
   return getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim() || '#18181B'
 }
 
-function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onClear: () => void }) {
+export interface SignaturePadHandle {
+  /** The signature drawn on the canvas right now, or null if nothing is drawn. */
+  getDataUrl: () => string | null
+  /** Wipe the canvas (used after a successful submit). */
+  clear: () => void
+}
+
+const SignaturePad = forwardRef<SignaturePadHandle, { onStrokesChange?: (hasStrokes: boolean) => void }>(function SignaturePad({ onStrokesChange }, ref) {
   const [isDrawing, setIsDrawing] = useState(false)
   // Finished strokes, plus strokes removed by Undo that Redo can bring back
   const [strokes, setStrokes] = useState<Point[][]>([])
   const [undone, setUndone] = useState<Point[][]>([])
   const currentStroke = useRef<Point[]>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    getDataUrl: () => {
+      const canvas = canvasRef.current
+      return canvas && strokes.length > 0 ? canvas.toDataURL('image/png') : null
+    },
+    clear: () => { setStrokes([]); setUndone([]) },
+  }), [strokes])
 
   const setupPen = (ctx: CanvasRenderingContext2D) => {
     ctx.strokeStyle = strokeColour()
@@ -132,6 +148,12 @@ function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onC
     ctx.stroke()
   }
 
+  // The pad reports whether it currently has any strokes; the signature
+  // itself is read straight off the canvas at submit time via getDataUrl.
+  useEffect(() => {
+    onStrokesChange?.(strokes.length > 0)
+  }, [strokes.length, onStrokesChange])
+
   const stopDrawing = () => {
     if (!isDrawing) return
     setIsDrawing(false)
@@ -140,27 +162,23 @@ function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onC
     if (stroke.length === 0) return
     setStrokes(prev => [...prev, stroke])
     setUndone([])
-    onClear() // a saved signature no longer matches the pad
   }
 
   const undo = () => {
     if (strokes.length === 0) return
     setUndone(prev => [...prev, strokes[strokes.length - 1]])
     setStrokes(prev => prev.slice(0, -1))
-    onClear()
   }
 
   const redo = () => {
     if (undone.length === 0) return
     setStrokes(prev => [...prev, undone[undone.length - 1]])
     setUndone(prev => prev.slice(0, -1))
-    onClear()
   }
 
   const clear = () => {
     setStrokes([])
     setUndone([])
-    onClear()
   }
 
   return (
@@ -190,23 +208,9 @@ function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onC
         <Button type="button" variant="secondary" size="sm" onClick={redo} disabled={undone.length === 0}>Redo</Button>
         <Button type="button" variant="secondary" size="sm" onClick={clear} disabled={strokes.length === 0}>Clear</Button>
       </div>
-      <Button
-        fullWidth
-        onClick={() => {
-          const canvas = canvasRef.current
-          if (!canvas || strokes.length === 0) {
-            toast.error('Please sign first')
-            return
-          }
-          onSave(canvas.toDataURL('image/png'))
-          toast.success('Signature saved')
-        }}
-      >
-        Save signature
-      </Button>
     </div>
   )
-}
+})
 
 function TabButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
@@ -236,7 +240,9 @@ export default function DriverPage() {
 
   // POD state
   const [recipientName, setRecipientName] = useState('')
-  const [signature, setSignature] = useState<string | null>(null)
+  const [hasSignature, setHasSignature] = useState(false)
+  const signaturePadRef = useRef<SignaturePadHandle>(null)
+  const { confirm } = useConfirm()
 
   const { data: me } = useQuery({
     queryKey: ['me', userId],
@@ -304,7 +310,8 @@ export default function DriverPage() {
       queryClient.invalidateQueries({ queryKey: ['driver-routes'] })
       toast.success('Delivery completed')
       setRecipientName('')
-      setSignature(null)
+      setHasSignature(false)
+      signaturePadRef.current?.clear()
     },
     onError: (err: AxiosError<{ detail?: string }>) =>
       toast.error(err.response?.data?.detail || 'Could not record the delivery. Try again.'),
@@ -351,13 +358,15 @@ export default function DriverPage() {
   }, [isTracking, role])
 
   const finalizeDelivery = () => {
-    if (!recipientName || !signature) return toast.error('Enter the receiver name and collect a signature')
+    // Read the signature straight off the canvas — no separate "save" step.
+    const signatureData = signaturePadRef.current?.getDataUrl() ?? null
+    if (!recipientName || !signatureData) return toast.error('Enter the receiver name and collect a signature')
     if (!currentStop) return toast.error('No active stop')
     if (!currentShipmentId) return toast.error('This stop has no linked shipment')
     updateStatus.mutate({
       shipmentId: currentShipmentId,
       status: 'delivered',
-      params: { received_by: recipientName, signature_data: signature },
+      params: { received_by: recipientName, signature_data: signatureData },
     })
   }
 
@@ -366,7 +375,18 @@ export default function DriverPage() {
     else { setShiftStatus('on_mission'); toast.success('Trip started'); setIsTracking(true) }
   }
   const pauseTrip = () => { setShiftStatus('on_duty'); setIsTracking(false); toast('Trip paused') }
-  const endShift = () => { setShiftStatus('offline'); setIsTracking(false); toast.success('Shift ended') }
+  const endShift = async () => {
+    const ok = await confirm({
+      title: 'End your shift?',
+      message: 'You will go offline and stop sharing your location until you sign back in.',
+      confirmLabel: 'End shift',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setShiftStatus('offline')
+    setIsTracking(false)
+    toast.success('Shift ended')
+  }
 
   const renderHome = () => (
     <div className="space-y-4 pb-24">
@@ -525,13 +545,13 @@ export default function DriverPage() {
             </label>
             <div>
               <span className="mb-1.5 block text-sm font-medium text-text">Proof of delivery (signature)</span>
-              <SignaturePad onSave={setSignature} onClear={() => setSignature(null)} />
+              <SignaturePad ref={signaturePadRef} onStrokesChange={setHasSignature} />
             </div>
             <Button
               fullWidth
               size="lg"
               loading={updateStatus.isPending}
-              disabled={!signature}
+              disabled={!hasSignature || !recipientName}
               onClick={finalizeDelivery}
             >
               Mark delivered
