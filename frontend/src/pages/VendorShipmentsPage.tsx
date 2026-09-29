@@ -13,6 +13,7 @@ interface VendorBid {
   status: string
   submitted_at: string
   eway_bill_ref: string | null
+  rejection_reason: string | null
   capacity_windows: { trigger_type: string | null; vehicles: { vehicle_type: string | null } | null } | null
 }
 
@@ -23,6 +24,7 @@ interface VendorRequest {
   required_capacity_kg: number | null
   status: string
   created_at: string
+  rejection_reason: string | null
   cargo_manifest?: { id: string }[]
 }
 
@@ -65,14 +67,30 @@ export default function VendorShipmentsPage() {
     { key: 'amount', header: 'Bid', cell: b => `₹${b.bid_amount.toLocaleString('en-IN')}`, sortValue: b => b.bid_amount },
     { key: 'vehicle', header: 'Vehicle', cell: b => b.capacity_windows?.vehicles?.vehicle_type ?? '—', hideOnMobile: true },
     { key: 'weight', header: 'Weight', cell: b => b.weight_kg != null ? `${b.weight_kg.toLocaleString('en-IN')} kg` : '—', hideOnMobile: true },
-    { key: 'status', header: 'Status', cell: b => <StatusPill status={b.status} /> },
+    {
+      key: 'status', header: 'Status',
+      cell: b => (
+        <span className="block">
+          <StatusPill status={b.status} />
+          {b.status === 'rejected' && b.rejection_reason && <span className="mt-0.5 block text-xs text-muted">{b.rejection_reason}</span>}
+        </span>
+      ),
+    },
   ]
 
   const requestColumns: Column<VendorRequest>[] = [
     { key: 'date', header: 'Date', cell: r => new Date(r.created_at).toLocaleDateString('en-IN'), sortValue: r => r.created_at },
     { key: 'route', header: 'Route', cell: r => <span className="truncate">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span> },
     { key: 'weight', header: 'Weight', cell: r => r.required_capacity_kg != null ? `${Number(r.required_capacity_kg).toLocaleString('en-IN')} kg` : '—', hideOnMobile: true },
-    { key: 'status', header: 'Status', cell: r => <StatusPill status={r.status} /> },
+    {
+      key: 'status', header: 'Status',
+      cell: r => (
+        <span className="block">
+          <StatusPill status={r.status} />
+          {r.status === 'rejected' && r.rejection_reason && <span className="mt-0.5 block text-xs text-muted">{r.rejection_reason}</span>}
+        </span>
+      ),
+    },
     {
       key: 'track', header: '', align: 'right',
       cell: r => {

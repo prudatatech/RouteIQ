@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, FileText, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, StatusPill, Tabs, TabPanel,
@@ -52,6 +53,7 @@ interface VendorKyc {
   gst_number: string | null
   kyc_status: KycStatus
   kyc_reviewed_at: string | null
+  kyc_rejection_reason: string | null
   updated_at: string | null
   created_at: string | null
   form: KycForm
@@ -92,6 +94,7 @@ async function loadVendors(): Promise<VendorKyc[]> {
       gst_number: v.gst_number ?? null,
       kyc_status: (['pending', 'submitted', 'approved', 'rejected'].includes(status) ? status : 'pending') as KycStatus,
       kyc_reviewed_at: v.kyc_reviewed_at ?? null,
+      kyc_rejection_reason: v.kyc_rejection_reason ?? null,
       updated_at: v.updated_at ?? null,
       created_at: v.created_at ?? null,
       form: kyc.data ?? {},
@@ -108,7 +111,7 @@ async function countPendingPartners() {
 
 export default function KycReviewPage() {
   const queryClient = useQueryClient()
-  const { confirm } = useConfirm()
+  const { confirm, prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'submitted')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -119,7 +122,11 @@ export default function KycReviewPage() {
   useRealtimeRefresh('kyc_review_page_partners', ['tpl_partners'], [['tpl-partners-pending-count']])
 
   const review = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
+    mutationFn: async ({ id, status, reason }: { id: string; status: 'approved' | 'rejected'; reason?: string }) => {
+      if (status === 'rejected') {
+        await vendorAPI.rejectKyc(id, reason!)
+        return
+      }
       // Only a submission still waiting for review can be decided, so a vendor who
       // edits their details mid-review (or a second reviewer) is not overwritten.
       const { data, error } = await supabase
@@ -155,18 +162,24 @@ export default function KycReviewPage() {
   const selected = all.find(v => v.id === selectedId) ?? null
 
   const decide = async (v: VendorKyc, status: 'approved' | 'rejected') => {
-    const ok = await confirm(status === 'approved'
-      ? {
-        title: `Approve KYC for ${vendorName(v)}?`,
-        message: 'Check the documents match the details first. Once approved, the vendor can bid for space on your vehicles.',
-        confirmLabel: 'Approve KYC',
-      }
-      : {
+    if (status === 'rejected') {
+      const reason = await prompt({
         title: `Reject KYC for ${vendorName(v)}?`,
-        message: 'The vendor will see their KYC was rejected and can correct and resubmit it. Tell them what to fix directly; the reason is not stored.',
+        message: 'The vendor will see this reason and can correct and resubmit their KYC.',
+        inputLabel: 'Reason',
+        placeholder: 'What needs to be fixed?',
         confirmLabel: 'Reject KYC',
         tone: 'danger',
+        required: true,
       })
+      if (reason) review.mutate({ id: v.id, status, reason })
+      return
+    }
+    const ok = await confirm({
+      title: `Approve KYC for ${vendorName(v)}?`,
+      message: 'Check the documents match the details first. Once approved, the vendor can bid for space on your vehicles.',
+      confirmLabel: 'Approve KYC',
+    })
     if (ok) review.mutate({ id: v.id, status })
   }
 
@@ -330,6 +343,9 @@ function KycDrawer({ vendor, onClose, pending, onDecide }: {
             )}
             {vendor.kyc_status === 'pending' && (
               <Alert tone="info">This vendor has not submitted KYC yet. You can review it once they do.</Alert>
+            )}
+            {vendor.kyc_status === 'rejected' && vendor.kyc_rejection_reason && (
+              <Alert tone="danger" title="Rejected">{vendor.kyc_rejection_reason}</Alert>
             )}
 
             <section className="space-y-3">

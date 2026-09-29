@@ -100,6 +100,7 @@ export default function VendorDocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [kycStatus, setKycStatus] = useState<KycStatus>('pending')
+  const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null)
   const [hasProfile, setHasProfile] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const isEditingRef = useRef(false)
@@ -126,6 +127,7 @@ export default function VendorDocumentsPage() {
       setHasProfile(true)
       const status = String(profile.kyc_status ?? 'pending').toLowerCase() as KycStatus
       setKycStatus(['pending', 'submitted', 'approved', 'rejected'].includes(status) ? status : 'pending')
+      setKycRejectionReason(profile.kyc_rejection_reason ?? null)
 
       if (!isEditingRef.current) {
         const kycData = profile.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] } | null
@@ -366,7 +368,7 @@ export default function VendorDocumentsPage() {
       )}
       {hasProfile && kycStatus === 'rejected' && (
         <Alert tone="danger" title="KYC rejected">
-          Please review and correct your details below, then resubmit.
+          {kycRejectionReason || 'Please review and correct your details below, then resubmit.'}
         </Alert>
       )}
 
