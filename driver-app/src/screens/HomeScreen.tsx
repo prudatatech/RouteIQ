@@ -158,6 +158,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   const moreActions = useMemo<MoreAction[]>(() => {
     const list: MoreAction[] = [];
+    // The break comes first: it is the one drivers reach for most.
+    list.push({
+      key: 'break',
+      icon: 'cafe-outline',
+      title: t('action_break'),
+      subtitle: t('take_break_sub'),
+      onPress: () => {
+        closeModal();
+        takeBreak();
+      },
+    });
     if (routeActive) {
       list.push({
         key: 'full_route',
@@ -200,16 +211,6 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         onPress: () => openModal({ kind: 'returnTrip' }),
       });
     }
-    list.push({
-      key: 'break',
-      icon: 'cafe-outline',
-      title: t('action_break'),
-      subtitle: t('take_break_sub'),
-      onPress: () => {
-        closeModal();
-        tracking.takeBreak();
-      },
-    });
     list.push({
       key: 'refresh',
       icon: 'refresh',
@@ -355,6 +356,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           isStartingTracking={tracking.isStarting}
           syncState={data.syncState}
           onToggleTracking={tracking.toggle}
+          onTakeBreak={takeBreak}
           onRetrySync={refresh}
           backgroundError={tracking.backgroundError}
           onRetryBackgroundTracking={tracking.retryBackgroundTracking}

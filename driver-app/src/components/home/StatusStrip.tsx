@@ -13,6 +13,8 @@ interface StatusStripProps {
   isStartingTracking: boolean;
   syncState: SyncState;
   onToggleTracking: () => void;
+  /** Shortcut shown while tracking is on: pause tracking for a break. */
+  onTakeBreak?: () => void;
   onRetrySync: () => void;
   /** Repeated background GPS-send/geofence failures, or null when tracking is healthy. */
   backgroundError?: { at: number; message: string } | null;
@@ -30,6 +32,7 @@ export default function StatusStrip({
   isStartingTracking,
   syncState,
   onToggleTracking,
+  onTakeBreak,
   onRetrySync,
   backgroundError,
   onRetryBackgroundTracking,
@@ -71,6 +74,16 @@ export default function StatusStrip({
         onPress={isStartingTracking ? undefined : onToggleTracking}
         accessibilityHint={t('hint_toggle_tracking')}
       />
+
+      {isTracking && onTakeBreak ? (
+        <StatusPill
+          tone="accent"
+          label={t('action_break')}
+          icon={icon('cafe-outline')}
+          onPress={onTakeBreak}
+          accessibilityHint={t('take_break_sub')}
+        />
+      ) : null}
 
       {backgroundError ? (
         <StatusPill
