@@ -76,7 +76,7 @@ export default function LoginScreen({ navigation }: any) {
     setError('');
     try {
       await api.verifyOTP(phone, otp);
-      navigation.replace('Home');
+      navigation.replace('Main');
     } catch (err: any) {
       Vibration.vibrate(400); // Vibrate on wrong OTP
       setError(err.message || 'That OTP is not correct. Please try again.');

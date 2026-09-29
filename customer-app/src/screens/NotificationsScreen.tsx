@@ -5,10 +5,10 @@ import { Feather } from '@expo/vector-icons';
 import { EmptyState, ScreenHeader } from '../components/ui';
 import { colors, size } from '../theme';
 
-export default function NotificationsScreen({ navigation }: any) {
+export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Notifications" onBack={() => navigation.goBack()} backLabel="Back" />
+      <ScreenHeader title="Notifications" />
 
       <View style={styles.body}>
         <EmptyState

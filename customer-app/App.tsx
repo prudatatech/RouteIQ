@@ -8,8 +8,7 @@ import { useFonts } from 'expo-font';
 
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
-import HomeScreen from './src/screens/HomeScreen';
-import NotificationsScreen from './src/screens/NotificationsScreen';
+import MainTabs from './src/navigation/MainTabs';
 import LocationSearchScreen from './src/screens/LocationSearchScreen';
 import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import { themeFonts } from './src/theme/fonts';
@@ -52,8 +51,7 @@ export default function App() {
         >
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} options={{ animation: 'fade_from_bottom' }} />
-          <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Main" component={MainTabs} options={{ animation: 'fade_from_bottom' }} />
           <Stack.Screen name="LocationSearch" component={LocationSearchScreen} options={{ animation: 'fade' }} />
           <Stack.Screen name="CargoConfig" component={CargoConfigScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>

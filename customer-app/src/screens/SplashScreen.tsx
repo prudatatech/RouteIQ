@@ -68,7 +68,7 @@ export default function SplashScreen({ navigation }: any) {
         duration: 400,
         useNativeDriver: true,
       }).start(() => {
-        navigation.replace(hasSession ? 'Home' : 'Login');
+        navigation.replace(hasSession ? 'Main' : 'Login');
       });
     };
 

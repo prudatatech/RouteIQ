@@ -38,7 +38,7 @@ const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
   unit === 't' ? tonnes.toFixed(1) : Math.round(tonnes * 1000).toLocaleString();
 
 export default function CargoConfigScreen({ navigation, route }: any) {
-  const { pickupLocation, dropoffLocation } = route.params || {};
+  const { pickupLocation, dropoffLocation, loadType } = route.params || {};
 
   const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
   const [unit, setUnit] = useState<'t' | 'kg'>('t');
@@ -105,6 +105,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* ROUTE */}
         <Card style={styles.routeCard}>
+          {loadType ? <StatusPill label={loadType === 'part' ? 'Part load' : 'Full truck'} tone="neutral" /> : null}
           <View style={styles.routeRow}>
             <View style={styles.timeline}>
               <View style={styles.dotFilled} />
@@ -274,7 +275,7 @@ const styles = StyleSheet.create({
   content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
   flex: { flex: 1 },
   section: { gap: space[1] },
-  routeCard: { gap: space[1] },
+  routeCard: { gap: space[2] },
   routeRow: { flexDirection: 'row', gap: space[3] },
   timeline: { width: DOT, alignItems: 'center', paddingTop: space[1] },
   dotFilled: { width: DOT, height: DOT, borderRadius: radius.full, backgroundColor: colors.accent },
