@@ -153,7 +153,7 @@ const isBulkSelectable = (r: VendorRequest) => r.status === 'pending' || r.statu
 
 export default function VendorRequestsPage() {
   const queryClient = useQueryClient()
-  const { prompt } = useConfirm()
+  const { confirm, prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'posted:desc' })
@@ -289,6 +289,14 @@ export default function VendorRequestsPage() {
       ...(bulkFlatParsed.value !== undefined ? { cost: bulkFlatParsed.value } : {}),
       ...(bulkPerKmParsed.value !== undefined ? { cost_per_km: bulkPerKmParsed.value } : {}),
     }
+    const plate = vehiclesForBulk.data?.find(v => v.id === bulkVehicleId)?.plate_number ?? 'the selected vehicle'
+    const count = bulkAssignTargets.length
+    const agreed = await confirm({
+      title: `Assign ${plate} to ${count} ${count === 1 ? 'request' : 'requests'}?`,
+      message: 'The vehicle is assigned to every selected request, and the loads are added to its cargo manifest.',
+      confirmLabel: 'Assign vehicle',
+    })
+    if (!agreed) return
     const { ok, failures } = await runBulk(bulkAssignTargets, r => vendorAPI.assignVehicle(r.id, { vehicle_id: bulkVehicleId, ...price }), vendorName)
     setBulkVehicleId('')
     setBulkFlat('')
