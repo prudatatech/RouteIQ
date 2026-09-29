@@ -3,7 +3,7 @@
  * nothing is sent and false is returned, so callers treat email as a bonus on
  * top of the in-app notification. Failures are logged, never thrown.
  */
-const FROM = 'Margix India <onboarding@resend.dev>';
+const FROM = 'MargixIndia <onboarding@resend.dev>';
 
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));

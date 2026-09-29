@@ -342,7 +342,7 @@ export const routeService = {
       try {
         await notificationService.sendNotification(
           vehicle.driver_id,
-          '🚨 Route Activated',
+          'Route ready',
           'Your route has been activated. Open the app to start your journey.',
           'route_activated',
           { route_id: route.id },

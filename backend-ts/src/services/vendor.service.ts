@@ -4,6 +4,7 @@ import { settings } from '../core/config';
 import { notificationService } from './notification.service';
 import { auditService, type AuditActor } from './audit.service';
 import { HttpError } from '../core/errors';
+import { formatINR, formatKg } from '../core/format';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
@@ -262,8 +263,8 @@ export const vendorService = {
 
     // Notify every active admin/superadmin, not just superadmins (D2)
     await notificationService.notifyStaff(
-      'New Vendor Request',
-      `Vendor requested a ${capacity}kg shipment (${enrichedMetadata.cargo?.category || 'General'}) from ${pickup.address} to ${drop.address}. ETA: ${totalHours.toFixed(1)} hrs.`,
+      'New vendor load',
+      `A vendor posted a ${formatKg(capacity)} load (${enrichedMetadata.cargo?.category || 'General'}) from ${pickup.address} to ${drop.address}. ETA: ${totalHours.toFixed(1)} hrs.`,
       'vendor_request',
       { request_id: data.id }
     );
@@ -310,8 +311,8 @@ export const vendorService = {
     // Notify the vendor
     await notificationService.sendNotification(
       data.vendor_id,
-      'Request Approved',
-      `Your shipment request from ${data.pickup_location} has been approved by admins.`,
+      'Load approved',
+      `Your load from ${data.pickup_location} was approved.`,
       'request_approved',
       { request_id: data.id }
     );
@@ -328,8 +329,8 @@ export const vendorService = {
     // Notify the vendor
     await notificationService.sendNotification(
       data.vendor_id,
-      'Request Rejected',
-      `Your shipment request from ${data.pickup_location} has been rejected by admins. Reason: ${reason}`,
+      'Load rejected',
+      `Your load from ${data.pickup_location} was rejected. Reason: ${reason}`,
       'request_rejected',
       { request_id: data.id }
     );
@@ -358,7 +359,7 @@ export const vendorService = {
     try {
       await notificationService.notifyStaff(
         'Vendor cancelled a load',
-        `The vendor cancelled the request from ${data.pickup_location} to ${data.drop_location}.`,
+        `The vendor cancelled the load from ${data.pickup_location} to ${data.drop_location}.`,
         'vendor_request_cancelled',
         { request_id: data.id },
       );
@@ -440,7 +441,7 @@ export const vendorService = {
     try {
       await notificationService.sendNotification(
         vendorId,
-        'KYC Approved',
+        'KYC approved',
         'Your KYC was approved. You can now bid for space and post loads.',
         'kyc_approved',
         { vendor_id: vendorId },
@@ -475,7 +476,7 @@ export const vendorService = {
 
     await notificationService.sendNotification(
       vendorId,
-      'KYC Rejected',
+      'KYC rejected',
       `Your KYC was not approved. Reason: ${reason}`,
       'kyc_rejected',
       { vendor_id: vendorId }
@@ -665,7 +666,7 @@ export const vendorService = {
       // Notify the driver instantly so the listener triggers
       await notificationService.sendNotification(
         assignee.driver_id,
-        'New Cargo Assigned',
+        'New pickup assigned',
         `A new pickup has been scheduled at ${req.pickup_location}.`,
         'cargo_assigned',
         { request_id: requestId, vehicle_id: vehicleId }
@@ -675,8 +676,8 @@ export const vendorService = {
     // Notify the vendor, with the price that was agreed
     await notificationService.sendNotification(
       req.vendor_id,
-      'Vehicle Assigned!',
-      `A vehicle has been assigned to your shipment request from ${req.pickup_location}.${agreed !== undefined && agreed > 0 ? ` Agreed price: ₹${agreed.toLocaleString('en-IN')}.` : ''}`,
+      'Vehicle assigned',
+      `A vehicle has been assigned to your load from ${req.pickup_location}.${agreed !== undefined && agreed > 0 ? ` Agreed price: ${formatINR(agreed)}.` : ''}`,
       'vehicle_assigned',
       { request_id: requestId, vehicle_id: vehicleId, ...(agreed !== undefined ? { cost: agreed } : {}) }
     );
@@ -730,8 +731,8 @@ export const vendorService = {
 
         await notificationService.sendNotification(
           match.vendor_id,
-          'Passing Capacity Available!',
-          `${vehicleDesc} is passing within ${Math.round(match.min_distance_km)}km of you! Want to drop something?`,
+          'Space passing your way',
+          `${vehicleDesc} is passing within ${Math.round(match.min_distance_km)} km of you. Want to send something?`,
           'passing_route',
           { route_id: routeId }
         );

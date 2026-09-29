@@ -10,6 +10,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
+import { formatINR } from '../core/format';
 import { corridorMatches, corridorRate, priceAtRate, type CorridorRate } from '../utils/corridor-match';
 import { roadKm, toPoint } from '../utils/eta';
 import { notificationService } from './notification.service';
@@ -56,7 +57,7 @@ export interface PartnerMatch {
 }
 
 const sourceColumn = (type: SourceType) => (type === 'request' ? 'request_id' : 'shipment_id');
-const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+const inr = formatINR;
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || 'pickup';
 
 function dbError(action: string, error: { message: string } | null): never {
@@ -198,7 +199,7 @@ async function notifyPartner(match: PartnerMatch, load: Load, price: number | nu
     if (match.partner.email) {
       await emailService.send(
         match.partner.email,
-        'New load offer on Margix India',
+        'New load offer on MargixIndia',
         `<p>Hello ${escapeHtml(match.partner.company_name ?? '')},</p><p>A load matches your corridor ${escapeHtml(match.corridor.corridor_name)}: ${escapeHtml(body)}</p><p>The first partner to accept gets the load.</p>`,
       );
     }

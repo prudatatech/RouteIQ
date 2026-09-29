@@ -2,6 +2,7 @@ import axios from 'axios';
 import { supabase } from '../core/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
+import { formatINR, formatKg } from '../core/format';
 import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
 import { pricingService } from './pricing.service';
@@ -231,7 +232,7 @@ export const capacityService = {
       if (isValidPoint(dropAt)) minimum = await pricingService.minimumFor(vendorAt, dropAt, weightKg, { userId: data.vendor_id, role: 'vendor' });
     }
     if (minimum !== null && bidAmount < minimum) {
-      throw new HttpError(400, `Bid is below the minimum bid of ₹${Math.round(minimum).toLocaleString('en-IN')}`);
+      throw new HttpError(400, `Bid is below the minimum bid of ${formatINR(Math.round(minimum))}`);
     }
 
     const { data: bid, error } = await supabase.from('capacity_bids').insert({
@@ -248,8 +249,8 @@ export const capacityService = {
     if (error) throw new Error(error.message);
 
     notify(() => notificationService.notifyStaff(
-      'New Capacity Bid',
-      `A vendor bid ₹${bidAmount} for ${weightKg} kg on ${windowVehicle?.plate_number ?? 'a vehicle'}.`,
+      'New bid',
+      `A vendor bid ${formatINR(bidAmount)} for ${formatKg(weightKg)} on ${windowVehicle?.plate_number ?? 'a vehicle'}.`,
       'capacity_bid',
       { bid_id: bid.id, window_id: data.window_id }
     ));
@@ -505,8 +506,8 @@ export const capacityService = {
       if (bidErr) throw new Error(`Failed to reject bids on window ${windowId}: ${bidErr.message}`);
       for (const bid of turnedDown ?? []) {
         notify(() => notificationService.sendNotification(
-          bid.vendor_id, 'Bid Rejected',
-          `Your bid of ₹${bid.bid_amount} was not accepted. The bidding window was cancelled.`,
+          bid.vendor_id, 'Rejected',
+          `Your bid of ${formatINR(bid.bid_amount)} was not accepted. The bidding window was cancelled.`,
           'bid_rejected', { bid_id: bid.id },
         ));
       }
@@ -555,8 +556,8 @@ export const capacityService = {
     if (bidErr) throw new Error(`Failed to expire bids: ${bidErr.message}`);
     for (const bid of expired ?? []) {
       notify(() => notificationService.sendNotification(
-        bid.vendor_id, 'Bid Expired',
-        `Your bid of ₹${bid.bid_amount} expired: the bidding window closed before it was decided. You can bid again on a new window.`,
+        bid.vendor_id, 'Expired',
+        `Your bid of ${formatINR(bid.bid_amount)} expired: the bidding window closed before it was decided. You can bid again on a new window.`,
         'bid_expired', { bid_id: bid.id },
       ));
     }
@@ -855,8 +856,8 @@ export const capacityService = {
 
       notify(() => notificationService.sendNotification(
         bid.vendor_id,
-        'Bid Accepted',
-        `Your bid of ₹${bid.bid_amount} for ${bid.weight_kg} kg was accepted. The truck has been routed to your pickup.`,
+        'Approved',
+        `Your bid of ${formatINR(bid.bid_amount)} for ${formatKg(bid.weight_kg)} was approved. The truck has been routed to your pickup.`,
         'bid_accepted',
         { bid_id: bid.id, shipment_id: shipmentId, window_id: windowId }
       ));
@@ -872,7 +873,7 @@ export const capacityService = {
       for (const lost of losingBids ?? []) {
         notify(() => notificationService.sendNotification(
           lost.vendor_id,
-          'Bid Not Selected',
+          'Not selected',
           'Another bid was accepted for this truck. Watch Live Corridors for new capacity.',
           'bid_lost',
           { bid_id: lost.id }
@@ -924,8 +925,8 @@ export const capacityService = {
 
     notify(() => notificationService.sendNotification(
       bid.vendor_id,
-      'Bid Rejected',
-      `Your bid of ₹${bid.bid_amount} was not accepted. Reason: ${reason}`,
+      'Rejected',
+      `Your bid of ${formatINR(bid.bid_amount)} was not accepted. Reason: ${reason}`,
       'bid_rejected',
       { bid_id: bid.id }
     ));
@@ -1032,8 +1033,8 @@ export const capacityService = {
     }
 
     notify(() => notificationService.sendNotification(
-      bid.vendor_id, 'Bid Cancelled',
-      `Your accepted bid of ₹${bid.bid_amount} was cancelled: ${reason}. You can bid again on other trucks.`,
+      bid.vendor_id, 'Bid cancelled',
+      `Your accepted bid of ${formatINR(bid.bid_amount)} was cancelled: ${reason}. You can bid again on other trucks.`,
       'bid_rejected', { bid_id: bid.id },
     ));
     return { windowId: bid.window_id };

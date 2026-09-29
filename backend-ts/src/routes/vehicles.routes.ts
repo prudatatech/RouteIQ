@@ -284,7 +284,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     }
 
     if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
-      return res.status(403).json({ detail: 'Unauthorized to update this vehicle' });
+      return res.status(403).json({ detail: 'Not authorized to update this vehicle' });
     }
 
     // Filter undefined values; drivers may only report load and position
@@ -429,7 +429,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
   try {
     // Ensure the driver is reporting for their own vehicle unless admin
     if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
-      return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
+      return res.status(403).json({ detail: 'Not authorized to report for this vehicle' });
     }
     const requestedType = req.body?.alert_type ?? 'panic_button';
     if (typeof requestedType !== 'string' || ![...SOS_ALERT_TYPES, 'sos'].includes(requestedType)) {
@@ -476,7 +476,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     // Notifications are informative; a failure must not undo the SOS report.
     notificationService
       .notifyStaff(
-        'Emergency SOS',
+        'SOS',
         `${vehicle?.driver_name ?? 'A driver'} on ${vehicle?.plate_number ?? 'a vehicle'} triggered an SOS: ${alert.description}`,
         'sos',
         { alert_id: alert.id, vehicle_id: req.params.vehicle_id },
@@ -495,7 +495,7 @@ router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admi
     const body = req.body ?? {};
 
     if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
-      return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
+      return res.status(403).json({ detail: 'Not authorized to report for this vehicle' });
     }
 
     // The bidding window: opens now or later, closes within a day, never below a real floor price

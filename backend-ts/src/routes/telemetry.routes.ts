@@ -167,7 +167,7 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByU
     // notification must not undo the alert.
     try {
       await notificationService.notifyStaff(
-        'Emergency SOS',
+        'SOS',
         `${vehicle.driver_name ?? 'A driver'} on ${vehicle.plate_number ?? 'a vehicle'} triggered an SOS (${alertType.replace('_', ' ')}).`,
         'sos',
         { alert_id: created?.id ?? null, vehicle_id: vehicle.id },

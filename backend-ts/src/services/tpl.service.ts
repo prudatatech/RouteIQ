@@ -600,12 +600,12 @@ export const tplService = {
     if (!apiKey) return;
     const { Resend } = await import('resend');
     const { error: sendErr } = await new Resend(apiKey).emails.send({
-      from: 'Margix India <onboarding@resend.dev>',
+      from: 'MargixIndia <onboarding@resend.dev>',
       to: email,
-      subject: 'Margix India - Setup Your 3PL Account Password',
+      subject: 'MargixIndia: set up your 3PL account password',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-          <h2 style="color: #4facfe;">Margix India 3PL Network</h2>
+          <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
           <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
           <p>Your 3PL partner application has been approved. Please use the code below to set up your password and access the control tower.</p>
           <div style="background-color: #f4f4f5; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">

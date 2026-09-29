@@ -97,7 +97,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
         .maybeSingle();
 
       if (manifestErr || !manifest) {
-        res.status(404).json({ detail: 'Route or Cargo Manifest not found' });
+        res.status(404).json({ detail: 'Route not found' });
         return;
       }
 

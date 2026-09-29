@@ -125,7 +125,7 @@ describe('POST /telematics/test-alarm', () => {
     const [alert] = supabaseMock.rows('maintenance_alerts');
     expect(alert).toMatchObject({ alert_type: 'tamper', is_test: true, source: 'webhook' });
     expect(supabaseMock.writes('notifications', 'POST').length).toBeGreaterThan(0);
-    expect(supabaseMock.writes('notifications', 'POST')[0].body.title).toMatch(/^Test alarm/);
+    expect(supabaseMock.writes('notifications', 'POST')[0].body.title).toMatch(/^Test alert/);
 
     const summary = await request(app).get('/api/v1/fleet/alerts/summary').set(bearer('admin-1'));
     expect(summary.body).toMatchObject({ open: 0, acknowledged: 0, last_30_days_by_type: {} });
