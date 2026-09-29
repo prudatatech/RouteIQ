@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { BaseStyleId } from '@/config/mapConfig'
 
 /** A position on the map. */
 export interface LatLng {
@@ -39,6 +40,13 @@ export interface MapRoute {
   stops?: MapRouteStop[]
   /** Draw a dashed line: the path is a plan or a straight-line estimate, not a driven road. */
   planned?: boolean
+}
+
+/** A driven path drawn as a line (a vehicle's trail from its GPS history). */
+export interface MapTrail {
+  id: string
+  /** GeoJSON [lng, lat] pairs, oldest first. */
+  coordinates: [number, number][]
 }
 
 export type MapPointKind = 'pickup' | 'drop' | 'incident' | 'hub' | 'load' | 'location'
@@ -89,6 +97,8 @@ export interface MapViewProps {
   mode?: MapMode
   vehicles?: MapVehicle[]
   route?: MapRoute | null
+  /** Driven paths, drawn under the vehicles. */
+  trails?: MapTrail[]
   points?: MapPoint[]
   /** Id of the selected vehicle or point. */
   selectedId?: string | null
@@ -107,6 +117,10 @@ export interface MapViewProps {
   /** false turns off panning, zooming and clicking (for small previews). Default true. */
   interactive?: boolean
   controls?: MapControls
+  /** Base map (streets, satellite, terrain, dark). Default streets. */
+  baseStyle?: BaseStyleId
+  /** Group nearby vehicles into clusters when there are many. Default true. */
+  clusters?: boolean
   /** Show a legend of the vehicle statuses on the map. */
   showLegend?: boolean
   /** Always show vehicle labels, not only for the selected vehicle. */

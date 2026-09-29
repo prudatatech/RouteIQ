@@ -2,7 +2,7 @@ import { circle } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, Polygon } from 'geojson'
 import type { LayerProps } from 'react-map-gl/maplibre'
 import { MAP_COLORS, MAP_TONES, type MapTone } from '@/config/mapConfig'
-import type { LatLng, MapPoint, MapPointKind, MapRoute, MapVehicle } from './types'
+import type { LatLng, MapPoint, MapPointKind, MapRoute, MapTrail, MapVehicle } from './types'
 
 /** Colour role of each point kind. Shared by markers and their geofence circles. */
 export const POINT_TONES: Record<MapPointKind, MapTone> = {
@@ -48,6 +48,33 @@ export function routeLineLayer(planned: boolean): LayerProps {
   }
 }
 
+/* ── Trails ─────────────────────────────────────────────────────────────── */
+
+export const TRAIL_SOURCE_ID = 'mapview-trails'
+
+export function trailFeatures(trails: MapTrail[]): FeatureCollection<LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: trails
+      .filter((t) => t.coordinates.length > 1)
+      .map((t) => ({ type: 'Feature', properties: { id: t.id }, geometry: { type: 'LineString', coordinates: t.coordinates } })),
+  }
+}
+
+export const trailCasingLayer: LayerProps = {
+  id: 'mapview-trail-casing',
+  type: 'line',
+  layout: { 'line-join': 'round', 'line-cap': 'round' },
+  paint: { 'line-color': MAP_COLORS.routeCasing, 'line-width': 6, 'line-opacity': 0.8 },
+}
+
+export const trailLineLayer: LayerProps = {
+  id: 'mapview-trail-line',
+  type: 'line',
+  layout: { 'line-join': 'round', 'line-cap': 'round' },
+  paint: { 'line-color': MAP_COLORS.trail, 'line-width': 3.5 },
+}
+
 /* ── Geofences ──────────────────────────────────────────────────────────── */
 
 export const GEOFENCE_SOURCE_ID = 'mapview-geofences'
@@ -88,7 +115,7 @@ const isValid = (p: LatLng) =>
   !(p.lat === 0 && p.lng === 0)
 
 /** Bounding box of everything on the map, or null when there is nothing. */
-export function contentBounds(vehicles: MapVehicle[], points: MapPoint[], route?: MapRoute | null): Bounds | null {
+export function contentBounds(vehicles: MapVehicle[], points: MapPoint[], route?: MapRoute | null, trails?: MapTrail[]): Bounds | null {
   // A geofence counts with its full circle, so fitting shows the whole zone.
   const fenceEdges = points.flatMap((p): LatLng[] => {
     if (!p.radiusKm || p.radiusKm <= 0) return []
@@ -105,6 +132,7 @@ export function contentBounds(vehicles: MapVehicle[], points: MapPoint[], route?
     ...fenceEdges,
     ...(route?.stops ?? []).map((s) => s.position),
     ...(route?.coordinates ?? []).map(([lng, lat]) => ({ lat, lng })),
+    ...(trails ?? []).flatMap((t) => t.coordinates.map(([lng, lat]) => ({ lat, lng }))),
   ].filter(isValid)
   if (positions.length === 0) return null
 

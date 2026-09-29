@@ -7,10 +7,14 @@ import { useAuthStore } from '@/store/authStore'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
 import { supabase, openChannel } from '@/services/supabase'
+import { useVehicleTrack } from '@/components/fleet/location/useVehicleLocation'
+import { trackCoordinates } from '@/components/fleet/location/format'
 import MapView from './MapView'
+import LayerSwitcher, { type LayerOverlay } from './LayerSwitcher'
+import { useLayerPrefs } from './layerPrefs'
 import { fetchDrivingRoute, type DrivingRoute } from './directions'
 import { useLiveVehiclePositions } from './useLiveVehiclePositions'
-import type { LatLng, MapMode, MapPoint, MapRoute, MapRouteStop, MapVehicle, MapViewHandle } from './types'
+import type { LatLng, MapMode, MapPoint, MapRoute, MapRouteStop, MapTrail, MapVehicle, MapViewHandle } from './types'
 import { formatMinutes } from '@/utils/display'
 
 /** Vehicle as returned by the vehicles API. */
@@ -70,6 +74,11 @@ export interface LiveMapProps {
   className?: string
 }
 
+/** Zoom used when a vehicle is selected. */
+const SELECT_ZOOM = 16
+/** How far back the selected vehicle's trail goes. */
+const TRAIL_HOURS = 6
+
 const stopPosition = (stop: LiveMapStop): LatLng | null => {
   const dp = Array.isArray(stop.delivery_points) ? stop.delivery_points[0] : stop.delivery_points
   if (dp?.latitude == null || dp?.longitude == null) return null
@@ -104,7 +113,10 @@ export default function LiveMap({
   const queryClient = useQueryClient()
   const livePositions = useLiveVehiclePositions()
   const [clickedId, setClickedId] = useState<string | null>(null)
-  const selectedId = selectedVehicleId ?? clickedId
+  // A page that passes onVehicleSelect owns the selection (so it can also clear it);
+  // otherwise a clicked marker stays selected here.
+  const selectedId = onVehicleSelect ? (selectedVehicleId ?? null) : (selectedVehicleId ?? clickedId)
+  const [layers, setLayers] = useLayerPrefs()
 
   // ── Vehicles ──────────────────────────────────────────────────────────
   const mapVehicles = useMemo<MapVehicle[]>(() => vehicles.flatMap((v) => {
@@ -175,12 +187,12 @@ export default function LiveMap({
   }, [selectedId, stopsKey, hasVehiclePosition])
 
   const route = useMemo<MapRoute | null>(() => {
-    if (stops.length === 0) return null
+    if (stops.length === 0 || !layers.routes) return null
     const start = selectedVehicle ? [[selectedVehicle.position.lng, selectedVehicle.position.lat] as [number, number]] : []
     if (driving) return { coordinates: [...start, ...driving.coordinates], stops }
     const straight = [...start, ...stops.map((s) => [s.position.lng, s.position.lat] as [number, number])]
     return { coordinates: straight, stops, planned: true }
-  }, [stops, driving, selectedVehicle])
+  }, [stops, driving, selectedVehicle, layers.routes])
 
   // ── Open marketplace loads ────────────────────────────────────────────
   const { data: openLoads } = useQuery({
@@ -208,26 +220,58 @@ export default function LiveMap({
     refetchInterval: 60_000,
     enabled: !compact && isStaff,
   })
-  const incidentPoints = useMemo<MapPoint[]>(() => (traffic?.incidents ?? []).map((i) => ({
+  const incidentPoints = useMemo<MapPoint[]>(() => (!layers.traffic ? [] : traffic?.incidents ?? []).map((i) => ({
     id: `traffic-${i.id}`,
     kind: 'incident' as const,
     position: { lat: i.lat, lng: i.lng },
     label: `Traffic: ${describeIncident(i)}`,
-  })), [traffic])
+  })), [traffic, layers.traffic])
 
-  // ── Camera: fly to the selected vehicle on request ────────────────────
-  const lastZoomEvent = useRef<number | undefined>()
+  // ── Trail of the selected vehicle, from its GPS history ───────────────
+  const { data: track } = useVehicleTrack(selectedId, TRAIL_HOURS, !compact && layers.trails)
+  const trails = useMemo<MapTrail[]>(() => {
+    const coordinates = trackCoordinates(track)
+    return selectedId && layers.trails && coordinates.length > 1 ? [{ id: selectedId, coordinates }] : []
+  }, [track, selectedId, layers.trails])
+
+  // ── Camera: fly to a vehicle when it is selected and when asked to ────
+  // Selecting (a marker, the list, or a ?vehicle= link) zooms to it once its position is known.
+  // A link opens before positions have loaded, so this waits for the position instead of giving up.
+  const flownTo = useRef<string | null>(null)
+  const selectedPosition = selectedVehicle?.position
+  useEffect(() => {
+    if (!selectedId) { flownTo.current = null; return }
+    if (!selectedPosition || flownTo.current === selectedId) return
+    flownTo.current = selectedId
+    mapRef.current?.flyTo(selectedPosition, SELECT_ZOOM)
+  }, [selectedId, selectedPosition])
+
+  // Asking again for the vehicle that is already selected (clicking it in a list) flies back to it.
+  const lastZoomEvent = useRef<number | undefined>(zoomFocusEvent)
   useEffect(() => {
     if (!zoomFocusEvent || lastZoomEvent.current === zoomFocusEvent) return
+    if (!selectedPosition) return // keep the request until the position is known
     lastZoomEvent.current = zoomFocusEvent
-    if (selectedVehicle) mapRef.current?.flyTo(selectedVehicle.position, 16)
-  }, [zoomFocusEvent, selectedVehicle])
+    mapRef.current?.flyTo(selectedPosition, SELECT_ZOOM)
+  }, [zoomFocusEvent, selectedPosition])
 
   const handleSelect = (id: string) => {
     if (id.startsWith('load-') || id.startsWith('traffic-')) return
     setClickedId(id)
     onVehicleSelect?.(id)
   }
+
+  const overlays: LayerOverlay[] = [
+    ...(isStaff ? [{
+      id: 'traffic',
+      label: 'Traffic incidents',
+      checked: layers.traffic,
+      hint: traffic && !traffic.configured ? 'Not set up yet' : 'Incidents on active routes',
+    }] : []),
+    { id: 'routes', label: 'Route lines', checked: layers.routes, hint: 'Active route of the selected vehicle' },
+    { id: 'trails', label: 'Vehicle trail', checked: layers.trails, hint: `Where the selected vehicle went in the last ${TRAIL_HOURS} hours` },
+    { id: 'clusters', label: 'Group nearby vehicles', checked: layers.clusters },
+  ]
 
   const remainingStops = (activeRoute?.route_stops ?? []).filter((s) => s.status === 'pending').length
 
@@ -238,6 +282,9 @@ export default function LiveMap({
       vehicles={mapVehicles}
       route={route}
       points={[...loadPoints, ...incidentPoints]}
+      trails={trails}
+      baseStyle={compact ? 'streets' : layers.base}
+      clusters={layers.clusters}
       selectedId={selectedId}
       onSelect={handleSelect}
       flyToSelected={false}
@@ -245,6 +292,14 @@ export default function LiveMap({
       className={className}
       ariaLabel="Live fleet map"
     >
+      {!compact && (
+        <LayerSwitcher
+          baseStyle={layers.base}
+          onBaseStyleChange={(base) => setLayers({ base })}
+          overlays={overlays}
+          onOverlayChange={(id, checked) => setLayers({ [id]: checked })}
+        />
+      )}
       {!compact && (
         <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
           <MapPlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 13)} />

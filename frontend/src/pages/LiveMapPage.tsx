@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Truck } from 'lucide-react'
@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import LiveMap from '@/components/map/LiveMap'
 import { Button, StatusPill, SearchInput, EmptyState, Skeleton } from '@/components/ui'
 import { isFleetVehicle, isVehicleLive } from '@/utils/vehicles'
+import SelectedVehiclePanel from '@/components/fleet/location/SelectedVehiclePanel'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 
 interface VehicleRow {
@@ -24,12 +25,13 @@ interface VehicleRow {
  * Full-screen fleet map. LiveMap draws each vehicle from its last stored
  * position and follows live GPS updates over Supabase realtime; the legend
  * lives inside LiveMap. The side list lets an operator find and select a
- * vehicle without hunting for it on the map.
+ * vehicle without hunting for it on the map. Selecting one (list, marker or a
+ * `?vehicle=<id>` link) zooms to it and swaps the list for its GPS data,
+ * activity and share link. The selection lives in the URL, so it can be shared.
  */
 export default function LiveMapPage() {
-  const [searchParams] = useSearchParams()
-  const requestedVehicleId = searchParams.get('vehicle')
-  const [selectedId, setSelectedId] = useState<string | null>(requestedVehicleId)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedId = searchParams.get('vehicle')
   const [zoomEvent, setZoomEvent] = useState(0)
   const [search, setSearch] = useState('')
 
@@ -63,23 +65,35 @@ export default function LiveMapPage() {
   const withPosition = fleet.filter(v => v.latitude != null && v.longitude != null)
   const filtered = withPosition.filter(v => v.plate_number.toLowerCase().includes(search.trim().toLowerCase()))
 
+  // The selection is the ?vehicle= parameter. Opening the page with it (for example Emergencies'
+  // "Open on live map") selects that vehicle, and LiveMap zooms to it as soon as its position is known.
+  const setSelected = (id: string | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (id) next.set('vehicle', id)
+      else next.delete('vehicle')
+      return next
+    }, { replace: true })
+  }
   const selectVehicle = (id: string) => {
-    setSelectedId(id)
+    setSelected(id)
     setZoomEvent(Date.now())
   }
-
-  // Deep link from other pages (e.g. Emergencies' "Open on live map"): zoom to
-  // the requested vehicle once its position is loaded.
-  useEffect(() => {
-    if (!requestedVehicleId) return
-    const match = withPosition.find(v => v.id === requestedVehicleId)
-    if (match) setZoomEvent(Date.now())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedVehicleId, withPosition.length])
+  const selectedPlate = fleet.find(v => v.id === selectedId)?.plate_number
 
   return (
     <div className="flex h-full w-full flex-col md:flex-row">
-      <aside className="flex h-64 shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-80 md:border-b-0 md:border-r">
+      <aside className={'flex shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-80 md:border-b-0 md:border-r ' + (selectedId ? 'h-96' : 'h-64')}>
+        {selectedId ? (
+          <SelectedVehiclePanel
+            key={selectedId}
+            vehicleId={selectedId}
+            plate={selectedPlate}
+            onBack={() => setSelected(null)}
+            onZoom={() => setZoomEvent(Date.now())}
+          />
+        ) : (
+        <>
         <div className="border-b border-border p-4">
           <h1 className="text-lg font-semibold text-text">Live map</h1>
           <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${liveCount.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles live`}</p>
@@ -129,6 +143,8 @@ export default function LiveMapPage() {
             </ul>
           )}
         </div>
+        </>
+        )}
       </aside>
 
       <div className="relative min-h-[320px] flex-1">
@@ -136,7 +152,7 @@ export default function LiveMapPage() {
           vehicles={fleet}
           selectedVehicleId={selectedId}
           zoomFocusEvent={zoomEvent}
-          onVehicleSelect={setSelectedId}
+          onVehicleSelect={setSelected}
           className="h-full w-full"
         />
       </div>

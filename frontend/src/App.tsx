@@ -17,7 +17,7 @@ import {
   dashboard, fleet, routes, routeDetails, analytics, insights, optimize, shipments, shipmentManifest, emergency, bids,
   backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
-  driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
+  driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 
 const DashboardPage = dashboard.Component
@@ -48,6 +48,7 @@ const TplSetupCredentialsPage = tplSetupCredentials.Component
 const TplDashboardPage = tplDashboard.Component
 const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
+const VehicleSharePage = vehicleShare.Component
 const BidsPage = bids.Component
 const VendorPortalPage = vendorPortal.Component
 const VendorTrackingPage = vendorTracking.Component
@@ -219,6 +220,7 @@ export default function App() {
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
           <Route path="/m/:token" element={<LazyRoute><MobileTrackPage /></LazyRoute>} />
+          <Route path="/share/:token" element={<LazyRoute><VehicleSharePage /></LazyRoute>} />
           <Route path="/driver" element={
             <LazyRoute><PrivateRoute allowedRoles={['superadmin', 'admin', 'driver']}>
               <DriverPage />

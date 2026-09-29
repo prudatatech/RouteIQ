@@ -1,3 +1,4 @@
+import type { StyleSpecification } from 'maplibre-gl'
 import tokens from '@/theme/tokens.json'
 import { statusToLabel, statusToTone, type Tone } from '@/components/ui/status'
 
@@ -11,6 +12,44 @@ import { statusToLabel, statusToTone, type Tone } from '@/components/ui/status'
 
 /** Base map style. Local copy of Carto Positron (no token needed). */
 export const MAP_STYLE_URL = '/map-style.json'
+
+/**
+ * Base maps the layer switcher offers. All are free and need no token:
+ * Carto (streets, dark) and Esri's public tile services (satellite, terrain).
+ */
+export type BaseStyleId = 'streets' | 'satellite' | 'terrain' | 'dark'
+
+const rasterStyle = (name: string, tiles: string, attribution: string, maxzoom: number): StyleSpecification => ({
+  version: 8,
+  name,
+  sources: { base: { type: 'raster', tiles: [tiles], tileSize: 256, maxzoom, attribution } },
+  layers: [{ id: 'base', type: 'raster', source: 'base' }],
+})
+
+export const BASE_STYLES: Record<BaseStyleId, { label: string; style: string | StyleSpecification }> = {
+  streets: { label: 'Streets', style: MAP_STYLE_URL },
+  satellite: {
+    label: 'Satellite',
+    style: rasterStyle(
+      'Satellite',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      'Imagery © Esri, Maxar, Earthstar Geographics',
+      18,
+    ),
+  },
+  terrain: {
+    label: 'Terrain',
+    style: rasterStyle(
+      'Terrain',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      'Map © Esri, HERE, Garmin, OpenStreetMap contributors',
+      18,
+    ),
+  },
+  dark: { label: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+}
+
+export const BASE_STYLE_IDS = Object.keys(BASE_STYLES) as BaseStyleId[]
 
 const envNumber = (value: string | undefined, fallback: number): number => {
   const n = Number(value)
@@ -64,6 +103,7 @@ export const MAP_COLORS = {
   route: c.accent,
   routeCasing: c.surface,
   plannedRoute: c.neutral,
+  trail: c.info,
 }
 
 interface StatusStyle {

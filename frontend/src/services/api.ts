@@ -269,6 +269,20 @@ export const fleetAPI = {
   saveAlertSettings: (values: object) => api.put('/fleet/alert-settings', values).then(r => r.data),
   sendTestAlarm: (vehicleId: string, event: string) =>
     api.post('/telematics/test-alarm', { vehicle_id: vehicleId, event }).then(r => r.data),
+  /** Current position with speed, heading, accuracy and last seen. */
+  vehicleLocation: (id: string) => api.get(`/fleet/vehicles/${id}/location`).then(r => r.data),
+  /** Carrying (which load, from where to where, % full), idle (since when) or offline. */
+  vehicleActivity: (id: string) => api.get(`/fleet/vehicles/${id}/activity`).then(r => r.data),
+  shareLinks: (id: string) => api.get(`/fleet/vehicles/${id}/share-links`).then(r => ensureArray(r.data)),
+  /** A public, read-only live-location link that expires after `hours`. */
+  createShareLink: (id: string, hours: number) => api.post(`/fleet/vehicles/${id}/share-links`, { hours }).then(r => r.data),
+  revokeShareLink: (linkId: string) => api.delete(`/fleet/share-links/${linkId}`).then(r => r.data),
+}
+
+export const gpsAPI = {
+  /** The driven path of a vehicle between two times (default: the last 24 hours), oldest point first. */
+  track: (vehicleId: string, params: { from?: string; to?: string; limit?: number } = {}) =>
+    api.get(`/gps/vehicle/${vehicleId}/track`, { params }).then(r => r.data),
 }
 
 export interface PublicStats {
@@ -281,6 +295,10 @@ export interface PublicStats {
 export const publicAPI = {
   /** Aggregate counts for the landing page. No sign-in needed. */
   stats: () => api.get('/public/stats').then(r => r.data as PublicStats),
+  /** The live-location page behind a shared link. No sign-in header, short timeout. */
+  vehicleShare: (token: string) => axios
+    .get(`${baseURL}/public/vehicle-share/${encodeURIComponent(token)}`, { timeout: 20_000 })
+    .then(r => r.data),
 }
 
 export const capacityAPI = {
