@@ -130,7 +130,7 @@ async function countDemand(pickup: LatLng, vehicleType: string | null) {
     return isValidPoint(p) && haversineKm(pickup, p) <= DEMAND_RADIUS_KM;
   };
   const [{ data: loads, error: loadErr }, { data: vehicles, error: vehErr }] = await Promise.all([
-    supabase.from('vendor_shipment_requests').select('id, pickup_lat, pickup_lng').in('status', ['pending', 'approved']).limit(1000),
+    supabase.from('vendor_shipment_requests').select('id, pickup_lat, pickup_lng').in('status', ['pending', 'approved', 'escalated']).limit(1000),
     supabase.from('vehicles').select('id, latitude, longitude, vehicle_type').in('status', ['available', 'idle']).limit(1000),
   ]);
   if (loadErr) throw new Error(loadErr.message);
@@ -386,6 +386,21 @@ export const pricingService = {
     if (error) console.error('[pricing] Could not store the quote:', error.message);
     else result.quote_id = saved.id;
     return result;
+  },
+
+  /**
+   * The lowest price worth accepting for a load: the low end of the engine's quote
+   * for this pickup, drop and weight. Null when the engine has no answer (no rate
+   * card and too little history), in which case no minimum can be enforced.
+   */
+  async minimumFor(pickup: LatLng, drop: LatLng, weightKg: number, ctx: { userId?: string; role?: string } = {}): Promise<number | null> {
+    try {
+      const q = await pricingService.quote({ pickup, drop, weight_kg: weightKg }, { ...ctx, source: 'capacity_bid' });
+      return q.status === 'ok' ? q.low : null;
+    } catch (e) {
+      console.error('[pricing] Minimum bid check failed:', e);
+      return null;
+    }
   },
 
   /** Record the price that was actually agreed, so later quotes can learn from it. */

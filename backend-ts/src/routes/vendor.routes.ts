@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { rateLimitByUser } from '../core/rate-limit';
@@ -115,11 +116,20 @@ router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req:
   }
 });
 
-// Get pending shipment requests (Super Admin)
-router.get('/shipment-request/pending', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Requests that still need a decision or a vehicle (staff, managers included): the "Needs a vehicle" set
+router.get('/shipment-request/pending', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const requests = await vendorService.getPendingRequests();
     res.json(requests);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Withdraw a load the vendor posted, while it has no vehicle yet
+router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await vendorService.cancelRequest(req.user.user_id, req.params.id));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
