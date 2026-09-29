@@ -135,7 +135,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           placeholder="Search by tracking ID, plate, driver, vendor or partner"
           aria-label="Search"
           aria-activedescendant={flat[activeIndex] ? `search-result-${flat[activeIndex].id}` : undefined}
-          className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-sm text-text placeholder:text-muted focus:border-brand focus:outline-none"
+          className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-sm text-text placeholder:text-placeholder focus:border-brand focus:outline-none"
         />
       </div>
 

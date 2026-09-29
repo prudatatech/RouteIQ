@@ -136,7 +136,7 @@ export default function LoginScreen({ navigation }: any) {
                   <TextInput
                     style={styles.input}
                     placeholder={t('login_phone_placeholder')}
-                    placeholderTextColor={colors.textDisabled}
+                    placeholderTextColor={colors.textPlaceholder}
                     keyboardType="phone-pad"
                     textContentType="telephoneNumber"
                     autoComplete="tel"

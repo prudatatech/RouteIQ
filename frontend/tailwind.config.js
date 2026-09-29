@@ -18,6 +18,7 @@ export default {
         'border-strong': c.borderStrong,
         text: c.text,
         muted: c.textMuted,
+        placeholder: c.textPlaceholder,
         disabled: c.textDisabled,
         brand: {
           DEFAULT: c.accent,

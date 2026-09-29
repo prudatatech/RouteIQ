@@ -45,6 +45,8 @@ jobs:
       - run: npm ci
       - name: Theme files match design/tokens.json
         run: node ../design/generate-tokens.mjs --check
+      - name: Text contrast meets WCAG AA
+        run: node ../design/check-contrast.mjs
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run build

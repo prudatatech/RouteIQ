@@ -65,7 +65,7 @@ export default function CustomerTrackingPage() {
                 autoComplete="off"
                 spellCheck={false}
                 aria-label="Tracking ID"
-                className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-base text-text placeholder:text-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
+                className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-base text-text placeholder:text-placeholder focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
               />
             </div>
             <Button type="submit" disabled={!searchId.trim()}>Track shipment</Button>
