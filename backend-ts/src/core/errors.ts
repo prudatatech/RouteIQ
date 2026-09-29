@@ -8,7 +8,8 @@
 import { Request, Response, NextFunction } from 'express';
 
 export class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  /** `extra` is merged into the JSON body next to the message (e.g. the existing record behind a 409). */
+  constructor(public readonly status: number, message: string, public readonly extra?: Record<string, unknown>) {
     super(message);
     this.name = 'HttpError';
   }
@@ -23,7 +24,7 @@ type ErrorKey = 'detail' | 'error';
 export function sendError(req: Request, res: Response, err: unknown, key: ErrorKey = 'detail'): void {
   if (res.headersSent) return;
   if (err instanceof HttpError) {
-    res.status(err.status).json({ [key]: err.message });
+    res.status(err.status).json({ ...err.extra, [key]: err.message });
     return;
   }
   const requestId = res.getHeader('X-Request-ID');

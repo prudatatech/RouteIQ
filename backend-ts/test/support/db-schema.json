@@ -703,7 +703,18 @@
     "photo_path",
     "created_at",
     "updated_at",
-    "updated_by"
+    "updated_by",
+    "employer_type",
+    "employer_partner_id",
+    "suspended_until",
+    "leave_from",
+    "leave_until",
+    "consent_at",
+    "consent_by",
+    "consent_method",
+    "invite_sent_at",
+    "anonymised_at",
+    "no_pan_reason"
   ],
   "user_documents": [
     "id",
@@ -721,7 +732,14 @@
     "verified_at",
     "archived_at",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "number_last4",
+    "number_hash",
+    "name_on_document",
+    "extra_file_paths",
+    "review_by",
+    "verification_method",
+    "resubmission_count"
   ],
   "user_emergency_contacts": [
     "id",
@@ -744,7 +762,9 @@
     "is_primary",
     "is_verified",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "effective_from",
+    "proof_document_id"
   ],
   "user_status_history": [
     "id",
@@ -769,5 +789,20 @@
     "action",
     "details",
     "created_at"
+  ],
+  "user_phone_history": [
+    "id",
+    "user_id",
+    "phone",
+    "from_at",
+    "to_at"
+  ],
+  "driver_vehicle_assignments": [
+    "id",
+    "driver_id",
+    "vehicle_id",
+    "assigned_at",
+    "unassigned_at",
+    "assigned_by"
   ]
 }

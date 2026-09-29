@@ -4,14 +4,16 @@
  * One interval job:
  *   - closes bidding windows whose end time has passed (resolveExpiredWindows)
  *   - auto-resolves driver confirmations nobody answered (checkConfirmationsTimeout)
- *   - once per Indian calendar day, marks people's documents past their expiry
- *     date as expired and sends the 30-day, 7-day and day-of reminders
+ *   - once per Indian calendar day, the people job (people-jobs.service): documents past
+ *     their expiry become expired and reminders go out, leave and suspensions that ended
+ *     return people to active, and old document files are deleted after retention
  * The steps only touch rows that are still waiting, so running a tick twice, or
  * two servers ticking at once, does no harm. Started from index.ts only; the
  * test app never starts it.
  */
 import { capacityService } from './capacity.service';
-import { runDocumentExpiryJob, todayKey } from './people-docs.service';
+import { runPeopleDailyJob } from './people-jobs.service';
+import { todayKey } from './people-docs.service';
 
 export const SCHEDULER_INTERVAL_MS = 60_000;
 
@@ -37,10 +39,11 @@ export async function runSchedulerTick(): Promise<{ windowsClosed: number } | nu
     const today = todayKey();
     if (documentsCheckedOn !== today) {
       try {
-        await runDocumentExpiryJob();
-        documentsCheckedOn = today;
+        const result = await runPeopleDailyJob();
+        // A step that failed is tried again on the next tick
+        if (result.failed.length === 0) documentsCheckedOn = today;
       } catch (e: any) {
-        console.error('[scheduler] Document expiry check failed:', e.message);
+        console.error('[scheduler] People daily job failed:', e.message);
       }
     }
     return { windowsClosed };

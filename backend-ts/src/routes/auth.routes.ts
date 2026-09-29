@@ -17,6 +17,7 @@ import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { sendError } from '../core/errors';
 import { normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
+import { driverWindows, inWindows } from '../services/driver-assignments.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -665,16 +666,18 @@ async function loadTripPay(cargoTrips: any[], routeTrips: any[]): Promise<Map<st
 }
 
 export async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
-  const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg, current_location_name').eq('driver_id', userId);
-  if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
+  // Trips count for the driver who had the vehicle at the time (driver_vehicle_assignments),
+  // so a vehicle that was archived or handed on still pays out to the right driver.
+  const { windows, vehicleIds, currentVehicles } = await driverWindows(userId, 'id, latitude, longitude, capacity_kg, current_location_name');
+  if (vehicleIds.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
+  const vehicles = currentVehicles;
 
-  const activeVehicle = vehicles[0];
+  const activeVehicle: any = vehicles[0] ?? {};
   const driverLat = activeVehicle.latitude;
   const driverLng = activeVehicle.longitude;
   // The vehicle's stored place name; no reverse geocoding on every request.
   const driverLocationName = activeVehicle.current_location_name || 'Origin Depot';
 
-  const vehicleIds = vehicles.map(v => v.id);
   let cargoQuery = supabase.from('cargo_manifest').select('*').in('vehicle_id', vehicleIds).eq('status', 'delivered').order('updated_at', { ascending: false });
   let routeQuery = supabase.from('routes').select(`
     *,
@@ -691,8 +694,10 @@ export async function buildEarnings(userId: string, filter: EarningsFilter = {})
     cargoQuery = cargoQuery.lte('updated_at', filter.to);
     routeQuery = routeQuery.lte('updated_at', filter.to);
   }
-  const { data: cargoTrips } = await cargoQuery;
-  const { data: routeTrips } = await routeQuery;
+  const { data: allCargoTrips } = await cargoQuery;
+  const { data: allRouteTrips } = await routeQuery;
+  const cargoTrips = (allCargoTrips || []).filter(t => inWindows(windows, t.vehicle_id, t.updated_at));
+  const routeTrips = (allRouteTrips || []).filter(t => inWindows(windows, t.vehicle_id, t.updated_at));
 
   const allTrips = [
     ...(cargoTrips || []).map(t => ({ ...t, trip_type: 'cargo' })),

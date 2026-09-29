@@ -90,6 +90,13 @@ export const settings = {
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
   POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
 
+  // Secret for the keyed hash of identity numbers (Aadhaar, PAN, licence...) used to spot duplicates.
+  // Never store the numbers themselves where a hash will do. Required in production.
+  PEOPLE_HASH_SALT: env('PEOPLE_HASH_SALT'),
+
+  // People documents (licence, Aadhaar, PAN...) go in the same private bucket under people/
+  PEOPLE_UPLOAD_MAX_BYTES: envInt('PEOPLE_UPLOAD_MAX_BYTES', 10 * 1024 * 1024),
+
   // Feature Flags
   ENABLE_MOBILE_GPS: envBool('ENABLE_MOBILE_GPS', false),
   ENABLE_HARDWARE_SYNC: envBool('ENABLE_HARDWARE_SYNC', false),
