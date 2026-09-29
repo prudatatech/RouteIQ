@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useControl, type ControlPosition, type IControl } from 'react-map-gl/maplibre'
 import { Loader2, TriangleAlert } from 'lucide-react'
 import clsx from 'clsx'
+import { Button } from '@/components/ui/Button'
 import { MAP_TONES, vehicleStatusStyle } from '@/config/mapConfig'
 import type { MapVehicle } from './types'
 
@@ -93,13 +94,7 @@ export function MapError({ message, onRetry }: { message: string; onRetry?: () =
         <p className="mt-1 max-w-sm text-sm text-muted">{message}</p>
       </div>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="h-control rounded-control border border-border bg-surface px-4 text-sm font-medium text-text hover:bg-surface-subtle"
-        >
-          Try again
-        </button>
+        <Button variant="secondary" onClick={onRetry}>Try again</Button>
       )}
     </div>
   )

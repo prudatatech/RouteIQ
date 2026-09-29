@@ -295,6 +295,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
           maxZoom={MAP_DEFAULTS.MAX_ZOOM}
           attributionControl={{ compact: true }}
           interactive={interactive}
+          // On a phone a small map inside a form would trap the page scroll, so it asks for two fingers.
+          cooperativeGestures={mode === 'picker'}
           cursor={onPick ? 'crosshair' : undefined}
           style={{ position: 'absolute', inset: 0 }}
           onLoad={(e) => { setZoom(e.target.getZoom()); setLoad({ status: 'ready' }) }}

@@ -128,7 +128,7 @@ export default function VendorLayout() {
       onMouseEnter={() => prefetchRoute(link.to)}
       onFocus={() => prefetchRoute(link.to)}
       className={({ isActive }) => clsx(
-        'relative flex items-center rounded-control text-sm transition-colors',
+        'relative flex items-center whitespace-nowrap rounded-control text-sm transition-colors',
         vertical ? 'h-11 px-3' : 'h-9 px-3',
         isActive ? 'bg-brand-soft font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
       )}
@@ -168,11 +168,11 @@ export default function VendorLayout() {
     <div className="flex min-h-screen flex-col bg-bg text-text">
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-6">
+          <div className="flex min-w-0 items-center gap-4 xl:gap-6">
             <NavLink to="/vendor" className="flex items-center gap-2.5">
               <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
               <span className="text-lg font-semibold text-text">MargixIndia</span>
-              <span className="hidden text-sm text-muted sm:inline">for shippers</span>
+              <span className="hidden text-sm text-muted xl:inline">for shippers</span>
             </NavLink>
             <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
           </div>
