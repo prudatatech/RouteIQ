@@ -4,13 +4,12 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessConfirmation, canAccessRoute, canAccessVehicle, isStaff } from '../core/ownership';
 import { notificationService } from '../services/notification.service';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
-import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { parseNumberInRange } from '../core/validate';
 
 const router = Router();
 
 // POST /api/v1/capacity/bids
-router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, res) => {
+router.post('/bids', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req, res) => {
   try {
     let { vendor_id, window_id, bid_amount, eway_bill_ref, dropoff_point_id, dropoff_name, dropoff_address, dropoff_lat, dropoff_lng, weight_kg, load_configuration } = req.body;
 
@@ -101,7 +100,8 @@ router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, re
 // GET /api/v1/capacity/windows/open — open windows without vehicle/driver details
 router.get('/windows/open', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req, res) => {
   try {
-    res.json(await capacityService.listOpenWindowsForVendors());
+    // Vendors only see trucks near them; staff see every open window
+    res.json(await capacityService.listOpenWindowsForVendors(req.user!.role === 'vendor' ? req.user!.user_id : undefined));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -189,9 +189,9 @@ router.get('/windows/:id/bid-count', requireAuth, async (req, res) => {
 });
 
 // POST /api/v1/capacity/driver/open-backhaul-window
-router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', 'admin', 'superadmin'), async (req, res) => {
+router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', ...STAFF_ROLES), async (req, res) => {
   try {
-    const { vehicle_id, available_capacity_kg, trigger_type } = req.body ?? {};
+    const { vehicle_id, available_capacity_kg, trigger_type, floor_price, duration_minutes } = req.body ?? {};
     if (typeof vehicle_id !== 'string' || !vehicle_id || available_capacity_kg === undefined || !trigger_type) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
@@ -205,15 +205,20 @@ router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', '
     }
     const spare = parseNumberInRange(available_capacity_kg, 'available_capacity_kg', 1, 50000);
     const { supabase } = await import('../core/supabase');
-    const { data: vehicle } = await supabase.from('vehicles').select('capacity_kg, status').eq('id', vehicle_id).maybeSingle();
+    const { data: vehicle } = await supabase.from('vehicles').select('capacity_kg').eq('id', vehicle_id).maybeSingle();
     if (!vehicle) throw new HttpError(404, 'Vehicle not found');
-    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
-      throw new HttpError(409, `This vehicle is in ${vehicle.status} and can't offer space.`);
-    }
     if (vehicle.capacity_kg && spare > vehicle.capacity_kg) {
       throw new HttpError(400, `Free space can't be more than the vehicle's ${vehicle.capacity_kg} kg capacity`);
     }
-    const window = await capacityService.openBackhaulWindow(vehicle_id, spare, trigger_type);
+    // The same window as every other way of opening one: status, free space and duplicates are checked there.
+    // Staff may set the minimum bid and the length; a driver's window is priced per bid by the pricing engine.
+    const window = await capacityService.openWindow({
+      vehicleId: vehicle_id,
+      triggerType: trigger_type,
+      ...(isStaff(req.user) && floor_price !== undefined ? { floorPrice: Number(floor_price) } : {}),
+      ...(isStaff(req.user) && duration_minutes !== undefined ? { durationMinutes: Number(duration_minutes) } : {}),
+      createdBy: req.user!.user_id,
+    });
     res.json(window);
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -312,7 +317,7 @@ router.post('/driver/postpone-route', requireAuth, requireRole('driver'), async 
 });
 
 // GET /api/v1/capacity/bids/pending
-router.get('/bids/pending', requireAuth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.get('/bids/pending', requireAuth, requireRole(...STAFF_ROLES), async (req, res) => {
   try {
     const { supabase } = await import('../core/supabase');
     const { data, error } = await supabase
@@ -329,7 +334,7 @@ router.get('/bids/pending', requireAuth, requireRole('superadmin', 'admin'), asy
 });
 
 // POST /api/v1/capacity/bids/:id/approve
-router.post('/bids/:id/approve', requireAuth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/bids/:id/approve', requireAuth, requireRole(...STAFF_ROLES), async (req, res) => {
   try {
     const bid = await capacityService.approveBid(req.params.id);
     res.json(bid);
@@ -339,7 +344,7 @@ router.post('/bids/:id/approve', requireAuth, requireRole('superadmin', 'admin')
 });
 
 // POST /api/v1/capacity/bids/:id/reject
-router.post('/bids/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req, res) => {
+router.post('/bids/:id/reject', requireAuth, requireRole(...STAFF_ROLES), async (req, res) => {
   try {
     const reason = parseRejectionReason(req.body?.reason);
     const bid = await capacityService.rejectBid(req.params.id, reason);
@@ -349,7 +354,7 @@ router.post('/bids/:id/reject', requireAuth, requireRole('superadmin', 'admin'),
   }
 });
 
-const WINDOW_STAFF = ['superadmin', 'admin', 'manager'] as const;
+const WINDOW_STAFF = STAFF_ROLES;
 
 // GET /api/v1/capacity/windows  (console list: recent windows with bid counts)
 router.get('/windows', requireAuth, requireRole(...WINDOW_STAFF), async (req, res) => {

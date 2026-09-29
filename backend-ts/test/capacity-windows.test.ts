@@ -19,8 +19,8 @@ function seed(extra: Record<string, any[]> = {}) {
       { id: 'vendor-1', role: 'vendor', is_active: true },
     ],
     vehicles: [
-      { id: 'v1', plate_number: 'MH12AB1234', vehicle_type: 'truck', available_capacity_kg: 800, bidding_window_open: false },
-      { id: 'v2', plate_number: 'MH12ZZ0001', vehicle_type: 'truck', available_capacity_kg: 0, bidding_window_open: false },
+      { id: 'v1', plate_number: 'MH12AB1234', vehicle_type: 'truck', status: 'available', available_capacity_kg: 800, bidding_window_open: false },
+      { id: 'v2', plate_number: 'MH12ZZ0001', vehicle_type: 'truck', status: 'available', available_capacity_kg: 0, bidding_window_open: false },
     ],
     shipments: [{ id: 's1', tracking_id: 'TRK1' }],
     capacity_windows: [],
@@ -131,5 +131,101 @@ describe('scheduler', () => {
     const before = supabaseMock.writes('driver_confirmations', 'PATCH').length;
     await runSchedulerTick();
     expect(supabaseMock.writes('driver_confirmations', 'PATCH').length).toBe(before);
+  });
+});
+
+describe('one way to open a window', () => {
+  const driver = () => ({ Authorization: `Bearer ${supabaseMock.signUserToken('driver-1')}` });
+  const toggle = (enabled: boolean) =>
+    request(app).post('/api/v1/capacity/driver/toggle-matching').set(driver()).send({ vehicle_id: 'v1', enabled });
+  const openBackhaul = () =>
+    request(app).post('/api/v1/capacity/driver/open-backhaul-window').set(driver())
+      .send({ vehicle_id: 'v1', available_capacity_kg: 300, trigger_type: 'mid_route' });
+
+  beforeEach(() => {
+    seed({
+      users: [
+        { id: 'admin-1', role: 'admin', is_active: true },
+        { id: 'vendor-1', role: 'vendor', is_active: true },
+        { id: 'driver-1', role: 'driver', is_active: true },
+      ],
+      vehicles: [
+        { id: 'v1', driver_id: 'driver-1', plate_number: 'MH12AB1234', vehicle_type: 'truck', status: 'available', capacity_kg: 1000, available_capacity_kg: 800, bidding_window_open: false },
+        { id: 'v-maint', driver_id: null, plate_number: 'X', vehicle_type: 'truck', status: 'maintenance', capacity_kg: 1000, available_capacity_kg: 800 },
+      ],
+    });
+  });
+
+  it('opens the same window for the driver toggle as the other paths: default length, no fixed price', async () => {
+    expect((await toggle(true)).status).toBe(200);
+    const [w] = supabaseMock.rows('capacity_windows');
+    expect(w).toMatchObject({ vehicle_id: 'v1', trigger_type: 'return_trip', status: 'open', floor_price: null });
+    expect((new Date(w.closes_at).getTime() - new Date(w.opens_at).getTime()) / MINUTE).toBe(30);
+    expect(supabaseMock.rows('vehicles')[0].bidding_window_open).toBe(true);
+  });
+
+  it('does not open a second window when the driver turns it on twice or uses another button', async () => {
+    await toggle(true);
+    expect((await toggle(true)).status).toBe(200);
+    expect((await openBackhaul()).status).toBe(409);
+    expect(supabaseMock.rows('capacity_windows')).toHaveLength(1);
+  });
+
+  it('closes the open window when the driver turns matching off', async () => {
+    await toggle(true);
+    expect((await toggle(false)).status).toBe(200);
+    expect(supabaseMock.rows('capacity_windows')[0]).toMatchObject({ status: 'closed' });
+    expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ bidding_window_open: false, bidding_window_closes_at: null });
+  });
+
+  it('will not offer space on a full vehicle or one in maintenance', async () => {
+    supabaseMock.rows('vehicles')[0].available_capacity_kg = 0;
+    expect((await toggle(true)).status).toBe(400);
+    expect(supabaseMock.rows('vehicles')[0].bidding_window_open).toBe(false);
+    expect((await request(app).post('/api/v1/capacity/windows').set('Authorization', `Bearer ${admin()}`)
+      .send({ vehicle_id: 'v-maint', floor_price: 100, duration_minutes: 30 })).status).toBe(409);
+  });
+
+  it('lets staff set the minimum bid and length on the same path, and a driver cannot', async () => {
+    const staffOpen = await request(app).post('/api/v1/capacity/driver/open-backhaul-window').set('Authorization', `Bearer ${admin()}`)
+      .send({ vehicle_id: 'v1', available_capacity_kg: 300, trigger_type: 'mid_route', floor_price: 2500, duration_minutes: 60 });
+    expect(staffOpen.status).toBe(200);
+    expect(staffOpen.body.floor_price).toBe(2500);
+    expect((new Date(staffOpen.body.closes_at).getTime() - new Date(staffOpen.body.opens_at).getTime()) / MINUTE).toBe(60);
+  });
+
+  it('is open to managers', async () => {
+    supabaseMock.rows('users').push({ id: 'manager-1', role: 'manager', is_active: true });
+    const res = await request(app).post('/api/v1/capacity/windows').set('Authorization', `Bearer ${supabaseMock.signUserToken('manager-1')}`)
+      .send({ vehicle_id: 'v1', floor_price: 100, duration_minutes: 30 });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('bids nobody decided', () => {
+  const old = 26 * 60 * MINUTE;
+
+  it('expire a day after their window closed, and the vendor is told', async () => {
+    seed({
+      vehicles: [{ id: 'v1', plate_number: 'A', status: 'available', available_capacity_kg: 100, bidding_window_open: false }],
+      capacity_windows: [
+        { id: 'stale', vehicle_id: 'v1', opens_at: ago(old + 30 * MINUTE), closes_at: ago(old), resolved_at: ago(old), floor_price: 1, winning_bid_id: null, status: 'closed' },
+        { id: 'recent', vehicle_id: 'v1', opens_at: ago(2 * 60 * MINUTE), closes_at: ago(60 * MINUTE), resolved_at: ago(60 * MINUTE), floor_price: 1, winning_bid_id: null, status: 'closed' },
+      ],
+      capacity_bids: [
+        { id: 'b-stale', window_id: 'stale', vendor_id: 'vendor-1', status: 'pending', bid_amount: 900 },
+        { id: 'b-recent', window_id: 'recent', vendor_id: 'vendor-1', status: 'pending', bid_amount: 900 },
+        { id: 'b-lost', window_id: 'stale', vendor_id: 'vendor-1', status: 'lost', bid_amount: 900 },
+      ],
+    });
+    await runSchedulerTick();
+    await new Promise(r => setTimeout(r, 30));
+    const status = (id: string) => supabaseMock.rows('capacity_bids').find(b => b.id === id)?.status;
+    expect(status('b-stale')).toBe('expired');
+    expect(status('b-recent')).toBe('pending');
+    expect(status('b-lost')).toBe('lost');
+    const told = supabaseMock.rows('notifications');
+    expect(told).toHaveLength(1);
+    expect(told[0]).toMatchObject({ user_id: 'vendor-1', type: 'bid_expired', data: { bid_id: 'b-stale' } });
   });
 });
