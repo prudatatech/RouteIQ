@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Check, FileText, Navigation, Trash2, Upload } from 'lucide-react'
+import { Check, FileText, Trash2, Upload } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
-import { MapView, type MapPoint } from '@/components/map'
+import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
-import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, PlaceSearch, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 
 type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected'
@@ -266,20 +266,6 @@ export default function VendorDocumentsPage() {
     setField('longitude', String(place.lng))
   }
 
-  const useCurrentLocation = () => {
-    if (!('geolocation' in navigator)) { toast.error('Your browser does not support location.'); return }
-    toast.loading('Finding your location…', { id: 'geo' })
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setField('latitude', String(pos.coords.latitude))
-        setField('longitude', String(pos.coords.longitude))
-        toast.success('Location set', { id: 'geo' })
-      },
-      () => toast.error('Could not get your location.', { id: 'geo' }),
-      { enableHighAccuracy: true, timeout: 10000 },
-    )
-  }
-
   // --- Submit -------------------------------------------------------------
   const submit = async () => {
     setAttempted({ 0: true, 1: true, 2: true, 3: true })
@@ -345,11 +331,6 @@ export default function VendorDocumentsPage() {
     ? 'Tell us about your company so we can verify it and open up bidding and posting loads.'
     : 'Your company details and KYC documents. Changing them sends an approved company back for review.'
 
-  const pos = form.latitude && form.longitude ? { lat: Number(form.latitude), lng: Number(form.longitude) } : null
-  const mapPoints: MapPoint[] = pos
-    ? [{ id: 'base', kind: 'hub', label: `Operating base: ${form.city || form.name || 'your base'}`, position: pos, radiusKm: 50, draggable: true }]
-    : []
-
   return (
     <Page width="form">
       <PageHeader title={title} description={description} />
@@ -402,12 +383,15 @@ export default function VendorDocumentsPage() {
                 <Input label="Telephone" value={form.telephone} onChange={e => setField('telephone', e.target.value)} />
               </div>
 
-              <PlaceSearch
-                label="Registered address"
+              <AddressPicker
+                label="Registered address / operating base"
                 required
                 value={form.addressLine1 ? { address: form.addressLine1, lat: Number(form.latitude) || 0, lng: Number(form.longitude) || 0 } : null}
                 onChange={onAddressPicked}
-                error={err(1, 'addressLine1')}
+                error={err(1, 'addressLine1') || err(1, 'location')}
+                hint="Search, use your current location, or drag the pin to set the 50 km radius you want to see capacity within."
+                kind="hub"
+                mapHeight={260}
               />
               <Input label="Address line 2" value={form.addressLine2} onChange={e => setField('addressLine2', e.target.value)} hint="Suite, floor or landmark (optional)" />
 
@@ -415,26 +399,6 @@ export default function VendorDocumentsPage() {
                 <Input label="City" required value={form.city} onChange={e => setField('city', e.target.value)} error={err(1, 'city')} />
                 <Input label="State" required value={form.state} onChange={e => setField('state', e.target.value)} error={err(1, 'state')} />
                 <Input label="Postal code" required value={form.postalCode} onChange={e => setField('postalCode', e.target.value)} error={err(1, 'postalCode')} />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-text">Operating base <span className="text-danger">*</span></p>
-                  <Button type="button" variant="secondary" size="sm" icon={<Navigation size={14} />} onClick={useCurrentLocation}>
-                    Use my current location
-                  </Button>
-                </div>
-                <p className="text-xs text-muted">Click the map to set the 50&nbsp;km radius you want to see capacity within, or drag the pin.</p>
-                <div className="overflow-hidden rounded-card border border-border">
-                  <MapView
-                    mode="picker"
-                    height={260}
-                    points={mapPoints}
-                    onPick={p => { setField('latitude', String(p.lat)); setField('longitude', String(p.lng)) }}
-                    onPointMove={(_, p) => { setField('latitude', String(p.lat)); setField('longitude', String(p.lng)) }}
-                  />
-                </div>
-                {err(1, 'location') && <p className="text-xs text-danger" role="alert">{err(1, 'location')}</p>}
               </div>
             </div>
           )}
