@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from '../support/mock-supabase';
-import { createApp } from '../../src/app';
+import { testApp } from '../support/test-app';
 
-const app = createApp();
+const app = testApp();
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 const admin = () => bearer(supabaseMock.signUserToken('admin-1'));
