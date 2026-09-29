@@ -14,7 +14,7 @@
 --   stays in the fleet, unassigned) - a real vehicle is never archived here.
 -- Step 2: a partial unique index so it cannot happen again.
 --
--- Safe to re-run. Not yet applied to the live project.
+-- Safe to re-run. Applied to the live project on 2026-09-29.
 
 WITH ranked AS (
   SELECT

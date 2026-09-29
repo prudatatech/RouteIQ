@@ -1,5 +1,4 @@
--- Workflow fixes, 3PL and vendor billing. NOT applied to the live project yet: apply before deploying
--- the backend that reads these columns.
+-- Workflow fixes, 3PL and vendor billing. Applied to the live project on 2026-09-29.
 --
 -- 1. A 3PL corridor rate is a number with a unit (per trip or per km) instead of free text that the
 --    backend used to read the first number out of ("Base + 12%" became 12 rupees). The old text
