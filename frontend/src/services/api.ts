@@ -238,6 +238,8 @@ export const telemetryAPI = {
 
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
+  /** Pulls the latest positions from the SparkGPS provider. Staff only. */
+  syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data as { status: string; message?: string }),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
   /** Newest-first, paged. `from`/`to` are YYYY-MM-DD IST calendar days. */
   auditLogs: (params: { limit?: number; offset?: number; from?: string; to?: string } = {}) =>
