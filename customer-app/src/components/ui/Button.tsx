@@ -59,16 +59,13 @@ export function Button({
       ]}
       {...rest}
     >
-      {loading ? (
-        <ActivityIndicator color={v.fg} />
-      ) : (
-        <View style={styles.content}>
-          {icon ? icon(v.fg) : null}
-          <Text style={[type.label, { color: v.fg }]} numberOfLines={1}>
-            {title}
-          </Text>
-        </View>
-      )}
+      {/* The label stays while busy so the button never turns into a bare spinner. */}
+      <View style={styles.content}>
+        {loading ? <ActivityIndicator color={v.fg} size="small" /> : icon ? icon(v.fg) : null}
+        <Text style={[type.label, { color: v.fg }]} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
     </Pressable>
   );
 }

@@ -75,6 +75,7 @@ export const translations = {
     logout: 'Log out',
     change_language: 'Language',
     my_vehicle: 'My vehicle',
+    vehicle_not_registered: 'Not registered yet',
     of: 'of',
 
     // Step guide
@@ -381,6 +382,7 @@ export const translations = {
     logout: 'लॉग आउट',
     change_language: 'भाषा बदलें',
     my_vehicle: 'मेरा वाहन',
+    vehicle_not_registered: 'अभी पंजीकृत नहीं',
     of: 'में से',
 
     sos: 'SOS (आपातकाल)',
@@ -681,6 +683,7 @@ export const translations = {
     logout: 'लॉग आउट',
     change_language: 'भाषा बदला',
     my_vehicle: 'माझे वाहन',
+    vehicle_not_registered: 'अद्याप नोंदणी नाही',
     of: 'पैकी',
 
     sos: 'SOS',
@@ -984,6 +987,7 @@ export const translations = {
     logout: 'లాగ్ అవుట్',
     change_language: 'భాష మార్చండి',
     my_vehicle: 'నా వాహనం',
+    vehicle_not_registered: 'ఇంకా నమోదు కాలేదు',
     of: 'లో',
 
     sos: 'SOS',
@@ -1278,6 +1282,7 @@ export const translations = {
     logout: 'ಲಾಗ್ ಔಟ್',
     change_language: 'ಭಾಷೆ ಬದಲಾಯಿಸಿ',
     my_vehicle: 'ನನ್ನ ವಾಹನ',
+    vehicle_not_registered: 'ಇನ್ನೂ ನೋಂದಣಿಯಾಗಿಲ್ಲ',
     of: 'ರಲ್ಲಿ',
 
     sos: 'SOS',
@@ -1576,6 +1581,7 @@ export const translations = {
     logout: 'লগ আউট',
     change_language: 'ভাষা পরিবর্তন করুন',
     my_vehicle: 'আমার গাড়ি',
+    vehicle_not_registered: 'এখনও নিবন্ধিত নয়',
     of: 'এর মধ্যে',
 
     sos: 'SOS',

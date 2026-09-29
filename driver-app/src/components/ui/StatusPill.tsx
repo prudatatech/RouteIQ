@@ -41,7 +41,7 @@ export function StatusPill({ label, tone = 'neutral', icon, onPress, accessibili
         accessibilityLabel={label}
         accessibilityHint={accessibilityHint}
         onPress={onPress}
-        hitSlop={12}
+        hitSlop={PRESSABLE_HIT_SLOP}
         style={({ pressed }) => [styles.pill, styles.pillPressable, { backgroundColor: t.bg }, pressed ? styles.pressed : null]}
       >
         {content}
@@ -55,6 +55,11 @@ export function StatusPill({ label, tone = 'neutral', icon, onPress, accessibili
   );
 }
 
+/** Every pill has the same visual height, so a row of mixed pills lines up. */
+const PILL_HEIGHT = 36;
+/** Pressable pills reach the 48pt touch target through their hit area, not by growing. */
+const PRESSABLE_HIT_SLOP = { top: (size.control - PILL_HEIGHT) / 2, bottom: (size.control - PILL_HEIGHT) / 2, left: 8, right: 8 };
+
 const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
@@ -64,7 +69,8 @@ const styles = StyleSheet.create({
     paddingVertical: space[1],
     borderRadius: radius.full,
     alignSelf: 'flex-start',
+    minHeight: PILL_HEIGHT,
   },
-  pillPressable: { minHeight: size.control, justifyContent: 'center' },
+  pillPressable: {},
   pressed: { opacity: 0.7 },
 });

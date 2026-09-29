@@ -35,13 +35,20 @@ export default function HomeHeader({ driverName, plateNumber, avatarUri, right }
         </Text>
         <Text variant="bodySmall" color="textMuted" numberOfLines={1}>
           {t('my_vehicle')}:{' '}
-          {plateNumber ? <Text variant="monoMedium">{plateNumber}</Text> : t('not_assigned')}
+          {!plateNumber
+            ? t('not_assigned')
+            : isPlaceholderPlate(plateNumber)
+              ? t('vehicle_not_registered')
+              : <Text variant="monoMedium">{plateNumber}</Text>}
         </Text>
       </View>
       {right}
     </View>
   );
 }
+
+/** TEMP-… plates are placeholders created for drivers whose vehicle isn't registered yet. */
+const isPlaceholderPlate = (plate: string) => /^TEMP-/i.test(plate);
 
 const styles = StyleSheet.create({
   header: {
