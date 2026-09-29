@@ -176,6 +176,41 @@ class ApiClient {
   async markAllNotificationsRead(): Promise<{ success: boolean }> {
     return this.request('POST', '/notifications/read-all');
   }
+
+  // ── Quote ──────────────────────────────────────────────────
+
+  /**
+   * Price for a shipment. The pricing engine's contract is
+   * {low, suggested, high, factors[]}; today the backend answers from the
+   * per-km rate, and this function is the only place that needs to change
+   * if the endpoint moves to /pricing/quote.
+   */
+  async getQuote(input: QuoteRequest): Promise<Quote> {
+    return this.request('POST', '/customer/quote', input);
+  }
+}
+
+export interface QuoteRequest {
+  pickup_lat: number;
+  pickup_lng: number;
+  drop_lat: number;
+  drop_lng: number;
+  weight_kg: number;
+  vehicle_type?: string | null;
+  load_type: 'full' | 'part';
+  /** Pickup day, YYYY-MM-DD (India). */
+  date: string;
+}
+
+export interface Quote {
+  /** False when no price can be given yet. */
+  available: boolean;
+  low: number | null;
+  suggested: number | null;
+  high: number | null;
+  distance_km: number | null;
+  factors: { label: string; detail: string }[];
+  message?: string;
 }
 
 export interface NotificationItem {
