@@ -20,6 +20,8 @@ export interface QuoteInput {
 }
 
 export interface QuoteFactor {
+  /** Stable machine code, so the app can show its own translated label. `label` stays English. */
+  code: string;
   label: string;
   detail: string;
 }
@@ -78,8 +80,8 @@ export async function computeQuote(input: QuoteInput, ctx: { userId?: string } =
     high: round2(outcome.high),
     distance_km: outcome.distance_km,
     factors: [
-      ...outcome.factors.map(f => ({ label: f.label, detail: f.detail })),
-      { label: 'Final price', detail: 'This is an estimate. Our team confirms the price when your booking is accepted.' },
+      ...outcome.factors.map(f => ({ code: f.code, label: f.label, detail: f.detail })),
+      { code: 'final_price', label: 'Final price', detail: 'This is an estimate. Our team confirms the price when your booking is accepted.' },
     ],
     source: 'pricing_engine',
   };
