@@ -61,8 +61,6 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
     // to report an on-time rate for.
     const onTimeRate = totalDeliveries > 0 ? (completed / totalDeliveries) * 100 : null;
     const fuelToday = routesToday.reduce((sum: number, r: any) => sum + (r.estimated_fuel_liters || 0), 0) * FUEL_PRICE_PER_LITER;
-    const avgScore = routesToday.reduce((sum: number, r: any) => sum + (r.optimization_score || 0.8), 0) / Math.max(1, routesToday.length);
-    const fuelSavedPct = avgScore * 20;
 
     // avg_eta_accuracy_pct and rerouting_events_today were derived from
     // on_time_rate_pct / total_deliveries_today via arbitrary constants with
@@ -72,7 +70,6 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
       active_vehicles: activeVehicles,
       on_time_rate_pct: onTimeRate !== null ? parseFloat(onTimeRate.toFixed(1)) : null,
       fuel_cost_today: parseFloat(fuelToday.toFixed(2)),
-      fuel_saved_pct: parseFloat(fuelSavedPct.toFixed(1)),
       total_deliveries_today: totalDeliveries,
     });
   } catch (e: any) {

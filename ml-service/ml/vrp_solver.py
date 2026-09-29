@@ -251,7 +251,7 @@ def solve_vrp_ortools(
             total_fuel_liters=round(sum(r.estimated_fuel_liters for r in routes), 2),
             solve_time_seconds=round(solve_time, 3),
             savings_vs_naive_pct=round(savings, 1),
-            solver_status="optimal" if solution.ObjectiveValue() else "feasible",
+            solver_status="feasible",
         )
 
     except ImportError:
@@ -307,15 +307,15 @@ def _greedy_fallback(
             stop_ids=stop_ids,
             total_distance_km=round(dist, 2),
             total_duration_minutes=round(dist / 50 * 60, 1),
-            estimated_fuel_liters=round(dist / 10, 2),
-            efficiency_score=0.7,
+            estimated_fuel_liters=round(dist / vehicle.fuel_efficiency_kmpl, 2),
+            efficiency_score=_score(dist, len(stop_ids)),
         ))
 
     total = sum(r.total_distance_km for r in routes)
     return VRPSolution(
         routes=routes,
         total_distance_km=round(total, 2),
-        total_fuel_liters=round(total / 10, 2),
+        total_fuel_liters=round(sum(r.estimated_fuel_liters for r in routes), 2),
         solve_time_seconds=round(elapsed, 3),
         savings_vs_naive_pct=None,
         solver_status="greedy_fallback",

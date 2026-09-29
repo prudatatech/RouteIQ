@@ -595,7 +595,8 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
       estimated_fuel_liters: parseFloat((dist / fuelEfficiency).toFixed(2)),
       traffic_delay_minutes: 0,
       weather_condition: 'clear',
-      efficiency_score: 0.7,
+      // Same measure the ML service uses: stops served per 5 km driven, capped at 1.
+      efficiency_score: stopIds.length ? parseFloat(Math.min(1, stopIds.length / (dist / 5 + 1)).toFixed(3)) : 0,
     });
   }
 
@@ -603,7 +604,7 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
   return {
     routes,
     total_distance_km: parseFloat(totalDist.toFixed(2)),
-    total_fuel_liters: parseFloat((totalDist / 10).toFixed(2)),
+    total_fuel_liters: parseFloat(routes.reduce((sum: number, r: any) => sum + r.estimated_fuel_liters, 0).toFixed(2)),
     solve_time_seconds: parseFloat(((Date.now() - startTime) / 1000).toFixed(3)),
     savings_vs_naive_pct: null,
     solver_status: 'greedy_fallback',

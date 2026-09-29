@@ -148,7 +148,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
         total_distance_km: 0,
         total_duration_minutes: 0,
         estimated_fuel_liters: 0,
-        optimization_score: 1.0,
+        optimization_score: null,
         vehicles: manifest.vehicles,
         logs: manifest.logs || [],
         route_stops: [

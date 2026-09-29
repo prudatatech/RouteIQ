@@ -90,10 +90,14 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), async (
 });
 
 // ── POST /sos/trigger ─────────────────────────────────────────
+// Optional alert_type lets the driver say what kind of emergency it is.
+const SOS_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
 router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => {
   try {
     const { lat, lng } = req.body;
     const userId = req.user?.user_id;
+    const alertType = SOS_TYPES.includes(req.body.alert_type) ? req.body.alert_type : 'panic_button';
+    const note = typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 500) : '';
 
     // Get the driver's current vehicle
     const { data: vehicle } = await supabase
@@ -113,8 +117,8 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
       driver_id: userId,
       latitude: lat,
       longitude: lng,
-      alert_type: 'panic_button',
-      description: 'Driver triggered SOS from mobile app',
+      alert_type: alertType,
+      description: note || 'Driver triggered SOS from mobile app',
       status: 'active'
     });
     if (sosErr) throw new Error(`Failed to record SOS: ${sosErr.message}`);
@@ -769,7 +773,6 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
 // ── GET /driver-ping/my-route — Driver fetches their current active route ──
 router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Response) => {
   try {
-    console.log(`[my-route] Request from user:`, req.user?.user_id);
     if (req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can fetch their route' });
       return;
@@ -781,8 +784,6 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       .select('id')
       .eq('driver_id', req.user!.user_id)
       .maybeSingle();
-
-    console.log(`[my-route] Found vehicle for driver:`, vehicle?.id);
 
     if (!vehicle) {
       res.status(404).json({ detail: 'No vehicle assigned' });
@@ -807,7 +808,6 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     // (Deletion is a side effect that must not happen on a GET; a write path should clean these up.)
     const hasStops = route && (route.route_stops || []).length > 0;
     if (route && !hasStops) {
-      console.log(`[my-route] Found stale empty route ${route.id} with 0 stops, ignoring`);
     }
 
     if (error || !route || !hasStops) {
@@ -920,8 +920,6 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           }
         }
       ];
-
-      console.log(`[my-route] Manifest found: id=${manifest.id}, db_status=${manifest.status}, mapped_status=${mStatus}, stops=${manifestStops.map(s => s.id + ':' + s.status).join(',')}`);
 
       res.json({
         active: true,
