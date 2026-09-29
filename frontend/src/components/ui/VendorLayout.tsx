@@ -1,205 +1,181 @@
-import { useEffect, useState } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Package, Search, LogOut, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import clsx from 'clsx'
+import { LogIn, LogOut, Menu, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
-import toast from 'react-hot-toast'
+import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
+import { buttonClasses } from './buttonStyles'
+import { IconButton } from './Button'
+import { StatusPill } from './StatusPill'
+
+const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'approved', 'rejected']
+
+const links = [
+  { to: '/vendor', label: 'Find capacity', end: true, requiresSignIn: false },
+  { to: '/vendor/corridor', label: 'Corridors', requiresSignIn: false },
+  { to: '/vendor/shipments', label: 'My shipments', requiresSignIn: true },
+  { to: '/vendor/tracking', label: 'Tracking', requiresSignIn: true },
+  { to: '/vendor/documents', label: 'Company & KYC', requiresSignIn: true },
+]
 
 export default function VendorLayout() {
-  const [vendorProfile, setVendorProfile] = useState<any>(null)
-  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null)
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
   const clearAuth = useAuthStore(s => s.clearAuth)
   const navigate = useNavigate()
   const location = useLocation()
+  const [vendorProfile, setVendorProfile] = useState<VendorProfileSummary | null>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!userId) {
       setVendorProfile(null)
       return
     }
-
-    const loadProfile = async () => {
-      try {
-        let profileData: any = {
-          id: userId,
-          company_name: 'New Vendor (Pending Setup)',
-          city: ''
-        }
-
-        const { data: rawProfile, error: _error } = await supabase
-          .from('vendor_profiles')
-          .select('id, company_name, city, company_logo, kyc_status')
-          .eq('id', userId)
-          .maybeSingle()
-
-        if (rawProfile) {
-          profileData = { ...profileData, ...rawProfile }
-          profileData.kycStatus = (rawProfile.kyc_status || 'pending').toLowerCase()
-        } else {
-          profileData.kycStatus = 'pending'
-        }
-
-        setVendorProfile(profileData)
-
-        if (rawProfile?.company_logo) {
-          try {
-            const signedUrl = await getKycDocumentUrl(rawProfile.company_logo)
-            setCompanyLogoUrl(signedUrl)
-          } catch (e) {
-            console.error('Failed to resolve company logo:', e)
-            setCompanyLogoUrl(null)
-          }
-        } else {
-          setCompanyLogoUrl(null)
-        }
-      } catch (err) {
-        console.error('Error fetching vendor layout profile:', err)
-      }
+    setProfileLoading(true)
+    const { data, error } = await supabase
+      .from('vendor_profiles')
+      .select('id, company_name, city, company_logo, kyc_status')
+      .eq('id', userId)
+      .maybeSingle()
+    setProfileLoading(false)
+    if (error) {
+      console.error('Failed to load vendor profile', error)
+      return
     }
-
-    loadProfile()
-
-    const handleProfileUpdate = () => {
-      loadProfile()
+    if (!data) {
+      setVendorProfile(null)
+      return
     }
-    window.addEventListener('vendor-profile-updated', handleProfileUpdate)
-    
-    // Real-time listener for KYC status changes by Admin
-    const channel = supabase
-      .channel('layout-kyc-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, () => {
-        loadProfile()
-      })
-      .subscribe()
-
-    // Bulletproof fallback: Poll every 5 seconds
-    const pollInterval = setInterval(() => {
-      loadProfile()
-    }, 5000)
-
-    return () => {
-      clearInterval(pollInterval)
-      window.removeEventListener('vendor-profile-updated', handleProfileUpdate)
-      supabase.removeChannel(channel)
-    }
+    const status = String(data.kyc_status ?? 'pending').toLowerCase() as KycStatus
+    setVendorProfile({
+      id: data.id,
+      company_name: data.company_name,
+      city: data.city,
+      company_logo: data.company_logo,
+      kycStatus: KYC_STATUSES.includes(status) ? status : 'pending',
+    })
   }, [userId])
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    loadProfile()
+    if (!userId) return
+    const onUpdated = () => { loadProfile() }
+    window.addEventListener('vendor-profile-updated', onUpdated)
+    // KYC decisions made by staff arrive through realtime.
+    const channel = supabase
+      .channel('vendor-layout-profile')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, onUpdated)
+      .subscribe()
+    return () => {
+      window.removeEventListener('vendor-profile-updated', onUpdated)
+      supabase.removeChannel(channel)
+    }
+  }, [userId, loadProfile])
+
+  useEffect(() => {
+    let cancelled = false
+    const path = vendorProfile?.company_logo
+    if (!path) { setLogoUrl(null); return }
+    getKycDocumentUrl(path)
+      .then(url => { if (!cancelled) setLogoUrl(url) })
+      .catch(() => { if (!cancelled) setLogoUrl(null) })
+    return () => { cancelled = true }
+  }, [vendorProfile?.company_logo])
+
+  useEffect(() => { setMenuOpen(false) }, [location.pathname])
+
+  const signOut = async () => {
     try {
       await supabase.auth.signOut()
     } catch (e) {
-      console.error(e)
+      console.error('Sign-out failed', e)
     }
     clearAuth()
-    navigate('/login')
+    navigate('/vendor/login')
   }
 
-  const requireAuth = (action: () => void) => {
-    if (!session) {
-      toast('Please log in to continue.', { icon: '🔒' })
-      navigate('/vendor/login')
-      return
-    }
-    action()
-  }
+  const target = (link: typeof links[number]) =>
+    link.requiresSignIn && !session ? `/vendor/login?next=${encodeURIComponent(link.to)}` : link.to
 
-  return (
-    <div className="min-h-screen bg-bg text-text font-sans flex flex-col relative overflow-hidden">
-      <div className="bg-mesh opacity-20 absolute inset-0 pointer-events-none" />
+  const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, refreshProfile: loadProfile }
+  const needsKyc = !!session && vendorProfile?.kycStatus !== 'approved'
 
-      {/* Modern Top Nav */}
-      <header className="relative z-50 bg-surface/80 backdrop-blur-xl border-b border-border sticky top-0">
-        <div className="max-w-[1600px] mx-auto px-6 lg:px-12 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-12">
-            {/* Logo */}
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/vendor')}>
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(79,172,254,0.4)]">
-                <Package className="text-white" size={20} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-display font-black text-text tracking-tighter uppercase leading-none">
-                  ROUTE<span className="text-primary">IQ</span>
-                </h1>
-                <span className="text-primary text-[10px] font-bold uppercase tracking-[0.2em]">Marketplace</span>
-              </div>
-            </div>
-            
-            {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center gap-8">
-              <button 
-                onClick={() => navigate('/vendor')} 
-                className={`text-sm font-bold transition-colors ${location.pathname === '/vendor' ? 'text-primary hover:text-primary-dark' : 'text-muted hover:text-text'}`}
-              >
-                Discover
-              </button>
-              <button 
-                onClick={() => requireAuth(() => navigate('/vendor/tracking'))} 
-                className={`text-sm font-bold transition-colors ${location.pathname === '/vendor/tracking' ? 'text-primary hover:text-primary-dark' : 'text-muted hover:text-text'}`}
-              >
-                Tracking
-              </button>
-              <button 
-                onClick={() => requireAuth(() => navigate('/vendor/shipments'))} 
-                className={`text-sm font-bold transition-colors ${location.pathname === '/vendor/shipments' ? 'text-primary hover:text-primary-dark' : 'text-muted hover:text-text'}`}
-              >
-                My Shipments
-              </button>
-              <button 
-                onClick={() => requireAuth(() => navigate('/vendor/corridor'))} 
-                className={`text-sm font-bold transition-colors ${location.pathname === '/vendor/corridor' ? 'text-primary hover:text-primary-dark' : 'text-muted hover:text-text'}`}
-              >
-                Corridors
-              </button>
-              <button 
-                onClick={() => requireAuth(() => navigate('/vendor/documents'))} 
-                className={`text-sm font-bold transition-colors relative ${location.pathname === '/vendor/documents' ? 'text-primary hover:text-primary-dark' : 'text-muted hover:text-text'}`}
-              >
-                Documents
-                {vendorProfile && vendorProfile.kycStatus?.toLowerCase() !== 'approved' && (
-                  <span className="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                )}
-              </button>
-            </nav>
-          </div>
+  const navLinks = (vertical: boolean) => links.map(link => (
+    <NavLink
+      key={link.to}
+      to={target(link)}
+      end={link.end}
+      className={({ isActive }) => clsx(
+        'relative flex items-center rounded-control text-sm transition-colors',
+        vertical ? 'h-11 px-3' : 'h-9 px-3',
+        isActive ? 'bg-brand-soft font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
+      )}
+    >
+      {link.label}
+      {link.to === '/vendor/documents' && needsKyc && (
+        <span className="ml-2 h-2 w-2 rounded-full bg-warning" aria-label="Action needed" />
+      )}
+    </NavLink>
+  ))
 
-          <div className="flex items-center gap-6">
-            <button className="text-muted hover:text-text transition-colors">
-              <Search size={20} />
-            </button>
-            <div className="flex items-center gap-4 border-l border-border pl-6">
-              {vendorProfile && (
-                <div className="hidden md:flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/vendor/documents')} title="View Documents & Profile">
-                  {companyLogoUrl && (
-                    <img src={companyLogoUrl} alt="Company Logo" className="w-8 h-8 rounded-full object-cover border border-border bg-white" />
-                  )}
-                  <div className="flex flex-col items-end">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={14} className="text-primary" />
-                      <span className="text-sm font-bold text-text uppercase tracking-tight group-hover:text-primary transition-colors">{vendorProfile.company_name}</span>
-                    </div>
-                    <span className="text-[10px] text-muted font-mono uppercase tracking-widest flex items-center gap-1">
-                      Verified Vendor <span className="w-1 h-1 rounded-full bg-primary mx-1" /> {vendorProfile.city || 'Profile'}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent p-[2px] cursor-pointer hover:scale-105 transition-transform shadow-lg shadow-primary/20" onClick={handleLogout} title="Logout">
-                <div className="w-full h-full bg-surface rounded-full flex items-center justify-center">
-                   <LogOut size={18} className="text-text" />
-                </div>
-              </div>
-            </div>
+  const account = session ? (
+    <div className="flex items-center gap-3">
+      {vendorProfile && (
+        <div className="hidden min-w-0 items-center gap-2 md:flex">
+          {logoUrl && <img src={logoUrl} alt="" className="h-8 w-8 rounded-full border border-border object-cover" />}
+          <div className="min-w-0 text-right">
+            <p className="truncate text-sm font-medium text-text">{vendorProfile.company_name || 'Your company'}</p>
+            <StatusPill status={vendorProfile.kycStatus} className="mt-0.5">
+              {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
+            </StatusPill>
           </div>
         </div>
+      )}
+      <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />
+    </div>
+  ) : (
+    <NavLink to="/vendor/login" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+      <LogIn size={16} aria-hidden="true" /> Sign in
+    </NavLink>
+  )
+
+  return (
+    <div className="flex min-h-screen flex-col bg-bg text-text">
+      <header className="sticky top-0 z-40 border-b border-border bg-surface">
+        <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="flex items-center gap-6">
+            <NavLink to="/vendor" className="flex items-center gap-2.5">
+              <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
+              <span className="text-lg font-semibold text-text">MargixIndia</span>
+              <span className="hidden text-sm text-muted sm:inline">for shippers</span>
+            </NavLink>
+            <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
+          </div>
+          <div className="hidden lg:block">{account}</div>
+          <IconButton
+            className="lg:hidden"
+            label={menuOpen ? 'Close menu' : 'Open menu'}
+            icon={menuOpen ? <X size={20} /> : <Menu size={20} />}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(o => !o)}
+          />
+        </div>
+        {menuOpen && (
+          <div className="border-t border-border bg-surface px-4 py-3 lg:hidden">
+            <nav aria-label="Vendor" className="flex flex-col gap-1">{navLinks(true)}</nav>
+            <div className="mt-3 border-t border-border pt-3">{account}</div>
+          </div>
+        )}
       </header>
 
-      {/* Main Content Area */}
-      <div className="relative z-10 flex-1 flex flex-col w-full">
-        <Outlet context={{ vendorProfile }} />
-      </div>
+      <main className="mx-auto w-full max-w-content flex-1 px-4 py-6 sm:px-6 lg:py-8">
+        <Outlet context={context} />
+      </main>
     </div>
   )
 }

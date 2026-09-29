@@ -1,12 +1,11 @@
-// margixindia App Router
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
-import { Spinner } from '@/components/ui'
+import { ConfirmProvider, Spinner } from '@/components/ui'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import FleetPage from '@/pages/FleetPage'
@@ -42,6 +41,13 @@ import VendorLoginPage from '@/pages/VendorLoginPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import VendorShipmentsPage from '@/pages/VendorShipmentsPage'
 import VendorCorridorPage from '@/pages/VendorCorridorPage'
+import VendorRequestsPage from '@/pages/VendorRequestsPage'
+
+/** Redirect an old address to its new one, keeping the query string and navigation state. */
+function MovedTo({ to }: { to: string }) {
+  const location = useLocation()
+  return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} state={location.state} replace />
+}
 
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const token = useAuthStore(s => s.token)
@@ -134,7 +140,15 @@ export default function App() {
 
   return (
     <>
-      <Toaster position="top-center" />
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          className: '!rounded-control !border !border-border !bg-surface !text-sm !text-text !shadow-raised',
+          success: { iconTheme: { primary: 'var(--color-success)', secondary: 'var(--color-surface)' } },
+          error: { iconTheme: { primary: 'var(--color-danger)', secondary: 'var(--color-surface)' } },
+        }}
+      />
+      <ConfirmProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -246,7 +260,7 @@ export default function App() {
                 <OptimizePage />
               </PrivateRoute>
             } />
-            <Route path="capacity-bidding" element={
+            <Route path="bids" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <CapacityBiddingPage />
               </PrivateRoute>
@@ -256,17 +270,17 @@ export default function App() {
                 <AnalyticsPage />
               </PrivateRoute>
             } />
-            <Route path="superadmin" element={
+            <Route path="admin/:section" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <SuperadminPage />
               </PrivateRoute>
             } />
-            <Route path="3pl-network" element={
+            <Route path="3pl-partners" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <TplNetworkPage />
               </PrivateRoute>
             } />
-            <Route path="3pl-network/verify" element={
+            <Route path="3pl-partners/verify" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <TplVerificationPage />
               </PrivateRoute>
@@ -276,11 +290,23 @@ export default function App() {
                 <AIHubPage />
               </PrivateRoute>
             } />
-            <Route path="cargo-network" element={
+            <Route path="backhaul" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <CargoNetworkPage />
               </PrivateRoute>
             } />
+            <Route path="vendor-requests" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <VendorRequestsPage />
+              </PrivateRoute>
+            } />
+            {/* Old addresses, kept so bookmarks and links in emails still work */}
+            <Route path="capacity-bidding" element={<MovedTo to="/bids" />} />
+            <Route path="cargo-network" element={<MovedTo to="/backhaul" />} />
+            <Route path="3pl-network" element={<MovedTo to="/3pl-partners" />} />
+            <Route path="3pl-network/verify" element={<MovedTo to="/3pl-partners/verify" />} />
+            <Route path="superadmin" element={<MovedTo to="/admin/users" />} />
+            <Route path="admin" element={<MovedTo to="/admin/users" />} />
             <Route path="live-map" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <LiveMapPage />
@@ -289,6 +315,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ConfirmProvider>
     </>
   )
 }

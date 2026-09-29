@@ -1,422 +1,265 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import {
-  LayoutDashboard, Truck, Map, BarChart3, Zap,
-  LogOut, Shield, Brain, Package, Network, ExternalLink, Briefcase, ShieldAlert, Building2,
-  ChevronsLeft, ChevronsRight, Settings
-} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
+import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, X } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
-import clsx from 'clsx'
+import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavItem } from '@/config/navigation'
 import AddShipmentModal from '@/components/modals/AddShipmentModal'
 import SOSListener from '@/components/SOSListener'
-import { useState, useEffect, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { GlobalDeliveryCelebration } from './GlobalDeliveryCelebration'
-interface NavItem {
-  to: string
-  icon: any
-  label: string
-  roles?: string[]
-  badge?: number
-  external?: boolean
-}
-interface NavSection {
-  title: string
-  shortTitle: string
-  items: NavItem[]
+import { IconButton } from './Button'
+
+const COLLAPSE_KEY = 'sidebar_collapsed'
+
+function readCollapsed() {
+  try { return localStorage.getItem(COLLAPSE_KEY) === 'true' } catch { return false }
 }
 
-const navSections: NavSection[] = [
-  {
-    title: 'Operations',
-    shortTitle: 'OP',
-    items: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Control Tower', roles: ['admin', 'superadmin'] },
-      { to: '/shipments', icon: Package, label: 'Cargo Manifest', roles: ['admin', 'superadmin'] },
-      { to: '/fleet', icon: Truck, label: 'Fleet Assets', roles: ['admin', 'superadmin'] },
-      { to: '/emergency', icon: ShieldAlert, label: 'Emergency Alerts', roles: ['admin', 'superadmin'] },
-      { to: '/vendor', icon: Package, label: 'Vendor Portal', roles: ['vendor'] },
-      { to: '/3pl-network', icon: Building2, label: '3PL Network', roles: ['superadmin'] },
-    ]
-  },
-  {
-    title: 'Planning',
-    shortTitle: 'PL',
-    items: [
-      { to: '/routes', icon: Map, label: 'Route Grid', roles: ['admin', 'superadmin'] },
-      { to: '/optimize', icon: Zap, label: 'Neural Reroute', roles: ['admin', 'superadmin'] },
-      { to: '/capacity-bidding', icon: Briefcase, label: 'Capacity Bidding', roles: ['admin', 'superadmin'] },
-      { to: '/cargo-network', icon: Network, label: 'Cargo Network', roles: ['admin', 'superadmin'] },
-    ]
-  },
-  {
-    title: 'Intelligence',
-    shortTitle: 'IN',
-    items: [
-      { to: '/analytics', icon: BarChart3, label: 'Intel Dashboard', roles: ['admin', 'superadmin'] },
-      { to: '/ai-hub', icon: Brain, label: 'Nexus AI Hub', roles: ['admin', 'superadmin'] },
-    ]
-  },
-  {
-    title: 'System',
-    shortTitle: 'SYS',
-    items: [
-      { to: '/track', icon: Shield, label: 'Tracking Portal', external: true },
-      { to: '/superadmin', icon: Settings, label: 'Superadmin', roles: ['superadmin'] },
-    ]
-  }
-]
+/** Counts for the navigation badges; each refreshes when its table changes. */
+function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
+  const [counts, setCounts] = useState<Record<NavBadge, number>>({ vendorRequests: 0, pendingPartners: 0, pendingKyc: 0 })
+
+  const loadVendorRequests = useCallback(async () => {
+    try {
+      const data = await vendorAPI.pendingRequests()
+      setCounts(c => ({ ...c, vendorRequests: Array.isArray(data) ? data.length : 0 }))
+    } catch {
+      // Keep the previous count; the page itself reports load errors.
+    }
+  }, [])
+
+  const loadPartners = useCallback(async () => {
+    const { count } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+    setCounts(c => ({ ...c, pendingPartners: count ?? 0 }))
+  }, [])
+
+  const loadKyc = useCallback(async () => {
+    const { count } = await supabase.from('vendor_profiles').select('id', { count: 'exact', head: true }).eq('kyc_status', 'submitted')
+    setCounts(c => ({ ...c, pendingKyc: count ?? 0 }))
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    loadVendorRequests()
+    const channel = supabase.channel('nav_badges')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, loadVendorRequests)
+    if (isSuperadmin) {
+      loadPartners()
+      loadKyc()
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tpl_partners' }, loadPartners)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles' }, loadKyc)
+    }
+    channel.subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [enabled, isSuperadmin, loadVendorRequests, loadPartners, loadKyc])
+
+  return counts
+}
+
+function Brand({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className={clsx('flex h-16 shrink-0 items-center gap-2.5 border-b border-border', collapsed ? 'justify-center px-2' : 'px-5')}>
+      <img src="/margix-logo.png" alt="" className="h-8 w-8 shrink-0 object-contain" />
+      {!collapsed && <span className="text-lg font-semibold text-text">MargixIndia</span>}
+    </div>
+  )
+}
+
+function NavList({ items, collapsed, badges, onNavigate }: {
+  items: { title: string; items: NavItem[] }[]
+  collapsed: boolean
+  badges: Record<NavBadge, number>
+  onNavigate?: () => void
+}) {
+  return (
+    <nav aria-label="Main" className={clsx('flex-1 space-y-5 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')}>
+      {items.map(section => (
+        <div key={section.title}>
+          {collapsed
+            ? <div className="mx-auto mb-2 h-px w-6 bg-border" aria-hidden="true" />
+            : <p className="mb-1 px-3 text-xs font-medium text-muted">{section.title}</p>}
+          <ul className="space-y-0.5">
+            {section.items.map(({ to, label, icon: Icon, badge }) => {
+              const count = badge ? badges[badge] : 0
+              return (
+                <li key={to}>
+                  <NavLink
+                    to={to}
+                    onClick={onNavigate}
+                    title={collapsed ? label : undefined}
+                    aria-label={collapsed ? (count ? `${label} (${count})` : label) : undefined}
+                    className={({ isActive }) => clsx(
+                      'relative flex h-10 items-center rounded-control text-sm transition-colors',
+                      collapsed ? 'justify-center' : 'gap-3 px-3',
+                      isActive ? 'bg-brand-soft font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
+                    )}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <Icon size={18} aria-hidden="true" className={clsx('shrink-0', isActive && 'text-brand')} />
+                        {!collapsed && <span className="flex-1 truncate">{label}</span>}
+                        {count > 0 && (collapsed
+                          ? <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand-fill" />
+                          : <span className="rounded-full bg-brand-fill px-2 py-0.5 text-xs font-medium text-on-brand tabular">{count}</span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+function SidebarFooter({ collapsed, onSignOut, onToggle }: { collapsed: boolean; onSignOut: () => void; onToggle?: () => void }) {
+  const item = clsx(
+    'flex h-10 w-full items-center rounded-control text-sm text-muted transition-colors hover:bg-surface-subtle hover:text-text',
+    collapsed ? 'justify-center' : 'gap-3 px-3',
+  )
+  const TrackingIcon = trackingPageLink.icon
+  return (
+    <div className={clsx('shrink-0 space-y-0.5 border-t border-border py-3', collapsed ? 'px-2' : 'px-3')}>
+      <a href={trackingPageLink.to} target="_blank" rel="noreferrer" className={item} title={collapsed ? trackingPageLink.label : undefined}>
+        <TrackingIcon size={18} aria-hidden="true" className="shrink-0" />
+        {collapsed ? <span className="sr-only">{trackingPageLink.label} (opens in a new tab)</span> : (
+          <>
+            <span className="flex-1 truncate">{trackingPageLink.label}</span>
+            <ExternalLink size={14} aria-hidden="true" />
+          </>
+        )}
+      </a>
+      {onToggle && (
+        <button type="button" onClick={onToggle} className={item} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {collapsed ? <ChevronsRight size={18} aria-hidden="true" /> : <ChevronsLeft size={18} aria-hidden="true" />}
+          {!collapsed && <span>Collapse</span>}
+        </button>
+      )}
+      <button type="button" onClick={onSignOut} className={item} aria-label={collapsed ? 'Sign out' : undefined}>
+        <LogOut size={18} aria-hidden="true" className="shrink-0" />
+        {!collapsed && <span>Sign out</span>}
+      </button>
+    </div>
+  )
+}
 
 export default function AppLayout() {
   const clearAuth = useAuthStore(s => s.clearAuth)
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
-  const [vendorBadge, setVendorBadge] = useState(0)
-  const [tplBadge, setTplBadge] = useState(0)
-  const [fleetBadge, setFleetBadge] = useState(0)
+  const location = useLocation()
   const queryClient = useQueryClient()
+  const [collapsed, setCollapsed] = useState(readCollapsed)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
-  // Collapsible sidebar state with localStorage persistence
-  const [isPinnedCollapsed, setIsPinnedCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('sidebar_collapsed') === 'true'
-    } catch { return false }
-  })
-  
-  const [hoverExpanded, setHoverExpanded] = useState(false)
-  const hoverTimer = useRef<any>(null)
-
-  const collapsed = isPinnedCollapsed && !hoverExpanded
+  const isStaff = role === 'admin' || role === 'superadmin'
+  const badges = useNavBadges(isStaff, role === 'superadmin')
+  const sections = navSections
+    .map(s => ({ ...s, items: s.items.filter(i => role && (i.roles as string[]).includes(role)) }))
+    .filter(s => s.items.length > 0)
+  const fullBleed = fullBleedPaths.some(p => location.pathname.startsWith(p))
 
   const toggleCollapsed = () => {
-    setIsPinnedCollapsed(prev => {
+    setCollapsed(prev => {
       const next = !prev
-      try { localStorage.setItem('sidebar_collapsed', String(next)) } catch (err) { console.warn('Failed to persist sidebar_collapsed', err) }
+      try { localStorage.setItem(COLLAPSE_KEY, String(next)) } catch { /* storage unavailable: keep in memory only */ }
       return next
     })
-    setHoverExpanded(false)
   }
 
-  const handleMouseEnter = () => {
-    if (isPinnedCollapsed) {
-      hoverTimer.current = setTimeout(() => {
-        setHoverExpanded(true)
-      }, 400) // Reduced from 2000ms to 400ms for better responsiveness
-    }
-  }
-
-  const handleMouseLeave = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current)
-    setHoverExpanded(false)
-  }
-
-  const handleSidebarClick = () => {
-    if (isPinnedCollapsed && !hoverExpanded) {
-      if (hoverTimer.current) clearTimeout(hoverTimer.current)
-      setHoverExpanded(true)
-    }
-  }
-
-  const sidebarWidth = collapsed ? 78 : 264
-
+  // Close the phone menu after navigating, and on Esc.
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
   useEffect(() => {
-    // Global fleet updates to eliminate latency when navigating to Fleet page
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
+  // Keep fleet data fresh everywhere so pages open with current positions.
+  useEffect(() => {
     const invalidateFleet = () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
     }
-    const globalSub = supabase.channel('global_fleet_updates')
+    const channel = supabase.channel('global_fleet_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidateFleet)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, invalidateFleet)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, invalidateFleet)
       .subscribe()
-
-    return () => {
-      supabase.removeChannel(globalSub)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [queryClient])
 
-  useEffect(() => {
-    if (!['admin', 'superadmin'].includes(role || '')) return
-    const fetchBadge = async () => {
-      try {
-        const data = await vendorAPI.pendingRequests()
-        setVendorBadge(Array.isArray(data) ? data.length : 0)
-      } catch {
-        // ignore — badge just stays at previous value
-      }
-    }
-    fetchBadge()
-    
-    const fetchTplBadge = async () => {
-      const { data } = await supabase.from('tpl_partners').select('id').eq('status', 'pending');
-      setTplBadge(data?.length || 0);
-    }
-    fetchTplBadge()
-
-    const fetchFleetBadge = async () => {
-      const { data } = await supabase.from('vehicles').select('id').eq('status', 'archived');
-      setFleetBadge(data?.length || 0);
-    }
-    fetchFleetBadge()
-
-    // Realtime subscription for new vendor requests
-    const sub = supabase.channel('layout_vendor_badge')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, fetchBadge)
-      .subscribe()
-      
-    // Realtime subscription for 3PL onboarding
-    const sub2 = supabase.channel('layout_tpl_badge')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tpl_partners' }, fetchTplBadge)
-      .subscribe()
-
-    // Realtime subscription for fleet drafts
-    const sub3 = supabase.channel('layout_fleet_badge')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, fetchFleetBadge)
-      .subscribe()
-
-    return () => { 
-      supabase.removeChannel(sub) 
-      supabase.removeChannel(sub2)
-      supabase.removeChannel(sub3)
-    }
-  }, [role])
-
-  const handleLogout = async () => {
+  const signOut = async () => {
     try {
       await supabase.auth.signOut()
     } catch (e) {
-      console.error('Logout error', e)
+      console.error('Sign-out failed', e)
     }
     clearAuth()
     navigate('/login')
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100 text-slate-900">
+    <div className="min-h-screen bg-bg text-text">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:shadow-raised">
+        Skip to content
+      </a>
 
-      {/* ── Irish Purple Sidebar ─────────────────────────────────── */}
+      {/* Desktop sidebar */}
       <aside
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onClick={handleSidebarClick}
-        className="fixed left-0 top-0 bottom-0 flex flex-col z-[100] overflow-hidden"
-        style={{
-          width: sidebarWidth,
-          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          background: '#ffffff',
-          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.05)',
-          borderRight: '1px solid #f1f5f9',
-        }}
+        className={clsx(
+          'fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border bg-surface transition-[width] duration-200 lg:flex',
+          collapsed ? 'w-16' : 'w-64',
+        )}
       >
-        {/* Logo */}
-        <div className={clsx("flex-shrink-0 border-b border-slate-100 overflow-hidden flex items-center gap-3", collapsed ? "h-[80px] justify-center" : "h-[80px] px-5")}>
-          <img 
-            src="/margix-logo.png" 
-            alt="Margix" 
-            className="transition-all duration-300 flex-shrink-0"
-            style={{
-              height: collapsed ? '32px' : '40px',
-              width: 'auto',
-              maxWidth: collapsed ? '50px' : '200px',
-              objectFit: 'contain'
-            }}
-          />
-          <div
-            className="overflow-hidden whitespace-nowrap flex flex-col"
-            style={{
-              width: collapsed ? 0 : 'auto',
-              opacity: collapsed ? 0 : 1,
-              transition: 'opacity 0.2s ease, width 0.3s ease',
-            }}
-          >
-            <div className="font-black text-xl text-slate-900 tracking-tight leading-tight">
-              Margix
-            </div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className={clsx("flex-1 py-3 overflow-y-auto space-y-4", collapsed ? "px-2.5" : "px-3")}>
-          {navSections.map((section) => {
-            const sectionItems = section.items.filter(item => !item.roles || item.roles.includes(role || ''))
-            if (sectionItems.length === 0) return null
-
-            return (
-              <div key={section.title} className="flex flex-col gap-0.5">
-                <div className={clsx(
-                  "flex items-center mb-1.5",
-                  collapsed ? "justify-center mt-2" : "px-3 mt-1"
-                )}>
-                  {collapsed ? (
-                    <span className="text-[10px] font-black uppercase text-slate-400/80 tracking-tighter" title={section.title}>
-                      {section.shortTitle}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.15em]">
-                      {section.title}
-                    </span>
-                  )}
-                </div>
-
-                {sectionItems.map(({ to, icon: Icon, label, external }) => {
-                  const itemBadge = (to === '/dashboard' && vendorBadge > 0) ? vendorBadge : 
-                                    (to === '/3pl-network' && tplBadge > 0) ? tplBadge : 
-                                    (to === '/fleet' && fleetBadge > 0) ? fleetBadge : undefined
-                  if (external) {
-                    return (
-                      <button
-                        key={to}
-                        onClick={() => window.open(to, '_blank')}
-                        className={clsx(
-                          "flex items-center w-full rounded-lg text-[13px] transition-all duration-200 relative group",
-                          collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3.5 py-2.5"
-                        )}
-                        style={{ color: '#64748b' }}
-                        title={collapsed ? label : undefined}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.background = '#f8fafc'
-                          e.currentTarget.style.color = '#0f172a'
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = 'transparent'
-                          e.currentTarget.style.color = '#64748b'
-                        }}
-                      >
-                        <Icon size={18} className="flex-shrink-0" />
-                        {!collapsed && <span className="flex-1 text-left font-medium">{label}</span>}
-                        {!collapsed && <ExternalLink size={11} style={{ opacity: 0.4 }} />}
-                      </button>
-                    )
-                  }
-                  return (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      title={collapsed ? label : undefined}
-                      className={({ isActive: _isActive }) => clsx(
-                        'flex items-center rounded-lg text-[13px] transition-all duration-200 relative group overflow-hidden',
-                        collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5',
-                      )}
-                      style={({ isActive }) => ({
-                        background: isActive ? '#eff6ff' : 'transparent',
-                        color: isActive ? '#1d4ed8' : '#64748b',
-                        fontWeight: isActive ? 600 : 500,
-                      })}
-                      onMouseEnter={e => {
-                        const link = e.currentTarget
-                        if (!link.classList.contains('active')) {
-                          link.style.background = '#f8fafc'
-                          link.style.color = '#334155'
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        const link = e.currentTarget
-                        const isActive = link.getAttribute('aria-current') === 'page'
-                        if (!isActive) {
-                          link.style.background = 'transparent'
-                          link.style.color = '#64748b'
-                        }
-                      }}
-                    >
-                      {({ isActive }) => (
-                        <>
-                          {isActive && (
-                            <div
-                              className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full"
-                              style={{ background: '#1d4ed8' }}
-                            />
-                          )}
-                          <Icon size={18} className="flex-shrink-0" style={{
-                            color: isActive ? '#1d4ed8' : undefined,
-                            transform: isActive ? 'scale(1.08)' : undefined,
-                            transition: 'all 0.2s ease',
-                          }} />
-                          {!collapsed && <span className="flex-1 tracking-tight">{label}</span>}
-                          {!collapsed && itemBadge && (
-                            <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
-                              {itemBadge}
-                            </span>
-                          )}
-                          {collapsed && itemBadge && (
-                            <span
-                              className="absolute -top-0.5 -right-0.5 w-4 h-4 text-[8px] font-black rounded-full flex items-center justify-center shadow-sm"
-                              style={{ background: '#a855f7', color: '#ffffff' }}
-                            >
-                              {itemBadge}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </NavLink>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </nav>
-
-        {/* Bottom: Collapse + Sign Out */}
-        <div className={clsx("pb-4 pt-2 flex-shrink-0 border-t border-slate-100", collapsed ? "px-2.5" : "px-3")}>
-          {/* Collapse Toggle */}
-          <button
-            onClick={toggleCollapsed}
-            className={clsx(
-              "flex items-center w-full rounded-lg text-[13px] font-medium transition-all duration-200 group mb-1",
-              collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3.5 py-2.5"
-            )}
-            style={{ color: '#64748b' }}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = '#f8fafc'
-              e.currentTarget.style.color = '#0f172a'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = '#64748b'
-            }}
-          >
-            {collapsed
-              ? <ChevronsRight size={18} className="flex-shrink-0" />
-              : <ChevronsLeft size={18} className="flex-shrink-0" />
-            }
-            {!collapsed && <span>Collapse</span>}
-          </button>
-
-          {/* Sign Out */}
-          <button
-            className={clsx(
-              "flex items-center w-full rounded-lg text-[13px] font-medium transition-all duration-200 group",
-              collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3.5 py-2.5"
-            )}
-            onClick={handleLogout}
-            title={collapsed ? 'Sign Out' : undefined}
-            style={{ color: '#64748b' }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = '#fef2f2'
-              e.currentTarget.style.color = '#ef4444'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = '#64748b'
-            }}
-          >
-            <LogOut size={18} className="flex-shrink-0 group-hover:-translate-x-0.5 transition-transform" />
-            {!collapsed && <span>Sign Out</span>}
-          </button>
-        </div>
+        <Brand collapsed={collapsed} />
+        <NavList items={sections} collapsed={collapsed} badges={badges} />
+        <SidebarFooter collapsed={collapsed} onSignOut={signOut} onToggle={toggleCollapsed} />
       </aside>
 
-      {/* Main content */}
-      <main
-        className="flex-1 p-8 min-h-screen relative z-10"
-        style={{ marginLeft: sidebarWidth, transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-      >
-        <div className="max-w-7xl mx-auto">
-          <Outlet />
+      {/* Phone and tablet top bar */}
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-surface px-2 lg:hidden">
+        <IconButton label="Open menu" icon={<Menu size={20} />} onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} />
+        <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
+        <span className="text-base font-semibold">MargixIndia</span>
+      </header>
+
+      {/* Phone and tablet menu */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="absolute inset-0 bg-overlay animate-fade-in" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-dialog animate-slide-in-left">
+            <div className="flex items-center justify-between border-b border-border pr-2">
+              <Brand collapsed={false} />
+              <IconButton label="Close menu" icon={<X size={20} />} onClick={() => setMobileOpen(false)} />
+            </div>
+            <NavList items={sections} collapsed={false} badges={badges} onNavigate={() => setMobileOpen(false)} />
+            <SidebarFooter collapsed={false} onSignOut={signOut} />
+          </div>
         </div>
+      )}
+
+      <main
+        id="main"
+        className={clsx('min-w-0 transition-[padding] duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
+      >
+        {fullBleed ? (
+          <div className="h-[calc(100dvh-3.5rem)] lg:h-dvh"><Outlet /></div>
+        ) : (
+          <div className="mx-auto w-full max-w-content px-4 py-6 sm:px-6 lg:py-8">
+            <Outlet />
+          </div>
+        )}
       </main>
+
       <AddShipmentModal />
       <SOSListener />
       <GlobalDeliveryCelebration />
