@@ -22,7 +22,6 @@ import { parseNumberInRange } from '../core/validate';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { markAssigned } from '../services/shipment.service';
-import { routeService } from '../services/route.service';
 
 /** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
 const isPlaceholderPlate = (plate: unknown) => /^(TEMP|DRFT)-/i.test(String(plate ?? ''));
@@ -256,37 +255,27 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         await supabase.from('delivery_points').update({ status: 'pending' }).in('id', plannedPointIds);
       }
 
-      // Dispatch through the route service: the vehicle goes on_route, planned arrivals are
-      // stamped and the driver is told. If it cannot start, the route stays pending and the
-      // driver is told about the plan instead.
-      let dispatched = false;
+      // The route stays pending: the console shows the plan for review, and dispatching it from the
+      // Routes page (routeService.changeStatus) puts the vehicle on route and stamps planned arrivals.
+      // The driver hears about the plan now.
       try {
-        await routeService.changeStatus(routeRow.id, 'active');
-        dispatched = true;
-        routeRow.status = 'active';
-      } catch (dispatchErr) {
-        console.warn('Failed to dispatch the optimized route:', dispatchErr);
-      }
-      if (!dispatched) {
-        try {
-          const { data: vehicle } = await supabase
-            .from('vehicles')
-            .select('driver_id')
-            .eq('id', optRoute.vehicle_id)
-            .single();
+        const { data: vehicle } = await supabase
+          .from('vehicles')
+          .select('driver_id')
+          .eq('id', optRoute.vehicle_id)
+          .single();
 
-          if (vehicle?.driver_id) {
-            await notificationService.sendNotification(
-              vehicle.driver_id,
-              '🚨 New Route Assigned',
-              `A new cargo route with ${stops.length} stops has been assigned to you.`,
-              'route_assigned',
-              { route_id: routeRow.id }
-            );
-          }
-        } catch (notifErr) {
-          console.warn('Failed to send route assignment notification:', notifErr);
+        if (vehicle?.driver_id) {
+          await notificationService.sendNotification(
+            vehicle.driver_id,
+            '🚨 New Route Assigned',
+            `A new cargo route with ${stops.length} stops has been assigned to you.`,
+            'route_assigned',
+            { route_id: routeRow.id }
+          );
         }
+      } catch (notifErr) {
+        console.warn('Failed to send route assignment notification:', notifErr);
       }
 
       routeResponses.push({

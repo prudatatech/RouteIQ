@@ -201,6 +201,46 @@ describe('assigning a shipment', () => {
   });
 });
 
+describe('choosing a vehicle', () => {
+  it('lists vehicles in service and never placeholders or maintenance', async () => {
+    reset({ shipments: [shipmentRow()], delivery_points: dps.map(d => ({ ...d })) });
+    supabaseMock.rows('vehicles').push(
+      { id: 'v-temp', plate_number: 'TEMP-ABC123', capacity_kg: 100, status: 'available' },
+      { id: 'v-draft', plate_number: 'DRFT-ABC123', capacity_kg: 100, status: 'available' },
+      { id: 'v-maint', plate_number: 'MH01', capacity_kg: 100, status: 'maintenance' },
+      { id: 'v-off', plate_number: 'MH02', capacity_kg: 100, status: 'offline' },
+    );
+    const res = await request(app).get(`/api/v1/shipments/${SHIPMENT}/assign-options?mode=any`).set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body.map((v: any) => v.id).sort()).toEqual([OTHER_VEHICLE, VEHICLE, 'v-off'].sort());
+  });
+
+  it('gives a booking whose delivery failed another vehicle, but not one that is simply on its way', async () => {
+    reset({
+      shipments: [shipmentRow({ status: 'exception' })],
+      delivery_points: dps.map(d => ({ ...d })),
+      customer_bookings: [bookingRow({ status: 'in_transit', shipment_id: SHIPMENT, tracking_id: 'RTX-AAAA1111', vehicle_id: VEHICLE })],
+    });
+    const ok = await post(`/bookings/${BOOKING}/assign`, { vehicle_id: OTHER_VEHICLE });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ status: 'assigned', vehicle_id: OTHER_VEHICLE });
+
+    reset({
+      shipments: [shipmentRow({ status: 'in_transit' })],
+      delivery_points: dps.map(d => ({ ...d })),
+      customer_bookings: [bookingRow({ status: 'in_transit', shipment_id: SHIPMENT, tracking_id: 'RTX-AAAA1111' })],
+    });
+    expect((await post(`/bookings/${BOOKING}/assign`, { vehicle_id: OTHER_VEHICLE })).status).toBe(409);
+  });
+
+  it('lets a shipment price be cleared', async () => {
+    reset({ shipments: [shipmentRow({ freight_charge: 1200 })], delivery_points: dps.map(d => ({ ...d })) });
+    const res = await request(app).patch(`/api/v1/shipments/${SHIPMENT}/edit`).set(admin()).send({ freight_charge: null });
+    expect(res.status).toBe(200);
+    expect(one('shipments', SHIPMENT).freight_charge).toBeNull();
+  });
+});
+
 describe('a shipment with a vehicle at creation', () => {
   beforeEach(() => reset());
 

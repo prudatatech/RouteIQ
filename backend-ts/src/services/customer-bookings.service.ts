@@ -259,8 +259,13 @@ export async function confirmBooking(id: string, actor: LogActor, options: { pri
 /** Staff put a vehicle on a confirmed booking's shipment. The shipment's own assign rules apply (vehicle in service, type, capacity). */
 export async function assignBooking(id: string, vehicleId: string, actor: LogActor) {
   const booking = await getBookingRow(id);
-  if (!['confirmed', 'assigned'].includes(booking.status) || !booking.shipment_id) {
+  if (!booking.shipment_id || !['confirmed', 'assigned', 'in_transit'].includes(booking.status)) {
     throw new HttpError(409, 'Confirm the booking before assigning a vehicle');
+  }
+  if (booking.status === 'in_transit') {
+    // Only a failed delivery can be given a vehicle again once the load has moved
+    const { data: shipment } = await supabase.from('shipments').select('status').eq('id', booking.shipment_id).maybeSingle();
+    if (shipment?.status !== 'exception') throw new HttpError(409, 'This booking is on its way and cannot be given another vehicle');
   }
   const { data: vehicle, error } = await supabase.from('vehicles').select('id').eq('id', vehicleId).maybeSingle();
   if (error) throw new Error(`Failed to read vehicle: ${error.message}`);

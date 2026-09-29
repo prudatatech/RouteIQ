@@ -137,17 +137,20 @@ describe('the optimizer', () => {
     expect(sentToMl.locations[1].lat).toBe(22.0);
   });
 
-  it('assigns the shipment through the shared helper and dispatches the route', async () => {
+  it('assigns the shipment through the shared helper and leaves the route pending for review', async () => {
     const res = await request(app).post('/api/v1/optimize').set(admin()).send({ depot_id: DEPOT, vehicle_ids: [VEH], shipment_ids: [SHIP], consider_weather: false });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('shipments')[0].status).toBe('assigned');
     expect(supabaseMock.rows('shipment_logs').find(l => l.status === 'assigned')?.metadata_json).toMatchObject({ vehicle_id: VEH, actor_id: 'admin-1' });
-    const route = supabaseMock.rows('routes')[0];
-    expect(route.status).toBe('active');
-    expect(res.body.routes[0].status).toBe('active');
-    expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
+    expect(supabaseMock.rows('routes')[0].status).toBe('pending');
+    expect(res.body.routes[0].status).toBe('pending');
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('available');
     expect(supabaseMock.rows('route_stops').map(s => s.sequence)).toEqual([1, 2]);
     expect(supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1')).toHaveLength(1);
+    // Dispatching it later is the route service's job
+    const { routeService } = await import('../src/services/route.service');
+    await routeService.changeStatus(supabaseMock.rows('routes')[0].id, 'active');
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
   });
 
   it('ignores a shipment that is already assigned', async () => {
