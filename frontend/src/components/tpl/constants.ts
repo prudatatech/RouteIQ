@@ -14,6 +14,21 @@ export const CORRIDOR_PRIORITY_OPTIONS = [
   { value: '3', label: 'Priority 3 (backup)' },
 ]
 
+/** Common lanes offered as suggestions in the corridor field (free text is still allowed). */
+export const CORRIDOR_SUGGESTIONS = ['DEL-BOM', 'BOM-BLR', 'DEL-CCU', 'MAA-BLR', 'DEL-HYD', 'PNQ-BLR', 'AMD-BOM', 'DEL-MAA']
+
+/** Common vehicle types offered as a multi-select in the corridor editor. */
+export const VEHICLE_TYPE_SUGGESTIONS = [
+  '32ft SXL', '32ft MXL', '24ft SXL', '20ft', '14ft Eicher',
+  '17ft Eicher', '19ft Eicher', 'Tata Ace', 'Ashok Leyland Dost',
+  'Bolero Pickup', '40ft Trailer', '40ft Flatbed', 'Refrigerated Van',
+]
+
+/** Split the comma-separated vehicle list stored on a corridor row. */
+export function parseVehicleTypes(value: string): string[] {
+  return value.split(',').map(v => v.trim()).filter(Boolean)
+}
+
 /** One corridor & rate row in the onboarding form and the partner's settings tab. */
 export interface CorridorFormRow {
   id: number

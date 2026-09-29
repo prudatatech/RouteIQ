@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
@@ -30,7 +31,7 @@ export default function TplSetupCredentialsPage() {
       setStep(2)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Failed to send the verification code.')
+      toast.error(errorMessage(err, 'Failed to send the verification code.'))
     } finally {
       setLoading(false)
     }
@@ -57,7 +58,7 @@ export default function TplSetupCredentialsPage() {
       navigate(`/login?as=vendor&email=${encodeURIComponent(email)}`)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Failed to verify the code and set the password.')
+      toast.error(errorMessage(err, 'Failed to verify the code and set the password.'))
     } finally {
       setLoading(false)
     }

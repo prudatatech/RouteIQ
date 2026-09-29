@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, CheckCircle2 } from 'lucide-react'
@@ -35,7 +36,7 @@ export default function TplTrackApplicationPage() {
       setApplication(data as TplApplication)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Application not found. Check your tracking ID.')
+      toast.error(errorMessage(err, 'Application not found. Check your tracking ID.'))
       setApplication(null)
     } finally {
       setLoading(false)

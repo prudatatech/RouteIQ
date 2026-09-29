@@ -177,6 +177,9 @@ export const capacityAPI = {
 
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
+  /** Create or update the company profile without submitting KYC (status stays as it is, "pending" for a new profile). */
+  saveProfile: (data: { companyName: string; gstNumber: string; city: string; address: string; lat: number; lng: number }) =>
+    api.post('/vendor/profile', data).then(r => r.data),
   submitKyc: (data: Record<string, unknown>) => api.post('/vendor/kyc/submit', data).then(r => r.data),
   passingRoutes: () => api.get('/vendor/passing-routes').then(r => ensureArray(r.data)),
   createShipmentRequest: (data: Record<string, unknown>) => api.post('/vendor/shipment-request', data).then(r => r.data),

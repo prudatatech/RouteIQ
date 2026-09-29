@@ -6,6 +6,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
+import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
@@ -100,6 +101,7 @@ export default function VendorDocumentsPage() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [kycStatus, setKycStatus] = useState<KycStatus>('pending')
   const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null)
   const [hasProfile, setHasProfile] = useState(false)
@@ -263,7 +265,7 @@ export default function VendorDocumentsPage() {
       }
       toast.success('Document uploaded')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
+      toast.error(errorMessage(err, 'Failed to upload document'))
     } finally {
       setUploadingKey(null)
     }
@@ -297,7 +299,7 @@ export default function VendorDocumentsPage() {
       await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
       toast.success('Document uploaded')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
+      toast.error(errorMessage(err, 'Failed to upload document'))
     } finally {
       setUploadingKey(null)
     }
@@ -372,9 +374,35 @@ export default function VendorDocumentsPage() {
       else window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'We could not save your details. Check your connection and try again.')
+      toast.error(errorMessage(err, 'We could not save your details. Check your connection and try again.'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  /** First-time setup only: create the profile from steps 1 and 2 and finish the KYC later from the dashboard banner. */
+  const saveAndFinishLater = async () => {
+    setAttempted(prev => ({ ...prev, 0: true, 1: true }))
+    if (!stepValid(0) || !stepValid(1) || !userId) return
+    setSaving(true)
+    try {
+      await vendorAPI.saveProfile({
+        companyName: form.name,
+        gstNumber: form.gstNumber || '',
+        city: form.city,
+        address: form.addressLine1,
+        lat: Number(form.latitude),
+        lng: Number(form.longitude),
+      })
+      window.dispatchEvent(new Event('vendor-profile-updated'))
+      refreshProfile()
+      toast.success('Company profile saved. Complete your KYC to post loads and bid.')
+      navigate('/vendor')
+    } catch (err) {
+      console.error(err)
+      toast.error(errorMessage(err, 'We could not save your details. Check your connection and try again.'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -568,6 +596,9 @@ export default function VendorDocumentsPage() {
             <div className="flex items-center gap-3">
               {isEditing && (
                 <Button type="button" variant="ghost" onClick={() => { setIsEditingKyc(false); setStep(0) }}>Cancel</Button>
+              )}
+              {mode === 'onboarding' && !hasProfile && step === 1 && (
+                <Button type="button" variant="secondary" onClick={saveAndFinishLater} loading={saving}>Save and finish later</Button>
               )}
               {step < STEPS.length - 1 ? (
                 <Button type="button" onClick={goNext}>Continue</Button>

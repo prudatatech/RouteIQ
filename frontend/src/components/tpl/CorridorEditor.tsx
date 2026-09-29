@@ -1,7 +1,12 @@
 import { Trash2, Plus } from 'lucide-react'
 import { Input, Select } from '@/components/ui'
 import { Button, IconButton } from '@/components/ui'
-import { CORRIDOR_PRIORITY_OPTIONS, emptyCorridorRow, type CorridorFormRow } from './constants'
+import {
+  CORRIDOR_PRIORITY_OPTIONS, CORRIDOR_SUGGESTIONS, VEHICLE_TYPE_SUGGESTIONS, emptyCorridorRow, parseVehicleTypes,
+  type CorridorFormRow,
+} from './constants'
+
+const LANE_LIST_ID = 'tpl-corridor-lanes'
 
 /**
  * The corridor & rate declaration list used by both the 3PL onboarding form and
@@ -16,6 +21,11 @@ export function CorridorEditor({ corridors, onChange }: {
   }
   const remove = (id: number) => onChange(corridors.filter(c => c.id !== id))
   const add = () => onChange([...corridors, emptyCorridorRow()])
+  const toggleVehicle = (row: CorridorFormRow, type: string) => {
+    const current = parseVehicleTypes(row.vehicles)
+    const next = current.includes(type) ? current.filter(v => v !== type) : [...current, type]
+    update(row.id, { vehicles: next.join(', ') })
+  }
 
   return (
     <div className="space-y-4">
@@ -25,6 +35,9 @@ export function CorridorEditor({ corridors, onChange }: {
           Add corridor
         </Button>
       </div>
+      <datalist id={LANE_LIST_ID}>
+        {CORRIDOR_SUGGESTIONS.map(lane => <option key={lane} value={lane} />)}
+      </datalist>
       <div className="space-y-3">
         {corridors.map(c => (
           <div key={c.id} className="relative rounded-control border border-border bg-surface-subtle p-4">
@@ -42,6 +55,7 @@ export function CorridorEditor({ corridors, onChange }: {
               <Input
                 label="Corridor"
                 placeholder="e.g. DEL-BOM"
+                list={LANE_LIST_ID}
                 value={c.name}
                 onChange={e => update(c.id, { name: e.target.value.toUpperCase() })}
               />
@@ -64,6 +78,26 @@ export function CorridorEditor({ corridors, onChange }: {
                 value={c.priority}
                 onChange={e => update(c.id, { priority: e.target.value })}
               />
+            </div>
+            <div className="mt-3" role="group" aria-label="Pick vehicle types">
+              <p className="mb-2 text-xs text-muted">Tap to add or remove vehicle types</p>
+              <div className="flex flex-wrap gap-2">
+                {VEHICLE_TYPE_SUGGESTIONS.map(type => {
+                  const selected = parseVehicleTypes(c.vehicles).includes(type)
+                  return (
+                    <Button
+                      key={type}
+                      type="button"
+                      size="sm"
+                      variant={selected ? 'primary' : 'secondary'}
+                      aria-pressed={selected}
+                      onClick={() => toggleVehicle(c, type)}
+                    >
+                      {type}
+                    </Button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         ))}

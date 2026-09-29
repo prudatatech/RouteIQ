@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Clock, ShieldCheck, TrendingUp, Zap } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { formatEta } from '@/utils/timeFormat'
@@ -8,7 +8,7 @@ import { capacityAPI, vendorAPI } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import PlaceBidModal from '@/components/vendor/PlaceBidModal'
-import { Alert, Card, EmptyState, Page, PageHeader, Skeleton } from '@/components/ui'
+import { Alert, buttonClasses, Card, EmptyState, Page, PageHeader, Skeleton } from '@/components/ui'
 
 interface OpenWindow {
   id: string
@@ -134,6 +134,23 @@ export default function VendorCorridorPage() {
       return
     }
     setBiddingWindow(w)
+  }
+
+  if (!session) {
+    return (
+      <Page>
+        <PageHeader title="Corridors" description="Open capacity windows and passing trucks near you, updated live." />
+        <EmptyState
+          title="Sign in to see live capacity"
+          description="Open capacity windows and passing trucks are shown to signed-in vendors."
+          action={(
+            <Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/corridor')}`} className={buttonClasses({ variant: 'primary' })}>
+              Sign in
+            </Link>
+          )}
+        />
+      </Page>
+    )
   }
 
   return (

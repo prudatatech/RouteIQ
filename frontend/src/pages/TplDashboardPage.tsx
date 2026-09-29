@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -103,7 +104,7 @@ export default function TplDashboardPage() {
         setDocuments(partnerData.tpl_documents || [])
       } catch (err) {
         console.error('Dashboard fetch error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard')
+        setError(errorMessage(err, 'Failed to load dashboard'))
       } finally {
         setLoading(false)
       }
@@ -160,7 +161,7 @@ export default function TplDashboardPage() {
       toast.success(`${doc.doc_type} updated. Status changed to pending approval.`)
     } catch (err) {
       console.error('Document update error:', err)
-      toast.error(err instanceof Error ? err.message : 'Failed to update document.')
+      toast.error(errorMessage(err, 'Failed to update document.'))
     } finally {
       setUploadingDoc(null)
     }
@@ -216,7 +217,7 @@ export default function TplDashboardPage() {
       setPartner((p) => p && ({ ...p, pending_updates: updates, status: 'pending' }))
       toast.success('Settings update requested. Awaiting approval.')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to submit the settings update.')
+      toast.error(errorMessage(err, 'Failed to submit the settings update.'))
     } finally {
       setIsSubmittingSettings(false)
     }
@@ -395,7 +396,7 @@ export default function TplDashboardPage() {
                         icon={<Eye size={14} />}
                         onClick={async () => {
                           try { await openKycDocument(doc.file_url) } catch (err) {
-                            toast.error(err instanceof Error ? err.message : 'Could not open document.')
+                            toast.error(errorMessage(err, 'Could not open document.'))
                           }
                         }}
                       >

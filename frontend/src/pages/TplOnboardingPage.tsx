@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
@@ -24,6 +25,14 @@ const DRAFT_KEY = 'tpl-onboarding-draft'
 function slugify(name: string) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 15)
   return base
+}
+
+/** 3PL ID suggestions built from the company name, valid for CUSTOM_ID_PATTERN. */
+function recommendIds(name: string, suffix: number): string[] {
+  if (name.trim().length < 3) return []
+  const base = slugify(name)
+  return [base, `${base}_3pl`, `${base}${new Date().getFullYear()}`, `${base}_${suffix}`]
+    .filter(id => CUSTOM_ID_PATTERN.test(id))
 }
 
 const steps = [
@@ -91,6 +100,10 @@ export default function TplOnboardingPage() {
     if (!isDeclared) errors[2].declaration = 'Accept the declaration to submit'
     return errors
   }, [companyName, customId, customIdError, editId, email, phone, pan, gst, bankAccount, bankIfsc, isDeclared])
+
+  // Random suffix chosen once so the suggestions do not change on every render.
+  const [idSuffix] = useState(() => Math.floor(Math.random() * 1000))
+  const idSuggestions = useMemo(() => recommendIds(companyName, idSuffix), [companyName, idSuffix])
 
   const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
@@ -254,7 +267,7 @@ export default function TplOnboardingPage() {
       setStep(3)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      toast.error(errorMessage(err, 'Something went wrong. Please try again.'))
     } finally {
       setSubmitting(false)
     }
@@ -325,6 +338,17 @@ export default function TplOnboardingPage() {
                 <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" className="font-mono" error={err(1, 'gst')} />
                 <Select label="MSME status" options={MSME_OPTIONS.map(o => ({ value: o, label: o }))} value={msmeStatus} onChange={e => setMsmeStatus(e.target.value)} />
               </div>
+
+              {!editId && idSuggestions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted">Suggested 3PL IDs</span>
+                  {idSuggestions.map(id => (
+                    <Button key={id} type="button" size="sm" variant={id === customId ? 'primary' : 'secondary'} className="font-mono" onClick={() => handleCustomIdChange(id)}>
+                      {id}
+                    </Button>
+                  ))}
+                </div>
+              )}
 
               <div className="border-t border-border pt-6">
                 <div className="mb-4 flex items-center gap-2">

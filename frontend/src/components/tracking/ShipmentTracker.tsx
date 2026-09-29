@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { CheckCircle2, Clock, MapPin, Truck } from 'lucide-react'
 import { Card, DetailList } from '@/components/ui/Card'
@@ -5,6 +6,7 @@ import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
+import { fetchDrivingRoute, type DrivingRoute } from '@/components/map/directions'
 import { formatEta } from '@/utils/timeFormat'
 
 function formatEventTime(value: string) {
@@ -39,12 +41,45 @@ export interface ShipmentTrackingData {
   total_weight_kg?: number | null
   origin_name?: string | null
   origin_address?: string | null
+  origin_lat?: number | null
+  origin_lng?: number | null
   destination?: TrackedDestination | null
   vehicle?: TrackedVehicle | null
   /** Arrival estimate from the vehicle's position to the next stop (straight line, average speed). */
   eta_minutes?: number | null
   /** Status timeline, public-safe: status and time only, no names. See ShipmentService.getPublicTracking. */
   history?: { status: string; at: string }[] | null
+}
+
+type LatLngPoint = { lat: number; lng: number }
+
+/** Where the vehicle is heading next: the pickup for a manifest that is not yet in transit, otherwise the drop. */
+function nextStopOf(shipment: ShipmentTrackingData): LatLngPoint | null {
+  const toPickup = shipment.tracking_id.startsWith('CM-') && shipment.status !== 'in_transit'
+  const origin = shipment.origin_lat != null && shipment.origin_lng != null
+    ? { lat: shipment.origin_lat, lng: shipment.origin_lng } : null
+  const drop = shipment.destination?.lat != null && shipment.destination?.lng != null
+    ? { lat: shipment.destination.lat, lng: shipment.destination.lng } : null
+  return toPickup ? origin ?? drop : drop
+}
+
+/** Road route (with live traffic) from the vehicle to its next stop; null when unavailable. */
+function useRemainingRoute(vehicle: LatLngPoint | null, stop: LatLngPoint | null, enabled: boolean) {
+  // ~100 m rounding so each position poll does not trigger a new Directions request.
+  const key = vehicle && stop && enabled
+    ? [vehicle.lat.toFixed(3), vehicle.lng.toFixed(3), stop.lat.toFixed(5), stop.lng.toFixed(5)].join(',')
+    : null
+  const [result, setResult] = useState<{ key: string; route: DrivingRoute | null } | null>(null)
+  useEffect(() => {
+    if (!key) return
+    const [vLat, vLng, sLat, sLng] = key.split(',').map(Number)
+    const ctrl = new AbortController()
+    fetchDrivingRoute([{ lat: vLat, lng: vLng }, { lat: sLat, lng: sLng }], ctrl.signal)
+      .then(route => setResult({ key, route }))
+      .catch(() => { /* aborted or failed: fall back to the backend estimate */ })
+    return () => ctrl.abort()
+  }, [key])
+  return key && result?.key === key ? result.route : null
 }
 
 const STEPS = [
@@ -76,6 +111,13 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
   onRetry?: () => void
   className?: string
 }) {
+  const vLat = shipment?.vehicle?.lat
+  const vLng = shipment?.vehicle?.lng
+  const vehiclePos = vLat != null && vLng != null ? { lat: vLat, lng: vLng } : null
+  const nextStop = useMemo(() => (shipment ? nextStopOf(shipment) : null), [shipment])
+  const inProgress = !!shipment && shipment.status !== 'delivered' && shipment.status !== 'cancelled'
+  const drivingRoute = useRemainingRoute(vehiclePos, nextStop, inProgress)
+
   if (isLoading) {
     return (
       <div className={clsx('space-y-6', className)}>
@@ -129,6 +171,9 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
     }]
     : []
 
+  const etaMinutes = drivingRoute ? drivingRoute.durationSeconds / 60 : shipment.eta_minutes
+  const route = drivingRoute ? { coordinates: drivingRoute.coordinates } : null
+
   return (
     <div className={clsx('space-y-6', className)}>
       <Card padded className="space-y-6">
@@ -175,6 +220,7 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
           items={[
             { label: 'Origin', value: shipment.origin_name || shipment.origin_address || '—' },
             { label: 'Destination', value: shipment.destination?.name || shipment.destination?.address || '—' },
+            { label: 'Priority', value: shipment.priority ? shipment.priority.charAt(0).toUpperCase() + shipment.priority.slice(1) : '—' },
             { label: 'Weight', value: shipment.total_weight_kg != null ? `${shipment.total_weight_kg} kg` : '—' },
             { label: 'Items', value: shipment.total_items ?? '—' },
           ]}
@@ -183,7 +229,7 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="overflow-hidden">
-          <MapView mode="tracking" height={280} vehicles={vehicles} points={points} />
+          <MapView mode="tracking" height={280} vehicles={vehicles} points={points} route={route} />
         </Card>
 
         <div className="space-y-6">
@@ -193,9 +239,9 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : shipment.eta_minutes != null ? formatEta(shipment.eta_minutes) : '—'}
+              {delivered ? 'Delivered' : etaMinutes != null ? formatEta(etaMinutes) : '—'}
             </p>
-            {!delivered && shipment.eta_minutes == null && (
+            {!delivered && etaMinutes == null && (
               <p className="mt-1 text-xs text-muted">No live vehicle assigned yet.</p>
             )}
           </Card>
