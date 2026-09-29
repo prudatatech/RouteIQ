@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import { Camera, FileText, Save, Truck, User } from 'lucide-react'
-import { Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
+import { Alert, Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
 import { indianMobileError, rcNumberError } from '@/utils/validators'
 import { expiryStatus } from '@/utils/documentExpiry'
 import StagedPhotos, { type StagedPhotoFiles } from '@/components/fleet/photos/StagedPhotos'
@@ -99,6 +99,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const [attempted, setAttempted] = useState<Set<number>>(new Set())
   // Photos picked for a vehicle that is not saved yet; they upload once it is (an existing vehicle uploads at once)
   const [staged, setStaged] = useState<StagedPhotoFiles>({})
+  const [savingDraft, setSavingDraft] = useState(false)
   const { confirm } = useConfirm()
   // The form as it was when the window opened, to tell whether anything changed.
   const baseline = useRef('')
@@ -145,6 +146,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   }
 
   const saveDraft = async () => {
+    setSavingDraft(true)
     try {
       const payload = withNullableDocs({ ...formData, status: 'archived' })
       if (!payload.plate_number) payload.plate_number = `DRFT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
@@ -156,10 +158,13 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       onClose()
     } catch {
       toast.error('We could not save the draft. Try again.')
+    } finally {
+      setSavingDraft(false)
     }
   }
 
   const requestClose = async () => {
+    if (savingDraft) return
     if ((JSON.stringify(formData) === baseline.current && Object.keys(staged).length === 0) || mutation.isPending) { onClose(); return }
     const discard = await confirm({
       title: 'Discard your changes?',
@@ -270,29 +275,30 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       footer={
         <>
           {canSaveDraft
-            ? <Button variant="ghost" icon={<Save size={16} />} onClick={saveDraft}>Save draft</Button>
-            : <Button variant="ghost" onClick={requestClose}>Cancel</Button>}
-          <div className="flex-1" />
-          <Button variant="secondary" onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>Back</Button>
+            ? <Button variant="ghost" icon={<Save size={16} />} loading={savingDraft} disabled={mutation.isPending} onClick={saveDraft}>Save draft</Button>
+            : <Button variant="ghost" disabled={mutation.isPending} onClick={requestClose}>Cancel</Button>}
+          <div className="hidden flex-1 sm:block" />
+          <Button variant="secondary" onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1 || mutation.isPending || savingDraft}>Back</Button>
           {step < STEPS.length ? (
-            <Button onClick={handleNext}>Next</Button>
+            <Button onClick={handleNext} disabled={savingDraft}>Next</Button>
           ) : (
-            <Button onClick={handleFinish} loading={mutation.isPending}>{isEditing ? 'Update vehicle' : 'Add vehicle'}</Button>
+            <Button onClick={handleFinish} loading={mutation.isPending} disabled={savingDraft}>{isEditing ? 'Update vehicle' : 'Add vehicle'}</Button>
           )}
         </>
       }
     >
-      <div className="mb-6 flex items-center gap-2" role="tablist" aria-label="Vehicle wizard steps">
+      <ol className="mb-6 flex items-center gap-2" aria-label="Vehicle steps">
         {STEPS.map(s => (
-          <div
+          <li
             key={s.num}
-            className={'flex flex-1 items-center gap-2 rounded-control border px-3 py-2 text-xs ' + (step === s.num ? 'border-brand bg-brand-soft text-brand' : 'border-border text-muted')}
+            aria-current={step === s.num ? 'step' : undefined}
+            className={'flex min-w-0 items-center gap-2 rounded-control border px-3 py-2 text-xs sm:flex-1 ' + (step === s.num ? 'flex-1 border-brand bg-brand-soft text-brand' : 'border-border text-muted')}
           >
-            <s.icon size={14} aria-hidden="true" />
-            <span className="font-medium">{s.label}</span>
-          </div>
+            <s.icon size={14} className="shrink-0" aria-hidden="true" />
+            <span className={'truncate font-medium ' + (step === s.num ? '' : 'sr-only sm:not-sr-only')}>{s.label}</span>
+          </li>
         ))}
-      </div>
+      </ol>
 
       {step === 1 && (
         <div className="space-y-4">
@@ -327,14 +333,14 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
             <Select label="Vehicle type" options={VEHICLE_TYPES} value={formData.vehicle_type} onChange={e => handleTypeChange(e.target.value)} />
             <Input label="Capacity (kg)" type="number" required min={1} value={formData.capacity_kg || ''} error={attempted.has(1) ? stepErrors(1).capacity : undefined} onChange={e => handleCapacityChange(Number(e.target.value))} />
           </div>
-          <div>
-            <p className="mb-1.5 text-sm font-medium text-text">Container dimensions (L × W × H, feet)</p>
+          <fieldset>
+            <legend className="mb-1.5 text-sm font-medium text-text">Container dimensions (L × W × H, feet)</legend>
             <div className="grid grid-cols-3 gap-4">
               <Input hideLabel label="Length" type="number" step="0.5" trailing="L" value={formData.container_length_ft || ''} onChange={e => set('container_length_ft', Number(e.target.value))} />
               <Input hideLabel label="Width" type="number" step="0.5" trailing="W" value={formData.container_width_ft || ''} onChange={e => set('container_width_ft', Number(e.target.value))} />
               <Input hideLabel label="Height" type="number" step="0.5" trailing="H" value={formData.container_height_ft || ''} onChange={e => set('container_height_ft', Number(e.target.value))} />
             </div>
-          </div>
+          </fieldset>
         </div>
       )}
 
@@ -359,9 +365,9 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
       {step === 4 && (
         <div className="space-y-4">
-          <p className="rounded-control border border-info/30 bg-info-soft px-4 py-3 text-sm text-text">
+          <Alert tone="info">
             Photos are optional. Add front, side and back views (and the inside or the cargo area if you like). You can add or replace them any time from the vehicle's details.
-          </p>
+          </Alert>
           {isEditing
             ? <VehiclePhotoCard vehicleId={initialData.id} />
             : <StagedPhotos files={staged} onChange={setStaged} />}
@@ -370,9 +376,9 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
       {step === 3 && (
         <div className="space-y-4">
-          <p className="rounded-control border border-info/30 bg-info-soft px-4 py-3 text-sm text-text">
-            Upload vehicle documents to stay compliant. If you don't have them all yet, save this as a draft and come back later.
-          </p>
+          <Alert tone="info">
+            Enter each document's number and expiry date to stay compliant. If you don't have them all yet, save this as a draft and come back later.
+          </Alert>
           {DOCS.map(doc => {
             const expiry = expiryStatus(formData[docExpiryKey(doc)])
             return (

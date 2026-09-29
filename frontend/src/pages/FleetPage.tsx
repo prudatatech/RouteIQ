@@ -203,10 +203,12 @@ export default function FleetPage() {
       header: 'Vehicle',
       sortValue: v => v.plate_number,
       cell: v => (
-        <div>
-          <p className="font-medium text-text">{v.plate_number}</p>
-          <p className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type)}</p>
-          {v.status === 'archived' && v.rejection_reason && <p className="text-xs text-danger">Rejected: {v.rejection_reason}</p>}
+        <div className="min-w-[8rem] max-w-[13rem]">
+          <p className="truncate font-medium text-text">{v.plate_number}</p>
+          <p className="truncate text-xs text-muted" title={v.vehicle_model || humanize(v.vehicle_type)}>{v.vehicle_model || humanize(v.vehicle_type)}</p>
+          {/* Wide screens have their own Driver column */}
+          <p className="truncate hidden text-xs text-muted md:block 2xl:hidden" title={v.driver_name ?? undefined}>{v.driver_name || 'No driver'}</p>
+          {v.status === 'archived' && v.rejection_reason && <p className="line-clamp-2 text-xs text-danger" title={v.rejection_reason}>Rejected: {v.rejection_reason}</p>}
         </div>
       ),
     },
@@ -214,9 +216,9 @@ export default function FleetPage() {
       key: 'status',
       header: 'Status',
       cell: v => (
-        <div className="space-y-0.5">
+        <div className="max-w-[13rem] space-y-1">
           <StatusPill status={v.status} />
-          {v.status === 'maintenance' && openJobs.get(v.id) && <MaintenanceNote job={openJobs.get(v.id)!} />}
+          {v.status === 'maintenance' && openJobs.get(v.id) && <MaintenanceNote job={openJobs.get(v.id)!} className="line-clamp-3 text-xs text-muted" />}
         </div>
       ),
     },
@@ -234,20 +236,20 @@ export default function FleetPage() {
     {
       key: 'details',
       header: 'Type and cargo',
-      hideBelow: 'md',
+      hideBelow: '2xl',
       sortValue: v => v.vehicle_type,
       cell: v => (
         <div className="space-y-1 text-sm">
-          <p className="text-text">{humanize(v.vehicle_type)}{v.capacity_kg ? <span className="text-muted"> · {v.capacity_kg.toLocaleString('en-IN')} kg</span> : null}</p>
-          {containerSize(v) && <p className="text-xs text-muted">Container {containerSize(v)}</p>}
-          <CargoChips types={v.cargo_types} max={3} />
+          <p className="whitespace-nowrap text-text">{humanize(v.vehicle_type)}{v.capacity_kg ? <span className="text-muted"> · {v.capacity_kg.toLocaleString('en-IN')} kg</span> : null}</p>
+          {containerSize(v) && <p className="whitespace-nowrap text-xs text-muted">Container {containerSize(v)}</p>}
+          <CargoChips types={v.cargo_types} max={2} />
         </div>
       ),
     },
     {
       key: 'driver',
       header: 'Driver',
-      hideBelow: 'lg',
+      hideBelow: '2xl',
       sortValue: v => v.driver_name ?? '',
       cell: v => v.driver_name
         ? (
@@ -267,7 +269,7 @@ export default function FleetPage() {
     {
       key: 'health',
       header: 'Health',
-      hideBelow: 'lg',
+      hideBelow: 'xl',
       sortValue: v => healthById.get(v.id)?.score ?? -1,
       cell: v => {
         const h = healthById.get(v.id)
@@ -284,14 +286,14 @@ export default function FleetPage() {
     {
       key: 'fuel',
       header: 'Fuel',
-      hideBelow: 'xl',
+      hideBelow: '2xl',
       cell: v => {
         if (!v.fuel_capacity_liters || v.current_fuel_liters == null) return <span className="text-muted">Unknown</span>
         const capacity = v.fuel_capacity_liters
         const current = v.current_fuel_liters
         const pct = Math.round((current / capacity) * 100)
         return (
-          <span className="inline-flex items-center gap-1.5 text-sm text-text">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-text">
             <Fuel size={14} className="text-muted" aria-hidden="true" />
             {current.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / {capacity.toLocaleString('en-IN')} L
             <span className="text-xs text-muted">({pct}%)</span>
@@ -402,8 +404,8 @@ export default function FleetPage() {
         <Tabs tabs={viewTabs} value={view} onChange={setView} label="Fleet sections" />
         {view === 'vehicles' && (
         <div className="flex flex-wrap items-center gap-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate, model, driver or cargo" label="Search vehicles" className="max-w-xs" />
-          <div className="flex flex-wrap gap-1.5">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate, model, driver or cargo" label="Search vehicles" className="w-full sm:w-80" />
+          <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
             {STATUS_FILTERS.map(s => (
               <button
                 key={s}
@@ -411,7 +413,7 @@ export default function FleetPage() {
                 aria-pressed={filter === s}
                 onClick={() => setFilter(s)}
                 className={
-                  'rounded-full px-3 py-1 text-xs font-medium transition-colors ' +
+                  'rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ' +
                   (filter === s ? 'bg-brand-soft text-brand' : 'bg-neutral-soft text-muted hover:text-text')
                 }
               >

@@ -74,12 +74,12 @@ export function IfscField({ value, onChange, onResolved, label = 'IFSC code', re
         onChange={e => onChange(e.target.value.toUpperCase())} error={shownError} hint={hint}
         inputClassName="font-mono uppercase"
         trailing={lookup.state === 'loading'
-          ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Checking" />
-          : lookup.state === 'found' ? <CheckCircle2 className="h-4 w-4 text-success" aria-label="Found" /> : undefined}
+          ? <Loader2 size={16} className="animate-spin" role="img" aria-label="Checking" />
+          : lookup.state === 'found' ? <CheckCircle2 size={16} className="text-success" role="img" aria-label="Found" /> : undefined}
       />
       {lookup.state === 'found' && <IfscSummary details={lookup.details} />}
       {lookup.state === 'unavailable' && (
-        <p className="text-xs text-muted">Couldn't check right now. Make sure the IFSC is right; it is checked again when you save.</p>
+        <p className="text-xs text-muted" role="status">Couldn't check right now. Make sure the IFSC is right; it is checked again when you save.</p>
       )}
     </div>
   )
@@ -134,12 +134,19 @@ export function BankBranchFields({ details, bankName, branch, onBankName, onBran
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Input label="Bank name" required={required} value={bankName} onChange={e => onBankName(e.target.value)} disabled={locked} error={bankError} />
-      <Input
-        label="Branch" required={required} value={branch} onChange={e => onBranch(e.target.value)} disabled={locked} error={branchError}
-        hint={locked ? (
-          <>Filled from bank records. <button type="button" className="font-medium text-brand hover:underline" onClick={() => setEditing(true)}>Edit</button></>
-        ) : undefined}
-      />
+      <Input label="Branch" required={required} value={branch} onChange={e => onBranch(e.target.value)} disabled={locked} error={branchError} />
+      {locked && (
+        <p className="text-xs text-muted sm:col-span-2">
+          Filled from bank records.{' '}
+          <button
+            type="button"
+            className="rounded-control font-medium text-brand hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            onClick={() => setEditing(true)}
+          >
+            Edit bank and branch
+          </button>
+        </p>
+      )}
     </div>
   )
 }

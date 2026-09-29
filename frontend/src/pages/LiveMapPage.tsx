@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { analyticsAPI, vehiclesAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import LiveMap from '@/components/map/LiveMap'
-import { Button, StatusPill, SearchInput, EmptyState, Skeleton } from '@/components/ui'
+import { Button, StatusPill, SearchInput, EmptyState, ErrorState, Skeleton } from '@/components/ui'
 import { isFleetVehicle, isVehicleLive } from '@/utils/vehicles'
 import SelectedVehiclePanel from '@/components/fleet/location/SelectedVehiclePanel'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
@@ -83,7 +83,8 @@ export default function LiveMapPage() {
 
   return (
     <div className="flex h-full w-full flex-col md:flex-row">
-      <aside className={'flex shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-80 md:border-b-0 md:border-r ' + (selectedId ? 'h-96' : 'h-64')}>
+      {/* On a phone the map comes first and the list or vehicle panel sits under it, so neither hides the other. */}
+      <aside className="order-2 flex h-[45%] min-h-0 shrink-0 flex-col border-t border-border bg-surface md:order-1 md:h-full md:w-80 md:border-r md:border-t-0">
         {selectedId ? (
           <SelectedVehiclePanel
             key={selectedId}
@@ -94,28 +95,32 @@ export default function LiveMapPage() {
           />
         ) : (
         <>
-        <div className="border-b border-border p-4">
-          <h1 className="text-lg font-semibold text-text">Live map</h1>
-          <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${liveCount.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles live`}</p>
-          {isStaff && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-3"
-              icon={<RefreshCw size={14} />}
-              loading={syncGps.isPending}
-              onClick={() => syncGps.mutate()}
-            >
-              Sync GPS now
-            </Button>
-          )}
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" className="mt-3" />
+        <div className="space-y-3 border-b border-border p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-text">Live map</h1>
+              <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${liveCount.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles live`}</p>
+            </div>
+            {isStaff && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                icon={<RefreshCw size={14} />}
+                loading={syncGps.isPending}
+                onClick={() => syncGps.mutate()}
+              >
+                Sync GPS
+              </Button>
+            )}
+          </div>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" />
         </div>
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="space-y-2 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
           ) : isError ? (
-            <EmptyState compact icon={<Truck size={22} />} title="We could not load vehicles" description="Check your connection and try again." action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Try again</Button>} />
+            <ErrorState compact title="We could not load vehicles" description="Check your connection and try again." onRetry={() => refetch()} />
           ) : filtered.length === 0 ? (
             <EmptyState
               compact
@@ -130,12 +135,13 @@ export default function LiveMapPage() {
                   <button
                     type="button"
                     onClick={() => selectVehicle(v.id)}
+                    aria-current={selectedId === v.id ? 'true' : undefined}
                     className={
-                      'flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm hover:bg-surface-subtle focus:bg-surface-subtle focus:outline-none' +
+                      'flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand' +
                       (selectedId === v.id ? ' bg-brand-soft hover:bg-brand-soft' : '')
                     }
                   >
-                    <span className="font-medium text-text">{v.plate_number}</span>
+                    <span className="min-w-0 truncate font-medium text-text">{v.plate_number}</span>
                     <StatusPill status={v.status} />
                   </button>
                 </li>
@@ -147,7 +153,7 @@ export default function LiveMapPage() {
         )}
       </aside>
 
-      <div className="relative min-h-[320px] flex-1">
+      <div className="relative order-1 min-h-[280px] flex-1 md:order-2">
         <LiveMap
           vehicles={fleet}
           selectedVehicleId={selectedId}

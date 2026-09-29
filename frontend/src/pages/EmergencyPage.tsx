@@ -4,9 +4,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User, Wrench } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
+import { formatDateTime } from '@/utils/display'
 import toast from 'react-hot-toast'
 import {
-  Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm, buttonClasses,
+  Page, PageHeader, Button, StatusPill, EmptyState, ErrorState, Skeleton, useConfirm, buttonClasses,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
 import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
@@ -260,7 +261,7 @@ export default function EmergencyPage() {
               <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
             ) : error ? (
               <div className="p-4">
-                <EmptyState compact icon={<AlertTriangle size={22} />} title="We could not load SOS calls" action={<Button variant="secondary" onClick={() => refetch()}>Try again</Button>} />
+                <ErrorState compact title="We could not load SOS calls" onRetry={() => refetch()} />
               </div>
             ) : alerts.length === 0 ? (
               <EmptyState compact icon={<ShieldAlert size={22} />} title="No SOS yet" description="SOS calls from drivers and staff will appear here." />
@@ -277,7 +278,7 @@ export default function EmergencyPage() {
                       type="button"
                       onClick={() => setSelectedId(alert.id)}
                       aria-pressed={isSelected}
-                      className="block w-full rounded-control text-left"
+                      className="block w-full rounded-control text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-text">
@@ -286,10 +287,10 @@ export default function EmergencyPage() {
                         </span>
                         <StatusPill tone={sosStatusTone(alert.status)}>{sosStatusLabel(alert.status)}</StatusPill>
                       </div>
-                      <p className="mt-1 text-xs text-muted">{new Date(alert.created_at).toLocaleString('en-IN')}</p>
+                      <p className="mt-1 text-xs text-muted">{formatDateTime(alert.created_at)}</p>
                       <div className="mt-2 space-y-0.5 text-sm text-text">
-                        <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{alert.driver?.full_name || 'Unknown driver'}</p>
-                        <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{alert.vehicle?.plate_number || 'Unknown vehicle'}</p>
+                        <p className="flex items-center gap-1.5"><User size={14} className="shrink-0 text-muted" aria-hidden="true" /><span className="min-w-0 truncate">{alert.driver?.full_name || 'Unknown driver'}</span></p>
+                        <p className="flex items-center gap-1.5"><Truck size={14} className="shrink-0 text-muted" aria-hidden="true" /><span className="min-w-0 truncate">{alert.vehicle?.plate_number || 'Unknown vehicle'}</span></p>
                       </div>
                       {sosSeverityLabel(alert.severity) && (
                         <p className={'mt-2 text-xs font-medium ' + (alert.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(alert.severity)}</p>
@@ -299,10 +300,12 @@ export default function EmergencyPage() {
                       )}
                       {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
                     </button>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 space-y-2">
+                    <div className="flex flex-wrap gap-2 empty:hidden">
                       {alert.driver?.phone && (
                         <a
                           href={`tel:${alert.driver.phone}`}
+                          aria-label={`Call ${alert.driver.full_name || 'driver'}`}
                           onClick={e => e.stopPropagation()}
                           className={buttonClasses({ variant: 'secondary', size: 'sm' })}
                         >
@@ -315,7 +318,7 @@ export default function EmergencyPage() {
                           onClick={e => e.stopPropagation()}
                           className={buttonClasses({ variant: 'secondary', size: 'sm' })}
                         >
-                          <MapPinned size={14} aria-hidden="true" /> Open on live map
+                          <MapPinned size={14} aria-hidden="true" /> Live map
                         </Link>
                       )}
                       {alert.latitude != null && alert.longitude != null && (
@@ -323,12 +326,15 @@ export default function EmergencyPage() {
                           href={`https://www.google.com/maps/search/?api=1&query=${alert.latitude},${alert.longitude}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          aria-label="Open in Google Maps"
                           onClick={e => e.stopPropagation()}
                           className={buttonClasses({ variant: 'secondary', size: 'sm' })}
                         >
-                          <ExternalLink size={14} aria-hidden="true" /> Open in Google Maps
+                          <ExternalLink size={14} aria-hidden="true" /> Google Maps
                         </a>
                       )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 empty:hidden">
                       {isActive && (!alert.status || alert.status === 'active') && (
                         <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
                       )}
@@ -346,6 +352,7 @@ export default function EmergencyPage() {
                         <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => returnToService(alert, true)}>Return to service</Button>
                       )}
                     </div>
+                    </div>
                   </div>
                 )
               })
@@ -362,23 +369,23 @@ export default function EmergencyPage() {
             ariaLabel="Map of active emergency alerts"
           >
             {selected && (
-              <div className="absolute left-3 top-3 z-10 max-w-xs rounded-control border border-border bg-surface p-3 shadow-raised">
+              <div className="absolute left-3 right-16 top-3 z-10 max-w-xs rounded-control border border-border bg-surface p-3 shadow-raised">
                 <p className="text-sm font-medium text-text">{sosTypeLabel(selected.alert_type)}</p>
-                <p className="mt-0.5 text-xs text-muted">{new Date(selected.created_at).toLocaleString('en-IN')}</p>
+                <p className="mt-0.5 text-xs text-muted">{formatDateTime(selected.created_at)}</p>
                 {sosSeverityLabel(selected.severity) && (
                   <p className={'mt-1 text-xs font-medium ' + (selected.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(selected.severity)}</p>
                 )}
                 <div className="mt-2 space-y-1 text-sm text-text">
-                  <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{selected.driver?.full_name || 'Unknown'}</p>
+                  <p className="flex items-center gap-1.5"><User size={14} className="shrink-0 text-muted" aria-hidden="true" /><span className="min-w-0 truncate">{selected.driver?.full_name || 'Unknown'}</span></p>
                   {selected.driver?.phone && (
-                    <p className="inline-flex items-center gap-1.5">
-                      <Phone size={13} className="text-muted" aria-hidden="true" />
+                    <p className="flex items-center gap-1.5">
+                      <Phone size={14} className="shrink-0 text-muted" aria-hidden="true" />
                       <a href={`tel:${selected.driver.phone}`} className="text-brand hover:underline">{selected.driver.phone}</a>
                     </p>
                   )}
-                  <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{selected.vehicle?.plate_number || 'Unknown'}</p>
+                  <p className="flex items-center gap-1.5"><Truck size={14} className="shrink-0 text-muted" aria-hidden="true" /><span className="min-w-0 truncate">{selected.vehicle?.plate_number || 'Unknown'}</span></p>
                   {selected.latitude != null && selected.longitude != null && (
-                    <p className="inline-flex items-center gap-1.5 font-mono text-xs"><MapPin size={13} className="text-muted" aria-hidden="true" />{selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}</p>
+                    <p className="flex items-center gap-1.5 font-mono text-xs"><MapPin size={14} className="shrink-0 text-muted" aria-hidden="true" />{selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}</p>
                   )}
                 </div>
               </div>

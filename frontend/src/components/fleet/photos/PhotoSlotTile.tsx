@@ -15,9 +15,13 @@ export default function PhotoSlotTile({ label, hint, src, busy, onFile, onRemove
     <div className="space-y-2">
       <div className="relative aspect-[4/3] overflow-hidden rounded-control border border-border bg-surface-subtle">
         {src ? (
-          <button type="button" onClick={onOpen} className="block h-full w-full" aria-label={`View the ${label.toLowerCase()} photo`}>
+          onOpen ? (
+            <button type="button" onClick={onOpen} className="block h-full w-full focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand" aria-label={`View the ${label.toLowerCase()} photo`}>
+              <img src={src} alt={`${label} of the vehicle`} className="h-full w-full object-cover" />
+            </button>
+          ) : (
             <img src={src} alt={`${label} of the vehicle`} className="h-full w-full object-cover" />
-          </button>
+          )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center text-xs text-muted">
             <Camera size={20} aria-hidden="true" />
@@ -30,11 +34,11 @@ export default function PhotoSlotTile({ label, hint, src, busy, onFile, onRemove
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className="text-sm font-medium text-text">{label}</span>
         <div className="flex items-center gap-1">
           <FileButton variant="link" accept="image/*" disabled={busy} onFile={onFile}>
-            {src ? 'Replace' : 'Add photo'}
+            {src ? 'Replace' : 'Add photo'}<span className="sr-only"> ({label.toLowerCase()})</span>
           </FileButton>
           {src && onRemove && (
             <IconButton label={`Remove the ${label.toLowerCase()} photo`} icon={<Trash2 size={14} />} size="sm" disabled={busy} onClick={onRemove} />
