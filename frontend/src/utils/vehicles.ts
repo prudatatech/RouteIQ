@@ -24,9 +24,12 @@ export function isDraftVehicle(v: PlateLike & StatusLike): boolean {
   return isPlaceholderPlate(v.plate_number)
 }
 
-/** A real, non-archived fleet vehicle: what the fleet counts and the live map show. */
+/** A vehicle a driver registered from the app that staff have not approved yet (Vehicle requests). */
+export const isPendingApproval = (v: StatusLike): boolean => v.status === 'pending_approval'
+
+/** A real, approved, non-archived fleet vehicle: what the fleet counts and the live map show. */
 export function isFleetVehicle(v: PlateLike & StatusLike): boolean {
-  return !isDraftVehicle(v) && v.status !== 'archived'
+  return !isDraftVehicle(v) && v.status !== 'archived' && !isPendingApproval(v)
 }
 
 /** The newer of last_heartbeat (driver and telemetry pings) and last_sync (GPS provider), or null. */

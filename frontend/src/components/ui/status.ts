@@ -24,7 +24,7 @@ const statusTone: Record<string, Tone> = {
   picked_up: 'info', out_for_delivery: 'info', escrow_held: 'info', bidded: 'info', submitted: 'info', planned: 'info',
   open: 'info', tracking: 'info', escalated: 'info', assigned_to_partner: 'info', offered: 'warning',
   // Needs attention
-  pending: 'warning', delayed: 'warning', maintenance: 'warning', paused: 'warning', notified: 'warning',
+  pending: 'warning', pending_approval: 'warning', delayed: 'warning', maintenance: 'warning', paused: 'warning', notified: 'warning',
   pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', medium: 'warning', gps_off: 'warning',
   // Failed / blocked
   failed: 'danger', rejected: 'danger', declined: 'danger', exception: 'danger', error: 'danger',
@@ -42,6 +42,7 @@ const statusLabel: Record<string, string> = {
   out_for_delivery: 'Out for delivery',
   gps_off: 'GPS off',
   maintenance: 'In maintenance',
+  pending_approval: 'Awaiting approval',
   sos: 'SOS',
   pending_escrow: 'Awaiting payment',
   escrow_held: 'Payment held',

@@ -42,6 +42,7 @@ const STAFF: Record<string, Resolver> = {
   tpl_offer_declined: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
   stop_failed: d => withOpen('/shipments', d.manifest_id),
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
+  vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),
   document_expiring: d => (str(d.user_id) ? `/admin/users/${str(d.user_id)}?tab=documents` : '/admin/users?tab=attention'),
 }

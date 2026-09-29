@@ -6,7 +6,7 @@ import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
-  Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
+  Alert, Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
 } from '@/components/ui'
 import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
@@ -17,6 +17,7 @@ import { downloadCsv, toCsv } from '@/utils/csv'
 import { expiryStatus } from '@/utils/documentExpiry'
 import { fleetAPI } from '@/services/api'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
+import { VehiclePhotoCard } from '@/components/fleet/photos/VehiclePhotoCard'
 import AlertsView from '@/components/fleet/AlertsView'
 import RaiseSosModal from '@/components/fleet/RaiseSosModal'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
@@ -56,6 +57,9 @@ interface Vehicle {
   permit_expiry?: string | null
   puc_expiry?: string | null
   odometer_km?: number | null
+  /** Set when staff rejected the vehicle a driver registered (it is archived, with the reason). */
+  rejection_reason?: string | null
+  review_decision?: string | null
 }
 
 const DOCUMENT_EXPIRY_LABELS: Record<string, string> = {
@@ -74,6 +78,8 @@ const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
 }
 
 function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
+  // Waiting for approval: reviewed on the Vehicle requests page, not part of the fleet yet
+  if (v.status === 'pending_approval') return false
   if (filter === 'drafts') return isDraftVehicle(v)
   if (isDraftVehicle(v)) return false
   if (filter === 'all') return v.status !== 'archived'
@@ -287,7 +293,7 @@ export default function FleetPage() {
   const handleUnarchive = async (v: Vehicle) => {
     const ok = await confirm({
       title: `Restore ${v.plate_number}?`,
-      message: 'The vehicle returns to the fleet as idle.',
+      message: v.review_decision === 'rejected' ? 'The vehicle is approved and returns to the fleet as available.' : 'The vehicle returns to the fleet as idle.',
       confirmLabel: 'Restore vehicle',
     })
     if (ok) statusMutation.mutate({ id: v.id, status: 'idle' })
@@ -302,6 +308,7 @@ export default function FleetPage() {
         <div>
           <p className="font-medium text-text">{v.plate_number}</p>
           <p className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type)}</p>
+          {v.status === 'archived' && v.rejection_reason && <p className="text-xs text-danger">Rejected: {v.rejection_reason}</p>}
         </div>
       ),
     },
@@ -604,7 +611,11 @@ export default function FleetPage() {
                 </div>
               )
             })()}
+            {detailVehicle.status === 'archived' && detailVehicle.rejection_reason && (
+              <Alert tone="danger" title="Rejected">{detailVehicle.rejection_reason}</Alert>
+            )}
             <RaiseSosModal key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} open={sosOpen} onClose={() => setSosOpen(false)} />
+            <VehiclePhotoCard key={`photos-${detailVehicle.id}`} vehicleId={detailVehicle.id} />
             <VehicleHealthPanel key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} />
           </div>
         )}

@@ -16,6 +16,7 @@ function page(importer: PageImporter) {
 // Console (behind AppLayout)
 export const dashboard = page(() => import('@/pages/DashboardPage'))
 export const fleet = page(() => import('@/pages/FleetPage'))
+export const vehicleRequests = page(() => import('@/pages/VehicleRequestsPage'))
 export const routes = page(() => import('@/pages/RoutesPage'))
 export const routeDetails = page(() => import('@/pages/RouteDetailsPage'))
 export const analytics = page(() => import('@/pages/AnalyticsPage'))
@@ -65,6 +66,7 @@ export const tplDashboard = page(() => import('@/pages/TplDashboardPage'))
 export const routePrefetch: Record<string, PageImporter> = {
   '/dashboard': dashboard.preload,
   '/fleet': fleet.preload,
+  '/vehicle-requests': vehicleRequests.preload,
   '/routes': routes.preload,
   '/live-map': liveMap.preload,
   '/shipments': shipments.preload,

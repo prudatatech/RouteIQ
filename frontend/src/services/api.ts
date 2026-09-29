@@ -117,6 +117,38 @@ export const vehiclesAPI = {
   }) => api.post(`/vehicles/${id}/sos`, data).then(r => r.data),
 }
 
+/** A stored vehicle photo; `url` is a short-lived signed link. */
+export interface VehiclePhoto {
+  slot: 'front' | 'side' | 'back' | 'interior' | 'cargo'
+  url: string | null
+  updated_at: string | null
+}
+
+/** A vehicle a driver registered from the app, waiting for a decision. */
+export interface VehicleRequest {
+  vehicle: Record<string, unknown> & { id: string; plate_number: string; vehicle_type: string; capacity_kg?: number | null }
+  driver: { id: string; full_name: string | null; phone: string | null; email: string | null } | null
+  photos: VehiclePhoto[]
+  primary_photo_url: string | null
+  submitted_at: string | null
+}
+
+/** Approval of vehicles registered from the driver app (admin and manager). */
+export const vehicleRequestsAPI = {
+  list: () => api.get('/vehicles/requests').then(r => r.data as { pending: number; requests: VehicleRequest[] }),
+  count: () => api.get('/vehicles/requests/count').then(r => r.data as { pending: number }),
+  approve: (id: string) => api.post(`/vehicles/${id}/approve`).then(r => r.data),
+  reject: (id: string, reason: string) => api.post(`/vehicles/${id}/reject`, { reason }).then(r => r.data),
+}
+
+export const vehiclePhotosAPI = {
+  list: (id: string) => api.get(`/vehicles/${id}/photos`).then(r => ensureArray(r.data) as VehiclePhoto[]),
+  uploadUrl: (id: string, data: { slot: string; content_type: string; size: number }) =>
+    api.post(`/vehicles/${id}/photos/upload-url`, data).then(r => r.data as { path: string; token: string; bucket: string }),
+  save: (id: string, slot: string, file_path: string) => api.put(`/vehicles/${id}/photos/${slot}`, { file_path }).then(r => r.data as VehiclePhoto),
+  remove: (id: string, slot: string) => api.delete(`/vehicles/${id}/photos/${slot}`),
+}
+
 export const optimizationAPI = {
   optimize: (data: Record<string, unknown>) => api.post('/optimize', data, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
   incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`, undefined, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
