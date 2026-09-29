@@ -19,6 +19,9 @@ import { sendError, HttpError } from '../core/errors';
 
 const router = Router();
 
+// Extra time allowed for an ML optimize call beyond the solver's own time budget
+const ML_TIMEOUT_MARGIN_SECONDS = 15;
+
 // ── POST / — Run VRP optimization ──────────────────────────
 router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
@@ -120,7 +123,8 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mlPayload),
-        signal: AbortSignal.timeout(10_000),
+        // The solver may use its whole time budget; allow for network and setup on top
+        signal: AbortSignal.timeout((payload.max_solve_time_seconds + ML_TIMEOUT_MARGIN_SECONDS) * 1000),
       });
       if (mlResponse.ok) {
         solution = await mlResponse.json();
@@ -234,8 +238,11 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       routes: routeResponses,
       total_distance_km: solution.total_distance_km || 0,
       total_fuel_liters: solution.total_fuel_liters || 0,
-      estimated_savings_pct: solution.savings_vs_naive_pct || 0,
+      // null when the solver has no baseline to measure savings against
+      estimated_savings_pct: solution.savings_vs_naive_pct ?? null,
       solve_time_seconds: solution.solve_time_seconds || 0,
+      // The algorithm that actually produced the routes (may differ from the request on fallback)
+      algorithm: solution.algorithm ?? mlPayload.algorithm,
       message: `Optimized ${routeResponses.length} routes in ${(solution.solve_time_seconds || 0).toFixed(2)}s`,
     });
   } catch (e: any) {
@@ -598,8 +605,9 @@ function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], traf
     total_distance_km: parseFloat(totalDist.toFixed(2)),
     total_fuel_liters: parseFloat((totalDist / 10).toFixed(2)),
     solve_time_seconds: parseFloat(((Date.now() - startTime) / 1000).toFixed(3)),
-    savings_vs_naive_pct: 12.0,
+    savings_vs_naive_pct: null,
     solver_status: 'greedy_fallback',
+    algorithm: 'greedy',
   };
 }
 

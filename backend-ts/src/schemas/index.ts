@@ -197,7 +197,8 @@ export const OptimizationRequestSchema = z.object({
   depot_id: z.string().uuid().optional().nullable(),
   vehicle_ids: z.array(z.string().uuid()).max(100).default([]),
   shipment_ids: z.array(z.string().uuid()).max(500).default([]),
-  algorithm: z.enum(['ortools', 'genetic', 'reinforcement']).default('ortools'),
+  // 'ga' and 'genetic' both select the genetic algorithm in the ML service
+  algorithm: z.enum(['ortools', 'ga', 'genetic']).default('ortools'),
   consider_traffic: z.boolean().default(true),
   consider_weather: z.boolean().default(true),
   traffic_density: z.number().min(0).max(1).default(0.5),

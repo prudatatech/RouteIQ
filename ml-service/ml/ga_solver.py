@@ -180,6 +180,6 @@ def solve_vrp_ga(
         total_distance_km=round(total_dist, 2),
         total_fuel_liters=round(total_fuel, 2),
         solve_time_seconds=round(time.time() - start_time, 3),
-        savings_vs_naive_pct=15.0, 
+        savings_vs_naive_pct=None,
         solver_status="optimal"
     )
