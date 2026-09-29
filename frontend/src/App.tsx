@@ -15,7 +15,7 @@ import LandingPage from '@/pages/LandingPage'
 import OptimizePage from '@/pages/OptimizePage'
 import SuperadminPage from '@/pages/SuperadminPage'
 import AIHubPage from '@/pages/AIHubPage'
-import CargoNetworkPage from '@/pages/CargoNetworkPage'
+import BackhaulPage from '@/pages/BackhaulPage'
 import ShipmentsPage from '@/pages/ShipmentsPage'
 import ShipmentManifestPage from '@/pages/ShipmentManifestPage'
 import RouteDetailsPage from '@/pages/RouteDetailsPage'
@@ -298,7 +298,7 @@ export default function App() {
             } />
             <Route path="backhaul" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <CargoNetworkPage />
+                <BackhaulPage />
               </PrivateRoute>
             } />
             <Route path="vendor-requests" element={
