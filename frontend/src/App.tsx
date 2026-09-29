@@ -36,7 +36,6 @@ import VendorTrackingPage from '@/pages/VendorTrackingPage'
 import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
 import VendorOnboardingPage from '@/pages/VendorOnboardingPage'
 import VendorDocumentsPage from '@/pages/VendorDocumentsPage'
-import VendorLoginPage from '@/pages/VendorLoginPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import VendorShipmentsPage from '@/pages/VendorShipmentsPage'
 import VendorCorridorPage from '@/pages/VendorCorridorPage'
@@ -49,6 +48,7 @@ function MovedTo({ to }: { to: string }) {
 }
 
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
+  const location = useLocation()
   const token = useAuthStore(s => s.token)
   const role = useAuthStore(s => s.role)
   const authInitialized = useAuthStore(s => s.authInitialized)
@@ -63,7 +63,12 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
     )
   }
 
-  if (!token) return <Navigate to="/login" replace />
+  if (!token) {
+    // Come back here after signing in; vendor and 3PL pages open the partner sign-in.
+    const params = new URLSearchParams({ next: `${location.pathname}${location.search}` })
+    if (location.pathname.startsWith('/vendor') || location.pathname.startsWith('/3pl-portal')) params.set('as', 'vendor')
+    return <Navigate to={`/login?${params}`} replace />
+  }
 
   // If this route is restricted to certain roles
   if (allowedRoles) {
@@ -75,6 +80,14 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   }
 
   return <>{children}</>
+}
+
+// The vendor sign-in page is now the partner option of /login. Keep ?next= and the rest.
+function VendorLoginRedirect() {
+  const { search, hash } = useLocation()
+  const params = new URLSearchParams(search)
+  params.set('as', 'vendor')
+  return <Navigate to={{ pathname: '/login', search: `?${params}`, hash }} replace />
 }
 
 // Old activation links point here; the real flow is the 3PL credential setup.
@@ -173,7 +186,7 @@ export default function App() {
             </PrivateRoute>
           } />
           {/* Vendor Portal — home/discover and corridors are intentionally public (browsable
-              before login; corridor bidding itself redirects to /vendor/login when there's no
+              before login; corridor bidding itself redirects to sign-in when there's no
               session). Everything that needs a vendor account is gated below. */}
           <Route path="/vendor" element={<VendorLayout />}>
             <Route index element={<VendorPortalPage />} />
@@ -205,7 +218,7 @@ export default function App() {
               <VendorOnboardingPage />
             </PrivateRoute>
           } />
-          <Route path="/vendor/login" element={<VendorLoginPage />} />
+          <Route path="/vendor/login" element={<VendorLoginRedirect />} />
 
           {/* 3PL Public/Partner Routes */}
           <Route path="/3pl/onboard" element={<TplOnboardingPage />} />
