@@ -80,7 +80,11 @@ Production was edited by hand: `tpl_partners`, `tpl_corridors`, `tpl_documents` 
 - `20260928000000` (roles from app_metadata), `…0100` (KYC columns, one-time backfill), `…0200` (deny-by-default RLS, field guards, private KYC bucket), `…0300` (status alignment).
 - Verified in a local Postgres 15/16 built from the repo's schema history plus the prod-only tables: all four apply cleanly and re-apply idempotently; 141 role-by-role checks pass (anon, drivers, vendor, 3PL partner, admin/manager/superadmin, inactive admin, service role, signup trigger, KYC backfill, no policy recursion).
 - Frontend reads KYC from the new columns and opens documents through signed URLs; superadmins can now open 3PL applicants' documents.
-- Known follow-ups: vendors see full vehicle rows (incl. driver phone, live position) for open windows — replace with a column-limited view; a verified vendor can edit company name/GST without re-verification; managers can approve KYC (matches backend staff roles — confirm intended); anonymous 3PL applicants can upload any file under `tpl-applications/` (move to backend-issued signed upload URLs).
+- Follow-ups (migrations `20260929*`, runbook section 1b in `supabase/README.md`):
+  - **Done** — vendors no longer read vehicle rows. `20260929000000` removes the vendor branch of the `vehicles` policy; vendors get open windows (`GET /capacity/windows/open`) and their own bids (`GET /capacity/bids/mine`) from the backend with vehicle type, free capacity and origin city only (plate only on a won bid). The passing-routes feed and its notification no longer include the full vehicle row or the plate.
+  - Open — a verified vendor can edit company name/GST without re-verification.
+  - Open — managers can approve KYC (matches backend staff roles — confirm intended).
+  - Open — anonymous 3PL applicants can upload any file under `tpl-applications/` (move to backend-issued signed upload URLs).
 
 ## Phase 3 — Driver app release, then key rotation — C
 

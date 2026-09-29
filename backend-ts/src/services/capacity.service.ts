@@ -8,7 +8,75 @@ function notify(send: () => Promise<unknown>) {
   send().catch((e) => console.error('[capacity] Notification failed:', e));
 }
 
+/** A PostgREST to-one embed arrives as an object (or, for some relationships, a one-element array). */
+function one<T>(embed: T | T[] | null | undefined): T | null {
+  return (Array.isArray(embed) ? embed[0] : embed) ?? null;
+}
+
+/**
+ * What a vendor sees of an open window: enough to decide and bid, nothing that
+ * identifies or locates the vehicle or its driver (no plate, phone or position).
+ */
+function toVendorWindow(w: any) {
+  const v = one<any>(w.vehicles);
+  return {
+    id: w.id,
+    trigger_type: w.trigger_type ?? null,
+    opens_at: w.opens_at,
+    closes_at: w.closes_at,
+    floor_price: w.floor_price,
+    vehicles: v
+      ? { vehicle_type: v.vehicle_type ?? null, available_capacity_kg: v.available_capacity_kg ?? null, origin_city: v.city ?? null }
+      : null,
+  };
+}
+
+/** A vendor's own bid; the plate is shown only once the vendor has won the window (needed for handover). */
+function toVendorBid(b: any) {
+  const w = one<any>(b.capacity_windows);
+  const v = one<any>(w?.vehicles);
+  const { capacity_windows: _omit, ...bid } = b;
+  return {
+    ...bid,
+    capacity_windows: w
+      ? {
+          trigger_type: w.trigger_type ?? null,
+          vehicles: v
+            ? { vehicle_type: v.vehicle_type ?? null, ...(b.status === 'won' ? { plate_number: v.plate_number ?? null } : {}) }
+            : null,
+        }
+      : null,
+  };
+}
+
 export const capacityService = {
+  /**
+   * Open capacity windows as vendors see them (see toVendorWindow).
+   */
+  async listOpenWindowsForVendors() {
+    const { data, error } = await supabase
+      .from('capacity_windows')
+      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg, city)')
+      .gt('closes_at', new Date().toISOString())
+      .is('winning_bid_id', null)
+      .order('opens_at', { ascending: false });
+    if (error) throw new Error(`Failed to load open windows: ${error.message}`);
+    return (data ?? []).map(toVendorWindow);
+  },
+
+  /**
+   * A vendor's bids, newest first (see toVendorBid).
+   */
+  async listVendorBids(vendorId: string) {
+    const { data, error } = await supabase
+      .from('capacity_bids')
+      .select('*, capacity_windows!capacity_bids_window_id_fkey(trigger_type, vehicles(vehicle_type, plate_number))')
+      .eq('vendor_id', vendorId)
+      .order('submitted_at', { ascending: false });
+    if (error) throw new Error(`Failed to load bids: ${error.message}`);
+    return (data ?? []).map(toVendorBid);
+  },
+
   /**
    * Submit a bid for a capacity window
    */

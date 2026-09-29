@@ -162,6 +162,9 @@ export const capacityAPI = {
     eway_bill_ref?: string
     load_configuration?: string
   }) => api.post('/capacity/bids', data).then(r => r.data),
+  // Vendor views: no plate, driver or live position (plate only on a won bid)
+  openWindows: () => api.get('/capacity/windows/open').then(r => ensureArray(r.data)),
+  myBids: () => api.get('/capacity/bids/mine').then(r => ensureArray(r.data)),
   pendingBids: () => api.get('/capacity/bids/pending').then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
 }

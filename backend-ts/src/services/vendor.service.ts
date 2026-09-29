@@ -263,8 +263,9 @@ export const vendorService = {
       
       if (error || !data || data.length === 0) return;
       
-      const { data: vehicleData } = await supabase.from('vehicles').select('plate_number, capacity_kg, available_capacity_kg').eq('id', vehicleId).single();
-      const vehicleDesc = vehicleData?.plate_number ? `Truck ${vehicleData.plate_number}` : 'A truck';
+      const { data: vehicleData } = await supabase.from('vehicles').select('vehicle_type, capacity_kg, available_capacity_kg').eq('id', vehicleId).single();
+      // Vendors are not told which vehicle it is (plate) until they win capacity on it
+      const vehicleDesc = vehicleData?.vehicle_type ? `A ${vehicleData.vehicle_type}` : 'A truck';
       
       // Notify matched vendors
       for (const match of data) {
@@ -339,7 +340,8 @@ export const vendorService = {
   async getPassingRoutes(vendorId: string) {
     const { data, error } = await supabase
       .from('vendor_route_opportunities')
-      .select('*, routes(*, vehicles(*))')
+      // Only what the card shows: never the full route or vehicle (plate, driver phone, live position)
+      .select('*, routes(id, vehicles(vehicle_type))')
       .eq('vendor_id', vendorId)
       .eq('status', 'notified')
       .order('created_at', { ascending: false });

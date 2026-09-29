@@ -95,6 +95,24 @@ router.post('/bids', requireAuth, requireRole('vendor', 'admin'), async (req, re
   }
 });
 
+// GET /api/v1/capacity/windows/open — open windows without vehicle/driver details
+router.get('/windows/open', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req, res) => {
+  try {
+    res.json(await capacityService.listOpenWindowsForVendors());
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// GET /api/v1/capacity/bids/mine — the caller's own bids
+router.get('/bids/mine', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req, res) => {
+  try {
+    res.json(await capacityService.listVendorBids(req.user!.user_id));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // GET /api/v1/capacity/nearby-vendors
 router.get('/nearby-vendors', requireAuth, requireRole(...STAFF_ROLES), async (req, res) => {
   try {

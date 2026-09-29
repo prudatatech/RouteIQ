@@ -62,6 +62,8 @@ class MockSupabase {
   readonly kid = 'test-key';
   /** Every insert, update and delete, in order. */
   mutations: Mutation[] = [];
+  /** Every request URL (path and query), in order. */
+  requests: URL[] = [];
 
   private server: http.Server | null = null;
   private tables = new Map<string, Row[]>();
@@ -84,6 +86,7 @@ class MockSupabase {
   reset(fixtures: Record<string, Row[]> = {}): void {
     this.tables = new Map(Object.entries(fixtures).map(([table, rows]) => [table, rows.map(r => structuredClone(r))]));
     this.mutations = [];
+    this.requests = [];
     this.failures.clear();
   }
 
@@ -117,6 +120,7 @@ class MockSupabase {
     req.on('data', chunk => (raw += chunk));
     req.on('end', () => {
       const url = new URL(req.url ?? '/', this.url);
+      this.requests.push(url);
       const send = (status: number, body?: unknown) => {
         res.writeHead(status, { 'Content-Type': 'application/json' });
         res.end(body === undefined ? '' : JSON.stringify(body));
