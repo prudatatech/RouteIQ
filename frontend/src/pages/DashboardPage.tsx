@@ -8,22 +8,15 @@ import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
+import { destinationOf, isActiveShipmentStatus } from '@/components/shipments/format'
+import type { ShipmentRow } from '@/components/shipments/types'
+import { isDraftVehicle } from '@/utils/vehicles'
 
 interface VehicleRow {
   id: string
   plate_number: string
   status: string
   last_sync?: string | null
-}
-
-interface ShipmentRow {
-  id: string
-  tracking_id: string
-  status: string
-  origin_name?: string | null
-  delivery_point?: { name?: string | null } | null
-  driver_name?: string | null
-  created_at?: string | null
 }
 
 interface SosAlertRow {
@@ -79,9 +72,11 @@ export default function DashboardPage() {
     refetchInterval: 5_000,
   })
 
+  // The list endpoint doesn't filter by status server-side, so "active" is computed
+  // here from the same rule the Shipments tabs use (isActiveShipmentStatus).
   const { data: shipments = [], isLoading: shipmentsLoading, error: shipmentsError, refetch: refetchShipments } = useQuery<ShipmentRow[]>({
-    queryKey: ['shipments', 'active'],
-    queryFn: () => shipmentsAPI.list({ status: 'in_transit', limit: 200 }) as Promise<ShipmentRow[]>,
+    queryKey: ['shipments', 'dashboard'],
+    queryFn: () => shipmentsAPI.list({ limit: 200 }) as Promise<ShipmentRow[]>,
     refetchInterval: 30_000,
   })
 
@@ -98,9 +93,10 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   })
 
-  const activeVehicles = vehicles.filter(v => v.status !== 'archived')
+  const activeVehicles = vehicles.filter(v => !isDraftVehicle(v))
   const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
-  const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
+  const activeShipments = shipments.filter(s => isActiveShipmentStatus(s.status))
+  const activeShipmentCount = activeShipments.length
   // No fabricated fallback: on_time_rate_pct is null when there is no route data for today.
   const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
   const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
@@ -137,7 +133,10 @@ export default function DashboardPage() {
       key: 'route',
       header: 'Route',
       hideOnMobile: true,
-      cell: s => <span>{s.origin_name || 'Origin pending'} → {s.delivery_point?.name || 'Destination pending'}</span>,
+      cell: s => {
+        const dest = destinationOf(s)
+        return <span>{s.origin_name || s.origin_address || 'Origin pending'} → {dest?.name || dest?.address || 'Destination pending'}</span>
+      },
     },
     { key: 'driver', header: 'Driver', hideOnMobile: true, hideBelow: 'lg', cell: s => s.driver_name || 'Unassigned' },
     {
@@ -157,7 +156,7 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Active shipments" value={activeShipmentCount} loading={kpisLoading} icon={<Package size={18} />} />
+        <Stat label="Active shipments" value={activeShipmentCount} loading={shipmentsLoading} icon={<Package size={18} />} />
         <Stat
           label="Tracked vehicles"
           value={activeVehicles.length}
@@ -220,20 +219,20 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader
-          title="Recent shipments"
-          description="Shipments currently in transit."
+          title="Active shipments"
+          description="Shipments that haven't been delivered yet."
           actions={<Button variant="ghost" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/shipments')}>View all</Button>}
         />
         <div className="p-4 pt-0 sm:p-6 sm:pt-0">
           <DataTable
-            caption="Recent shipments"
+            caption="Active shipments"
             columns={columns}
-            rows={shipments}
+            rows={activeShipments}
             rowKey={s => s.id}
             loading={shipmentsLoading}
             error={shipmentsError ? 'We could not load shipments.' : undefined}
             onRetry={() => refetchShipments()}
-            empty={{ title: 'No shipments in transit', description: 'Create a shipment to see it here.', action: <Button onClick={openModal}>Create shipment</Button> }}
+            empty={{ title: 'No active shipments', description: 'Every shipment has been delivered or cancelled.', action: <Button onClick={openModal}>Create shipment</Button> }}
             onRowClick={s => navigate('/shipments?tracking=' + s.tracking_id)}
             pageSize={10}
           />
