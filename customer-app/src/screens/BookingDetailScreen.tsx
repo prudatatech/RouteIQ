@@ -9,7 +9,7 @@ import { api, type BookingDetail } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { BOOKING_STATUS, BOOKING_STEPS, canCancel, formatMinutes } from '../utils/bookingStatus';
 import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
-import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
+import { useTranslation } from '../hooks/useTranslation';
 
 /** How often live tracking refreshes while the shipment is moving. */
 const LIVE_REFRESH_MS = 30_000;
@@ -69,9 +69,11 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
     setPulling(true);
     reload();
   };
-  useEffect(() => {
+  const [wasLoading, setWasLoading] = useState(loading);
+  if (wasLoading !== loading) {
+    setWasLoading(loading);
     if (!loading) setPulling(false);
-  }, [loading]);
+  }
 
   const cancel = async () => {
     setCancelling(true);
