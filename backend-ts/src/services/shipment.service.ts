@@ -865,6 +865,14 @@ export class ShipmentService {
     // Bill the delivery (complete-stop, status updates and verify-pod all end up here)
     if (status === 'delivered') await InvoiceService.onShipmentDelivered(shipmentId);
 
+    // Keep a customer's booking (and their notifications) in step with the shipment
+    try {
+      const { onShipmentStatus } = await import('./customer-bookings.service');
+      await onShipmentStatus(shipmentId, status);
+    } catch (e) {
+      console.error('Failed to update the customer booking:', e);
+    }
+
     // Find vehicle to recalculate capacity
     const { data: dp } = await supabase
       .from('delivery_points')

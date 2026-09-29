@@ -1,0 +1,64 @@
+/**
+ * margixindia — Customer bookings for staff: list, confirm, assign, cancel.
+ */
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
+import { HttpError, parseRejectionReason, sendError } from '../core/errors';
+import { assignBooking, BOOKING_STATUSES, cancelBooking, confirmBooking, listAllBookings } from '../services/customer-bookings.service';
+
+const router = Router();
+router.use(requireAuth, requireRole(...STAFF_ROLES));
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function bookingId(req: Request): string {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) throw new HttpError(404, 'Booking not found');
+  return id;
+}
+const actor = (req: Request) => ({ id: req.user!.user_id, role: req.user!.role });
+
+// ── GET /bookings?status= ──────────────────────────────────
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    if (status && !(BOOKING_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, 'Unknown status');
+    res.json(await listAllBookings(status));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── POST /bookings/:id/confirm — creates the shipment ──────
+router.post('/:id/confirm', async (req: Request, res: Response) => {
+  try {
+    res.json(await confirmBooking(bookingId(req), actor(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── POST /bookings/:id/assign — { vehicle_id } ─────────────
+router.post('/:id/assign', async (req: Request, res: Response) => {
+  try {
+    const parsed = z.object({ vehicle_id: z.string().uuid('Choose a vehicle') }).safeParse(req.body);
+    if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
+    res.json(await assignBooking(bookingId(req), parsed.data.vehicle_id, actor(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── POST /bookings/:id/cancel — { reason } ─────────────────
+router.post('/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const reason = parseRejectionReason(req.body?.reason);
+    const user = req.user!;
+    res.json(await cancelBooking(bookingId(req), { role: 'staff', userId: user.user_id, actorRole: user.role }, reason));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+export default router;

@@ -188,6 +188,25 @@ class ApiClient {
   async getQuote(input: QuoteRequest): Promise<Quote> {
     return this.request('POST', '/customer/quote', input);
   }
+
+  // ── Bookings ───────────────────────────────────────────────
+
+  /** The price is worked out again on the server; the app never sends one. */
+  async createBooking(input: BookingRequest): Promise<Booking> {
+    return this.request('POST', '/customer/bookings', input);
+  }
+
+  async listBookings(): Promise<Booking[]> {
+    return this.request('GET', '/customer/bookings');
+  }
+
+  async getBooking(id: string): Promise<BookingDetail> {
+    return this.request('GET', `/customer/bookings/${id}`);
+  }
+
+  async cancelBooking(id: string, reason?: string): Promise<Booking> {
+    return this.request('POST', `/customer/bookings/${id}/cancel`, reason ? { reason } : {});
+  }
 }
 
 export interface QuoteRequest {
@@ -200,6 +219,53 @@ export interface QuoteRequest {
   load_type: 'full' | 'part';
   /** Pickup day, YYYY-MM-DD (India). */
   date: string;
+}
+
+export interface BookingRequest extends QuoteRequest {
+  pickup_name: string;
+  pickup_address: string;
+  drop_name: string;
+  drop_address: string;
+}
+
+export type BookingStatus = 'requested' | 'confirmed' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';
+
+export interface Booking {
+  id: string;
+  pickup_name: string;
+  pickup_address: string;
+  pickup_lat: number;
+  pickup_lng: number;
+  drop_name: string;
+  drop_address: string;
+  drop_lat: number;
+  drop_lng: number;
+  weight_kg: number;
+  load_type: 'full' | 'part';
+  vehicle_type: string | null;
+  /** YYYY-MM-DD */
+  pickup_date: string;
+  quoted_price: number | null;
+  status: BookingStatus;
+  tracking_id: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+}
+
+/** What the public tracking endpoint returns for a shipment (no vendor or driver details). */
+export interface Tracking {
+  status: string;
+  eta_minutes: number | null;
+  vehicle: { plate_number: string | null; type: string | null; lat: number | null; lng: number | null } | null;
+  destination: { name: string | null; address: string | null; lat: number | null; lng: number | null } | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
+  history: { status: string; at: string }[];
+}
+
+export interface BookingDetail {
+  booking: Booking;
+  tracking: Tracking | null;
 }
 
 export interface Quote {

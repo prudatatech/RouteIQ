@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Button, Card, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
+import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
 import { api, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
@@ -47,7 +47,52 @@ export default function QuoteScreen({ navigation, route }: any) {
     setPickerOpen(false);
   };
 
+  const [booking, setBooking] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [booked, setBooked] = useState(false);
+
+  const book = async () => {
+    setBooking(true);
+    setBookingError(null);
+    try {
+      await api.createBooking({
+        pickup_lat: pickupCoord.latitude,
+        pickup_lng: pickupCoord.longitude,
+        drop_lat: dropoffCoord.latitude,
+        drop_lng: dropoffCoord.longitude,
+        weight_kg: weightKg,
+        vehicle_type: vehicleType,
+        load_type: loadType,
+        date,
+        pickup_name: placeName(pickupLocation),
+        pickup_address: pickupLocation,
+        drop_name: placeName(dropoffLocation),
+        drop_address: dropoffLocation,
+      });
+      setBooked(true);
+    } catch (e: any) {
+      setBookingError(e?.message || 'Could not send your booking. Check your internet connection and try again.');
+    } finally {
+      setBooking(false);
+    }
+  };
+
   const isRange = quote?.available && quote.low != null && quote.high != null && quote.low !== quote.high;
+
+  if (booked) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.doneWrap}>
+          <EmptyState
+            icon={<Feather name="check-circle" size={size.icon.xl} color={colors.success} />}
+            title="Booking sent"
+            message={`Our team will confirm your pickup on ${formatDay(date)} and let you know here.`}
+            action={{ label: 'Back to Home', onPress: () => navigation.popToTop(), variant: 'primary' }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -144,7 +189,15 @@ export default function QuoteScreen({ navigation, route }: any) {
       </ScrollView>
 
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
-        <Button title="Change details" variant="secondary" onPress={() => navigation.goBack()} />
+        {bookingError ? <ErrorBanner message={bookingError} /> : null}
+        <Button
+          title="Book this shipment"
+          loading={booking}
+          disabled={loading || !!error}
+          accessibilityHint={quote && !quote.available ? 'Sends your request so our team can quote it' : undefined}
+          onPress={book}
+        />
+        <Button title="Change details" variant="secondary" disabled={booking} onPress={() => navigation.goBack()} />
       </SafeAreaView>
 
       <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
@@ -178,6 +231,9 @@ export default function QuoteScreen({ navigation, route }: any) {
     </SafeAreaView>
   );
 }
+
+/** The first part of an address, used as the place's short name. */
+const placeName = (address: string) => address.split(',')[0].trim() || address;
 
 function priceLabel(quote: Quote): string {
   if (quote.low != null && quote.high != null && quote.low !== quote.high) {
@@ -215,6 +271,7 @@ function DateChip({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  doneWrap: { flex: 1, justifyContent: 'center' },
   content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
   section: { gap: space[2] },
   routeCard: { gap: space[1] },

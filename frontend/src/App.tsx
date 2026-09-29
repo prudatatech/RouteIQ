@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, routes, routeDetails, analytics, optimize, shipments, shipmentManifest, emergency, bids,
-  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
+  backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -54,6 +54,7 @@ const VendorDocumentsPage = vendorDocuments.Component
 const VendorShipmentsPage = vendorShipments.Component
 const VendorCorridorPage = vendorCorridor.Component
 const VendorRequestsPage = vendorRequests.Component
+const BookingsPage = bookings.Component
 
 /** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
 function PageFallback() {
@@ -380,6 +381,11 @@ export default function App() {
             <Route path="vendor-requests" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <VendorRequestsPage />
+              </PrivateRoute>
+            } />
+            <Route path="bookings" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <BookingsPage />
               </PrivateRoute>
             } />
             {/* Old addresses, kept so bookmarks and links in emails still work */}
