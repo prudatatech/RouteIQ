@@ -9,6 +9,7 @@ import type { Language } from '../../locales';
 import { INDIAN_VEHICLES, LANGUAGES } from '../../constants/profile';
 import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
 import { colors, radius, size, space } from '../../theme';
+import { formatNumber } from '../../utils/format';
 
 export const AVATAR_KEY = 'driver_avatar_uri';
 
@@ -206,7 +207,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
               disabled={savingVehicle !== null}
               accessibilityRole="radio"
               accessibilityState={{ selected, disabled: savingVehicle !== null }}
-              accessibilityLabel={`${label}, ${v.capacity_kg.toLocaleString()} kg`}
+              accessibilityLabel={`${label}, ${formatNumber(v.capacity_kg)} kg`}
               style={({ pressed }) => [styles.vehicle, idx > 0 && styles.vehicleBorder, pressed && styles.pressed]}
             >
               <View style={styles.flex}>
@@ -214,7 +215,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
                   {label}
                 </Text>
                 <Text variant="caption" color="textMuted">
-                  {`${v.capacity_kg.toLocaleString()} kg · ${v.container}`}
+                  {`${formatNumber(v.capacity_kg)} kg · ${v.container}`}
                 </Text>
               </View>
               {selected ? <Ionicons name="checkmark-circle" size={size.icon.md} color={colors.accent} /> : null}

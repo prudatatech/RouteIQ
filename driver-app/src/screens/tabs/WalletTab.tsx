@@ -7,7 +7,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import type { Invoice } from '../../components/modals/InvoiceDialog';
 import { Card, EmptyState, ErrorBanner, StatusPill, Text } from '../../components/ui';
 import { colors, size, space } from '../../theme';
-import { formatINR, formatNumber } from '../../utils/format';
+import { formatDate, formatINR, formatNumber } from '../../utils/format';
 
 interface WalletTabProps {
   onOpenInvoice: (invoice: Invoice) => void;
@@ -139,7 +139,7 @@ export default function WalletTab({ onOpenInvoice }: WalletTabProps) {
                   >
                     <View style={styles.flex}>
                       <Text variant="caption" color="textMuted">
-                        {`${new Date(inv.date).toLocaleDateString()} · ${inv.cargo_type ?? ''}`}
+                        {`${formatDate(inv.date)} · ${inv.cargo_type ?? ''}`}
                       </Text>
                       <Text variant="bodyMedium" numberOfLines={1}>
                         {`${inv.pickup ?? '—'} → ${inv.drop ?? '—'}`}

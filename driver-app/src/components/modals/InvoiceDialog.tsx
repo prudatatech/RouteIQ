@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
 import { Button, Text } from '../ui';
 import { colors, size, space } from '../../theme';
+import { formatINR } from '../../utils/format';
 
 export interface Invoice {
   id: string;
@@ -19,7 +20,7 @@ export interface Invoice {
   total_payout?: number;
 }
 
-const money = (v?: number) => (typeof v === 'number' ? `₹${v.toLocaleString()}` : '—');
+const money = (v?: number) => (typeof v === 'number' ? formatINR(v) : '—');
 
 function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: 'success' | 'danger' | 'text' }) {
   return (

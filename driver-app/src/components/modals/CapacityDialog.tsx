@@ -4,6 +4,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { errorMessage } from '../../utils/errors';
 import { Button, Text } from '../ui';
 import { space } from '../../theme';
+import { formatNumber } from '../../utils/format';
 
 interface CapacityDialogProps {
   vehicle: { vehicle_type?: string | null; capacity_kg?: number | null } | null;
@@ -32,7 +33,7 @@ export default function CapacityDialog({ vehicle, onDeclare, onCancel }: Capacit
   const capacity = vehicle?.capacity_kg ?? null;
   const label = (pct: number) => {
     const base = pct === 0 ? t('load_empty') : pct === 100 ? t('load_full') : `${pct}% ${t('load_full_suffix')}`;
-    return capacity ? `${base} (${Math.round((pct / 100) * capacity).toLocaleString()} kg)` : base;
+    return capacity ? `${base} (${formatNumber(Math.round((pct / 100) * capacity))} kg)` : base;
   };
 
   return (
@@ -48,7 +49,7 @@ export default function CapacityDialog({ vehicle, onDeclare, onCancel }: Capacit
         ) : null}
         {capacity ? (
           <Text variant="bodySmall" color="textMuted">
-            {`${t('max_capacity')}: ${capacity.toLocaleString()} kg`}
+            {`${t('max_capacity')}: ${formatNumber(capacity)} kg`}
           </Text>
         ) : null}
         <Text variant="bodySmall" color="textMuted">

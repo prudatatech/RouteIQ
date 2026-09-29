@@ -5,6 +5,7 @@ import { supabase } from '../services/supabase';
 import { api } from '../services/api';
 import { Text } from './ui';
 import { colors, elevation, radius, size, space } from '../theme';
+import { formatINR } from '../utils/format';
 
 interface BackhaulPopupProps {
   vehicleId: string;
@@ -136,7 +137,7 @@ export default function BackhaulPopup({ vehicleId, onDismiss, bottomOffset = spa
         <View style={styles.body}>
           <Text variant="title">
             {matchAmount !== null
-              ? `${t('backhaul_matched_offer')} ₹${matchAmount.toLocaleString()}`
+              ? `${t('backhaul_matched_offer')} ${formatINR(matchAmount)}`
               : t('backhaul_offer_accepted')}
           </Text>
           <Text variant="bodySmall" color="textMuted">

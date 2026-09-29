@@ -55,7 +55,10 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   returnTrip: 'full',
 };
 
-const formatTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const formatTime = (ms: number) =>
+  new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(
+    new Date(ms),
+  );
 
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
+import { formatNumber } from '../utils/format';
 
 /** Weight presets with the vehicle class usually used for them in India. */
 const TRUCK_TIERS = [
@@ -35,7 +36,7 @@ const getTierForWeight = (weight: number) => {
 };
 
 const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
-  unit === 't' ? tonnes.toFixed(1) : Math.round(tonnes * 1000).toLocaleString();
+  unit === 't' ? tonnes.toFixed(1) : formatNumber(Math.round(tonnes * 1000));
 
 export default function CargoConfigScreen({ navigation, route }: any) {
   const { pickupLocation, dropoffLocation, loadType } = route.params || {};
@@ -249,7 +250,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </Text>
             <Text variant="bodyMedium">{suggestedTruck ?? 'Chosen after you confirm the weight'}</Text>
             <Text variant="caption" color="textMuted">
-              For loads up to {Math.round(selectedWeight * 1000).toLocaleString()} kg
+              For loads up to {formatNumber(Math.round(selectedWeight * 1000))} kg
             </Text>
           </View>
         </Card>
