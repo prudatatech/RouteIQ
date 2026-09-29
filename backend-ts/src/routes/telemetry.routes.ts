@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { InvoiceService } from '../services/invoice.service';
 
 const router = Router();
 
@@ -713,6 +714,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         }
       } else {
         await supabase.from('cargo_manifest').update({ status: 'delivered' }).eq('id', manifestId);
+        await InvoiceService.onManifestDelivered(manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
         // Auto-empty: subtract delivered weight from truck
         const deliveredWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;

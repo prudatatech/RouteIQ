@@ -6,6 +6,7 @@ import { HttpError } from '../core/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
 import { SecurityService } from './security.service';
+import { InvoiceService } from './invoice.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 
@@ -860,6 +861,9 @@ export class ShipmentService {
       metadata.signature_captured = !!signatureData;
     }
     await ShipmentService.recordShipmentLog(shipmentId, status, lat, lng, metadata, actor);
+
+    // Bill the delivery (complete-stop, status updates and verify-pod all end up here)
+    if (status === 'delivered') await InvoiceService.onShipmentDelivered(shipmentId);
 
     // Find vehicle to recalculate capacity
     const { data: dp } = await supabase

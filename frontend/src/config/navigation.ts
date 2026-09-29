@@ -1,5 +1,5 @@
 import {
-  BarChart3, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
+  BarChart3, Banknote, Settings, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
   Package, Route, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
@@ -56,6 +56,7 @@ export const navSections: NavSection[] = [
     title: 'Insights',
     items: [
       { to: '/analytics', label: 'Analytics', icon: BarChart3, roles: staff },
+      { to: '/finance', label: 'Finance', icon: Banknote, roles: staff },
     ],
   },
   {
@@ -64,6 +65,7 @@ export const navSections: NavSection[] = [
       { to: '/admin/users', label: 'Users', icon: Users, roles: superadmin },
       { to: '/admin/kyc', label: 'KYC review', icon: FileCheck2, roles: superadmin, badge: 'pendingKyc' },
       { to: '/admin/audit', label: 'Audit log', icon: History, roles: superadmin },
+      { to: '/admin/settings', label: 'Settings', icon: Settings, roles: staff },
     ],
   },
 ]

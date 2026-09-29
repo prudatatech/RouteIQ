@@ -23,6 +23,7 @@ const links = [
   { to: '/vendor', label: 'Find capacity', end: true, requiresSignIn: false },
   { to: '/vendor/corridor', label: 'Corridors', requiresSignIn: false },
   { to: '/vendor/shipments', label: 'My shipments', requiresSignIn: true },
+  { to: '/vendor/invoices', label: 'Invoices', requiresSignIn: true },
   { to: '/vendor/tracking', label: 'Tracking', requiresSignIn: true },
   { to: '/vendor/documents', label: 'Company & KYC', requiresSignIn: true },
 ]

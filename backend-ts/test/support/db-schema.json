@@ -132,7 +132,14 @@
     "paid_at",
     "due_date",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "manifest_id",
+    "vendor_id",
+    "gst_rate",
+    "gst_amount",
+    "total",
+    "price_source",
+    "voided_at"
   ],
   "kyc_profiles": [
     "id",
@@ -451,5 +458,19 @@
     "cost_per_km",
     "metadata",
     "rejection_reason"
+  ],
+  "expenses": [
+    "id",
+    "vehicle_id",
+    "route_id",
+    "category",
+    "amount",
+    "expense_date",
+    "litres",
+    "note",
+    "receipt_path",
+    "created_by",
+    "created_at",
+    "updated_at"
   ]
 }

@@ -187,6 +187,8 @@ export const vendorAPI = {
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
   rejectRequest: (id: string, reason: string) => api.put(`/vendor/shipment-request/${id}/reject`, { reason }).then(r => r.data),
   rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
+  /** The vendor's own invoices, newest first. */
+  invoices: () => api.get('/vendor/invoices').then(r => ensureArray(r.data)),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }
@@ -254,6 +256,39 @@ export const analyticsAPI = {
   /** Trips dispatched and deliveries per day, oldest first. `from`/`to` override `days`. */
   dailyActivity: (params: { days?: number; from?: string; to?: string } = { days: 14 }) =>
     api.get('/analytics/daily-activity', { params }).then(r => ensureArray(r.data)),
+}
+
+export interface DateParams { from?: string; to?: string }
+
+export interface ExpenseInput {
+  vehicle_id?: string | null
+  route_id?: string | null
+  category: string
+  amount: number
+  expense_date: string
+  litres?: number | null
+  note?: string | null
+  receipt_path?: string | null
+}
+
+/** Invoices, expenses, fuel price and profit and loss (staff). */
+export const financeAPI = {
+  summary: (range: DateParams) => api.get('/finance/summary', { params: range }).then(r => r.data),
+  unpriced: (range: DateParams) => api.get('/finance/unpriced', { params: range }).then(r => ensureArray(r.data)),
+  invoices: (params: DateParams & { status?: string }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
+  createInvoice: (target: { shipment_id: string } | { manifest_id: string }) => api.post('/finance/invoices', target).then(r => r.data),
+  payInvoice: (id: string) => api.put(`/finance/invoices/${id}/pay`).then(r => r.data),
+  voidInvoice: (id: string) => api.put(`/finance/invoices/${id}/void`).then(r => r.data),
+  expenses: (params: DateParams & { category?: string; vehicle_id?: string }) => api.get('/finance/expenses', { params }).then(r => ensureArray(r.data)),
+  createExpense: (data: ExpenseInput) => api.post('/finance/expenses', data).then(r => r.data),
+  updateExpense: (id: string, data: Partial<ExpenseInput>) => api.put(`/finance/expenses/${id}`, data).then(r => r.data),
+  deleteExpense: (id: string) => api.delete(`/finance/expenses/${id}`),
+  receiptUpload: (data: { content_type: string; size: number }) =>
+    api.post('/finance/expenses/receipt-upload', data).then(r => r.data as { path: string; token: string; bucket: string }),
+  receiptUrl: (id: string) => api.get(`/finance/expenses/${id}/receipt-url`).then(r => r.data as { url: string }),
+  settings: () => api.get('/finance/settings').then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
+  saveFuelPrice: (fuel_price_per_litre: number) =>
+    api.put('/finance/settings', { fuel_price_per_litre }).then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
 }
 
 export const tplAPI = {
