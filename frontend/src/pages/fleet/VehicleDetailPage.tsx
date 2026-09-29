@@ -15,6 +15,8 @@ import { expiryStatus } from '@/utils/documentExpiry'
 import { canReturnToService, isDraftVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import RaiseSosModal from '@/components/fleet/RaiseSosModal'
+import { MoveToMaintenanceModal } from '@/components/fleet/maintenance/MoveToMaintenanceModal'
+import { ReturnToServiceModal } from '@/components/fleet/maintenance/ReturnToServiceModal'
 import LoadBar from '@/components/fleet/LoadBar'
 import CargoChips from '@/components/fleet/CargoChips'
 import SosCountBadge from '@/components/fleet/SosCountBadge'
@@ -25,7 +27,7 @@ import VehicleLoadsTab from '@/components/fleet/VehicleLoadsTab'
 import { useSosCounts } from '@/components/fleet/useSosCounts'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 import { apiErrorMessage, bandLabel, bandTone, formatOdometer, type HealthBand } from '@/components/fleet/health'
-import { returnVehicleToService, setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
+import { setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { containerSize, type Vehicle } from '@/components/fleet/types'
 import { FuelTabSlot, LocationTabSlot, MaintenanceTabSlot } from './tabSlots'
 
@@ -46,6 +48,7 @@ export default function VehicleDetailPage() {
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'overview')
   const [editing, setEditing] = useState(false)
   const [sosOpen, setSosOpen] = useState(false)
+  const [maintenanceMode, setMaintenanceMode] = useState<'move' | 'return' | null>(null)
 
   // Re-render every 30 s so "last seen" and the live pill stay true.
   const [now, setNow] = useState(() => Date.now())
@@ -89,30 +92,9 @@ export default function VehicleDetailPage() {
     onError: err => toast.error(apiErrorMessage(err, 'We could not change the vehicle status.')),
   })
 
-  const handleReturnToService = async (v: Vehicle) => {
-    const ok = await confirm({
-      title: `Return ${v.plate_number} to service?`,
-      message: 'It becomes available for dispatch again. Do this once it is repaired, inspected or safe to drive.',
-      confirmLabel: 'Return to service',
-    })
-    if (!ok) return
-    try {
-      await returnVehicleToService(v.id)
-      changed()
-      toast.success(`${v.plate_number} is back in service`)
-    } catch (err) {
-      toast.error(apiErrorMessage(err, 'We could not return the vehicle to service.'))
-    }
-  }
-  const handleMaintenance = async (v: Vehicle) => {
-    const ok = await confirm({
-      title: `Move ${v.plate_number} to maintenance?`,
-      message: 'It is not offered for new work until you return it to service.',
-      confirmLabel: 'Move to maintenance',
-      tone: 'danger',
-    })
-    if (ok) statusMutation.mutate({ status: 'maintenance' })
-  }
+  // Move to maintenance / Return to service open their own forms (reason, return date, workshop, parts, cost)
+  const handleReturnToService = () => setMaintenanceMode('return')
+  const handleMaintenance = () => setMaintenanceMode('move')
   const handleUnarchive = async (v: Vehicle) => {
     const ok = await confirm({
       title: `Restore ${v.plate_number}?`,
@@ -194,10 +176,10 @@ export default function VehicleDetailPage() {
                   <Button variant="danger" icon={<ShieldAlert size={16} />} onClick={() => setSosOpen(true)}>Raise SOS</Button>
                 )}
                 {canReturnToService(vehicle) && (
-                  <Button icon={<Wrench size={16} />} onClick={() => handleReturnToService(vehicle)}>Return to service</Button>
+                  <Button icon={<Wrench size={16} />} onClick={handleReturnToService}>Return to service</Button>
                 )}
                 {!draft && ['available', 'idle', 'offline', 'on_route'].includes(vehicle.status) && (
-                  <Button variant="secondary" icon={<Wrench size={16} />} onClick={() => handleMaintenance(vehicle)}>Move to maintenance</Button>
+                  <Button variant="secondary" icon={<Wrench size={16} />} onClick={handleMaintenance}>Move to maintenance</Button>
                 )}
                 {vehicle.status === 'archived' && !draft && (
                   <Button variant="secondary" icon={<ArchiveRestore size={16} />} onClick={() => handleUnarchive(vehicle)}>Restore vehicle</Button>
@@ -326,6 +308,12 @@ export default function VehicleDetailPage() {
         />
       )}
       <RaiseSosModal key={vehicle.id} vehicleId={vehicle.id} plate={vehicle.plate_number} open={sosOpen} onClose={() => setSosOpen(false)} />
+      {maintenanceMode === 'move' && (
+        <MoveToMaintenanceModal open vehicleId={vehicle.id} plate={vehicle.plate_number} onClose={() => { setMaintenanceMode(null); changed() }} />
+      )}
+      {maintenanceMode === 'return' && (
+        <ReturnToServiceModal open vehicleId={vehicle.id} plate={vehicle.plate_number} onClose={() => { setMaintenanceMode(null); changed() }} />
+      )}
     </Page>
   )
 }

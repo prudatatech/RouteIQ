@@ -497,7 +497,11 @@
     "note",
     "expense_id",
     "created_by",
-    "created_at"
+    "created_at",
+    "workshop",
+    "labour_cost",
+    "invoice_number",
+    "job_id"
   ],
   "vehicle_service_plans": [
     "id",
@@ -580,7 +584,9 @@
     "odometer_km",
     "odometer_updated_at",
     "fuel_level_pct",
-    "fuel_reported_at"
+    "fuel_reported_at",
+    "odometer_synced_at",
+    "odometer_source"
   ],
   "vendor_profiles": [
     "id",
@@ -856,6 +862,71 @@
     "flags",
     "note",
     "created_at",
+    "updated_at"
+  ],
+  "vehicle_maintenance_jobs": [
+    "id",
+    "vehicle_id",
+    "status",
+    "reason_type",
+    "workshop",
+    "expected_return_date",
+    "note",
+    "sos_alert_id",
+    "released_work",
+    "opened_at",
+    "opened_by",
+    "opened_odometer_km",
+    "closed_at",
+    "closed_by",
+    "final_odometer_km",
+    "total_cost",
+    "close_note",
+    "service_log_id",
+    "updated_at"
+  ],
+  "vehicle_service_items": [
+    "id",
+    "service_log_id",
+    "vehicle_id",
+    "description",
+    "kind",
+    "quantity",
+    "unit_cost",
+    "total_cost",
+    "created_at"
+  ],
+  "vehicle_service_attachments": [
+    "id",
+    "vehicle_id",
+    "service_log_id",
+    "job_id",
+    "kind",
+    "file_path",
+    "file_name",
+    "content_type",
+    "size_bytes",
+    "uploaded_by",
+    "created_at"
+  ],
+  "vehicle_odometer_events": [
+    "id",
+    "vehicle_id",
+    "kind",
+    "before_km",
+    "after_km",
+    "source",
+    "reason",
+    "created_by",
+    "created_at"
+  ],
+  "service_plan_templates": [
+    "id",
+    "item",
+    "interval_km",
+    "interval_days",
+    "sort_order",
+    "is_active",
     "updated_at"
   ]
 }

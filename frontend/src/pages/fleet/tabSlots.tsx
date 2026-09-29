@@ -1,16 +1,9 @@
 /**
  * Tab slots of the vehicle page (/fleet/:vehicleId).
  *
- * Location, Maintenance and Fuel are built as their own components and wired in here, one slot each.
- * Until then a slot shows what the old Fleet drawer showed for that subject, from the vehicle's own
- * fields, so no feature is lost. To wire a feature in after merge, replace the body of its slot with
- * the feature's component (props: the vehicle) and delete the fallback:
- *
- *   LocationTabSlot     -> components/fleet/location/VehicleLocationPanel     (GPS, trail, share)
- *   MaintenanceTabSlot  -> components/fleet/maintenance/VehicleMaintenanceTab (+ VehicleConditionCard)
- *   FuelTabSlot         -> components/fleet/fuel/VehicleFuelTab
- *
- * Every slot renders inside <div data-tab-slot="...">, which is what to look for.
+ *   LocationTabSlot     -> components/fleet/location/VehicleLocationPanel (GPS, trail, activity, share)
+ *   MaintenanceTabSlot  -> VehicleHealthPanel (health score + VehicleMaintenanceTab: condition bars, open job, service history)
+ *   FuelTabSlot         -> reported tank level + components/fleet/fuel/VehicleFuelTab (fill-ups, mileage, anomalies)
  */
 import { Fuel } from 'lucide-react'
 import { Card, CardBody, CardHeader, DetailList } from '@/components/ui'

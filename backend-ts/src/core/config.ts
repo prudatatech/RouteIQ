@@ -90,6 +90,10 @@ export const settings = {
   TPL_UPLOAD_URLS_PER_HOUR: envInt('TPL_UPLOAD_URLS_PER_HOUR', 30),
   // Expense receipts go in the same private bucket under expenses/
   EXPENSE_RECEIPT_MAX_BYTES: envInt('EXPENSE_RECEIPT_MAX_BYTES', 5 * 1024 * 1024),
+  // Service invoices, job cards and photos go in the same private bucket under vehicle-service/
+  SERVICE_ATTACHMENT_MAX_BYTES: envInt('SERVICE_ATTACHMENT_MAX_BYTES', 10 * 1024 * 1024),
+  // How often the scheduler adds each vehicle's GPS distance to its odometer
+  ODOMETER_SYNC_INTERVAL_MINUTES: envInt('ODOMETER_SYNC_INTERVAL_MINUTES', 30),
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
   POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
 

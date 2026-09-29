@@ -26,6 +26,8 @@ import { containerSize, type Vehicle } from '@/components/fleet/types'
 import { apiErrorMessage, bandLabel, bandTone, fleetKeys, type HealthBand } from '@/components/fleet/health'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { isDraftVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
+import { MaintenanceNote } from '@/components/fleet/maintenance/MaintenanceNote'
+import { useOpenMaintenanceJobs } from '@/components/fleet/maintenance/useOpenMaintenanceJobs'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
 const VIEW_IDS = ['vehicles', 'analytics', 'alerts', 'service'] as const
@@ -134,6 +136,7 @@ export default function FleetPage() {
   const healthQuery = useFleetHealth()
   const healthById = useMemo(() => new Map((healthQuery.data ?? []).map(h => [h.vehicle_id, h])), [healthQuery.data])
   const sosCounts = useSosCounts()
+  const openJobs = useOpenMaintenanceJobs()
 
   const alertSummary = useQuery<{ open: number; acknowledged: number }>({
     queryKey: fleetKeys.alertSummary,
@@ -204,7 +207,16 @@ export default function FleetPage() {
         </div>
       ),
     },
-    { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: v => (
+        <div className="space-y-0.5">
+          <StatusPill status={v.status} />
+          {v.status === 'maintenance' && openJobs.get(v.id) && <MaintenanceNote job={openJobs.get(v.id)!} />}
+        </div>
+      ),
+    },
     {
       key: 'load',
       header: 'Load',
