@@ -57,7 +57,7 @@ export default function CustomerTrackingPage() {
                 type="text"
                 value={searchId}
                 onChange={e => setSearchId(e.target.value)}
-                placeholder="e.g. SH-1A2B3C4D"
+                placeholder="e.g. RTX-1A2B3C4D"
                 aria-label="Tracking ID"
                 className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-base text-text placeholder:text-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
               />

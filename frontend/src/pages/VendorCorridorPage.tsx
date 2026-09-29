@@ -73,7 +73,7 @@ export default function VendorCorridorPage() {
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
   const navigate = useNavigate()
-  const { vendorProfile, isSignedIn } = useVendorContext()
+  const { vendorProfile, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
 
   const fetchData = async () => {
@@ -118,7 +118,7 @@ export default function VendorCorridorPage() {
     <Page>
       <PageHeader title="Corridors" description="Open capacity windows and passing trucks near you, updated live." />
 
-      {isSignedIn && !kycApproved && (
+      {isVendor && !kycApproved && (
         <Alert tone="warning" title="Complete your KYC to bid">
           Your company needs an approved KYC before you can place a bid.
         </Alert>

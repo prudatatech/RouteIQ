@@ -23,6 +23,7 @@ const links = [
 export default function VendorLayout() {
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
+  const role = useAuthStore(s => s.role)
   const clearAuth = useAuthStore(s => s.clearAuth)
   const navigate = useNavigate()
   const location = useLocation()
@@ -102,8 +103,9 @@ export default function VendorLayout() {
   const target = (link: typeof links[number]) =>
     link.requiresSignIn && !session ? `/login?as=vendor&next=${encodeURIComponent(link.to)}` : link.to
 
-  const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, refreshProfile: loadProfile }
-  const needsKyc = !!session && vendorProfile?.kycStatus !== 'approved'
+  const isVendor = !!session && role === 'vendor'
+  const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, isVendor, refreshProfile: loadProfile }
+  const needsKyc = isVendor && vendorProfile?.kycStatus !== 'approved'
 
   const navLinks = (vertical: boolean) => links.map(link => (
     <NavLink

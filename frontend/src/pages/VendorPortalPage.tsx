@@ -6,7 +6,7 @@ import type { ResolvedPlace } from '@/services/geocoding'
 
 export default function VendorPortalPage() {
   const navigate = useNavigate()
-  const { vendorProfile, isSignedIn } = useVendorContext()
+  const { vendorProfile, isSignedIn, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
 
   const goPostLoad = (query?: string, place?: ResolvedPlace | null) => {
@@ -37,7 +37,7 @@ export default function VendorPortalPage() {
           Find verified fleet capacity, post a load with your own floor price, and track it end to end.
         </p>
 
-        {isSignedIn && !kycApproved && (
+        {isVendor && !kycApproved && (
           <div className="mx-auto max-w-2xl pt-2 text-left">
             <Alert tone="warning" title="Complete your KYC to post loads and bid">
               Your company needs an approved KYC before you can post a load or place a bid.{' '}

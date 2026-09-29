@@ -139,13 +139,13 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
               const isDone = i < currentStepIdx
               const active = i === currentStepIdx
               return (
-                <li key={step.key} className="flex flex-1 items-center last:flex-none">
-                  <div className="flex w-20 flex-col items-center gap-2 text-center">
+                <li key={step.key} className="flex min-w-0 flex-1 items-center last:flex-none">
+                  <div className="flex w-16 shrink-0 flex-col items-center gap-2 text-center sm:w-20">
                     <span
                       aria-hidden="true"
                       className={clsx(
                         'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-medium',
-                        isDone || active ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface text-muted',
+                        isDone || active ? 'border-brand-fill bg-brand-fill text-on-brand' : 'border-border bg-surface text-muted',
                       )}
                     >
                       {isDone || active ? <CheckCircle2 size={14} /> : i + 1}
@@ -153,7 +153,7 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
                     <span className={clsx('text-xs', active || isDone ? 'font-medium text-text' : 'text-muted')}>{step.label}</span>
                   </div>
                   {i < STEPS.length - 1 && (
-                    <span aria-hidden="true" className={clsx('mx-1 h-0.5 flex-1', i < currentStepIdx ? 'bg-brand' : 'bg-border')} />
+                    <span aria-hidden="true" className={clsx('mx-1 h-0.5 min-w-2 flex-1', i < currentStepIdx ? 'bg-brand-fill' : 'bg-border')} />
                   )}
                 </li>
               )

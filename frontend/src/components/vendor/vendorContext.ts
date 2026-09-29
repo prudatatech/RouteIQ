@@ -15,6 +15,8 @@ export interface VendorOutletContext {
   vendorProfile: VendorProfileSummary | null
   profileLoading: boolean
   isSignedIn: boolean
+  /** Signed in with a vendor account (staff can browse the portal but don't need KYC). */
+  isVendor: boolean
   /** Re-read the profile, for example after the vendor saves their documents. */
   refreshProfile: () => void
 }
