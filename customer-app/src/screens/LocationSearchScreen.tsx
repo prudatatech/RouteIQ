@@ -217,11 +217,23 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       if (data.address) {
         const preciseAddress = data.address.LongLabel || data.address.Match_addr;
         const cleanedAddress = preciseAddress.replace(/, IND$/, '');
+        setProblem(null);
         setQuery(cleanedAddress);
         setConfirmedAddress(cleanedAddress);
+      } else {
+        // We have a pin position but no address for it: don't leave the previous
+        // location's text showing as if it still applied to the new pin.
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setQuery('');
+        setConfirmedAddress('');
+        setProblem({ kind: 'no_address' });
       }
     } catch (error) {
       console.log('Map drag reverse geocode error:', error);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setQuery('');
+      setConfirmedAddress('');
+      setProblem({ kind: 'no_address' });
     }
   };
 
