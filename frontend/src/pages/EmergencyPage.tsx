@@ -100,6 +100,18 @@ export default function EmergencyPage() {
     if (!selectedId && alerts.length > 0) setSelectedId(alerts[0].id)
   }, [alerts, selectedId])
 
+  const acknowledge = async (alert: SosAlert) => {
+    try {
+      await telemetryAPI.acknowledgeSos(alert.id)
+      queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
+        prev?.map(a => a.id === alert.id ? { ...a, status: 'acknowledged' } : a))
+      toast.success('Alert acknowledged')
+    } catch (err) {
+      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(message || 'Failed to acknowledge the alert')
+    }
+  }
+
   const resolve = async (alert: SosAlert) => {
     const ok = await confirm({
       title: 'Resolve this alert?',
@@ -156,34 +168,39 @@ export default function EmergencyPage() {
                 const isActive = alert.status !== 'resolved'
                 const isSelected = alert.id === selectedId
                 return (
-                  <button
+                  <div
                     key={alert.id}
-                    type="button"
-                    onClick={() => setSelectedId(alert.id)}
-                    className={
-                      'block w-full px-4 py-3 text-left transition-colors focus:outline-none ' +
-                      (isSelected ? 'bg-brand-soft' : 'hover:bg-surface-subtle')
-                    }
+                    className={'px-4 py-3 transition-colors ' + (isSelected ? 'bg-brand-soft' : 'hover:bg-surface-subtle')}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-text">
-                        {isActive ? <AlertTriangle size={14} className="text-danger" aria-hidden="true" /> : <CheckCircle size={14} className="text-success" aria-hidden="true" />}
-                        {ALERT_TYPE_LABEL[alert.alert_type] ?? alert.alert_type}
-                      </span>
-                      <StatusPill status={alert.status} />
-                    </div>
-                    <p className="mt-1 text-xs text-muted">{new Date(alert.created_at).toLocaleString('en-IN')}</p>
-                    <div className="mt-2 space-y-0.5 text-sm text-text">
-                      <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{alert.driver?.full_name || 'Unknown driver'}</p>
-                      <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{alert.vehicle?.plate_number || 'Unknown vehicle'}</p>
-                    </div>
-                    {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(alert.id)}
+                      aria-pressed={isSelected}
+                      className="block w-full rounded-control text-left"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-text">
+                          {isActive ? <AlertTriangle size={14} className="text-danger" aria-hidden="true" /> : <CheckCircle size={14} className="text-success" aria-hidden="true" />}
+                          {ALERT_TYPE_LABEL[alert.alert_type] ?? alert.alert_type}
+                        </span>
+                        <StatusPill status={alert.status} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted">{new Date(alert.created_at).toLocaleString('en-IN')}</p>
+                      <div className="mt-2 space-y-0.5 text-sm text-text">
+                        <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{alert.driver?.full_name || 'Unknown driver'}</p>
+                        <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{alert.vehicle?.plate_number || 'Unknown vehicle'}</p>
+                      </div>
+                      {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
+                    </button>
                     {isActive && (
-                      <Button size="sm" variant="secondary" className="mt-3" onClick={e => { e.stopPropagation(); resolve(alert) }}>
-                        Resolve
-                      </Button>
+                      <div className="mt-3 flex gap-2">
+                        {alert.status === 'active' && (
+                          <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
+                        )}
+                        <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 )
               })
             )}
