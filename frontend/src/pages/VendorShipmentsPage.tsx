@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import { Button, DataTable, Page, PageHeader, StatusPill, type Column } from '@/components/ui'
+import {
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, useTabParam, type Column, type TabItem,
+} from '@/components/ui'
 
 interface VendorBid {
   id: string
@@ -31,6 +33,8 @@ interface VendorRequest {
 export default function VendorShipmentsPage() {
   const [bids, setBids] = useState<VendorBid[]>([])
   const [requests, setRequests] = useState<VendorRequest[]>([])
+  const [bidSearch, setBidSearch] = useState('')
+  const [requestSearch, setRequestSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const userId = useAuthStore(s => s.userId)
@@ -62,13 +66,44 @@ export default function VendorShipmentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
+  // Status tabs are built from whatever statuses actually appear, plus "All" —
+  // never a hardcoded/invented status list.
+  const bidStatuses = useMemo(() => Array.from(new Set(bids.map(b => b.status))).sort(), [bids])
+  const requestStatuses = useMemo(() => Array.from(new Set(requests.map(r => r.status))).sort(), [requests])
+  const [bidTab, setBidTab] = useTabParam(['all', ...bidStatuses], 'all', 'bidStatus')
+  const [requestTab, setRequestTab] = useTabParam(['all', ...requestStatuses], 'all', 'loadStatus')
+  const bidTabs: TabItem<string>[] = [
+    { id: 'all', label: 'All', count: bids.length },
+    ...bidStatuses.map(s => ({ id: s, label: s.replace(/_/g, ' '), count: bids.filter(b => b.status === s).length })),
+  ]
+  const requestTabs: TabItem<string>[] = [
+    { id: 'all', label: 'All', count: requests.length },
+    ...requestStatuses.map(s => ({ id: s, label: s.replace(/_/g, ' '), count: requests.filter(r => r.status === s).length })),
+  ]
+
+  const filteredBids = useMemo(() => {
+    const q = bidSearch.trim().toLowerCase()
+    return bids
+      .filter(b => bidTab === 'all' || b.status === bidTab)
+      .filter(b => !q || [
+        b.capacity_windows?.vehicles?.vehicle_type, b.status, b.eway_bill_ref, String(b.bid_amount),
+      ].some(v => v?.toLowerCase().includes(q)))
+  }, [bids, bidTab, bidSearch])
+
+  const filteredRequests = useMemo(() => {
+    const q = requestSearch.trim().toLowerCase()
+    return requests
+      .filter(r => requestTab === 'all' || r.status === requestTab)
+      .filter(r => !q || [r.pickup_location, r.drop_location, r.status].some(v => v?.toLowerCase().includes(q)))
+  }, [requests, requestTab, requestSearch])
+
   const bidColumns: Column<VendorBid>[] = [
     { key: 'date', header: 'Date', cell: b => new Date(b.submitted_at).toLocaleDateString('en-IN'), sortValue: b => b.submitted_at },
     { key: 'amount', header: 'Bid', cell: b => `₹${b.bid_amount.toLocaleString('en-IN')}`, sortValue: b => b.bid_amount },
-    { key: 'vehicle', header: 'Vehicle', cell: b => b.capacity_windows?.vehicles?.vehicle_type ?? '—', hideOnMobile: true },
-    { key: 'weight', header: 'Weight', cell: b => b.weight_kg != null ? `${b.weight_kg.toLocaleString('en-IN')} kg` : '—', hideOnMobile: true },
+    { key: 'vehicle', header: 'Vehicle', cell: b => b.capacity_windows?.vehicles?.vehicle_type ?? '—', hideOnMobile: true, sortValue: b => b.capacity_windows?.vehicles?.vehicle_type },
+    { key: 'weight', header: 'Weight', cell: b => b.weight_kg != null ? `${b.weight_kg.toLocaleString('en-IN')} kg` : '—', hideOnMobile: true, sortValue: b => b.weight_kg },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortValue: b => b.status,
       cell: b => (
         <span className="block">
           <StatusPill status={b.status} />
@@ -80,10 +115,10 @@ export default function VendorShipmentsPage() {
 
   const requestColumns: Column<VendorRequest>[] = [
     { key: 'date', header: 'Date', cell: r => new Date(r.created_at).toLocaleDateString('en-IN'), sortValue: r => r.created_at },
-    { key: 'route', header: 'Route', cell: r => <span className="truncate">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span> },
-    { key: 'weight', header: 'Weight', cell: r => r.required_capacity_kg != null ? `${Number(r.required_capacity_kg).toLocaleString('en-IN')} kg` : '—', hideOnMobile: true },
+    { key: 'route', header: 'Route', cell: r => <span className="truncate">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span>, sortValue: r => r.pickup_location },
+    { key: 'weight', header: 'Weight', cell: r => r.required_capacity_kg != null ? `${Number(r.required_capacity_kg).toLocaleString('en-IN')} kg` : '—', hideOnMobile: true, sortValue: r => r.required_capacity_kg },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortValue: r => r.status,
       cell: r => (
         <span className="block">
           <StatusPill status={r.status} />
@@ -113,11 +148,15 @@ export default function VendorShipmentsPage() {
       />
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-text">Bids</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">Bids</h2>
+          <SearchInput value={bidSearch} onChange={setBidSearch} placeholder="Search by vehicle, status or e-way bill" className="max-w-xs" />
+        </div>
+        {bidStatuses.length > 0 && <Tabs tabs={bidTabs} value={bidTab} onChange={setBidTab} label="Filter bids by status" />}
         <DataTable
           caption="Your bids"
           columns={bidColumns}
-          rows={bids}
+          rows={filteredBids}
           rowKey={b => b.id}
           loading={loading}
           error={error ?? undefined}
@@ -127,11 +166,15 @@ export default function VendorShipmentsPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-text">Posted loads</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-text">Posted loads</h2>
+          <SearchInput value={requestSearch} onChange={setRequestSearch} placeholder="Search by pickup, drop or status" className="max-w-xs" />
+        </div>
+        {requestStatuses.length > 0 && <Tabs tabs={requestTabs} value={requestTab} onChange={setRequestTab} label="Filter posted loads by status" />}
         <DataTable
           caption="Your posted loads"
           columns={requestColumns}
-          rows={requests}
+          rows={filteredRequests}
           rowKey={r => r.id}
           loading={loading}
           error={error ?? undefined}
