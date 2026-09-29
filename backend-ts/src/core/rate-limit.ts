@@ -13,6 +13,24 @@ export async function consumeRateLimit(key: string, limit: number, windowSeconds
 }
 
 /**
+ * Middleware: limit requests per signed-in user for one named action.
+ * Runs after requireAuth.
+ */
+export function rateLimitByUser(action: string, limit: number, windowSeconds: number) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (await consumeRateLimit(`${action}:user:${req.user?.user_id ?? req.ip}`, limit, windowSeconds)) {
+        next();
+        return;
+      }
+      res.status(429).json({ detail: 'Too many requests. Please try again later.' });
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
+/**
  * Middleware: limit requests per client IP for one named action.
  */
 export function rateLimitByIp(action: string, limit: number, windowSeconds: number) {

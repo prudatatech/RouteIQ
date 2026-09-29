@@ -186,7 +186,14 @@ export const vendorAPI = {
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
   rejectRequest: (id: string, reason: string) => api.put(`/vendor/shipment-request/${id}/reject`, { reason }).then(r => r.data),
+  approveKyc: (id: string) => api.put(`/vendor/kyc/${id}/approve`).then(r => r.data),
   rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
+  /** Signed upload URL for one KYC document; use uploadKycDocument() from services/kycDocuments. */
+  kycUploadUrl: (data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post('/vendor/kyc/upload-url', data).then(r => r.data),
+  /** Saves uploaded document paths on the vendor's profile ahead of the final submit. */
+  saveKycDocuments: (data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put('/vendor/kyc/documents', data).then(r => r.data),
   /** The vendor's own invoices, newest first. */
   invoices: () => api.get('/vendor/invoices').then(r => ensureArray(r.data)),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
