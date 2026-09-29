@@ -19,8 +19,9 @@ export const notificationService = {
       throw new Error(error.message);
     }
     
-    // Also trigger native Push Notification if they are a driver
-    await pushService.sendToUser(userId, title, body, data);
+    // Also trigger native Push Notification if they are a driver. The type
+    // travels with it so a tap opens the right screen (e.g. Messages).
+    await pushService.sendToUser(userId, title, body, { ...(data ?? {}), type });
 
     return notif;
   },
