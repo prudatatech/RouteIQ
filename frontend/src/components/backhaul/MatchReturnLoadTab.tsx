@@ -7,8 +7,9 @@ import {
   Alert, Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Select, Skeleton,
 } from '@/components/ui'
 import { useCargoStore } from '@/store/cargoStore'
+import { formatKg, formatKm } from '@/utils/display'
 import {
-  apiErrorMessage, formatKg, formatKm, spaceLeft, useBackhaulVehicles, useOpenLoads, vehicleLabel,
+  apiErrorMessage, spaceLeft, useBackhaulVehicles, useOpenLoads, vehicleLabel,
   type DuplicatedManifest,
 } from './data'
 

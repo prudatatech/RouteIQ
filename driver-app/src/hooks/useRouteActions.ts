@@ -107,7 +107,7 @@ export function useRouteActions({
       if (dist > ARRIVAL_RADIUS_M) {
         Alert.alert(t('alert_geofence_title'), `${t('alert_geofence_desc')} (${Math.round(dist)} m)`, [
           { text: t('cancel'), style: 'cancel' },
-          { text: t('yes'), onPress: action },
+          { text: t('continue_anyway'), onPress: action },
         ]);
       } else {
         action();

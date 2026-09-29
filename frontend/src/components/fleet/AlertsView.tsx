@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
-import { Button, DataTable, Stat, StatusPill, Tabs, useConfirm, type Column, type TabItem } from '@/components/ui'
+import { Button, DataTable, DetailList, Drawer, Stat, StatusPill, Tabs, useConfirm, type Column, type TabItem } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
-import { alertTypeLabel, apiErrorMessage, fleetKeys, severityTone, type FleetAlert } from './health'
+import { alertTypeLabel, apiErrorMessage, fleetKeys, type FleetAlert } from './health'
 
 type Filter = 'active' | 'resolved'
 const FILTERS: TabItem<Filter>[] = [{ id: 'active', label: 'Open' }, { id: 'resolved', label: 'Resolved' }]
@@ -19,17 +19,40 @@ interface Summary {
 const statusLabel = { open: 'Open', acknowledged: 'Acknowledged', resolved: 'Resolved' } as const
 const statusTone = { open: 'danger', acknowledged: 'warning', resolved: 'neutral' } as const
 
-/** Alarms from vehicles and server rules, with acknowledge and resolve. Test alarms are marked and left out of the counts. */
-export default function AlertsView() {
+/** Alerts from vehicles and server rules, with acknowledge and resolve. Test alerts are marked and left out of the counts. */
+export default function AlertsView({ openId, onOpenHandled }: {
+  /** An alert to open on arrival, from a notification link (?open=<alert id>). */
+  openId?: string | null
+  onOpenHandled?: () => void
+} = {}) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const [filter, setFilter] = useState<Filter>('active')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const alerts = useQuery<FleetAlert[]>({
     queryKey: fleetKeys.alerts(filter),
     queryFn: () => fleetAPI.alerts(filter) as Promise<FleetAlert[]>,
     refetchInterval: 30_000,
   })
+  // A linked alert may be open or already resolved, so look in both lists.
+  const linked = useQuery<FleetAlert[]>({
+    queryKey: fleetKeys.alerts('all'),
+    queryFn: () => fleetAPI.alerts('all') as Promise<FleetAlert[]>,
+    enabled: !!openId,
+  })
+  useEffect(() => {
+    if (!openId || linked.isLoading) return
+    const match = linked.data?.find(a => a.id === openId)
+    if (match) {
+      setFilter(match.status === 'resolved' ? 'resolved' : 'active')
+      setSelectedId(match.id)
+    } else {
+      toast.error('That alert could not be found')
+    }
+    onOpenHandled?.()
+  }, [openId, linked.isLoading, linked.data, onOpenHandled])
+
   const summary = useQuery<Summary>({
     queryKey: fleetKeys.alertSummary,
     queryFn: () => fleetAPI.alertSummary() as Promise<Summary>,
@@ -79,7 +102,7 @@ export default function AlertsView() {
     },
     {
       key: 'severity', header: 'Severity', sortValue: r => r.severity ?? '',
-      cell: r => (r.severity ? <StatusPill tone={severityTone(r.severity)}>{r.severity.charAt(0).toUpperCase() + r.severity.slice(1)}</StatusPill> : '—'),
+      cell: r => (r.severity ? <StatusPill status={r.severity} /> : '—'),
     },
     {
       key: 'message', header: 'Details', hideBelow: 'lg',
@@ -115,6 +138,7 @@ export default function AlertsView() {
     },
   ]
 
+  const selected = selectedId ? [...(alerts.data ?? []), ...(linked.data ?? [])].find(a => a.id === selectedId) ?? null : null
   const s = summary.data
   return (
     <div className="space-y-4">
@@ -125,7 +149,7 @@ export default function AlertsView() {
           label="Critical or high"
           value={(s?.by_severity.critical ?? 0) + (s?.by_severity.high ?? 0)}
           loading={summary.isLoading}
-          hint="Test alarms are not counted"
+          hint="Test alerts are not counted"
         />
       </div>
       <Tabs tabs={FILTERS} value={filter} onChange={setFilter} label="Alert status" />
@@ -138,13 +162,51 @@ export default function AlertsView() {
         error={alerts.isError ? 'We could not load alerts. Check your connection and try again.' : undefined}
         onRetry={() => alerts.refetch()}
         initialSort={{ key: 'raised', direction: 'desc' }}
+        onRowClick={a => setSelectedId(a.id)}
+        selectedKey={selectedId}
         empty={{
           title: filter === 'active' ? 'No open alerts' : 'No resolved alerts yet',
           description: filter === 'active'
-            ? 'Overspeed, long idle, GPS lost, low fuel and device alarms show up here as they happen.'
+            ? 'Overspeed, long idle, GPS lost, low fuel and device alerts show up here as they happen.'
             : undefined,
         }}
       />
+      <Drawer
+        open={!!selected}
+        onClose={() => setSelectedId(null)}
+        title={selected ? alertTypeLabel(selected.type) : ''}
+        description={selected?.plate_number ?? undefined}
+        footer={selected && selected.status !== 'resolved' ? (
+          <>
+            {selected.status === 'open' && (
+              <Button variant="secondary" loading={acknowledge.isPending} onClick={() => acknowledge.mutate(selected.id)}>Acknowledge</Button>
+            )}
+            <Button loading={resolve.isPending} onClick={() => onResolve(selected)}>Resolve alert</Button>
+          </>
+        ) : undefined}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill tone={statusTone[selected.status]}>{statusLabel[selected.status]}</StatusPill>
+              {selected.severity && <StatusPill status={selected.severity} />}
+              {selected.is_test && <StatusPill tone="info" dot={false}>Test</StatusPill>}
+            </div>
+            <DetailList
+              columns={1}
+              items={[
+                { label: 'Vehicle', value: <span className="font-mono">{selected.plate_number ?? '—'}</span> },
+                { label: 'Details', value: selected.message ?? '—' },
+                { label: 'Times it happened', value: selected.occurrences.toLocaleString('en-IN') },
+                { label: 'Raised', value: formatDateTime(selected.created_at) },
+                { label: 'Last seen', value: formatDateTime(selected.last_seen_at) },
+                ...(selected.acknowledged_at ? [{ label: 'Acknowledged', value: formatDateTime(selected.acknowledged_at) }] : []),
+                ...(selected.resolved_at ? [{ label: 'Resolved', value: formatDateTime(selected.resolved_at) }] : []),
+              ]}
+            />
+          </div>
+        )}
+      </Drawer>
     </div>
   )
 }

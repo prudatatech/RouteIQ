@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { shipmentsAPI } from '@/services/api'
+import { manifestTrackingId } from '@/components/shipments/format'
 import { ShipmentTracker, type ShipmentTrackingData } from '@/components/tracking/ShipmentTracker'
 import { Button, buttonClasses, EmptyState, ErrorState, Page, PageHeader, SearchInput, Skeleton } from '@/components/ui'
 
@@ -69,7 +70,7 @@ export default function VendorTrackingPage() {
       setActive(
         ((data ?? []) as CargoManifestRow[])
           .filter(r => r.cargo_manifest && r.cargo_manifest.length > 0)
-          .map(r => ({ id: r.id, tracking_id: `CM-${r.cargo_manifest![0].id.slice(0, 8).toUpperCase()}` })),
+          .map(r => ({ id: r.id, tracking_id: manifestTrackingId(r.cargo_manifest![0].id) })),
       )
       setLoading(false)
     }

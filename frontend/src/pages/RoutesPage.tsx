@@ -4,12 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Play, CheckCircle2 } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
 import {
-  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, statusToLabel, parseSort, serializeSort, useUrlState, type Column,
+  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Tabs, TabPanel, statusToLabel, useTabParam, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
-import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { formatMinutes, formatRelative, formatKm } from '@/utils/display'
 
 interface Vehicle {
   id: string
@@ -28,17 +28,12 @@ interface RouteRow extends RouteLike {
   updated_at?: string | null
 }
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'active', label: 'Active' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-]
+const STATUS_TABS = ['all', 'pending', 'optimizing', 'active', 'completed', 'cancelled'] as const
+type StatusTab = typeof STATUS_TABS[number]
 
 export default function RoutesPage() {
   const navigate = useNavigate()
-  const [status, setStatus] = useUrlState('status', { fallback: 'all' })
+  const [status, setStatus] = useTabParam<StatusTab>(STATUS_TABS, 'all', 'status')
   const [q, setQ] = useUrlState('q', { debounceMs: 300 })
   const { dispatch, complete, isPending } = useRouteStatusActions()
   const [sortParam, setSortParam] = useUrlState('sort')
@@ -73,6 +68,12 @@ export default function RoutesPage() {
       })
   }, [routes, status, q, vehicleById])
 
+  const tabs = STATUS_TABS.map(id => ({
+    id,
+    label: id === 'all' ? 'All' : statusToLabel(id, 'route'),
+    count: isLoading ? undefined : id === 'all' ? routes.length : routes.filter(r => r.status === id).length,
+  }))
+
   const columns: Column<RouteRow>[] = [
     {
       key: 'vehicle',
@@ -91,7 +92,7 @@ export default function RoutesPage() {
     {
       key: 'status',
       header: 'Status',
-      cell: r => <StatusPill status={r.status} />,
+      cell: r => <StatusPill status={r.status} kind="route" />,
       sortValue: r => r.status,
     },
     {
@@ -110,7 +111,7 @@ export default function RoutesPage() {
         const distance = getRouteDistance(full)
         if (distance <= 0) return <span className="text-muted">—</span>
         const duration = getRouteDuration(full, distance)
-        return <span>{distance.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km · {formatEta(duration)}</span>
+        return <span>{formatKm(distance)} · {formatMinutes(duration)}</span>
       },
       sortValue: r => getRouteDistance(withVehicle(r)),
       hideBelow: 'md',
@@ -121,7 +122,7 @@ export default function RoutesPage() {
       cell: r => {
         const raw = r.updated_at ?? r.created_at
         if (!raw) return <span className="text-muted">—</span>
-        return formatTimeAgo(new Date(raw))
+        return formatRelative(raw)
       },
       sortValue: r => r.updated_at ?? r.created_at ?? '',
       align: 'right',
@@ -167,10 +168,10 @@ export default function RoutesPage() {
       return {
         route_id: r.id.slice(0, 8).toUpperCase(),
         vehicle: vehicle?.plate_number || '',
-        status: statusToLabel(r.status),
+        status: statusToLabel(r.status, 'route'),
         stops: r.route_stops?.length ?? 0,
         distance_km: distance > 0 ? distance.toFixed(1) : '',
-        eta: distance > 0 ? formatEta(getRouteDuration(full, distance)) : '',
+        eta: distance > 0 ? formatMinutes(getRouteDuration(full, distance)) : '',
         updated_at: r.updated_at ?? r.created_at ?? '',
       }
     }), [
@@ -192,34 +193,30 @@ export default function RoutesPage() {
         description="Every planned route and where it stands."
         actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or route ID" className="sm:max-w-xs" />
-          <Select
-            aria-label="Filter by status"
-            value={status}
-            onChange={e => setStatus(e.target.value)}
-            options={STATUS_OPTIONS}
-            className="sm:w-48"
-          />
+        <div className="space-y-4">
+          <Tabs label="Filter routes by status" tabs={tabs} value={status} onChange={setStatus} />
+          <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or route ID" className="max-w-sm" />
         </div>
       </PageHeader>
 
-      <DataTable
-        caption="Routes"
-        columns={columns}
-        rows={rows}
-        rowKey={r => r.id}
-        loading={isLoading}
-        error={isError ? 'We could not load routes. Check your connection and try again.' : undefined}
-        onRetry={refetch}
-        empty={{
-          title: q || status !== 'all' ? 'No routes match your filters' : 'No routes yet',
-          description: q || status !== 'all' ? undefined : 'Routes appear once route optimization plans them.',
-        }}
-        onRowClick={r => navigate(`/routes/${r.id}`)}
-        sort={sort}
-        onSortChange={s => setSortParam(serializeSort(s))}
-      />
+      <TabPanel id={status}>
+        <DataTable
+          caption="Routes"
+          columns={columns}
+          rows={rows}
+          rowKey={r => r.id}
+          loading={isLoading}
+          error={isError ? 'We could not load routes. Check your connection and try again.' : undefined}
+          onRetry={refetch}
+          empty={{
+            title: q || status !== 'all' ? 'No routes match your filters' : 'No routes yet',
+            description: q || status !== 'all' ? undefined : 'Routes appear once route optimization plans them.',
+          }}
+          onRowClick={r => navigate(`/routes/${r.id}`)}
+          sort={sort}
+          onSortChange={s => setSortParam(serializeSort(s))}
+        />
+      </TabPanel>
     </Page>
   )
 }

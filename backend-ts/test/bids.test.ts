@@ -270,6 +270,9 @@ describe('awarding a bid', () => {
     await new Promise(r => setTimeout(r, 20));
     const types = supabaseMock.rows('notifications').map(n => `${n.user_id}:${n.type}`).sort();
     expect(types).toEqual(['driver-1:cargo_assigned', 'vendor-1:bid_accepted', 'vendor-2:bid_lost']);
+    const titles = Object.fromEntries(supabaseMock.rows('notifications').map(n => [n.type, n.title]));
+    expect(titles).toMatchObject({ bid_accepted: 'Approved', bid_lost: 'Not selected' });
+    expect(supabaseMock.rows('notifications').find(n => n.type === 'bid_accepted')?.body).toContain('₹1,500 for 500 kg');
   });
 
   it('closes the window on award', async () => {
@@ -336,6 +339,7 @@ describe('awarding a bid', () => {
     expect(supabaseMock.rows('shipments').find(s => s.bid_id === 'bid-1')?.status).toBe('cancelled');
     const told = supabaseMock.rows('notifications').map(n => `${n.user_id}:${n.type}`);
     expect(told).toContain('vendor-1:bid_rejected');
+    expect(supabaseMock.rows('notifications').find(n => n.type === 'bid_rejected')?.title).toBe('Bid cancelled');
     expect(told).toContain('admin-1:stop_flagged');
   });
 });

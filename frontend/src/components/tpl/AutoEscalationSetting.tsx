@@ -21,7 +21,7 @@ export function AutoEscalationSetting() {
     <Card>
       <CardHeader
         title="3PL partners"
-        description="Staff can always offer a load to partners by hand from Vendor requests or a shipment."
+        description="Staff can always offer a load to partners by hand from Vendor loads or a shipment."
       />
       <CardBody>
         {settings.isLoading ? <Skeleton className="h-10 w-full" /> : (

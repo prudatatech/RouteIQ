@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClipboardCheck, Pencil, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
-import { formatDate } from '@/utils/display'
+import { formatDate, formatRupees } from '@/utils/display'
 import { Alert, Button, IconButton, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import {
   apiErrorMessage, bandLabel, bandTone, checkLabel, checkTone, fleetKeys, formatOdometer, serviceLabel, serviceTone,
@@ -156,7 +156,7 @@ export default function VehicleHealthPanel({ vehicleId, plate }: { vehicleId: st
                 </div>
                 <p className="text-xs text-muted">
                   {[e.odometer_km != null && `At ${Math.round(Number(e.odometer_km)).toLocaleString('en-IN')} km`,
-                    e.cost != null && `₹${Number(e.cost).toLocaleString('en-IN')}`, e.note].filter(Boolean).join(' · ') || 'No details'}
+                    e.cost != null && formatRupees(e.cost), e.note].filter(Boolean).join(' · ') || 'No details'}
                 </p>
               </li>
             ))}

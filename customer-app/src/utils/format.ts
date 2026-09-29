@@ -11,13 +11,14 @@ import { translateNow } from '../locales';
 const LOCALE = 'en-IN';
 const TIME_ZONE = 'Asia/Kolkata';
 
-/** ₹ amount, e.g. formatINR(125000) -> "₹1,25,000.00". */
+/** ₹ amount in whole rupees, with paise only when there are some: 125000 -> "₹1,25,000", 1250.5 -> "₹1,250.50". */
 export function formatINR(amount: number, options: Intl.NumberFormatOptions = {}): string {
+  const paise = Math.round(Math.abs(amount) * 100) % 100 !== 0;
   return new Intl.NumberFormat(LOCALE, {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: paise ? 2 : 0,
+    maximumFractionDigits: paise ? 2 : 0,
     ...options,
   }).format(amount);
 }

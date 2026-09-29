@@ -7,8 +7,8 @@ import {
 } from '@/components/ui'
 import { tplNetworkAPI, type TplOrder } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { errorMessage, formatDate, formatDateTime, formatRupees } from '@/utils/display'
-import { formatMinutes, formatPercent, formatRating } from './stats'
+import { errorMessage, formatDate, formatDateTime, formatRupees, formatMinutes } from '@/utils/display'
+import { formatPercent, formatRating } from './stats'
 
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || '—'
 const RATING_OPTIONS = [5, 4, 3, 2, 1].map(n => ({ value: String(n), label: `${n} out of 5` }))
@@ -20,7 +20,7 @@ function RateModal({ order, onClose }: { order: TplOrder | null; onClose: () => 
   const save = useMutation({
     mutationFn: () => tplNetworkAPI.rateOrder(order!.id, Number(rating), note.trim() || undefined),
     onSuccess: () => {
-      toast.success('Rating saved.')
+      toast.success('Rating saved')
       queryClient.invalidateQueries({ queryKey: ['tpl-partner-orders'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner-stats'] })
       onClose()

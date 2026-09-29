@@ -34,7 +34,7 @@ export default function VendorPortalPage() {
   return (
     <Page>
       <section className="space-y-4 py-6 text-center sm:py-10">
-        <h1 className="text-2xl font-semibold text-text sm:text-3xl">Where are you shipping today?</h1>
+        <h1 className="text-2xl font-semibold text-text sm:text-3xl">Find capacity</h1>
         <p className="mx-auto max-w-2xl text-sm text-muted sm:text-base">
           Find verified fleet capacity, post a load with the price you want to pay, and track it end to end.
         </p>

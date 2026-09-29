@@ -7,10 +7,10 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase, openChannel } from '@/services/supabase'
 import { messagesAPI, type UnreadThread } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { formatTimeAgo } from '@/utils/timeFormat'
 import { IconButton } from './Button'
 import { Spinner } from './Spinner'
 import { notificationPath, type NotificationAudience } from './notificationTargets'
+import { formatRelative } from '@/utils/display'
 
 interface NotificationRow {
   id: string
@@ -190,7 +190,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
                           </span>
                         </span>
                         <span className="w-full truncate text-xs text-muted">{t.last_body}</span>
-                        <span className="text-xs text-muted">{formatTimeAgo(new Date(t.last_at))}</span>
+                        <span className="text-xs text-muted">{formatRelative(t.last_at)}</span>
                       </button>
                     </li>
                   ))}
@@ -210,7 +210,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
               <p className="px-4 py-6 text-center text-sm text-muted">
                 {audience === 'vendor'
                   ? 'No notifications yet. Updates on your loads, bids, offers and verification will show up here.'
-                  : 'No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.'}
+                  : 'No notifications yet. New SOS alerts, vendor loads, bids and reviews will show up here.'}
               </p>
             )}
             <ul>
@@ -229,7 +229,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
                       <span className="truncate text-sm font-medium text-text">{n.title}</span>
                     </span>
                     <span className="w-full truncate text-xs text-muted">{n.body}</span>
-                    <span className="text-xs text-muted">{formatTimeAgo(new Date(n.created_at))}</span>
+                    <span className="text-xs text-muted">{formatRelative(n.created_at)}</span>
                   </button>
                 </li>
               ))}

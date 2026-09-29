@@ -3,7 +3,7 @@ import {
   Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
-export type StaffRole = 'admin' | 'superadmin'
+export type StaffRole = 'admin' | 'superadmin' | 'manager'
 
 /** Counters shown next to a navigation item. Loaded by the app shell. */
 export type NavBadge = 'vendorRequests' | 'pendingPartners' | 'pendingKyc'
@@ -23,6 +23,7 @@ export interface NavSection {
 
 const staff: StaffRole[] = ['admin', 'superadmin']
 const superadmin: StaffRole[] = ['superadmin']
+const staffAndManagers: StaffRole[] = ['admin', 'superadmin', 'manager']
 
 /** The console navigation, grouped by what operators do each day. */
 export const navSections: NavSection[] = [
@@ -33,7 +34,7 @@ export const navSections: NavSection[] = [
       { to: '/live-map', label: 'Live map', icon: MapPinned, roles: staff },
       { to: '/shipments', label: 'Shipments', icon: Package, roles: staff },
       { to: '/fleet', label: 'Fleet', icon: Truck, roles: staff },
-      { to: '/emergency', label: 'Emergencies', icon: ShieldAlert, roles: staff },
+      { to: '/emergency', label: 'Emergencies', icon: ShieldAlert, roles: staffAndManagers },
     ],
   },
   {
@@ -49,7 +50,7 @@ export const navSections: NavSection[] = [
     items: [
       { to: '/bids', label: 'Bids', icon: Briefcase, roles: staff },
       { to: '/bookings', label: 'Customer bookings', icon: Smartphone, roles: staff },
-      { to: '/vendor-requests', label: 'Vendor requests', icon: Inbox, roles: staff, badge: 'vendorRequests' },
+      { to: '/vendor-requests', label: 'Vendor loads', icon: Inbox, roles: staff, badge: 'vendorRequests' },
       { to: '/3pl-partners', label: '3PL partners', icon: Building2, roles: superadmin, badge: 'pendingPartners' },
     ],
   },

@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Clock, Gauge, Route as RouteIcon } from 'lucide-react'
 import { analyticsAPI, telemetryAPI, telemetryWS, vehiclesAPI } from '@/services/api'
-import { EmptyState, ErrorState, Select, Skeleton, Stat, StatusPill, buttonClasses } from '@/components/ui'
-import { formatTimeAgo } from '@/utils/timeFormat'
+import { EmptyState, ErrorState, Select, Skeleton, Stat, StatusPill, buttonClasses, statusToLabel } from '@/components/ui'
 import { ChartCard, SimpleLineChart } from './charts'
-import { formatNumber, formatTime } from './format'
+import { formatNumber } from './format'
+import { formatTime, formatRelative, formatDateTime } from '@/utils/display'
 
 interface VehicleOption {
   id: string
@@ -152,7 +152,7 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
           label="Vehicle"
           value={selectedId ?? ''}
           onChange={e => select(e.target.value)}
-          options={options.map(v => ({ value: v.id, label: `${v.plate_number}${v.status ? ` · ${v.status.replace(/_/g, ' ')}` : ''}` }))}
+          options={options.map(v => ({ value: v.id, label: `${v.plate_number}${v.status ? ` · ${statusToLabel(v.status)}` : ''}` }))}
           className="sm:w-80"
         />
         <div className="flex items-center gap-2" aria-live="polite">
@@ -176,8 +176,8 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
           label="Last update"
           icon={<Clock size={18} />}
           loading={history.isLoading}
-          value={last ? formatTimeAgo(new Date(last.at), now) : '—'}
-          hint={last ? new Date(last.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : undefined}
+          value={last ? formatRelative(last.at, now) : '—'}
+          hint={last ? formatDateTime(last.at) : undefined}
         />
         <Stat
           label="Trip progress"

@@ -4,7 +4,8 @@ import { Building2, IndianRupee, PackageCheck, Percent } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { DataTable, SearchInput, Stat, StatusPill, type Column } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
-import { formatNumber, formatPercent, formatRupees } from './format'
+import { formatNumber, formatPercent } from './format'
+import { formatRupees } from '@/utils/display'
 
 interface VendorRow {
   id: string
@@ -78,7 +79,7 @@ export default function VendorsTab() {
           icon={<Percent size={18} />}
           loading={isLoading}
           value={noValue ?? formatPercent(kpis.rate)}
-          hint={kpis.rate == null ? 'No vendor requests yet' : 'Average across vendors with requests'}
+          hint={kpis.rate == null ? 'No vendor loads yet' : 'Average across vendors with loads'}
         />
         <Stat
           label="Average cost per load"

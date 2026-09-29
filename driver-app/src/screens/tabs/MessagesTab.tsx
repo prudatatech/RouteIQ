@@ -5,6 +5,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import type { ChatMessage } from '../../services/api';
 import { Button, Card, EmptyState, ErrorBanner, Text, TextField } from '../../components/ui';
 import { errorMessage } from '../../utils/errors';
+import { formatDateTime } from '../../utils/format';
 import { colors, radius, size, space } from '../../theme';
 
 interface MessagesTabProps {
@@ -21,15 +22,7 @@ interface MessagesTabProps {
 
 const MAX_LENGTH = 2000;
 
-const formatTime = (iso: string) =>
-  new Intl.DateTimeFormat('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'Asia/Kolkata',
-  }).format(new Date(iso));
+const formatStamp = (iso: string) => formatDateTime(iso, { year: undefined });
 
 /** Text conversation with dispatch for the current route. The box to type in is on top and the newest message first, so nothing needs scrolling. */
 export default function MessagesTab({ hasRoute, messages, loading, failed, sending, onRetry, onSend, onCallDispatch }: MessagesTabProps) {
@@ -136,7 +129,7 @@ function Bubble({ message }: { message: ChatMessage }) {
         </Text>
       </View>
       <Text variant="caption" color="textMuted">
-        {`${mine ? t('messages_you') : t('messages_dispatch')}${message.shipment_tracking_id ? ` · ${message.shipment_tracking_id}` : ''} · ${formatTime(message.created_at)}`}
+        {`${mine ? t('messages_you') : t('messages_dispatch')}${message.shipment_tracking_id ? ` · ${message.shipment_tracking_id}` : ''} · ${formatStamp(message.created_at)}`}
       </Text>
     </View>
   );

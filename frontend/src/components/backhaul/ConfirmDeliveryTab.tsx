@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { cargoAPI } from '@/services/api'
 import { Alert, Button, Card, CardBody, CardHeader, DetailList, Input, useConfirm } from '@/components/ui'
 import { apiErrorMessage, backhaulKeys } from './data'
+import { formatDateTime } from '@/utils/display'
 
 interface DeliveryConfirmation {
   tracking_id: string
@@ -36,7 +37,7 @@ export default function ConfirmDeliveryTab() {
     const ok = await confirm({
       title: `Mark ${payload.tracking_id} delivered?`,
       message: `This records ${payload.recipient_name} as the recipient and closes the shipment. It cannot be undone here.`,
-      confirmLabel: 'Confirm delivery',
+      confirmLabel: 'Mark delivered',
     })
     if (ok) deliver.mutate(payload)
   }
@@ -59,7 +60,7 @@ export default function ConfirmDeliveryTab() {
               label="Received by"
               value={recipient}
               onChange={e => { deliver.reset(); setRecipient(e.target.value) }}
-              placeholder="Recipient's full name"
+              placeholder="Receiver's full name"
               autoComplete="off"
               required
             />
@@ -84,7 +85,7 @@ export default function ConfirmDeliveryTab() {
                 items={[
                   { label: 'Tracking ID', value: <span className="font-mono">{deliver.data.tracking_id}</span> },
                   { label: 'Received by', value: deliver.data.recipient_name },
-                  { label: 'Recorded at', value: new Date(deliver.data.delivered_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) },
+                  { label: 'Recorded at', value: formatDateTime(deliver.data.delivered_at) },
                 ]}
               />
             </CardBody>

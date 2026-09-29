@@ -143,7 +143,7 @@ export default function TplDashboardPage() {
             if (data) setCorridors(data)
           })
           if (payload.new.status === 'active' && !payload.new.pending_updates) {
-            toast.success('Your pending updates have been approved.')
+            toast.success('Your pending updates have been approved')
           }
         }
       })
@@ -215,7 +215,7 @@ export default function TplDashboardPage() {
 
     const namedCorridors = settingsForm.corridors.filter(c => c.name.trim())
     if (namedCorridors.length === 0) {
-      toast.error('Add at least one corridor you serve, for example DEL-BOM.')
+      toast.error('Add at least one corridor you serve, for example DEL-BOM')
       return
     }
     setIsSubmittingSettings(true)

@@ -19,6 +19,8 @@ export interface CapacityBidInfo {
 export interface ShipmentRow {
   id: string
   tracking_id: string
+  /** Set on a cargo manifest that came from a vendor's posted load. */
+  vendor_request_id?: string | null
   status?: string | null
   priority?: string | null
   origin_name?: string | null

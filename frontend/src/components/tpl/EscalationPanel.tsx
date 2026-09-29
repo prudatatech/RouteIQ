@@ -74,13 +74,13 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
   })
   const withdrawOne = useMutation({
     mutationFn: (offerId: string) => tplNetworkAPI.withdrawOffer(offerId),
-    onSuccess: () => toast.success('Offer withdrawn.'),
+    onSuccess: () => toast.success('Offer withdrawn'),
     onError: err => toast.error(errorMessage(err, 'We could not withdraw this offer. Try again.')),
     onSettled: refresh,
   })
   const withdrawAll = useMutation({
     mutationFn: () => tplNetworkAPI.withdrawAll(source),
-    onSuccess: () => toast.success('All open offers withdrawn.'),
+    onSuccess: () => toast.success('All open offers withdrawn'),
     onError: err => toast.error(errorMessage(err, 'We could not withdraw the offers. Try again.')),
     onSettled: refresh,
   })

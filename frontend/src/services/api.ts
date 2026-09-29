@@ -106,6 +106,12 @@ export const vehiclesAPI = {
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/vehicles/${id}`),
   summary: () => api.get('/vehicles/summary').then(r => r.data),
+  /** Staff raise an SOS for a vehicle. `severity` is whether injuries are reported. */
+  raiseSos: (id: string, data: {
+    alert_type: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other'
+    severity?: 'serious' | 'minor'
+    description?: string
+  }) => api.post(`/vehicles/${id}/sos`, data).then(r => r.data),
 }
 
 export const optimizationAPI = {

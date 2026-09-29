@@ -4,8 +4,9 @@ import { IndianRupee, PackageCheck, Route, Scale, Truck, Wallet } from 'lucide-r
 import { analyticsAPI } from '@/services/api'
 import { Alert, Button, DateRangeControl, presetRange, Stat, type DateRangeValue } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
-import { formatDay, formatNumber, formatRupees } from './format'
+import { formatNumber } from './format'
 import { useFinanceSummary } from './useFinanceSummary'
+import { formatDay, formatRupees } from '@/utils/display'
 
 interface FleetOverview {
   trips_today: number
@@ -65,7 +66,7 @@ export default function OverviewTab() {
       ) : (
         <section aria-label={`Figures for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Stat
-            label="Trips"
+            label="Routes"
             icon={<Route size={18} />}
             loading={loading}
             value={formatNumber(ov?.trips_today)}
@@ -136,13 +137,13 @@ export default function OverviewTab() {
       )}
 
       <ChartCard
-        title="Trips and deliveries"
+        title="Routes and deliveries"
         description={`Routes dispatched and shipments delivered each day, ${rangeLabel}`}
         loading={activity.isLoading}
         error={activity.isError}
         onRetry={() => activity.refetch()}
         empty={!hasActivity}
-        emptyTitle="No trips or deliveries in this range"
+        emptyTitle="No routes or deliveries in this range"
         emptyDescription="Dispatch a route or deliver a shipment and it will show here."
         height="h-72"
       >
@@ -150,8 +151,8 @@ export default function OverviewTab() {
           data={days}
           categoryKey="date"
           formatCategory={formatDay}
-          series={[{ key: 'trips', label: 'Trips' }, { key: 'deliveries', label: 'Deliveries' }]}
-          label={`Trips and deliveries per day. Total ${days.reduce((s, d) => s + d.trips, 0)} trips and ${days.reduce((s, d) => s + d.deliveries, 0)} deliveries.`}
+          series={[{ key: 'trips', label: 'Routes' }, { key: 'deliveries', label: 'Deliveries' }]}
+          label={`Routes and deliveries per day. Total ${days.reduce((s, d) => s + d.trips, 0)} routes and ${days.reduce((s, d) => s + d.deliveries, 0)} deliveries.`}
         />
       </ChartCard>
     </div>

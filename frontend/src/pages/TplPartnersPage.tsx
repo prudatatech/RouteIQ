@@ -4,13 +4,13 @@ import { Check, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
-import { formatMinutes, formatPercent } from '@/components/tpl/stats'
+import { formatPercent } from '@/components/tpl/stats'
 import {
   BulkActionBar, Button, DataTable, IconButton, Page, PageHeader, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
-import { errorMessage, formatDate } from '@/utils/display'
+import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
 
 interface TplPartner {
   id: string
@@ -59,13 +59,13 @@ export default function TplPartnersPage() {
 
   const approve = useMutation({
     mutationFn: (id: string) => tplAPI.approve(id),
-    onSuccess: () => { toast.success('Partner approved.'); refresh() },
+    onSuccess: () => { toast.success('Partner approved'); refresh() },
     onError: err => toast.error(errorMessage(err, 'We could not approve this partner. Try again.')),
   })
 
   const reject = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => tplAPI.reject(id, reason),
-    onSuccess: () => { toast.success('Application rejected.'); refresh() },
+    onSuccess: () => { toast.success('Application rejected'); refresh() },
     onError: err => toast.error(errorMessage(err, 'We could not reject this application. Try again.')),
   })
 
@@ -73,7 +73,7 @@ export default function TplPartnersPage() {
     const ok = await confirm({
       title: 'Approve this 3PL partner?',
       message: 'This activates the partner and lets them set up their account.',
-      confirmLabel: 'Approve',
+      confirmLabel: 'Approve partner',
     })
     if (ok) approve.mutate(p.id)
   }
@@ -83,7 +83,7 @@ export default function TplPartnersPage() {
       title: `Reject ${p.company_name}?`,
       inputLabel: 'Reason for rejection',
       placeholder: 'What needs to change before this can be approved?',
-      confirmLabel: 'Reject',
+      confirmLabel: 'Reject application',
       tone: 'danger',
       required: true,
     })
@@ -113,7 +113,7 @@ export default function TplPartnersPage() {
     const ok = await confirm({
       title: `Approve ${targets.length} ${targets.length === 1 ? 'partner' : 'partners'}?`,
       message: 'Each partner is activated and can set up their account.',
-      confirmLabel: 'Approve all',
+      confirmLabel: 'Approve partners',
     })
     if (!ok) return
     setBulkBusy(true)
@@ -130,7 +130,7 @@ export default function TplPartnersPage() {
     setBulkBusy(false)
     selection.clear()
     refresh()
-    if (failures.length === 0) toast.success(`Approved ${approved} ${approved === 1 ? 'partner' : 'partners'}.`)
+    if (failures.length === 0) toast.success(`Approved ${approved} ${approved === 1 ? 'partner' : 'partners'}`)
     else toast.error(`Approved ${approved}, ${failures.length} failed: ${failures.slice(0, 3).join('; ')}${failures.length > 3 ? '…' : ''}`)
   }
 

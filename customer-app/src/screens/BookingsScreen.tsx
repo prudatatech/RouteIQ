@@ -94,7 +94,7 @@ function BookingRow({ booking, onPress, t }: { booking: Booking; onPress: () => 
         </Text>
         <View style={styles.meta}>
           <Text variant="bodySmall" color="textMuted">
-            {booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : t('price_tbc')}
+            {booking.quoted_price != null ? formatINR(booking.quoted_price) : t('price_tbc')}
           </Text>
           {booking.tracking_id ? (
             <Text variant="caption" color="textMuted" style={styles.mono}>

@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2, Smartphone } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { shipmentsAPI, telemetryAPI } from '@/services/api'
-import { formatEta } from '@/utils/timeFormat'
 import LiveMap, { type LiveMapStop, type LiveMapVehicle } from './LiveMap'
+import { formatMinutes } from '@/utils/display'
 
 interface PublicTracking {
   tracking_id?: string
@@ -98,7 +98,7 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
       <div className="absolute left-3 top-3 z-10 flex items-center gap-4 rounded-control border border-border bg-surface px-3 py-2 shadow-raised">
         <div>
           <div className="text-xs text-muted">Arrives in</div>
-          <div className="text-sm font-medium text-text">{trackInfo.eta_minutes ? formatEta(trackInfo.eta_minutes) : 'Not available yet'}</div>
+          <div className="text-sm font-medium text-text">{trackInfo.eta_minutes ? formatMinutes(trackInfo.eta_minutes) : 'Not available yet'}</div>
         </div>
         <button
           type="button"

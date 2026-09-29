@@ -15,6 +15,7 @@ import { sosHeadline } from '@/utils/sos'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { humanize } from '@/components/ui'
 import type { FleetAlert } from '@/components/fleet/health'
+import { formatDay } from '@/utils/display'
 
 interface VehicleRow {
   id: string
@@ -71,7 +72,7 @@ function alarmItem(alarms: FleetAlert[], open: () => void): AttentionItem {
   return {
     id: 'fleet-alarms',
     kind: 'alarm',
-    title: `${alarms.length.toLocaleString('en-IN')} open fleet ${alarms.length === 1 ? 'alarm' : 'alarms'}`,
+    title: `${alarms.length.toLocaleString('en-IN')} open fleet ${alarms.length === 1 ? 'alert' : 'alerts'}`,
     subtitle: kinds,
     time: timeAgo(newest),
     actions: [{ label: 'View alerts', onClick: open }],
@@ -239,7 +240,7 @@ export default function DashboardPage() {
       key: 'created',
       header: 'Created',
       sortValue: s => s.created_at ? new Date(s.created_at).getTime() : 0,
-      cell: s => s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—',
+      cell: s => s.created_at ? formatDay(s.created_at) : '—',
     },
   ]
 
@@ -281,12 +282,12 @@ export default function DashboardPage() {
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><Inbox size={18} /></span>
           <div>
             <p className="text-sm font-medium text-text">
-              Pending vendor requests{vendorRequestsLoading ? '' : ` (${(pendingVendorRequests?.length ?? 0).toLocaleString('en-IN')})`}
+              New vendor loads{vendorRequestsLoading ? '' : ` (${(pendingVendorRequests?.length ?? 0).toLocaleString('en-IN')})`}
             </p>
             <p className="text-xs text-muted">Loads vendors want you to approve and assign a vehicle to.</p>
           </div>
         </div>
-        <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vendor-requests')}>Open vendor requests</Button>
+        <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vendor-requests')}>Open vendor loads</Button>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">

@@ -3,6 +3,7 @@ import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
+import { manifestParcelCode } from '../core/parcelCode';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { rateLimitByUser } from '../core/rate-limit';
 import {
@@ -101,7 +102,7 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
       reference: r.shipment_id
         ? (tracking.get(r.shipment_id) ?? null)
         : r.manifest_id
-          ? `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`
+          ? manifestParcelCode(String(r.manifest_id))
           : `REQ-${String(r.vendor_request_id).slice(0, 8).toUpperCase()}`,
     })));
   } catch (error: any) {

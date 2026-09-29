@@ -30,7 +30,7 @@ const linkClass =
 
 const titles: Record<Mode, string> = {
   'sign-in': 'Sign in',
-  'sign-up': 'Create a shipper account',
+  'sign-up': 'Create a vendor account',
   forgot: 'Reset your password',
   reset: 'Set a new password',
 }
@@ -284,7 +284,7 @@ export default function LoginPage() {
       setFormError(describeAuthError(error, 'reset'))
       return
     }
-    toast.success('Your password has been changed.')
+    toast.success('Your password has been changed')
     const session = (await supabase.auth.getSession()).data.session
     if (!session || !data.user) {
       switchMode('sign-in')
@@ -316,7 +316,7 @@ export default function LoginPage() {
     reset: 'Save new password',
   }
   const subtitle = {
-    'sign-in': audience === 'staff' ? 'For operations staff and drivers.' : 'For shippers and 3PL partners.',
+    'sign-in': audience === 'staff' ? 'For operations staff and drivers.' : 'For vendors and 3PL partners.',
     'sign-up': 'Find truck capacity, post loads and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',
@@ -385,7 +385,7 @@ export default function LoginPage() {
   const otherOptions: ReactNode[] = []
   if (mode === 'sign-in' && audience === 'partner') {
     otherOptions.push(
-      <>New shipper? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create an account</button></>,
+      <>New vendor? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create an account</button></>,
       <>Approved 3PL partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
       <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
       <>Just looking? <Link className={linkClass} to="/vendor">Browse capacity without signing in</Link></>,

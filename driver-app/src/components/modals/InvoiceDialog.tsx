@@ -59,7 +59,7 @@ export default function InvoiceDialog({ invoice, onClose }: { invoice: Invoice; 
         <Row label={t('drop_label')} value={invoice.drop || '—'} />
         <Row
           label={t('cargo_label')}
-          value={`${invoice.cargo_type || '—'}${typeof invoice.weight_tons === 'number' ? ` (${formatNumber(invoice.weight_tons, { maximumFractionDigits: 1 })} t)` : ''}`}
+          value={`${invoice.cargo_type || '—'}${typeof invoice.weight_tons === 'number' ? ` (${formatNumber(invoice.weight_tons * 1000, { maximumFractionDigits: 0 })} kg)` : ''}`}
         />
         <Row label={t('distance_label')} value={typeof invoice.distance_km === 'number' ? `${formatNumber(invoice.distance_km, { maximumFractionDigits: 1 })} km` : '—'} />
       </View>

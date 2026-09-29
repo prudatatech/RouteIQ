@@ -254,7 +254,7 @@ export default function VendorShipmentRequestPage() {
 
     if (!token) {
       sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload))
-      toast('Sign in to post this load — we will bring you right back.', { icon: '🔒' })
+      toast('Sign in to post this load — we will bring you right back', { icon: '🔒' })
       navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request')}`)
       return
     }
@@ -332,7 +332,7 @@ export default function VendorShipmentRequestPage() {
           {step === 1 && (
             <div className="space-y-6">
               <div>
-                <p className="mb-3 text-sm font-medium text-text">Consignee (receiver)</p>
+                <p className="mb-3 text-sm font-medium text-text">Receiver</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input label="Name" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
                   <Input
@@ -436,7 +436,7 @@ export default function VendorShipmentRequestPage() {
                 ['Declared value', declaredValue ? formatRupees(declaredValue) : '—'],
                 ['Special handling', SPECIAL_HANDLING.filter(o => specialHandling[o.id]).map(o => o.label).join(', ') || 'None'],
               ]} />
-              <ReviewSection title="Consignee" rows={[
+              <ReviewSection title="Receiver" rows={[
                 ['Name', consigneeName || '—'],
                 ['Contact', [consigneeContact, consigneeEmail].filter(Boolean).join(' · ') || '—'],
               ]} />

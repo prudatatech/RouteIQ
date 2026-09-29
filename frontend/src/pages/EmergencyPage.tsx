@@ -70,7 +70,7 @@ export default function EmergencyPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sos_alerts' }, async payload => {
         const enhanced = await attachDetails(payload.new as SosAlert)
         queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev => [enhanced, ...(prev ?? [])])
-        toast.error('New emergency alert')
+        toast.error('New SOS')
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sos_alerts' }, payload => {
         queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
@@ -113,7 +113,7 @@ export default function EmergencyPage() {
         queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev => [...(prev ?? []), enhanced])
         setSelectedId(openId)
       } else {
-        toast.error('That alert could not be found.')
+        toast.error('That SOS could not be found')
       }
       finish()
     })
@@ -130,18 +130,18 @@ export default function EmergencyPage() {
       queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
         prev?.map(a => a.id === alert.id ? { ...a, status: 'acknowledged' } : a))
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
-      toast.success('Alert acknowledged')
+      toast.success('SOS acknowledged')
     } catch (err) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(message || 'Failed to acknowledge the alert')
+      toast.error(message || 'We could not acknowledge this SOS. Try again.')
     }
   }
 
   const resolve = async (alert: SosAlert) => {
     const ok = await confirm({
-      title: 'Resolve this alert?',
-      message: `Mark the ${sosTypeLabel(alert.alert_type)} alert for ${alert.vehicle?.plate_number ?? 'this vehicle'} as resolved.`,
-      confirmLabel: 'Resolve',
+      title: 'Resolve this SOS?',
+      message: `Mark the ${sosTypeLabel(alert.alert_type)} SOS for ${alert.vehicle?.plate_number ?? 'this vehicle'} as resolved.`,
+      confirmLabel: 'Resolve SOS',
     })
     if (!ok) return
     try {
@@ -149,9 +149,9 @@ export default function EmergencyPage() {
       queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
         prev?.map(a => a.id === alert.id ? { ...a, status: 'resolved' } : a))
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
-      toast.success('Alert resolved')
+      toast.success('SOS resolved')
     } catch (err) {
-      toast.error(apiErrorMessage(err, 'Failed to resolve the alert'))
+      toast.error(apiErrorMessage(err, 'We could not resolve this SOS. Try again.'))
       return
     }
     // A serious accident or breakdown put the vehicle in maintenance; resolving does not bring it back.
@@ -209,7 +209,7 @@ export default function EmergencyPage() {
     <Page>
       <PageHeader
         title="Emergencies"
-        description={isLoading ? 'Driver SOS alerts and where they are.' : activeAlerts.length === 0 ? 'No active alerts.' : `${activeAlerts.length.toLocaleString('en-IN')} active ${activeAlerts.length === 1 ? 'alert' : 'alerts'}.`}
+        description={isLoading ? 'Driver SOS calls and where they are.' : activeAlerts.length === 0 ? 'No active SOS.' : `${activeAlerts.length.toLocaleString('en-IN')} active ${activeAlerts.length === 1 ? 'SOS' : 'SOS calls'}`}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[380px_1fr]">
@@ -219,10 +219,10 @@ export default function EmergencyPage() {
               <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
             ) : error ? (
               <div className="p-4">
-                <EmptyState compact icon={<AlertTriangle size={22} />} title="We could not load alerts" action={<Button variant="secondary" onClick={() => refetch()}>Try again</Button>} />
+                <EmptyState compact icon={<AlertTriangle size={22} />} title="We could not load SOS calls" action={<Button variant="secondary" onClick={() => refetch()}>Try again</Button>} />
               </div>
             ) : alerts.length === 0 ? (
-              <EmptyState compact icon={<ShieldAlert size={22} />} title="No emergency alerts" description="SOS alerts from drivers will appear here." />
+              <EmptyState compact icon={<ShieldAlert size={22} />} title="No SOS yet" description="SOS calls from drivers and staff will appear here." />
             ) : (
               alerts.map(alert => {
                 const isActive = isOpenSos(alert.status)

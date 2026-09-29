@@ -9,11 +9,11 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Input, Page, PageHeader, Select, SearchInput,
-  Skeleton, StatusPill, Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
+  Skeleton, StatusPill, Tabs, TabPanel, humanize, statusToLabel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees, formatKm } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
@@ -106,16 +106,6 @@ const tabStatuses: Record<Exclude<TabId, 'all'>, string[]> = {
 const tabOfStatus = (status: string): Exclude<TabId, 'all'> | null =>
   (Object.keys(tabStatuses) as Exclude<TabId, 'all'>[]).find(k => tabStatuses[k].includes(status)) ?? null
 
-const statusLabels: Record<string, string> = {
-  pending: 'New',
-  approved: 'Approved',
-  assigned: 'Vehicle assigned',
-  escalated: 'With 3PL partners',
-  cancelled: 'Cancelled by vendor',
-  assigned_to_partner: 'Assigned to partner',
-  fulfilled: 'Completed',
-}
-
 const shortPlace = (place: string | null | undefined) => (place ?? '').split(',')[0].trim() || '—'
 const vendorName = (r: VendorRequest) => r.vendor?.company_name || 'Unnamed vendor'
 
@@ -196,15 +186,15 @@ export default function VendorRequestsPage() {
 
   const approve = useMutation({
     mutationFn: (id: string) => vendorAPI.approveRequest(id),
-    onSuccess: () => toast.success('Request approved. Assign a vehicle when one is ready.'),
-    onError: err => toast.error(errorMessage(err, 'We could not approve this request. Try again.')),
+    onSuccess: () => toast.success('Load approved. Assign a vehicle when one is ready.'),
+    onError: err => toast.error(errorMessage(err, 'We could not approve this load. Try again.')),
     onSettled: refresh,
   })
 
   const reject = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => vendorAPI.rejectRequest(id, reason),
-    onSuccess: () => { toast.success('Request rejected. The vendor has been told.'); setSelectedId(null) },
-    onError: err => toast.error(errorMessage(err, 'We could not reject this request. Try again.')),
+    onSuccess: () => { toast.success('Load rejected. The vendor has been told.'); setSelectedId(null) },
+    onError: err => toast.error(errorMessage(err, 'We could not reject this load. Try again.')),
     onSettled: refresh,
   })
 
@@ -296,13 +286,13 @@ export default function VendorRequestsPage() {
   }
 
   const reportBulk = (verb: string, ok: number, failures: string[]) => {
-    if (failures.length === 0) toast.success(`${verb} ${ok} ${ok === 1 ? 'request' : 'requests'}.`)
+    if (failures.length === 0) toast.success(`${verb} ${ok} ${ok === 1 ? 'load' : 'loads'}`)
     else toast.error(`${verb} ${ok}, ${failures.length} failed: ${failures.slice(0, 3).join('; ')}${failures.length > 3 ? '…' : ''}`)
   }
 
   const bulkApprove = async () => {
     const targets = selection.selectedRows.filter(r => r.status === 'pending')
-    if (targets.length === 0) { toast.error('Only new requests can be approved.'); return }
+    if (targets.length === 0) { toast.error('Only new loads can be approved'); return }
     const { ok, failures } = await runBulk(targets, r => vendorAPI.approveRequest(r.id), vendorName)
     selection.clear()
     refresh()
@@ -313,11 +303,11 @@ export default function VendorRequestsPage() {
     const targets = selection.selectedRows.filter(isBulkSelectable)
     if (targets.length === 0) return
     const reason = await prompt({
-      title: `Reject ${targets.length} ${targets.length === 1 ? 'request' : 'requests'}?`,
-      message: 'The same reason is sent to every vendor whose request is rejected.',
+      title: `Reject ${targets.length} ${targets.length === 1 ? 'load' : 'loads'}?`,
+      message: 'The same reason is sent to every vendor whose load is rejected.',
       inputLabel: 'Reason',
-      placeholder: 'Why are these requests being rejected?',
-      confirmLabel: 'Reject requests',
+      placeholder: 'Why are these loads being rejected?',
+      confirmLabel: 'Reject loads',
       tone: 'danger',
       required: true,
     })
@@ -337,8 +327,8 @@ export default function VendorRequestsPage() {
     const plate = vehiclesForBulk.data?.find(v => v.id === bulkVehicleId)?.plate_number ?? 'the selected vehicle'
     const count = bulkAssignTargets.length
     const agreed = await confirm({
-      title: `Assign ${plate} to ${count} ${count === 1 ? 'request' : 'requests'}?`,
-      message: 'The vehicle is assigned to every selected request, and the loads are added to its cargo manifest.',
+      title: `Assign ${plate} to ${count} ${count === 1 ? 'load' : 'loads'}?`,
+      message: 'The vehicle is assigned to every selected load, and the loads are added to its cargo manifest.',
       confirmLabel: 'Assign vehicle',
     })
     if (!agreed) return
@@ -357,11 +347,11 @@ export default function VendorRequestsPage() {
 
   const askReject = async (r: VendorRequest) => {
     const reason = await prompt({
-      title: 'Reject this request?',
-      message: `${vendorName(r)}’s request from ${shortPlace(r.pickup_location)} to ${shortPlace(r.drop_location)} will be rejected and the vendor notified.`,
+      title: 'Reject this load?',
+      message: `${vendorName(r)}’s load from ${shortPlace(r.pickup_location)} to ${shortPlace(r.drop_location)} will be rejected and the vendor notified.`,
       inputLabel: 'Reason',
-      placeholder: 'Why is this request being rejected?',
-      confirmLabel: 'Reject request',
+      placeholder: 'Why is this load being rejected?',
+      confirmLabel: 'Reject load',
       tone: 'danger',
       required: true,
     })
@@ -396,7 +386,7 @@ export default function VendorRequestsPage() {
     },
     {
       key: 'status', header: 'Status',
-      cell: r => <StatusPill status={r.status}>{statusLabels[r.status]}</StatusPill>,
+      cell: r => <StatusPill status={r.status} kind="request" />,
       sortValue: r => r.status,
     },
   ]
@@ -410,11 +400,11 @@ export default function VendorRequestsPage() {
   ]
 
   const emptyTitle: Record<TabId, string> = {
-    open: 'No requests waiting',
-    assigned: 'No requests with a vehicle',
-    completed: 'No completed requests',
-    rejected: 'No rejected or cancelled requests',
-    all: 'No vendor requests yet',
+    open: 'No loads waiting',
+    assigned: 'No loads with a vehicle',
+    completed: 'No completed loads',
+    rejected: 'No rejected or cancelled loads',
+    all: 'No vendor loads yet',
   }
 
   const exportCsv = () => {
@@ -423,7 +413,7 @@ export default function VendorRequestsPage() {
       pickup: r.pickup_location,
       drop: r.drop_location,
       weight_kg: r.required_capacity_kg,
-      status: statusLabels[r.status] ?? r.status,
+      status: statusToLabel(r.status, 'request'),
       posted_at: r.created_at,
     })), [
       { key: 'vendor', header: 'Vendor' },
@@ -439,31 +429,31 @@ export default function VendorRequestsPage() {
   return (
     <Page>
       <PageHeader
-        title="Vendor requests"
-        description="Loads posted by vendors that need a vehicle. New requests appear here as they come in."
+        title="Vendor loads"
+        description="Loads posted by vendors that need a vehicle. New loads appear here as they come in."
         actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
         <div className="space-y-4">
-          <Tabs label="Filter requests by status" tabs={requests.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
-          <SearchInput value={search} onChange={setSearch} label="Search requests" placeholder="Search by vendor or place" className="max-w-sm" />
+          <Tabs label="Filter loads by status" tabs={requests.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
+          <SearchInput value={search} onChange={setSearch} label="Search loads" placeholder="Search by vendor or place" className="max-w-sm" />
         </div>
       </PageHeader>
 
       <TabPanel id={tab}>
         <DataTable
-          caption="Vendor shipment requests"
+          caption="Vendor loads"
           columns={columns}
           rows={rows}
           rowKey={r => r.id}
           loading={requests.isLoading}
-          error={requests.error ? 'We could not load vendor requests. Check your connection and try again.' : undefined}
+          error={requests.error ? 'We could not load vendor loads. Check your connection and try again.' : undefined}
           onRetry={() => requests.refetch()}
           onRowClick={r => setSelectedId(r.id)}
           selectedKey={selectedId}
           sort={sort}
           onSortChange={s => setSortParam(serializeSort(s))}
           empty={{
-            title: search ? 'No requests match your search' : emptyTitle[tab],
+            title: search ? 'No loads match your search' : emptyTitle[tab],
             description: search ? 'Try a different vendor or place name.' : 'Vendors post loads from their portal.',
             action: search ? <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> : undefined,
           }}
@@ -615,7 +605,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
     <Drawer
       open={!!request}
       onClose={onClose}
-      title={request ? vendorName(request) : 'Request'}
+      title={request ? vendorName(request) : 'Load'}
       description={request ? `${shortPlace(request.pickup_location)} to ${shortPlace(request.drop_location)}` : undefined}
       footer={canAssign && request ? (
         <>
@@ -637,7 +627,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
       {request && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill status={request.status}>{statusLabels[request.status]}</StatusPill>
+            <StatusPill status={request.status} kind="request" />
             <span className="text-sm text-muted">Posted {formatRelative(request.created_at)}</span>
           </div>
 
@@ -714,7 +704,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                         <span className="min-w-0 flex-1">
                           <span className="block font-mono text-sm font-medium text-text">{vehicle.plate_number}</span>
                           <span className="block text-xs text-muted">
-                            {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${distanceKm.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km from pickup`].filter(Boolean).join(' · ')}
+                            {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${formatKm(distanceKm)} from pickup`].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                         <span className="shrink-0 text-right">

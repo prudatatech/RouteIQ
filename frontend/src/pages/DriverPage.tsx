@@ -7,7 +7,6 @@ import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
-import { formatEta } from '@/utils/timeFormat'
 import DriverMap from '@/components/map/DriverMap'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +15,7 @@ import { StatusPill } from '@/components/ui/StatusPill'
 import { Select } from '@/components/ui/Field'
 import { EmptyState } from '@/components/ui/States'
 import { useConfirm } from '@/components/ui'
+import { formatMinutes, formatTime } from '@/utils/display'
 
 type Point = { x: number; y: number }
 type ShiftStatus = 'offline' | 'on_duty' | 'on_mission'
@@ -422,7 +422,7 @@ export default function DriverPage() {
             <DetailList
               columns={2}
               items={[
-                { label: 'ETA', value: computedDuration > 0 ? formatEta(computedDuration) : '—' },
+                { label: 'ETA', value: computedDuration > 0 ? formatMinutes(computedDuration) : '—' },
                 { label: 'Distance', value: computedDist > 0 ? `${computedDist.toFixed(1)} km` : '—' },
               ]}
             />
@@ -444,7 +444,7 @@ export default function DriverPage() {
                 ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 size={14} aria-hidden="true" /> Connected</span>
                 : isTracking ? 'Waiting for fix' : 'Off',
             },
-            { label: 'Last update', value: lastUpdate ? lastUpdate.toLocaleTimeString() : '—' },
+            { label: 'Last update', value: lastUpdate ? formatTime(lastUpdate, { seconds: true }) : '—' },
           ]}
         />
       </Card>

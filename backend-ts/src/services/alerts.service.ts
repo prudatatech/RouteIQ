@@ -119,7 +119,7 @@ export async function raiseAlert(input: RaiseAlertInput): Promise<RaiseAlertResu
   if (error || !created) throw error ?? new Error('Alert was not saved');
 
   const label = ALERT_META[input.type].label;
-  const title = `${isTest ? 'Test alarm: ' : ''}${label}${input.plate ? ` on ${input.plate}` : ''}`;
+  const title = `${isTest ? 'Test alert: ' : ''}${label}${input.plate ? ` on ${input.plate}` : ''}`;
   try {
     await notificationService.notifyStaff(title, input.description, 'fleet_alert', {
       alert_id: created.id,

@@ -6,7 +6,8 @@ import {
 } from '@/components/ui'
 import { useCargoStore } from '@/store/cargoStore'
 import LoadActions from './LoadActions'
-import { apiErrorMessage, formatKg, formatKm, useBackhaulVehicles, useOpenLoads, vehicleLabel, type OpenLoad } from './data'
+import { apiErrorMessage, useBackhaulVehicles, useOpenLoads, vehicleLabel, type OpenLoad } from './data'
+import { formatKg, formatKm } from '@/utils/display'
 
 interface PoolPlan {
   vehicle: { id: string; plate_number: string; capacity_kg: number }
@@ -89,7 +90,7 @@ export default function PoolLoadsTab() {
                     label={
                       <span className="flex flex-wrap items-baseline gap-x-2">
                         <span className="font-mono">{load.tracking_id}</span>
-                        <span className="text-muted">{load.shipper ?? 'Unknown shipper'}</span>
+                        <span className="text-muted">{load.shipper ?? 'Unknown vendor'}</span>
                       </span>
                     }
                     description={missing

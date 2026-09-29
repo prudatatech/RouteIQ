@@ -4,7 +4,7 @@ import type { TranslateFn } from '../hooks/useTranslation';
 
 /** Plain-language status for a booking (a translation key), and the tone its pill uses. */
 export const BOOKING_STATUS: Record<BookingStatus, { label: string; tone: Tone }> = {
-  requested: { label: 'status_requested', tone: 'warning' },
+  requested: { label: 'status_requested', tone: 'info' },
   confirmed: { label: 'status_confirmed', tone: 'info' },
   assigned: { label: 'status_assigned', tone: 'info' },
   in_transit: { label: 'status_in_transit', tone: 'accent' },
@@ -12,7 +12,7 @@ export const BOOKING_STATUS: Record<BookingStatus, { label: string; tone: Tone }
   cancelled: { label: 'status_cancelled', tone: 'neutral' },
 };
 
-/** A load whose delivery attempt failed and is waiting for another. The booking keeps its own status, so this reads the shipment's. */
+/** A shipment whose delivery attempt failed and is waiting for another. The booking keeps its own status, so this reads the shipment's. */
 export const deliveryFailed = (booking: Pick<Booking, 'status' | 'shipment_status'>) =>
   booking.shipment_status === 'exception' && booking.status !== 'delivered' && booking.status !== 'cancelled';
 
@@ -29,7 +29,7 @@ export const BOOKING_STEPS: { status: BookingStatus; label: string }[] = [
   { status: 'delivered', label: 'status_delivered' },
 ];
 
-/** A customer can cancel until the load is picked up. */
+/** A customer can cancel until the shipment is picked up. */
 export const canCancel = (status: BookingStatus) => status === 'requested' || status === 'confirmed' || status === 'assigned';
 
 /** "45 min" or "2 h 10 min". */

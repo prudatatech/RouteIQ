@@ -6,7 +6,7 @@ import { supabase } from '@/services/supabase'
 import { bookingsAPI, type CustomerBooking } from '@/services/api'
 import {
   Alert, Button, DataTable, DetailList, Drawer, ErrorState, Input, Modal, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  humanize, useConfirm, useTabParam, useUrlState, type Column, type Tone,
+  humanize, statusToLabel, statusToTone, useConfirm, useTabParam, useUrlState, type Column, type Tone,
 } from '@/components/ui'
 import { isDraftVehicle } from '@/utils/vehicles'
 import { errorMessage, formatDate, formatKg, formatRelative, formatRupees } from '@/utils/display'
@@ -21,24 +21,15 @@ const tabStatuses: Record<Exclude<TabId, 'all'>, CustomerBooking['status'][]> = 
   cancelled: ['cancelled'],
 }
 
-const statusInfo: Record<CustomerBooking['status'], { label: string; tone: Tone }> = {
-  requested: { label: 'New', tone: 'warning' },
-  confirmed: { label: 'Confirmed, needs a vehicle', tone: 'info' },
-  assigned: { label: 'Vehicle assigned', tone: 'info' },
-  in_transit: { label: 'On its way', tone: 'brand' },
-  delivered: { label: 'Delivered', tone: 'success' },
-  cancelled: { label: 'Cancelled', tone: 'neutral' },
-}
-
 /**
  * What staff and the customer see for a booking. A failed delivery has no booking status of its own,
  * so it shows from the shipment's status.
  */
 function statusOf(b: CustomerBooking): { label: string; tone: Tone } {
   if (b.shipment_status === 'exception' && !['delivered', 'cancelled'].includes(b.status)) {
-    return { label: 'Delivery attempt failed', tone: 'danger' }
+    return { label: 'Delivery failed', tone: 'danger' }
   }
-  return statusInfo[b.status]
+  return { label: statusToLabel(b.status, 'booking'), tone: statusToTone(b.status, 'booking') }
 }
 
 /** A booking whose vehicle can be chosen: waiting for one, already has one, or its delivery failed. */

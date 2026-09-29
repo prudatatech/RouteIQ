@@ -105,7 +105,7 @@ export async function createBooking(customerId: string, input: BookingInput) {
     .single();
   if (error || !data) throw new Error(`Failed to create booking: ${error?.message}`);
 
-  await notifyCustomer(data, 'Booking received', `We have your request from ${input.pickup_name} to ${input.drop_name}. Our team will confirm it soon.`, 'requested');
+  await notifyCustomer(data, 'Booking received', `We have your booking from ${input.pickup_name} to ${input.drop_name}. Our team will confirm it soon.`, 'requested');
   await notifyStaff('New customer booking', `${input.pickup_name} to ${input.drop_name}, ${input.weight_kg} kg, pickup ${input.date}`, data.id);
   return data;
 }
@@ -302,7 +302,7 @@ export async function cancelBooking(id: string, by: { role: 'customer' | 'staff'
       // The shipment refused (it has moved on): the booking goes back as it was, so nothing is half-cancelled.
       await transition(id, ['cancelled'], { status: booking.status, cancelled_by: null, cancel_reason: null });
       if (e instanceof HttpError && e.status === 409) {
-        throw new HttpError(409, 'This load has already been picked up, so the booking can no longer be cancelled.');
+        throw new HttpError(409, 'This shipment has already been picked up, so the booking can no longer be cancelled.');
       }
       throw e;
     }
@@ -339,8 +339,8 @@ const MOVES_FROM: Record<string, BookingStatus[]> = {
 const PROGRESS_TEXT: Record<string, [string, string]> = {
   confirmed: ['Finding you another vehicle', 'The vehicle for your booking is no longer available. Our team is arranging another one.'],
   assigned: ['Vehicle assigned', 'A vehicle has been assigned to your booking.'],
-  in_transit: ['Your shipment is on its way', 'Your load has been picked up. You can follow it live in the app.'],
-  delivered: ['Your shipment was delivered', 'Your load has been delivered. Thank you for booking with MargixIndia.'],
+  in_transit: ['Your shipment is on its way', 'Your shipment has been picked up. You can follow it live in the app.'],
+  delivered: ['Your shipment was delivered', 'Your shipment has been delivered. Thank you for booking with MargixIndia.'],
   cancelled: ['Booking cancelled', 'Your booking was cancelled by our team.'],
 };
 
@@ -349,7 +349,7 @@ export async function onShipmentStatus(shipmentId: string, shipmentStatus: strin
   if (shipmentStatus === 'exception') {
     const { data: failed } = await supabase.from('customer_bookings').select(BOOKING_COLUMNS).eq('shipment_id', shipmentId).maybeSingle();
     if (failed && !['delivered', 'cancelled'].includes(failed.status)) {
-      await notifyCustomer(failed, 'Delivery attempt failed', 'We could not deliver your load this time. Our team will arrange another attempt.', failed.status);
+      await notifyCustomer(failed, 'Delivery attempt failed', 'We could not deliver your shipment this time. Our team will arrange another attempt.', failed.status);
     }
     return;
   }

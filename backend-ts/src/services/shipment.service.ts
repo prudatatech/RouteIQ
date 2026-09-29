@@ -5,6 +5,8 @@
 import { HttpError } from '../core/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
+import { formatISTDate } from '../core/format';
+import { manifestParcelCode } from '../core/parcelCode';
 import { SecurityService } from './security.service';
 import { InvoiceService } from './invoice.service';
 import { OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertTransition } from '../core/transitions';
@@ -36,11 +38,7 @@ const getETA = (distance: string, createdAt: string): string => {
   const date = new Date(createdAt);
   date.setTime(date.getTime() + travelHours * 60 * 60 * 1000);
 
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+  return formatISTDate(date);
 };
 
 /** Average road speed used for the public arrival estimate (straight-line distance). */
@@ -791,7 +789,7 @@ export class ShipmentService {
           realDistKm = route.total_distance_km.toString();
           const routeStart = new Date(route.created_at || manifestData.created_at);
           routeStart.setTime(routeStart.getTime() + (route.total_duration_minutes || 0) * 60 * 1000);
-          realEtaText = routeStart.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          realEtaText = formatISTDate(routeStart);
         }
       }
 
@@ -851,7 +849,8 @@ export class ShipmentService {
 
       return {
         id: manifestData.id,
-        tracking_id: 'CM-' + manifestData.id.substring(0, 8).toUpperCase(),
+        tracking_id: manifestParcelCode(manifestData.id),
+        vendor_request_id: manifestData.vendor_request_id ?? null,
         status: manifestData.status,
         metadata: metadata,
         pickup_location: { address: manifestData.pickup_location, lat: manifestData.pickup_lat, lng: manifestData.pickup_lng },
@@ -949,7 +948,8 @@ export class ShipmentService {
 
     const mappedManifests = (manifests || []).map((m: any) => ({
       id: m.id,
-      tracking_id: 'CM-' + m.id.substring(0, 8).toUpperCase(),
+      tracking_id: manifestParcelCode(m.id),
+      vendor_request_id: m.vendor_request_id ?? null,
       status: m.status === 'scheduled' ? 'created' : m.status, // maps scheduled to created
       priority: 'high',
       // cargo_manifest only stores lat/lng plus one address string per point, so the

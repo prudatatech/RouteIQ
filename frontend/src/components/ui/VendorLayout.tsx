@@ -173,7 +173,7 @@ export default function VendorLayout() {
             <NavLink to="/vendor" className="flex items-center gap-2.5">
               <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
               <span className="text-lg font-semibold text-text">MargixIndia</span>
-              <span className="hidden text-sm text-muted xl:inline">for shippers</span>
+              <span className="hidden text-sm text-muted xl:inline">for vendors</span>
             </NavLink>
             <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
           </div>

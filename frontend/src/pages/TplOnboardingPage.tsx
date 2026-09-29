@@ -131,7 +131,7 @@ export default function TplOnboardingPage() {
     if (!editId || !editPan) return
     tplAPI.getPartner(editId, editPan).then(data => {
       if (data.pan_number !== editPan.toUpperCase()) {
-        toast.error('Invalid credentials for editing this application.')
+        toast.error('Invalid credentials for editing this application')
         navigate('/3pl/onboard/track')
         return
       }
@@ -152,7 +152,7 @@ export default function TplOnboardingPage() {
         setExistingDocs(data.tpl_documents.map((d: { doc_type: string; file_url: string }) => ({ type: d.doc_type, url: d.file_url })))
       }
     }).catch(() => {
-      toast.error('Failed to load application data.')
+      toast.error('Failed to load application data')
     }).finally(() => setLoadingExisting(false))
   }, [editId, editPan, navigate])
 
@@ -223,7 +223,7 @@ export default function TplOnboardingPage() {
       return
     }
     if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) {
-      toast.error(`${file.name} is not a PDF, PNG or JPG file.`)
+      toast.error(`${file.name} is not a PDF, PNG or JPG file`)
       return
     }
     setUploadedDocs(prev => ({ ...prev, [docType]: file }))

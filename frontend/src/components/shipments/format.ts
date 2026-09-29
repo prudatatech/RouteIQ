@@ -34,6 +34,9 @@ export function isActiveShipmentStatus(status?: string | null): boolean {
  * Cargo manifests from vendor bids are merged into the shipments list with a CM- ID.
  * They live in another table, so shipment actions (status, edit, assign, delete) do not apply.
  */
+/** The tracking ID printed for a cargo manifest: CM- and the first 8 characters of its id (same rule as the server). */
+export const manifestTrackingId = (manifestId: string) => `CM-${manifestId.slice(0, 8).toUpperCase()}`
+
 export const isCargoManifest = (s: Pick<ShipmentRow, 'tracking_id'>) => s.tracking_id?.startsWith('CM-') ?? false
 
 export function deliveryPointsOf(s: ShipmentRow): DeliveryPoint[] {
@@ -64,27 +67,6 @@ export function plateOf(s: ShipmentRow): string | null {
   }
   return null
 }
-
-export function formatDate(value?: string | null) {
-  if (!value) return null
-  // A bare date (2026-09-30) is an India calendar day: read it at midday so no timezone moves it
-  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00+05:30` : value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-export function formatDateTime(value?: string | null) {
-  if (!value) return null
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
-}
-
-export const formatKg = (kg?: number | null) =>
-  kg == null ? null : `${Number(kg).toLocaleString('en-IN', { maximumFractionDigits: 1 })} kg`
-
-export const formatRupees = (amount?: number | null) =>
-  amount == null ? null : `₹${Number(amount).toLocaleString('en-IN')}`
 
 /** The server uses 999999 for "position unknown". */
 export const knownDistance = (v: Pick<VehicleOption, 'distance_km'>) =>

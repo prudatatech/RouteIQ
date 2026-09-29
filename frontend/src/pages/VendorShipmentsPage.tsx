@@ -6,6 +6,7 @@ import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import { supabase, openChannel } from '@/services/supabase'
 import { capacityAPI, vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { manifestTrackingId } from '@/components/shipments/format'
 import {
   Button, DataTable, statusToLabel, Page, PageHeader, SearchInput, StatusPill, Tabs, useConfirm, useTabParam, type Column, type TabItem,
 } from '@/components/ui'
@@ -195,7 +196,7 @@ export default function VendorShipmentsPage() {
         }
         const manifestId = r.cargo_manifest?.[0]?.id
         if (!manifestId) return null
-        const trackingId = `CM-${manifestId.slice(0, 8).toUpperCase()}`
+        const trackingId = manifestTrackingId(manifestId)
         return (
           <Button size="sm" variant="secondary" onClick={() => navigate(`/track/${trackingId}`)}>Track</Button>
         )

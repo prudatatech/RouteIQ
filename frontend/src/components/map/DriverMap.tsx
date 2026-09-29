@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatEta } from '@/utils/timeFormat';
 import MapView from './MapView';
 import { fetchDrivingRoute, type DrivingRoute } from './directions';
 import type { LatLng, MapPoint, MapRoute, MapVehicle } from './types';
+import { formatMinutes } from '@/utils/display'
 
 interface DriverMapProps {
   currentLat: number;
@@ -62,7 +62,7 @@ export default function DriverMap({ currentLat, currentLng, targetLat, targetLng
   }, [hasTarget, driving, currentLat, currentLng, targetLat, targetLng]);
 
   const stats = [
-    { label: 'Arrives in', value: driving ? formatEta(driving.durationSeconds / 60) : 'Not available' },
+    { label: 'Arrives in', value: driving ? formatMinutes(driving.durationSeconds / 60) : 'Not available' },
     { label: 'Distance left', value: driving ? `${(driving.distanceMeters / 1000).toFixed(1)} km` : 'Not available' },
     { label: 'Speed', value: `${Math.round(onMission ? speed : 0)} km/h` },
   ];

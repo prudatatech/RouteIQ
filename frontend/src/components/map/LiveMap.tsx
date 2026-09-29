@@ -7,11 +7,11 @@ import { useAuthStore } from '@/store/authStore'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
 import { supabase, openChannel } from '@/services/supabase'
-import { formatEta } from '@/utils/timeFormat'
 import MapView from './MapView'
 import { fetchDrivingRoute, type DrivingRoute } from './directions'
 import { useLiveVehiclePositions } from './useLiveVehiclePositions'
 import type { LatLng, MapMode, MapPoint, MapRoute, MapRouteStop, MapVehicle, MapViewHandle } from './types'
+import { formatMinutes } from '@/utils/display'
 
 /** Vehicle as returned by the vehicles API. */
 export interface LiveMapVehicle {
@@ -265,7 +265,7 @@ export default function LiveMap({
               </p>
               {driving && (
                 <p className="mt-1 text-xs text-muted">
-                  Arrives in <span className="font-medium text-text">{formatEta(driving.durationSeconds / 60)}</span>
+                  Arrives in <span className="font-medium text-text">{formatMinutes(driving.durationSeconds / 60)}</span>
                   {' · '}
                   <span className="tabular">{(driving.distanceMeters / 1000).toFixed(1)} km</span> to go
                 </p>

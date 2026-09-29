@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation, Wrench, ArchiveRestore } from 'lucide-react'
+import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation, Wrench, ArchiveRestore, ShieldAlert } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
-import { formatTimeAgo } from '@/utils/timeFormat'
-import { formatDateTime } from '@/utils/display'
+import { formatDateTime, formatRelative } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
   Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
@@ -19,6 +18,7 @@ import { expiryStatus } from '@/utils/documentExpiry'
 import { fleetAPI } from '@/services/api'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
 import AlertsView from '@/components/fleet/AlertsView'
+import RaiseSosModal from '@/components/fleet/RaiseSosModal'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
 import { apiErrorMessage, bandLabel, bandTone, fleetKeys, formatOdometer, type HealthBand } from '@/components/fleet/health'
 import { returnVehicleToService, setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
@@ -120,6 +120,7 @@ export default function FleetPage() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [sosOpen, setSosOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Keep "last seen" labels and the live threshold current.
@@ -173,11 +174,11 @@ export default function FleetPage() {
   // matching vehicle and opens its drawer, then the param is dropped from the URL.
   useEffect(() => {
     const openId = searchParams.get('open')
-    if (!openId || isLoading) return
+    if (!openId || isLoading || view === 'alerts') return
     const match = vehicles.find(v => v.id === openId)
     if (match) setDetailVehicle(match)
     setSearchParams(params => { params.delete('open'); return params }, { replace: true })
-  }, [searchParams, setSearchParams, vehicles, isLoading])
+  }, [searchParams, setSearchParams, vehicles, isLoading, view])
 
   const healthQuery = useFleetHealth()
   const healthById = useMemo(() => new Map((healthQuery.data ?? []).map(h => [h.vehicle_id, h])), [healthQuery.data])
@@ -240,7 +241,7 @@ export default function FleetPage() {
     const ok = await confirm({
       title: `Delete ${v.plate_number}?`,
       message: 'A vehicle with no trips on record is removed for good. One that has completed trips is archived instead, so its history is kept.',
-      confirmLabel: 'Delete',
+      confirmLabel: 'Delete vehicle',
       tone: 'danger',
     })
     if (ok) deleteMutation.mutate(v.id)
@@ -287,7 +288,7 @@ export default function FleetPage() {
     const ok = await confirm({
       title: `Restore ${v.plate_number}?`,
       message: 'The vehicle returns to the fleet as idle.',
-      confirmLabel: 'Restore',
+      confirmLabel: 'Restore vehicle',
     })
     if (ok) statusMutation.mutate({ id: v.id, status: 'idle' })
   }
@@ -373,7 +374,7 @@ export default function FleetPage() {
       cell: v => {
         const pingAt = lastSeenAt(v)
         if (isVehicleLive(v, liveMinutes, now)) return <StatusPill tone="success">Live</StatusPill>
-        return <span className="text-sm text-muted">{pingAt ? formatTimeAgo(pingAt, now) : 'No GPS data'}</span>
+        return <span className="text-sm text-muted">{pingAt ? formatRelative(pingAt, now) : 'No GPS data'}</span>
       },
     },
     {
@@ -472,7 +473,12 @@ export default function FleetPage() {
       </PageHeader>
 
       <TabPanel id={view}>
-      {view === 'alerts' && <AlertsView />}
+      {view === 'alerts' && (
+        <AlertsView
+          openId={searchParams.get('open')}
+          onOpenHandled={() => setSearchParams(params => { params.delete('open'); return params }, { replace: true })}
+        />
+      )}
       {view === 'service' && <ServiceDueView onOpenVehicle={openVehicle} />}
       {view === 'vehicles' && (
       <DataTable
@@ -537,6 +543,9 @@ export default function FleetPage() {
             </div>
             {role !== 'driver' && (
               <div className="flex flex-wrap gap-2">
+                {!isDraftVehicle(detailVehicle) && detailVehicle.status !== 'archived' && (
+                  <Button variant="danger" icon={<ShieldAlert size={16} />} onClick={() => setSosOpen(true)}>Raise SOS</Button>
+                )}
                 {canReturnToService(detailVehicle) && (
                   <Button icon={<Wrench size={16} />} onClick={() => handleReturnToService(detailVehicle)}>Return to service</Button>
                 )}
@@ -552,7 +561,7 @@ export default function FleetPage() {
               columns={2}
               items={[
                 { label: 'Status', value: <StatusPill status={detailVehicle.status} /> },
-                { label: 'Last seen', value: detailIsLive ? 'Live' : (detailPing ? formatTimeAgo(detailPing, now) : 'No GPS data') },
+                { label: 'Last seen', value: detailIsLive ? 'Live' : (detailPing ? formatRelative(detailPing, now) : 'No GPS data') },
                 { label: 'Driver', value: detailVehicle.driver_name || 'Unassigned' },
                 { label: 'GPS device', value: detailVehicle.spark_id || 'Not linked' },
                 {
@@ -595,6 +604,7 @@ export default function FleetPage() {
                 </div>
               )
             })()}
+            <RaiseSosModal key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} open={sosOpen} onClose={() => setSosOpen(false)} />
             <VehicleHealthPanel key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} />
           </div>
         )}

@@ -1,3 +1,4 @@
+import { formatRupees } from '@/utils/display'
 /** Documents a 3PL applicant or partner can upload; matches backend TPL_DOCUMENT_TYPES. */
 export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'] as const
 
@@ -65,13 +66,12 @@ export interface StoredCorridor {
   priority?: string | number | null
 }
 
-const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
 /** A rate as it is shown: numeric rates as amount and unit, older text as written, "Quoted per load" for none. */
 export function rateText(amount: number | string | null | undefined, unit: RateUnit | null | undefined, legacy?: string | null): string {
   const n = Number(amount)
   if (amount != null && amount !== '' && Number.isFinite(n) && n > 0) {
-    return `${rupees(n)} ${unit === 'per_km' ? 'per km' : 'per trip'}`
+    return `${formatRupees(n)} ${unit === 'per_km' ? 'per km' : 'per trip'}`
   }
   return legacy?.trim() || 'Quoted per load'
 }

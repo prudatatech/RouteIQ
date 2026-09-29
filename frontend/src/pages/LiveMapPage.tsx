@@ -40,7 +40,7 @@ export default function LiveMapPage() {
     mutationFn: analyticsAPI.syncSparkGPS,
     onSuccess: result => {
       if (result.status === 'success') {
-        toast.success('GPS positions updated.')
+        toast.success('GPS positions updated')
         queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       } else {
         toast(result.message || 'GPS sync is not set up, so nothing was updated.')

@@ -72,7 +72,7 @@ function DispatchPhoneCard() {
   )
 }
 
-/** Numbers costs and pricing are worked out from, how drivers reach dispatch, and (for superadmins) fleet alarm rules. */
+/** Numbers costs and pricing are worked out from, how drivers reach dispatch, and (for superadmins) fleet alert rules. */
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
@@ -110,7 +110,7 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Values that costs, pricing and fleet alarms are worked out from, and the number drivers call." />
+      <PageHeader title="Settings" description="Values that costs, pricing and fleet alerts are worked out from, and the number drivers call." />
 
       {settings.isError ? (
         <ErrorState title="We could not load settings" description="Check your connection and try again." onRetry={() => settings.refetch()} />
@@ -157,8 +157,8 @@ export default function SettingsPage() {
       )}
 
       {isSuperadmin && (
-        <section aria-labelledby="alarm-settings" className="space-y-4">
-          <h2 id="alarm-settings" className="text-lg font-semibold text-text">Fleet alarms</h2>
+        <section aria-labelledby="alert-settings" className="space-y-4">
+          <h2 id="alert-settings" className="text-lg font-semibold text-text">Fleet alerts</h2>
           <AlarmSettingsSection />
         </section>
       )}

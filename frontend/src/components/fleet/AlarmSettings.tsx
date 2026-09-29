@@ -41,7 +41,7 @@ function AlarmRules() {
       toast.success('Alarm rules saved')
       queryClient.invalidateQueries({ queryKey: ['fleet-alert-settings'] })
     },
-    onError: err => toast.error(apiErrorMessage(err, 'We could not save the alarm rules. Try again.')),
+    onError: err => toast.error(apiErrorMessage(err, 'We could not save the alert rules. Try again.')),
   })
 
   const submit = () => {
@@ -60,10 +60,10 @@ function AlarmRules() {
 
   return (
     <Card>
-      <CardHeader title="Alarm rules" description="The limits that open an alert when a vehicle reports its location." />
+      <CardHeader title="Alert rules" description="The limits that open an alert when a vehicle reports its location." />
       <CardBody>
         {settings.isLoading ? <Skeleton className="h-40 w-full" /> : settings.isError ? (
-          <Alert tone="danger" title="We could not load the alarm rules" action={<Button size="sm" variant="secondary" onClick={() => settings.refetch()}>Try again</Button>}>
+          <Alert tone="danger" title="We could not load the alert rules" action={<Button size="sm" variant="secondary" onClick={() => settings.refetch()}>Try again</Button>}>
             Check your connection and try again.
           </Alert>
         ) : (
@@ -84,7 +84,7 @@ function AlarmRules() {
               ))}
             </div>
             <div className="flex justify-end">
-              <Button loading={save.isPending} onClick={submit}>Save alarm rules</Button>
+              <Button loading={save.isPending} onClick={submit}>Save alert rules</Button>
             </div>
           </div>
         )}
@@ -110,14 +110,14 @@ function TestAlarm() {
       setResult(res.status)
       queryClient.invalidateQueries({ queryKey: ['fleet-alerts'] })
     },
-    onError: err => { setResult(null); toast.error(apiErrorMessage(err, 'We could not send the test alarm. Try again.')) },
+    onError: err => { setResult(null); toast.error(apiErrorMessage(err, 'We could not send the test alert. Try again.')) },
   })
 
   return (
     <Card>
       <CardHeader
-        title="Send test alarm"
-        description="Sends an alarm through the same path as a real device event, to check that alerts and notifications reach staff. It is marked as a test and is not counted in reports or health scores."
+        title="Send test alert"
+        description="Sends an alert through the same path as a real device event, to check that alerts and notifications reach staff. It is marked as a test and is not counted in reports or health scores."
       />
       <CardBody>
         <div className="space-y-4">
@@ -130,7 +130,7 @@ function TestAlarm() {
               placeholder={vehicles.isLoading ? 'Loading vehicles' : 'Choose a vehicle'}
             />
             <Select
-              label="Alarm type"
+              label="Alert type"
               value={event}
               onChange={e => { setEvent(e.target.value); setResult(null) }}
               options={TEST_EVENTS.map(t => ({ value: t, label: ALERT_TYPE_LABELS[t] }))}
@@ -139,16 +139,16 @@ function TestAlarm() {
           {result && (
             <Alert
               tone="success"
-              title={result === 'created' ? 'Test alarm sent' : 'A test alarm of this type is already open'}
+              title={result === 'created' ? 'Test alert sent' : 'A test alert of this type is already open'}
               action={<Link className="text-sm font-medium text-brand hover:underline" to="/fleet?tab=alerts">Open alerts</Link>}
             >
               {result === 'created'
-                ? 'Check the alerts list and the notification bell. Resolve the test alarm when you are done.'
+                ? 'Check the alerts list and the notification bell. Resolve the test alert when you are done.'
                 : 'Resolve it in the alerts list to send another one.'}
             </Alert>
           )}
           <div className="flex justify-end">
-            <Button disabled={!vehicleId} loading={send.isPending} onClick={() => send.mutate()}>Send test alarm</Button>
+            <Button disabled={!vehicleId} loading={send.isPending} onClick={() => send.mutate()}>Send test alert</Button>
           </div>
         </div>
       </CardBody>
@@ -156,7 +156,7 @@ function TestAlarm() {
   )
 }
 
-/** Superadmin settings for fleet alarms: rule limits, the device webhook and a pipeline test. */
+/** Superadmin settings for fleet alerts: rule limits, the device webhook and a pipeline test. */
 export function AlarmSettingsSection() {
   const webhookUrl = `${api.defaults.baseURL ?? ''}/telematics/webhook`
   return (

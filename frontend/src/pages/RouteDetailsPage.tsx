@@ -10,8 +10,7 @@ import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline,
 import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapPoint, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
-import { formatDateTime } from '@/utils/display'
-import { formatEta } from '@/utils/timeFormat'
+import { formatDateTime, formatMinutes, formatKm } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
 import { useRouteIncidents } from '@/components/traffic/hooks'
 import { describeIncident } from '@/utils/traffic'
@@ -176,7 +175,7 @@ export default function RouteDetailsPage() {
     const ok = await confirm({
       title: 'Delete this route?',
       message: 'This cannot be undone.',
-      confirmLabel: 'Delete',
+      confirmLabel: 'Delete route',
       tone: 'danger',
     })
     if (ok) deleteMutation.mutate()
@@ -190,7 +189,7 @@ export default function RouteDetailsPage() {
     <Page>
       <PageHeader
         back={{ to: '/routes', label: 'Back to routes' }}
-        title={<span className="inline-flex flex-wrap items-center gap-3">Route {shortId} <StatusPill status={route.status} /></span>}
+        title={<span className="inline-flex flex-wrap items-center gap-3">Route {shortId} <StatusPill status={route.status} kind="route" /></span>}
         description={route.created_at ? `Created ${formatDistanceToNow(new Date(route.created_at), { addSuffix: true })}` : undefined}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -221,8 +220,8 @@ export default function RouteDetailsPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Distance" value={distance > 0 ? `${distance.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km` : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} />
-        <Stat label="ETA" value={duration > 0 ? formatEta(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} />
+        <Stat label="Distance" value={distance > 0 ? formatKm(distance) : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} />
+        <Stat label="ETA" value={duration > 0 ? formatMinutes(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} />
         <Stat label="Fuel" value={fuel > 0 ? `${fuel.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L` : '—'} hint={fuel > 0 && isEstimated ? 'Estimated' : undefined} />
         <Stat label="Vehicle" value={vehicleName} />
       </div>

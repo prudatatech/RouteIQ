@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, formatDate, isActiveShipmentStatus, pickupDateOf, shipmentStatusLabel,
+  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus, pickupDateOf, shipmentStatusLabel,
 } from './format'
 
 describe('shipment statuses', () => {
@@ -15,7 +15,7 @@ describe('shipment statuses', () => {
 
   it('names a failed delivery for what happened', () => {
     expect(shipmentStatusLabel('exception')).toBe('Delivery failed')
-    expect(shipmentStatusLabel('assigned')).toBe('Assigned')
+    expect(shipmentStatusLabel('assigned')).toBe('Vehicle assigned')
   })
 })
 
@@ -25,11 +25,6 @@ describe('pickup date', () => {
     expect(pickupDateOf({ metadata: { dispatch_date: '2026-10-01T00:00:00Z' } })).toBe('2026-10-01')
     expect(pickupDateOf({ metadata: {} })).toBeNull()
     expect(pickupDateOf({})).toBeNull()
-  })
-
-  it('shows a bare date as the same India calendar day', () => {
-    expect(formatDate('2026-09-30')).toContain('30')
-    expect(formatDate('2026-09-30')).toContain('2026')
   })
 })
 

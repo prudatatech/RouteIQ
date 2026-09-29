@@ -268,8 +268,8 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
         if (vehicle?.driver_id) {
           await notificationService.sendNotification(
             vehicle.driver_id,
-            '🚨 New Route Assigned',
-            `A new cargo route with ${stops.length} stops has been assigned to you.`,
+            'New route assigned',
+            `A new route with ${stops.length} stops has been assigned to you.`,
             'route_assigned',
             { route_id: routeRow.id }
           );

@@ -6,7 +6,7 @@ import { analyticsAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
 import {
   Button, Card, CardBody, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, Skeleton, Stat, StatusPill, buttonClasses,
-  type Column, type Tone,
+  type Column,
 } from '@/components/ui'
 import { formatNumber } from '@/components/analytics/format'
 
@@ -29,9 +29,6 @@ interface Demand {
   forecast: ForecastRow[]
   forecast_method: string
 }
-
-const severityTone: Record<string, Tone> = { high: 'danger', medium: 'warning', low: 'info' }
-const severityLabel: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 /** What the fleet needs attention for, and where loads are wanted. Every figure is read from live data; empty sections say so. */
 export default function InsightsPage() {
@@ -134,7 +131,7 @@ function InsightCard({ title, description, query, items, empty, action }: {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium text-text">{i.title}</p>
-                    {i.severity && <StatusPill tone={severityTone[i.severity] ?? 'neutral'}>{severityLabel[i.severity] ?? i.severity}</StatusPill>}
+                    {i.severity && <StatusPill status={i.severity} />}
                   </div>
                   <p className="text-sm text-muted">{i.insight}</p>
                 </div>

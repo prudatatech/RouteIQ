@@ -253,7 +253,7 @@ export class AnalyticsService {
       insights.push({
         id: `reroute_${s.vehicle_id}`,
         type: 'reroute_suggestion',
-        title: fromTraffic ? `Traffic ahead: ${s.trigger}` : `Reroute Alert: ${s.vehicle_id.substring(0, 8)}`,
+        title: fromTraffic ? `Traffic ahead: ${s.trigger}` : `Reroute: ${s.vehicle_id.substring(0, 8)}`,
         insight: saved !== null
           ? `Better path found! ${s.trigger}. Potential savings: ${saved} mins.`
           : `${s.trigger}. Open the route to check for a better order.`,
