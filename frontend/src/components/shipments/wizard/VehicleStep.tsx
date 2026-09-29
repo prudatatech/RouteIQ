@@ -9,9 +9,10 @@ import {
 import LiveMap from '@/components/map/LiveMap'
 import { capacityAPI, telemetryAPI, vehiclesAPI } from '@/services/api'
 import { reversePlace } from '@/services/geocoding'
-import { apiErrorMessage, formatKg, freeCapacityKg, haversineKm } from '../format'
+import { apiErrorMessage, freeCapacityKg, haversineKm } from '../format'
 import type { VehicleOption } from '../types'
 import type { StepProps } from './stepProps'
+import { formatKg, formatKm } from '@/utils/display'
 
 const BIDDING_WINDOWS = [5, 10, 15, 30]
 
@@ -55,7 +56,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
 
   const vehicleLabel = (v: VehicleOption & { distance_km: number | null }) => {
     const parts = [v.plate_number]
-    if (v.distance_km != null) parts.push(`${v.distance_km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km away`)
+    if (v.distance_km != null) parts.push(`${formatKm(v.distance_km)} away`)
     if (v.capacity_kg != null) parts.push(`${formatKg(freeCapacityKg(v))} of ${formatKg(v.capacity_kg)} free`)
     if (v.status && v.status !== 'available') parts.push(statusToLabel(v.status))
     return parts.join(' · ')
@@ -225,7 +226,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
                       {v.city && <div className="truncate text-xs text-muted">{v.city}</div>}
                     </div>
                     {v.distance_km != null && (
-                      <StatusPill tone="neutral" dot={false}>{v.distance_km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</StatusPill>
+                      <StatusPill tone="neutral" dot={false}>{formatKm(v.distance_km)}</StatusPill>
                     )}
                   </li>
                 ))}

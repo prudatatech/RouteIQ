@@ -13,7 +13,7 @@ import {
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees, formatKm } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
@@ -704,7 +704,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                         <span className="min-w-0 flex-1">
                           <span className="block font-mono text-sm font-medium text-text">{vehicle.plate_number}</span>
                           <span className="block text-xs text-muted">
-                            {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${distanceKm.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km from pickup`].filter(Boolean).join(' · ')}
+                            {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${formatKm(distanceKm)} from pickup`].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                         <span className="shrink-0 text-right">

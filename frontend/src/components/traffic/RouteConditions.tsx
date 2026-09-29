@@ -2,6 +2,7 @@ import { CloudRain, TriangleAlert } from 'lucide-react'
 import { describeIncident } from '@/utils/traffic'
 import { Card, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
 import { useRouteIncidents, useRouteWeather } from './hooks'
+import { formatKm } from '@/utils/display'
 
 const SEVERITY_LABEL = ['Unknown delay', 'Minor delay', 'Moderate delay', 'Major delay', 'Road closed or major delay']
 
@@ -36,7 +37,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
                 w.temperature_c != null ? `${w.temperature_c} °C` : null,
                 w.wind_kmph != null ? `Wind ${w.wind_kmph} km/h` : null,
                 w.rain_mm_per_hour != null ? `Rain ${w.rain_mm_per_hour} mm/h` : null,
-                w.visibility_m != null ? `Visibility ${(w.visibility_m / 1000).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km` : null,
+                w.visibility_m != null ? `Visibility ${formatKm(w.visibility_m / 1000)}` : null,
               ].filter(Boolean).join(' · ')}
             </p>
           </div>

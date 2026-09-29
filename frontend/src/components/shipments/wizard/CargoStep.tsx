@@ -1,10 +1,11 @@
 import clsx from 'clsx'
 import { Input, Select } from '@/components/ui'
-import { PRIORITIES, formatKg } from '../format'
+import { PRIORITIES } from '../format'
 import { CARGO_TYPES, chargeableKg, volumetricKg } from './payload'
 import type { StepProps } from './stepProps'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import { formatKg } from '@/utils/display'
 
 const priorityOptions = PRIORITIES.map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))
 const toNumber = (value: string) => (value === '' ? 0 : Number(value))

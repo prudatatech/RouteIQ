@@ -6,8 +6,7 @@ import { Send } from 'lucide-react'
 import { Button, EmptyState, ErrorState, Spinner, Textarea } from '@/components/ui'
 import { messagesAPI, type ChatMessage } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { formatTimeAgo } from '@/utils/timeFormat'
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatRelative } from '@/utils/display'
 
 export type MessageTarget = { route_id: string } | { shipment_id: string }
 
@@ -122,7 +121,7 @@ function Bubble({ message }: { message: ChatMessage }) {
       <p className="mt-0.5 text-xs text-muted">
         {fromDriver ? (message.sender_name || 'Driver') : `${message.sender_name || 'Dispatch'}`}
         {message.shipment_tracking_id ? <> · <span className="font-mono">{message.shipment_tracking_id}</span></> : null}
-        {' · '}{formatTimeAgo(new Date(message.created_at))}
+        {' · '}{formatRelative(message.created_at)}
         {!fromDriver && message.read_at ? ' · Read' : ''}
       </p>
     </div>

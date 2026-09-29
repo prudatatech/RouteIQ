@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { cargoAPI } from '@/services/api'
 import { Alert, Button, Card, CardBody, CardHeader, DetailList, Input, useConfirm } from '@/components/ui'
 import { apiErrorMessage, backhaulKeys } from './data'
+import { formatDateTime } from '@/utils/display'
 
 interface DeliveryConfirmation {
   tracking_id: string
@@ -84,7 +85,7 @@ export default function ConfirmDeliveryTab() {
                 items={[
                   { label: 'Tracking ID', value: <span className="font-mono">{deliver.data.tracking_id}</span> },
                   { label: 'Received by', value: deliver.data.recipient_name },
-                  { label: 'Recorded at', value: new Date(deliver.data.delivered_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) },
+                  { label: 'Recorded at', value: formatDateTime(deliver.data.delivered_at) },
                 ]}
               />
             </CardBody>

@@ -7,9 +7,9 @@ import {
   Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Tabs, TabPanel, statusToLabel, useTabParam, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
-import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { formatMinutes, formatRelative, formatKm } from '@/utils/display'
 
 interface Vehicle {
   id: string
@@ -111,7 +111,7 @@ export default function RoutesPage() {
         const distance = getRouteDistance(full)
         if (distance <= 0) return <span className="text-muted">—</span>
         const duration = getRouteDuration(full, distance)
-        return <span>{distance.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km · {formatEta(duration)}</span>
+        return <span>{formatKm(distance)} · {formatMinutes(duration)}</span>
       },
       sortValue: r => getRouteDistance(withVehicle(r)),
       hideBelow: 'md',
@@ -122,7 +122,7 @@ export default function RoutesPage() {
       cell: r => {
         const raw = r.updated_at ?? r.created_at
         if (!raw) return <span className="text-muted">—</span>
-        return formatTimeAgo(new Date(raw))
+        return formatRelative(raw)
       },
       sortValue: r => r.updated_at ?? r.created_at ?? '',
       align: 'right',
@@ -171,7 +171,7 @@ export default function RoutesPage() {
         status: statusToLabel(r.status, 'route'),
         stops: r.route_stops?.length ?? 0,
         distance_km: distance > 0 ? distance.toFixed(1) : '',
-        eta: distance > 0 ? formatEta(getRouteDuration(full, distance)) : '',
+        eta: distance > 0 ? formatMinutes(getRouteDuration(full, distance)) : '',
         updated_at: r.updated_at ?? r.created_at ?? '',
       }
     }), [

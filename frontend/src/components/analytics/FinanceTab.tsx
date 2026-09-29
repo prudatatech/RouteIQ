@@ -4,9 +4,9 @@ import { Coins, IndianRupee, Route, Scale, Truck, Wallet } from 'lucide-react'
 import {
   Alert, Button, Card, CardHeader, DataTable, DateRangeControl, presetRange, Stat, buttonClasses, type Column, type DateRangeValue,
 } from '@/components/ui'
-import { formatDate } from '@/utils/display'
+import { formatDate, formatDay, formatRupees } from '@/utils/display'
 import { ChartCard, SimpleBarChart, SimpleLineChart } from './charts'
-import { formatDay, formatNumber, formatRupees } from './format'
+import { formatNumber } from './format'
 import { useFinanceSummary, type FinanceSummary } from './useFinanceSummary'
 
 type RouteRow = FinanceSummary['routes'][number]

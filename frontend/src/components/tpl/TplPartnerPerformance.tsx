@@ -7,8 +7,8 @@ import {
 } from '@/components/ui'
 import { tplNetworkAPI, type TplOrder } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
-import { errorMessage, formatDate, formatDateTime, formatRupees } from '@/utils/display'
-import { formatMinutes, formatPercent, formatRating } from './stats'
+import { errorMessage, formatDate, formatDateTime, formatRupees, formatMinutes } from '@/utils/display'
+import { formatPercent, formatRating } from './stats'
 
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || '—'
 const RATING_OPTIONS = [5, 4, 3, 2, 1].map(n => ({ value: String(n), label: `${n} out of 5` }))

@@ -10,13 +10,14 @@ import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
 import ShipmentDetailsDrawer from '@/components/shipments/ShipmentDetailsDrawer'
 import {
-  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, isBiddingOpen, pickupDateOf, plateOf, shipmentStatusLabel,
+  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, isBiddingOpen, pickupDateOf, plateOf, shipmentStatusLabel,
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { formatDate, formatKg } from '@/utils/display'
 
 const TAB_IDS = ['all', ...SHIPMENT_STATUSES] as const
 type TabId = (typeof TAB_IDS)[number]

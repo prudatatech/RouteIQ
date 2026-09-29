@@ -11,12 +11,13 @@ import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import {
-  apiErrorMessage, deliveryPointsOf, destinationOf, formatDate, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, pickupDateOf, plateOf, priorityTone, shipmentStatusLabel,
+  apiErrorMessage, deliveryPointsOf, destinationOf, isBiddingOpen, isCargoManifest, pickupDateOf, plateOf, priorityTone, shipmentStatusLabel,
 } from './format'
 import DriverRating from './DriverRating'
 import ParcelLabel from './ParcelLabel'
 import MessagesPanel from '@/components/messages/MessagesPanel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
+import { formatDate, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
 const statusAction: Record<(typeof FORWARD_STATUSES)[number], string> = {
@@ -185,9 +186,17 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     >
       <div className="space-y-6">
         {manifestOnly && (
-          <Alert tone="info" title="Booked through a vendor bid">
-            This load comes from a cargo manifest. Its status and vehicle are managed from Bids.
-          </Alert>
+          s.vendor_request_id ? (
+            <Alert tone="info" title="Posted by a vendor">
+              A vendor posted this load. Its status and vehicle are managed from{' '}
+              <Link to={`/vendor-requests?open=${encodeURIComponent(s.vendor_request_id)}`} className="font-medium underline">Vendor loads</Link>.
+            </Alert>
+          ) : (
+            <Alert tone="info" title="Booked through a vendor bid">
+              This load comes from a cargo manifest. Its status and vehicle are managed from{' '}
+              <Link to="/bids" className="font-medium underline">Bids</Link>.
+            </Alert>
+          )
         )}
 
         <Section title="Route">

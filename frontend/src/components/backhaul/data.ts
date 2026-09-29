@@ -64,8 +64,6 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   return typeof detail === 'string' && detail ? detail : fallback
 }
 
-export const formatKg = (kg: number | null | undefined) => (kg == null ? '—' : `${kg.toLocaleString('en-IN')} kg`)
-export const formatKm = (km: number | null | undefined) => (km == null ? '—' : `${km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km`)
 
 /** Space a vehicle can still take, preferring the live figure. */
 export const spaceLeft = (v: BackhaulVehicle) => v.available_capacity_kg ?? v.capacity_kg ?? null

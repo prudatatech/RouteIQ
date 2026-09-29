@@ -5,6 +5,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { Button, Modal } from '@/components/ui'
 import { sosSeverityLabel, sosTypeLabel } from '@/utils/sos'
+import { formatTime } from '@/utils/display'
 
 interface SosAlert {
   id: string
@@ -108,7 +109,7 @@ export default function SOSListener() {
       closeOnBackdrop={false}
       size="sm"
       title={<span className="inline-flex items-center gap-2 text-danger"><AlertTriangle size={20} aria-hidden="true" /> {title}</span>}
-      description={`${current.plate ? `Vehicle ${current.plate}` : 'A driver'} · ${new Date(current.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`}
+      description={`${current.plate ? `Vehicle ${current.plate}` : 'A driver'} · ${formatTime(current.created_at)}`}
       footer={
         <>
           <Button variant="secondary" onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>

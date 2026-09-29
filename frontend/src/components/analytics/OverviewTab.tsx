@@ -4,8 +4,9 @@ import { IndianRupee, PackageCheck, Route, Scale, Truck, Wallet } from 'lucide-r
 import { analyticsAPI } from '@/services/api'
 import { Alert, Button, DateRangeControl, presetRange, Stat, type DateRangeValue } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
-import { formatDay, formatNumber, formatRupees } from './format'
+import { formatNumber } from './format'
 import { useFinanceSummary } from './useFinanceSummary'
+import { formatDay, formatRupees } from '@/utils/display'
 
 interface FleetOverview {
   trips_today: number

@@ -7,14 +7,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { fetchDrivingRoute, type DrivingRoute } from '@/components/map/directions'
-import { formatEta } from '@/utils/timeFormat'
-import { formatKg } from '@/utils/display'
-
-function formatEventTime(value: string) {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
-}
+import { formatKg, formatMinutes, formatDateTime } from '@/utils/display'
 
 /** Vehicle fields the public tracking endpoint returns — no driver identity or phone. */
 export interface TrackedVehicle {
@@ -253,7 +246,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatEta(etaMinutes)) : '—'}
+              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatMinutes(etaMinutes)) : '—'}
             </p>
             {!delivered && !cancelled && !failed && etaMinutes == null && (
               <p className="mt-1 text-xs text-muted">Shown once a vehicle is on its way and sharing its location.</p>
@@ -287,7 +280,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
           <p className="mb-4 text-sm font-medium text-text">Status history</p>
           <Timeline
             events={shipment.history.map(e => (e.status === 'exception' ? { ...e, note: 'Delivery attempt failed' } : e))}
-            formatAt={formatEventTime}
+            formatAt={formatDateTime}
           />
         </Card>
       )}

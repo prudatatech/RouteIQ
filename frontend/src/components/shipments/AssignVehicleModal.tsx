@@ -3,8 +3,9 @@ import toast from 'react-hot-toast'
 import { Button, DataTable, Modal, StatusPill, humanize, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { shipmentsAPI } from '@/services/api'
-import { apiErrorMessage, formatKg, freeCapacityKg, knownDistance } from './format'
+import { apiErrorMessage, freeCapacityKg, knownDistance } from './format'
 import type { ShipmentRow, VehicleOption } from './types'
+import { formatKg, formatKm } from '@/utils/display'
 
 /** Pick a vehicle for a shipment that has none. Vehicles nearest the pickup come first. */
 export default function AssignVehicleModal({ shipment, onClose }: { shipment: ShipmentRow | null; onClose: () => void }) {
@@ -60,7 +61,7 @@ export default function AssignVehicleModal({ shipment, onClose }: { shipment: Sh
       sortValue: v => knownDistance(v),
       cell: v => {
         const d = knownDistance(v)
-        return d == null ? <span className="text-muted">Unknown</span> : <span className="tabular">{d.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</span>
+        return d == null ? <span className="text-muted">Unknown</span> : <span className="tabular">{formatKm(d)}</span>
       },
     },
     {

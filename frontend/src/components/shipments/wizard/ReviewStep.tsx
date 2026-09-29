@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, DetailList, humanize } from '@/components/ui'
 import { vehiclesAPI } from '@/services/api'
 import type { DraftShipmentData } from '@/store/draftStore'
-import { formatKg, formatRupees } from '../format'
 import type { VehicleOption } from '../types'
 import { CARGO_TYPES, chargeableKg } from './payload'
 import type { StepId } from './validation'
+import { formatKg, formatRupees, formatDate } from '@/utils/display'
 
 function ReviewSection({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
   return (
@@ -36,7 +36,7 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
             ...stops.map((s, i) => ({ label: `Stop ${i + 1}`, value: s.address || s.name })),
             { label: 'Destination', value: data.delivery_point_address || data.delivery_point_name || null },
             { label: 'Dispatch', value: data.plan_for_later && data.scheduled_date
-              ? new Date(`${data.scheduled_date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+              ? formatDate(data.scheduled_date)
               : 'Today' },
           ]}
         />

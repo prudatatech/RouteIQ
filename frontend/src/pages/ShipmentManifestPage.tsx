@@ -8,9 +8,10 @@ import {
   Textarea, humanize,
 } from '@/components/ui'
 import { shipmentsAPI } from '@/services/api'
-import { apiErrorMessage, formatDate, formatKg, formatRupees, haversineKm } from '@/components/shipments/format'
+import { apiErrorMessage, haversineKm } from '@/components/shipments/format'
 import { emailError, indianMobileError } from '@/utils/validators'
 import ParcelLabel from '@/components/shipments/ParcelLabel'
+import { formatDate, formatKg, formatRupees } from '@/utils/display'
 
 type Meta = Record<string, unknown>
 
@@ -199,8 +200,8 @@ export default function ShipmentManifestPage() {
     { path: 'brand', label: 'Brand or make', value: pick('brand', null) },
     { path: 'packagingType', label: 'Packaging', value: pick('packagingType', null) },
     { path: 'noOfPackages', label: 'Packages', value: pick('noOfPackages', shipment.total_items != null ? String(shipment.total_items) : null) },
-    { path: 'grossWeight', label: 'Gross weight', value: pick('grossWeight', formatKg(shipment.total_weight_kg)) },
-    { path: 'declaredValue', label: 'Declared value', value: pick('declaredValue', formatRupees(shipment.asking_price)) },
+    { path: 'grossWeight', label: 'Gross weight', value: pick('grossWeight', shipment.total_weight_kg != null ? formatKg(shipment.total_weight_kg) : null) },
+    { path: 'declaredValue', label: 'Declared value', value: pick('declaredValue', shipment.asking_price != null ? formatRupees(shipment.asking_price) : null) },
   ]
 
   const handling = (getPath(meta, 'specialHandling') as Meta | undefined) ?? {}

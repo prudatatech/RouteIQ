@@ -4,9 +4,9 @@ import toast from 'react-hot-toast'
 import { Gavel, Truck } from 'lucide-react'
 import { shipmentsAPI } from '@/services/api'
 import { Alert, Button, useConfirm } from '@/components/ui'
-import { errorMessage, formatRupees } from '@/utils/display'
+import { errorMessage, formatRupees, formatKg } from '@/utils/display'
 import OpenWindowModal from './OpenWindowModal'
-import { backhaulKeys, formatKg, type BackhaulVehicle } from './data'
+import { backhaulKeys, type BackhaulVehicle } from './data'
 
 /**
  * What staff can do once a load (or a pooled run) fits a truck: put the load(s) on that truck, or offer the

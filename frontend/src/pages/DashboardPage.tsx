@@ -15,6 +15,7 @@ import { sosHeadline } from '@/utils/sos'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { humanize } from '@/components/ui'
 import type { FleetAlert } from '@/components/fleet/health'
+import { formatDay } from '@/utils/display'
 
 interface VehicleRow {
   id: string
@@ -239,7 +240,7 @@ export default function DashboardPage() {
       key: 'created',
       header: 'Created',
       sortValue: s => s.created_at ? new Date(s.created_at).getTime() : 0,
-      cell: s => s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—',
+      cell: s => s.created_at ? formatDay(s.created_at) : '—',
     },
   ]
 

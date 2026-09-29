@@ -1,7 +1,8 @@
 import type { AxiosError } from 'axios'
 import type { QuoteOk } from '@/services/pricing'
 import { Alert, Button, Skeleton, StatusPill } from '@/components/ui'
-import { rupees, type usePriceQuote } from './usePriceQuote'
+import { type usePriceQuote } from './usePriceQuote'
+import { formatKm, formatRupees } from '@/utils/display'
 
 function errorText(err: unknown): string {
   const detail = (err as AxiosError<{ detail?: unknown }>)?.response?.data?.detail
@@ -45,16 +46,16 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs text-muted">Suggested price</p>
-          <p className="text-2xl font-semibold text-text tabular">{rupees(data.suggested)}</p>
+          <p className="text-2xl font-semibold text-text tabular">{formatRupees(data.suggested)}</p>
           <p className="text-sm text-muted tabular">
-            Range {rupees(data.low)} to {rupees(data.high)} · {rupees(data.per_km_suggested)} per km
+            Range {formatRupees(data.low)} to {formatRupees(data.high)} · {formatRupees(data.per_km_suggested)} per km
           </p>
         </div>
         {onUse && <Button variant="secondary" onClick={() => onUse(data)}>{useLabel}</Button>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-        <span className="tabular">{data.distance_km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</span>
+        <span className="tabular">{formatKm(data.distance_km)}</span>
         {data.distance_is_estimate
           ? <StatusPill tone="warning" dot={false}>Estimated distance</StatusPill>
           : <StatusPill tone="neutral" dot={false}>{data.distance_source === 'mappls' ? 'Mappls route' : 'Google route'}</StatusPill>}
@@ -72,7 +73,7 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
               </div>
               {f.amount_inr !== 0 && (
                 <span className={f.key === 'rate_card' || f.amount_inr > 0 ? 'shrink-0 text-sm tabular text-text' : 'shrink-0 text-sm tabular text-success'}>
-                  {f.key === 'rate_card' ? rupees(f.amount_inr) : `${f.amount_inr > 0 ? '+' : '−'}${rupees(Math.abs(f.amount_inr))}`}
+                  {f.key === 'rate_card' ? formatRupees(f.amount_inr) : `${f.amount_inr > 0 ? '+' : '−'}${formatRupees(Math.abs(f.amount_inr))}`}
                 </span>
               )}
             </li>

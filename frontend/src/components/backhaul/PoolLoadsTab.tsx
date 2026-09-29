@@ -6,7 +6,8 @@ import {
 } from '@/components/ui'
 import { useCargoStore } from '@/store/cargoStore'
 import LoadActions from './LoadActions'
-import { apiErrorMessage, formatKg, formatKm, useBackhaulVehicles, useOpenLoads, vehicleLabel, type OpenLoad } from './data'
+import { apiErrorMessage, useBackhaulVehicles, useOpenLoads, vehicleLabel, type OpenLoad } from './data'
+import { formatKg, formatKm } from '@/utils/display'
 
 interface PoolPlan {
   vehicle: { id: string; plate_number: string; capacity_kg: number }

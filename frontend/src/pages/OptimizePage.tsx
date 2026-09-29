@@ -5,9 +5,9 @@ import { Check, Navigation, RotateCw, Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
-import { formatEta } from '@/utils/timeFormat'
 import { isDraftVehicle } from '@/utils/vehicles'
 import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
+import { formatMinutes, formatKm } from '@/utils/display'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert, useConfirm,
@@ -497,8 +497,8 @@ export default function OptimizePage() {
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                     <Stat label="Routes" value={(result.routes?.length ?? 0).toLocaleString('en-IN')} />
-                    <Stat label="Total distance" value={`${(result.total_distance_km ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km`} />
-                    <Stat label="ETA" value={formatEta(result.new_eta_minutes ?? result.routes?.[0]?.total_duration_minutes ?? 0)} />
+                    <Stat label="Total distance" value={formatKm(result.total_distance_km ?? 0)} />
+                    <Stat label="ETA" value={formatMinutes(result.new_eta_minutes ?? result.routes?.[0]?.total_duration_minutes ?? 0)} />
                     <Stat label="Fuel" value={`${(result.total_fuel_liters ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`} />
                     <Stat label="Savings" value={result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—'} />
                     <Stat label="Algorithm used" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
@@ -526,8 +526,8 @@ export default function OptimizePage() {
                             <div className="text-xs text-muted">{stopCount.toLocaleString('en-IN')} stop{stopCount === 1 ? '' : 's'}</div>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted">
-                            <span>{(r.total_distance_km ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</span>
-                            <span>{formatEta(r.total_duration_minutes ?? 0)}</span>
+                            <span>{formatKm(r.total_distance_km ?? 0)}</span>
+                            <span>{formatMinutes(r.total_duration_minutes ?? 0)}</span>
                             {r.id && (
                               <Button size="sm" variant="ghost" onClick={() => navigate(`/routes/${r.id}`)}>View</Button>
                             )}

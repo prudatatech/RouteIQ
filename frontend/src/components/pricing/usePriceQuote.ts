@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { pricingAPI, type QuoteRequest, type QuoteResponse } from '@/services/pricing'
 
-export const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
-
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {

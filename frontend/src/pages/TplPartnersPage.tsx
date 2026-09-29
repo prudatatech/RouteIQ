@@ -4,13 +4,13 @@ import { Check, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
-import { formatMinutes, formatPercent } from '@/components/tpl/stats'
+import { formatPercent } from '@/components/tpl/stats'
 import {
   BulkActionBar, Button, DataTable, IconButton, Page, PageHeader, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
-import { errorMessage, formatDate } from '@/utils/display'
+import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
 
 interface TplPartner {
   id: string

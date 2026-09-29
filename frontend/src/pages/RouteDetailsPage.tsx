@@ -10,8 +10,7 @@ import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline,
 import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapPoint, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
-import { formatDateTime } from '@/utils/display'
-import { formatEta } from '@/utils/timeFormat'
+import { formatDateTime, formatMinutes, formatKm } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
 import { useRouteIncidents } from '@/components/traffic/hooks'
 import { describeIncident } from '@/utils/traffic'
@@ -221,8 +220,8 @@ export default function RouteDetailsPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Distance" value={distance > 0 ? `${distance.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km` : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} />
-        <Stat label="ETA" value={duration > 0 ? formatEta(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} />
+        <Stat label="Distance" value={distance > 0 ? formatKm(distance) : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} />
+        <Stat label="ETA" value={duration > 0 ? formatMinutes(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} />
         <Stat label="Fuel" value={fuel > 0 ? `${fuel.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L` : '—'} hint={fuel > 0 && isEstimated ? 'Estimated' : undefined} />
         <Stat label="Vehicle" value={vehicleName} />
       </div>

@@ -4,13 +4,12 @@ import { Clock, ShieldCheck, TrendingUp, Zap } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { formatEta } from '@/utils/timeFormat'
 import { capacityAPI, vendorAPI } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import PlaceBidModal from '@/components/vendor/PlaceBidModal'
 import { Alert, Button, buttonClasses, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/components/ui'
-import { formatRupees } from '@/utils/display'
+import { formatRupees, formatMinutes } from '@/utils/display'
 
 interface OpenWindow {
   id: string
@@ -208,7 +207,7 @@ export default function VendorCorridorPage() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand">
                     <Zap size={11} /> Route match
                   </span>
-                  <span className="text-xs text-muted">{pr.eta_minutes != null ? `${formatEta(pr.eta_minutes)} away` : 'Nearby'}</span>
+                  <span className="text-xs text-muted">{pr.eta_minutes != null ? `${formatMinutes(pr.eta_minutes)} away` : 'Nearby'}</span>
                 </div>
                 <div className="text-xs text-muted">{pr.routes?.vehicles?.vehicle_type || 'Truck'}</div>
                 <p className="text-2xl font-semibold text-text">

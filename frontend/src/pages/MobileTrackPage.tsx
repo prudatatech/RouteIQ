@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { ErrorState, Alert } from '@/components/ui/States'
 import { Spinner } from '@/components/ui/Spinner'
 import { MapView, type MapVehicle } from '@/components/map'
+import { formatTime } from '@/utils/display'
 
 interface SessionInfo {
   vehicle_id: string
@@ -171,7 +172,7 @@ export default function MobileTrackPage() {
               {pushCount > 0 && (
                 <p className="flex items-center justify-between text-xs text-muted">
                   <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-success" aria-hidden="true" /> {pushCount} updates sent</span>
-                  {lastPush && <span>Last: {lastPush.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>}
+                  {lastPush && <span>Last: {formatTime(lastPush, { seconds: true })}</span>}
                 </p>
               )}
 

@@ -4,7 +4,8 @@ import { Building2, IndianRupee, PackageCheck, Percent } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { DataTable, SearchInput, Stat, StatusPill, type Column } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
-import { formatNumber, formatPercent, formatRupees } from './format'
+import { formatNumber, formatPercent } from './format'
+import { formatRupees } from '@/utils/display'
 
 interface VendorRow {
   id: string

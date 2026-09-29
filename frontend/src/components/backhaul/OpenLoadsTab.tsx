@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable, SearchInput, StatusPill, buttonClasses, type Column } from '@/components/ui'
-import { formatKg, useOpenLoads, type OpenLoad } from './data'
+import { useOpenLoads, type OpenLoad } from './data'
+import { formatKg, formatDay } from '@/utils/display'
 
 const columns: Column<OpenLoad>[] = [
   {
@@ -29,7 +30,7 @@ const columns: Column<OpenLoad>[] = [
   },
   {
     key: 'created', header: 'Created', hideBelow: 'xl', sortValue: r => r.created_at,
-    cell: r => new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+    cell: r => formatDay(r.created_at),
   },
 ]
 
