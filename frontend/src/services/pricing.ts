@@ -85,10 +85,3 @@ export const trafficAPI = {
 export const weatherAPI = {
   route: (routeId: string) => api.get(`/weather/route/${routeId}`).then(r => r.data as RouteWeather),
 }
-
-/** Plain-language cause, e.g. "Accident on NH48, +25 min". */
-export function describeIncident(i: Pick<TrafficIncident, 'type' | 'road' | 'delay_seconds'>): string {
-  const on = i.road ? ` on ${i.road}` : ''
-  const delay = i.delay_seconds && i.delay_seconds >= 60 ? `, +${Math.round(i.delay_seconds / 60)} min` : ''
-  return `${i.type}${on}${delay}`
-}
