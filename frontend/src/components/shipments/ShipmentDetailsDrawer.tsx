@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ExternalLink, FileText, MapPin, Pencil, Trash2, Truck } from 'lucide-react'
 import {
-  Alert, Button, DetailList, Drawer, StatusPill, buttonClasses, humanize, statusToLabel, useConfirm,
+  Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm,
 } from '@/components/ui'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { shipmentsAPI } from '@/services/api'
 import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isCargoManifest, plateOf, priorityTone,
 } from './format'
-import type { ShipmentRow } from './types'
+import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
 const statusAction: Record<(typeof FORWARD_STATUSES)[number], string> = {
@@ -67,6 +67,12 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not delete the shipment. Try again.')),
   })
 
+  const historyQuery = useQuery({
+    queryKey: ['shipment-history', shipment?.id],
+    queryFn: () => shipmentsAPI.history(shipment!.id) as Promise<{ events: ShipmentHistoryEvent[] }>,
+    enabled: !!shipment && !isCargoManifest(shipment),
+  })
+
   if (!shipment) return null
 
   const s = shipment
@@ -78,6 +84,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
+  const historyEvents = historyQuery.data?.events ?? []
 
   const remove = async () => {
     const ok = await confirm({
@@ -161,6 +168,24 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>Assign vehicle</Button>
           )}
         </Section>
+
+        {!manifestOnly && (
+          <Section title="Status history">
+            {historyQuery.isLoading && <p className="text-sm text-muted">Loading history…</p>}
+            {historyQuery.isError && <p className="text-sm text-muted">We could not load the status history.</p>}
+            {!historyQuery.isLoading && !historyQuery.isError && (
+              <Timeline
+                events={historyEvents.map((e): { status: string; at: string; actorLabel?: string | null; note?: string | null } => ({
+                  status: e.status,
+                  at: e.at,
+                  actorLabel: e.actor ? [e.actor.name, e.actor.role ? humanize(e.actor.role) : null].filter(Boolean).join(' · ') || null : null,
+                  note: e.note,
+                }))}
+                formatAt={formatDateTime}
+              />
+            )}
+          </Section>
+        )}
 
         {bid && (
           <Section title={bid.capacity_windows?.trigger_type === 'end_of_route' ? 'Vendor backhaul bid' : 'Vendor bid'}>
