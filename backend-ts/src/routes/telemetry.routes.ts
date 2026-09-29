@@ -76,18 +76,38 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
   }
 });
 
-// ── PUT /sos/:id/resolve ──────────────────────────────────────
-router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id;
-    // Uses service_role key to bypass RLS
-    const { error } = await supabase.from('sos_alerts').update({ status: 'resolved' }).eq('id', id);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (e: any) {
-    sendError(req, res, e);
-  }
-});
+// ── PUT /sos/:id/acknowledge and /sos/:id/resolve ─────────────
+// active → acknowledged (someone is handling it) → resolved. Each step only applies
+// from the states listed, so two dispatchers acting at once can't undo each other.
+const SOS_TRANSITIONS: Record<'acknowledged' | 'resolved', string[]> = {
+  acknowledged: ['active'],
+  resolved: ['active', 'acknowledged'],
+};
+
+function sosTransition(next: 'acknowledged' | 'resolved') {
+  return async (req: Request, res: Response) => {
+    try {
+      // Service role: staff have no UPDATE policy on sos_alerts
+      const { data, error } = await supabase
+        .from('sos_alerts')
+        .update({ status: next, updated_at: new Date().toISOString() })
+        .eq('id', req.params.id)
+        .in('status', SOS_TRANSITIONS[next])
+        .select('id');
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        res.status(409).json({ detail: `This alert is not in a state that can be ${next}` });
+        return;
+      }
+      res.json({ success: true, status: next });
+    } catch (e: any) {
+      sendError(req, res, e);
+    }
+  };
+}
+
+router.put('/sos/:id/acknowledge', requireAuth, requireRole(...STAFF_ROLES), sosTransition('acknowledged'));
+router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTransition('resolved'));
 
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.

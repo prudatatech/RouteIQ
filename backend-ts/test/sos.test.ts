@@ -35,3 +35,29 @@ describe('driver SOS', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('staff SOS handling', () => {
+  const ALERT = '44444444-4444-4444-4444-444444444444';
+  const staff = () => ({ Authorization: `Bearer ${supabaseMock.signUserToken('admin-1')}` });
+
+  beforeEach(() => {
+    supabaseMock.reset({
+      users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+      sos_alerts: [{ id: ALERT, status: 'active' }],
+    });
+  });
+
+  it('acknowledges an active alert, then resolves it', async () => {
+    expect((await request(app).put(`/api/v1/telemetry/sos/${ALERT}/acknowledge`).set(staff())).status).toBe(200);
+    expect((await request(app).put(`/api/v1/telemetry/sos/${ALERT}/resolve`).set(staff())).status).toBe(200);
+  });
+
+  it('refuses to acknowledge an alert that is already resolved', async () => {
+    supabaseMock.reset({ users: [{ id: 'admin-1', role: 'admin', is_active: true }], sos_alerts: [{ id: ALERT, status: 'resolved' }] });
+    expect((await request(app).put(`/api/v1/telemetry/sos/${ALERT}/acknowledge`).set(staff())).status).toBe(409);
+  });
+
+  it('is staff only', async () => {
+    expect((await request(app).put(`/api/v1/telemetry/sos/${ALERT}/acknowledge`).set(bearer(driver))).status).toBe(403);
+  });
+});
