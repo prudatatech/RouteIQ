@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Check, FileCheck, FileX, X } from 'lucide-react'
+import { Check, Download, FileCheck, FileX, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 /** How many recent capacity windows the page loads. */
 const WINDOW_LIMIT = 100
@@ -288,11 +289,35 @@ export default function BidsPage() {
     all: 'No capacity windows yet. They open when a driver has spare space on a trip.',
   }
 
+  const exportCsv = () => {
+    const csv = toCsv(visible.flatMap(({ window: win, bids, state }) => bids.map(bid => ({
+      vehicle: win.vehicles?.plate_number || '',
+      vendor: vendorName(bid),
+      city: bid.vendor?.city || '',
+      bid_amount: bid.bid_amount,
+      weight_kg: bid.weight_kg ?? '',
+      status: (bidStatus[bid.status] ?? { label: bid.status }).label,
+      window_state: stateLabel[state].label,
+      submitted_at: bid.submitted_at || '',
+    }))), [
+      { key: 'vehicle', header: 'Vehicle' },
+      { key: 'vendor', header: 'Vendor' },
+      { key: 'city', header: 'City' },
+      { key: 'bid_amount', header: 'Bid amount' },
+      { key: 'weight_kg', header: 'Weight (kg)' },
+      { key: 'status', header: 'Bid status' },
+      { key: 'window_state', header: 'Window' },
+      { key: 'submitted_at', header: 'Submitted at' },
+    ])
+    downloadCsv(`bids-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
       <PageHeader
         title="Bids"
         description={`Vendors bid for spare space on your vehicles. Approve one bid per vehicle; the latest ${WINDOW_LIMIT} windows are shown.`}
+        actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
         <Tabs label="Filter windows by status" tabs={board.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
       </PageHeader>

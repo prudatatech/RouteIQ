@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Download, Plus } from 'lucide-react'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, statusToLabel, useTabParam, type Column,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort, statusToLabel,
+  useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
@@ -15,6 +16,7 @@ import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
+import { downloadCsv, toCsv } from '@/utils/csv'
 
 const TAB_IDS = ['all', ...SHIPMENT_STATUSES] as const
 type TabId = (typeof TAB_IDS)[number]
@@ -33,7 +35,9 @@ export default function ShipmentsPage() {
   const queryClient = useQueryClient()
   const openCreate = useDraftStore(s => s.openModal)
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'all', 'status')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'shipment:desc' })
+  const sort = parseSort(sortParam)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<ShipmentRow | null>(null)
   const [assigning, setAssigning] = useState<ShipmentRow | null>(null)
@@ -173,9 +177,46 @@ export default function ShipmentsPage() {
   const createButton = <Button icon={<Plus size={16} />} onClick={openCreate}>Create shipment</Button>
   const filtering = tab !== 'all' || search.trim() !== ''
 
+  const exportCsv = () => {
+    const csv = toCsv(filtered.map(s => {
+      const dest = destinationOf(s)
+      return {
+        tracking_id: s.tracking_id,
+        status: statusToLabel(s.status),
+        pickup: s.origin_name || s.origin_address || '',
+        destination: dest?.name || dest?.address || '',
+        vehicle: plateOf(s) || '',
+        driver: s.driver_name || '',
+        load_kg: s.total_weight_kg ?? '',
+        items: s.total_items ?? '',
+        created_at: s.created_at || '',
+      }
+    }), [
+      { key: 'tracking_id', header: 'Tracking ID' },
+      { key: 'status', header: 'Status' },
+      { key: 'pickup', header: 'Pickup' },
+      { key: 'destination', header: 'Destination' },
+      { key: 'vehicle', header: 'Vehicle' },
+      { key: 'driver', header: 'Driver' },
+      { key: 'load_kg', header: 'Load (kg)' },
+      { key: 'items', header: 'Items' },
+      { key: 'created_at', header: 'Created at' },
+    ])
+    downloadCsv(`shipments-${new Date().toISOString().slice(0, 10)}.csv`, csv)
+  }
+
   return (
     <Page>
-      <PageHeader title="Shipments" description="Every shipment and where it is now." actions={createButton}>
+      <PageHeader
+        title="Shipments"
+        description="Every shipment and where it is now."
+        actions={(
+          <>
+            <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
+            {createButton}
+          </>
+        )}
+      >
         <Tabs
           label="Filter by status"
           value={tab}
@@ -205,7 +246,8 @@ export default function ShipmentsPage() {
         onRetry={() => refetch()}
         onRowClick={s => setSelectedId(s.id)}
         selectedKey={selectedId}
-        initialSort={{ key: 'shipment', direction: 'desc' }}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
         empty={filtering
           ? {
             title: 'No shipments match',

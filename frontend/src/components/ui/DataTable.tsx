@@ -35,6 +35,9 @@ export interface DataTableProps<T> {
   /** Rows per page; paging controls appear when there are more rows. */
   pageSize?: number
   initialSort?: { key: string; direction: 'asc' | 'desc' }
+  /** Controlled sort; pass together with `onSortChange` to lift sort state to the page (e.g. for the URL). */
+  sort?: { key: string; direction: 'asc' | 'desc' } | null
+  onSortChange?: (sort: { key: string; direction: 'asc' | 'desc' } | null) => void
   selectedKey?: string | null
   className?: string
 }
@@ -51,9 +54,18 @@ function isEmptyConfig(value: unknown): value is { title: ReactNode; description
  * sticky header and a stacked card layout on phones.
  */
 export function DataTable<T>({
-  columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort, selectedKey, className,
+  columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort,
+  sort: controlledSort, onSortChange, selectedKey, className,
 }: DataTableProps<T>) {
-  const [sort, setSort] = useState(initialSort ?? null)
+  const isControlled = controlledSort !== undefined && onSortChange !== undefined
+  const [internalSort, setInternalSort] = useState(initialSort ?? null)
+  const sort = isControlled ? controlledSort : internalSort
+  const setSort = isControlled
+    ? (updater: typeof internalSort | ((prev: typeof internalSort) => typeof internalSort)) => {
+      const next = typeof updater === 'function' ? (updater as (prev: typeof internalSort) => typeof internalSort)(controlledSort ?? null) : updater
+      onSortChange!(next)
+    }
+    : setInternalSort
   const [page, setPage] = useState(0)
 
   const sorted = useMemo(() => {

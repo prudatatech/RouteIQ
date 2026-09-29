@@ -1,11 +1,30 @@
 import { useState } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { Checkbox, IconButton, Input, PlaceSearch } from '@/components/ui'
+import { MapView, type MapPoint } from '@/components/map'
 import type { ResolvedPlace } from '@/services/geocoding'
 import type { StepProps } from './stepProps'
 import { todayIso } from './validation'
 
 const nameOf = (place: ResolvedPlace) => place.address.split(', ')[0] || place.address
+/** Keeps the create-shipment wizard's recent addresses separate from other place pickers. */
+const RECENT_PLACES_KEY = 'wizard-route'
+
+/** Pickup, extra stops and destination as map points for the route preview. */
+function routePoints(
+  origin: { address?: string | null; lat: number; lng: number } | null,
+  destination: { address?: string | null; lat: number; lng: number } | null,
+  stops: { id: string; name: string; address: string; lat: number; lng: number }[],
+): MapPoint[] {
+  const points: MapPoint[] = []
+  if (origin) points.push({ id: 'pickup', kind: 'pickup', label: `Pickup: ${origin.address ?? ''}`, position: { lat: origin.lat, lng: origin.lng } })
+  stops.forEach((s, i) => {
+    if (!s.lat || !s.lng) return
+    points.push({ id: s.id || `stop-${i}`, kind: 'location', label: `Stop ${i + 1}: ${s.name}`, position: { lat: s.lat, lng: s.lng } })
+  })
+  if (destination) points.push({ id: 'drop', kind: 'drop', label: `Destination: ${destination.address ?? ''}`, position: { lat: destination.lat, lng: destination.lng } })
+  return points
+}
 
 export default function RouteStep({ data, update, errors }: StepProps) {
   // Remounts the stop search after each pick so it starts empty again.
@@ -27,6 +46,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
         placeholder="Where is the cargo collected?"
         value={origin}
         error={errors.origin}
+        recentPlacesKey={RECENT_PLACES_KEY}
         onChange={place => update(place
           ? { origin_name: nameOf(place), origin_address: place.address, origin_lat: place.lat, origin_lng: place.lng }
           : { origin_name: '', origin_address: '', origin_lat: 0, origin_lng: 0 })}
@@ -37,10 +57,29 @@ export default function RouteStep({ data, update, errors }: StepProps) {
         placeholder="Where is it going?"
         value={destination}
         error={errors.destination}
+        recentPlacesKey={RECENT_PLACES_KEY}
         onChange={place => update(place
           ? { delivery_point_name: nameOf(place), delivery_point_address: place.address, dest_lat: place.lat, dest_lng: place.lng }
           : { delivery_point_name: '', delivery_point_address: '', dest_lat: 0, dest_lng: 0 })}
       />
+
+      {(origin || destination) && (
+        <div className="overflow-hidden rounded-card border border-border">
+          <MapView
+            mode={origin && destination ? 'route' : 'picker'}
+            height={220}
+            interactive={false}
+            points={routePoints(origin, destination, stops)}
+            route={origin && destination
+              ? {
+                coordinates: [origin, ...stops.filter(s => s.lat && s.lng), destination].map(p => [p.lng, p.lat] as [number, number]),
+                planned: true,
+              }
+              : null}
+            ariaLabel="Preview of the pickup, stops and destination"
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         <PlaceSearch
@@ -49,6 +88,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
           hint="Optional. Stops are visited nearest-first from the pickup, before the destination."
           placeholder="Add a stop on the way"
           value={null}
+          recentPlacesKey={RECENT_PLACES_KEY}
           onChange={place => {
             if (!place) return
             update({

@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { tplAPI } from '@/services/api'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, useTabParam,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, parseSort, serializeSort, useTabParam, useUrlState,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 
@@ -29,7 +29,9 @@ type StatusTab = typeof TABS[number]
 export default function TplPartnersPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useTabParam<StatusTab>(TABS, 'pending')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort')
+  const sort = parseSort(sortParam)
 
   const { data: partners = [], isLoading, error, refetch } = useQuery<TplPartner[]>({
     queryKey: ['tpl-queue', 'all'],
@@ -98,6 +100,8 @@ export default function TplPartnersPage() {
         error={error ? 'We could not load 3PL partners.' : undefined}
         onRetry={() => refetch()}
         onRowClick={p => navigate(`/3pl-partners/${p.id}`)}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
         empty={{ title: tab === 'pending' ? 'No pending applications' : 'No partners here yet', description: 'Applications appear here once submitted.' }}
       />
     </Page>
