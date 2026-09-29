@@ -29,6 +29,7 @@ export default function MobileTrackPage() {
   const [coords, setCoords] = useState<{ lat: number; lng: number; speed: number; accuracy: number } | null>(null)
   const [pushCount, setPushCount] = useState(0)
   const [lastPush, setLastPush] = useState<Date | null>(null)
+  const [pushFailing, setPushFailing] = useState(false)
   const watchId = useRef<number | null>(null)
 
   useEffect(() => {
@@ -54,9 +55,11 @@ export default function MobileTrackPage() {
       })
       setPushCount(c => c + 1)
       setLastPush(new Date())
+      setPushFailing(false)
       setStatus('tracking')
     } catch {
-      // A single failed push is not fatal — the next GPS fix retries.
+      // One failed push is not fatal: the next GPS fix retries. Tell the driver dispatch may not see them.
+      setPushFailing(true)
     }
   }, [token])
 
@@ -87,6 +90,7 @@ export default function MobileTrackPage() {
       navigator.geolocation.clearWatch(watchId.current)
       watchId.current = null
     }
+    setPushFailing(false)
     setStatus('ready')
   }, [])
 
@@ -132,6 +136,11 @@ export default function MobileTrackPage() {
               {status === 'tracking' && (
                 <Alert tone="success" title="Sharing your live location" />
               )}
+              {isActive && pushFailing && (
+                <Alert tone="warning" title="Dispatch cannot see your location right now">
+                  Check your mobile data. We keep trying while this page is open.
+                </Alert>
+              )}
               {status === 'connecting' && (
                 <div className="flex items-center gap-2 text-sm text-muted">
                   <Spinner size={16} /> Getting a GPS fix…
@@ -150,7 +159,7 @@ export default function MobileTrackPage() {
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-control border border-border bg-surface-subtle p-3">
                     <dt className="text-xs text-muted">Speed</dt>
-                    <dd className="mt-0.5 font-medium text-text">{coords.speed > 0 ? `${(coords.speed * 3.6).toFixed(1)} km/h` : '0 km/h'}</dd>
+                    <dd className="mt-0.5 font-medium text-text">{Math.round(coords.speed * 3.6)} km/h</dd>
                   </div>
                   <div className="rounded-control border border-border bg-surface-subtle p-3">
                     <dt className="text-xs text-muted">Accuracy</dt>
@@ -162,7 +171,7 @@ export default function MobileTrackPage() {
               {pushCount > 0 && (
                 <p className="flex items-center justify-between text-xs text-muted">
                   <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-success" aria-hidden="true" /> {pushCount} updates sent</span>
-                  {lastPush && <span>Last: {lastPush.toLocaleTimeString()}</span>}
+                  {lastPush && <span>Last: {lastPush.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>}
                 </p>
               )}
 
