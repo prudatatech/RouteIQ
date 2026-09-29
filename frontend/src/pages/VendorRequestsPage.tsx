@@ -7,8 +7,8 @@ import clsx from 'clsx'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
-  Alert, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, SearchInput, Skeleton,
-  StatusPill, Tabs, TabPanel, useConfirm, useTabParam, type Column,
+  Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, Select, SearchInput,
+  Skeleton, StatusPill, Tabs, TabPanel, useConfirm, useRowSelection, useTabParam, type Column,
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
@@ -130,12 +130,17 @@ function eligibleVehicles(request: VendorRequest, vehicles: Vehicle[]) {
   return { eligible, withSpaceCount: withSpace.length }
 }
 
+/** A request can be approved, rejected or (re)assigned in bulk while it's still open. */
+const isBulkSelectable = (r: VendorRequest) => r.status === 'pending' || r.status === 'approved'
+
 export default function VendorRequestsPage() {
   const queryClient = useQueryClient()
   const { prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkVehicleId, setBulkVehicleId] = useState('')
 
   const requests = useQuery({ queryKey: ['vendor-requests'], queryFn: loadRequests })
   useRealtimeRefresh('vendor_requests_page', ['vendor_shipment_requests'], [['vendor-requests']])
@@ -176,6 +181,91 @@ export default function VendorRequestsPage() {
   }, [all, tab, search])
 
   const selected = all.find(r => r.id === selectedId) ?? null
+
+  const selection = useRowSelection(rows, r => r.id)
+  const vehiclesForBulk = useQuery({
+    queryKey: ['assignable-vehicles'],
+    queryFn: loadVehicles,
+    enabled: tab === 'open' && selection.count > 0,
+  })
+  const bulkAssignTargets = useMemo(() => selection.selectedRows.filter(isBulkSelectable), [selection.selectedRows])
+  const bulkVehicleCandidates = useMemo(() => {
+    if (!vehiclesForBulk.data || bulkAssignTargets.length === 0) return []
+    const combinedKg = bulkAssignTargets.reduce((sum, r) => sum + Number(r.required_capacity_kg || 0), 0)
+    return vehiclesForBulk.data.filter(v => {
+      if (!ASSIGNABLE_VEHICLE_STATUSES.includes(v.status)) return false
+      if (Number(v.available_capacity_kg ?? 0) < combinedKg) return false
+      if (v.latitude == null || v.longitude == null) return false
+      const vehiclePoint = turf.point([v.longitude, v.latitude])
+      return bulkAssignTargets.every(r => {
+        if (r.pickup_lat == null || r.pickup_lng == null) return false
+        return turf.distance(vehiclePoint, turf.point([r.pickup_lng, r.pickup_lat]), { units: 'kilometers' }) <= ASSIGN_RADIUS_KM
+      })
+    })
+  }, [vehiclesForBulk.data, bulkAssignTargets])
+
+  useEffect(() => { setBulkVehicleId('') }, [bulkAssignTargets.length])
+
+  /** Runs `action` for each item in sequence (reusing the single-item endpoints),
+   * so a failure on one item doesn't stop the rest — errors are summarised at the end. */
+  async function runBulk<T>(items: T[], action: (item: T) => Promise<void>, labelFor: (item: T) => string) {
+    setBulkBusy(true)
+    let ok = 0
+    const failures: string[] = []
+    for (const item of items) {
+      try {
+        await action(item)
+        ok++
+      } catch (err) {
+        failures.push(`${labelFor(item)}: ${errorMessage(err, 'failed')}`)
+      }
+    }
+    setBulkBusy(false)
+    return { ok, failures }
+  }
+
+  const reportBulk = (verb: string, ok: number, failures: string[]) => {
+    if (failures.length === 0) toast.success(`${verb} ${ok} ${ok === 1 ? 'request' : 'requests'}.`)
+    else toast.error(`${verb} ${ok}, ${failures.length} failed: ${failures.slice(0, 3).join('; ')}${failures.length > 3 ? '…' : ''}`)
+  }
+
+  const bulkApprove = async () => {
+    const targets = selection.selectedRows.filter(r => r.status === 'pending')
+    if (targets.length === 0) { toast.error('Only new requests can be approved.'); return }
+    const { ok, failures } = await runBulk(targets, r => vendorAPI.approveRequest(r.id), vendorName)
+    selection.clear()
+    refresh()
+    reportBulk('Approved', ok, failures)
+  }
+
+  const bulkReject = async () => {
+    const targets = selection.selectedRows.filter(isBulkSelectable)
+    if (targets.length === 0) return
+    const reason = await prompt({
+      title: `Reject ${targets.length} ${targets.length === 1 ? 'request' : 'requests'}?`,
+      message: 'The same reason is sent to every vendor whose request is rejected.',
+      inputLabel: 'Reason',
+      placeholder: 'Why are these requests being rejected?',
+      confirmLabel: 'Reject requests',
+      tone: 'danger',
+      required: true,
+    })
+    if (!reason) return
+    const { ok, failures } = await runBulk(targets, r => vendorAPI.rejectRequest(r.id, reason), vendorName)
+    selection.clear()
+    refresh()
+    reportBulk('Rejected', ok, failures)
+  }
+
+  const bulkAssign = async () => {
+    if (!bulkVehicleId || bulkAssignTargets.length === 0) return
+    const { ok, failures } = await runBulk(bulkAssignTargets, r => vendorAPI.assignVehicle(r.id, { vehicle_id: bulkVehicleId }), vendorName)
+    setBulkVehicleId('')
+    selection.clear()
+    queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
+    refresh()
+    reportBulk('Assigned', ok, failures)
+  }
 
   const askReject = async (r: VendorRequest) => {
     const reason = await prompt({
@@ -265,7 +355,38 @@ export default function VendorRequestsPage() {
             description: search ? 'Try a different vendor or place name.' : 'Vendors post loads from their portal.',
             action: search ? <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> : undefined,
           }}
+          selection={{
+            selectedKeys: selection.selectedKeys,
+            onToggleRow: key => selection.toggleRow(key),
+            onToggleAll: (pageRows, checked) => selection.toggleAll(pageRows, checked),
+            isRowSelectable: isBulkSelectable,
+          }}
         />
+
+        <div className="mt-3">
+          <BulkActionBar count={selection.count} onClear={selection.clear}>
+            <Button size="sm" variant="secondary" disabled={bulkBusy} loading={bulkBusy} onClick={bulkApprove}>Approve selected</Button>
+            <Button size="sm" variant="secondary" disabled={bulkBusy} onClick={bulkReject}>Reject selected (one reason)</Button>
+            {bulkAssignTargets.length > 0 && (
+              bulkVehicleCandidates.length > 0 ? (
+                <>
+                  <Select
+                    label="Vehicle for all selected"
+                    hideLabel
+                    placeholder="Choose a vehicle"
+                    className="w-44"
+                    value={bulkVehicleId}
+                    onChange={e => setBulkVehicleId(e.target.value)}
+                    options={bulkVehicleCandidates.map(v => ({ value: v.id, label: v.plate_number }))}
+                  />
+                  <Button size="sm" disabled={!bulkVehicleId || bulkBusy} loading={bulkBusy} onClick={bulkAssign}>Assign vehicle</Button>
+                </>
+              ) : (
+                <span className="text-xs text-muted">No single vehicle can take all selected loads — assign them one at a time.</span>
+              )
+            )}
+          </BulkActionBar>
+        </div>
       </TabPanel>
 
       <RequestDrawer

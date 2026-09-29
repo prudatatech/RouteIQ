@@ -20,6 +20,15 @@ export interface Column<T> {
   className?: string
 }
 
+export interface DataTableSelection<T> {
+  selectedKeys: ReadonlySet<string>
+  onToggleRow: (key: string, row: T) => void
+  /** Called with the rows currently on screen (the visible page) and the new checked state. */
+  onToggleAll: (pageRows: T[], checked: boolean) => void
+  /** Rows that fail this check don't get a checkbox and are ignored by "select all". */
+  isRowSelectable?: (row: T) => boolean
+}
+
 export interface DataTableProps<T> {
   columns: Column<T>[]
   rows: T[]
@@ -36,6 +45,8 @@ export interface DataTableProps<T> {
   pageSize?: number
   initialSort?: { key: string; direction: 'asc' | 'desc' }
   selectedKey?: string | null
+  /** Adds a checkbox column with select-all-on-page. Omit for tables without bulk actions. */
+  selection?: DataTableSelection<T>
   className?: string
 }
 
@@ -51,7 +62,7 @@ function isEmptyConfig(value: unknown): value is { title: ReactNode; description
  * sticky header and a stacked card layout on phones.
  */
 export function DataTable<T>({
-  columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort, selectedKey, className,
+  columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort, selectedKey, selection, className,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState(initialSort ?? null)
   const [page, setPage] = useState(0)
@@ -75,6 +86,12 @@ export function DataTable<T>({
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
   useEffect(() => { if (page > pageCount - 1) setPage(0) }, [page, pageCount])
   const visible = sorted.slice(page * pageSize, page * pageSize + pageSize)
+
+  const selectableVisible = selection ? visible.filter(row => selection.isRowSelectable?.(row) ?? true) : []
+  const allVisibleSelected = selection != null && selectableVisible.length > 0
+    && selectableVisible.every(row => selection.selectedKeys.has(rowKey(row)))
+  const someVisibleSelected = selection != null && !allVisibleSelected
+    && selectableVisible.some(row => selection.selectedKeys.has(rowKey(row)))
 
   const toggleSort = (key: string) => {
     setSort(prev => (prev?.key === key ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }))
@@ -104,6 +121,19 @@ export function DataTable<T>({
           <caption className="sr-only">{caption}</caption>
           <thead className="sticky top-0 z-10 bg-surface-subtle">
             <tr>
+              {selection && (
+                <th scope="col" className="w-10 border-b border-border px-4 py-2.5">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all rows on this page"
+                    className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer disabled:cursor-not-allowed"
+                    checked={allVisibleSelected}
+                    ref={el => { if (el) el.indeterminate = someVisibleSelected }}
+                    disabled={selectableVisible.length === 0}
+                    onChange={e => selection.onToggleAll(selectableVisible, e.target.checked)}
+                  />
+                </th>
+              )}
               {columns.map(col => {
                 const active = sort?.key === col.key
                 return (
@@ -134,6 +164,9 @@ export function DataTable<T>({
           <tbody>
             {loading && rows.length === 0 && Array.from({ length: 5 }).map((_, i) => (
               <tr key={`skeleton-${i}`}>
+                {selection && (
+                  <td className="border-b border-border px-4 py-3"><Skeleton className="h-4 w-4" /></td>
+                )}
                 {columns.map(col => (
                   <td key={col.key} className={clsx('border-b border-border px-4 py-3', col.hideBelow && hideClass[col.hideBelow])}>
                     <Skeleton className="h-4 w-full max-w-[160px]" />
@@ -143,6 +176,7 @@ export function DataTable<T>({
             ))}
             {!error && visible.map(row => {
               const key = rowKey(row)
+              const selectable = selection?.isRowSelectable?.(row) ?? true
               return (
                 <tr
                   key={key}
@@ -153,6 +187,19 @@ export function DataTable<T>({
                     selectedKey === key && 'bg-brand-soft hover:bg-brand-soft',
                   )}
                 >
+                  {selection && (
+                    <td className="px-4 py-3 align-middle" onClick={e => e.stopPropagation()}>
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select row ${key}`}
+                          className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
+                          checked={selection.selectedKeys.has(key)}
+                          onChange={() => selection.onToggleRow(key, row)}
+                        />
+                      )}
+                    </td>
+                  )}
                   {columns.map(col => (
                     <td
                       key={col.key}
@@ -182,12 +229,24 @@ export function DataTable<T>({
           <ul className="divide-y divide-border">
             {visible.map(row => {
               const key = rowKey(row)
+              const selectable = selection?.isRowSelectable?.(row) ?? true
               return (
                 <li
                   key={key}
                   {...rowProps(row)}
                   className={clsx('space-y-1.5 px-4 py-3', onRowClick && 'cursor-pointer active:bg-surface-subtle', selectedKey === key && 'bg-brand-soft')}
                 >
+                  {selection && selectable && (
+                    <div className="flex justify-end" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select row ${key}`}
+                        className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
+                        checked={selection.selectedKeys.has(key)}
+                        onChange={() => selection.onToggleRow(key, row)}
+                      />
+                    </div>
+                  )}
                   {columns.filter(c => !c.hideOnMobile).map((col, i) => (
                     <div key={col.key} className={clsx('flex items-start justify-between gap-4 text-sm', i === 0 && 'font-medium')}>
                       {i > 0 && <span className="shrink-0 text-xs text-muted">{col.header}</span>}
