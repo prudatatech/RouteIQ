@@ -182,6 +182,8 @@ export const shipmentsAPI = {
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),
   assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
+  /** Ordered status timeline (staff only) — see ShipmentService.getShipmentHistory. */
+  history: (id: string) => api.get(`/shipments/${id}/history`).then(r => r.data),
 }
 
 export const routesAPI = {

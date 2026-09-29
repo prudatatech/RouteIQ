@@ -38,6 +38,15 @@ export interface ShipmentRow {
   capacity_bids?: CapacityBidInfo | null
 }
 
+/** One entry of GET /shipments/:id/history (backend-ts ShipmentService.getShipmentHistory). */
+export interface ShipmentHistoryEvent {
+  status: string
+  at: string
+  actor: { id: string; name: string | null; role: string | null } | null
+  note: string | null
+  location: { lat: number; lng: number } | null
+}
+
 /** Vehicle fields used when choosing a vehicle for a shipment. */
 export interface VehicleOption {
   id: string

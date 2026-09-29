@@ -716,7 +716,8 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         status === 'completed' ? 'delivered' : 'exception',
         lat, lng,
         received_by || null,
-        signature_data || null
+        signature_data || null,
+        { id: req.user!.user_id, role: req.user!.role }
       );
     }
 

@@ -3,8 +3,15 @@ import { CheckCircle2, Clock, MapPin, Truck } from 'lucide-react'
 import { Card, DetailList } from '@/components/ui/Card'
 import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
+import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { formatEta } from '@/utils/timeFormat'
+
+function formatEventTime(value: string) {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+}
 
 /** Vehicle fields the public tracking endpoint returns — no driver identity or phone. */
 export interface TrackedVehicle {
@@ -36,6 +43,8 @@ export interface ShipmentTrackingData {
   vehicle?: TrackedVehicle | null
   /** Arrival estimate from the vehicle's position to the next stop (straight line, average speed). */
   eta_minutes?: number | null
+  /** Status timeline, public-safe: status and time only, no names. See ShipmentService.getPublicTracking. */
+  history?: { status: string; at: string }[] | null
 }
 
 const STEPS = [
@@ -209,6 +218,13 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
           </Card>
         </div>
       </div>
+
+      {shipment.history && shipment.history.length > 0 && (
+        <Card padded>
+          <p className="mb-4 text-sm font-medium text-text">Status history</p>
+          <Timeline events={shipment.history} formatAt={formatEventTime} />
+        </Card>
+      )}
     </div>
   )
 }

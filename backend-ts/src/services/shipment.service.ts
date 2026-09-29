@@ -53,6 +53,27 @@ function estimateEtaMinutes(fromLat?: number | null, fromLng?: number | null, to
   return Math.max(1, Math.round((km / ETA_AVERAGE_SPEED_KMPH) * 60));
 }
 
+/** Who made a status change, when it is known. Never fabricated — only set from `req.user`. */
+export interface LogActor {
+  id: string;
+  role: string;
+}
+
+/** One event in a shipment's status history, for staff. */
+export interface ShipmentHistoryEvent {
+  status: string;
+  at: string;
+  actor: { id: string; name: string | null; role: string | null } | null;
+  note: string | null;
+  location: { lat: number; lng: number } | null;
+}
+
+/** The public-safe cut of a history event: status and time only. */
+export interface PublicHistoryEvent {
+  status: string;
+  at: string;
+}
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -62,7 +83,8 @@ export class ShipmentService {
     status: string,
     lat?: number | null,
     lng?: number | null,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    actor?: LogActor | null
   ): Promise<ShipmentLog> {
     // 1. Fetch last log to get previous hash and index
     const { data: lastLogs } = await supabase
@@ -76,7 +98,10 @@ export class ShipmentService {
     const prevHash = lastLog?.log_hash || '0'.repeat(64);
     const newIndex = lastLog ? lastLog.index + 1 : 0;
 
-    // 2. Prepare data for hashing
+    // 2. Prepare data for hashing. The actor (who made this change) is folded into
+    // the metadata so it's part of the tamper-evident hash chain too — never a
+    // separate, unverified field.
+    const fullMetadata = actor ? { ...(metadata || {}), actor_id: actor.id, actor_role: actor.role } : metadata || {};
     const timestamp = new Date().toISOString();
     const data = {
       shipment_id: shipmentId,
@@ -85,7 +110,7 @@ export class ShipmentService {
       location_lng: lng ?? null,
       timestamp,
       index: newIndex,
-      metadata: metadata || {},
+      metadata: fullMetadata,
     };
 
     // 3. Generate hash
@@ -104,7 +129,7 @@ export class ShipmentService {
         index: newIndex,
         previous_hash: prevHash,
         log_hash: newHash,
-        metadata_json: metadata || {},
+        metadata_json: fullMetadata,
       })
       .select()
       .single();
@@ -192,7 +217,7 @@ export class ShipmentService {
   /**
    * Create a new shipment with parcels.
    */
-  static async createShipment(shipmentIn: ShipmentCreate): Promise<Shipment> {
+  static async createShipment(shipmentIn: ShipmentCreate, actor?: LogActor | null): Promise<Shipment> {
     const trackingId = shipmentIn.tracking_id || `RTX-${uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
 
     // 1. Insert shipment
@@ -373,7 +398,7 @@ export class ShipmentService {
     }
 
     // 5. Create tamper-evident log
-    await ShipmentService.recordShipmentLog(dbShipment.id, 'created');
+    await ShipmentService.recordShipmentLog(dbShipment.id, 'created', null, null, undefined, actor);
 
     // 6. Recalculate vehicle capacity if vehicle assigned
     if (shipmentIn.vehicle_id) {
@@ -397,7 +422,7 @@ export class ShipmentService {
   /**
    * Assign a driver/vehicle to an existing shipment.
    */
-  static async assignDriver(shipmentId: string, vehicleId: string): Promise<Shipment | null> {
+  static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new HttpError(404, 'Shipment not found');
     if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new HttpError(400, 'Shipment has no delivery points');
@@ -461,7 +486,7 @@ export class ShipmentService {
       });
     }
 
-    await this.recordShipmentLog(shipmentId, 'assigned', shipment.origin_lat, shipment.origin_lng, { vehicle_id: vehicleId });
+    await this.recordShipmentLog(shipmentId, 'assigned', shipment.origin_lat, shipment.origin_lng, { vehicle_id: vehicleId }, actor);
     await this.recalculateVehicleCapacity(vehicleId);
 
     return this.getShipment(shipmentId);
@@ -794,7 +819,8 @@ export class ShipmentService {
     lat?: number | null,
     lng?: number | null,
     receivedBy?: string | null,
-    signatureData?: string | null
+    signatureData?: string | null,
+    actor?: LogActor | null
   ): Promise<Shipment | null> {
     const updateData: Record<string, any> = { status };
     if (receivedBy) updateData.received_by = receivedBy;
@@ -813,7 +839,7 @@ export class ShipmentService {
       metadata.received_by = receivedBy;
       metadata.signature_captured = !!signatureData;
     }
-    await ShipmentService.recordShipmentLog(shipmentId, status, lat, lng, metadata);
+    await ShipmentService.recordShipmentLog(shipmentId, status, lat, lng, metadata, actor);
 
     // Find vehicle to recalculate capacity
     const { data: dp } = await supabase
@@ -874,18 +900,32 @@ export class ShipmentService {
     return ShipmentService.getShipment(shipmentId);
   }
 
+  /** Statuses past which a shipment has already moved and can no longer be deleted. */
+  private static readonly UNDELETABLE_STATUSES = ['picked_up', 'in_transit', 'delivered'];
+
   /**
    * Delete a shipment and all related data.
+   *
+   * Refuses once the shipment has been picked up, is in transit or has been
+   * delivered — deleting real movement history is how it goes missing from
+   * the record. Cancel it instead (before pickup) so the trail stays intact.
    */
   static async deleteShipment(shipmentId: string): Promise<boolean> {
     // Check existence
     const { data: existing } = await supabase
       .from('shipments')
-      .select('id')
+      .select('id, status')
       .eq('id', shipmentId)
       .single();
 
     if (!existing) return false;
+
+    if (ShipmentService.UNDELETABLE_STATUSES.includes(existing.status)) {
+      throw new HttpError(
+        409,
+        `This shipment is ${existing.status.replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`
+      );
+    }
 
     // 1. Get delivery point
     const { data: dps } = await supabase
@@ -945,6 +985,114 @@ export class ShipmentService {
     }
 
     return true;
+  }
+
+  /**
+   * Full status history for staff: every hash-chained `shipment_logs` entry for
+   * this shipment, oldest first, with the actor (if one was recorded) and a
+   * short plain-language note. When a shipment predates status logging (or was
+   * never logged, e.g. some cargo-manifest flows) this falls back to whatever
+   * the record itself says — created and, if it has since moved on, its
+   * current status — and never invents a step in between.
+   *
+   * Returns null when no shipment, cargo manifest or vendor request exists
+   * with this id.
+   */
+  static async getShipmentHistory(shipmentId: string): Promise<ShipmentHistoryEvent[] | null> {
+    const { data: shipment } = await supabase
+      .from('shipments')
+      .select('status, created_at, updated_at, received_by')
+      .eq('id', shipmentId)
+      .maybeSingle();
+
+    if (shipment) {
+      const { data: logs } = await supabase
+        .from('shipment_logs')
+        .select('*')
+        .eq('shipment_id', shipmentId)
+        .order('index', { ascending: true });
+
+      return ShipmentService.buildHistoryEvents(logs || [], shipment);
+    }
+
+    // Not a shipment row — try the vendor/manifest tables so the drawer can still
+    // show something for loads booked through those flows (they carry no
+    // shipment_logs of their own).
+    const { data: manifest } = await supabase
+      .from('cargo_manifest')
+      .select('status, created_at, updated_at')
+      .eq('id', shipmentId)
+      .maybeSingle();
+    if (manifest) return ShipmentService.buildHistoryEvents([], manifest);
+
+    const { data: vendorRequest } = await supabase
+      .from('vendor_shipment_requests')
+      .select('status, created_at, updated_at')
+      .eq('id', shipmentId)
+      .maybeSingle();
+    if (vendorRequest) return ShipmentService.buildHistoryEvents([], vendorRequest);
+
+    return null;
+  }
+
+  /** Builds the staff-facing history from real `shipment_logs` rows, resolving actor names. */
+  private static async buildHistoryEvents(
+    logs: ShipmentLog[],
+    record: { status: string; created_at: string; updated_at?: string | null; received_by?: string | null }
+  ): Promise<ShipmentHistoryEvent[]> {
+    if (logs.length > 0) {
+      logs = [...logs].sort((a, b) => a.index - b.index);
+      const actorIds = Array.from(
+        new Set(logs.map(l => l.metadata_json?.actor_id).filter((id): id is string => typeof id === 'string'))
+      );
+      let usersById = new Map<string, { full_name: string | null; role: string | null }>();
+      if (actorIds.length > 0) {
+        const { data: users } = await supabase.from('users').select('id, full_name, role').in('id', actorIds);
+        usersById = new Map((users || []).map((u: any) => [u.id, { full_name: u.full_name ?? null, role: u.role ?? null }]));
+      }
+
+      return logs.map((log): ShipmentHistoryEvent => {
+        const meta = log.metadata_json || {};
+        const actorId: string | undefined = meta.actor_id;
+        const actor = actorId
+          ? { id: actorId, name: usersById.get(actorId)?.full_name ?? null, role: meta.actor_role ?? usersById.get(actorId)?.role ?? null }
+          : null;
+
+        let note: string | null = null;
+        if (meta.received_by) note = `Received by ${meta.received_by}`;
+        else if (log.status === 'assigned' && meta.vehicle_id) note = 'Vehicle assigned';
+
+        return {
+          status: log.status,
+          at: log.timestamp,
+          actor,
+          note,
+          location: log.location_lat != null && log.location_lng != null ? { lat: log.location_lat, lng: log.location_lng } : null,
+        };
+      });
+    }
+
+    // No log entries exist for this record — show only what the record itself
+    // confirms: it was created, and, if it has moved past "created" since,
+    // its current status. Nothing in between is guessed at.
+    const events: ShipmentHistoryEvent[] = [
+      { status: 'created', at: record.created_at, actor: null, note: null, location: null },
+    ];
+    if (record.status && record.status !== 'created' && record.updated_at) {
+      events.push({
+        status: record.status,
+        at: record.updated_at,
+        actor: null,
+        note: record.received_by ? `Received by ${record.received_by}` : null,
+        location: null,
+      });
+    }
+    return events;
+  }
+
+  /** Status + time only — what the public tracking page is allowed to show. */
+  private static toPublicHistory(events: ShipmentHistoryEvent[]): PublicHistoryEvent[] {
+    return events.map(e => ({ status: e.status, at: e.at }));
   }
 
   /**
@@ -1009,12 +1157,15 @@ export class ShipmentService {
         trackingInfo.eta_minutes = estimateEtaMinutes(v.latitude, v.longitude, target.lat, target.lng);
       }
 
+      const manifestEvents = await ShipmentService.buildHistoryEvents([], { ...manifest, status: trackingInfo.status });
+      trackingInfo.history = ShipmentService.toPublicHistory(manifestEvents);
+
       return trackingInfo;
     }
 
     const { data: shipment } = await supabase
       .from('shipments')
-      .select('*, delivery_points!delivery_points_shipment_id_fkey(*)')
+      .select('*, delivery_points!delivery_points_shipment_id_fkey(*), shipment_logs(*)')
       .eq('tracking_id', trackingId)
       .single();
 
@@ -1069,6 +1220,9 @@ export class ShipmentService {
         }
       }
     }
+
+    const shipmentEvents = await ShipmentService.buildHistoryEvents(shipment.shipment_logs || [], shipment);
+    trackingInfo.history = ShipmentService.toPublicHistory(shipmentEvents);
 
     return trackingInfo;
   }
