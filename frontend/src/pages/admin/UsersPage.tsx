@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Building2, UserPlus, UsersRound } from 'lucide-react'
+import { Building2, Download, Upload, UserPlus, UsersRound } from 'lucide-react'
 import { usersAPI, authAPI, peopleAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
@@ -10,7 +10,9 @@ import {
   parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate, formatRelative } from '@/utils/display'
+import { downloadCsv } from '@/utils/csv'
 import { AddPersonModal } from '@/components/people/AddPersonModal'
+import { ImportModal } from '@/components/people/ImportModal'
 import { PersonAvatar } from '@/components/people/PersonAvatar'
 import { docSummaryView, needsAttention } from '@/components/people/docs'
 import {
@@ -89,6 +91,20 @@ export default function UsersPage() {
   const sort = parseSort(sortParam)
   const [addOpen, setAddOpen] = useState(false)
   const [vendorOpen, setVendorOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [exporting, setExporting] = useState<'people' | 'expiring' | null>(null)
+
+  const exportCsv = async (kind: 'people' | 'expiring') => {
+    setExporting(kind)
+    try {
+      const blob = await peopleAPI.exportCsv(kind)
+      downloadCsv(kind === 'people' ? 'people.csv' : 'documents-expiring.csv', await blob.text())
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not export the file. Try again.'))
+    } finally {
+      setExporting(null)
+    }
+  }
 
   const people = useQuery<PersonRow[]>({
     queryKey: ['people', 'list', status, search.trim()],
@@ -157,6 +173,9 @@ export default function UsersPage() {
         description="Drivers and staff: who they are, their documents, and how they work with us."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'people'} onClick={() => exportCsv('people')}>Export people</Button>
+            <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'expiring'} onClick={() => exportCsv('expiring')}>Expiring documents</Button>
+            {canAdd && <Button variant="secondary" icon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Import</Button>}
             {myRole === 'superadmin' && <Button variant="secondary" icon={<Building2 size={16} />} onClick={() => setVendorOpen(true)}>Add vendor</Button>}
             {canAdd && <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>Add person</Button>}
           </div>
@@ -201,6 +220,7 @@ export default function UsersPage() {
       </TabPanel>
 
       <AddPersonModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
       <AddVendorModal open={vendorOpen} onClose={() => setVendorOpen(false)} />
     </Page>
   )

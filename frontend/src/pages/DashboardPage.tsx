@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon } from 'lucide-react'
-import { dashboardAPI, vehiclesAPI, shipmentsAPI, analyticsAPI, vendorAPI, fleetAPI } from '@/services/api'
+import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon, FileWarning } from 'lucide-react'
+import { dashboardAPI, vehiclesAPI, shipmentsAPI, analyticsAPI, vendorAPI, fleetAPI, peopleAPI } from '@/services/api'
 import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
@@ -15,7 +15,7 @@ import { sosHeadline } from '@/utils/sos'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { humanize } from '@/components/ui'
 import type { FleetAlert } from '@/components/fleet/health'
-import { formatDay } from '@/utils/display'
+import { formatDay, formatDate } from '@/utils/display'
 
 interface VehicleRow {
   id: string
@@ -46,7 +46,7 @@ interface Insight {
 
 interface AttentionItem {
   id: string
-  kind: 'incident' | 'alarm' | 'offline' | 'delay' | 'idle'
+  kind: 'incident' | 'alarm' | 'offline' | 'delay' | 'idle' | 'licence-expired' | 'licence-expiring' | 'documents'
   title: string
   subtitle: string
   time: string
@@ -156,6 +156,16 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   })
 
+  // Driver licences and required documents. Optional: the list simply has no rows if the call fails.
+  const role = useAuthStore(state => state.role)
+  const { data: peopleAttention } = useQuery({
+    queryKey: ['people', 'attention'],
+    queryFn: peopleAPI.attention,
+    enabled: role === 'admin' || role === 'superadmin' || role === 'manager',
+    refetchInterval: 5 * 60_000,
+    retry: false,
+  })
+
   const liveMinutes = useLiveMinutes()
   const activeVehicles = vehicles.filter(isFleetVehicle)
   const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
@@ -222,6 +232,38 @@ export default function DashboardPage() {
         : [],
     })),
   ]
+
+  const licenceItems: AttentionItem[] = [
+    ...(peopleAttention?.expired_licences ?? []).map(p => ({
+      id: `licence-expired-${p.user_id}`,
+      kind: 'licence-expired' as const,
+      title: 'Driver licence expired',
+      subtitle: `${p.full_name ?? 'Unnamed driver'}${p.expires_on ? ` · expired ${formatDate(p.expires_on)}` : ''}`,
+      time: '',
+      actions: [{ label: 'Open profile', onClick: () => navigate(`/admin/users/${p.user_id}?tab=documents`) }],
+    })),
+    ...(peopleAttention?.expiring_licences ?? []).map(p => ({
+      id: `licence-expiring-${p.user_id}`,
+      kind: 'licence-expiring' as const,
+      title: 'Driver licence expiring',
+      subtitle: `${p.full_name ?? 'Unnamed driver'}${p.expires_on ? ` · expires ${formatDate(p.expires_on)}` : ''}`,
+      time: '',
+      actions: [{ label: 'Open profile', onClick: () => navigate(`/admin/users/${p.user_id}?tab=documents`) }],
+    })),
+  ]
+  const missingDocs = peopleAttention?.missing_required ?? []
+  if (missingDocs.length > 0) {
+    const names = missingDocs.slice(0, 3).map(p => p.full_name ?? 'Unnamed').join(', ')
+    licenceItems.push({
+      id: 'people-missing-documents',
+      kind: 'documents',
+      title: `${missingDocs.length.toLocaleString('en-IN')} ${missingDocs.length === 1 ? 'person is' : 'people are'} missing required documents`,
+      subtitle: missingDocs.length > 3 ? `${names} and ${missingDocs.length - 3} more` : names,
+      time: '',
+      actions: [{ label: 'Review documents', onClick: () => navigate(missingDocs.length === 1 ? `/admin/users/${missingDocs[0].user_id}?tab=documents` : '/admin/users?tab=attention') }],
+    })
+  }
+  attentionItems.push(...licenceItems)
 
   const columns: Column<ShipmentRow>[] = [
     { key: 'tracking_id', header: 'Tracking ID', cell: s => <span className="font-mono text-xs">{s.tracking_id}</span> },
@@ -312,10 +354,10 @@ export default function DashboardPage() {
               attentionItems.map(item => (
                 <div key={item.id} className="flex items-start gap-3 px-4 py-3">
                   <span
-                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.kind === 'delay' || item.kind === 'idle' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger'}`}
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger'}`}
                     aria-hidden="true"
                   >
-                    {item.kind === 'incident' || item.kind === 'alarm' ? <AlertCircle size={16} /> : item.kind === 'offline' ? <WifiOff size={16} /> : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
+                    {item.kind === 'licence-expired' || item.kind === 'licence-expiring' || item.kind === 'documents' ? <FileWarning size={16} /> : item.kind === 'incident' || item.kind === 'alarm' ? <AlertCircle size={16} /> : item.kind === 'offline' ? <WifiOff size={16} /> : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-text">{item.title}</p>
