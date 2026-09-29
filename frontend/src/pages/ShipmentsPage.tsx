@@ -1,6 +1,6 @@
 import {
   Plus, Search, Package, MapPin, Layers,
-  ShieldCheck, Zap, Navigation, Loader2, AlertTriangle, Smartphone, CheckCircle, FileText
+  ShieldCheck, Zap, Navigation, Loader2, AlertTriangle, FileText
 } from 'lucide-react'
 import _axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -195,27 +195,6 @@ export default function ShipmentsPage() {
       toast.error(typeof msg === 'string' ? msg : JSON.stringify(msg))
     }
   })
-
-  const [neuralPipelineStep, setNeuralPipelineStep] = useState<number | null>(null)
-  const [_createdShipmentData, setCreatedShipmentData] = useState<any>(null)
-
-  useEffect(() => {
-    if (neuralPipelineStep !== null && neuralPipelineStep < 4) {
-      const timer = setTimeout(() => {
-        setNeuralPipelineStep((prev: any) => prev !== null ? prev + 1 : null)
-      }, 2200)
-      return () => clearTimeout(timer)
-    }
-  }, [neuralPipelineStep])
-
-  useEffect(() => {
-    const handleShipmentCreated = (e: any) => {
-      setCreatedShipmentData(e.detail)
-      setNeuralPipelineStep(1)
-    }
-    window.addEventListener('shipmentCreated', handleShipmentCreated)
-    return () => window.removeEventListener('shipmentCreated', handleShipmentCreated)
-  }, [])
 
   const filtered = (Array.isArray(shipments) ? shipments : []).filter((s: any) => {
     if (!s) return false;
@@ -484,150 +463,6 @@ export default function ShipmentsPage() {
 
 
       <EditShipmentModal shipment={editingShipment} isOpen={!!editingShipment} onClose={() => setEditingShipment(null)} />
-
-      {/* Sleek and Compact AI Neural Routing Pipeline Overlay */}
-      {neuralPipelineStep !== null && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md border border-slate-200 p-6 bg-white text-slate-900 shadow-[0_20px_50px_rgba(15,23,42,0.15)] rounded-[2rem] relative overflow-hidden">
-            
-            {/* Soft subtle background glow */}
-            <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-500/5 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="space-y-5 relative z-10">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-yellow-400 flex items-center justify-center text-slate-950 shadow-md shadow-yellow-500/10">
-                    <Zap size={18} className="fill-current animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black uppercase tracking-tight text-slate-950 leading-none">Neural Route Pipeline</h3>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Autonomous Dispatch Grid</p>
-                  </div>
-                </div>
-                <Badge variant="orange" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20 text-[8px] px-2 py-0.5">
-                  {neuralPipelineStep < 4 ? 'OPTIMIZING' : 'SOLVED'}
-                </Badge>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 tracking-widest">
-                  <span>Engine Solver Progress</span>
-                  <span>{Math.round((neuralPipelineStep / 4) * 100)}%</span>
-                </div>
-                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-300 rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${(neuralPipelineStep / 4) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Pipeline Steps */}
-              <div className="space-y-2">
-                {[
-                  {
-                    step: 1,
-                    title: '1. Neural Routing Solver',
-                    desc: 'Sending dispatch vector to Neural Solver models to calculate optimal paths...',
-                    icon: <Layers size={14} />
-                  },
-                  {
-                    step: 2,
-                    title: '2. Route Grid Optimization',
-                    desc: 'Finalizing stop sequence, total distance, weather conditions, and travel times...',
-                    icon: <Navigation size={14} />
-                  },
-                  {
-                    step: 3,
-                    title: '3. Driver Interface Dispatch',
-                    desc: 'Broadcasting telemetry sequence to mobile driver console & marking route active...',
-                    icon: <Smartphone size={14} />
-                  },
-                  {
-                    step: 4,
-                    title: '4. AI Intel Dashboard Sync',
-                    desc: 'Updating travel analytics metrics, fuel conservation levels, and dashboard KPIs...',
-                    icon: <CheckCircle size={14} />
-                  }
-                ].map(({ step, title, desc, icon }) => {
-                  const isDone = neuralPipelineStep > step || neuralPipelineStep === 4;
-                  const isActive = neuralPipelineStep === step;
-                  return (
-                    <div 
-                      key={step} 
-                      className={clsx(
-                        "flex gap-3 p-2.5 rounded-xl border transition-all duration-200",
-                        isDone ? "bg-emerald-50/40 border-emerald-100 text-slate-800" :
-                        isActive ? "bg-yellow-50/50 border-yellow-250 text-slate-950 shadow-sm" :
-                        "bg-slate-50/40 border-slate-100 text-slate-400 opacity-60"
-                      )}
-                    >
-                      <div className={clsx(
-                        "w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
-                        isDone ? "bg-emerald-500 text-white" :
-                        isActive ? "bg-yellow-400 text-slate-950 animate-pulse font-bold" :
-                        "bg-slate-200 text-slate-500"
-                      )}>
-                        {isDone ? (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                        ) : icon}
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className={clsx("text-[10px] font-black uppercase tracking-wide", isActive ? "text-slate-900" : isDone ? "text-slate-800" : "text-slate-500")}>{title}</div>
-                        <div className={clsx("text-[9px] font-medium leading-tight", isActive ? "text-slate-600" : "text-slate-400")}>{desc}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Action shortcuts when finished */}
-              {neuralPipelineStep === 4 && (
-                <div className="pt-3 border-t border-slate-100 space-y-3 animate-in slide-in-from-bottom-2 duration-300">
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">
-                    Navigate to Updated Platform Sectors
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      onClick={() => { setNeuralPipelineStep(null); navigate('/routes'); }}
-                      className="h-10 bg-slate-50 hover:bg-slate-100 border border-slate-250 text-slate-800 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      🚚 Route Grid
-                    </button>
-                    <button 
-                      onClick={() => { setNeuralPipelineStep(null); navigate('/driver'); }}
-                      className="h-10 bg-slate-50 hover:bg-slate-100 border border-slate-250 text-slate-800 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      📱 Driver Console
-                    </button>
-                    <button 
-                      onClick={() => { setNeuralPipelineStep(null); navigate('/ai-hub'); }}
-                      className="h-10 bg-slate-50 hover:bg-slate-100 border border-slate-250 text-slate-800 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      🧠 AI Intel Hub
-                    </button>
-                    <button 
-                      onClick={() => { setNeuralPipelineStep(null); navigate('/dashboard'); }}
-                      className="h-10 bg-slate-50 hover:bg-slate-100 border border-slate-250 text-slate-800 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      📊 Dashboard
-                    </button>
-                  </div>
-                  <button 
-                    onClick={() => setNeuralPipelineStep(null)}
-                    className="w-full h-10 bg-yellow-450 hover:bg-yellow-400 text-slate-950 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm active:scale-95"
-                  >
-                    Done & Return
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Custom Delete Confirmation Modal */}
       {confirmDeleteShipmentId && (

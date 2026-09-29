@@ -303,14 +303,11 @@ export default function AddShipmentModal() {
       }
       return shipmentsAPI.create(payload)
     },
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       clearDraft()
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       toast.success('Shipment successfully initialized')
       closeModal()
-
-      // Dispatch custom event for neural pipeline trigger on ShipmentsPage
-      window.dispatchEvent(new CustomEvent('shipmentCreated', { detail: data }))
     },
     onError: (error: any) => {
       const msg = error?.response?.data?.detail || error?.message || 'Failed to create shipment'
