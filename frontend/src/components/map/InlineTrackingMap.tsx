@@ -1,97 +1,115 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Smartphone } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { shipmentsAPI, telemetryAPI } from '@/services/api'
 import { formatEta } from '@/utils/timeFormat'
-import LiveMap from './LiveMap'
-import { Button } from '@/components/ui'
-import toast from 'react-hot-toast'
+import LiveMap, { type LiveMapStop, type LiveMapVehicle } from './LiveMap'
 
-export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { trackingId: string, allVehicles?: any[] }) {
-  const { data: trackInfo, isLoading } = useQuery({
+interface PublicTracking {
+  tracking_id?: string
+  status?: string
+  eta_minutes?: number | null
+  origin_lat?: number | null
+  origin_lng?: number | null
+  destination?: { lat?: number | null; lng?: number | null } | null
+  vehicle?: {
+    id?: string
+    plate_number?: string
+    status?: string
+    lat?: number | null
+    lng?: number | null
+    type?: string
+  } | null
+}
+
+/** The next place the vehicle is heading to: pickup before collection, drop while in transit. */
+function nextStop(track: PublicTracking): LiveMapStop[] | undefined {
+  if (!track.tracking_id?.startsWith('CM-')) return undefined
+  const beforePickup = track.status === 'created' || track.status === 'assigned' || track.status === 'scheduled'
+  const target = beforePickup
+    ? { latitude: track.origin_lat, longitude: track.origin_lng }
+    : track.status === 'in_transit'
+      ? { latitude: track.destination?.lat, longitude: track.destination?.lng }
+      : null
+  return target ? [{ status: 'pending', sequence: 1, delivery_points: target }] : undefined
+}
+
+/** Tracking map for one shipment, shown inside a shipment row. */
+export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { trackingId: string, allVehicles?: LiveMapVehicle[] }) {
+  const { data: trackInfo, isLoading, isError } = useQuery({
     queryKey: ['trackPublicly', trackingId],
-    queryFn: () => shipmentsAPI.trackPublicly(trackingId),
+    queryFn: () => shipmentsAPI.trackPublicly(trackingId) as Promise<PublicTracking>,
     refetchInterval: 10000,
   })
 
   const [isCalling, setIsCalling] = useState(false)
 
-  if (isLoading) return <div className="h-64 flex items-center justify-center"><Loader2 size={24} className="animate-spin text-yellow-500" /></div>
-  
-  if (!trackInfo || !trackInfo.vehicle?.id) {
-    return <div className="h-64 flex items-center justify-center text-xs font-bold text-muted uppercase tracking-widest bg-slate-50 rounded-2xl">Awaiting Driver Assignment</div>
+  if (isLoading) {
+    return (
+      <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+        <Loader2 size={16} className="animate-spin" aria-hidden /> Loading tracking…
+      </div>
+    )
   }
 
-  // Need to provide vehicle to LiveMap, so it knows the start position.  
-  // It handles its own realtime updates if it has the ID.
-  const activeVehicle = {
-    id: trackInfo.vehicle.id,
-    plate_number: trackInfo.vehicle.plate_number,
-    status: trackInfo.vehicle.status,
-    latitude: trackInfo.vehicle.lat,
-    longitude: trackInfo.vehicle.lng,
-    vehicle_type: trackInfo.vehicle.type
+  if (isError) {
+    return <div className="flex h-64 items-center justify-center rounded-card bg-surface-subtle text-sm text-muted">Tracking could not be loaded. Try again in a moment.</div>
   }
 
-  // Fallback map array with only the active vehicle if it's not in allVehicles
+  const vehicle = trackInfo?.vehicle
+  if (!trackInfo || !vehicle?.id) {
+    return <div className="flex h-64 items-center justify-center rounded-card bg-surface-subtle text-sm text-muted">No driver assigned yet.</div>
+  }
+
+  const activeVehicle: LiveMapVehicle = {
+    id: vehicle.id,
+    plate_number: vehicle.plate_number ?? 'Vehicle',
+    status: vehicle.status ?? 'on_route',
+    latitude: vehicle.lat,
+    longitude: vehicle.lng,
+    vehicle_type: vehicle.type,
+  }
+
+  // Use the fleet list when it already has this vehicle, otherwise just this one.
   const mapVehicles = allVehicles.some(v => v.id === activeVehicle.id) ? allVehicles : [activeVehicle]
-
-  let customPendingStops: any[] = []
-  if (trackInfo && trackInfo.tracking_id?.startsWith('CM-')) {
-    if (trackInfo.status === 'created' || trackInfo.status === 'assigned' || trackInfo.status === 'scheduled') {
-      customPendingStops = [{
-        status: 'pending',
-        sequence: 1,
-        delivery_points: {
-          latitude: trackInfo.origin_lat,
-          longitude: trackInfo.origin_lng
-        }
-      }]
-    } else if (trackInfo.status === 'in_transit') {
-      customPendingStops = [{
-        status: 'pending',
-        sequence: 1,
-        delivery_points: {
-          latitude: trackInfo.destination?.lat,
-          longitude: trackInfo.destination?.lng
-        }
-      }]
-    }
-  }
 
   const handleCallDriver = async () => {
     try {
       setIsCalling(true)
       await telemetryAPI.callDriver(activeVehicle.id)
-      toast.success('Ringing driver app...')
-    } catch (e: any) {
-      toast.error('Failed to call driver: ' + e.message)
+      toast.success('Calling the driver app')
+    } catch (e: unknown) {
+      toast.error(`Could not call the driver: ${e instanceof Error ? e.message : 'unknown error'}`)
     } finally {
       setIsCalling(false)
     }
   }
 
   return (
-    <div className="h-80 w-full rounded-2xl overflow-hidden border-2 border-slate-100 bg-white shadow-inner relative group mt-4">
-      <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg border border-slate-100 flex items-center justify-between min-w-[200px]">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <div>
-            <div className="text-[9px] font-black uppercase tracking-widest text-muted">ETA</div>
-            <div className="text-xs font-black text-slate-900">{trackInfo.eta_minutes ? formatEta(trackInfo.eta_minutes) : 'CALCULATING...'}</div>
-          </div>
+    <div className="relative mt-4 h-80 w-full overflow-hidden rounded-card border border-border bg-surface">
+      <LiveMap
+        vehicles={mapVehicles}
+        selectedVehicleId={activeVehicle.id}
+        customPendingStops={nextStop(trackInfo)}
+        mode="tracking"
+        compact
+      />
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-4 rounded-control border border-border bg-surface px-3 py-2 shadow-raised">
+        <div>
+          <div className="text-xs text-muted">Arrives in</div>
+          <div className="text-sm font-medium text-text">{trackInfo.eta_minutes ? formatEta(trackInfo.eta_minutes) : 'Not available yet'}</div>
         </div>
-        <Button 
-          size="sm" 
-          className="ml-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1 text-xs font-bold flex items-center gap-2"
+        <button
+          type="button"
           onClick={handleCallDriver}
           disabled={isCalling}
+          className="flex h-control items-center gap-2 rounded-control border border-border bg-surface px-3 text-sm font-medium text-text hover:bg-surface-subtle disabled:opacity-50"
         >
-          {isCalling ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
-          {isCalling ? 'Calling...' : 'Call'}
-        </Button>
+          {isCalling ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Smartphone size={14} aria-hidden />}
+          {isCalling ? 'Calling…' : 'Call driver'}
+        </button>
       </div>
-      <LiveMap vehicles={mapVehicles} selectedVehicleId={activeVehicle.id} customPendingStops={customPendingStops.length > 0 ? customPendingStops : undefined} />
     </div>
   )
 }

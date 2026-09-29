@@ -1,36 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'maplibre-gl'
-import { Search, Navigation, X } from 'lucide-react'
-import axios from 'axios'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-
-import { 
-  STATUS_COLORS, 
-  VEHICLE_EMOJI, 
-  CARGO_EMOJI,
-  MAP_DEFAULTS 
-} from '@/config/mapConfig'
-import {  routesAPI, marketplaceAPI } from '@/services/api'
+import { Loader2, Search, X } from 'lucide-react'
+import { marketplaceAPI, routesAPI } from '@/services/api'
+import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import { supabase } from '@/services/supabase'
-import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { formatEta } from '@/utils/timeFormat'
+import MapView from './MapView'
+import { fetchDrivingRoute, type DrivingRoute } from './directions'
+import { useLiveVehiclePositions } from './useLiveVehiclePositions'
+import type { LatLng, MapMode, MapPoint, MapRoute, MapRouteStop, MapVehicle, MapViewHandle } from './types'
 
-function createGeoJSONCircle(center: [number, number], radiusInKm: number, points = 64) {
-    const coords = { latitude: center[1], longitude: center[0] };
-    const distanceX = radiusInKm / (111.320 * Math.cos(coords.latitude * Math.PI / 180));
-    const distanceY = radiusInKm / 110.574;
-    const ret: [number, number][] = [];
-    for (let i = 0; i < points; i++) {
-        const theta = (i / points) * (2 * Math.PI);
-        const x = distanceX * Math.cos(theta);
-        const y = distanceY * Math.sin(theta);
-        ret.push([coords.longitude + x, coords.latitude + y]);
-    }
-    ret.push(ret[0]);
-    return { type: 'Feature' as const, geometry: { type: 'Polygon' as const, coordinates: [ret] }, properties: {} };
-}
-
-interface Vehicle {
+/** Vehicle as returned by the vehicles API. */
+export interface LiveMapVehicle {
   id: string
   plate_number: string
   latitude?: number | null
@@ -40,752 +21,288 @@ interface Vehicle {
   cargo_types?: string[]
 }
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
+interface DeliveryPoint {
+  latitude?: number | string | null
+  longitude?: number | string | null
+  name?: string | null
+  address?: string | null
+}
 
-let _mapInstance: mapboxgl.Map | null = null;
+/** A route stop as returned by the routes API (or built by a page). */
+export interface LiveMapStop {
+  id?: string
+  sequence?: number
+  status?: string
+  delivery_points?: DeliveryPoint | DeliveryPoint[] | null
+}
 
-export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, onVehicleSelect, customPendingStops }: { vehicles: Vehicle[], selectedVehicleId?: string | null, zoomFocusEvent?: number, onVehicleSelect?: (id: string) => void, customPendingStops?: any[] }) {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const intervalRef = useRef<any>(null)
+interface RouteRow {
+  id: string
+  name?: string | null
+  status: string
+  vehicle_id?: string | null
+  route_stops?: LiveMapStop[] | null
+}
+
+interface OpenLoad {
+  id: string
+  origin_lat?: number | null
+  origin_lng?: number | null
+  origin_name?: string | null
+  weight_kg?: number | null
+}
+
+export interface LiveMapProps {
+  vehicles: LiveMapVehicle[]
+  selectedVehicleId?: string | null
+  /** Change this number to fly to the selected vehicle. */
+  zoomFocusEvent?: number
+  onVehicleSelect?: (id: string) => void
+  /** Stops to draw for the selected vehicle instead of its active route's pending stops. */
+  customPendingStops?: LiveMapStop[]
+  /** Map preset. Default "fleet". */
+  mode?: MapMode
+  /** Hide the place search, route summary, open loads and legend (for small embedded maps). */
+  compact?: boolean
+  className?: string
+}
+
+const stopPosition = (stop: LiveMapStop): LatLng | null => {
+  const dp = Array.isArray(stop.delivery_points) ? stop.delivery_points[0] : stop.delivery_points
+  if (dp?.latitude == null || dp?.longitude == null) return null
+  const lat = Number(dp.latitude)
+  const lng = Number(dp.longitude)
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+}
+
+const stopLabel = (stop: LiveMapStop): string | undefined => {
+  const dp = Array.isArray(stop.delivery_points) ? stop.delivery_points[0] : stop.delivery_points
+  return dp?.name || dp?.address || undefined
+}
+
+const bySequence = (a: LiveMapStop, b: LiveMapStop) => (a.sequence ?? 0) - (b.sequence ?? 0)
+
+/**
+ * Live fleet map: vehicles with realtime GPS, the selected vehicle's active
+ * route (road route when a Mapbox token is set), open marketplace loads and a
+ * place search. Drawing is done by MapView.
+ */
+export default function LiveMap({
+  vehicles,
+  selectedVehicleId,
+  zoomFocusEvent,
+  onVehicleSelect,
+  customPendingStops,
+  mode = 'fleet',
+  compact = false,
+  className,
+}: LiveMapProps) {
+  const mapRef = useRef<MapViewHandle>(null)
   const queryClient = useQueryClient()
+  const livePositions = useLiveVehiclePositions()
+  const [clickedId, setClickedId] = useState<string | null>(null)
+  const selectedId = selectedVehicleId ?? clickedId
 
-  const selectedVehicleIdRef = useRef(selectedVehicleId)
-  useEffect(() => { selectedVehicleIdRef.current = selectedVehicleId }, [selectedVehicleId])
+  // ── Vehicles ──────────────────────────────────────────────────────────
+  const mapVehicles = useMemo<MapVehicle[]>(() => vehicles.flatMap((v) => {
+    const live = livePositions[v.id]
+    const position = live ?? (v.latitude != null && v.longitude != null ? { lat: Number(v.latitude), lng: Number(v.longitude) } : null)
+    // Vehicles without a GPS position are left off the map, never placed at a guessed spot.
+    return position ? [{ id: v.id, position, status: v.status, label: v.plate_number }] : []
+  }), [vehicles, livePositions])
 
-  const { data: activeRoutes } = useQuery({
-    queryKey: ['routes', selectedVehicleId],
-    queryFn: () => routesAPI.list({ vehicle_id: selectedVehicleId }),
-    enabled: !!selectedVehicleId,
+  const selectedVehicle = selectedId ? mapVehicles.find((v) => v.id === selectedId) : undefined
+
+  // ── Selected vehicle's active route ───────────────────────────────────
+  const { data: activeRoute } = useQuery({
+    queryKey: ['routes', selectedId],
+    queryFn: () => routesAPI.list({ vehicle_id: selectedId }) as Promise<RouteRow[]>,
+    enabled: !!selectedId,
     refetchInterval: 10000,
-    select: (routes: any[]) => routes.filter(r => (r.status === 'active' || r.status === 'pending') && r.vehicle_id === selectedVehicleId)
+    select: (routes: RouteRow[]) =>
+      routes.find((r) => (r.status === 'active' || r.status === 'pending') && r.vehicle_id === selectedId) ?? null,
   })
-  const activeRoutesRef = useRef<any[]>([])
-  const lastRenderedRouteRef = useRef<string>('')
-  const lastRenderedDestRef = useRef<string>('')
-  useEffect(() => { 
-    // Ensure we don't hold onto a previous vehicle's route while React Query fetches the new one
-    if (activeRoutes && activeRoutes.length > 0 && activeRoutes[0].vehicle_id !== selectedVehicleId) {
-      activeRoutesRef.current = []
-    } else {
-      activeRoutesRef.current = activeRoutes || [] 
-    }
-  }, [activeRoutes, selectedVehicleId])
 
-  const customPendingStopsRef = useRef<any[] | undefined>()
-  useEffect(() => { customPendingStopsRef.current = customPendingStops }, [customPendingStops])
+  // New stops added mid-route show up without waiting for the next refetch.
+  useEffect(() => {
+    if (!selectedId) return
+    const channel = supabase
+      .channel(`map-route-stops-${selectedId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'route_stops' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['routes'] })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [selectedId, queryClient])
 
+  const pendingStops = useMemo(() => {
+    if (customPendingStops && customPendingStops.length > 0) return [...customPendingStops].sort(bySequence)
+    return (activeRoute?.route_stops ?? []).filter((s) => s.status === 'pending').sort(bySequence)
+  }, [customPendingStops, activeRoute])
+
+  const stops = useMemo<MapRouteStop[]>(() => pendingStops.flatMap((s, i) => {
+    const position = stopPosition(s)
+    return position
+      ? [{ id: s.id ?? `stop-${i}`, position, sequence: s.sequence ?? i + 1, status: s.status, label: stopLabel(s) }]
+      : []
+  }), [pendingStops])
+
+  // Road route from the vehicle through the stops. Refetched when the stops
+  // or the selected vehicle change, not on every GPS ping.
+  const [driving, setDriving] = useState<DrivingRoute | null>(null)
+  const vehiclePosRef = useRef<LatLng | null>(null)
+  vehiclePosRef.current = selectedVehicle?.position ?? null
+  const stopsRef = useRef(stops)
+  stopsRef.current = stops
+  const stopsKey = stops.map((s) => `${s.position.lat},${s.position.lng}`).join(';')
+  const hasVehiclePosition = Boolean(selectedVehicle)
+
+  useEffect(() => {
+    setDriving(null)
+    const start = vehiclePosRef.current
+    const waypoints = stopsRef.current.map((s) => s.position)
+    if (!start || waypoints.length === 0) return
+    const controller = new AbortController()
+    fetchDrivingRoute([start, ...waypoints], controller.signal)
+      .then((result) => { if (!controller.signal.aborted) setDriving(result) })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) console.warn('Could not fetch the road route', err)
+      })
+    return () => controller.abort()
+    // Keyed on stopsKey (not positions) so a moving vehicle does not trigger a refetch.
+  }, [selectedId, stopsKey, hasVehiclePosition])
+
+  const route = useMemo<MapRoute | null>(() => {
+    if (stops.length === 0) return null
+    const start = selectedVehicle ? [[selectedVehicle.position.lng, selectedVehicle.position.lat] as [number, number]] : []
+    if (driving) return { coordinates: [...start, ...driving.coordinates], stops }
+    const straight = [...start, ...stops.map((s) => [s.position.lng, s.position.lat] as [number, number])]
+    return { coordinates: straight, stops, planned: true }
+  }, [stops, driving, selectedVehicle])
+
+  // ── Open marketplace loads ────────────────────────────────────────────
   const { data: openLoads } = useQuery({
     queryKey: ['marketplace_loads'],
-    queryFn: () => marketplaceAPI.openLoads(),
+    queryFn: () => marketplaceAPI.openLoads() as Promise<{ loads?: OpenLoad[] }>,
     refetchInterval: 15000,
+    enabled: !compact,
   })
+  const loadPoints = useMemo<MapPoint[]>(() => compact ? [] : (openLoads?.loads ?? []).flatMap((l) =>
+    l.origin_lat != null && l.origin_lng != null
+      ? [{
+          id: `load-${l.id}`,
+          kind: 'load' as const,
+          position: { lat: Number(l.origin_lat), lng: Number(l.origin_lng) },
+          label: `Open load${l.origin_name ? ` from ${l.origin_name}` : ''}${l.weight_kg ? `, ${l.weight_kg} kg` : ''}`,
+        }]
+      : []), [openLoads, compact])
 
-  // Only zoom when explicitly requested via zoomFocusEvent
-  const lastZoomEvent = useRef<number | undefined>();
+  // ── Camera: fly to the selected vehicle on request ────────────────────
+  const lastZoomEvent = useRef<number | undefined>()
   useEffect(() => {
-    if (!selectedVehicleId || !_mapInstance || !zoomFocusEvent) return
-    if (lastZoomEvent.current === zoomFocusEvent) return;
-    lastZoomEvent.current = zoomFocusEvent;
-    
-    // Prioritize LIVE position from Websocket
-    const liveTarget = targetPositions.current[selectedVehicleId]
-    if (liveTarget && liveTarget.lat && liveTarget.lng) {
-      _mapInstance.flyTo({ center: [liveTarget.lng, liveTarget.lat], zoom: 16, duration: 2000 })
-      return
-    }
+    if (!zoomFocusEvent || lastZoomEvent.current === zoomFocusEvent) return
+    lastZoomEvent.current = zoomFocusEvent
+    if (selectedVehicle) mapRef.current?.flyTo(selectedVehicle.position, 16)
+  }, [zoomFocusEvent, selectedVehicle])
 
-    // Fallback to DB position
-    const v = vehicles.find(v => v.id === selectedVehicleId)
-    if (v && v.latitude && v.longitude) {
-      _mapInstance.flyTo({ center: [v.longitude, v.latitude], zoom: 16, duration: 2000 })
-    }
-  }, [zoomFocusEvent, selectedVehicleId, vehicles])
-
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
-
-  // Use refs for animation state to avoid re-renders
-  const targetPositions = useRef<Record<string, { lat: number, lng: number, speed: number, fuel?: number }>>({})
-  const currentPositions = useRef<Record<string, { lat: number, lng: number }>>({})
-  const dirtyFlags = useRef<Record<string, boolean>>({})
-  const animCancelers = useRef<Record<string, () => void>>({})
-
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!searchQuery || !_mapInstance) return
-
-    setIsSearching(true)
-    try {
-      const resp = await axios.get(
-        `${import.meta.env.VITE_MAPBOX_GEOCODING_URL}/${encodeURIComponent(searchQuery)}.json`,
-        {
-          params: {
-            access_token: MAPBOX_TOKEN,
-            country: 'IN',
-            limit: 1,
-            types: 'place,locality,address'
-          }
-        }
-      )
-
-      if (resp.data?.features?.length > 0) {
-        const [lng, lat] = resp.data.features[0].center
-        _mapInstance.flyTo({ center: [lng, lat], zoom: 12, duration: 2500 })
-      }
-    } catch (err) {
-      console.error('Search failed', err)
-    } finally {
-      setIsSearching(false)
-    }
+  const handleSelect = (id: string) => {
+    if (id.startsWith('load-')) return
+    setClickedId(id)
+    onVehicleSelect?.(id)
   }
 
-  const vehiclesRef = useRef(vehicles)
-  useEffect(() => {
-    vehiclesRef.current = vehicles
-  }, [vehicles])
-
-  // ── Direct Supabase GPS Polling (Guaranteed Fallback) ──
-  // Polls Supabase every 5s for fresh coordinates
-  // This guarantees the map always shows the latest GPS position
-  useEffect(() => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const { data } = await supabase
-          .from('vehicles')
-          .select('id, latitude, longitude, status, last_heartbeat')
-        
-        if (data) {
-          for (const v of data) {
-            if (v.latitude && v.longitude) {
-              const current = currentPositions.current[v.id]
-              
-              // Only trigger if we moved significantly (avoid jitter if WS is also handling it)
-              if (current && (Math.abs(current.lat - v.latitude) > 0.0001 || Math.abs(current.lng - v.longitude) > 0.0001)) {
-                targetPositions.current[v.id] = {
-                  lat: v.latitude,
-                  lng: v.longitude,
-                  speed: v.status === 'on_route' ? 30 : 0,
-                  fuel: targetPositions.current[v.id]?.fuel
-                }
-                
-                // Trigger animation if not already animating
-                if (!animCancelers.current?.[v.id]) {
-                  const animCancelersRef = animCancelers.current || {};
-                  animCancelersRef[v.id] = animateMarkerAlongRoute({
-                    startCoord: [current.lng, current.lat],
-                    endCoord: [v.longitude, v.latitude],
-                    duration: 2000,
-                    onTick: (coord) => {
-                      currentPositions.current[v.id] = { lng: coord[0], lat: coord[1] }
-                      dirtyFlags.current[v.id] = true
-                    }
-                  })
-                }
-              } else if (!current) {
-                currentPositions.current[v.id] = { lat: v.latitude, lng: v.longitude }
-                if (dirtyFlags.current) dirtyFlags.current[v.id] = true;
-              }
-            }
-          }
-        }
-      } catch (_e) {
-        // Silent fail — other paths will keep working
-      }
-    }, 5000)
-
-    return () => clearInterval(pollInterval)
-  }, [])
-
-  useEffect(() => {
-    const ws: any = null
-    let realtimeChannel: any = null
-    let waypointChannel: any = null
-    let lastRouteSetTime = 0
-
-    if (!mapRef.current || _mapInstance) return
-    const map = new mapboxgl.Map({
-      container: mapRef.current!,
-      style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      center: MAP_DEFAULTS.CENTER,
-      zoom: MAP_DEFAULTS.ZOOM,
-      minZoom: MAP_DEFAULTS.MIN_ZOOM,
-      maxZoom: MAP_DEFAULTS.MAX_ZOOM,
-      attributionControl: false,
-    })
-
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
-
-    map.on('load', () => {
-      // Add GeoJSON source for trucks
-      map.addSource('trucks', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: []
-        },
-        cluster: true,
-        clusterMaxZoom: 10,
-        clusterRadius: 50
-      })
-
-      // Heatmap layer
-      map.addLayer({ id: 'truck-heat', type: 'heatmap', source: 'trucks', maxzoom: 9, paint: { 'heatmap-weight': 1, 'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 3], 'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(234,179,8,0)', 0.2, 'rgba(234,179,8,0.2)', 0.4, 'rgba(234,179,8,0.4)', 0.6, 'rgba(234,179,8,0.7)', 0.8, 'rgba(234,179,8,0.9)', 1, '#EAB308'], 'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 9, 20], 'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 1, 9, 0] } })
-      
-      // Active Route (Line)
-      map.addSource('active-route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-      map.addLayer({
-        id: 'active-route-line-glow', type: 'line', source: 'active-route',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#8B5CF6', 'line-width': 8, 'line-opacity': 0.3 }
-      })
-      map.addLayer({
-        id: 'active-route-line', type: 'line', source: 'active-route',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#8B5CF6', 'line-width': 4 }
-      })
-
-      // Geofence (Polygon)
-      map.addSource('geofence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-      map.addLayer({
-        id: 'geofence-fill', type: 'fill', source: 'geofence',
-        paint: { 'fill-color': '#10B981', 'fill-opacity': 0.15 }
-      })
-      map.addLayer({
-        id: 'geofence-line', type: 'line', source: 'geofence',
-        paint: { 'line-color': '#10B981', 'line-width': 2 }
-      })
-
-      // Destination (Icon)
-      map.addSource('destination', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-      map.addLayer({
-        id: 'destination-point-glow', type: 'circle', source: 'destination',
-        paint: { 'circle-color': '#8B5CF6', 'circle-radius': 14, 'circle-opacity': 0.3 }
-      })
-      map.addLayer({
-        id: 'destination-point', type: 'circle', source: 'destination',
-        paint: { 'circle-color': '#8B5CF6', 'circle-radius': 8, 'circle-stroke-width': 3, 'circle-stroke-color': '#FFFFFF' }
-      })
-
-      // Marketplace Loads (Open Jobs)
-      map.addSource('marketplace-loads', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-      map.addLayer({
-        id: 'marketplace-loads-circle', type: 'circle', source: 'marketplace-loads',
-        paint: { 'circle-color': '#A855F7', 'circle-radius': 10, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF' }
-      })
-      map.addLayer({
-        id: 'marketplace-loads-label', type: 'symbol', source: 'marketplace-loads',
-        layout: { 'text-field': '🔥', 'text-size': 12, 'text-allow-overlap': true }
-      })
-      
-      // Cluster Circle layer
-      map.addLayer({ id: 'clusters', type: 'circle', source: 'trucks', filter: ['has', 'point_count'], paint: { 'circle-color': '#0F172A', 'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 50, 40], 'circle-stroke-width': 2, 'circle-stroke-color': '#EAB308' } })
-      
-      // Cluster Count layer
-      map.addLayer({ id: 'cluster-count', type: 'symbol', source: 'trucks', filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count'], 'text-size': 12, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#ffffff' } })
-      
-      // Map Interactions
-      map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer' })
-      map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = '' })
-      map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer' })
-      map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = '' })
-
-      map.on('click', 'clusters', async (e) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] })
-        const clusterId = features[0].properties?.cluster_id
-        try {
-          const zoom = await (map.getSource('trucks') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(clusterId)
-          if (typeof zoom === 'number') {
-            map.easeTo({ center: (features[0].geometry as any).coordinates, zoom })
-          }
-        } catch (_err) {
-          // ignore error
-        }
-      })
-
-      map.on('click', 'unclustered-point', (e) => {
-        const props = e.features?.[0]?.properties
-        if (!props) return
-        
-        const coords = (e.features?.[0]?.geometry as any).coordinates
-        const v_id = props.id
-
-        if (onVehicleSelect) {
-          onVehicleSelect(v_id)
-        }
-
-        const target = targetPositions.current[v_id]
-        
-        new mapboxgl.Popup({ closeButton: false, anchor: 'bottom', maxWidth: '300px', className: 'truck-popup' })
-          .setLngLat(coords)
-          .setHTML(`
-            <div class="bg-surface text-text p-4 rounded-2xl border border-border shadow-2xl font-sans min-w-[200px]">
-              <div class="flex items-center justify-between mb-3 border-b border-border pb-2">
-                <span class="text-xs font-black uppercase text-yellow-500 tracking-tighter">${props.plate}</span>
-                <span class="text-[10px] uppercase font-bold text-muted">${props.emoji}</span>
-              </div>
-              <div class="space-y-2">
-                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted">
-                  <span>LIVE SPEED</span>
-                  <span class="text-text">${target?.speed?.toFixed(0) || 0} KM/H</span>
-                </div>
-                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted">
-                  <span>FUEL PROBE</span>
-                  <span class="text-text">${target?.fuel?.toFixed(1) || '--'}%</span>
-                </div>
-              </div>
-              <div class="mt-4 pt-2 flex gap-2">
-                 <div class="px-3 py-1 bg-surface2 rounded-lg text-[8px] font-black uppercase text-muted tracking-tighter">TELEMETRY: SYNCED</div>
-                 <div class="px-3 py-1 bg-yellow-500/10 rounded-lg text-[8px] font-black uppercase text-yellow-500 tracking-tighter">OP STATUS: ${props.status}</div>
-              </div>
-            </div>
-          `)
-          .addTo(map)
-      })
-
-      // Helper to generate Mapbox Image from Emoji dynamically
-      const addEmojiIcon = (name: string, emoji: string) => {
-        if (map.hasImage(name)) return;
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.font = '48px Arial';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(emoji, 32, 36); // Slight offset for vertical centering
-          map.addImage(name, ctx.getImageData(0, 0, 64, 64));
-        }
-      };
-
-      // Individual Truck Icons (Emoji rendered as Image to preserve colors)
-      map.addLayer({ 
-        id: 'unclustered-point', 
-        type: 'symbol', 
-        source: 'trucks', 
-        filter: ['!', ['has', 'point_count']], 
-        layout: { 
-          'icon-image': ['get', 'icon_name'], 
-          'icon-size': 0.7, 
-          'icon-allow-overlap': true,
-        } 
-      })
-
-      
-      // ── Supabase Realtime (PRIMARY path — direct from driver app GPS) ──
-      // This is the Ola/Uber-style pipeline: Driver GPS → Supabase cloud → Dashboard
-      realtimeChannel = supabase
-        .channel('vehicle-gps-live')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'vehicles' },
-          (payload: any) => {
-            const data = payload.new;
-            if (!data) return;
-            
-            // If vehicle status changes, force React Query to update the Dashboard sidebar immediately
-            if (['INSERT', 'UPDATE', 'DELETE'].includes(payload.eventType)) {
-              queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-            }
-            
-            const { id, latitude, longitude, status } = data;
-            
-            if (latitude && longitude) {
-              console.log(`🛰️ LIVE GPS: Vehicle ${id} → ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
-              
-              const current = currentPositions.current[id]
-              if (!current) {
-                currentPositions.current[id] = { lat: latitude, lng: longitude }
-                dirtyFlags.current[id] = true
-              } else {
-                // Cancel existing animation for this vehicle
-                if (animCancelers.current[id]) animCancelers.current[id]()
-                
-                const route = id === selectedVehicleIdRef.current ? (fetchedRouteGeometryRef.current as [number, number][] | undefined) : undefined;
-                
-                animCancelers.current[id] = animateMarkerAlongRoute({
-                  startCoord: [current.lng, current.lat],
-                  endCoord: [longitude, latitude],
-                  routeCoords: route,
-                  duration: 2000,
-                  onTick: (coord) => {
-                    currentPositions.current[id] = { lng: coord[0], lat: coord[1] }
-                    dirtyFlags.current[id] = true
-                  }
-                })
-              }
-
-              targetPositions.current[id] = {
-                lat: latitude,
-                lng: longitude,
-                speed: status === 'on_route' ? 30 : 0,
-                fuel: targetPositions.current[id]?.fuel
-              }
-            }
-          }
-        )
-        .subscribe()
-
-      // Listen for dynamic waypoint additions (mid-route fills)
-      waypointChannel = supabase
-        .channel('map-waypoints')
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'route_stops' },
-          (payload: any) => {
-             console.log('📍 New Waypoint Injected Live:', payload.new)
-             queryClient.invalidateQueries({ queryKey: ['routes'] })
-          }
-        )
-        .subscribe()
-
-      let lastVehiclesRef: any[] = []; // Initialize to empty array to FORCE update on first frame!
-
-      // Smooth Animation Loop (Master Render)
-      const animate = () => {
-        const source = map.getSource('trucks') as mapboxgl.GeoJSONSource
-        if (!source) {
-          intervalRef.current = requestAnimationFrame(animate)
-          return
-        }
-
-        let needsUpdate = false;
-
-        if (lastVehiclesRef !== vehiclesRef.current) {
-          needsUpdate = true;
-          lastVehiclesRef = vehiclesRef.current;
-        }
-
-        const features = vehiclesRef.current.flatMap((v) => {
-          // Only plot vehicles with a real position (stored or live); never place them at made-up spots
-          if (!currentPositions.current[v.id]) {
-             if (v.latitude == null || v.longitude == null) return []
-             currentPositions.current[v.id] = { lat: v.latitude, lng: v.longitude }
-             dirtyFlags.current[v.id] = true
-          }
-
-          const primaryCargo = v.cargo_types?.[0] || 'general'
-          const cargoEmoji = CARGO_EMOJI[primaryCargo] || ''
-          const vehicleEmoji = VEHICLE_EMOJI[v.vehicle_type || 'truck'] || '🚛'
-          const combinedEmoji = `${vehicleEmoji}${cargoEmoji}`
-          const iconName = `emoji-${combinedEmoji}`
-          
-          if (!map.hasImage(iconName)) {
-            addEmojiIcon(iconName, combinedEmoji)
-          }
-          
-          if (dirtyFlags.current[v.id]) {
-             needsUpdate = true;
-             dirtyFlags.current[v.id] = false; // Reset flag after picking it up
-          }
-
-          const current = currentPositions.current[v.id]
-
-          return {
-            type: 'Feature' as const,
-            geometry: { type: 'Point' as const, coordinates: [current.lng, current.lat] },
-            properties: { 
-              id: v.id, status: v.status, plate: v.plate_number,
-              emoji: combinedEmoji,
-              icon_name: iconName,
-              color: STATUS_COLORS[v.status] || '#94a3b8'
-            }
-          }
-        })
-
-        if (needsUpdate) {
-          source.setData({ type: 'FeatureCollection', features })
-        }
-        
-        const routeSource = map.getSource('active-route') as mapboxgl.GeoJSONSource
-        const geofenceSource = map.getSource('geofence') as mapboxgl.GeoJSONSource
-        const destSource = map.getSource('destination') as mapboxgl.GeoJSONSource
-        
-        if (routeSource && geofenceSource && destSource) {
-           const routes = activeRoutesRef.current
-           const customStops = customPendingStopsRef.current
-           const selectedId = selectedVehicleIdRef.current
-           const vPos = selectedId ? currentPositions.current[selectedId] : null
-           
-           if (selectedId && vPos) {
-              let pendingStops: any[] = []
-              if (customStops && customStops.length > 0) {
-                pendingStops = customStops
-              } else if (routes && routes.length > 0) {
-                pendingStops = (routes[0].route_stops || []).filter((s: any) => s.status === 'pending').sort((a: any, b: any) => a.sequence - b.sequence)
-              }
-              
-              if (pendingStops.length > 0) {
-                 const coords = [[vPos.lng, vPos.lat]]
-                 const destFeatures: any[] = []
-                 const geofenceFeatures: any[] = []
-                 
-                 for (let i = 0; i < pendingStops.length; i++) {
-                   const dp = pendingStops[i].delivery_points
-                   const destLat = Array.isArray(dp) ? dp[0]?.latitude : dp?.latitude
-                   const destLng = Array.isArray(dp) ? dp[0]?.longitude : dp?.longitude
-                   
-                   if (destLat && destLng) {
-                     coords.push([destLng, destLat])
-                     destFeatures.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [destLng, destLat] }, properties: { stopIdx: i + 1 } })
-                     if (i === 0) {
-                       geofenceFeatures.push(createGeoJSONCircle([destLng, destLat], 0.05))
-                     }
-                   }
-                 }
-                 
-                 if (coords.length > 1) {
-                   // If Mapbox fetched geometry is available, use it! Otherwise fallback to straight lines
-                   const mbRoute = fetchedRouteGeometryRef.current;
-                   let lineCoords = coords;
-                   if (mbRoute && mbRoute.length > 0) {
-                     // Connect current live position to the start of the fetched Mapbox road path
-                     lineCoords = [[vPos.lng, vPos.lat], ...mbRoute];
-                   }
-                   
-                   const routeString = JSON.stringify(lineCoords)
-                   const now = performance.now()
-                   if (lastRenderedRouteRef.current !== routeString && (now - lastRouteSetTime > 200)) {
-                     lastRouteSetTime = now
-                     lastRenderedRouteRef.current = routeString
-                     routeSource.setData({
-                        type: 'FeatureCollection',
-                        features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: lineCoords }, properties: {} }]
-                     })
-                   }
-                   
-                   const destString = JSON.stringify(destFeatures)
-                   if (lastRenderedDestRef.current !== destString) {
-                     lastRenderedDestRef.current = destString
-                     geofenceSource.setData({
-                        type: 'FeatureCollection',
-                        features: geofenceFeatures
-                     })
-                     destSource.setData({
-                        type: 'FeatureCollection',
-                        features: destFeatures
-                     })
-                   }
-                 }
-              } else {
-                 if (lastRenderedRouteRef.current !== 'empty') {
-                   lastRenderedRouteRef.current = 'empty'
-                   lastRenderedDestRef.current = 'empty'
-                   routeSource.setData({ type: 'FeatureCollection', features: [] })
-                   geofenceSource.setData({ type: 'FeatureCollection', features: [] })
-                   destSource.setData({ type: 'FeatureCollection', features: [] })
-                 }
-              }
-           } else {
-              if (lastRenderedRouteRef.current !== 'empty') {
-                lastRenderedRouteRef.current = 'empty'
-                lastRenderedDestRef.current = 'empty'
-                routeSource.setData({ type: 'FeatureCollection', features: [] })
-                geofenceSource.setData({ type: 'FeatureCollection', features: [] })
-                destSource.setData({ type: 'FeatureCollection', features: [] })
-              }
-           }
-        }
-
-        intervalRef.current = requestAnimationFrame(animate)
-      }
-
-      animate()
-    })
-
-    _mapInstance = map
-
-    return () => {
-      cancelAnimationFrame(intervalRef.current!)
-      if (ws) ws.close()
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel)
-      if (waypointChannel) supabase.removeChannel(waypointChannel)
-      _mapInstance?.remove()
-      _mapInstance = null
-    }
-  }, []) // Empty dependency array ensures we only initialize the Map once!
-
-  useEffect(() => {
-    if (!_mapInstance || !openLoads?.loads) return
-    const map = _mapInstance
-    const source = map.getSource('marketplace-loads') as mapboxgl.GeoJSONSource
-    if (source) {
-      const features = openLoads.loads.filter((l: any) => l.origin_lat && l.origin_lng).map((l: any) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [l.origin_lng, l.origin_lat] },
-        properties: { id: l.id, name: l.origin_name, weight: l.weight_kg }
-      }))
-      source.setData({ type: 'FeatureCollection', features })
-    }
-  }, [openLoads])
-
-  const fetchedRouteGeometryRef = useRef<number[][] | null>(null);
-  const currentFetchedVehicleRef = useRef<string | null>(null);
-  const [liveETA, setLiveETA] = useState<number | null>(null);
-  const [liveDistance, setLiveDistance] = useState<number | null>(null);
-
-  useEffect(() => {
-    const fetchRouteGeometry = async () => {
-      if (!selectedVehicleId) {
-        fetchedRouteGeometryRef.current = null;
-        currentFetchedVehicleRef.current = null;
-        setLiveETA(null);
-        setLiveDistance(null);
-        return;
-      }
-
-      // If the vehicle changed, clear the old route geometry immediately
-      if (currentFetchedVehicleRef.current !== selectedVehicleId) {
-        fetchedRouteGeometryRef.current = null;
-        setLiveETA(null);
-        setLiveDistance(null);
-        currentFetchedVehicleRef.current = selectedVehicleId;
-      }
-
-      let pendingStops: any[] = [];
-      if (customPendingStops && customPendingStops.length > 0) {
-        pendingStops = customPendingStops;
-      } else if (activeRoutes && activeRoutes.length > 0) {
-        pendingStops = (activeRoutes[0].route_stops || []).filter((s: any) => s.status === 'pending').sort((a: any, b: any) => a.sequence - b.sequence);
-      }
-      
-      if (pendingStops.length === 0) {
-        console.log('LiveMap: No pending stops found for route', activeRoutes);
-        fetchedRouteGeometryRef.current = null;
-        setLiveETA(null);
-        setLiveDistance(null);
-        return;
-      }
-
-      console.log('LiveMap: Pending stops found', pendingStops);
-
-      const vPos = currentPositions.current[selectedVehicleId];
-      const coords: [number, number][] = [];
-      
-      // Fallback to vehicle db position if no live pos yet
-      if (vPos) {
-        coords.push([vPos.lng, vPos.lat]);
-      } else {
-        const v = vehicles.find(v => v.id === selectedVehicleId);
-        if (v && v.longitude && v.latitude) coords.push([v.longitude, v.latitude]);
-      }
-
-      for (const stop of pendingStops) {
-        const dp = stop.delivery_points;
-        const lat = Array.isArray(dp) ? dp[0]?.latitude : dp?.latitude;
-        const lng = Array.isArray(dp) ? dp[0]?.longitude : dp?.longitude;
-        if (lat && lng) coords.push([Number(lng), Number(lat)]);
-      }
-
-      if (coords.length < 2) {
-        fetchedRouteGeometryRef.current = null;
-        setLiveETA(null);
-        setLiveDistance(null);
-        return;
-      }
-      
-      const limitedCoords = coords.slice(0, 25);
-      const coordsString = limitedCoords.map(c => `${c[0]},${c[1]}`).join(';');
-      
-      try {
-        const res = await axios.get(
-          `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordsString}?overview=full&geometries=geojson&access_token=${MAPBOX_TOKEN}`
-        );
-        if (res.data.routes && res.data.routes.length > 0) {
-          const routeData = res.data.routes[0];
-          fetchedRouteGeometryRef.current = routeData.geometry.coordinates;
-          setLiveETA(routeData.duration);
-          setLiveDistance(routeData.distance);
-        }
-      } catch (e) {
-        console.error('Failed to fetch route geometry:', e);
-        fetchedRouteGeometryRef.current = null;
-        setLiveETA(null);
-        setLiveDistance(null);
-      }
-    };
-
-    fetchRouteGeometry();
-  }, [activeRoutes, selectedVehicleId, vehicles]);
+  const remainingStops = (activeRoute?.route_stops ?? []).filter((s) => s.status === 'pending').length
 
   return (
-    <div className="relative w-full h-full bg-surface2 rounded-[28px] overflow-hidden border border-border shadow-2xl">
-      {/* Pan-India Search Bar */}
-      {MAPBOX_TOKEN && MAPBOX_TOKEN !== 'your_mapbox_token_here' && (
-        <form 
-          onSubmit={handleSearch}
-          className="absolute top-6 left-6 z-20 w-64 md:w-80 group"
-        >
-          <div className="relative">
-            <input 
-              type="text"
-              placeholder="Search Pan-India Locations..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-12 bg-surface/90 backdrop-blur-md border border-border rounded-2xl px-12 text-xs font-bold text-text placeholder:text-muted focus:outline-none focus:border-yellow-500/50 transition-all shadow-2xl"
-            />
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-yellow-500 transition-colors">
-              {isSearching ? <Navigation size={14} className="animate-pulse" /> : <Search size={14} />}
-            </div>
-            {searchQuery && (
-              <button 
-                type="button" 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-text"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        </form>
-      )}
-
-      {/* Active Route Info Overlay */}
-      {selectedVehicleId && activeRoutes && activeRoutes.length > 0 && (
-        <div className="absolute top-6 right-6 z-20 w-72 bg-surface/90 backdrop-blur-md border border-blue-500/50 rounded-2xl p-4 shadow-2xl shadow-blue-500/10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Active Mission</span>
-          </div>
-          <div className="text-sm font-bold text-text truncate mb-1">
-            {activeRoutes[0].name || `Route ${activeRoutes[0].id.slice(0, 8)}`}
-          </div>
-          <div className="flex gap-4 text-[10px] font-bold text-muted uppercase tracking-tighter">
-            <div>Stops: <span className="text-text">{activeRoutes[0].route_stops?.filter((s:any) => s.status==='pending').length || 0} rem</span></div>
-            <div>Status: <span className="text-blue-400">{activeRoutes[0].status}</span></div>
-          </div>
-          {(liveETA !== null || liveDistance !== null) && (
-            <div className="flex gap-4 text-[10px] font-bold text-muted uppercase tracking-tighter mt-2 pt-2 border-t border-border">
-              {liveETA !== null && <div>Live ETA: <span className="text-green-500">{formatEta(liveETA / 60)}</span></div>}
-              {liveDistance !== null && <div>Dist: <span className="text-text">{(liveDistance / 1000).toFixed(1)} km</span></div>}
-            </div>
+    <MapView
+      ref={mapRef}
+      mode={mode}
+      vehicles={mapVehicles}
+      route={route}
+      points={loadPoints}
+      selectedId={selectedId}
+      onSelect={handleSelect}
+      flyToSelected={false}
+      showLegend={!compact}
+      className={className}
+      ariaLabel="Live fleet map"
+    >
+      {!compact && (
+        <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
+          <PlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 12)} />
+          {selectedId && activeRoute && (
+            <section aria-label="Active route" className="rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
+              <p className="truncate font-medium text-text">{activeRoute.name || `Route ${activeRoute.id.slice(0, 8)}`}</p>
+              <p className="mt-1 text-xs text-muted">
+                {remainingStops} {remainingStops === 1 ? 'stop' : 'stops'} left · {activeRoute.status === 'active' ? 'Active' : 'Pending'}
+              </p>
+              {driving && (
+                <p className="mt-1 text-xs text-muted">
+                  Arrives in <span className="font-medium text-text">{formatEta(driving.durationSeconds / 60)}</span>
+                  {' · '}
+                  <span className="tabular">{(driving.distanceMeters / 1000).toFixed(1)} km</span> to go
+                </p>
+              )}
+            </section>
           )}
         </div>
       )}
+    </MapView>
+  )
+}
 
-      <div ref={mapRef} className="w-full h-full min-h-[400px]" />
-      
-      {/* Legend / Overlay */}
-      <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2 p-4 rounded-2xl bg-surface/80 backdrop-blur-md border border-border shadow-2xl">
-         <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase text-text/80 tracking-widest">Active Corridors</span>
-         </div>
-          <div className="flex gap-4 mt-2">
-            {[
-              { label: 'Moving', color: STATUS_COLORS.on_route },
-              { label: 'Parked', color: STATUS_COLORS.available },
-              { label: 'Open Load', color: '#A855F7' },
-            ].map(l => (
-              <div key={l.label} className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: l.color }} />
-                <span className="text-[8px] font-bold text-muted uppercase">{l.label}</span>
-              </div>
-            ))}
-         </div>
+/** Search box that moves the map to a place in India. */
+function PlaceSearch({ onFound }: { onFound: (position: LatLng) => void }) {
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [notFound, setNotFound] = useState(false)
+  const inputId = useId()
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!query.trim()) return
+    setSearching(true)
+    setNotFound(false)
+    try {
+      const [first] = await suggestPlaces(query)
+      const place = first ? await resolvePlace(first) : null
+      if (place) onFound({ lat: place.lat, lng: place.lng })
+      else setNotFound(true)
+    } catch (err) {
+      console.warn('Place search failed', err)
+      setNotFound(true)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  return (
+    <form role="search" onSubmit={submit}>
+      <label htmlFor={inputId} className="sr-only">Search for a place</label>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+          {searching ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Search size={16} aria-hidden />}
+        </span>
+        <input
+          id={inputId}
+          type="search"
+          placeholder="Search for a place"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setNotFound(false) }}
+          className="h-control w-full rounded-control border border-border bg-surface pl-9 pr-9 text-sm text-text shadow-raised placeholder:text-muted focus:border-brand focus:outline-none"
+        />
+        {query && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={() => { setQuery(''); setNotFound(false) }}
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted hover:text-text"
+          >
+            <X size={14} aria-hidden />
+          </button>
+        )}
       </div>
-
-
-    </div>
+      {notFound && <p role="status" className="mt-1 rounded-control bg-surface px-2 py-1 text-xs text-muted shadow-raised">No place found for “{query}”.</p>}
+    </form>
   )
 }

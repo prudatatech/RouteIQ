@@ -1,51 +1,114 @@
-// Map Configuration Constants
-export const INDIA_POSITIONS: { lng: number; lat: number; city: string }[] = [
-  { lng: 77.2090, lat: 28.6139, city: 'Delhi' },
-  { lng: 72.8777, lat: 19.0760, city: 'Mumbai' },
-  { lng: 80.2707, lat: 13.0827, city: 'Chennai' },
-  { lng: 88.3639, lat: 22.5726, city: 'Kolkata' },
-  { lng: 77.5946, lat: 12.9716, city: 'Bangalore' },
-  { lng: 78.4867, lat: 17.3850, city: 'Hyderabad' },
-  { lng: 73.8567, lat: 18.5204, city: 'Pune' },
-  { lng: 75.7873, lat: 26.9124, city: 'Jaipur' },
-  { lng: 72.5714, lat: 23.0225, city: 'Ahmedabad' },
-  { lng: 85.8245, lat: 20.2961, city: 'Bhubaneswar' },
-]
+import tokens from '@/theme/tokens.json'
 
-export const STATUS_COLORS: Record<string, string> = {
-  on_route:    '#F9C935',
-  available:   '#10b981',
-  idle:        '#94a3b8',
-  maintenance: '#f59e0b',
-  offline:     '#ef4444',
-  gps_off:     '#ef4444',
+/**
+ * Map settings shared by every map in the app (see components/map/MapView).
+ *
+ * The base map is the Carto Positron vector style served from /map-style.json.
+ * It needs no access token. A Mapbox token is optional and only used for
+ * driving directions; without it routes are drawn as straight lines.
+ */
+
+/** Base map style. Local copy of Carto Positron (no token needed). */
+export const MAP_STYLE_URL = '/map-style.json'
+
+const envNumber = (value: string | undefined, fallback: number): number => {
+  const n = Number(value)
+  return value !== undefined && value !== '' && Number.isFinite(n) ? n : fallback
 }
 
-export const CARGO_COLORS: Record<string, string> = {
-  general:    '#F9C935', // Yellow
-  cold_chain: '#3b82f6', // Blue
-  hazardous:  '#f97316', // Orange
-}
-
-export const CARGO_EMOJI: Record<string, string> = {
-  general:    '📦',
-  cold_chain: '❄️',
-  hazardous:  '⚠️',
-}
-
-export const VEHICLE_EMOJI: Record<string, string> = {
-  truck: '🚛',
-  van:   '🚐',
-  bike:  '🏍️',
-  car:   '🚗',
-}
-
+/** Default view: all of India. Override with VITE_MAP_CENTER_LNG/LAT and VITE_MAP_ZOOM. */
 export const MAP_DEFAULTS = {
   CENTER: [
-    Number(import.meta.env.VITE_MAP_CENTER_LNG || 81.0),
-    Number(import.meta.env.VITE_MAP_CENTER_LAT || 22.5)
+    envNumber(import.meta.env.VITE_MAP_CENTER_LNG, 81.0),
+    envNumber(import.meta.env.VITE_MAP_CENTER_LAT, 22.5),
   ] as [number, number],
-  ZOOM: Number(import.meta.env.VITE_MAP_ZOOM || 4.2),
+  ZOOM: envNumber(import.meta.env.VITE_MAP_ZOOM, 4.2),
   MIN_ZOOM: 3,
-  MAX_ZOOM: 16,
+  MAX_ZOOM: 18,
+}
+
+/** Mapbox token for driving directions, or null when it is missing or still the placeholder. */
+export const MAPBOX_TOKEN: string | null = (() => {
+  const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
+  if (!token || /^your_mapbox_token/i.test(token)) return null
+  return token
+})()
+
+/* ── Colours ────────────────────────────────────────────────────────────── */
+
+/** Colour roles used on maps. Each maps to a theme token. */
+export type MapTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'muted' | 'brand'
+
+interface ToneStyle {
+  /** Tailwind background class for DOM markers. */
+  bg: string
+  /** Raw colour for GL paint properties (lines, fills), which cannot read CSS variables. */
+  color: string
+}
+
+const c = tokens.color
+
+export const MAP_TONES: Record<MapTone, ToneStyle> = {
+  success: { bg: 'bg-success', color: c.success },
+  warning: { bg: 'bg-warning', color: c.warning },
+  danger: { bg: 'bg-danger', color: c.danger },
+  info: { bg: 'bg-info', color: c.info },
+  neutral: { bg: 'bg-neutral', color: c.neutral },
+  muted: { bg: 'bg-disabled', color: c.textDisabled },
+  brand: { bg: 'bg-brand', color: c.accent },
+}
+
+/** Colours for GL layers (route line, geofences). */
+export const MAP_COLORS = {
+  route: c.accent,
+  routeCasing: c.surface,
+  plannedRoute: c.neutral,
+}
+
+interface StatusStyle {
+  label: string
+  tone: MapTone
+}
+
+/**
+ * Vehicle status -> label and colour. This is the only place that decides
+ * how a vehicle status looks on a map.
+ */
+export const VEHICLE_STATUS: Record<string, StatusStyle> = {
+  on_route: { label: 'On route', tone: 'info' },
+  in_transit: { label: 'In transit', tone: 'info' },
+  active: { label: 'Active', tone: 'info' },
+  available: { label: 'Available', tone: 'success' },
+  idle: { label: 'Idle', tone: 'neutral' },
+  maintenance: { label: 'In maintenance', tone: 'warning' },
+  gps_off: { label: 'GPS off', tone: 'warning' },
+  offline: { label: 'Offline', tone: 'muted' },
+  archived: { label: 'Archived', tone: 'muted' },
+  sos: { label: 'SOS', tone: 'danger' },
+}
+
+const humanize = (value: string) => {
+  const text = value.replace(/[_-]+/g, ' ').trim()
+  return text ? text[0].toUpperCase() + text.slice(1).toLowerCase() : 'Unknown'
+}
+
+/** Label and tone for any vehicle status, including ones not listed above. */
+export function vehicleStatusStyle(status: string | null | undefined): StatusStyle {
+  const key = (status ?? '').toLowerCase()
+  return VEHICLE_STATUS[key] ?? { label: humanize(key), tone: 'neutral' }
+}
+
+/** Route stop status -> label and colour. */
+export const STOP_STATUS: Record<string, StatusStyle> = {
+  pending: { label: 'Pending', tone: 'neutral' },
+  arrived: { label: 'Arrived', tone: 'info' },
+  completed: { label: 'Completed', tone: 'success' },
+  delivered: { label: 'Delivered', tone: 'success' },
+  failed: { label: 'Failed', tone: 'danger' },
+  skipped: { label: 'Skipped', tone: 'muted' },
+}
+
+export function stopStatusStyle(status: string | null | undefined): StatusStyle {
+  const key = (status ?? 'pending').toLowerCase()
+  return STOP_STATUS[key] ?? { label: humanize(key), tone: 'neutral' }
 }

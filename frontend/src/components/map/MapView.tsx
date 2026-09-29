@@ -1,0 +1,338 @@
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import Map, {
+  FullscreenControl,
+  Layer,
+  NavigationControl,
+  Source,
+  type ErrorEvent,
+  type MapLayerMouseEvent,
+  type MapRef,
+} from 'react-map-gl/maplibre'
+import clsx from 'clsx'
+import { MAP_DEFAULTS, MAP_STYLE_URL } from '@/config/mapConfig'
+import {
+  GEOFENCE_SOURCE_ID,
+  ROUTE_SOURCE_ID,
+  contentBounds,
+  geofenceFeatures,
+  geofenceFillLayer,
+  geofenceLineLayer,
+  routeCasingLayer,
+  routeFeature,
+  routeLineLayer,
+  withValidPosition,
+} from './layers'
+import { PointMarker, StopMarker, VehicleMarker } from './markers'
+import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
+import type { LatLng, MapControls, MapFit, MapMode, MapViewHandle, MapViewProps } from './types'
+
+interface ModeDefaults {
+  fitTo: MapFit
+  flyToSelected: boolean
+  follow: boolean
+  controls: MapControls
+  showLegend: boolean
+}
+
+const MODE_DEFAULTS: Record<MapMode, ModeDefaults> = {
+  fleet: { fitTo: 'initial', flyToSelected: true, follow: false, controls: { zoom: true, fullscreen: true, recenter: true }, showLegend: true },
+  route: { fitTo: 'content', flyToSelected: false, follow: false, controls: { zoom: true, fullscreen: true, recenter: true }, showLegend: false },
+  incident: { fitTo: 'content', flyToSelected: true, follow: false, controls: { zoom: true, fullscreen: true, recenter: true }, showLegend: false },
+  tracking: { fitTo: 'initial', flyToSelected: false, follow: true, controls: { zoom: true, recenter: true }, showLegend: false },
+  picker: { fitTo: 'content', flyToSelected: false, follow: false, controls: { zoom: true }, showLegend: false },
+}
+
+/** Zoom used when there is a single thing to show, or when flying to a selection. */
+const FOCUS_ZOOM = 14
+/** Never zoom in further than this when fitting several things. */
+const FIT_MAX_ZOOM = 15
+/** Same as the marker glide, so the camera and the vehicle move together. */
+const FOLLOW_DURATION_MS = 1500
+/** If the style has not loaded by then, show an error instead of a blank box. */
+const LOAD_TIMEOUT_MS = 20000
+
+type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string; canRetry: boolean }
+
+let webglSupport: boolean | undefined
+
+/** Checked once per page; the probe context is released so it does not use up the browser's WebGL slots. */
+function webglAvailable(): boolean {
+  if (webglSupport !== undefined) return webglSupport
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl')
+    gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    webglSupport = Boolean(gl)
+  } catch {
+    webglSupport = false
+  }
+  return webglSupport
+}
+
+const WEBGL_MESSAGE =
+  'This browser or device cannot draw maps (WebGL is turned off or not supported). Try another browser, or turn on hardware acceleration.'
+const NETWORK_MESSAGE = 'The map could not be loaded. Check your internet connection and try again.'
+const SLOW_MESSAGE = 'The map is taking too long to load. Check your internet connection and try again.'
+
+/** Tile errors come with a sourceId or tile and are not fatal; style and WebGL errors are. */
+function isFatal(e: ErrorEvent): boolean {
+  const extra = e as ErrorEvent & { sourceId?: string; tile?: unknown }
+  return !extra.sourceId && !extra.tile
+}
+
+/**
+ * The one map component for the app. See README.md in this folder.
+ * Fills its parent (at least 320 px high) unless `height` is given.
+ */
+const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, ref) {
+  const {
+    mode = 'fleet',
+    route = null,
+    selectedId = null,
+    onSelect,
+    fitPadding = 48,
+    interactive = true,
+    showLabels = false,
+    onPick,
+    onPointMove,
+    initialCenter,
+    initialZoom,
+    pitch = 0,
+    height,
+    className,
+    ariaLabel = 'Map',
+    children,
+  } = props
+  const defaults = MODE_DEFAULTS[mode]
+  const fitTo = props.fitTo ?? defaults.fitTo
+  const flyToSelected = props.flyToSelected ?? defaults.flyToSelected
+  const follow = props.follow ?? defaults.follow
+  const controls = props.controls ?? defaults.controls
+  const showLegend = props.showLegend ?? defaults.showLegend
+
+  const vehicles = useMemo(() => withValidPosition(props.vehicles), [props.vehicles])
+  const points = useMemo(() => withValidPosition(props.points), [props.points])
+  const stops = useMemo(() => withValidPosition(route?.stops), [route?.stops])
+
+  const mapRef = useRef<MapRef>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [load, setLoad] = useState<LoadState>(() =>
+    webglAvailable() ? { status: 'loading' } : { status: 'error', message: WEBGL_MESSAGE, canRetry: false },
+  )
+  const ready = load.status === 'ready'
+
+  // Never leave a blank box: give up with a message if the style does not arrive.
+  useEffect(() => {
+    if (load.status !== 'loading') return
+    const timer = window.setTimeout(
+      () => setLoad({ status: 'error', message: SLOW_MESSAGE, canRetry: true }),
+      LOAD_TIMEOUT_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [load.status, attempt])
+
+  const handleError = useCallback((e: ErrorEvent) => {
+    console.warn('Map error', e.error)
+    if (!isFatal(e)) return
+    setLoad((current) => {
+      if (current.status === 'ready') return current // a late style error on a working map
+      return webglAvailable()
+        ? { status: 'error', message: NETWORK_MESSAGE, canRetry: true }
+        : { status: 'error', message: WEBGL_MESSAGE, canRetry: false }
+    })
+  }, [])
+
+  const retry = useCallback(() => {
+    setLoad({ status: 'loading' })
+    setAttempt((n) => n + 1)
+  }, [])
+
+  // Latest content, read by camera helpers without re-subscribing effects.
+  const content = useRef({ vehicles, points, route, stops })
+  content.current = { vehicles, points, route, stops }
+  const padding = useRef(fitPadding)
+  padding.current = fitPadding
+
+  const fitToContent = useCallback((animate: boolean) => {
+    const map = mapRef.current
+    if (!map) return
+    const { vehicles: v, points: p, route: r, stops: s } = content.current
+    const bounds = contentBounds(v, p, r ? { ...r, stops: s } : null)
+    const duration = animate ? 800 : 0
+    if (!bounds) {
+      map.easeTo({ center: MAP_DEFAULTS.CENTER, zoom: MAP_DEFAULTS.ZOOM, duration })
+      return
+    }
+    const [[minLng, minLat], [maxLng, maxLat]] = bounds
+    if (minLng === maxLng && minLat === maxLat) {
+      map.easeTo({ center: [minLng, minLat], zoom: FOCUS_ZOOM, padding: padding.current, duration })
+    } else {
+      map.fitBounds(bounds, { padding: padding.current, maxZoom: FIT_MAX_ZOOM, duration })
+    }
+  }, [])
+
+  const flyTo = useCallback((position: LatLng, zoom = FOCUS_ZOOM) => {
+    mapRef.current?.flyTo({ center: [position.lng, position.lat], zoom, duration: 1200 })
+  }, [])
+
+  // ── Fit to content ────────────────────────────────────────────────────
+  // Changes when things are added or removed, not when a vehicle just moves.
+  const signature = useMemo(() => [
+    vehicles.map((v) => v.id).sort().join(','),
+    points.map((p) => `${p.id}@${p.position.lat.toFixed(5)},${p.position.lng.toFixed(5)}`).sort().join(','),
+    stops.map((s) => s.id).join(','),
+    // Length and end only: a line that starts at a moving vehicle must not refit on every ping.
+    route?.coordinates.length ?? 0,
+    route?.coordinates[route.coordinates.length - 1]?.join(',') ?? '',
+  ].join('|'), [vehicles, points, stops, route?.coordinates])
+
+  const hasFitted = useRef(false)
+  useEffect(() => { hasFitted.current = false }, [attempt])
+  useEffect(() => {
+    if (!ready || fitTo === 'none') return
+    if (fitTo === 'initial' && hasFitted.current) return
+    const { vehicles: v, points: p, route: r, stops: s } = content.current
+    if (!contentBounds(v, p, r ? { ...r, stops: s } : null)) return
+    fitToContent(hasFitted.current)
+    hasFitted.current = true
+  }, [ready, signature, fitTo, fitToContent])
+
+  // ── Follow a vehicle ──────────────────────────────────────────────────
+  const followId =
+    typeof follow === 'string'
+      ? follow
+      : follow
+        ? (selectedId && vehicles.some((v) => v.id === selectedId) ? selectedId : vehicles.length === 1 ? vehicles[0].id : null)
+        : null
+  const followed = followId ? vehicles.find((v) => v.id === followId) : undefined
+  const [following, setFollowing] = useState(true)
+  const lastFollowed = useRef<{ id: string; key: string } | null>(null)
+
+  useEffect(() => {
+    if (!ready || !followed) return
+    const key = `${followed.position.lat},${followed.position.lng}`
+    const previous = lastFollowed.current
+    if (previous?.id === followed.id && previous.key === key) return
+    lastFollowed.current = { id: followed.id, key }
+    if (!previous) return // the first position is covered by the initial fit
+    if (previous.id !== followed.id) {
+      // Switched to another vehicle: go to it and follow it.
+      setFollowing(true)
+      mapRef.current?.flyTo({ center: [followed.position.lng, followed.position.lat], zoom: Math.max(mapRef.current.getZoom(), FOCUS_ZOOM), duration: 1200 })
+      return
+    }
+    if (following) {
+      mapRef.current?.easeTo({ center: [followed.position.lng, followed.position.lat], duration: FOLLOW_DURATION_MS })
+    }
+  }, [ready, followed, following])
+
+  const recenter = useCallback(() => {
+    if (followed) {
+      setFollowing(true)
+      flyTo(followed.position, Math.max(mapRef.current?.getZoom() ?? FOCUS_ZOOM, FOCUS_ZOOM))
+    } else {
+      fitToContent(true)
+    }
+  }, [followed, flyTo, fitToContent])
+
+  // ── Fly to the selection ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!ready || !flyToSelected || !selectedId) return
+    const { vehicles: v, points: p } = content.current
+    const target = v.find((x) => x.id === selectedId)?.position ?? p.find((x) => x.id === selectedId)?.position
+    if (target) flyTo(target, Math.max(mapRef.current?.getZoom() ?? 0, FOCUS_ZOOM))
+  }, [ready, flyToSelected, selectedId, flyTo])
+
+  useImperativeHandle(ref, () => ({ flyTo, fitToContent: () => fitToContent(true) }), [flyTo, fitToContent])
+
+  // ── Picking ───────────────────────────────────────────────────────────
+  const handleClick = useCallback((e: MapLayerMouseEvent) => {
+    if (!onPick) return
+    const target = e.originalEvent.target
+    if (target instanceof Element && target.closest('.maplibregl-marker')) return
+    onPick({ lat: e.lngLat.lat, lng: e.lngLat.lng })
+  }, [onPick])
+
+  const line = route ? routeFeature({ ...route, stops }) : null
+  // A line built from stops alone is a straight-line estimate, so draw it dashed.
+  const planned = Boolean(route?.planned) || (route?.coordinates.length ?? 0) < 2
+  const geofences = useMemo(() => geofenceFeatures(points), [points])
+  const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
+  const center = initialCenter ?? { lng: MAP_DEFAULTS.CENTER[0], lat: MAP_DEFAULTS.CENTER[1] }
+
+  return (
+    <div
+      role="region"
+      aria-label={ariaLabel}
+      className={clsx('relative w-full overflow-hidden bg-surface-subtle', height === undefined && 'h-full min-h-80', className)}
+      style={height !== undefined ? { height } : undefined}
+    >
+      {load.status !== 'error' || load.canRetry ? (
+        <Map
+          key={attempt}
+          ref={mapRef}
+          mapStyle={MAP_STYLE_URL}
+          initialViewState={{ longitude: center.lng, latitude: center.lat, zoom: initialZoom ?? MAP_DEFAULTS.ZOOM, pitch }}
+          minZoom={MAP_DEFAULTS.MIN_ZOOM}
+          maxZoom={MAP_DEFAULTS.MAX_ZOOM}
+          attributionControl={{ compact: true }}
+          interactive={interactive}
+          cursor={onPick ? 'crosshair' : undefined}
+          style={{ position: 'absolute', inset: 0 }}
+          onLoad={() => setLoad({ status: 'ready' })}
+          onError={handleError}
+          onClick={onPick ? handleClick : undefined}
+          onDragStart={() => setFollowing(false)}
+        >
+          {interactive && controls.recenter && <RecenterButton onClick={recenter} />}
+          {interactive && controls.zoom && <NavigationControl position="top-right" showCompass={pitch > 0} />}
+          {interactive && controls.fullscreen && <FullscreenControl position="top-right" />}
+
+          {geofences.features.length > 0 && (
+            <Source id={GEOFENCE_SOURCE_ID} type="geojson" data={geofences}>
+              <Layer {...geofenceFillLayer} />
+              <Layer {...geofenceLineLayer} />
+            </Source>
+          )}
+
+          {line && (
+            <Source id={ROUTE_SOURCE_ID} type="geojson" data={line}>
+              {!planned && <Layer {...routeCasingLayer} />}
+              <Layer {...routeLineLayer(planned)} />
+            </Source>
+          )}
+
+          {stops.map((s) => <StopMarker key={s.id} stop={s} />)}
+
+          {points.map((p) => (
+            <PointMarker
+              key={p.id}
+              point={p}
+              selected={p.id === selectedId}
+              onSelect={onSelect}
+              onMove={onPointMove}
+            />
+          ))}
+
+          {vehicles.map((v) => (
+            <VehicleMarker
+              key={v.id}
+              vehicle={v}
+              selected={v.id === selectedId}
+              showLabel={showLabels}
+              route={v.id === selectedId || v.id === followId ? routeForVehicle : undefined}
+              onSelect={onSelect}
+            />
+          ))}
+        </Map>
+      ) : null}
+
+      {ready && showLegend && <StatusLegend vehicles={vehicles} />}
+      {children}
+      {load.status === 'loading' && <MapLoading />}
+      {load.status === 'error' && <MapError message={load.message} onRetry={load.canRetry ? retry : undefined} />}
+    </div>
+  )
+})
+
+export default MapView
