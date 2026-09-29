@@ -64,6 +64,9 @@ export default tseslint.config(
       'src/pages/ShipmentManifestPage.tsx',
       'src/components/modals/AddShipmentModal.tsx',
       'src/components/shipments/**/*.{ts,tsx}',
+      'src/pages/RoutesPage.tsx',
+      'src/pages/RouteDetailsPage.tsx',
+      'src/pages/OptimizePage.tsx',
     ],
     plugins: { design },
     rules: {

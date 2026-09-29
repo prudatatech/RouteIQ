@@ -18,7 +18,6 @@ import OptimizePage from '@/pages/OptimizePage'
 import UsersPage from '@/pages/admin/UsersPage'
 import KycReviewPage from '@/pages/admin/KycReviewPage'
 import AuditLogPage from '@/pages/admin/AuditLogPage'
-import AIHubPage from '@/pages/AIHubPage'
 import CargoNetworkPage from '@/pages/CargoNetworkPage'
 import ShipmentsPage from '@/pages/ShipmentsPage'
 import ShipmentManifestPage from '@/pages/ShipmentManifestPage'
@@ -323,11 +322,8 @@ export default function App() {
                 <TplVerificationPage />
               </PrivateRoute>
             } />
-            <Route path="ai-hub" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <AIHubPage />
-              </PrivateRoute>
-            } />
+            {/* AI Hub is retired; its reroute suggestions moved to Route optimization. */}
+            <Route path="ai-hub" element={<MovedTo to="/optimize" />} />
             <Route path="backhaul" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <CargoNetworkPage />

@@ -1,347 +1,518 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Zap, Play, CheckCircle, Activity, CloudRain, Cpu, Navigation, Map } from 'lucide-react'
+import { Check, Navigation, RotateCw, Sparkles } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { formatEta } from '@/utils/timeFormat'
-import { optimizationAPI, vehiclesAPI, routesAPI, api } from '@/services/api'
-import LiveMap from '@/components/map/LiveMap'
-import toast from 'react-hot-toast'
-import clsx from 'clsx'
+import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
+import {
+  Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Stat,
+  EmptyState, LoadingState, Alert,
+} from '@/components/ui'
 
-// Solvers the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS)
+// Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
-  { value: 'ortools', label: 'Google OR-Tools', desc: 'Constraint programming' },
-  { value: 'ga', label: 'Genetic Algorithm', desc: 'Evolutionary algorithm' },
-]
+  { value: 'ortools', label: 'OR-Tools', description: 'Constraint programming solver' },
+  { value: 'ga', label: 'Genetic algorithm', description: 'Evolutionary search' },
+] as const
 
-// Names for the algorithm the backend reports it ran, including its greedy fallback
+// Names for the algorithm the backend reports it ran, including its greedy fallback.
 const ALGORITHM_LABELS: Record<string, string> = {
   ortools: 'OR-Tools',
-  ga: 'Genetic',
+  ga: 'Genetic algorithm',
   greedy: 'Greedy (fallback)',
+}
+
+interface Vehicle {
+  id: string
+  plate_number?: string | null
+  status: string
+  latitude?: number | null
+  longitude?: number | null
+}
+
+interface DeliveryPoint {
+  id: string
+  name?: string | null
+  address?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}
+
+interface Shipment {
+  id: string
+  tracking_id?: string | null
+  total_weight_kg?: number | null
+  weight_kg?: number | null
+  delivery_points?: DeliveryPoint[] | null
+}
+
+interface OptimizedRouteStop {
+  delivery_point_id?: string | null
+  sequence?: number
+  status?: string | null
+}
+
+interface OptimizedRoute {
+  id?: string
+  vehicle_id?: string | null
+  total_distance_km?: number | null
+  total_duration_minutes?: number | null
+  estimated_fuel_liters?: number | null
+  stops?: OptimizedRouteStop[] | null
+  stop_ids?: string[] | null
+  vehicles?: { plate_number?: string | null; latitude?: number | null; longitude?: number | null; status?: string | null } | null
+  route_stops?: { id?: string; sequence: number; status?: string | null; delivery_points?: DeliveryPoint | DeliveryPoint[] | null }[] | null
+}
+
+interface OptimizeResult {
+  routes?: OptimizedRoute[]
+  total_distance_km?: number
+  total_fuel_liters?: number
+  estimated_savings_pct?: number | null
+  solve_time_seconds?: number
+  algorithm?: string
+  message?: string
+  new_eta_minutes?: number
+}
+
+interface RerouteSuggestion {
+  id: string
+  vehicle_id: string
+  route_id: string
+  new_sequence: string[]
+  saved_mins: number
+  insight: string
 }
 
 export default function OptimizePage() {
   const queryClient = useQueryClient()
-  const location = useLocation()
-  const _navigate = useNavigate()
+  const location = useLocation() as { state?: { routeId?: string } }
+  const navigate = useNavigate()
   const routeIdToReoptimize = location.state?.routeId
-  
-  const [algo, setAlgo] = useState('ortools')
-  const [traffic, setTraffic] = useState(true)
-  const [weather, setWeather] = useState(true)
-  const [solveTime, setSolveTime] = useState(30)
 
-  // Fetch depots
-  const { data: depots = [] } = useQuery({
-    queryKey: ['depots'],
-    queryFn: () => api.get('/depots/').then(r => r.data),
-  })
-  const depotId: string = depots[0]?.id ?? ''
+  const [algorithm, setAlgorithm] = useState<'ortools' | 'ga'>('ortools')
+  const [considerTraffic, setConsiderTraffic] = useState(true)
+  const [considerWeather, setConsiderWeather] = useState(true)
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set())
+  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string>>(new Set())
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
 
-  // Fetch vehicles
-  const { data: vehicles = [] } = useQuery({
-    queryKey: ['vehicles', 'available', 'idle', 'on_route', 'offline'],
-    queryFn: () => vehiclesAPI.list({ limit: 50 }).then((list: any[]) =>
-      list.filter((v: any) => ['available', 'idle', 'on_route', 'offline'].includes(v.status))
-    )
+  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<Vehicle[]>({
+    queryKey: ['vehicles', 'optimizable'],
+    queryFn: () => vehiclesAPI.list({ limit: 100 }).then((list: Vehicle[]) =>
+      list.filter(v => ['available', 'idle', 'on_route', 'offline'].includes(v.status)),
+    ),
   })
 
-  // Fetch pending shipments (Cargo Manifest)
-  const { data: pendingStops = [] } = useQuery({
+  const { data: pendingShipments = [], isLoading: shipmentsLoading } = useQuery<Shipment[]>({
     queryKey: ['shipments', 'pending'],
-    queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: any) => s.status === 'created' && !s.vehicle_id))
+    queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: Shipment & { status: string; vehicle_id?: string | null }) => s.status === 'created' && !s.vehicle_id)),
   })
+
+  // Every vehicle and shipment is available to pick from; default to all selected
+  // so a first run behaves like before, but the operator can narrow it down.
+  const effectiveVehicleIds = selectedVehicleIds.size > 0 ? selectedVehicleIds : new Set(vehicles.map(v => v.id))
+  const effectiveShipmentIds = selectedShipmentIds.size > 0 ? selectedShipmentIds : new Set(pendingShipments.map(s => s.id))
+
+  const toggleVehicle = (id: string) => {
+    setSelectedVehicleIds(prev => {
+      const base = prev.size > 0 ? prev : new Set(vehicles.map(v => v.id))
+      const next = new Set(base)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleShipment = (id: string) => {
+    setSelectedShipmentIds(prev => {
+      const base = prev.size > 0 ? prev : new Set(pendingShipments.map(s => s.id))
+      const next = new Set(base)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const deliveryPointById = useMemo(() => {
+    const map = new Map<string, DeliveryPoint>()
+    for (const s of pendingShipments) for (const dp of s.delivery_points ?? []) map.set(dp.id, dp)
+    return map
+  }, [pendingShipments])
+
+  const vehicleById = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles])
 
   const [error, setError] = useState<string | null>(null)
-  
-  const { mutate: runOptimization, data: result, isPending } = useMutation({
+
+  const { mutate: runOptimization, data: result, isPending, reset } = useMutation<OptimizeResult>({
     mutationFn: async () => {
       setError(null)
       if (routeIdToReoptimize) {
-        const startedAt = performance.now();
-        const reoptData = await optimizationAPI.reoptimizeRoute(routeIdToReoptimize);
-        const routeData = await routesAPI.get(routeIdToReoptimize);
-        
-        const fallbackDistance = reoptData.new_distance_km || getRouteDistance(routeData);
-        const fallbackEta = reoptData.new_eta_minutes || getRouteDuration(routeData, fallbackDistance);
-        const estimatedDistance = fallbackDistance;
-        const estimatedFuel = reoptData.estimated_fuel_liters || getRouteFuel(routeData, fallbackDistance);
-        const savedMins = reoptData.saved_minutes || 0;
+        const startedAt = performance.now()
+        const reoptData = await optimizationAPI.reoptimizeRoute(routeIdToReoptimize)
+        const routeData = await routesAPI.get(routeIdToReoptimize)
 
-        const enrichedRouteData = {
-          ...routeData,
-          total_duration_minutes: fallbackEta,
-          total_distance_km: estimatedDistance,
-          estimated_fuel_liters: estimatedFuel,
-          stop_ids: routeData.route_stops || routeData.stop_ids || [],
-        };
-
-        // Savings only when the solver reports them; re-optimisation does not use the traffic/weather toggles
-        const finalSavingsPct = savedMins > 0 ? (savedMins / Math.max(1, fallbackEta + savedMins)) * 100 : null;
+        const distance = reoptData.new_distance_km || getRouteDistance(routeData)
+        const duration = reoptData.new_eta_minutes || getRouteDuration(routeData, distance)
+        const fuel = reoptData.estimated_fuel_liters || getRouteFuel(routeData, distance)
+        const savedMins = reoptData.saved_minutes || 0
+        // Re-optimisation does not use the traffic/weather toggles; savings are only shown when the solver reports them.
+        const savingsPct = savedMins > 0 ? (savedMins / Math.max(1, duration + savedMins)) * 100 : null
 
         return {
-          routes: [enrichedRouteData],
-          total_distance_km: estimatedDistance,
-          total_fuel_liters: estimatedFuel,
-          estimated_savings_pct: finalSavingsPct,
+          routes: [{ ...routeData, total_duration_minutes: duration, total_distance_km: distance, estimated_fuel_liters: fuel }],
+          total_distance_km: distance,
+          total_fuel_liters: fuel,
+          estimated_savings_pct: savingsPct,
           solve_time_seconds: (performance.now() - startedAt) / 1000,
           message: reoptData.message,
-          new_eta_minutes: fallbackEta,
-        };
+          new_eta_minutes: duration,
+        }
       }
-      const payload = {
-        depot_id: depotId || undefined,
-        vehicle_ids: vehicles.slice(0, 5).map((v: any) => v.id),
-        shipment_ids: pendingStops.slice(0, 20).map((s: any) => s.id),
-        algorithm: algo,
-        consider_traffic: traffic,
-        consider_weather: weather,
-        max_solve_time_seconds: solveTime,
-      };
-      console.log('Sending Optimization Payload:', payload);
-      return optimizationAPI.optimize(payload);
+      return optimizationAPI.optimize({
+        vehicle_ids: [...effectiveVehicleIds],
+        shipment_ids: [...effectiveShipmentIds],
+        algorithm,
+        consider_traffic: considerTraffic,
+        consider_weather: considerWeather,
+        max_solve_time_seconds: 30,
+      })
     },
     onSuccess: (data) => {
       if (routeIdToReoptimize) {
-        toast.success(data.message || 'Route successfully re-optimized')
+        toast.success(data.message || 'Route re-optimized')
         queryClient.invalidateQueries({ queryKey: ['route', routeIdToReoptimize] })
       } else {
-        toast.success(`Optimized ${data.routes?.length ?? 0} routes in ${(data.solve_time_seconds || 0).toFixed(2)}s`)
+        toast.success(`Optimized ${data.routes?.length ?? 0} route${data.routes?.length === 1 ? '' : 's'} in ${(data.solve_time_seconds || 0).toFixed(1)}s`)
         queryClient.invalidateQueries({ queryKey: ['routes'] })
+        queryClient.invalidateQueries({ queryKey: ['shipments'] })
       }
     },
     onError: (err: any) => {
-      console.error('OPTIMIZATION ERROR:', err, err.response?.data);
       const msg = err.response?.data?.detail
-      setError(Array.isArray(msg) ? msg.map((e: any) => e.msg).join(', ') : (msg || 'Optimization failed'))
-      toast.error(`Optimization failed: ${err.message || 'Check resource availability'}`)
+      setError(Array.isArray(msg) ? msg.map((e: any) => e.msg).join(', ') : (msg || err.message || 'Optimization failed'))
     },
   })
 
-  const canOptimize = (vehicles.length > 0 && pendingStops.length > 0) || !!routeIdToReoptimize
+  const canOptimize = !!routeIdToReoptimize || (effectiveVehicleIds.size > 0 && effectiveShipmentIds.size > 0)
+
+  // ── Suggestions panel: reroute suggestions the ML service has already found ──
+  const { data: insights = [], isLoading: insightsLoading } = useQuery<any[]>({
+    queryKey: ['ai-insights'],
+    queryFn: () => analyticsAPI.insights(),
+    refetchInterval: 15_000,
+  })
+  const suggestions: RerouteSuggestion[] = insights
+    .filter((i: any) => i.type === 'reroute_suggestion' && !dismissedSuggestions.has(i.id))
+    .map((i: any) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight }))
+
+  const { data: activeVehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: ['vehicles', 'active-for-suggestions'],
+    queryFn: () => vehiclesAPI.list({ limit: 100 }).then((list: Vehicle[]) => list.filter(v => v.status === 'on_route')),
+  })
+
+  const applySuggestion = useMutation({
+    mutationFn: (s: RerouteSuggestion) => routesAPI.reroute(s.route_id, s.new_sequence),
+    onSuccess: (_data, s) => {
+      toast.success('Reroute applied')
+      setDismissedSuggestions(prev => new Set(prev).add(s.id))
+      queryClient.invalidateQueries({ queryKey: ['ai-insights'] })
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not apply the reroute'),
+  })
+
+  const checkVehicle = useMutation({
+    mutationFn: (vehicleId: string) => optimizationAPI.incubate(vehicleId),
+    onSuccess: (data: any) => {
+      if (data.status === 'suggested') toast.success(data.message)
+      else toast(data.message, { icon: 'ℹ️' })
+      queryClient.invalidateQueries({ queryKey: ['ai-insights'] })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not check this vehicle'),
+  })
+
+  // ── Map: the optimized routes' actual stops, not the raw shipment list ──
+  const mapVehicles: MapVehicle[] = useMemo(() => {
+    if (!result?.routes?.length) {
+      return vehicles.flatMap(v => v.latitude != null && v.longitude != null
+        ? [{ id: v.id, label: v.plate_number || v.id.slice(0, 8), status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
+        : [])
+    }
+    return result.routes.flatMap((r, i) => {
+      if (r.vehicles?.latitude != null && r.vehicles?.longitude != null) {
+        return [{ id: r.vehicle_id ?? `route-${i}`, label: r.vehicles.plate_number || 'Vehicle', status: r.vehicles.status ?? 'on_route', position: { lat: r.vehicles.latitude, lng: r.vehicles.longitude } }]
+      }
+      const v = r.vehicle_id ? vehicleById.get(r.vehicle_id) : undefined
+      return v?.latitude != null && v?.longitude != null
+        ? [{ id: v.id, label: v.plate_number || v.id.slice(0, 8), status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
+        : []
+    })
+  }, [result, vehicles, vehicleById])
+
+  const mapStops: MapRouteStop[] = useMemo(() => {
+    if (!result?.routes?.length) {
+      return pendingShipments.flatMap(s => {
+        const dp = s.delivery_points?.[0]
+        return dp?.latitude != null && dp?.longitude != null
+          ? [{ id: s.id, sequence: 0, label: dp.name || dp.address || s.tracking_id || undefined, position: { lat: dp.latitude, lng: dp.longitude } }]
+          : []
+      })
+    }
+    return result.routes.flatMap(r => {
+      // Re-optimize result: full route_stops with nested delivery points already loaded.
+      if (r.route_stops?.length) {
+        return [...r.route_stops]
+          .sort((a, b) => a.sequence - b.sequence)
+          .flatMap((s, i) => {
+            const dp = Array.isArray(s.delivery_points) ? s.delivery_points[0] : s.delivery_points
+            return dp?.latitude != null && dp?.longitude != null
+              ? [{ id: s.id ?? `${i}`, sequence: i + 1, status: s.status ?? undefined, label: dp.name || dp.address || undefined, position: { lat: dp.latitude, lng: dp.longitude } }]
+              : []
+          })
+      }
+      // Freshly optimized result: stops reference delivery_point_id only.
+      if (r.stops?.length) {
+        return r.stops.flatMap((s, i) => {
+          const dp = s.delivery_point_id ? deliveryPointById.get(s.delivery_point_id) : undefined
+          return dp?.latitude != null && dp?.longitude != null
+            ? [{ id: s.delivery_point_id as string, sequence: i + 1, status: s.status ?? undefined, label: dp.name || dp.address || undefined, position: { lat: dp.latitude, lng: dp.longitude } }]
+            : []
+        })
+      }
+      return []
+    })
+  }, [result, pendingShipments, deliveryPointById])
 
   return (
-    <div className="h-[calc(100vh-100px)] flex flex-col space-y-6">
-      {/* Title Header */}
-      <div className="relative p-8 rounded-[2.5rem] bg-surface border border-border overflow-hidden shadow-2xl shrink-0">
-        <div className="absolute top-0 right-0 p-8">
-          <Navigation className="w-24 h-24 text-primary/10 animate-pulse" />
-        </div>
-        <div className="relative z-10">
-          <h1 className="text-3xl font-black text-text uppercase tracking-tight leading-none mb-2">
-            AI Route Grid
-          </h1>
-          <p className="text-xs text-text-muted font-bold tracking-[0.2em] uppercase max-w-2xl">
-            Intelligent fleet dispatch. Currently evaluating <b>{vehicles.length}</b> vehicles and <b>{pendingStops.length}</b> shipments.
-          </p>
-        </div>
-      </div>
+    <Page>
+      <PageHeader
+        title="Route optimization"
+        description={routeIdToReoptimize
+          ? `Re-optimizing route ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
+          : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} pending shipments.`}
+      />
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
-        
-        {/* Left Pane: Config & Actions */}
-        <div className="lg:col-span-4 flex flex-col space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-          
-          <div className="p-6 rounded-[2rem] bg-surface border border-border shadow-xl">
-            <h2 className="text-sm font-black text-text uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Cpu className="text-primary" size={18} />
-              Solver Core
-            </h2>
-
-            <div className="space-y-3 mb-8">
-              {ALGORITHM_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setAlgo(opt.value)}
-                  className={clsx(
-                    "w-full text-left p-4 rounded-2xl border transition-all flex items-start gap-4",
-                    algo === opt.value 
-                      ? "bg-primary/10 border-primary/30" 
-                      : "bg-background border-border hover:border-primary/20 hover:bg-surface-hover"
-                  )}
-                >
-                  <div className={clsx(
-                    "w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 transition-colors",
-                    algo === opt.value ? "border-primary bg-primary" : "border-muted bg-transparent"
-                  )} />
-                  <div>
-                    <div className={clsx("text-sm font-bold uppercase tracking-wider", algo === opt.value ? "text-primary" : "text-text")}>
-                      {opt.label}
-                    </div>
-                    <div className="text-[10px] text-text-muted uppercase tracking-widest mt-1">
-                      {opt.desc}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <h2 className="text-sm font-black text-text uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Activity className="text-accent-secondary" size={18} />
-              Live Telemetry Multipliers
-            </h2>
-
-            <div className="space-y-4 mb-8">
-              {[
-                { label: 'Real-time Traffic', value: traffic, set: setTraffic, desc: 'Mappls Traffic API', icon: Map },
-                { label: 'Weather Conditions', value: weather, set: setWeather, desc: 'OpenWeather Maps', icon: CloudRain },
-              ].map(({ label, value, set, desc, icon: Icon }) => (
-                <div key={label} className="flex items-center justify-between p-4 rounded-2xl bg-background border border-border">
-                  <div className="flex items-center gap-3">
-                    <Icon className="text-text-muted" size={16} />
-                    <div>
-                      <div className="text-xs font-bold text-text uppercase tracking-wider">{label}</div>
-                      <div className="text-[9px] text-text-muted uppercase tracking-widest mt-1">{desc}</div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => set(!value)}
-                    className={clsx(
-                      "w-10 h-6 rounded-full relative transition-colors duration-300",
-                      value ? "bg-primary" : "bg-muted"
-                    )}
-                  >
-                    <div className={clsx(
-                      "absolute top-1 w-4 h-4 rounded-full bg-background transition-all duration-300 shadow-sm",
-                      value ? "left-5" : "left-1"
-                    )} />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-xs font-bold text-text-muted uppercase tracking-wider">Max Solve Time</label>
-                <span className="font-mono text-xs text-primary font-bold">{solveTime}s</span>
-              </div>
-              <input
-                type="range" min={5} max={300} value={solveTime}
-                onChange={e => setSolveTime(+e.target.value)}
-                className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            {routeIdToReoptimize && (
-              <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-6 flex items-start gap-3">
-                <Navigation className="text-blue-400 shrink-0 mt-0.5" size={16} />
-                <div>
-                  <div className="text-xs font-bold text-blue-400 uppercase tracking-wider">Re-routing Active Route</div>
-                  <div className="text-[10px] text-blue-400/80 uppercase tracking-widest mt-1">
-                    Applying solver core telemetry to Route {routeIdToReoptimize.slice(0, 8)}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!canOptimize && !isPending && !routeIdToReoptimize && (
-              <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 mb-6 flex items-start gap-3">
-                <Zap className="text-red-400 shrink-0 mt-0.5" size={16} />
-                <div>
-                  <div className="text-xs font-bold text-red-400 uppercase tracking-wider">Insufficient Resources</div>
-                  <div className="text-[10px] text-red-400/80 uppercase tracking-widest mt-1">
-                    {vehicles.length === 0 ? 'No vehicles available.' : ''} {pendingStops.length === 0 ? 'No shipments.' : ''}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={() => runOptimization()}
-              disabled={isPending || !canOptimize}
-              className="w-full h-12 bg-primary hover:bg-primary-dark disabled:opacity-50 text-slate-950 text-xs font-black uppercase rounded-xl tracking-widest transition-all flex items-center justify-center gap-3"
-            >
-              <Play size={16} className={clsx("fill-current", isPending && "animate-pulse")} />
-              {isPending ? 'Generating Routes...' : (routeIdToReoptimize ? 'Re-optimize Route' : 'Initialize Dispatch AI')}
-            </button>
-            
-            {error && (
-              <div className="mt-4 text-xs text-red-400 font-bold text-center">
-                {error}
-              </div>
-            )}
-          </div>
-          
-        </div>
-
-        {/* Right Pane: Map & Results */}
-        <div className="lg:col-span-8 flex flex-col space-y-6">
-          <div className="h-[400px] rounded-[2rem] overflow-hidden border border-border shadow-2xl relative bg-black/20">
-            <LiveMap vehicles={vehicles} customPendingStops={pendingStops} />
-            
-            <div className="absolute top-4 left-4 z-10">
-              <div className="bg-surface/80 backdrop-blur-md border border-border/50 p-3 rounded-2xl shadow-xl flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                <span className="text-xs font-bold uppercase tracking-widest text-text">Mappls Network Active</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 bg-surface border border-border rounded-[2rem] p-6 shadow-xl flex flex-col">
-            <h2 className="text-sm font-black text-text uppercase tracking-widest mb-6 flex items-center gap-2">
-              <CheckCircle className="text-green-500" size={18} />
-              Route Assignments
-            </h2>
-            
-            {!result ? (
-               <div className="flex-1 flex flex-col items-center justify-center text-text-muted opacity-50">
-                 <Navigation size={48} className="mb-4" />
-                 <p className="text-xs font-bold uppercase tracking-widest">Awaiting AI Dispatch Generation</p>
-               </div>
-            ) : (
-              <div className="flex flex-col space-y-6 overflow-y-auto custom-scrollbar pr-2">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 shrink-0">
-                  {[
-                    { label: 'Active Routes', value: result.routes?.length ?? 0 },
-                    { label: 'Total Distance', value: `${(result.total_distance_km || 0).toFixed(1)} km` },
-                    { label: 'ETA', value: formatEta(result.new_eta_minutes || result.routes?.[0]?.total_duration_minutes || 0) },
-                    { label: 'Estimated Fuel', value: `${(result.total_fuel_liters || 0).toFixed(1)} L` },
-                    { label: 'Network Savings', value: result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—' },
-                    { label: 'Traffic Logic', value: result.traffic_anomaly || '—' },
-                    ...(result.algorithm ? [{ label: 'Algorithm Used', value: ALGORITHM_LABELS[result.algorithm] ?? result.algorithm }] : []),
-                  ].map(({ label, value }) => (
-                    <div key={label} className="p-4 rounded-2xl bg-background border border-border">
-                      <div className="text-xl font-black text-primary font-mono">{value}</div>
-                      <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-2">{label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="space-y-4">
-                  {(result.routes ?? []).map((r: any, i: number) => (
-                    <div key={r.id ?? i} className="p-4 rounded-2xl bg-background border border-border flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-black">
-                          #{i + 1}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-text uppercase tracking-widest">
-                            Vehicle {(r.vehicles?.plate_number || r.vehicle_id || '').toString().slice(0,12)}
-                          </div>
-                          <div className="text-[10px] text-text-muted uppercase tracking-widest mt-1">
-                            {r.stop_ids?.length || 0} Assignments • Origin Depot
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-[10px] font-black uppercase tracking-widest">
-                          {formatEta(r.total_duration_minutes || 0)}
-                        </span>
-                        <span className="px-3 py-1 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full text-[10px] font-black uppercase tracking-widest">
-                          {(r.total_distance_km || 0).toFixed(1)} km
-                        </span>
-                      </div>
-                    </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Configuration */}
+        <div className="space-y-6 lg:col-span-4">
+          {!routeIdToReoptimize && (
+            <Card padded className="space-y-5">
+              <div>
+                <h2 className="mb-2 text-sm font-medium text-text">Algorithm</h2>
+                <div role="radiogroup" aria-label="Algorithm" className="space-y-2">
+                  {ALGORITHM_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={algorithm === opt.value}
+                      onClick={() => setAlgorithm(opt.value)}
+                      className={`flex w-full items-start gap-3 rounded-control border px-3 py-2.5 text-left transition-colors ${
+                        algorithm === opt.value ? 'border-brand bg-brand-soft' : 'border-border hover:bg-surface-subtle'
+                      }`}
+                    >
+                      <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${algorithm === opt.value ? 'border-brand' : 'border-border-strong'}`}>
+                        {algorithm === opt.value && <span className="h-2 w-2 rounded-full bg-brand-fill" />}
+                      </span>
+                      <span>
+                        <span className="block text-sm font-medium text-text">{opt.label}</span>
+                        <span className="block text-xs text-muted">{opt.description}</span>
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
+
+              <div className="space-y-2 border-t border-border pt-4">
+                <Checkbox label="Consider real-time traffic" checked={considerTraffic} onChange={e => setConsiderTraffic(e.target.checked)} />
+                <Checkbox label="Consider weather conditions" checked={considerWeather} onChange={e => setConsiderWeather(e.target.checked)} />
+              </div>
+
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-text">Vehicles</h2>
+                  <span className="text-xs text-muted">{effectiveVehicleIds.size} of {vehicles.length} selected</span>
+                </div>
+                {vehiclesLoading ? <LoadingState label="Loading vehicles…" /> : vehicles.length === 0 ? (
+                  <EmptyState compact title="No vehicles available" />
+                ) : (
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-control border border-border p-2">
+                    {vehicles.map(v => (
+                      <Checkbox
+                        key={v.id}
+                        label={v.plate_number || v.id.slice(0, 8)}
+                        checked={effectiveVehicleIds.has(v.id)}
+                        onChange={() => toggleVehicle(v.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-text">Shipments</h2>
+                  <span className="text-xs text-muted">{effectiveShipmentIds.size} of {pendingShipments.length} selected</span>
+                </div>
+                {shipmentsLoading ? <LoadingState label="Loading shipments…" /> : pendingShipments.length === 0 ? (
+                  <EmptyState compact title="No pending shipments" description="Every shipment already has a vehicle." />
+                ) : (
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-control border border-border p-2">
+                    {pendingShipments.map(s => (
+                      <Checkbox
+                        key={s.id}
+                        label={s.tracking_id || s.id.slice(0, 8)}
+                        checked={effectiveShipmentIds.has(s.id)}
+                        onChange={() => toggleShipment(s.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {!canOptimize && !isPending && (
+            <Alert tone="warning" title="Nothing to optimize">
+              {vehicles.length === 0 ? 'No vehicles are available. ' : ''}
+              {pendingShipments.length === 0 ? 'There are no pending shipments.' : ''}
+            </Alert>
+          )}
+
+          <Button
+            variant="primary"
+            fullWidth
+            icon={<Navigation size={16} />}
+            loading={isPending}
+            disabled={!canOptimize}
+            onClick={() => { reset(); runOptimization() }}
+          >
+            {isPending ? 'Optimizing…' : routeIdToReoptimize ? 'Re-optimize route' : 'Run optimization'}
+          </Button>
+          {routeIdToReoptimize && (
+            <Button variant="ghost" fullWidth onClick={() => navigate('/optimize', { replace: true })}>
+              Start a new optimization instead
+            </Button>
+          )}
+
+          {error && (
+            <Alert tone="danger" title="Optimization failed">{error}</Alert>
+          )}
         </div>
 
+        {/* Map + result */}
+        <div className="space-y-6 lg:col-span-8">
+          <Card className="overflow-hidden">
+            <div className="h-80">
+              <MapView mode="route" vehicles={mapVehicles} route={{ coordinates: [], stops: mapStops }} ariaLabel="Optimization map" />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Result" />
+            <CardBody>
+              {isPending ? (
+                <LoadingState label="Running the solver…" />
+              ) : !result ? (
+                <EmptyState compact title="No result yet" description="Run an optimization to see routes here." />
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    <Stat label="Routes" value={(result.routes?.length ?? 0).toLocaleString('en-IN')} />
+                    <Stat label="Total distance" value={`${(result.total_distance_km ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km`} />
+                    <Stat label="ETA" value={formatEta(result.new_eta_minutes ?? result.routes?.[0]?.total_duration_minutes ?? 0)} />
+                    <Stat label="Fuel" value={`${(result.total_fuel_liters ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`} />
+                    <Stat label="Savings" value={result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—'} />
+                    <Stat label="Algorithm used" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
+                  </div>
+
+                  <div className="space-y-2">
+                    {(result.routes ?? []).map((r, i) => {
+                      const vehicle = r.vehicles?.plate_number || (r.vehicle_id ? vehicleById.get(r.vehicle_id)?.plate_number : undefined)
+                      const stopCount = r.route_stops?.length ?? r.stops?.length ?? r.stop_ids?.length ?? 0
+                      return (
+                        <div key={r.id ?? i} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
+                          <div>
+                            <div className="text-sm font-medium text-text">{vehicle || (r.vehicle_id ? r.vehicle_id.slice(0, 8) : `Route ${i + 1}`)}</div>
+                            <div className="text-xs text-muted">{stopCount.toLocaleString('en-IN')} stop{stopCount === 1 ? '' : 's'}</div>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm text-muted">
+                            <span>{(r.total_distance_km ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</span>
+                            <span>{formatEta(r.total_duration_minutes ?? 0)}</span>
+                            {r.id && (
+                              <Button size="sm" variant="ghost" onClick={() => navigate(`/routes/${r.id}`)}>View</Button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* Suggestions: reroute opportunities the ML service already found from live traffic. */}
+          <Card>
+            <CardHeader
+              title="Suggestions"
+              description="Reroutes the solver has already found for vehicles on the road."
+            />
+            <CardBody className="space-y-4">
+              {activeVehicles.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {activeVehicles.map(v => (
+                    <Button
+                      key={v.id}
+                      size="sm"
+                      variant="secondary"
+                      icon={checkVehicle.isPending && checkVehicle.variables === v.id ? <RotateCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      disabled={checkVehicle.isPending}
+                      onClick={() => checkVehicle.mutate(v.id)}
+                    >
+                      Check {v.plate_number || v.id.slice(0, 8)}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              {insightsLoading ? (
+                <LoadingState label="Checking for suggestions…" />
+              ) : suggestions.length === 0 ? (
+                <EmptyState compact title="No suggestions right now" description="Nothing better than the current routes was found." />
+              ) : (
+                <ul className="space-y-2">
+                  {suggestions.map(s => {
+                    const vehicle = vehicleById.get(s.vehicle_id)
+                    return (
+                      <li key={s.id} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-text">{vehicle?.plate_number || s.vehicle_id.slice(0, 8)}</div>
+                          <div className="text-xs text-muted">{s.insight}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <StatusPill tone="brand" dot={false}>-{s.saved_mins} min</StatusPill>
+                          <Button
+                            size="sm"
+                            icon={<Check size={14} />}
+                            loading={applySuggestion.isPending && applySuggestion.variables?.id === s.id}
+                            onClick={() => applySuggestion.mutate(s)}
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+        </div>
       </div>
-    </div>
+    </Page>
   )
 }
