@@ -177,6 +177,28 @@ const roleCache = new Map<string, { role: string; expiresAt: number }>();
 /** Drop a cached role, e.g. after an admin changes a user's role or status. */
 export function invalidateRoleCache(userId: string): void {
   roleCache.delete(userId);
+  activeCache.delete(userId);
+}
+
+const activeCache = new Map<string, { active: boolean; expiresAt: number }>();
+
+/**
+ * Backend-issued tokens (drivers) live for their whole lifetime once minted, so
+ * a driver suspended after signing in would keep working. Look the account up
+ * (cached 60s) and reject it when it is switched off. A token whose user has no
+ * `users` row (customers, who live in their own table) is left alone.
+ */
+async function assertBackendUserActive(userId: string): Promise<void> {
+  const cached = activeCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (!cached.active) throw new AuthError('Account is inactive');
+    return;
+  }
+  const { data, error } = await supabase.from('users').select('is_active').eq('id', userId).maybeSingle();
+  if (error) throw new Error(`Account lookup failed: ${error.message}`);
+  const active = data?.is_active !== false;
+  activeCache.set(userId, { active, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
+  if (!active) throw new AuthError('Account is inactive');
 }
 
 /**
@@ -224,7 +246,9 @@ export async function authenticateToken(token: string, expectedType: 'access' | 
 
   if (source === 'backend') {
     if (payload.type !== expectedType) throw new AuthError(`Expected a ${expectedType} token`);
-    return { user_id: userId, role: backendTokenRole(payload), source };
+    const role = backendTokenRole(payload);
+    if (expectedType === 'access' && role !== 'customer') await assertBackendUserActive(userId);
+    return { user_id: userId, role, source };
   }
 
   if (expectedType !== 'access') throw new AuthError('Supabase sessions are refreshed by Supabase');

@@ -9,6 +9,10 @@
  *   URL and records the path; POST /storage/v1/object/sign/<bucket>/<path> does
  *   the same for a signed download URL.
  *
+ * - /auth/v1/admin/users (create, list, get, update, delete) and /auth/v1/invite
+ *   keep users in memory (`authUsers`) and record each call in `authCalls`, so
+ *   tests can create people through Supabase Auth without a real project.
+ *
  * Upserts match an existing row on the `on_conflict` columns (default `id`).
  *
  * Filters: `eq.`, `neq.`, `is.` and `in.(...)` on query params. `select`,
@@ -228,6 +232,15 @@ class MockSupabase {
   signedUploads: string[] = [];
   /** `<bucket>/<path>` of every signed download URL issued. */
   signedReads: string[] = [];
+  /**
+   * Whether the Auth admin API answers. Off by default (calls get a 404, as before it was
+   * mocked, which some tests rely on); a test that creates people turns it on.
+   */
+  authAdmin = false;
+  /** Supabase Auth users (id, email, app_metadata, user_metadata). */
+  authUsers: Row[] = [];
+  /** Every Supabase Auth admin call: `{ op, body }`. */
+  authCalls: Array<{ op: 'create' | 'invite' | 'update' | 'delete'; id?: string; body: any }> = [];
 
   private server: http.Server | null = null;
   private tables = new Map<string, Row[]>();
@@ -264,6 +277,9 @@ class MockSupabase {
     this.requests = [];
     this.signedUploads = [];
     this.signedReads = [];
+    this.authUsers = [];
+    this.authCalls = [];
+    this.authAdmin = false;
     this.failures.clear();
   }
 
@@ -292,6 +308,53 @@ class MockSupabase {
     });
   }
 
+  private handleAuthAdmin(method: string, url: URL, raw: string, send: (status: number, body?: unknown) => void): void {
+    let body: any = {};
+    try {
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      body = {};
+    }
+    const id = url.pathname.startsWith('/auth/v1/admin/users/') ? decodeURIComponent(url.pathname.split('/').pop() ?? '') : undefined;
+    const exists = (email?: string) => !!email && this.authUsers.some(u => u.email === email);
+    const taken = () => send(422, { code: 422, error_code: 'email_exists', msg: 'A user with this email address has already been registered' });
+    const now = new Date().toISOString();
+
+    if (url.pathname === '/auth/v1/invite' && method === 'POST') {
+      this.authCalls.push({ op: 'invite', body });
+      // Inviting someone who has not accepted yet sends the invitation again
+      const pending = this.authUsers.find(u => u.email === body.email && !u.confirmed);
+      if (pending) return send(200, pending);
+      if (exists(body.email)) return taken();
+      const user = { id: crypto.randomUUID(), aud: 'authenticated', email: body.email, app_metadata: {}, user_metadata: body.data ?? {}, created_at: now };
+      this.authUsers.push(user);
+      return send(200, user);
+    }
+    if (!id && method === 'POST') {
+      this.authCalls.push({ op: 'create', body });
+      if (exists(body.email)) return taken();
+      const user = { id: body.id ?? crypto.randomUUID(), aud: 'authenticated', email: body.email, app_metadata: body.app_metadata ?? {}, user_metadata: body.user_metadata ?? {}, created_at: now, confirmed: !!body.email_confirm };
+      this.authUsers.push(user);
+      return send(200, user);
+    }
+    if (!id && method === 'GET') return send(200, { users: this.authUsers, aud: 'authenticated' });
+    const user = this.authUsers.find(u => u.id === id);
+    if (!user) return send(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
+    if (method === 'GET') return send(200, user);
+    if (method === 'PUT') {
+      this.authCalls.push({ op: 'update', id, body });
+      if (body.email && body.email !== user.email && exists(body.email)) return taken();
+      Object.assign(user, { ...body, app_metadata: { ...user.app_metadata, ...(body.app_metadata ?? {}) } });
+      return send(200, user);
+    }
+    if (method === 'DELETE') {
+      this.authCalls.push({ op: 'delete', id, body });
+      this.authUsers.splice(this.authUsers.indexOf(user), 1);
+      return send(200, {});
+    }
+    return send(405, { message: `Unsupported method ${method}` });
+  }
+
   private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     let raw = '';
     req.on('data', chunk => (raw += chunk));
@@ -308,6 +371,9 @@ class MockSupabase {
         return send(200, { keys: [jwk] });
       }
       if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
+      if (this.authAdmin && (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite')) {
+        return this.handleAuthAdmin(req.method ?? 'GET', url, raw, send);
+      }
       // Storage: signed upload URLs (records the requested object path)
       const signPrefix = '/storage/v1/object/upload/sign/';
       if (req.method === 'POST' && url.pathname.startsWith(signPrefix)) {

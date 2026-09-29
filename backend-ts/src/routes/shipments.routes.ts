@@ -2,6 +2,7 @@
  * margixindia — Shipment Routes
  * Ports: backend/app/api/v1/endpoints/shipments.py
  */
+import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
@@ -345,7 +346,7 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
       options.sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
     }
 
-    res.json(options);
+    res.json(await withDriverLicenceStatus(options));
   } catch (e: any) {
     sendError(req, res, e);
   }

@@ -15,29 +15,13 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { sendError } from '../core/errors';
+import { normalizePhone } from '../utils/phone';
+import { findAuthUserByEmail } from '../core/auth-users';
+import { driverWindows, inWindows } from '../services/driver-assignments.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
-
-/**
- * Find a Supabase auth.users record by email without loading the whole user
- * base into memory. `supabase.auth.admin.listUsers()` defaults to the first
- * 50 users, so a plain call silently misses any account past that page.
- * Pages through in large batches (bounded) until the email is found.
- */
-async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
-  const perPage = 1000;
-  const maxPages = 50; // up to 50,000 users
-  for (let page = 1; page <= maxPages; page++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error || !data?.users?.length) break;
-    const match = data.users.find((u: any) => u.email === email);
-    if (match) return { id: match.id };
-    if (data.users.length < perPage) break; // last page
-  }
-  return null;
-}
 
 // ═══════════════════════════════════════════════════════════
 // DRIVER AUTH — Twilio Phone OTP (like Ola/Uber/Zomato)
@@ -53,18 +37,6 @@ const OTP_FAILURES_PER_HOUR = 10;      // wrong guesses per phone per hour, acro
 function generateOTP(): string {
   const len = Math.min(Math.max(settings.OTP_LENGTH || 6, 4), 8);
   return crypto.randomInt(0, 10 ** len).toString().padStart(len, '0');
-}
-
-/** Normalise an Indian phone number to E.164 (+91XXXXXXXXXX); null when invalid. */
-function normalizePhone(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  let phone = raw.replace(/\s+/g, '').replace(/^0+/, '');
-  if (!phone.startsWith('+')) {
-    if (phone.startsWith('91') && phone.length === 12) phone = '+' + phone;
-    else if (phone.length === 10) phone = '+91' + phone;
-    else phone = '+' + phone;
-  }
-  return phone.replace(/\D/g, '').length >= 10 ? phone : null;
 }
 
 function twilioConfigured(): boolean {
@@ -693,17 +665,19 @@ async function loadTripPay(cargoTrips: any[], routeTrips: any[]): Promise<Map<st
   return pay;
 }
 
-async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
-  const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg, current_location_name').eq('driver_id', userId);
-  if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
+export async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
+  // Trips count for the driver who had the vehicle at the time (driver_vehicle_assignments),
+  // so a vehicle that was archived or handed on still pays out to the right driver.
+  const { windows, vehicleIds, currentVehicles } = await driverWindows(userId, 'id, latitude, longitude, capacity_kg, current_location_name');
+  if (vehicleIds.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
+  const vehicles = currentVehicles;
 
-  const activeVehicle = vehicles[0];
+  const activeVehicle: any = vehicles[0] ?? {};
   const driverLat = activeVehicle.latitude;
   const driverLng = activeVehicle.longitude;
   // The vehicle's stored place name; no reverse geocoding on every request.
   const driverLocationName = activeVehicle.current_location_name || 'Origin Depot';
 
-  const vehicleIds = vehicles.map(v => v.id);
   let cargoQuery = supabase.from('cargo_manifest').select('*').in('vehicle_id', vehicleIds).eq('status', 'delivered').order('updated_at', { ascending: false });
   let routeQuery = supabase.from('routes').select(`
     *,
@@ -720,8 +694,10 @@ async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
     cargoQuery = cargoQuery.lte('updated_at', filter.to);
     routeQuery = routeQuery.lte('updated_at', filter.to);
   }
-  const { data: cargoTrips } = await cargoQuery;
-  const { data: routeTrips } = await routeQuery;
+  const { data: allCargoTrips } = await cargoQuery;
+  const { data: allRouteTrips } = await routeQuery;
+  const cargoTrips = (allCargoTrips || []).filter(t => inWindows(windows, t.vehicle_id, t.updated_at));
+  const routeTrips = (allRouteTrips || []).filter(t => inWindows(windows, t.vehicle_id, t.updated_at));
 
   const allTrips = [
     ...(cargoTrips || []).map(t => ({ ...t, trip_type: 'cargo' })),

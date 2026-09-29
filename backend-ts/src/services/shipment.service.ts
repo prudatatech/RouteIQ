@@ -2,6 +2,7 @@
  * margixindia — Shipment Service
  * Ports: backend/app/services/shipment_service.py
  */
+import { assertDriverDispatchable } from './people-docs.service';
 import { HttpError } from '../core/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
@@ -342,6 +343,8 @@ export class ShipmentService {
     if (isClass && vehicle.vehicle_type && String(vehicle.vehicle_type).toLowerCase() !== requiredType!.toLowerCase()) {
       throw new HttpError(409, `This load needs a ${requiredType}, and that vehicle is a ${vehicle.vehicle_type}.`);
     }
+    // Blocks only when the driver_document_enforcement setting is 'block'
+    await assertDriverDispatchable(vehicleId);
     const capacity = Number(vehicle.capacity_kg);
     if (weightKg > 0 && capacity > 0) {
       const free = capacity - (await ShipmentService.activeLoadKg(vehicleId, excludeShipmentId));

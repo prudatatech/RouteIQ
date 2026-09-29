@@ -54,6 +54,7 @@ Object.assign(process.env, {
   SUPABASE_ANON_KEY: 'test-anon-key',
   SUPABASE_JWT_SECRET: TEST_JWT_SECRET,
   SECRET_KEY: '',
+  PEOPLE_HASH_SALT: 'test-people-hash-salt',
 
   UPSTASH_REDIS_REST_URL: '',
   UPSTASH_REDIS_REST_TOKEN: '',

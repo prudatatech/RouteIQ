@@ -18,6 +18,7 @@ import { assertVehicleStatusChange, changeVehicleStatus, isPlaceholderPlate, isT
 import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
 import { capacityService } from '../services/capacity.service';
+import { withDriverLicenceStatus } from '../services/people-docs.service';
 
 const router = Router();
 
@@ -139,11 +140,13 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
       .order('id', { ascending: true })
       .range(skip, skip + limit - 1);
 
-    const { data: vehicles, error } = await query;
+    const { data: found, error } = await query;
     if (error) throw error;
 
-    await cacheSet(cacheKey, vehicles || [], 30);
-    res.json(vehicles || []);
+    // Warning data for dispatch: the state of each driver's licence
+    const vehicles = await withDriverLicenceStatus(found || []);
+    await cacheSet(cacheKey, vehicles, 30);
+    res.json(vehicles);
   } catch (e: any) {
     sendError(req, res, e);
   }
