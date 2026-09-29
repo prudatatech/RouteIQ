@@ -122,6 +122,7 @@ export const deliveryPointsAPI = {
 
 
 export const usersAPI = {
+  me: () => api.get('/users/me').then(r => r.data),
   list: () => api.get('/users/').then(r => r.data),
   update: (id: string, data: any) => api.patch(`/users/${id}`, data).then(r => r.data),
 }
@@ -219,6 +220,8 @@ export const telemetryAPI = {
     api.post('/telemetry/mobile-session', { vehicle_id: vehicleId, phone }).then(r => r.data),
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
   resolveSos: (id: string, data?: any) => api.put(`/telemetry/sos/${id}/resolve`, data).then(r => r.data),
+  /** Driver raises an SOS for their assigned vehicle. */
+  triggerSos: (data: { lat?: number, lng?: number }) => api.post('/telemetry/sos/trigger', data).then(r => r.data),
 }
 
 export const analyticsAPI = {

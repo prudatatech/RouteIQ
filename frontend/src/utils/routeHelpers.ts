@@ -33,7 +33,8 @@ export const getRouteDistance = (route: any) => {
     }
   }
   
-  return totalKm > 0 ? parseFloat(totalKm.toFixed(1)) : 40.7;
+  // No coordinates to measure: report 0 rather than a made-up distance
+  return totalKm > 0 ? parseFloat(totalKm.toFixed(1)) : 0;
 };
 
 export const getRouteDuration = (route: any, distanceKm: number) => {

@@ -102,18 +102,22 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
       .eq('driver_id', userId)
       .single();
 
-    if (vehicle) {
-      // Insert SOS alert
-      await supabase.from('sos_alerts').insert({
-        vehicle_id: vehicle.id,
-        driver_id: userId,
-        latitude: lat,
-        longitude: lng,
-        alert_type: 'panic_button',
-        description: 'Driver triggered SOS from mobile app',
-        status: 'active'
-      });
+    // Never report success for an SOS that was not recorded
+    if (!vehicle) {
+      res.status(404).json({ detail: 'No vehicle assigned to this driver, so the SOS could not be raised' });
+      return;
     }
+
+    const { error: sosErr } = await supabase.from('sos_alerts').insert({
+      vehicle_id: vehicle.id,
+      driver_id: userId,
+      latitude: lat,
+      longitude: lng,
+      alert_type: 'panic_button',
+      description: 'Driver triggered SOS from mobile app',
+      status: 'active'
+    });
+    if (sosErr) throw new Error(`Failed to record SOS: ${sosErr.message}`);
 
     res.json({ status: 'success', message: 'SOS triggered successfully' });
   } catch (e: any) {
