@@ -8,7 +8,7 @@ import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
-import { destinationOf, isActiveShipmentStatus } from '@/components/shipments/format'
+import { ACTIVE_SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { isDraftVehicle } from '@/utils/vehicles'
 
@@ -80,8 +80,16 @@ export default function DashboardPage() {
     refetchInterval: 5_000,
   })
 
-  // The list endpoint doesn't filter by status server-side, so "active" is computed
-  // here from the same rule the Shipments tabs use (isActiveShipmentStatus).
+  // Exact counts from the server, so the number stays right when there are more shipments
+  // than the list below carries.
+  const { data: shipmentCounts, isLoading: countsLoading } = useQuery({
+    queryKey: ['shipments', 'counts'],
+    queryFn: dashboardAPI.shipmentCounts,
+    refetchInterval: 30_000,
+  })
+
+  // The list below shows the latest shipments only. "Active" there uses the same rule
+  // the Shipments tabs use (isActiveShipmentStatus).
   const { data: shipments = [], isLoading: shipmentsLoading, error: shipmentsError, refetch: refetchShipments } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments', 'dashboard'],
     queryFn: () => shipmentsAPI.list({ limit: 200 }) as Promise<ShipmentRow[]>,
@@ -121,7 +129,9 @@ export default function DashboardPage() {
   const activeVehicles = vehicles.filter(v => !isDraftVehicle(v))
   const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
   const activeShipments = shipments.filter(s => isActiveShipmentStatus(s.status))
-  const activeShipmentCount = activeShipments.length
+  const activeShipmentCount = shipmentCounts
+    ? ACTIVE_SHIPMENT_STATUSES.reduce((sum, status) => sum + (shipmentCounts.counts[status] ?? 0), 0)
+    : null
   // No fabricated fallback: on_time_rate_pct is null when there is no route data for today.
   const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
   const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
@@ -206,7 +216,7 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Active shipments" value={activeShipmentCount} loading={shipmentsLoading} icon={<Package size={18} />} />
+        <Stat label="Active shipments" value={activeShipmentCount ?? '–'} loading={countsLoading} icon={<Package size={18} />} />
         <Stat
           label="Tracked vehicles"
           value={activeVehicles.length}

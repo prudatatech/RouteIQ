@@ -55,12 +55,13 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
       open={open}
       onClose={onClose}
       size="sm"
+      onSubmit={submit}
       title={`Correct odometer for ${plate}`}
       description="The reading counted from GPS keeps adding to what you enter here."
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={save.isPending} onClick={submit}>Save reading</Button>
+          <Button type="submit" loading={save.isPending}>Save reading</Button>
         </>
       )}
     >
@@ -105,12 +106,13 @@ export function PlanModal({ vehicleId, plan, open, onClose }: {
     <Modal
       open={open}
       onClose={onClose}
+      onSubmit={submit}
       title={plan ? `Change ${plan.item}` : 'Add a service item'}
       description="Say how often it is due and when it was last done. We work out when the next one falls due."
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={save.isPending} onClick={submit}>Save item</Button>
+          <Button type="submit" loading={save.isPending}>Save item</Button>
         </>
       )}
     >
@@ -181,12 +183,13 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
     <Modal
       open={open}
       onClose={onClose}
+      onSubmit={submit}
       title={`Log a service for ${plate}`}
       description="This moves the item's next due date forward. A cost is added to expenses as maintenance."
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={save.isPending} onClick={submit}>Log service</Button>
+          <Button type="submit" loading={save.isPending}>Log service</Button>
         </>
       )}
     >

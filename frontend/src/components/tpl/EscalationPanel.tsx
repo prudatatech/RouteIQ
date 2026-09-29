@@ -82,6 +82,17 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
     if (ok) send.mutate()
   }
 
+  const askWithdrawOne = async (offerId: string, partnerName: string | null | undefined) => {
+    const who = partnerName ?? 'this partner'
+    const ok = await confirm({
+      title: `Withdraw the offer to ${who}?`,
+      message: `${who} will be told this load is no longer available to them. Offers to other partners stay open.`,
+      confirmLabel: 'Withdraw offer',
+      tone: 'danger',
+    })
+    if (ok) withdrawOne.mutate(offerId)
+  }
+
   const askWithdrawAll = async () => {
     const ok = await confirm({
       title: 'Withdraw every open offer?',
@@ -136,7 +147,7 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
                         variant="ghost"
                         disabled={withdrawOne.isPending || withdrawAll.isPending}
                         loading={withdrawOne.isPending && withdrawOne.variables === o.id}
-                        onClick={() => withdrawOne.mutate(o.id)}
+                        onClick={() => askWithdrawOne(o.id, o.partner_name)}
                       >
                         Withdraw
                       </Button>

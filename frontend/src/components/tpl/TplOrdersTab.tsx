@@ -44,16 +44,17 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
     <Modal
       open={!!offer}
       onClose={onClose}
+      onSubmit={() => accept.mutate()}
       title="Accept this load"
       description={offer ? `${shortPlace(offer.pickup_location)} to ${shortPlace(offer.drop_location)}` : undefined}
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
+            type="submit"
             icon={<Check size={16} />}
             loading={accept.isPending}
             disabled={!!amountError || !!timeError || (needsAmount && amount === '')}
-            onClick={() => accept.mutate()}
           >
             Accept load
           </Button>

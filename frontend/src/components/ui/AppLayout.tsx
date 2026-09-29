@@ -16,6 +16,7 @@ import { NotificationsBell } from './NotificationsBell'
 import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
 import { useDialog } from './useDialog'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 /** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform ?? navigator.userAgent ?? '')
@@ -226,6 +227,9 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // Matches Tailwind's `lg`: the sidebar shows from here up, the phone header below it.
+  // Only one bell is mounted so its queries and realtime channel are not doubled.
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
   // The modal (and the map it pulls in) is only fetched once a "Create shipment" button opens it.
   const isShipmentModalOpen = useDraftStore(s => s.isModalOpen)
 
@@ -293,7 +297,7 @@ export default function AppLayout() {
         {isStaff && (
           <div className={clsx('flex shrink-0 items-center gap-1 border-b border-border py-2', collapsed ? 'flex-col px-2' : 'pl-3 pr-2')}>
             <SearchButton collapsed={collapsed} onClick={() => setSearchOpen(true)} />
-            <NotificationsBell />
+            {isDesktop && <NotificationsBell />}
           </div>
         )}
         <NavList items={sections} collapsed={collapsed} badges={badges} />
@@ -308,7 +312,7 @@ export default function AppLayout() {
         {isStaff && (
           <>
             <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />
-            <NotificationsBell />
+            {!isDesktop && <NotificationsBell />}
           </>
         )}
       </header>

@@ -362,11 +362,6 @@ export default function App() {
                 <AuditLogPage />
               </PrivateRoute>
             } />
-            <Route path="admin/settings" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
-                <SettingsPage />
-              </PrivateRoute>
-            } />
             <Route path="3pl-partners" element={
               <PrivateRoute allowedRoles={['superadmin']}>
                 <TplPartnersPage />

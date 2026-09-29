@@ -159,7 +159,7 @@ export default function VendorLayout() {
         : <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />}
     </div>
   ) : (
-    <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+    <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
       <LogIn size={16} aria-hidden="true" /> Sign in
     </NavLink>
   )

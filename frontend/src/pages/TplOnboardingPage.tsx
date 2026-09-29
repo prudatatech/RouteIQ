@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
 import { tplAPI } from '@/services/api'
-import { Button, Card, Checkbox, Input, Select, Spinner } from '@/components/ui'
+import { Button, Card, Checkbox, FileButton, Input, Select, Spinner } from '@/components/ui'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
@@ -443,11 +443,10 @@ export default function TplOnboardingPage() {
                                 >
                                   <Eye size={14} />
                                 </button>
-                                <label className="cursor-pointer rounded-control text-muted hover:text-text focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
+                                <FileButton variant="bare" className="rounded-control text-muted hover:text-text" accept=".pdf,.png,.jpg,.jpeg" onFile={file => handleFileSelect(docType, file)}>
                                   <UploadCloud size={14} />
                                   <span className="sr-only">Replace {docType}</span>
-                                  <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
-                                </label>
+                                </FileButton>
                                 {file && (
                                   <button
                                     type="button"
@@ -465,11 +464,10 @@ export default function TplOnboardingPage() {
                               </div>
                             </>
                           ) : (
-                            <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-control focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
+                            <FileButton variant="bare" className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-control" accept=".pdf,.png,.jpg,.jpeg" onFile={file => handleFileSelect(docType, file)}>
                               <UploadCloud size={20} className="text-muted" />
                               <span className="text-xs font-medium text-text">{docType}</span>
-                              <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
-                            </label>
+                            </FileButton>
                           )}
                         </div>
                       )

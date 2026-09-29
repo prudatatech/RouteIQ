@@ -6,7 +6,7 @@ import {
   Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
 import {
-  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
+  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, FileButton, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -461,17 +461,16 @@ export default function TplDashboardPage() {
                       >
                         View
                       </Button>
-                      <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-subtle focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
-                        {uploadingDoc === doc.id ? <Spinner size={14} /> : <UploadCloud size={14} />}
+                      <FileButton
+                        variant="secondary"
+                        size="sm"
+                        icon={<UploadCloud size={14} />}
+                        loading={uploadingDoc === doc.id}
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        onFile={file => handleReplaceDocument(doc, file)}
+                      >
                         Update
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          className="sr-only"
-                          disabled={uploadingDoc === doc.id}
-                          onChange={e => { handleReplaceDocument(doc, e.target.files?.[0]); e.target.value = '' }}
-                        />
-                      </label>
+                      </FileButton>
                     </div>
                   </Card>
                 ))}

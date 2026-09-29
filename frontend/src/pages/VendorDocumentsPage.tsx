@@ -10,7 +10,7 @@ import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
-import { Alert, Button, Card, Checkbox, ErrorState, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
@@ -582,17 +582,15 @@ export default function VendorDocumentsPage() {
               <div>
                 <p className="mb-3 text-sm font-medium text-text">Other documents <span className="font-normal text-muted">(optional)</span></p>
                 <div className="rounded-card border border-dashed border-border p-4">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-control text-sm font-medium text-brand hover:underline focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
-                    <Upload size={14} />
+                  <FileButton
+                    variant="link"
+                    icon={<Upload size={14} />}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    disabled={uploadingKey === '__other__'}
+                    onFile={uploadOtherDoc}
+                  >
                     {uploadingKey === '__other__' ? 'Uploading…' : 'Upload a document'}
-                    <input
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      className="sr-only"
-                      disabled={uploadingKey === '__other__'}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadOtherDoc(f); e.target.value = '' }}
-                    />
-                  </label>
+                  </FileButton>
                   {otherDocs.length === 0 ? (
                     <p className="mt-2 text-xs text-muted">No additional documents uploaded.</p>
                   ) : (
@@ -708,17 +706,9 @@ function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }:
             <Button type="button" variant="ghost" size="sm" onClick={onRemove}>Remove</Button>
           </>
         ) : (
-          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-control text-sm font-medium text-brand hover:underline focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
-            <Upload size={14} />
+          <FileButton variant="link" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={busy} onFile={onUpload}>
             {busy ? 'Uploading…' : 'Upload'}
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              className="sr-only"
-              disabled={busy}
-              onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = '' }}
-            />
-          </label>
+          </FileButton>
         )}
       </div>
     </div>

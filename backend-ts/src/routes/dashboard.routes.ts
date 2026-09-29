@@ -77,4 +77,28 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
   }
 });
 
+// ── GET /shipment-counts ───────────────────────────────────
+// Exact number of shipments per status. Counted in the database so it stays right on
+// fleets with more shipments than a list page can carry.
+export const SHIPMENT_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'exception'] as const;
+
+router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const results = await Promise.all(
+      SHIPMENT_STATUSES.map(async status => {
+        const { count, error } = await supabase
+          .from('shipments')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', status);
+        if (error) throw error;
+        return [status, count ?? 0] as const;
+      }),
+    );
+    const counts = Object.fromEntries(results) as Record<(typeof SHIPMENT_STATUSES)[number], number>;
+    res.json({ counts, total: results.reduce((sum, [, n]) => sum + n, 0) });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
 export default router;
