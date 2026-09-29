@@ -9,6 +9,19 @@ import LiveMap from '@/components/map/LiveMap'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
+// Solvers the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS)
+const ALGORITHM_OPTIONS = [
+  { value: 'ortools', label: 'Google OR-Tools', desc: 'Constraint programming' },
+  { value: 'ga', label: 'Genetic Algorithm', desc: 'Evolutionary algorithm' },
+]
+
+// Names for the algorithm the backend reports it ran, including its greedy fallback
+const ALGORITHM_LABELS: Record<string, string> = {
+  ortools: 'OR-Tools',
+  ga: 'Genetic',
+  greedy: 'Greedy (fallback)',
+}
+
 export default function OptimizePage() {
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -138,11 +151,7 @@ export default function OptimizePage() {
             </h2>
 
             <div className="space-y-3 mb-8">
-              {[
-                { value: 'ortools', label: 'Google OR-Tools', desc: 'Constraint programming' },
-                { value: 'genetic', label: 'Machine Learning (GA)', desc: 'Evolutionary algorithm' },
-                { value: 'reinforcement', label: 'Reinforcement Learning', desc: 'Deep RL history' },
-              ].map(opt => (
+              {ALGORITHM_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
                   onClick={() => setAlgo(opt.value)}
@@ -291,6 +300,7 @@ export default function OptimizePage() {
                     { label: 'Estimated Fuel', value: `${(result.total_fuel_liters || 0).toFixed(1)} L` },
                     { label: 'Network Savings', value: result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—' },
                     { label: 'Traffic Logic', value: result.traffic_anomaly || '—' },
+                    ...(result.algorithm ? [{ label: 'Algorithm Used', value: ALGORITHM_LABELS[result.algorithm] ?? result.algorithm }] : []),
                   ].map(({ label, value }) => (
                     <div key={label} className="p-4 rounded-2xl bg-background border border-border">
                       <div className="text-xl font-black text-primary font-mono">{value}</div>

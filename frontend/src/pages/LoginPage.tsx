@@ -16,20 +16,13 @@ export default function LoginPage() {
 
   const navigate = useNavigate()
 
-  const handleLogin = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
+  const handleLogin = async (e?: React.FormEvent) => {
     e?.preventDefault()
     setLoading(true)
-    const targetEmail = customEmail || email
-    const targetPass = customPass || password
+    const targetEmail = email
+    const targetPass = password
 
     try {
-      if (targetEmail === 'admin@safexpress.com') {
-        toast.success('Welcome back, 3PL Partner!')
-        navigate('/3pl-portal')
-        setLoading(false)
-        return
-      }
-
       // Sign In Flow
       const { data, error } = await supabase.auth.signInWithPassword({
         email: targetEmail,
@@ -128,7 +121,7 @@ export default function LoginPage() {
               </label>
               <input
                 type="email"
-                placeholder="nexus.auth@prudata.io"
+                placeholder="you@company.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required

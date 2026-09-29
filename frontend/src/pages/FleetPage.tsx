@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Search, Truck, X, Fuel, Info, MapPin,
-  BarChart2, Settings, Cloud, Thermometer, Pencil, Trash2, ExternalLink, Copy, CheckCircle2, Navigation
+  BarChart2, Settings, Pencil, Trash2, ExternalLink, Copy, CheckCircle2, Navigation
 } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
+import { formatTimeAgo } from '@/utils/timeFormat'
 import { Card, StatusDot, Button, Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
@@ -17,6 +18,18 @@ const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', '
 const _VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
 const _FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
 const _STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
+
+// A vehicle counts as live when its last position report is at most this old
+const LIVE_GPS_THRESHOLD_MS = 5 * 60 * 1000
+
+// Latest position report: telemetry/driver pings set last_heartbeat, the GPS provider sync sets last_sync
+function lastPingAt(v: { last_heartbeat?: string | null; last_sync?: string | null }): Date | null {
+  const times = [v.last_heartbeat, v.last_sync]
+    .filter((t): t is string => !!t)
+    .map(t => new Date(t).getTime())
+    .filter(t => !Number.isNaN(t))
+  return times.length > 0 ? new Date(Math.max(...times)) : null
+}
 
 // ─── Location Modal ───────────────────────────────────────────────────────────
 function LocationModal({ vehicle, onClose }: { vehicle: any; onClose: () => void }) {
@@ -291,6 +304,13 @@ export default function FleetPage() {
     return () => clearTimeout(timer)
   }, [])
 
+  // Keep "last seen" labels and the live threshold current
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(tick)
+  }, [])
+
   // Real-time updates for Fleet table
   useEffect(() => {
     const invalidate = () => {
@@ -484,7 +504,8 @@ export default function FleetPage() {
               ) : (
                 filtered.map((v: any, idx: number) => {
                   const currentLoad = v.current_load_kg || (v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg))
-                  const isLoaded = v.status === 'on_route' || currentLoad > 0
+                  const lastPing = lastPingAt(v)
+                  const isLive = !!lastPing && now - lastPing.getTime() <= LIVE_GPS_THRESHOLD_MS
 
                   return (
                   <tr
@@ -573,20 +594,15 @@ export default function FleetPage() {
                     <td className="px-6 py-5">
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-3">
-                          {isLoaded ? (
-                            <>
-                              <div className="flex items-center gap-1 text-sky-600">
-                                <Cloud size={14} />
-                                <span className="text-[10px] font-black uppercase tracking-tighter">Live Sync</span>
-                              </div>
-                              <div className="flex items-center gap-1 text-emerald-600">
-                                <Thermometer size={14} />
-                                <span className="text-[10px] font-black uppercase tracking-tighter">Active GPS</span>
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-[10px] font-black text-muted uppercase italic tracking-widest">Idle State</span>
-                          )}
+                          {lastPing && isLive ? (
+                            <div className="flex items-center gap-1 text-emerald-600">
+                              <Navigation size={14} />
+                              <span className="text-[10px] font-black uppercase tracking-tighter">Live GPS</span>
+                            </div>
+                          ) : null}
+                          <span className="text-[10px] font-black text-muted uppercase tracking-widest">
+                            {lastPing ? `Last seen ${formatTimeAgo(lastPing, now)}` : 'No GPS data'}
+                          </span>
                         </div>
                         {/* Capacity Status Badge */}
                         <div className="mt-1 flex flex-col gap-1">

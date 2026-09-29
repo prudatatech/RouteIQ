@@ -27,7 +27,6 @@ import TplOnboardingPage from '@/pages/TplOnboardingPage'
 import TplTrackApplicationPage from '@/pages/TplTrackApplicationPage'
 import TplSetupCredentialsPage from '@/pages/TplSetupCredentialsPage'
 import TplVerificationPage from '@/pages/TplVerificationPage'
-import TplActivationPage from '@/pages/TplActivationPage'
 import TplDashboardPage from '@/pages/TplDashboardPage'
 import LiveMapPage from '@/pages/LiveMapPage'
 import MobileTrackPage from '@/pages/MobileTrackPage'
@@ -76,6 +75,13 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   }
 
   return <>{children}</>
+}
+
+// Old activation links point here; the real flow is the 3PL credential setup.
+// Keep the query string (e.g. ?email=) so the setup form is prefilled.
+function TplActivateRedirect() {
+  const { search } = useLocation()
+  return <Navigate to={`/3pl/onboard/setup${search}`} replace />
 }
 
 export default function App() {
@@ -205,7 +211,7 @@ export default function App() {
           <Route path="/3pl/onboard" element={<TplOnboardingPage />} />
           <Route path="/3pl/onboard/track" element={<TplTrackApplicationPage />} />
           <Route path="/3pl/onboard/setup" element={<TplSetupCredentialsPage />} />
-          <Route path="/3pl-portal/activate" element={<TplActivationPage />} />
+          <Route path="/3pl-portal/activate" element={<TplActivateRedirect />} />
           <Route path="/3pl-portal/:id" element={
             <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
               <TplDashboardPage />

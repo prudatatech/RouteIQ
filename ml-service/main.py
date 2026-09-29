@@ -75,6 +75,9 @@ class VehicleInput(BaseModel):
     supported_cargo_types: List[str] = []
     fuel_efficiency_kmpl: float = 10.0
 
+SUPPORTED_ALGORITHMS = ("ortools", "ga")
+
+
 class OptimizeRequest(BaseModel):
     locations: List[LocationInput]
     vehicles: List[VehicleInput]
@@ -108,7 +111,7 @@ async def health():
 
 @app.post("/optimize")
 async def optimize(req: OptimizeRequest):
-    """Run VRP optimization using Google OR-Tools."""
+    """Run VRP optimization with OR-Tools (default) or the genetic algorithm."""
     try:
         locations = [
             Location(
@@ -134,7 +137,17 @@ async def optimize(req: OptimizeRequest):
             for v in req.vehicles
         ]
 
-        if getattr(req, "algorithm", "ortools") == "ga":
+        # Accept both spellings of the genetic algorithm
+        algorithm = (req.algorithm or "ortools").strip().lower()
+        if algorithm == "genetic":
+            algorithm = "ga"
+        if algorithm not in SUPPORTED_ALGORITHMS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported algorithm '{req.algorithm}'. Use one of: {', '.join(SUPPORTED_ALGORITHMS)}",
+            )
+
+        if algorithm == "ga":
             solution = solve_vrp_ga(
                 locations=locations,
                 vehicles=vehicles,
@@ -172,7 +185,11 @@ async def optimize(req: OptimizeRequest):
             "solve_time_seconds": solution.solve_time_seconds,
             "savings_vs_naive_pct": solution.savings_vs_naive_pct,
             "solver_status": solution.solver_status,
+            # The algorithm that actually produced the routes
+            "algorithm": "greedy" if solution.solver_status == "greedy_fallback" else algorithm,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Optimization failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

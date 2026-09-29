@@ -447,7 +447,7 @@ export default function VendorDocumentsPage() {
                 disabled={isReadOnly}
               />
               <span className="text-sm text-muted leading-relaxed">
-                "We hereby certify that above mentioned details are correct. We further confirm that the said details can be used by Seal Logistics Forwarders Pvt. Ltd. for online remittance of funds. The responsibility of any delay in payment and additional processing charges due to incorrect details vest with us."
+                "We, {formData.name.trim() || 'the company named above'}, hereby certify that the above mentioned details are correct. We further confirm that the said details can be used for online remittance of funds to us. The responsibility of any delay in payment and additional processing charges due to incorrect details vests with us."
               </span>
             </label>
           </div>

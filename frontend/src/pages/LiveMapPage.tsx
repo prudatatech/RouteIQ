@@ -1,59 +1,25 @@
-import React, { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
-import { useMobileLocation } from '../hooks/useMobileLocation';
-import { telemetryWS } from '@/services/api';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { vehiclesAPI } from '@/services/api';
+import LiveMap from '@/components/map/LiveMap';
 
+// Full-screen fleet map. LiveMap draws each vehicle from its last stored position
+// and follows live GPS updates over Supabase realtime.
 const LiveMapPage: React.FC = () => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<maplibregl.Map | null>(null);
-  const mobileMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const { position, error: _error, enabled } = useMobileLocation();
+  const { data: vehicles = [] } = useQuery({
+    queryKey: ['vehicles', 'live'],
+    queryFn: () => vehiclesAPI.list({ limit: 500 }),
+    refetchInterval: 30_000,
+  });
 
-  useEffect(() => {
-    if (mapContainer.current && !mapInstance.current) {
-      mapInstance.current = new maplibregl.Map({
-        container: mapContainer.current,
-        style: "/map-style.json?v=3",
-        center: [0, 0],
-        zoom: 2,
-      });
-    }
+  const fleet = vehicles.filter((v: { status?: string }) => v.status !== 'archived');
 
-    // Live GPS telemetry feed (authenticated with the current Supabase session).
-    const ws = telemetryWS.connect((data) => {
-      if (data.type === 'gps_update' && mapInstance.current && data.lat && data.lng) {
-        const el = document.createElement('div');
-        el.style.width = '12px';
-        el.style.height = '12px';
-        el.style.backgroundColor = '#B38700';
-        el.style.borderRadius = '50%';
-        new maplibregl.Marker(el).setLngLat([data.lng, data.lat]).addTo(mapInstance.current);
-      }
-    });
-
-    return () => {
-      ws.close();
-    };
-  }, []);
-
-  // Effect to add mobile GPS marker when position updates
-  useEffect(() => {
-    if (!enabled || !position || !mapInstance.current) return;
-    const el = document.createElement('div');
-    el.style.width = '14px';
-    el.style.height = '14px';
-    el.style.backgroundColor = '#ff6600'; // distinct color for mobile GPS
-    el.style.borderRadius = '50%';
-    el.style.boxShadow = '0 0 8px rgba(255,102,0,0.7)';
-    // Remove previous marker if exists
-    if (mobileMarkerRef.current) {
-      mobileMarkerRef.current.remove();
-    }
-    mobileMarkerRef.current = new maplibregl.Marker(el).setLngLat([position.lng, position.lat]).addTo(mapInstance.current);
-  }, [position, enabled]);
-
-  return <div className="h-screen w-full" ref={mapContainer} />;
+  // The app layout pads the page by 2rem top and bottom
+  return (
+    <div className="h-[calc(100vh-4rem)] w-full">
+      <LiveMap vehicles={fleet} />
+    </div>
+  );
 };
 
 export default LiveMapPage;

@@ -9,7 +9,18 @@ export default function VendorPortalPage() {
   const [heroSuggestions, setHeroSuggestions] = useState<any[]>([])
 
   const navigate = useNavigate()
-  const { _vendorProfile } = useOutletContext<any>() || {}
+  // VendorLayout passes the signed-in vendor's profile (with kycStatus) as Outlet context
+  const { vendorProfile } = useOutletContext<any>() || {}
+
+  // Posting a load needs approved KYC, same rule as bidding on the corridor page
+  const kycBlocksPosting = () => {
+    if (vendorProfile && vendorProfile.kycStatus !== 'approved') {
+      toast.error('Your KYC is pending. Please complete KYC to post loads.')
+      navigate('/vendor/documents')
+      return true
+    }
+    return false
+  }
 
   useEffect(() => {
     const searchHeroArcGIS = async () => {
@@ -71,6 +82,7 @@ export default function VendorPortalPage() {
                    toast.error('Please enter a location first');
                    return;
                  }
+                 if (kycBlocksPosting()) return;
                  navigate(`/vendor/request?query=${encodeURIComponent(heroSearchTerm)}`);
                }} 
                className="bg-primary hover:bg-primary-dark text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-sm flex items-center gap-2 shadow-lg transition-transform active:scale-95 shrink-0"
@@ -85,6 +97,7 @@ export default function VendorPortalPage() {
                  <button
                    key={s.id}
                    onClick={async () => {
+                      if (kycBlocksPosting()) return;
                       try {
                         let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${s.magicKey}&f=json`;
                         let res = await fetch(url);

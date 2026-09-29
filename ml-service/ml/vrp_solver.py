@@ -56,7 +56,8 @@ class VRPSolution:
     total_distance_km: float
     total_fuel_liters: float
     solve_time_seconds: float
-    savings_vs_naive_pct: float
+    # None when the solver has no baseline to compare against
+    savings_vs_naive_pct: Optional[float]
     solver_status: str
 
 
@@ -316,7 +317,7 @@ def _greedy_fallback(
         total_distance_km=round(total, 2),
         total_fuel_liters=round(total / 10, 2),
         solve_time_seconds=round(elapsed, 3),
-        savings_vs_naive_pct=12.0,
+        savings_vs_naive_pct=None,
         solver_status="greedy_fallback",
     )
 

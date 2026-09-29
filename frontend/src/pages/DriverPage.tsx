@@ -4,52 +4,128 @@ import {
   Home, Map as MapIcon, Package, Bell, User, Phone, Play, Pause,
   CheckCircle2, AlertTriangle, ShieldAlert, Loader2
 } from 'lucide-react';
-import { routesAPI, shipmentsAPI, telemetryAPI } from '@/services/api';
+import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api';
 import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers';
 import { formatEta } from '@/utils/timeFormat';
 import DriverMap from '@/components/map/DriverMap';
 import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
+import type { AxiosError } from 'axios';
 
-function SignaturePad({ onSave }: { onSave: (data: string) => void }) {
+type Point = { x: number; y: number };
+
+// Shapes returned by GET /routes for a driver's route
+type DeliveryPoint = {
+  name?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  demand_kg?: number;
+  shipment_id?: string | null;
+};
+type RouteStop = {
+  sequence?: number;
+  status?: string;
+  delivery_points?: DeliveryPoint;
+  delivery_point?: DeliveryPoint;
+};
+
+// Canvas can't read CSS variables, so resolve the theme colour when drawing
+function strokeColour(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#000';
+}
+
+function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onClear: () => void }) {
   const [isDrawing, setIsDrawing] = useState(false);
+  // Finished strokes, plus strokes removed by Undo that Redo can bring back
+  const [strokes, setStrokes] = useState<Point[][]>([]);
+  const [undone, setUndone] = useState<Point[][]>([]);
+  const currentStroke = useRef<Point[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.strokeStyle = 'var(--primary)';
+  const setupPen = (ctx: CanvasRenderingContext2D) => {
+    ctx.strokeStyle = strokeColour();
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
-  }, []);
+    ctx.lineJoin = 'round';
+  };
 
-  const getPos = (e: any) => {
+  // Repaint from the stroke list whenever it changes (undo, redo, clear)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setupPen(ctx);
+    for (const stroke of strokes) {
+      if (stroke.length === 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (const p of stroke.slice(1)) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+  }, [strokes]);
+
+  // Map the pointer to canvas pixels (the canvas is scaled by CSS)
+  const getPos = (e: React.MouseEvent | React.TouchEvent): Point => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
+    const source = 'touches' in e ? e.touches[0] : e;
     return {
-      x: (e.clientX || e.touches?.[0]?.clientX) - rect.left,
-      y: (e.clientY || e.touches?.[0]?.clientY) - rect.top
+      x: (source.clientX - rect.left) * (canvas.width / rect.width),
+      y: (source.clientY - rect.top) * (canvas.height / rect.height),
     };
   };
 
-  const startDrawing = (e: any) => {
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDrawing(true);
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    currentStroke.current = [getPos(e)];
   };
 
-  const draw = (e: any) => {
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
-    const { x, y } = getPos(e);
-    ctx.lineTo(x, y);
+    const stroke = currentStroke.current;
+    const prev = stroke[stroke.length - 1];
+    const next = getPos(e);
+    stroke.push(next);
+    setupPen(ctx);
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(next.x, next.y);
     ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const stroke = currentStroke.current;
+    currentStroke.current = [];
+    if (stroke.length === 0) return;
+    setStrokes(prev => [...prev, stroke]);
+    setUndone([]);
+    onClear(); // a saved signature no longer matches the pad
+  };
+
+  const undo = () => {
+    if (strokes.length === 0) return;
+    setUndone(prev => [...prev, strokes[strokes.length - 1]]);
+    setStrokes(prev => prev.slice(0, -1));
+    onClear();
+  };
+
+  const redo = () => {
+    if (undone.length === 0) return;
+    setStrokes(prev => [...prev, undone[undone.length - 1]]);
+    setUndone(prev => prev.slice(0, -1));
+    onClear();
+  };
+
+  const clear = () => {
+    setStrokes([]);
+    setUndone([]);
+    onClear();
   };
 
   return (
@@ -61,21 +137,37 @@ function SignaturePad({ onSave }: { onSave: (data: string) => void }) {
         <canvas
           onMouseDown={startDrawing}
           onMouseMove={draw}
-          onMouseUp={() => setIsDrawing(false)}
-          onMouseLeave={() => setIsDrawing(false)}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
           onTouchStart={startDrawing}
           onTouchMove={draw}
-          onTouchEnd={() => setIsDrawing(false)}
+          onTouchEnd={stopDrawing}
           ref={canvasRef}
           width={400}
           height={200}
           className="w-full h-full cursor-crosshair relative z-10"
         />
       </div>
+      <div className="grid grid-cols-3 gap-3">
+        <button type="button" onClick={undo} disabled={strokes.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
+          Undo
+        </button>
+        <button type="button" onClick={redo} disabled={undone.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
+          Redo
+        </button>
+        <button type="button" onClick={clear} disabled={strokes.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
+          Clear
+        </button>
+      </div>
       <button
         onClick={() => {
           const canvas = canvasRef.current;
-          if (canvas) onSave(canvas.toDataURL('image/png'));
+          if (!canvas || strokes.length === 0) {
+            toast.error('Please sign first');
+            return;
+          }
+          onSave(canvas.toDataURL('image/png'));
+          toast.success('Signature saved');
         }}
         className="w-full h-14 bg-yellow-500 text-black font-black uppercase tracking-widest text-xs rounded-xl shadow-lg active:scale-95 transition-transform"
       >
@@ -93,10 +185,18 @@ export default function DriverPage() {
   const role = useAuthStore((s: any) => s.role);
   const [isTracking, setIsTracking] = useState(false);
   const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number; speedKmph: number } | null>(null);
+  // Time of the last GPS fix from this device
+  const [lastFixAt, setLastFixAt] = useState<Date | null>(null);
 
   // POD State
   const [recipientName, setRecipientName] = useState('');
   const [signature, setSignature] = useState<string | null>(null);
+
+  const { data: me } = useQuery({
+    queryKey: ['me', userId],
+    queryFn: () => usersAPI.me(),
+    enabled: !!userId,
+  });
 
   const { data: routes = [], isLoading: _isLoading } = useQuery({
     queryKey: ['driver-routes', userId],
@@ -105,11 +205,48 @@ export default function DriverPage() {
   });
 
   const activeRoute = routes[0];
-  const stops = activeRoute?.stops || activeRoute?.route_stops || [];
-  const currentStop = stops.find((s: any) => s.status === 'pending') || stops[stops.length - 1];
+  // GET /routes embeds the vehicle as `vehicles` and each stop's point as `delivery_points`
+  const vehicle = activeRoute?.vehicles ?? activeRoute?.vehicle ?? null;
+  const stops: RouteStop[] = [...((activeRoute?.route_stops ?? activeRoute?.stops ?? []) as RouteStop[])]
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+  const pointOf = (stop?: RouteStop): DeliveryPoint | null => stop?.delivery_points ?? stop?.delivery_point ?? null;
+  const currentStopIndex = stops.findIndex(s => s.status === 'pending');
+  const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined;
+  const currentPoint = pointOf(currentStop);
+  const pendingStopCount = stops.filter(s => s.status === 'pending').length;
+
+  // Where the route starts: its depot when it has one (optimised routes), otherwise the first stop
+  const { data: depots = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['depots'],
+    queryFn: () => api.get('/depots/').then(r => r.data),
+    enabled: !!activeRoute?.depot_id,
+  });
+  const routeOrigin = activeRoute?.depot_id
+    ? depots.find(d => d.id === activeRoute.depot_id)?.name
+    : pointOf(stops[0])?.name;
+
+  // Shipment behind the current stop, for cargo and consignee details
+  const currentShipmentId: string | undefined = currentPoint?.shipment_id ?? undefined;
+  const { data: currentShipment } = useQuery({
+    queryKey: ['shipment', currentShipmentId],
+    queryFn: () => shipmentsAPI.get(currentShipmentId!),
+    enabled: !!currentShipmentId,
+  });
+  const consigneePhone: string | undefined =
+    currentShipment?.metadata?.consigneeContact || currentShipment?.metadata?.consignee?.contact || undefined;
 
   const computedDist = activeRoute ? getRouteDistance(activeRoute) : 0;
   const computedDuration = activeRoute ? getRouteDuration(activeRoute, computedDist) : 0;
+
+  // Last position report: this device's own fix, else the vehicle's last telemetry heartbeat
+  const lastUpdate = lastFixAt ?? (vehicle?.last_heartbeat ? new Date(vehicle.last_heartbeat) : null);
+
+  const triggerSos = useMutation({
+    mutationFn: () => telemetryAPI.triggerSos(liveLocation ? { lat: liveLocation.lat, lng: liveLocation.lng } : {}),
+    onSuccess: () => toast.success('SOS sent to the control room'),
+    onError: (err: AxiosError<{ detail?: string }>) =>
+      toast.error(err.response?.data?.detail || 'Could not send SOS. Call the control room directly.'),
+  });
 
   const updateStatus = useMutation({
     mutationFn: ({ shipmentId, status, params }: any) =>
@@ -124,11 +261,10 @@ export default function DriverPage() {
 
   // Before the first fix, show the vehicle's last reported position
   useEffect(() => {
-    const v = activeRoute?.vehicle;
-    if (!liveLocation && v?.latitude != null && v?.longitude != null) {
-      setLiveLocation({ lat: v.latitude, lng: v.longitude, speedKmph: 0 });
+    if (!liveLocation && vehicle?.latitude != null && vehicle?.longitude != null) {
+      setLiveLocation({ lat: vehicle.latitude, lng: vehicle.longitude, speedKmph: 0 });
     }
-  }, [activeRoute?.vehicle?.latitude, activeRoute?.vehicle?.longitude]);
+  }, [vehicle?.latitude, vehicle?.longitude]);
 
   // Share this device's real location while on a trip (drivers only)
   useEffect(() => {
@@ -144,6 +280,7 @@ export default function DriverPage() {
         const { latitude, longitude, speed, heading, accuracy } = pos.coords;
         const speedMs = Math.max(0, speed ?? 0);
         setLiveLocation({ lat: latitude, lng: longitude, speedKmph: Math.round(speedMs * 3.6) });
+        setLastFixAt(new Date(pos.timestamp));
 
         if (Date.now() - lastSent < 10_000) return;
         lastSent = Date.now();
@@ -165,8 +302,9 @@ export default function DriverPage() {
   const finalizeDelivery = () => {
     if (!recipientName || !signature) return toast.error('Check signature fields');
     if (!currentStop) return toast.error('No active stop');
+    if (!currentShipmentId) return toast.error('This stop has no linked shipment');
     updateStatus.mutate({
-      shipmentId: currentStop.delivery_point.shipment_id,
+      shipmentId: currentShipmentId,
       status: 'delivered',
       params: { received_by: recipientName, signature_data: signature }
     });
@@ -177,10 +315,12 @@ export default function DriverPage() {
       {/* Driver Header */}
       <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
         <h2 className="text-xs font-bold text-muted uppercase tracking-widest">margixindia Driver</h2>
-        <h1 className="text-xl font-black uppercase mt-1">Welcome, Driver</h1>
+        <h1 className="text-xl font-black uppercase mt-1">Welcome, {me?.full_name || 'Driver'}</h1>
         <div className="mt-4 flex justify-between items-center text-sm">
           <div>
-            <p className="text-muted">Truck: <span className="font-bold text-text">{activeRoute?.vehicle?.plate_number || 'HR38AC1276'}</span></p>
+            {vehicle?.plate_number && (
+              <p className="text-muted">Vehicle: <span className="font-bold text-text">{vehicle.plate_number}</span></p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${shiftStatus !== 'OFFLINE' ? 'bg-success animate-pulse' : 'bg-slate-500'}`} />
@@ -198,19 +338,19 @@ export default function DriverPage() {
           <div className="space-y-4">
             <div className="relative pl-6 border-l-2 border-surface2">
               <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-yellow-500" />
-              <p className="text-sm font-bold">Delhi Hub</p>
+              <p className="text-sm font-bold">{routeOrigin || '—'}</p>
               <div className="h-6" />
               <div className="absolute -left-[5px] bottom-1 w-2 h-2 rounded-full bg-primary" />
-              <p className="text-sm font-bold">{currentStop?.delivery_point?.name || 'Destination'}</p>
+              <p className="text-sm font-bold">{currentPoint?.name || (stops.length > 0 ? 'All stops completed' : '—')}</p>
             </div>
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
               <div>
                 <p className="text-[10px] text-muted uppercase tracking-widest">ETA</p>
-                <p className="font-black text-lg">{formatEta(computedDuration)}</p>
+                <p className="font-black text-lg">{computedDuration > 0 ? formatEta(computedDuration) : '—'}</p>
               </div>
               <div>
                 <p className="text-[10px] text-muted uppercase tracking-widest">Distance</p>
-                <p className="font-black text-lg">{computedDist.toFixed(1)} km</p>
+                <p className="font-black text-lg">{computedDist > 0 ? `${computedDist.toFixed(1)} km` : '—'}</p>
               </div>
             </div>
           </div>
@@ -225,33 +365,41 @@ export default function DriverPage() {
         <div className="grid grid-cols-2 gap-y-4">
           <div>
             <p className="text-xs text-muted mb-1">Speed</p>
-            <p className="font-black text-lg">{shiftStatus === 'ON_MISSION' ? '48' : '0'} km/h</p>
+            <p className="font-black text-lg">{isTracking && lastFixAt && liveLocation ? `${liveLocation.speedKmph} km/h` : '—'}</p>
           </div>
           <div>
             <p className="text-xs text-muted mb-1">GPS</p>
-            <p className="font-bold text-success flex items-center gap-1"><CheckCircle2 size={14} /> Connected</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-1">Battery</p>
-            <p className="font-bold">84%</p>
+            {isTracking && lastFixAt ? (
+              <p className="font-bold text-success flex items-center gap-1"><CheckCircle2 size={14} /> Connected</p>
+            ) : (
+              <p className="font-bold text-muted">{isTracking ? 'Waiting for fix' : 'Off'}</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted mb-1">Last Update</p>
-            <p className="font-bold">5 sec ago</p>
+            <p className="font-bold">{lastUpdate ? lastUpdate.toLocaleTimeString() : '—'}</p>
           </div>
         </div>
       </div>
 
       {/* Cargo Details */}
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-        <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Cargo Details</h2>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-muted">Shipment</span><span className="font-bold uppercase">SHP-001</span></div>
-          <div className="flex justify-between"><span className="text-muted">Weight</span><span className="font-bold">10 Tons</span></div>
-          <div className="flex justify-between"><span className="text-muted">Type</span><span className="font-bold">Electronics</span></div>
-          <div className="flex justify-between"><span className="text-muted">Delivery Slots</span><span className="font-bold">3</span></div>
+      {currentStop && (
+        <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
+          <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Cargo Details</h2>
+          <div className="space-y-2 text-sm">
+            {currentShipment?.tracking_id && (
+              <div className="flex justify-between"><span className="text-muted">Shipment</span><span className="font-bold uppercase">{currentShipment.tracking_id}</span></div>
+            )}
+            {(currentShipment?.total_weight_kg || currentPoint?.demand_kg) ? (
+              <div className="flex justify-between"><span className="text-muted">Weight</span><span className="font-bold">{currentShipment?.total_weight_kg || currentPoint?.demand_kg} kg</span></div>
+            ) : null}
+            {currentShipment?.metadata?.productCategory && (
+              <div className="flex justify-between"><span className="text-muted">Type</span><span className="font-bold">{currentShipment.metadata.productCategory}</span></div>
+            )}
+            <div className="flex justify-between"><span className="text-muted">Stops Left</span><span className="font-bold">{pendingStopCount}</span></div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Actions */}
       <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
@@ -273,12 +421,6 @@ export default function DriverPage() {
             <Pause size={20} className="mb-2" /> Pause Trip
           </button>
           <button
-            onClick={() => toast.success('Delay reported to Control Tower')}
-            className="flex flex-col items-center justify-center p-4 rounded-xl bg-orange-500/10 text-orange-500 font-black text-[10px] uppercase tracking-widest hover:bg-orange-500/20 transition-all"
-          >
-            <AlertTriangle size={20} className="mb-2" /> Report Delay
-          </button>
-          <button
             onClick={() => setActiveTab('deliveries')}
             className="flex flex-col items-center justify-center p-4 rounded-xl bg-primary/10 text-primary font-black text-[10px] uppercase tracking-widest hover:bg-primary/20 transition-all"
           >
@@ -297,13 +439,12 @@ export default function DriverPage() {
         </div>
       );
     }
-    const target = currentStop?.delivery_point;
     return (
       <DriverMap
         currentLat={liveLocation.lat}
         currentLng={liveLocation.lng}
-        targetLat={target?.lat ?? liveLocation.lat}
-        targetLng={target?.lng ?? liveLocation.lng}
+        targetLat={currentPoint?.latitude ?? liveLocation.lat}
+        targetLng={currentPoint?.longitude ?? liveLocation.lng}
         shiftStatus={shiftStatus}
         speed={liveLocation.speedKmph}
       />
@@ -314,15 +455,23 @@ export default function DriverPage() {
     <div className="space-y-6 pb-24">
       {currentStop ? (
         <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-          <h2 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-4">Delivery Stop #2</h2>
+          <h2 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-4">Delivery Stop #{currentStopIndex + 1} of {stops.length}</h2>
           <div className="space-y-3 mb-6">
-            <div><p className="text-xs text-muted uppercase">Customer</p><p className="font-bold text-lg">ABC Pvt Ltd</p></div>
-            <div><p className="text-xs text-muted uppercase">Contact</p><p className="font-bold text-lg text-primary">98xxxxxx12</p></div>
-            <div><p className="text-xs text-muted uppercase">Address</p><p className="font-bold">{currentStop.delivery_point?.address || 'Jaipur Hub'}</p></div>
+            {currentPoint?.name && (
+              <div><p className="text-xs text-muted uppercase">Customer</p><p className="font-bold text-lg">{currentPoint.name}</p></div>
+            )}
+            {consigneePhone && (
+              <div><p className="text-xs text-muted uppercase">Contact</p><p className="font-bold text-lg text-primary">{consigneePhone}</p></div>
+            )}
+            {currentPoint?.address && (
+              <div><p className="text-xs text-muted uppercase">Address</p><p className="font-bold">{currentPoint.address}</p></div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-6">
-            <button className="h-12 bg-surface2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase"><Phone size={14} /> Call Customer</button>
+            {consigneePhone && (
+              <a href={`tel:${consigneePhone}`} className="h-12 bg-surface2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase"><Phone size={14} /> Call Customer</a>
+            )}
             <button onClick={() => setActiveTab('nav')} className="h-12 bg-primary/20 text-primary rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase"><MapIcon size={14} /> Navigate</button>
           </div>
 
@@ -341,7 +490,7 @@ export default function DriverPage() {
             </div>
             <div>
               <label className="text-xs text-muted uppercase mb-1 block">Proof of Delivery (Signature)</label>
-              <SignaturePad onSave={setSignature} />
+              <SignaturePad onSave={setSignature} onClear={() => setSignature(null)} />
             </div>
             <button
               onClick={finalizeDelivery}
@@ -366,17 +515,14 @@ export default function DriverPage() {
     <div className="space-y-6 pb-24">
       <div className="bg-error/10 p-6 rounded-2xl border border-error/20 shadow-md">
         <h2 className="text-[10px] font-black text-error uppercase tracking-widest mb-4 flex items-center gap-2"><ShieldAlert size={14} /> Alert Center</h2>
-        <p className="text-sm text-text mb-6">Report critical emergencies immediately. This notifies the Control Tower and initiates emergency protocols.</p>
+        <p className="text-sm text-text mb-6">Report critical emergencies immediately. This raises an SOS alert for your vehicle{liveLocation ? ' with your current location' : ''} on the control room's emergency screen.</p>
 
-        <div className="space-y-3">
-          <button onClick={() => toast.success('SOS Sent')} className="w-full p-4 bg-surface2 rounded-xl flex items-center gap-3 font-bold hover:bg-error/20 hover:text-error transition-all"><AlertTriangle size={18} /> Vehicle Breakdown</button>
-          <button onClick={() => toast.success('SOS Sent')} className="w-full p-4 bg-surface2 rounded-xl flex items-center gap-3 font-bold hover:bg-error/20 hover:text-error transition-all"><AlertTriangle size={18} /> Accident</button>
-          <button onClick={() => toast.success('SOS Sent')} className="w-full p-4 bg-surface2 rounded-xl flex items-center gap-3 font-bold hover:bg-error/20 hover:text-error transition-all"><AlertTriangle size={18} /> Route Blocked</button>
-          <button onClick={() => toast.success('SOS Sent')} className="w-full p-4 bg-surface2 rounded-xl flex items-center gap-3 font-bold hover:bg-error/20 hover:text-error transition-all"><AlertTriangle size={18} /> Medical Emergency</button>
-        </div>
-
-        <button onClick={() => toast.error('Initiating general SOS')} className="w-full mt-6 h-14 bg-error text-white font-black uppercase text-sm rounded-xl shadow-xl shadow-error/20 active:scale-95 transition-transform">
-          Send SOS
+        <button
+          onClick={() => triggerSos.mutate()}
+          disabled={triggerSos.isPending}
+          className="w-full mt-6 h-14 bg-error text-white font-black uppercase text-sm rounded-xl shadow-xl shadow-error/20 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {triggerSos.isPending ? <Loader2 className="animate-spin" /> : <><AlertTriangle size={18} /> Send SOS</>}
         </button>
       </div>
     </div>
@@ -389,8 +535,8 @@ export default function DriverPage() {
           <User size={32} className="text-primary" />
         </div>
         <div>
-          <h2 className="font-black text-xl">Rahul Kumar</h2>
-          <p className="text-muted text-sm uppercase">Driver ID: D-8492</p>
+          <h2 className="font-black text-xl">{me?.full_name || 'Driver'}</h2>
+          {vehicle?.plate_number && <p className="text-muted text-sm uppercase">Vehicle: {vehicle.plate_number}</p>}
         </div>
       </div>
 
@@ -400,7 +546,7 @@ export default function DriverPage() {
           onClick={() => { setShiftStatus('OFFLINE'); setIsTracking(false); toast.success('Shift Ended') }}
           className="w-full h-14 bg-error/10 text-error font-black uppercase text-xs rounded-xl shadow-md active:scale-95 transition-transform"
         >
-          End Shift & Logout
+          End Shift
         </button>
       </div>
     </div>

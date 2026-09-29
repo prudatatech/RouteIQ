@@ -339,7 +339,7 @@ export default function TplOnboardingPage() {
                            value={email}
                            onChange={e => setEmail(e.target.value)}
                            className="w-full bg-surface border border-border rounded text-text font-medium text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all"
-                           placeholder="admin@safexpress.com"
+                           placeholder="you@company.com"
                          />
                        </div>
                        <div>
