@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Play, CheckCircle2 } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
 import {
-  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, parseSort, serializeSort, useUrlState, type Column,
+  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, statusToLabel, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
@@ -46,13 +46,13 @@ export default function RoutesPage() {
 
   const { data: routes = [], isLoading, isError, refetch } = useQuery<RouteRow[]>({
     queryKey: ['routes'],
-    queryFn: () => routesAPI.list({ limit: 50 }) as Promise<RouteRow[]>,
+    queryFn: () => routesAPI.list({ limit: 200 }) as Promise<RouteRow[]>,
     refetchInterval: 20_000,
   })
 
   const { data: vehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
-    queryFn: () => vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>,
+    queryFn: () => vehiclesAPI.list({ limit: 500 }) as Promise<Vehicle[]>,
   })
 
   const vehicleById = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles])
@@ -81,7 +81,7 @@ export default function RoutesPage() {
         const vehicle = vehicleById.get(r.vehicle_id ?? '')
         return (
           <div>
-            <div className="font-medium text-text">{vehicle?.plate_number || (r.vehicle_id ? r.vehicle_id.slice(0, 8) : 'Unassigned')}</div>
+            <div className="font-medium text-text">{vehicle?.plate_number || (r.vehicle_id ? 'Vehicle not found' : 'Unassigned')}</div>
             {vehicle?.vehicle_model && <div className="text-xs text-muted">{vehicle.vehicle_model}</div>}
           </div>
         )
@@ -156,16 +156,16 @@ export default function RoutesPage() {
       const full = withVehicle(r)
       const distance = getRouteDistance(full)
       return {
-        route_id: r.id,
-        vehicle: vehicle?.plate_number || r.vehicle_id || '',
-        status: r.status,
+        route_id: r.id.slice(0, 8).toUpperCase(),
+        vehicle: vehicle?.plate_number || '',
+        status: statusToLabel(r.status),
         stops: r.route_stops?.length ?? 0,
         distance_km: distance > 0 ? distance.toFixed(1) : '',
         eta: distance > 0 ? formatEta(getRouteDuration(full, distance)) : '',
         updated_at: r.updated_at ?? r.created_at ?? '',
       }
     }), [
-      { key: 'route_id', header: 'Route ID' },
+      { key: 'route_id', header: 'Route' },
       { key: 'vehicle', header: 'Vehicle' },
       { key: 'status', header: 'Status' },
       { key: 'stops', header: 'Stops' },

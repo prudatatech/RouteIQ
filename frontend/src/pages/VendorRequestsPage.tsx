@@ -295,6 +295,9 @@ export default function VendorRequestsPage() {
     setBulkPerKm('')
     selection.clear()
     queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
+    queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+    queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['shipments'] })
     refresh()
     reportBulk('Assigned', ok, failures)
   }
@@ -537,6 +540,9 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
     onSuccess: () => {
       toast.success('Vehicle assigned. The load was added to its cargo manifest.')
       queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
       onAssigned()
     },
     onError: err => toast.error(errorMessage(err, 'We could not assign the vehicle. Try again.')),

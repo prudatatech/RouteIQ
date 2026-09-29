@@ -56,6 +56,8 @@ export default function EmergencyPage() {
       if (err) throw err
       return Promise.all((data ?? []).map(attachDetails))
     },
+    // Open alerts first, so an old unresolved one is never pushed off the list by resolved ones.
+    select: rows => [...rows].sort((a, b) => Number(a.status === 'resolved') - Number(b.status === 'resolved')),
   })
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export default function EmergencyPage() {
       await telemetryAPI.acknowledgeSos(alert.id)
       queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
         prev?.map(a => a.id === alert.id ? { ...a, status: 'acknowledged' } : a))
+      queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       toast.success('Alert acknowledged')
     } catch (err) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -115,6 +118,7 @@ export default function EmergencyPage() {
       await telemetryAPI.resolveSos(alert.id)
       queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
         prev?.map(a => a.id === alert.id ? { ...a, status: 'resolved' } : a))
+      queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       toast.success('Alert resolved')
     } catch (err) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -145,7 +149,7 @@ export default function EmergencyPage() {
     <Page>
       <PageHeader
         title="Emergencies"
-        description={`${activeAlerts.length} active ${activeAlerts.length === 1 ? 'alert' : 'alerts'}.`}
+        description={isLoading ? 'Driver SOS alerts and where they are.' : activeAlerts.length === 0 ? 'No active alerts.' : `${activeAlerts.length.toLocaleString('en-IN')} active ${activeAlerts.length === 1 ? 'alert' : 'alerts'}.`}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[380px_1fr]">

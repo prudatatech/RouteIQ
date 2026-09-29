@@ -9,7 +9,7 @@ import { formatEta } from '@/utils/timeFormat'
 import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
-  EmptyState, LoadingState, Alert,
+  EmptyState, LoadingState, Alert, useConfirm,
 } from '@/components/ui'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
@@ -127,6 +127,7 @@ export default function OptimizePage() {
   const queryClient = useQueryClient()
   const location = useLocation() as { state?: { routeId?: string } }
   const navigate = useNavigate()
+  const { confirm } = useConfirm()
   const routeIdToReoptimize = location.state?.routeId
 
   const [algorithm, setAlgorithm] = useState<'ortools' | 'ga'>('ortools')
@@ -135,13 +136,14 @@ export default function OptimizePage() {
   const [considerWeather, setConsiderWeather] = useState(true)
   const [manualWeather, setManualWeather] = useState(false)
   const [weatherLevel, setWeatherLevel] = useState('0.5')
-  const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set())
-  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string>>(new Set())
+  // null means nothing was touched yet, so everything counts as selected.
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string> | null>(null)
+  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string> | null>(null)
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
 
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'optimizable'],
-    queryFn: () => (vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>).then((list: Vehicle[]) =>
+    queryFn: () => (vehiclesAPI.list({ limit: 500 }) as Promise<Vehicle[]>).then((list: Vehicle[]) =>
       list.filter(v => ['available', 'idle', 'on_route', 'offline'].includes(v.status)),
     ),
   })
@@ -153,12 +155,12 @@ export default function OptimizePage() {
 
   // Every vehicle and shipment is available to pick from; default to all selected
   // so a first run behaves like before, but the operator can narrow it down.
-  const effectiveVehicleIds = selectedVehicleIds.size > 0 ? selectedVehicleIds : new Set(vehicles.map(v => v.id))
-  const effectiveShipmentIds = selectedShipmentIds.size > 0 ? selectedShipmentIds : new Set(pendingShipments.map(s => s.id))
+  const effectiveVehicleIds = selectedVehicleIds ?? new Set(vehicles.map(v => v.id))
+  const effectiveShipmentIds = selectedShipmentIds ?? new Set(pendingShipments.map(s => s.id))
 
   const toggleVehicle = (id: string) => {
     setSelectedVehicleIds(prev => {
-      const base = prev.size > 0 ? prev : new Set(vehicles.map(v => v.id))
+      const base = prev ?? new Set(vehicles.map(v => v.id))
       const next = new Set(base)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -167,7 +169,7 @@ export default function OptimizePage() {
   }
   const toggleShipment = (id: string) => {
     setSelectedShipmentIds(prev => {
-      const base = prev.size > 0 ? prev : new Set(pendingShipments.map(s => s.id))
+      const base = prev ?? new Set(pendingShipments.map(s => s.id))
       const next = new Set(base)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -229,6 +231,7 @@ export default function OptimizePage() {
         toast.success(`Optimized ${data.routes?.length ?? 0} route${data.routes?.length === 1 ? '' : 's'} in ${(data.solve_time_seconds || 0).toFixed(1)}s`)
         queryClient.invalidateQueries({ queryKey: ['routes'] })
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       }
     },
     onError: (err: ApiError) => {
@@ -251,7 +254,7 @@ export default function OptimizePage() {
 
   const { data: activeVehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'active-for-suggestions'],
-    queryFn: () => (vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>).then((list: Vehicle[]) => list.filter(v => v.status === 'on_route')),
+    queryFn: () => (vehiclesAPI.list({ limit: 500 }) as Promise<Vehicle[]>).then((list: Vehicle[]) => list.filter(v => v.status === 'on_route')),
   })
 
   const applySuggestion = useMutation({
@@ -279,7 +282,7 @@ export default function OptimizePage() {
   const mapVehicles: MapVehicle[] = useMemo(() => {
     if (!result?.routes?.length) {
       return vehicles.flatMap(v => v.latitude != null && v.longitude != null
-        ? [{ id: v.id, label: v.plate_number || v.id.slice(0, 8), status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
+        ? [{ id: v.id, label: v.plate_number || 'Unnamed vehicle', status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
         : [])
     }
     return result.routes.flatMap((r, i) => {
@@ -288,7 +291,7 @@ export default function OptimizePage() {
       }
       const v = r.vehicle_id ? vehicleById.get(r.vehicle_id) : undefined
       return v?.latitude != null && v?.longitude != null
-        ? [{ id: v.id, label: v.plate_number || v.id.slice(0, 8), status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
+        ? [{ id: v.id, label: v.plate_number || 'Unnamed vehicle', status: v.status, position: { lat: v.latitude, lng: v.longitude } }]
         : []
     })
   }, [result, vehicles, vehicleById])
@@ -409,7 +412,7 @@ export default function OptimizePage() {
                     {vehicles.map(v => (
                       <Checkbox
                         key={v.id}
-                        label={v.plate_number || v.id.slice(0, 8)}
+                        label={v.plate_number || 'Unnamed vehicle'}
                         checked={effectiveVehicleIds.has(v.id)}
                         onChange={() => toggleVehicle(v.id)}
                       />
@@ -430,7 +433,7 @@ export default function OptimizePage() {
                     {pendingShipments.map(s => (
                       <Checkbox
                         key={s.id}
-                        label={s.tracking_id || s.id.slice(0, 8)}
+                        label={s.tracking_id || 'Shipment'}
                         checked={effectiveShipmentIds.has(s.id)}
                         onChange={() => toggleShipment(s.id)}
                       />
@@ -499,6 +502,13 @@ export default function OptimizePage() {
                     <p className="text-sm text-muted">{weatherNote(result.weather)}</p>
                   )}
 
+                  {!routeIdToReoptimize && (result.routes?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-brand-soft px-4 py-3 text-sm text-text">
+                      <span>The new routes are waiting to be dispatched.</span>
+                      <Button size="sm" variant="secondary" onClick={() => navigate('/routes?status=pending')}>Review and dispatch</Button>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     {(result.routes ?? []).map((r, i) => {
                       const vehicle = r.vehicles?.plate_number || (r.vehicle_id ? vehicleById.get(r.vehicle_id)?.plate_number : undefined)
@@ -506,7 +516,7 @@ export default function OptimizePage() {
                       return (
                         <div key={r.id ?? i} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
                           <div>
-                            <div className="text-sm font-medium text-text">{vehicle || (r.vehicle_id ? r.vehicle_id.slice(0, 8) : `Route ${i + 1}`)}</div>
+                            <div className="text-sm font-medium text-text">{vehicle || `Route ${i + 1}`}</div>
                             <div className="text-xs text-muted">{stopCount.toLocaleString('en-IN')} stop{stopCount === 1 ? '' : 's'}</div>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted">
@@ -543,7 +553,7 @@ export default function OptimizePage() {
                       disabled={checkVehicle.isPending}
                       onClick={() => checkVehicle.mutate(v.id)}
                     >
-                      Check {v.plate_number || v.id.slice(0, 8)}
+                      Check {v.plate_number || 'Unnamed vehicle'}
                     </Button>
                   ))}
                 </div>
@@ -560,7 +570,7 @@ export default function OptimizePage() {
                     return (
                       <li key={s.id} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-text">{vehicle?.plate_number || s.vehicle_id.slice(0, 8)}</div>
+                          <div className="text-sm font-medium text-text">{vehicle?.plate_number || 'Vehicle'}</div>
                           {s.cause && <div className="text-sm text-text">{s.cause}</div>}
                           <div className="text-xs text-muted">{s.insight}</div>
                         </div>
@@ -571,7 +581,14 @@ export default function OptimizePage() {
                               size="sm"
                               icon={<Check size={14} />}
                               loading={applySuggestion.isPending && applySuggestion.variables?.id === s.id}
-                              onClick={() => applySuggestion.mutate(s)}
+                              onClick={async () => {
+                              const ok = await confirm({
+                                title: 'Apply this reroute?',
+                                message: `${vehicle?.plate_number ?? 'The vehicle'} will follow the new stop order and its driver will see the change.`,
+                                confirmLabel: 'Apply reroute',
+                              })
+                              if (ok) applySuggestion.mutate(s)
+                            }}
                             >
                               Apply
                             </Button>

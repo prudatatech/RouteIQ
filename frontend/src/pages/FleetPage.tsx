@@ -104,7 +104,7 @@ export default function FleetPage() {
   const sort = parseSort(sortParam)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
-  const [detailVehicle, setDetailVehicle] = useState<Vehicle | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Keep "last seen" labels and the live threshold current.
@@ -195,9 +195,17 @@ export default function FleetPage() {
   }
 
   const filtered = useMemo(
-    () => vehicles.filter(v => v.plate_number.toLowerCase().includes(search.toLowerCase())),
+    () => {
+      const q = search.trim().toLowerCase()
+      if (!q) return vehicles
+      return vehicles.filter(v => [v.plate_number, v.vehicle_model, v.driver_name].some(t => t?.toLowerCase().includes(q)))
+    },
     [vehicles, search],
   )
+
+  // Read the open vehicle from the live list so the drawer follows realtime updates.
+  const detailVehicle = detailId ? vehicles.find(v => v.id === detailId) ?? null : null
+  const setDetailVehicle = (v: Vehicle | null) => setDetailId(v?.id ?? null)
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => vehiclesAPI.delete(id),
@@ -311,7 +319,7 @@ export default function FleetPage() {
       align: 'right',
       cell: v => (
         <div className="flex items-center justify-end gap-1">
-          <IconButton label={`Show ${v.plate_number} on the map`} icon={<MapPin size={16} />} size="sm" onClick={() => setDetailVehicle(v)} />
+          <IconButton label={`Show ${v.plate_number} on the map`} icon={<MapPin size={16} />} size="sm" onClick={() => navigate('/live-map?vehicle=' + v.id)} />
           <IconButton label={`Analytics for ${v.plate_number}`} icon={<BarChart2 size={16} />} size="sm" onClick={() => navigate('/analytics?vehicle=' + v.id)} />
           {role !== 'driver' && (
             <>
@@ -366,7 +374,7 @@ export default function FleetPage() {
     <Page>
       <PageHeader
         title="Fleet"
-        description={`${counts.all.toLocaleString('en-IN')} vehicles.`}
+        description={summary ? `${counts.all.toLocaleString('en-IN')} ${counts.all === 1 ? 'vehicle' : 'vehicles'} in your fleet.` : 'Every vehicle, its health and where it is.'}
         actions={(
           <>
             <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
@@ -379,7 +387,7 @@ export default function FleetPage() {
         <Tabs tabs={viewTabs} value={view} onChange={setView} label="Fleet sections" />
         {view === 'vehicles' && (
         <div className="flex flex-wrap items-center gap-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" className="max-w-xs" />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate, model or driver" label="Search vehicles" className="max-w-xs" />
           <div className="flex flex-wrap gap-1.5">
             {STATUS_FILTERS.map(s => (
               <button
@@ -415,9 +423,11 @@ export default function FleetPage() {
         onRowClick={setDetailVehicle}
         empty={{
           icon: <Truck size={22} />,
-          title: search ? 'No vehicles match your search' : 'No vehicles yet',
-          description: search ? undefined : 'Add your first vehicle to get started.',
-          action: !search && role !== 'driver' ? <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button> : undefined,
+          title: search || filter !== 'all' ? 'No vehicles match' : 'No vehicles yet',
+          description: search || filter !== 'all' ? 'Try another status or search term.' : 'Add your first vehicle to get started.',
+          action: search || filter !== 'all'
+            ? <Button variant="secondary" onClick={() => { setSearch(''); setFilter('all') }}>Clear filters</Button>
+            : role !== 'driver' ? <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button> : undefined,
         }}
         pageSize={20}
         sort={sort}
