@@ -9,7 +9,7 @@ import { routesAPI } from '@/services/api'
 import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline, type TimelineEvent, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
 import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapPoint, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
-import { canCompleteRoute, canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
+import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatDateTime } from '@/utils/display'
 import { formatEta } from '@/utils/timeFormat'
 import RouteConditions from '@/components/traffic/RouteConditions'
@@ -34,7 +34,7 @@ interface RouteStop {
 
 /** Mirrors the backend rule in routes.routes.ts DELETE /:route_id: once a route
  * has started, deleting it would erase real movement history. Cancel it instead. */
-const UNDELETABLE_STATUSES = new Set(['active', 'in_progress', 'completed'])
+const UNDELETABLE_STATUSES = new Set(['active', 'completed'])
 
 interface RouteDetail extends RouteLike {
   id: string
@@ -67,7 +67,7 @@ export default function RouteDetailsPage() {
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) => routesAPI.updateStatus((route as RouteDetail).id, status),
     onSuccess: () => {
-      toast.success('Route cancelled')
+      toast.success(route?.is_manifest ? 'Load cancelled' : 'Route cancelled')
       queryClient.invalidateQueries({ queryKey: ['route', id] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
@@ -124,9 +124,11 @@ export default function RouteDetailsPage() {
   const shortId = route.id.slice(0, 8).toUpperCase()
   const isCompleted = route.status === 'completed' || route.status === 'delivered'
   const isCancelled = route.status === 'cancelled'
-  const canRunOptimizer = route.status === 'active' || route.status === 'pending' || route.status === 'on_route' || route.status === 'in_progress'
+  // A vendor load has one pickup and one drop: there is nothing to optimize, and it is cancelled, not deleted
+  const canRunOptimizer = !route.is_manifest && (route.status === 'active' || route.status === 'pending')
   const canCancel = !isCompleted && !isCancelled
-  const canDelete = !UNDELETABLE_STATUSES.has(route.status)
+  const canDelete = !route.is_manifest && !UNDELETABLE_STATUSES.has(route.status)
+  const completeBlocked = completeBlockedReason(route)
 
   const distance = getRouteDistance(route)
   const duration = getRouteDuration(route, distance)
@@ -154,15 +156,17 @@ export default function RouteDetailsPage() {
 
   const timeline: TimelineEvent[] = [
     { status: 'created', at: route.created_at },
-    { status: 'in_progress', at: route.started_at },
+    { status: 'active', at: route.started_at },
     { status: 'completed', at: route.completed_at },
   ].filter((e): e is TimelineEvent => !!e.at)
 
   const handleCancel = async () => {
     const ok = await confirm({
-      title: 'Cancel this route?',
-      message: 'The vehicle and driver will no longer see this route as active.',
-      confirmLabel: 'Cancel route',
+      title: route.is_manifest ? 'Cancel this load?' : 'Cancel this route?',
+      message: route.is_manifest
+        ? "The vendor's request goes back to approved so it can be assigned again, the vehicle gets its capacity back and the driver is told."
+        : 'The vehicle and driver will no longer see this route as active.',
+      confirmLabel: route.is_manifest ? 'Cancel load' : 'Cancel route',
       tone: 'danger',
     })
     if (ok) updateStatusMutation.mutate('cancelled')
@@ -194,12 +198,21 @@ export default function RouteDetailsPage() {
               <Button icon={<Play size={16} />} onClick={() => statusActions.dispatch(route)} loading={statusActions.isPending}>Dispatch</Button>
             )}
             {canCompleteRoute(route) && (
-              <Button icon={<CheckCircle2 size={16} />} onClick={() => statusActions.complete(route)} loading={statusActions.isPending}>Mark completed</Button>
+              <Button
+                icon={<CheckCircle2 size={16} />}
+                onClick={() => statusActions.complete(route)}
+                loading={statusActions.isPending}
+                disabled={completeBlocked !== null}
+                title={completeBlocked ?? undefined}
+              >
+                Mark completed
+              </Button>
             )}
             <Button
               variant="secondary"
               onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
               disabled={!canRunOptimizer}
+              title={route.is_manifest ? 'A vendor load has one pickup and one drop, so there is nothing to optimize.' : undefined}
             >
               Run optimizer
             </Button>
@@ -284,7 +297,7 @@ export default function RouteDetailsPage() {
                 disabled={!canCancel}
                 loading={updateStatusMutation.isPending}
               >
-                Cancel route
+                {route.is_manifest ? 'Cancel load' : 'Cancel route'}
               </Button>
               {canDelete && (
                 <Button variant="danger" icon={<Trash2 size={16} />} onClick={handleDelete} loading={deleteMutation.isPending}>

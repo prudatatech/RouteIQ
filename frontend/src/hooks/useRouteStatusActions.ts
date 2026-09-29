@@ -8,11 +8,19 @@ interface RouteStatusLike {
   id: string
   status: string
   is_manifest?: boolean
+  route_stops?: readonly object[] | null
 }
 
 /** Cargo-manifest routes are shown as routes but live in another table; PATCH /routes/:id/status can't change them. */
 export const canDispatchRoute = (r: RouteStatusLike) => !r.is_manifest && r.status === 'pending'
-export const canCompleteRoute = (r: RouteStatusLike) => !r.is_manifest && (r.status === 'active' || r.status === 'in_progress')
+export const canCompleteRoute = (r: RouteStatusLike) => !r.is_manifest && r.status === 'active'
+
+/** Why an active route can't be marked completed yet: deliveries are still to be made or failed. */
+export function completeBlockedReason(r: RouteStatusLike): string | null {
+  const pending = (r.route_stops ?? []).filter(s => (s as { status?: string | null }).status === 'pending').length
+  if (pending === 0) return null
+  return `${pending} ${pending === 1 ? 'stop is' : 'stops are'} still pending. Complete or fail ${pending === 1 ? 'it' : 'them'} first, or cancel the route.`
+}
 
 /** Dispatch (pending → active) and mark completed, each behind a confirmation. */
 export function useRouteStatusActions() {
@@ -39,6 +47,8 @@ export function useRouteStatusActions() {
   }
 
   const complete = async (route: RouteStatusLike) => {
+    const blocked = completeBlockedReason(route)
+    if (blocked) { toast.error(blocked); return }
     const ok = await confirm({
       title: 'Mark this route as completed?',
       message: 'The vehicle becomes available again.',
