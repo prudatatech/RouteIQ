@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import { IconButton } from './Button'
 import { Spinner } from './Spinner'
+import { notificationPath, type NotificationAudience } from './notificationTargets'
 
 interface NotificationRow {
   id: string
@@ -21,33 +22,20 @@ interface NotificationRow {
   created_at: string
 }
 
-/** Where a notification's row takes staff when clicked, per its `type` and `data`. */
-const NOTIFICATION_TARGETS: Record<string, { base: string; dataKey: string }> = {
-  sos: { base: '/emergency', dataKey: 'alert_id' },
-  vendor_request: { base: '/vendor-requests', dataKey: 'request_id' },
-  customer_booking: { base: '/bookings', dataKey: 'booking_id' },
-  capacity_bid: { base: '/bids', dataKey: 'bid_id' },
-  kyc_submitted: { base: '/admin/kyc', dataKey: 'profile_id' },
-  tpl_application: { base: '/3pl-partners', dataKey: 'partner_id' },
-}
-
-function pathFor(n: NotificationRow): string | null {
-  const target = NOTIFICATION_TARGETS[n.type]
-  if (!target) return null
-  const id = n.data?.[target.dataKey]
-  return typeof id === 'string' ? `${target.base}?open=${id}` : target.base
-}
-
 const LIST_LIMIT = 20
 const MESSAGE_THREADS_SHOWN = 5
 
 /** Where an unread thread takes staff: the route page, or the shipment's drawer. */
 const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : `/shipments?open=${t.shipment_id}`)
 
-/** Bell with an unread count, a realtime feed of the signed-in staff member's own notifications
- * (SOS, vendor requests, bids, KYC submissions, 3PL applications — see docs/ux-plan-2.md, D2). */
-export function NotificationsBell() {
+/** Bell with an unread count and a realtime feed of the signed-in user's own notifications. Staff get
+ * SOS, vendor requests, bids, KYC and 3PL activity (see docs/ux-plan-2.md, D2) and drivers' messages;
+ * shippers and 3PL partners get what happens to their loads, bids, KYC and offers. */
+export function NotificationsBell({ placement = 'left' }: { placement?: 'left' | 'right' } = {}) {
   const userId = useAuthStore(s => s.userId)
+  const role = useAuthStore(s => s.role)
+  // Vendors and 3PL partners both sign in with the vendor role; drivers' messages are for staff only
+  const audience: NotificationAudience = role === 'vendor' ? 'vendor' : 'staff'
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationRow[]>([])
@@ -61,7 +49,7 @@ export function NotificationsBell() {
   const messagesUnread = useQuery({
     queryKey: ['messages-unread'],
     queryFn: () => messagesAPI.unread(),
-    enabled: !!userId,
+    enabled: !!userId && audience === 'staff',
     refetchInterval: 60_000,
   })
   useRealtimeRefresh('messages-unread-bell', ['messages'], [['messages-unread']])
@@ -119,7 +107,7 @@ export function NotificationsBell() {
 
   const openNotification = async (n: NotificationRow) => {
     setOpen(false)
-    const path = pathFor(n)
+    const path = notificationPath(n, audience)
     if (path) navigate(path)
     if (!n.is_read) {
       setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
@@ -168,7 +156,10 @@ export function NotificationsBell() {
           ref={panelRef}
           role="region"
           aria-label="Notifications"
-          className="absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-1rem)] lg:left-0 lg:right-auto rounded-card border border-border bg-surface shadow-dialog"
+          className={clsx(
+            'absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-card border border-border bg-surface shadow-dialog',
+            placement === 'left' && 'lg:left-0 lg:right-auto',
+          )}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-text">Notifications</p>
@@ -217,7 +208,9 @@ export function NotificationsBell() {
             )}
             {!loading && !loadFailed && items.length === 0 && unreadThreads.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted">
-                No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.
+                {audience === 'vendor'
+                  ? 'No notifications yet. Updates on your loads, bids, offers and verification will show up here.'
+                  : 'No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.'}
               </p>
             )}
             <ul>

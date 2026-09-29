@@ -405,7 +405,7 @@ export const tplNetworkService = {
     for (const p of partners ?? []) {
       if (!p.user_id) continue;
       try {
-        await notificationService.sendNotification(p.user_id, 'Load offer withdrawn', 'A load offered to you is no longer available.', 'tpl_offer_withdrawn', {});
+        await notificationService.sendNotification(p.user_id, 'Load offer withdrawn', 'A load offered to you is no longer available.', 'tpl_offer_withdrawn', { partner_id: p.id });
       } catch (e) {
         console.error('[tpl-network] Withdraw notification failed:', e);
       }
@@ -537,7 +537,7 @@ export const tplNetworkService = {
       for (const p of others ?? []) {
         if (!p.user_id) continue;
         try {
-          await notificationService.sendNotification(p.user_id, 'Load taken', 'Another partner accepted a load that was offered to you.', 'tpl_offer_taken', {});
+          await notificationService.sendNotification(p.user_id, 'Load taken', 'Another partner accepted a load that was offered to you.', 'tpl_offer_taken', { partner_id: p.id });
         } catch (e) {
           console.error('[tpl-network] Taken notification failed:', e);
         }
@@ -547,7 +547,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner accepted a load',
         `${partner.company_name} accepted ${shortPlace(offer.pickup_location)} to ${shortPlace(offer.drop_location)} at ${inr(amount)}.`,
-        'tpl_order_accepted', { order_id: order.id, [col]: sourceId });
+        'tpl_order_accepted', { order_id: order.id, partner_id: partner.id, [col]: sourceId });
       if (sourceType === 'request') {
         const { data: r } = await supabase.from('vendor_shipment_requests').select('vendor_id').eq('id', sourceId).maybeSingle();
         if (r?.vendor_id) {
@@ -582,7 +582,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner declined a load',
         `${partner.company_name} declined ${shortPlace(declined.pickup_location)} to ${shortPlace(declined.drop_location)}: ${reason}`,
-        'tpl_offer_declined', { offer_id: offerId });
+        'tpl_offer_declined', { offer_id: offerId, partner_id: partner.id });
     } catch (e) {
       console.error('[tpl-network] Decline notification failed:', e);
     }
@@ -640,7 +640,7 @@ export const tplNetworkService = {
       const label = next === 'picked_up' ? 'picked up' : next === 'in_transit' ? 'in transit' : 'delivered';
       await notificationService.notifyStaff(`3PL order ${label}`,
         `${partner.company_name}: ${shortPlace(order.pickup_location)} to ${shortPlace(order.drop_location)} is ${label}.`,
-        'tpl_order_status', { order_id: orderId });
+        'tpl_order_status', { order_id: orderId, partner_id: partner.id });
     } catch (e) {
       console.error('[tpl-network] Order follow-up failed:', e);
     }
@@ -707,7 +707,7 @@ export const tplNetworkService = {
         if (partner?.user_id) {
           await notificationService.sendNotification(partner.user_id, 'Payment marked as paid',
             `${inr(Number(data.agreed_amount))} for ${shortPlace(data.pickup_location)} to ${shortPlace(data.drop_location)} was marked paid.`,
-            'tpl_order_paid', { order_id: orderId });
+            'tpl_order_paid', { order_id: orderId, partner_id: data.partner_id });
         }
       } catch (e) {
         console.error('[tpl-network] Paid notification failed:', e);
