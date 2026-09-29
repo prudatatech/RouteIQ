@@ -16,6 +16,8 @@ import { settings } from '../core/config';
 import { v4 as uuidv4 } from 'uuid';
 import { notificationService } from '../services/notification.service';
 import { sendError, HttpError } from '../core/errors';
+import { liveWeatherAt } from '../services/weather.service';
+import { isValidPoint, LatLng } from '../services/geo';
 
 const router = Router();
 
@@ -79,6 +81,35 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       return;
     }
 
+    // ── Weather: a manual severity wins; otherwise live conditions at the depot and the centre of the stops ──
+    let weatherSeverity = 0;
+    let weatherInfo: { source: 'off' | 'manual' | 'live' | 'unavailable'; severity: number; description: string | null } = { source: 'off', severity: 0, description: null };
+    if (payload.consider_weather) {
+      if (payload.weather_severity !== undefined) {
+        weatherSeverity = payload.weather_severity;
+        weatherInfo = { source: 'manual', severity: weatherSeverity, description: null };
+      } else {
+        const stopPoints = shipments
+          .map((s: any) => ({ lat: Number(s.delivery_points?.[0]?.latitude), lng: Number(s.delivery_points?.[0]?.longitude) }))
+          .filter(isValidPoint);
+        const points: LatLng[] = [];
+        if (isValidPoint({ lat: Number(depot.latitude), lng: Number(depot.longitude) })) points.push({ lat: Number(depot.latitude), lng: Number(depot.longitude) });
+        if (stopPoints.length > 0) {
+          points.push({
+            lat: stopPoints.reduce((sum, p) => sum + p.lat, 0) / stopPoints.length,
+            lng: stopPoints.reduce((sum, p) => sum + p.lng, 0) / stopPoints.length,
+          });
+        }
+        const live = await liveWeatherAt(points);
+        if (live) {
+          weatherSeverity = live.severity;
+          weatherInfo = { source: 'live', severity: live.severity, description: live.description };
+        } else {
+          weatherInfo = { source: 'unavailable', severity: 0, description: null };
+        }
+      }
+    }
+
     // ── Call Python ML service ──
     const mlPayload = {
       locations: [
@@ -113,7 +144,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       })),
       max_solve_seconds: payload.max_solve_time_seconds,
       traffic_factor: payload.consider_traffic ? 1.0 + payload.traffic_density * settings.TRAFFIC_FACTOR_MULTIPLIER : 1.0,
-      weather_factor: payload.consider_weather ? 1.0 + payload.weather_severity * settings.WEATHER_FACTOR_MULTIPLIER : 1.0,
+      weather_factor: payload.consider_weather ? 1.0 + weatherSeverity * settings.WEATHER_FACTOR_MULTIPLIER : 1.0,
       algorithm: payload.algorithm === 'genetic' ? 'ga' : payload.algorithm,
     };
 
@@ -151,7 +182,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
           total_distance_km: optRoute.total_distance_km,
           total_duration_minutes: optRoute.total_duration_minutes,
           estimated_fuel_liters: optRoute.estimated_fuel_liters,
-          weather_condition: optRoute.weather_condition || 'clear',
+          weather_condition: (weatherInfo.source === 'live' && weatherInfo.description) || optRoute.weather_condition || 'clear',
           traffic_delay_minutes: optRoute.traffic_delay_minutes || 0,
           waypoints: [],
           optimization_score: optRoute.efficiency_score || 0.0,
@@ -243,6 +274,8 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       solve_time_seconds: solution.solve_time_seconds || 0,
       // The algorithm that actually produced the routes (may differ from the request on fallback)
       algorithm: solution.algorithm ?? mlPayload.algorithm,
+      // Where the weather effect came from: live OpenWeather, a manual value, or none
+      weather: weatherInfo,
       message: `Optimized ${routeResponses.length} routes in ${(solution.solve_time_seconds || 0).toFixed(2)}s`,
     });
   } catch (e: any) {

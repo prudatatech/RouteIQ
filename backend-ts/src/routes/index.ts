@@ -26,6 +26,9 @@ import vendorRoutes from './vendor.routes';
 import tplRoutes from './tpl.routes';
 import searchRoutes from './search.routes';
 import notificationsRoutes from './notifications.routes';
+import pricingRoutes from './pricing.routes';
+import trafficRoutes from './traffic.routes';
+import weatherRoutes from './weather.routes';
 
 const apiRouter = Router();
 
@@ -50,5 +53,8 @@ apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/tpl', tplRoutes);
 apiRouter.use('/search', searchRoutes);
 apiRouter.use('/notifications', notificationsRoutes);
+apiRouter.use('/pricing', pricingRoutes);
+apiRouter.use('/traffic', trafficRoutes);
+apiRouter.use('/weather', weatherRoutes);
 
 export default apiRouter;

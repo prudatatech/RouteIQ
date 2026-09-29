@@ -1,6 +1,7 @@
 import { supabase } from '../core/supabase';
 import { notificationService } from './notification.service';
 import { HttpError } from '../core/errors';
+import { pricingService } from './pricing.service';
 
 /** Request states an admin can still act on (approve, reject or assign a vehicle). */
 const OPEN_REQUEST_STATUSES = ['pending', 'approved'];
@@ -320,6 +321,13 @@ export const vendorService = {
       ...(cost !== undefined ? { cost } : {}),
       ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
     });
+
+    // Tell the pricing engine which price was agreed, so later quotes can learn from it
+    const quoteId = (req.metadata as Record<string, unknown> | null)?.quote_id;
+    const agreed = cost;
+    if (typeof quoteId === 'string' && typeof agreed === 'number' && agreed > 0) {
+      await pricingService.recordOutcome(quoteId, { accepted_amount: agreed, request_id: requestId });
+    }
 
     // Insert into cargo_manifest
     const { error: manifestErr } = await supabase.from('cargo_manifest').insert({

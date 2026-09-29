@@ -55,6 +55,10 @@ export const settings = {
   TOMTOM_API_KEY: env('TOMTOM_API_KEY'),
   MAPBOX_ACCESS_TOKEN: env('MAPBOX_ACCESS_TOKEN'),
 
+  // Traffic incidents (TomTom): how often to check active routes, and the smallest delay that raises a reroute suggestion
+  TRAFFIC_REFRESH_MINUTES: envInt('TRAFFIC_REFRESH_MINUTES', 10),
+  TRAFFIC_MIN_DELAY_MINUTES: envInt('TRAFFIC_MIN_DELAY_MINUTES', 5),
+
   // SparkGPS (Roadcast)
   SPARK_GPS_API_URL: env('SPARK_GPS_API_URL', 'https://api.roadcast.in/v1'),
   SPARK_GPS_API_TOKEN: env('SPARK_GPS_API_TOKEN'),

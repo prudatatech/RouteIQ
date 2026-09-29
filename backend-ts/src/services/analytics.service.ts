@@ -203,16 +203,23 @@ export class AnalyticsService {
     // 3. Reroute suggestions from Redis cache
     const suggestions = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
     for (const s of suggestions) {
+      const fromTraffic = s.source === 'traffic';
+      const saved = typeof s.saved_minutes === 'number' && s.saved_minutes > 0 ? s.saved_minutes : null;
       insights.push({
         id: `reroute_${s.vehicle_id}`,
         type: 'reroute_suggestion',
-        title: `Reroute Alert: ${s.vehicle_id.substring(0, 8)}`,
-        insight: `Better path found! ${s.trigger}. Potential savings: ${s.saved_minutes} mins.`,
+        title: fromTraffic ? `Traffic ahead: ${s.trigger}` : `Reroute Alert: ${s.vehicle_id.substring(0, 8)}`,
+        insight: saved !== null
+          ? `Better path found! ${s.trigger}. Potential savings: ${saved} mins.`
+          : `${s.trigger}. Open the route to check for a better order.`,
         vehicle_id: s.vehicle_id,
         route_id: s.route_id,
         new_sequence: s.new_stop_sequence,
-        saved_mins: s.saved_minutes,
-        severity: 'medium',
+        saved_mins: saved,
+        cause: s.trigger,
+        incident_id: s.incident_id ?? null,
+        delay_minutes: s.delay_minutes ?? null,
+        severity: fromTraffic ? 'high' : 'medium',
         icon: 'reroute',
       });
     }
