@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
-  Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, Select, SearchInput,
+  Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Input, Page, PageHeader, Select, SearchInput,
   Skeleton, StatusPill, Tabs, TabPanel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -131,6 +131,15 @@ function eligibleVehicles(request: VendorRequest, vehicles: Vehicle[]) {
   return { eligible, withSpaceCount: withSpace.length }
 }
 
+/** Optional price input: blank is fine, otherwise it must be a positive number. */
+function parsePrice(raw: string): { value?: number; error?: string } {
+  const text = raw.trim()
+  if (!text) return {}
+  const value = Number(text)
+  if (!Number.isFinite(value) || value <= 0) return { error: 'Enter a number above 0' }
+  return { value }
+}
+
 /** A request can be approved, rejected or (re)assigned in bulk while it's still open. */
 const isBulkSelectable = (r: VendorRequest) => r.status === 'pending' || r.status === 'approved'
 
@@ -207,6 +216,12 @@ export default function VendorRequestsPage() {
     })
   }, [vehiclesForBulk.data, bulkAssignTargets])
 
+  const [bulkFlat, setBulkFlat] = useState('')
+  const [bulkPerKm, setBulkPerKm] = useState('')
+  const bulkFlatParsed = parsePrice(bulkFlat)
+  const bulkPerKmParsed = parsePrice(bulkPerKm)
+  const bulkPriceInvalid = !!bulkFlatParsed.error || !!bulkPerKmParsed.error
+
   useEffect(() => { setBulkVehicleId('') }, [bulkAssignTargets.length])
 
   /** Runs `action` for each item in sequence (reusing the single-item endpoints),
@@ -261,9 +276,15 @@ export default function VendorRequestsPage() {
   }
 
   const bulkAssign = async () => {
-    if (!bulkVehicleId || bulkAssignTargets.length === 0) return
-    const { ok, failures } = await runBulk(bulkAssignTargets, r => vendorAPI.assignVehicle(r.id, { vehicle_id: bulkVehicleId }), vendorName)
+    if (!bulkVehicleId || bulkAssignTargets.length === 0 || bulkPriceInvalid) return
+    const price = {
+      ...(bulkFlatParsed.value !== undefined ? { cost: bulkFlatParsed.value } : {}),
+      ...(bulkPerKmParsed.value !== undefined ? { cost_per_km: bulkPerKmParsed.value } : {}),
+    }
+    const { ok, failures } = await runBulk(bulkAssignTargets, r => vendorAPI.assignVehicle(r.id, { vehicle_id: bulkVehicleId, ...price }), vendorName)
     setBulkVehicleId('')
+    setBulkFlat('')
+    setBulkPerKm('')
     selection.clear()
     queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
     refresh()
@@ -406,7 +427,29 @@ export default function VendorRequestsPage() {
                     onChange={e => setBulkVehicleId(e.target.value)}
                     options={bulkVehicleCandidates.map(v => ({ value: v.id, label: v.plate_number }))}
                   />
-                  <Button size="sm" disabled={!bulkVehicleId || bulkBusy} loading={bulkBusy} onClick={bulkAssign}>Assign vehicle</Button>
+                  <Input
+                    label="Flat price per load (₹, optional)"
+                    hideLabel
+                    placeholder="Flat price (₹)"
+                    type="number"
+                    min={0}
+                    className="w-32"
+                    value={bulkFlat}
+                    onChange={e => setBulkFlat(e.target.value)}
+                    error={bulkFlatParsed.error}
+                  />
+                  <Input
+                    label="Rate per km (₹, optional)"
+                    hideLabel
+                    placeholder="Rate per km (₹)"
+                    type="number"
+                    min={0}
+                    className="w-32"
+                    value={bulkPerKm}
+                    onChange={e => setBulkPerKm(e.target.value)}
+                    error={bulkPerKmParsed.error}
+                  />
+                  <Button size="sm" disabled={!bulkVehicleId || bulkBusy || bulkPriceInvalid} loading={bulkBusy} onClick={bulkAssign}>Assign vehicle</Button>
                 </>
               ) : (
                 <span className="text-xs text-muted">No single vehicle can take all selected loads — assign them one at a time.</span>
@@ -439,9 +482,13 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
   onAssigned: () => void
 }) {
   const [vehicleId, setVehicleId] = useState('')
+  const [flatPrice, setFlatPrice] = useState('')
+  const [ratePerKm, setRatePerKm] = useState('')
+  const flat = parsePrice(flatPrice)
+  const perKm = parsePrice(ratePerKm)
   const canAssign = !!request && (request.status === 'pending' || request.status === 'approved')
 
-  useEffect(() => { setVehicleId('') }, [request?.id])
+  useEffect(() => { setVehicleId(''); setFlatPrice(''); setRatePerKm('') }, [request?.id])
 
   const vehicles = useQuery({ queryKey: ['assignable-vehicles'], queryFn: loadVehicles, enabled: canAssign || !!request?.assigned_vehicle_id })
   const { eligible, withSpaceCount } = useMemo(
@@ -454,7 +501,11 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
 
   const queryClient = useQueryClient()
   const assign = useMutation({
-    mutationFn: ({ id, vehicle }: { id: string; vehicle: string }) => vendorAPI.assignVehicle(id, { vehicle_id: vehicle }),
+    mutationFn: ({ id, vehicle }: { id: string; vehicle: string }) => vendorAPI.assignVehicle(id, {
+      vehicle_id: vehicle,
+      ...(flat.value !== undefined ? { cost: flat.value } : {}),
+      ...(perKm.value !== undefined ? { cost_per_km: perKm.value } : {}),
+    }),
     onSuccess: () => {
       toast.success('Vehicle assigned. The load was added to its cargo manifest.')
       queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
@@ -484,7 +535,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
           )}
           <Button
             icon={<Truck size={16} />}
-            disabled={!vehicleId || busy}
+            disabled={!vehicleId || busy || !!flat.error || !!perKm.error}
             loading={assign.isPending}
             onClick={() => assign.mutate({ id: request.id, vehicle: vehicleId })}
           >
@@ -578,6 +629,28 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                     ))}
                   </div>
                 </fieldset>
+              )}
+              {vehicleId && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Flat price (₹)"
+                    type="number"
+                    min={0}
+                    hint="Optional. A fixed price for this load."
+                    value={flatPrice}
+                    onChange={e => setFlatPrice(e.target.value)}
+                    error={flat.error}
+                  />
+                  <Input
+                    label="Rate per km (₹)"
+                    type="number"
+                    min={0}
+                    hint="Optional. Charged per km of the trip."
+                    value={ratePerKm}
+                    onChange={e => setRatePerKm(e.target.value)}
+                    error={perKm.error}
+                  />
+                </div>
               )}
               {vehicleId && (
                 <Alert tone="info">Assigning adds this load to the vehicle’s cargo manifest and notifies the driver and the vendor.</Alert>
