@@ -33,10 +33,16 @@ export default defineConfig(({ mode }) => {
       sourcemap: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'react-router-dom'],
-            charts: ['recharts'],
-            map: ['maplibre-gl'],
+          // Only core React libs are force-grouped: they're needed by the entry on every
+          // page, so one stable "vendor" chunk lets the browser cache it across deploys.
+          // Everything else — recharts, maplibre-gl included — is left to Rollup's normal
+          // per-chunk splitting, so it ships only with the lazy page/component that
+          // actually imports it (see src/config/lazyPages.tsx) instead of being pinned
+          // into a named chunk that the entry would then have to load up front.
+          manualChunks(id) {
+            if (/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)) {
+              return 'vendor'
+            }
           },
         },
       },

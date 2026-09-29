@@ -1,48 +1,70 @@
-import { useEffect } from 'react'
+import { Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
-import { Button, ConfirmProvider, EmptyState, Spinner } from '@/components/ui'
+import { Button, ConfirmProvider, EmptyState, LoadingState, Spinner } from '@/components/ui'
 import { Lock } from 'lucide-react'
 import { loadAccount } from '@/services/account'
+import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
-import DashboardPage from '@/pages/DashboardPage'
-import FleetPage from '@/pages/FleetPage'
-import RoutesPage from '@/pages/RoutesPage'
-import AnalyticsPage from '@/pages/AnalyticsPage'
 import LandingPage from '@/pages/LandingPage'
-import OptimizePage from '@/pages/OptimizePage'
-import UsersPage from '@/pages/admin/UsersPage'
-import KycReviewPage from '@/pages/admin/KycReviewPage'
-import AuditLogPage from '@/pages/admin/AuditLogPage'
-import BackhaulPage from '@/pages/BackhaulPage'
-import ShipmentsPage from '@/pages/ShipmentsPage'
-import ShipmentManifestPage from '@/pages/ShipmentManifestPage'
-import RouteDetailsPage from '@/pages/RouteDetailsPage'
-import EmergencyPage from '@/pages/EmergencyPage'
-import DriverPage from '@/pages/DriverPage'
-import CustomerTrackingPage from '@/pages/CustomerTrackingPage'
-import TplPartnersPage from '@/pages/TplPartnersPage'
-import TplPartnerDetailPage from '@/pages/TplPartnerDetailPage'
-import TplOnboardingPage from '@/pages/TplOnboardingPage'
-import TplTrackApplicationPage from '@/pages/TplTrackApplicationPage'
-import TplSetupCredentialsPage from '@/pages/TplSetupCredentialsPage'
-import TplDashboardPage from '@/pages/TplDashboardPage'
-import LiveMapPage from '@/pages/LiveMapPage'
-import MobileTrackPage from '@/pages/MobileTrackPage'
-import BidsPage from '@/pages/BidsPage'
-import VendorPortalPage from '@/pages/VendorPortalPage'
-import VendorTrackingPage from '@/pages/VendorTrackingPage'
-import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
-import VendorOnboardingPage from '@/pages/VendorOnboardingPage'
-import VendorDocumentsPage from '@/pages/VendorDocumentsPage'
 import VendorLayout from '@/components/ui/VendorLayout'
-import VendorShipmentsPage from '@/pages/VendorShipmentsPage'
-import VendorCorridorPage from '@/pages/VendorCorridorPage'
-import VendorRequestsPage from '@/pages/VendorRequestsPage'
+import {
+  dashboard, fleet, routes, routeDetails, analytics, optimize, shipments, shipmentManifest, emergency, bids,
+  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit,
+  vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
+  driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
+} from '@/config/lazyPages'
+
+const DashboardPage = dashboard.Component
+const FleetPage = fleet.Component
+const RoutesPage = routes.Component
+const RouteDetailsPage = routeDetails.Component
+const AnalyticsPage = analytics.Component
+const OptimizePage = optimize.Component
+const UsersPage = adminUsers.Component
+const KycReviewPage = adminKyc.Component
+const AuditLogPage = adminAudit.Component
+const BackhaulPage = backhaul.Component
+const ShipmentsPage = shipments.Component
+const ShipmentManifestPage = shipmentManifest.Component
+const EmergencyPage = emergency.Component
+const DriverPage = driver.Component
+const CustomerTrackingPage = customerTracking.Component
+const TplPartnersPage = tplPartners.Component
+const TplPartnerDetailPage = tplPartnerDetail.Component
+const TplOnboardingPage = tplOnboarding.Component
+const TplTrackApplicationPage = tplTrackApplication.Component
+const TplSetupCredentialsPage = tplSetupCredentials.Component
+const TplDashboardPage = tplDashboard.Component
+const LiveMapPage = liveMap.Component
+const MobileTrackPage = mobileTrack.Component
+const BidsPage = bids.Component
+const VendorPortalPage = vendorPortal.Component
+const VendorTrackingPage = vendorTracking.Component
+const VendorShipmentRequestPage = vendorShipmentRequest.Component
+const VendorOnboardingPage = vendorOnboarding.Component
+const VendorDocumentsPage = vendorDocuments.Component
+const VendorShipmentsPage = vendorShipments.Component
+const VendorCorridorPage = vendorCorridor.Component
+const VendorRequestsPage = vendorRequests.Component
+
+/** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
+function PageFallback() {
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center bg-bg">
+      <LoadingState label="Loading" />
+    </div>
+  )
+}
+
+/** Suspense boundary for a lazy page that has no `AppLayout`/`VendorLayout` around it. */
+function LazyRoute({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageFallback />}>{children}</Suspense>
+}
 
 /** Redirect an old address to its new one, keeping the query string and navigation state. */
 function MovedTo({ to }: { to: string }) {
@@ -183,21 +205,22 @@ export default function App() {
       />
       <ConfirmProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ChunkErrorBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/track" element={<CustomerTrackingPage />} />
-          <Route path="/track/:trackingId" element={<CustomerTrackingPage />} />
+          <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
+          <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
-          <Route path="/m/:token" element={<MobileTrackPage />} />
+          <Route path="/m/:token" element={<LazyRoute><MobileTrackPage /></LazyRoute>} />
           <Route path="/driver" element={
-            <PrivateRoute allowedRoles={['superadmin', 'admin', 'driver']}>
+            <LazyRoute><PrivateRoute allowedRoles={['superadmin', 'admin', 'driver']}>
               <DriverPage />
-            </PrivateRoute>
+            </PrivateRoute></LazyRoute>
           } />
           <Route path="/driver/dashboard" element={
-            <PrivateRoute allowedRoles={['superadmin', 'admin', 'driver']}>
+            <LazyRoute><PrivateRoute allowedRoles={['superadmin', 'admin', 'driver']}>
               <DriverPage />
-            </PrivateRoute>
+            </PrivateRoute></LazyRoute>
           } />
           {/* Vendor Portal — home/discover and corridors are intentionally public (browsable
               before login; corridor bidding itself redirects to sign-in when there's no
@@ -235,14 +258,14 @@ export default function App() {
           <Route path="/vendor/login" element={<VendorLoginRedirect />} />
 
           {/* 3PL Public/Partner Routes */}
-          <Route path="/3pl/onboard" element={<TplOnboardingPage />} />
-          <Route path="/3pl/onboard/track" element={<TplTrackApplicationPage />} />
-          <Route path="/3pl/onboard/setup" element={<TplSetupCredentialsPage />} />
+          <Route path="/3pl/onboard" element={<LazyRoute><TplOnboardingPage /></LazyRoute>} />
+          <Route path="/3pl/onboard/track" element={<LazyRoute><TplTrackApplicationPage /></LazyRoute>} />
+          <Route path="/3pl/onboard/setup" element={<LazyRoute><TplSetupCredentialsPage /></LazyRoute>} />
           <Route path="/3pl-portal/activate" element={<TplActivateRedirect />} />
           <Route path="/3pl-portal/:id" element={
-            <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+            <LazyRoute><PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
               <TplDashboardPage />
-            </PrivateRoute>
+            </PrivateRoute></LazyRoute>
           } />
 
           {/* Public Landing Page */}
@@ -357,6 +380,7 @@ export default function App() {
             } />
           </Route>
         </Routes>
+        </ChunkErrorBoundary>
       </BrowserRouter>
       </ConfirmProvider>
     </>
