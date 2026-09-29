@@ -15,6 +15,7 @@ export type DriverModal =
   | { kind: 'issue'; stop: RouteStop }
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
+  | { kind: 'fuel' }
   | { kind: 'moreActions' }
   | { kind: 'invoice'; invoice: Invoice };
 
