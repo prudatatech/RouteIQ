@@ -51,6 +51,7 @@ import IncomingCallDialog from '../components/modals/IncomingCallDialog';
 import InvoiceDialog from '../components/modals/InvoiceDialog';
 import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
 import ReturnTripScreen from './ReturnTripScreen';
+import FuelLogScreen from './FuelLogScreen';
 import RouteTab from './tabs/RouteTab';
 import ScanTab from './tabs/ScanTab';
 import MessagesTab from './tabs/MessagesTab';
@@ -66,10 +67,11 @@ interface HomeScreenProps {
 const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   moreActions: 'sheet',
   returnTrip: 'full',
+  fuel: 'full',
 };
 
 /** Dialogs where the driver types or captures something: only Cancel or Back closes them, never a stray touch outside. */
-const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos'];
+const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos', 'fuel'];
 
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();
@@ -244,6 +246,13 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     }
     if (data.activeVehicleId) {
       list.push({
+        key: 'log_fuel',
+        icon: 'water-outline',
+        title: t('fuel_log_title'),
+        subtitle: t('fuel_log_sub'),
+        onPress: () => openModal({ kind: 'fuel' }),
+      });
+      list.push({
         key: 'declare_load',
         icon: 'cube-outline',
         title: t('declare_load'),
@@ -363,6 +372,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         return <MoreActionsSheet actions={moreActions} onClose={closeModal} />;
       case 'invoice':
         return <InvoiceDialog invoice={active.invoice} onClose={closeModal} />;
+      case 'fuel':
+        return data.activeVehicleId ? (
+          <FuelLogScreen vehicleId={data.activeVehicleId} location={tracking.currentLoc} onClose={closeModal} headerRight={sosButton} />
+        ) : null;
       case 'returnTrip':
         return data.activeVehicleId ? (
           <ReturnTripScreen vehicleId={data.activeVehicleId} onClose={closeModal} headerRight={sosButton} />

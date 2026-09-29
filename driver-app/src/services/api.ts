@@ -98,6 +98,23 @@ export interface ChatMessage {
   read_at: string | null;
 }
 
+export type FuelPaymentMode = 'cash' | 'card' | 'upi' | 'fuel_card' | 'credit' | 'other';
+
+/** One fill-up in the vehicle's fuel log. */
+export interface FuelLog {
+  id: string;
+  filled_at: string;
+  litres: number;
+  price_per_litre: number;
+  total_amount: number;
+  odometer_km: number | null;
+  is_full_tank: boolean;
+  station_name: string | null;
+  bill_status: 'with_bill' | 'no_bill';
+  /** Km per litre over the stretch this full fill closes. */
+  mileage_kmpl: number | null;
+}
+
 /** No answer from the server: no signal, or the request took too long. */
 export class NetworkError extends Error {
   constructor() {
@@ -486,6 +503,33 @@ class ApiClient {
 
   async getVehicleInfo(vehicle_id: string): Promise<any> {
     return this.request('GET', `/vehicles/${vehicle_id}`);
+  }
+
+  /** The vehicle's latest fill-ups, newest first. */
+  async getFuelLogs(vehicleId: string): Promise<FuelLog[]> {
+    const rows = await this.request('GET', `/fleet/vehicles/${encodeURIComponent(vehicleId)}/fuel-logs?limit=5`);
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  /** A signed URL to upload one bill photo or PDF (up to 5 MB). */
+  async getFuelBillUploadUrl(vehicleId: string, data: { content_type: string; size: number }): Promise<{ path: string; signed_url: string; token: string }> {
+    return this.request('POST', `/fleet/vehicles/${encodeURIComponent(vehicleId)}/fuel-logs/bill-upload`, data);
+  }
+
+  /** Logs a fill-up. Any two of litres, price_per_litre and total_amount; without bill_path it is saved as "no bill". */
+  async createFuelLog(vehicleId: string, data: {
+    litres?: number;
+    price_per_litre?: number;
+    total_amount?: number;
+    odometer_km?: number | null;
+    is_full_tank: boolean;
+    station_name?: string | null;
+    payment_mode: FuelPaymentMode;
+    bill_path?: string | null;
+    fill_latitude?: number;
+    fill_longitude?: number;
+  }, idempotencyKey?: string): Promise<FuelLog> {
+    return this.request('POST', `/fleet/vehicles/${encodeURIComponent(vehicleId)}/fuel-logs`, data, true, idempotencyHeader(idempotencyKey));
   }
 
   async toggleBiddingWindow(vehicle_id: string, enabled: boolean): Promise<any> {
