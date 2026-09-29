@@ -6,7 +6,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, canAccessRouteStop, canAccessManifest } from '../core/ownership';
-import { consumeRateLimit, rateLimitByUser } from '../core/rate-limit';
+import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
 import { TelemetryCreateSchema } from '../schemas';
 import { TelemetryService } from '../services/telemetry.service';
@@ -344,7 +344,7 @@ router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', '
 });
 
 // ── POST /mobile-push/:session_token (no auth) ─────────────
-router.post('/mobile-push/:session_token', async (req: Request, res: Response) => {
+router.post('/mobile-push/:session_token', rateLimitByIp('mobile-push', 300, 60), async (req: Request, res: Response) => {
   try {
     const token = req.params.session_token;
     const session = getMobileSession(token);
@@ -397,7 +397,7 @@ router.post('/mobile-push/:session_token', async (req: Request, res: Response) =
 });
 
 // ── GET /mobile-session/:session_token ─────────────────────
-router.get('/mobile-session/:session_token', (req: Request, res: Response) => {
+router.get('/mobile-session/:session_token', rateLimitByIp('mobile-session-lookup', 60, 60), (req: Request, res: Response) => {
   const session = getMobileSession(req.params.session_token);
   if (!session) {
     res.status(404).json({ detail: 'Session not found' });

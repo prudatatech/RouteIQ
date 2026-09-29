@@ -106,7 +106,7 @@ router.get('/by-user/:userId', requireAuth, async (req, res) => {
 });
 
 // GET /api/v1/tpl/:id  — full record for staff, the partner, or an applicant with the PAN
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', rateLimitByIp('tpl-lookup', 60, 60), optionalAuth, async (req, res) => {
   try {
     const partner = await tplService.getPartner(req.params.id);
     const full = isStaff(req.user)

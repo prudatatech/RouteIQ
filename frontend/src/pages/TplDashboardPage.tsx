@@ -98,6 +98,11 @@ export default function TplDashboardPage() {
 
         const partnerData = await tplAPI.getPartner(id)
         if (!partnerData) throw new Error('Partner not found')
+        // The backend only shows the full record (and accepts changes) to the partner's own
+        // account, so anyone else would see a dashboard they cannot use.
+        if (partnerData.user_id !== useAuthStore.getState().userId) {
+          throw new Error('This dashboard belongs to another partner account. Sign in with the partner account to open it.')
+        }
 
         setPartner(partnerData)
         setCorridors(partnerData.tpl_corridors || [])
