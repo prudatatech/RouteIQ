@@ -16,7 +16,7 @@ if (!googleMapsApiKey) {
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'margixindia',
+  name: 'MargixIndia Driver',
   slug: 'routeiq',
   owner: 'kushagratiwari',
   version: '1.1.0',
@@ -71,11 +71,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-location',
       {
         locationAlwaysAndWhenInUsePermission:
-          'Allow margixindia Driver to use your location for accurate delivery tracking and background updates.',
+          'Allow MargixIndia Driver to use your location for accurate delivery tracking and background updates.',
         locationAlwaysPermission:
-          'Allow margixindia Driver to use your location for accurate delivery tracking and background updates.',
+          'Allow MargixIndia Driver to use your location for accurate delivery tracking and background updates.',
         locationWhenInUsePermission:
-          'Allow margixindia Driver to use your location for accurate delivery tracking and background updates.',
+          'Allow MargixIndia Driver to use your location for accurate delivery tracking and background updates.',
         isAndroidBackgroundLocationEnabled: true,
         isAndroidForegroundServiceEnabled: true,
       },

@@ -21,7 +21,7 @@ if (!googleMapsApiKey) {
 export default ({ config }: ConfigContext): ExpoConfig => {
   const merged = {
     ...config,
-    name: 'customer-app',
+    name: 'MargixIndia',
     slug: 'customer-app',
     version: '1.0.0',
     orientation: 'portrait',
