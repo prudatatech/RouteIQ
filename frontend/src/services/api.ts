@@ -211,6 +211,13 @@ export const shipmentsAPI = {
   assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
   /** Ordered status timeline (staff only) — see ShipmentService.getShipmentHistory. */
   history: (id: string) => api.get(`/shipments/${id}/history`).then(r => r.data),
+  /** Receiver, delivery photo and signature; the two images are signed links that expire in 10 minutes (staff only). */
+  proof: (id: string) => api.get(`/shipments/${id}/proof`).then(r => r.data as {
+    received_by: string | null
+    photo_url: string | null
+    signature_url: string | null
+    signature_data: string | null
+  }),
 }
 
 export const routesAPI = {

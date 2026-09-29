@@ -16,6 +16,7 @@ import crypto from 'crypto';
 import { sendError } from '../core/errors';
 import { InvoiceService } from '../services/invoice.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
+import { isPodPathFor } from '../services/pod.service';
 import { manifestParcelCode } from '../core/parcelCode';
 
 const router = Router();
@@ -671,11 +672,19 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       return;
     }
 
-    const { stop_id, status = 'completed', photo_url, signature_data, received_by, lat, lng } = req.body;
+    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by, lat, lng } = req.body;
     if (!stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
       return;
     }
+    // Proof-of-delivery files must be ones this stop's signed upload URLs produced
+    for (const [field, value] of [['photo_url', photo_url], ['signature_url', signature_url]] as const) {
+      if (value != null && !isPodPathFor(value, stop_id)) {
+        res.status(400).json({ detail: `${field} is not an upload for this stop` });
+        return;
+      }
+    }
+    const proofFiles = status === 'completed' ? { photo_url: photo_url ?? null, signature_url: signature_url ?? null } : {};
     // Why a stop failed, kept in the shipment's tamper-evident log
     const { reason, note } = req.body;
     if (reason !== undefined && !STOP_FAILURE_REASONS.includes(reason)) {
@@ -715,7 +724,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
           }
         }
       } else {
-        await supabase.from('cargo_manifest').update({ status: 'delivered' }).eq('id', manifestId);
+        await supabase.from('cargo_manifest').update({
+          status: 'delivered',
+          ...(received_by ? { received_by } : {}),
+          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+        }).eq('id', manifestId);
         await InvoiceService.onManifestDelivered(manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
         // Auto-empty: subtract delivered weight from truck
@@ -760,7 +774,11 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     // Update route stop status
     const { data: stop, error: stopErr } = await supabase
       .from('route_stops')
-      .update({ status }) // 'completed' or 'failed'
+      .update({
+        status, // 'completed' or 'failed'
+        ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+        ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+      })
       .eq('id', stop_id)
       .select('route_id, delivery_point_id')
       .single();
@@ -787,7 +805,8 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         received_by || null,
         signature_data || null,
         { id: req.user!.user_id, role: req.user!.role },
-        failureMetadata
+        failureMetadata,
+        proofFiles
       );
     }
 

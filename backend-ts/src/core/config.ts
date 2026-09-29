@@ -83,6 +83,8 @@ export const settings = {
   TPL_UPLOAD_URLS_PER_HOUR: envInt('TPL_UPLOAD_URLS_PER_HOUR', 30),
   // Expense receipts go in the same private bucket under expenses/
   EXPENSE_RECEIPT_MAX_BYTES: envInt('EXPENSE_RECEIPT_MAX_BYTES', 5 * 1024 * 1024),
+  // Proof-of-delivery photo and signature go in the same private bucket under pod/
+  POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
 
   // Feature Flags
   ENABLE_MOBILE_GPS: envBool('ENABLE_MOBILE_GPS', false),

@@ -76,6 +76,15 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     enabled: !!shipment && !isCargoManifest(shipment),
   })
 
+  const hasProofFiles = !!(shipment?.photo_url || shipment?.signature_url)
+  const proofQuery = useQuery({
+    queryKey: ['shipment-proof', shipment?.id],
+    queryFn: () => shipmentsAPI.proof(shipment!.id),
+    enabled: !!shipment && hasProofFiles,
+    // The signed links last 10 minutes
+    staleTime: 5 * 60_000,
+  })
+
   if (!shipment) return null
 
   const s = shipment
@@ -241,7 +250,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {(s.received_by || s.signature_data) && (
+        {(s.received_by || s.signature_data || hasProofFiles) && (
           <Section title="Proof of delivery">
             <DetailList
               columns={1}
@@ -250,14 +259,23 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                 { label: 'When', value: formatDateTime(deliveredEvent?.at) },
                 {
                   label: 'Signature',
-                  value: s.signature_data
-                    ? (signatureIsImage
-                      ? <img src={s.signature_data} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-surface" />
-                      : s.signature_data)
-                    : null,
+                  value: proofQuery.data?.signature_url
+                    ? <img src={proofQuery.data.signature_url} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-white" />
+                    : s.signature_data
+                      ? (signatureIsImage
+                        ? <img src={s.signature_data} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-surface" />
+                        : s.signature_data)
+                      : (s.signature_url && proofQuery.isLoading ? 'Loading…' : null),
+                },
+                {
+                  label: 'Photo',
+                  value: proofQuery.data?.photo_url
+                    ? <a href={proofQuery.data.photo_url} target="_blank" rel="noreferrer"><img src={proofQuery.data.photo_url} alt="Photo of the delivery" className="max-h-48 max-w-full rounded-control border border-border" /></a>
+                    : (s.photo_url && proofQuery.isLoading ? 'Loading…' : null),
                 },
               ]}
             />
+            {hasProofFiles && proofQuery.isError && <p className="text-sm text-muted">We could not load the photo and signature. Close and reopen this shipment to try again.</p>}
             {deliveredEvent?.location && (
               <div className="space-y-1.5">
                 <p className="text-sm text-muted">Delivered near</p>

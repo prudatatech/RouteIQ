@@ -286,7 +286,9 @@ class ApiClient {
     lng?: number;
     /** Name of the person who received the goods (proof of delivery). */
     received_by?: string;
+    /** Storage paths from pod-upload-url, for the delivery photo and the signature. */
     photo_url?: string;
+    signature_url?: string;
     signature_data?: string;
     /** Why a stop failed (status 'failed'): stored in the shipment log. */
     reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
@@ -295,6 +297,16 @@ class ApiClient {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
   }
 
+
+  /** A signed URL to upload one proof-of-delivery image (JPEG or PNG) for a stop. */
+  async getPodUploadUrl(data: {
+    stop_id: string;
+    kind: 'photo' | 'signature';
+    content_type: 'image/jpeg' | 'image/png';
+    size: number;
+  }): Promise<{ path: string; token: string; signed_url: string; bucket: string }> {
+    return this.request('POST', '/driver/pod-upload-url', data);
+  }
 
   /**
    * Verifies a scanned or typed parcel code. `pickup` marks a shipment picked up;

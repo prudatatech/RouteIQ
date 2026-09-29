@@ -90,6 +90,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-font',
     'expo-secure-store',
     [
+      'expo-image-picker',
+      {
+        cameraPermission: 'Allow MargixIndia Driver to use the camera to photograph deliveries.',
+        photosPermission: 'Allow MargixIndia Driver to use a photo from your library as your profile picture.',
+        microphonePermission: false,
+      },
+    ],
+    [
       'expo-camera',
       {
         cameraPermission: 'Allow MargixIndia Driver to use the camera to scan parcel codes and photograph deliveries.',

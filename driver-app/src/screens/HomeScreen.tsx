@@ -290,8 +290,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             parcelVerified={scans.verified.has(active.stop.id)}
             onScanCode={(code, method) => scans.checkForStop(active.stop, code, method)}
             onCancel={closeModal}
-            onSubmit={async (receiverName) => {
-              await actions.completeStop(active.stop, receiverName);
+            onSubmit={async (pod) => {
+              await actions.completeStop(active.stop, pod);
               closeModal();
             }}
           />

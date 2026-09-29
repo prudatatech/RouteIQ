@@ -48,7 +48,10 @@
     "capacity_kg",
     "status",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "received_by",
+    "photo_url",
+    "signature_url"
   ],
   "customers": [
     "id",
@@ -200,7 +203,9 @@
     "sequence",
     "status",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "photo_url",
+    "signature_url"
   ],
   "routes": [
     "id",
@@ -261,7 +266,9 @@
     "updated_at",
     "required_vehicle_type",
     "bid_id",
-    "metadata"
+    "metadata",
+    "photo_url",
+    "signature_url"
   ],
   "sos_alerts": [
     "id",

@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { StopCheck } from '../../hooks/useParcelScan';
+import { compressPhoto, type PodInput } from '../../services/podUpload';
 import ParcelScanner, { type ScanMethod } from '../scan/ParcelScanner';
+import SignaturePad from './SignaturePad';
 import { Banner, Button, Text, TextField } from '../ui';
-import { colors, size, space } from '../../theme';
+import { colors, radius, size, space } from '../../theme';
 
 interface PodDialogProps {
   stopName?: string | null;
@@ -15,12 +18,15 @@ interface PodDialogProps {
   parcelVerified?: boolean;
   /** Checks a scanned or typed code against this stop's parcel. */
   onScanCode?: (code: string, method: ScanMethod) => StopCheck;
-  /** Resolves when the stop is saved; throws with a message on failure. */
-  onSubmit: (receiverName: string) => Promise<void>;
+  /**
+   * Resolves when the stop is saved (or queued to send later); throws with a
+   * message on failure. The photo and signature are local files.
+   */
+  onSubmit: (pod: PodInput) => Promise<void>;
   onCancel: () => void;
 }
 
-/** Proof of delivery: the name of the person who received the goods. */
+/** Proof of delivery: parcel check, delivery photo, receiver's signature and name. */
 export default function PodDialog({ stopName, parcelCode, parcelVerified = false, onScanCode, onSubmit, onCancel }: PodDialogProps) {
   const { t } = useTranslation();
   const [receiverName, setReceiverName] = useState('');
@@ -31,6 +37,30 @@ export default function PodDialog({ stopName, parcelCode, parcelVerified = false
   const [verified, setVerified] = useState(parcelVerified);
   const [skipScan, setSkipScan] = useState(false);
   const needsScan = !!parcelCode && !!onScanCode;
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [signatureUri, setSignatureUri] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+
+  const takePhoto = async () => {
+    setPhotoError('');
+    setPhotoBusy(true);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setPhotoError(t('pod_photo_denied'));
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      setPhotoUri(await compressPhoto(result.assets[0].uri));
+    } catch {
+      setPhotoError(t('pod_photo_failed'));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const onCode = (code: string, method: ScanMethod) => {
     if (!onScanCode) return;
@@ -55,13 +85,25 @@ export default function PodDialog({ stopName, parcelCode, parcelVerified = false
     setSaving(true);
     setError('');
     try {
-      await onSubmit(receiverName.trim());
+      await onSubmit({ receiverName: receiverName.trim(), photoUri, signatureUri });
     } catch (e: any) {
       setError(e?.message || t('complete_stop_failed'));
     } finally {
       setSaving(false);
     }
   };
+
+  if (signing) {
+    return (
+      <SignaturePad
+        onDone={(uri) => {
+          setSignatureUri(uri);
+          setSigning(false);
+        }}
+        onCancel={() => setSigning(false)}
+      />
+    );
+  }
 
   return (
     <>
@@ -120,6 +162,36 @@ export default function PodDialog({ stopName, parcelCode, parcelVerified = false
         </View>
       ) : null}
 
+      <View style={styles.parcel}>
+        <Text variant="bodySmallMedium">{t('pod_photo_title')}</Text>
+        {photoUri ? <Image source={{ uri: photoUri }} style={styles.photo} accessibilityLabel={t('pod_photo_title')} /> : null}
+        <Button
+          title={photoUri ? t('pod_photo_retake') : t('pod_photo_take')}
+          variant="secondary"
+          onPress={takePhoto}
+          loading={photoBusy}
+          disabled={saving}
+          icon={(color) => <Ionicons name="camera-outline" size={size.icon.md} color={color} />}
+        />
+        {photoError ? (
+          <Text variant="caption" color="danger" accessibilityLiveRegion="polite">
+            {photoError}
+          </Text>
+        ) : null}
+      </View>
+
+      <View style={styles.parcel}>
+        <Text variant="bodySmallMedium">{t('pod_signature_title')}</Text>
+        {signatureUri ? <Image source={{ uri: signatureUri }} style={styles.signature} resizeMode="contain" accessibilityLabel={t('pod_signature_title')} /> : null}
+        <Button
+          title={signatureUri ? t('pod_signature_redo') : t('pod_signature_take')}
+          variant="secondary"
+          onPress={() => setSigning(true)}
+          disabled={saving}
+          icon={(color) => <Ionicons name="create-outline" size={size.icon.md} color={color} />}
+        />
+      </View>
+
       <TextField
         label={t('pod_receiver_label')}
         placeholder={t('pod_receiver_placeholder')}
@@ -132,7 +204,6 @@ export default function PodDialog({ stopName, parcelCode, parcelVerified = false
         maxLength={100}
         autoCapitalize="words"
         autoCorrect={false}
-        autoFocus
         returnKeyType="done"
         onSubmitEditing={submit}
       />
@@ -148,6 +219,8 @@ export default function PodDialog({ stopName, parcelCode, parcelVerified = false
 const styles = StyleSheet.create({
   header: { gap: space[1] },
   parcel: { gap: space[2] },
+  photo: { width: '100%', height: 160, borderRadius: radius.card, backgroundColor: colors.surfaceSubtle },
+  signature: { width: '100%', height: 96, borderRadius: radius.card, borderWidth: size.border, borderColor: colors.border, backgroundColor: colors.surface },
   verified: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   actions: { flexDirection: 'row', gap: space[3] },
   action: { flex: 1 },

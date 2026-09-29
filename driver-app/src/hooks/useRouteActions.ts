@@ -11,6 +11,7 @@ import { errorMessage } from '../utils/errors';
 import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
 import { ARRIVAL_RADIUS_M, distanceMeters, stopCoord } from '../utils/route';
 import type { FailureReason } from '../components/modals/IssueDialog';
+import { uploadProofFiles, type PodInput } from '../services/podUpload';
 import { useTranslation } from './useTranslation';
 
 interface Options {
@@ -151,15 +152,18 @@ export function useRouteActions({
   }, [activeVehicleId, activeVehicle, showBackhaulPopup, t]);
 
   /**
-   * Proof of delivery. Sends the receiver's name as `received_by` and the
-   * current position; throws so the form can show the error.
+   * Proof of delivery. Uploads the photo and signature, then sends the receiver's
+   * name, the file paths and the current position as one completion; throws so
+   * the form can show the error.
    */
   const completeStop = useCallback(
-    async (stop: RouteStop, receiverName: string) => {
+    async (stop: RouteStop, pod: PodInput) => {
+      const paths = await uploadProofFiles(stop.id, pod);
       const res = await api.completeStop({
         stop_id: stop.id,
         status: 'completed',
-        received_by: receiverName,
+        received_by: pod.receiverName,
+        ...paths,
         ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
       });
       await refresh();
