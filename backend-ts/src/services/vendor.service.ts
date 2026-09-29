@@ -1,4 +1,6 @@
 import { supabase } from '../core/supabase';
+import { withWarnings } from './people-common';
+import { checkIfscForSave } from './ifsc.service';
 import crypto from 'crypto';
 import { settings } from '../core/config';
 import { notificationService } from './notification.service';
@@ -76,6 +78,26 @@ async function transitionRequest(requestId: string, from: string[], update: Reco
 /** Legal identity columns this service writes; changing one on an approved profile needs a new KYC review. */
 const VENDOR_IDENTITY_FIELDS = ['company_name', 'gst_number', 'address'] as const;
 
+/**
+ * Checks the IFSC the wizard carries and records the branch inside the KYC data
+ * (`bank.ifsc_details`). An unknown IFSC is a 400; a lookup that is down only warns.
+ */
+async function withVerifiedBank(kycData: unknown): Promise<{ kycData: unknown; warnings: string[] }> {
+  const root = (kycData ?? {}) as Record<string, any>;
+  const form = (root.data ?? {}) as Record<string, any>;
+  if (typeof form.bankIfscCode !== 'string' || !form.bankIfscCode.trim()) return { kycData, warnings: [] };
+  const check = await checkIfscForSave(form.bankIfscCode);
+  const d = check.details;
+  return {
+    warnings: check.warnings,
+    kycData: {
+      ...root,
+      data: { ...form, bankIfscCode: form.bankIfscCode.trim().toUpperCase(), ...(d ? { bankName: d.bank ?? form.bankName, bankBranchName: d.branch ?? form.bankBranchName } : {}) },
+      bank: { ifsc_details: d, ifsc_verified_at: check.verifiedAt, bank_name: d?.bank ?? null, branch: d?.branch ?? null },
+    },
+  };
+}
+
 export const vendorService = {
   /**
    * Save or update a vendor's own profile. Changing a legal identity field on
@@ -148,6 +170,8 @@ export const vendorService = {
     kycData: unknown;
   }) {
     payload = { ...payload, gstNumber: cleanVendorGstin(payload.gstNumber) };
+    const { kycData, warnings } = await withVerifiedBank(payload.kycData);
+    payload = { ...payload, kycData };
     const { data: existing, error: currentErr } = await supabase
       .from('vendor_profiles')
       .select('kyc_status')
@@ -186,7 +210,7 @@ export const vendorService = {
       }
     }
 
-    return data;
+    return withWarnings(data, warnings);
   },
 
   /**

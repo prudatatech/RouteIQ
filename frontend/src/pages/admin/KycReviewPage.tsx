@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
-  Alert, Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
+  Alert, Button, DataTable, DetailList, Drawer, IfscVerifiedHint, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
   buttonClasses, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
@@ -58,6 +58,7 @@ interface VendorKyc {
   updated_at: string | null
   created_at: string | null
   form: KycForm
+  ifscVerifiedAt: string | null
   otherDocs: { name: string; path: string }[]
 }
 
@@ -80,7 +81,7 @@ async function loadVendors(): Promise<VendorKyc[]> {
   const { data, error } = await supabase.from('vendor_profiles').select('*')
   if (error) throw error
   return (data ?? []).map(v => {
-    const kyc = (v.kyc_data ?? {}) as { data?: KycForm; otherDocs?: { name: string; path: string }[] }
+    const kyc = (v.kyc_data ?? {}) as { data?: KycForm; otherDocs?: { name: string; path: string }[]; bank?: { ifsc_verified_at?: string | null } }
     const status = String(v.kyc_status || 'pending').toLowerCase()
     return {
       id: v.id,
@@ -92,6 +93,7 @@ async function loadVendors(): Promise<VendorKyc[]> {
       updated_at: v.updated_at ?? null,
       created_at: v.created_at ?? null,
       form: kyc.data ?? {},
+      ifscVerifiedAt: kyc.bank?.ifsc_verified_at ?? null,
       otherDocs: Array.isArray(kyc.otherDocs) ? kyc.otherDocs.filter(d => d?.path) : [],
     }
   })
@@ -362,7 +364,7 @@ function KycDrawer({ vendor, onClose, pending, onDecide }: {
                 { label: 'Bank and branch', value: text([f.bankName, f.bankBranchName].filter(Boolean).join(', ')) },
                 { label: 'Account number', value: mono(f.bankAccountNumber) },
                 { label: 'Account type', value: text(f.accountType) },
-                { label: 'IFSC', value: mono(f.bankIfscCode) },
+                { label: 'IFSC', value: <div>{mono(f.bankIfscCode)} {f.bankIfscCode ? <IfscVerifiedHint verifiedAt={vendor?.ifscVerifiedAt} /> : null}</div> },
                 { label: 'MICR', value: mono(f.bankMicrCode) },
               ]} />
             </section>

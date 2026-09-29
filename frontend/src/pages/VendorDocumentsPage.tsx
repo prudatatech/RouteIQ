@@ -10,7 +10,8 @@ import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
-import { Alert, Button, Card, Checkbox, ErrorState, FileButton, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import type { IfscDetails } from '@/services/api'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
@@ -120,6 +121,7 @@ export default function VendorDocumentsPage() {
   const [step, setStep] = useState(0)
   const [attempted, setAttempted] = useState<Record<number, boolean>>({})
   const [form, setForm] = useState<KycFormData>(EMPTY_FORM)
+  const [ifscInfo, setIfscInfo] = useState<IfscDetails | null>(null)
   const [otherDocs, setOtherDocs] = useState<DocRef[]>([])
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
@@ -368,7 +370,7 @@ export default function VendorDocumentsPage() {
       // Goes through the backend so staff are notified (vendorService.submitKyc
       // calls notificationService.notifyStaff) instead of writing to Supabase
       // directly from the client.
-      await vendorAPI.submitKyc({
+      const saved = await vendorAPI.submitKyc({
         companyName: form.name,
         gstNumber: form.gstNumber || '',
         city: form.city,
@@ -379,6 +381,7 @@ export default function VendorDocumentsPage() {
         kycData,
       })
 
+      for (const w of (saved?.warning_messages as string[] | undefined) ?? []) toast(w, { duration: 8000 })
       clearDraft()
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
@@ -551,9 +554,14 @@ export default function VendorDocumentsPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input label="Beneficiary account name" required value={form.beneficiaryAccountName} onChange={e => setField('beneficiaryAccountName', e.target.value)} error={err(2, 'beneficiaryAccountName')} />
                   <Input label="Bank account number" required value={form.bankAccountNumber} onChange={e => setField('bankAccountNumber', e.target.value.replace(/\D/g, '').slice(0, 18))} error={err(2, 'bankAccountNumber')} inputMode="numeric" hint="9 to 18 digits" />
-                  <Input label="Bank name" required value={form.bankName} onChange={e => setField('bankName', e.target.value)} error={err(2, 'bankName')} />
-                  <Input label="Branch name" required value={form.bankBranchName} onChange={e => setField('bankBranchName', e.target.value)} error={err(2, 'bankBranchName')} />
-                  <Input label="IFSC code" required value={form.bankIfscCode} placeholder="HDFC0001234" maxLength={11} onChange={e => setField('bankIfscCode', e.target.value.toUpperCase())} error={err(2, 'bankIfscCode')} inputClassName="uppercase" />
+                  <IfscField label="IFSC code" required value={form.bankIfscCode} onChange={v => setField('bankIfscCode', v)} onResolved={setIfscInfo} error={err(2, 'bankIfscCode')} className="sm:col-span-2" />
+                  <div className="sm:col-span-2">
+                    <BankBranchFields
+                      required details={ifscInfo} bankName={form.bankName} branch={form.bankBranchName}
+                      onBankName={v => setField('bankName', v)} onBranch={v => setField('bankBranchName', v)}
+                      bankError={err(2, 'bankName')} branchError={err(2, 'bankBranchName')}
+                    />
+                  </div>
                   <Select label="Account type" required options={ACCOUNT_TYPES} value={form.accountType} onChange={e => setField('accountType', e.target.value)} />
                 </div>
               </div>

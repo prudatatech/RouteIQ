@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { checkIfscForSave, type IfscCheck } from './ifsc.service';
+import { withWarnings } from './people-common';
 import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
@@ -85,6 +87,19 @@ function corridorRows(partnerId: string, corridors: any[]) {
   });
 }
 
+/** Partner columns filled from the IFSC lookup; cleared when no IFSC was given. */
+async function ifscColumns(ifsc: unknown): Promise<{ columns: Record<string, any>; check: IfscCheck | null }> {
+  if (typeof ifsc !== 'string' || !ifsc.trim()) {
+    return { columns: { bank_name: null, bank_branch: null, bank_ifsc_details: null, bank_ifsc_verified_at: null }, check: null };
+  }
+  const check = await checkIfscForSave(ifsc);
+  const d = check.details;
+  return {
+    check,
+    columns: { bank_name: d?.bank ?? null, bank_branch: d?.branch ?? null, bank_ifsc_details: d, bank_ifsc_verified_at: check.verifiedAt },
+  };
+}
+
 export const tplService = {
   /**
    * Submit a new 3PL onboarding application
@@ -97,6 +112,7 @@ export const tplService = {
     if (gstProblem) throw new HttpError(400, gstProblem);
     assertApplicationFields(data);
     const phone = parseMobile(data.phone);
+    const bank = await ifscColumns(bankIfsc);
 
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
     if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
@@ -124,7 +140,8 @@ export const tplService = {
         gstin: normalizeGstin(gst),
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
-        bank_ifsc: bankIfsc || null,
+        bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null,
+        ...bank.columns,
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null,
         status: 'pending'
@@ -168,7 +185,7 @@ export const tplService = {
       console.error('[tpl] Application notification failed:', e);
     }
 
-    return partner;
+    return { partner, warnings: bank.check?.warnings ?? [] };
   },
 
   /**
@@ -262,6 +279,7 @@ export const tplService = {
     const gstProblem = gst !== undefined ? gstinError(gst, pan) : undefined;
     if (gstProblem) throw new HttpError(400, gstProblem);
     assertApplicationFields(data ?? {}, true);
+    const bank = await ifscColumns(bankIfsc);
 
     const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
@@ -285,7 +303,8 @@ export const tplService = {
         ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
-        bank_ifsc: bankIfsc || null,
+        bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null,
+        ...bank.columns,
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null
       })
@@ -325,7 +344,7 @@ export const tplService = {
       }
     }
 
-    return true;
+    return { warnings: bank.check?.warnings ?? [] };
   },
 
   /**

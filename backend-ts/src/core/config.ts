@@ -55,6 +55,9 @@ export const settings = {
   TOMTOM_API_KEY: env('TOMTOM_API_KEY'),
   MAPBOX_ACCESS_TOKEN: env('MAPBOX_ACCESS_TOKEN'),
 
+  // IFSC branch lookup (Razorpay's free public API, no key)
+  IFSC_LOOKUP_BASE_URL: env('IFSC_LOOKUP_BASE_URL', 'https://ifsc.razorpay.com'),
+
   // Traffic incidents (TomTom): how often to check active routes, and the smallest delay that raises a reroute suggestion
   TRAFFIC_REFRESH_MINUTES: envInt('TRAFFIC_REFRESH_MINUTES', 10),
   TRAFFIC_MIN_DELAY_MINUTES: envInt('TRAFFIC_MIN_DELAY_MINUTES', 5),

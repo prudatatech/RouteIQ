@@ -207,6 +207,10 @@ export interface BankAccount {
   account_number: string
   ifsc: string
   bank_name: string | null
+  branch_name?: string | null
+  bank_city?: string | null
+  bank_state?: string | null
+  ifsc_verified_at?: string | null
   upi_id: string | null
   is_primary: boolean
   is_verified: boolean

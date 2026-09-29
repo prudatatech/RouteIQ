@@ -6,7 +6,7 @@ import {
   Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
 import {
-  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, FileButton, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
+  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, FileButton, IfscVerifiedHint, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -65,6 +65,9 @@ interface TplPartner {
   msme_status?: string | null
   bank_account_no?: string | null
   bank_ifsc?: string | null
+  bank_name?: string | null
+  bank_branch?: string | null
+  bank_ifsc_verified_at?: string | null
   status: string
   created_at: string
   sla_commitment?: string | null
@@ -389,13 +392,15 @@ export default function TplDashboardPage() {
                   <dl className="space-y-3 text-sm">
                     {[['PAN', partner.pan_number], ['GSTIN', partner.gstin], ['MSME status', partner.msme_status],
                       ['Bank A/C', partner.bank_account_no ? `****${String(partner.bank_account_no).slice(-4)}` : '—'],
-                      ['IFSC', partner.bank_ifsc]].map(([label, val]) => (
+                      ['IFSC', partner.bank_ifsc],
+                      ['Bank', [partner.bank_name, partner.bank_branch].filter(Boolean).join(', ')]].map(([label, val]) => (
                       <div key={label} className="flex items-center justify-between">
                         <dt className="text-muted">{label}</dt>
                         <dd className="font-mono text-text">{val || '—'}</dd>
                       </div>
                     ))}
                   </dl>
+                  {partner.bank_ifsc && <p className="mt-2 text-right"><IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} /></p>}
                 </Card>
                 <Card padded>
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><MapPin size={16} className="text-brand" /> Active corridors</h3>

@@ -5,6 +5,7 @@
  * Applicants may view or edit their pending application with its PAN.
  * Partners see their own record; superadmins manage the network.
  */
+import { withWarnings } from '../services/people-common';
 import { Router, Request, Response } from 'express';
 import { tplService } from '../services/tpl.service';
 import { optionalAuth, requireAuth, requireRole } from '../core/auth';
@@ -49,8 +50,8 @@ async function panMatches(req: Request, partner: any, pan: unknown): Promise<boo
 // POST /api/v1/tpl/onboard
 router.post('/onboard', rateLimitByIp('tpl-onboard', 5, 60 * 60), async (req, res) => {
   try {
-    const partner = await tplService.onboard(req.body);
-    res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status } });
+    const { partner, warnings } = await tplService.onboard(req.body);
+    res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status }, ...withWarnings({}, warnings) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }
@@ -149,8 +150,8 @@ router.patch('/:id', optionalAuth, async (req, res) => {
         throw new HttpError(403, 'PAN does not match this application');
       }
     }
-    const data = await tplService.updateApplication(req.params.id, req.body);
-    res.json({ success: true, data });
+    const { warnings } = await tplService.updateApplication(req.params.id, req.body);
+    res.json({ success: true, data: true, ...withWarnings({}, warnings) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }
