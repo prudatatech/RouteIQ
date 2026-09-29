@@ -1,6 +1,5 @@
 /**
- * margixindia — Analytics Routes (v2)
- * Full Fleet Intelligence endpoints
+ * margixindia — Analytics routes
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
@@ -54,28 +53,15 @@ router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) =
   }
 });
 
-// ── GET /vehicle-health ────────────────────────────────────
-router.get('/vehicle-health', requireAuth, async (req: Request, res: Response) => {
+// ── GET /daily-activity ────────────────────────────────────
+router.get('/daily-activity', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized to view vehicle health' });
+      res.status(403).json({ detail: 'Not authorized' });
       return;
     }
-    const data = await AnalyticsService.getVehicleHealth();
-    res.json(data);
-  } catch (e: any) {
-    sendError(req, res, e);
-  }
-});
-
-// ── GET /profitable-routes ─────────────────────────────────
-router.get('/profitable-routes', requireAuth, async (req: Request, res: Response) => {
-  try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized to view route profitability' });
-      return;
-    }
-    const data = await AnalyticsService.getMostProfitableRoutes();
+    const days = parseInt(req.query.days as string, 10) || 14;
+    const data = await AnalyticsService.getDailyActivity(days);
     res.json(data);
   } catch (e: any) {
     sendError(req, res, e);
@@ -150,20 +136,6 @@ router.get('/driver-performance', requireAuth, async (req: Request, res: Respons
       return;
     }
     const data = await AnalyticsService.getDriverPerformance();
-    res.json(data);
-  } catch (e: any) {
-    sendError(req, res, e);
-  }
-});
-
-// ── GET /financials ──────────────────────────────────────────
-router.get('/financials', requireAuth, async (req: Request, res: Response) => {
-  try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized' });
-      return;
-    }
-    const data = await AnalyticsService.getFinancialMetrics();
     res.json(data);
   } catch (e: any) {
     sendError(req, res, e);

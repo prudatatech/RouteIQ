@@ -6,20 +6,29 @@ import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
-const MAINT_COST_PER_ROUTE = 150; // flat INR per route
+
+const IST_OFFSET_MS = 330 * 60 * 1000;
+
+/** Midnight in India `daysAgo` days before today, as an absolute instant. */
+function startOfIndianDay(daysAgo: number): Date {
+  const ist = new Date(Date.now() + IST_OFFSET_MS);
+  const midnightUtc = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() - daysAgo);
+  return new Date(midnightUtc - IST_OFFSET_MS);
+}
+
+/** YYYY-MM-DD of the Indian calendar day that contains `date`. */
+function indianDateKey(date: Date): string {
+  return new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
 
 export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
-  // FLEET OVERVIEW — all financial + operational KPIs in one shot
+  // FLEET OVERVIEW — today's operational figures, all counted from real rows
   // ──────────────────────────────────────────────────────────────────────────
   static async getFleetOverview(): Promise<Record<string, any>> {
-    // "Today" scoping restored: every *_today figure below is filtered to
-    // rows created since local midnight, matching its label.
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    // "Today" is the Indian calendar day, whatever timezone the server runs in.
+    const todayISO = startOfIndianDay(0).toISOString();
 
-    // Vehicle counts
     const [
       { count: totalVehicles },
       { count: runningVehicles },
@@ -27,233 +36,73 @@ export class AnalyticsService {
       { count: tripsToday },
       { count: deliveredToday },
     ] = await Promise.all([
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }),
+      supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', todayISO),
       supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', todayISO),
     ]);
 
-    // Revenue today from paid invoices
-    const { data: invoicesToday } = await supabase
-      .from('invoices')
-      .select('amount')
-      .eq('status', 'paid')
-      .gte('created_at', todayISO);
-
-    const dailyRevenue = (invoicesToday || []).reduce((s: number, i: any) => s + (i.amount || 0), 0);
-
-    // Fuel & maintenance costs from routes today
+    // Planned distance of the routes dispatched today
     const { data: routesToday } = await supabase
       .from('routes')
-      .select('estimated_fuel_liters, total_distance_km, vehicle_id')
+      .select('total_distance_km')
       .in('status', ['active', 'completed'])
       .gte('created_at', todayISO);
-
-    const fuelExpenses = (routesToday || []).reduce((s: number, r: any) => s + ((r.estimated_fuel_liters || 0) * FUEL_PRICE_PER_LITER), 0);
-    const maintenanceExpenses = (routesToday || []).length * MAINT_COST_PER_ROUTE;
     const totalDistanceToday = (routesToday || []).reduce((s: number, r: any) => s + (r.total_distance_km || 0), 0);
 
-    // Backhaul revenue from fulfilled vendor requests
+    // Backhaul revenue: agreed cost of vendor loads assigned or fulfilled today
     const { data: backhaulData } = await supabase
       .from('vendor_shipment_requests')
       .select('cost')
       .in('status', ['fulfilled', 'assigned'])
       .gte('created_at', todayISO);
+    const backhaulLoads = (backhaulData || []).filter((b: any) => b.cost != null);
+    const backhaulRevenue = backhaulLoads.reduce((s: number, b: any) => s + (b.cost || 0), 0);
 
-    const backhaulRevenue = (backhaulData || []).reduce((s: number, b: any) => s + (b.cost || 0), 0);
-
-    // Profit
-    const totalCost = fuelExpenses + maintenanceExpenses;
-    const totalProfit = dailyRevenue - totalCost + backhaulRevenue;
-    const numTrucks = Math.max(1, totalVehicles || 1);
-    const profitPerTruck = totalProfit / numTrucks;
-    const costPerKm = totalDistanceToday > 0 ? totalCost / totalDistanceToday : 0;
-    const fleetUtilisation = totalVehicles ? Math.round(((runningVehicles || 0) / totalVehicles) * 100) : 0;
-
+    // Revenue, fuel, maintenance and profit figures were removed: no invoice
+    // is ever written and costs were flat per-route constants, so they were
+    // always ₹0 or invented.
     return {
-      daily_revenue: Math.round(dailyRevenue),
       trips_today: tripsToday || 0,
       deliveries_today: deliveredToday || 0,
       running_vehicles: runningVehicles || 0,
       idle_vehicles: idleVehicles || 0,
       total_vehicles: totalVehicles || 0,
-      fleet_utilisation_pct: fleetUtilisation,
-      profit_per_truck: Math.round(profitPerTruck),
-      cost_per_km: parseFloat(costPerKm.toFixed(2)),
-      fuel_expenses: Math.round(fuelExpenses),
-      maintenance_expenses: Math.round(maintenanceExpenses),
-      backhaul_revenue: Math.round(backhaulRevenue),
-      total_profit: Math.round(totalProfit),
-      total_cost: Math.round(totalCost),
+      fleet_utilisation_pct: totalVehicles ? Math.round(((runningVehicles || 0) / totalVehicles) * 100) : null,
       total_distance_km: Math.round(totalDistanceToday),
+      backhaul_loads_today: backhaulLoads.length,
+      backhaul_revenue: Math.round(backhaulRevenue),
     };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // VEHICLE HEALTH — dynamic health score per vehicle
+  // DAILY ACTIVITY — routes dispatched and shipments delivered per day
   // ──────────────────────────────────────────────────────────────────────────
-  static async getVehicleHealth(): Promise<Record<string, any>[]> {
-    const { data: vehicles, error } = await supabase
-      .from('vehicles')
-      .select('id, plate_number, vehicle_type, status, created_at')
-      .limit(20);
+  static async getDailyActivity(days = 14): Promise<{ date: string; trips: number; deliveries: number }[]> {
+    const span = Math.min(Math.max(Math.round(days) || 14, 1), 90);
+    const since = startOfIndianDay(span - 1).toISOString();
 
-    if (error || !vehicles) return [];
+    const [{ data: routes, error: routesErr }, { data: shipments, error: shipmentsErr }] = await Promise.all([
+      supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', since),
+      supabase.from('shipments').select('updated_at').eq('status', 'delivered').gte('updated_at', since),
+    ]);
+    if (routesErr) throw routesErr;
+    if (shipmentsErr) throw shipmentsErr;
 
-    const vehicleIds = vehicles.map((v) => v.id);
-
-    // Fetch latest telemetry per vehicle
-    const telemetryMap: Record<string, any> = {};
-    for (const vid of vehicleIds) {
-      const { data } = await supabase
-        .from('telemetry')
-        .select('fuel_level_pct, speed_kmph, timestamp')
-        .eq('vehicle_id', vid)
-        .order('timestamp', { ascending: false })
-        .limit(1);
-      if (data?.[0]) telemetryMap[vid] = data[0];
+    const buckets = new Map<string, { trips: number; deliveries: number }>();
+    for (let i = span - 1; i >= 0; i--) {
+      buckets.set(indianDateKey(startOfIndianDay(i)), { trips: 0, deliveries: 0 });
     }
-
-    // Fetch total distance driven per vehicle (from all completed routes)
-    const { data: allRoutes } = await supabase
-      .from('routes')
-      .select('vehicle_id, total_distance_km, created_at')
-      .in('vehicle_id', vehicleIds)
-      .in('status', ['active', 'completed']);
-
-    const distanceMap: Record<string, number> = {};
-    const routeCountMap: Record<string, number> = {};
-    (allRoutes || []).forEach((r: any) => {
-      distanceMap[r.vehicle_id] = (distanceMap[r.vehicle_id] || 0) + (r.total_distance_km || 0);
-      routeCountMap[r.vehicle_id] = (routeCountMap[r.vehicle_id] || 0) + 1;
+    (routes || []).forEach((r: any) => {
+      const b = buckets.get(indianDateKey(new Date(r.created_at)));
+      if (b) b.trips++;
     });
-
-    return vehicles.map((v: any) => {
-      const telem = telemetryMap[v.id];
-      const totalKm = distanceMap[v.id] || 0;
-      const fuelLevel = telem?.fuel_level_pct ?? 75;
-
-      // Health components — estimated from available data
-      // Oil Change: deteriorates every 5000 km (good < 3000 km since change)
-      const oilKmSinceChange = totalKm % 5000;
-      const oilRemainingKm = 5000 - oilKmSinceChange;
-      const oilStatus = oilRemainingKm > 2000 ? 'Good' : oilRemainingKm > 500 ? `Due in ${Math.round(oilRemainingKm)} km` : 'Overdue';
-      const oilScore = Math.max(0, Math.min(100, (oilRemainingKm / 5000) * 100));
-
-      // Brake Pads: deteriorate every 40,000 km
-      const brakeKmSinceChange = totalKm % 40000;
-      const brakeRemainingKm = 40000 - brakeKmSinceChange;
-      const brakeStatus = brakeRemainingKm > 5000 ? 'Good' : `Due in ${Math.round(brakeRemainingKm)} km`;
-      const brakeScore = Math.max(0, Math.min(100, (brakeRemainingKm / 40000) * 100));
-
-      // Battery: score based on route count (heavy usage degrades faster)
-      const batteryScore = Math.max(30, 100 - (routeCountMap[v.id] || 0) * 0.5);
-      const batteryStatus = batteryScore > 70 ? 'Healthy' : batteryScore > 40 ? 'Weakening' : 'Replace Soon';
-
-      // Tyres: deteriorate every 30,000 km
-      const tyreKm = totalKm % 30000;
-      const tyreRemainingKm = 30000 - tyreKm;
-      const tyreStatus = tyreRemainingKm > 3000 ? 'Good' : `Replace in ${Math.round(tyreRemainingKm)} km`;
-      const tyreScore = Math.max(0, Math.min(100, (tyreRemainingKm / 30000) * 100));
-
-      // Insurance: estimate based on vehicle age (created_at)
-      const vehicleAgeMs = Date.now() - new Date(v.created_at).getTime();
-      const vehicleAgeDays = vehicleAgeMs / (1000 * 60 * 60 * 24);
-      const insuranceDaysRemaining = Math.max(0, Math.round(365 - (vehicleAgeDays % 365)));
-      const insuranceStatus = insuranceDaysRemaining > 30 ? `${insuranceDaysRemaining} Days Remaining` : `⚠ Renew in ${insuranceDaysRemaining} Days`;
-      const insuranceScore = Math.min(100, (insuranceDaysRemaining / 365) * 100);
-
-      // Fuel score
-      const fuelScore = fuelLevel;
-      const fuelStatus = fuelLevel > 40 ? 'Healthy' : fuelLevel > 15 ? 'Low' : 'Critical';
-
-      // Overall health score (weighted average)
-      const healthScore = Math.round(
-        oilScore * 0.2 +
-        brakeScore * 0.2 +
-        batteryScore * 0.15 +
-        tyreScore * 0.2 +
-        insuranceScore * 0.1 +
-        fuelScore * 0.15
-      );
-
-      return {
-        id: v.id,
-        plate_number: v.plate_number,
-        vehicle_type: v.vehicle_type,
-        status: v.status,
-        health_score: healthScore,
-        total_distance_km: Math.round(totalKm),
-        fuel_level_pct: Math.round(fuelLevel),
-        components: {
-          oil_change: { status: oilStatus, score: Math.round(oilScore), remaining_km: Math.round(oilRemainingKm) },
-          brake_pads: { status: brakeStatus, score: Math.round(brakeScore), remaining_km: Math.round(brakeRemainingKm) },
-          battery: { status: batteryStatus, score: Math.round(batteryScore) },
-          tyres: { status: tyreStatus, score: Math.round(tyreScore), remaining_km: Math.round(tyreRemainingKm) },
-          insurance: { status: insuranceStatus, score: Math.round(insuranceScore), days_remaining: insuranceDaysRemaining },
-          fuel: { status: fuelStatus, score: Math.round(fuelScore), level_pct: Math.round(fuelLevel) },
-        },
-      };
+    (shipments || []).forEach((sh: any) => {
+      const b = buckets.get(indianDateKey(new Date(sh.updated_at)));
+      if (b) b.deliveries++;
     });
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // MOST PROFITABLE ROUTES
-  // ──────────────────────────────────────────────────────────────────────────
-  static async getMostProfitableRoutes(): Promise<Record<string, any>[]> {
-    // Get all completed routes with distance and fuel
-    const { data: routes } = await supabase
-      .from('routes')
-      .select('id, total_distance_km, estimated_fuel_liters, route_stops(delivery_points(address, city))')
-      .eq('status', 'completed')
-      .order('total_distance_km', { ascending: false })
-      .limit(30);
-
-    if (!routes || routes.length === 0) return [];
-
-    const routeIds = routes.map((r) => r.id);
-
-    // Get paid invoices per route (match by shipments on route_stops)
-    // We'll approximate: fetch invoices with matching shipment refs
-    const { data: shipments } = await supabase
-      .from('shipments')
-      .select('id, route_id, freight_charge')
-      .in('route_id', routeIds)
-      .not('freight_charge', 'is', null);
-
-    const revenueByRoute: Record<string, number> = {};
-    (shipments || []).forEach((s: any) => {
-      if (s.route_id) {
-        revenueByRoute[s.route_id] = (revenueByRoute[s.route_id] || 0) + (s.freight_charge || 0);
-      }
-    });
-
-    return routes
-      .map((r: any) => {
-        const revenue = revenueByRoute[r.id] || 0;
-        const fuelCost = (r.estimated_fuel_liters || 0) * FUEL_PRICE_PER_LITER;
-        const maintCost = MAINT_COST_PER_ROUTE;
-        const profit = revenue - fuelCost - maintCost;
-        const profitMarginPct = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
-
-        // Build origin → destination label from stops
-        const stops = (r.route_stops || []).map((s: any) => s.delivery_points?.city || s.delivery_points?.address || '').filter(Boolean);
-        const origin = stops[0] || 'Origin';
-        const destination = stops[stops.length - 1] || 'Destination';
-
-        return {
-          id: r.id,
-          label: `${origin} → ${destination}`,
-          distance_km: Math.round(r.total_distance_km || 0),
-          revenue: Math.round(revenue),
-          cost: Math.round(fuelCost + maintCost),
-          profit: Math.round(profit),
-          profit_margin_pct: profitMarginPct,
-        };
-      })
-      .sort((a, b) => b.profit - a.profit)
-      .slice(0, 8);
+    return Array.from(buckets, ([date, v]) => ({ date, ...v }));
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -525,55 +374,48 @@ export class AnalyticsService {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // DRIVER PERFORMANCE
+  // DRIVER PERFORMANCE — per vehicle and its assigned driver
   // ──────────────────────────────────────────────────────────────────────────
   static async getDriverPerformance(): Promise<any[]> {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
-      .select('id, plate_number, vehicle_type, status, driver_id');
+      .select('id, plate_number, vehicle_type, status, driver_id')
+      .neq('status', 'archived');
 
-    if (error) { console.error('Error fetching vehicles:', error); return []; }
+    if (error) throw error;
     if (!vehicles || vehicles.length === 0) return [];
 
     const vehicleIds = vehicles.map(v => v.id);
 
-    const { data: routesData } = await supabase
+    const { data: routesData, error: routesErr } = await supabase
       .from('routes')
-      .select('id, vehicle_id, status, total_distance_km, optimization_score')
+      .select('vehicle_id, status, total_distance_km')
       .in('vehicle_id', vehicleIds);
+    if (routesErr) throw routesErr;
 
-    let routesByVehicle: Record<string, any[]> = {};
-    if (routesData) {
-      routesData.forEach(r => {
-        if (!routesByVehicle[r.vehicle_id]) routesByVehicle[r.vehicle_id] = [];
-        routesByVehicle[r.vehicle_id].push(r);
-      });
-    }
+    const routesByVehicle: Record<string, any[]> = {};
+    (routesData || []).forEach(r => {
+      (routesByVehicle[r.vehicle_id] ||= []).push(r);
+    });
 
     const driverIds = vehicles.map(v => v.driver_id).filter(Boolean) as string[];
-    let usersMap: Record<string, any> = {};
+    const usersMap: Record<string, any> = {};
     if (driverIds.length > 0) {
       const { data: usersData } = await supabase
         .from('users')
         .select('id, full_name, email')
         .in('id', driverIds);
-      if (usersData) usersData.forEach(u => { usersMap[u.id] = u; });
+      (usersData || []).forEach(u => { usersMap[u.id] = u; });
     }
 
+    // Only counts that exist in the data. The old "rating" (from a default
+    // optimisation score of 80) and "on-time %" (100% for vehicles with no
+    // routes) were invented and are gone.
     return vehicles.map((v: any) => {
-      let completedRoutes = 0, totalRoutes = 0, totalDistance = 0, totalScore = 0, scoreCount = 0;
       const vRoutes = routesByVehicle[v.id] || [];
-
-      vRoutes.forEach((r: any) => {
-        totalRoutes++;
-        if (r.status === 'completed') completedRoutes++;
-        totalDistance += (r.total_distance_km || 0);
-        if (r.optimization_score) { totalScore += r.optimization_score; scoreCount++; }
-      });
-
-      const onTimePct = totalRoutes > 0 ? (completedRoutes / totalRoutes) * 100 : 100;
-      const avgScore = scoreCount > 0 ? totalScore / scoreCount : 80;
-      const rating = (avgScore / 100) * 5.0;
+      const finished = vRoutes.filter((r: any) => ['completed', 'cancelled'].includes(r.status));
+      const completed = vRoutes.filter((r: any) => r.status === 'completed');
+      const distance = completed.reduce((sum: number, r: any) => sum + (r.total_distance_km || 0), 0);
       const driver = v.driver_id ? usersMap[v.driver_id] : null;
 
       return {
@@ -581,60 +423,14 @@ export class AnalyticsService {
         plate_number: v.plate_number,
         vehicle_type: v.vehicle_type,
         status: v.status,
-        name: driver ? (driver.full_name || 'Unassigned') : 'Unassigned',
-        email: driver ? driver.email : '',
-        completed_routes: completedRoutes,
-        on_time_pct: parseFloat(onTimePct.toFixed(1)),
-        total_distance_km: Math.floor(totalDistance),
-        rating: parseFloat(Math.min(5.0, Math.max(1.0, rating)).toFixed(1)),
+        driver_name: driver?.full_name || null,
+        total_routes: vRoutes.length,
+        completed_routes: completed.length,
+        // Share of finished routes that were completed rather than cancelled.
+        completion_pct: finished.length > 0 ? Math.round((completed.length / finished.length) * 1000) / 10 : null,
+        total_distance_km: Math.round(distance),
       };
-    }).sort((a, b) => b.rating - a.rating);
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // FINANCIAL METRICS (7-day chart)
-  // ──────────────────────────────────────────────────────────────────────────
-  static async getFinancialMetrics(): Promise<any[]> {
-    const dataMap: Record<string, { revenue: number; cost: number }> = {};
-    const now = new Date();
-
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dateKey = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      dataMap[dateKey] = { revenue: 0, cost: 0 };
-    }
-
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(now.getDate() - 7);
-    const dateThreshold = sevenDaysAgo.toISOString();
-
-    const { data: invoices } = await supabase
-      .from('invoices')
-      .select('amount, created_at')
-      .eq('status', 'paid')
-      .gte('created_at', dateThreshold);
-
-    (invoices || []).forEach((inv: any) => {
-      const dateKey = new Date(inv.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (dataMap[dateKey]) dataMap[dateKey].revenue += (inv.amount || 0);
-    });
-
-    const { data: routes } = await supabase
-      .from('routes')
-      .select('estimated_fuel_liters, created_at')
-      .in('status', ['active', 'completed'])
-      .gte('created_at', dateThreshold);
-
-    (routes || []).forEach((r: any) => {
-      const dateKey = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (dataMap[dateKey]) dataMap[dateKey].cost += ((r.estimated_fuel_liters || 0) * FUEL_PRICE_PER_LITER) + MAINT_COST_PER_ROUTE;
-    });
-
-    return Object.keys(dataMap).map(dateKey => {
-      const { revenue, cost } = dataMap[dateKey];
-      return { date: dateKey, revenue: Math.floor(revenue), cost: Math.floor(cost), profit: Math.floor(revenue - cost) };
-    });
+    }).sort((a, b) => b.completed_routes - a.completed_routes);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -645,7 +441,8 @@ export class AnalyticsService {
       .from('vendor_profiles')
       .select('id, company_name, city, is_verified, kyc_status');
 
-    if (error || !vendors) return [];
+    if (error) throw error;
+    if (!vendors) return [];
 
     const { data: requests } = await supabase
       .from('vendor_shipment_requests')
@@ -673,11 +470,12 @@ export class AnalyticsService {
       return {
         id: v.id,
         name: v.company_name,
-        region: v.city || 'Central',
+        region: v.city || null,
         deliveries: fulfilled,
         sla: sla !== null ? parseFloat(sla.toFixed(1)) : null,
         costPerDelivery: costs.length > 0 ? Math.round(avgCost) : null,
         status,
+        kyc_status: kycStatus || (v.is_verified ? 'verified' : 'pending'),
       };
     });
   }
