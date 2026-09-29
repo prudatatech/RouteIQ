@@ -6,7 +6,7 @@ import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
-  useConfirm, type Column,
+  parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
@@ -60,8 +60,10 @@ export default function FleetPage() {
   const { confirm } = useConfirm()
   const queryClient = useQueryClient()
 
-  const [filter, setFilter] = useState<(typeof STATUS_FILTERS)[number]>('all')
-  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useTabParam(STATUS_FILTERS, 'all', 'status')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort')
+  const sort = parseSort(sortParam)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [detailVehicle, setDetailVehicle] = useState<Vehicle | null>(null)
@@ -287,6 +289,8 @@ export default function FleetPage() {
           action: !search && role !== 'driver' ? <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button> : undefined,
         }}
         pageSize={20}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
       />
 
       <VehicleWizardModal

@@ -52,3 +52,16 @@ export function useUrlState(key: string, options: UseUrlStateOptions = {}): [str
 
   return [local, setValue]
 }
+
+export type SortState = { key: string; direction: 'asc' | 'desc' } | null
+
+/** `{key,direction}` <-> a single `key:direction` URL param value, for `DataTable`'s controlled sort. */
+export function serializeSort(sort: SortState): string {
+  return sort ? `${sort.key}:${sort.direction}` : ''
+}
+
+export function parseSort(value: string): SortState {
+  const [key, direction] = value.split(':')
+  if (!key || (direction !== 'asc' && direction !== 'desc')) return null
+  return { key, direction }
+}

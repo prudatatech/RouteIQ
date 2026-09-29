@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import {
-  Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, Select, StatusPill, humanize, type Column,
+  Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, Select, StatusPill, humanize,
+  parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -27,9 +28,11 @@ const optionsFor = (values: (string | null)[]) =>
   [...new Set(values.filter((v): v is string => !!v))].sort().map(v => ({ value: v, label: humanize(v) }))
 
 export default function AuditLogPage() {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState(ALL)
-  const [agent, setAgent] = useState(ALL)
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [status, setStatus] = useUrlState('status', { fallback: ALL })
+  const [agent, setAgent] = useUrlState('agent', { fallback: ALL })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'time:desc' })
+  const sort = parseSort(sortParam)
   const [selected, setSelected] = useState<AuditEntry | null>(null)
 
   const logs = useQuery<AuditEntry[]>({
@@ -128,7 +131,8 @@ export default function AuditLogPage() {
         onRetry={() => logs.refetch()}
         onRowClick={setSelected}
         selectedKey={selected?.id}
-        initialSort={{ key: 'time', direction: 'desc' }}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
         pageSize={25}
         empty={filtered
           ? { title: 'No entries match these filters', action: <Button variant="secondary" onClick={clear}>Clear filters</Button> }

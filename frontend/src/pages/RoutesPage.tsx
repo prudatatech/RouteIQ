@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
-import { Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, type Column } from '@/components/ui'
+import {
+  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, parseSort, serializeSort, useUrlState, type Column,
+} from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -34,8 +36,10 @@ const STATUS_OPTIONS = [
 
 export default function RoutesPage() {
   const navigate = useNavigate()
-  const [status, setStatus] = useState('all')
-  const [q, setQ] = useState('')
+  const [status, setStatus] = useUrlState('status', { fallback: 'all' })
+  const [q, setQ] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort')
+  const sort = parseSort(sortParam)
 
   const { data: routes = [], isLoading, isError, refetch } = useQuery<RouteRow[]>({
     queryKey: ['routes'],
@@ -180,6 +184,8 @@ export default function RoutesPage() {
           description: q || status !== 'all' ? undefined : 'Routes appear once route optimization plans them.',
         }}
         onRowClick={r => navigate(`/routes/${r.id}`)}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
       />
     </Page>
   )

@@ -8,7 +8,7 @@ import { vendorAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, StatusPill, Tabs, TabPanel,
-  buttonClasses, useConfirm, useTabParam, type Column,
+  buttonClasses, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -113,7 +113,9 @@ export default function KycReviewPage() {
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'submitted')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: tab === 'submitted' ? 'updated:asc' : 'updated:desc' })
+  const sort = parseSort(sortParam)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const vendors = useQuery({ queryKey: ['kyc-vendors'], queryFn: loadVendors })
@@ -269,7 +271,8 @@ export default function KycReviewPage() {
           onRetry={() => vendors.refetch()}
           onRowClick={v => setSelectedId(v.id)}
           selectedKey={selectedId}
-          initialSort={{ key: 'updated', direction: tab === 'submitted' ? 'asc' : 'desc' }}
+          sort={sort}
+          onSortChange={s => setSortParam(serializeSort(s))}
           empty={search
             ? { title: 'No vendors match your search', action: <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> }
             : { title: emptyTitle[tab] }}

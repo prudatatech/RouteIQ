@@ -6,7 +6,7 @@ import { usersAPI, authAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
   Button, DataTable, Input, Modal, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  useConfirm, useTabParam, type Column,
+  parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate } from '@/utils/display'
 
@@ -72,7 +72,9 @@ export default function UsersPage() {
   const { confirm } = useConfirm()
   const currentUserId = useAuthStore(s => s.userId)
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'all')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'joined:desc' })
+  const sort = parseSort(sortParam)
   const [inviteOpen, setInviteOpen] = useState(false)
 
   const users = useQuery<User[]>({
@@ -217,7 +219,8 @@ export default function UsersPage() {
           loading={users.isLoading}
           error={users.error ? 'We could not load users. Check your connection and try again.' : undefined}
           onRetry={() => users.refetch()}
-          initialSort={{ key: 'joined', direction: 'desc' }}
+          sort={sort}
+          onSortChange={s => setSortParam(serializeSort(s))}
           empty={search
             ? { title: 'No users match your search', action: <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> }
             : { title: 'No users here' }}

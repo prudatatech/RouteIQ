@@ -8,7 +8,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
   Alert, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, SearchInput, Skeleton,
-  StatusPill, Tabs, TabPanel, useConfirm, useTabParam, type Column,
+  StatusPill, Tabs, TabPanel, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
@@ -135,7 +135,9 @@ export default function VendorRequestsPage() {
   const queryClient = useQueryClient()
   const { prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'posted:desc' })
+  const sort = parseSort(sortParam)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const requests = useQuery({ queryKey: ['vendor-requests'], queryFn: loadRequests })
@@ -283,7 +285,8 @@ export default function VendorRequestsPage() {
           onRetry={() => requests.refetch()}
           onRowClick={r => setSelectedId(r.id)}
           selectedKey={selectedId}
-          initialSort={{ key: 'posted', direction: 'desc' }}
+          sort={sort}
+          onSortChange={s => setSortParam(serializeSort(s))}
           empty={{
             title: search ? 'No requests match your search' : emptyTitle[tab],
             description: search ? 'Try a different vendor or place name.' : 'Vendors post loads from their portal.',

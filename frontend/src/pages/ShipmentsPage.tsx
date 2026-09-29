@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus } from 'lucide-react'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, statusToLabel, useTabParam, type Column,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort, statusToLabel,
+  useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
@@ -33,7 +34,9 @@ export default function ShipmentsPage() {
   const queryClient = useQueryClient()
   const openCreate = useDraftStore(s => s.openModal)
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'all', 'status')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
+  const [sortParam, setSortParam] = useUrlState('sort', { fallback: 'shipment:desc' })
+  const sort = parseSort(sortParam)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<ShipmentRow | null>(null)
   const [assigning, setAssigning] = useState<ShipmentRow | null>(null)
@@ -232,7 +235,8 @@ export default function ShipmentsPage() {
         onRetry={() => refetch()}
         onRowClick={s => setSelectedId(s.id)}
         selectedKey={selectedId}
-        initialSort={{ key: 'shipment', direction: 'desc' }}
+        sort={sort}
+        onSortChange={s => setSortParam(serializeSort(s))}
         empty={filtering
           ? {
             title: 'No shipments match',
