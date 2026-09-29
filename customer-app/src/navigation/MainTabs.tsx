@@ -2,6 +2,7 @@ import React from 'react';
 import { Feather } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
+import BookingsScreen from '../screens/BookingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
 import { colors, size, type } from '../theme';
@@ -14,7 +15,7 @@ function icon(name: keyof typeof Feather.glyphMap) {
   };
 }
 
-/** The three signed-in destinations. Safe-area insets are applied by the tab bar. */
+/** The signed-in destinations. Safe-area insets are applied by the tab bar. */
 export default function MainTabs() {
   return (
     <Tab.Navigator
@@ -27,6 +28,7 @@ export default function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home', tabBarIcon: icon('home') }} />
+      <Tab.Screen name="Bookings" component={BookingsScreen} options={{ title: 'Bookings', tabBarIcon: icon('package') }} />
       <Tab.Screen
         name="Notifications"
         component={NotificationsScreen}

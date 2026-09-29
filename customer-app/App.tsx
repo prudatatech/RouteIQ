@@ -12,6 +12,7 @@ import MainTabs from './src/navigation/MainTabs';
 import LocationSearchScreen from './src/screens/LocationSearchScreen';
 import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import QuoteScreen from './src/screens/QuoteScreen';
+import BookingDetailScreen from './src/screens/BookingDetailScreen';
 import { themeFonts } from './src/theme/fonts';
 import { colors } from './src/theme';
 
@@ -56,6 +57,7 @@ export default function App() {
           <Stack.Screen name="LocationSearch" component={LocationSearchScreen} options={{ animation: 'fade' }} />
           <Stack.Screen name="CargoConfig" component={CargoConfigScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Quote" component={QuoteScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="BookingDetail" component={BookingDetailScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

@@ -49,13 +49,13 @@ export default function QuoteScreen({ navigation, route }: any) {
 
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [booked, setBooked] = useState(false);
+  const [bookedId, setBookedId] = useState<string | null>(null);
 
   const book = async () => {
     setBooking(true);
     setBookingError(null);
     try {
-      await api.createBooking({
+      const created = await api.createBooking({
         pickup_lat: pickupCoord.latitude,
         pickup_lng: pickupCoord.longitude,
         drop_lat: dropoffCoord.latitude,
@@ -69,7 +69,7 @@ export default function QuoteScreen({ navigation, route }: any) {
         drop_name: placeName(dropoffLocation),
         drop_address: dropoffLocation,
       });
-      setBooked(true);
+      setBookedId(created.id);
     } catch (e: any) {
       setBookingError(e?.message || 'Could not send your booking. Check your internet connection and try again.');
     } finally {
@@ -79,7 +79,7 @@ export default function QuoteScreen({ navigation, route }: any) {
 
   const isRange = quote?.available && quote.low != null && quote.high != null && quote.low !== quote.high;
 
-  if (booked) {
+  if (bookedId) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.doneWrap}>
@@ -87,7 +87,14 @@ export default function QuoteScreen({ navigation, route }: any) {
             icon={<Feather name="check-circle" size={size.icon.xl} color={colors.success} />}
             title="Booking sent"
             message={`Our team will confirm your pickup on ${formatDay(date)} and let you know here.`}
-            action={{ label: 'Back to Home', onPress: () => navigation.popToTop(), variant: 'primary' }}
+            action={{
+              label: 'View my booking',
+              variant: 'primary',
+              onPress: () => {
+                navigation.popToTop();
+                navigation.navigate('BookingDetail', { id: bookedId });
+              },
+            }}
           />
         </View>
       </SafeAreaView>
