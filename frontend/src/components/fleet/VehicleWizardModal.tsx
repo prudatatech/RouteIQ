@@ -116,8 +116,12 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const set = <K extends keyof VehicleFormData>(key: K, value: VehicleFormData[K]) =>
     setFormData(prev => ({ ...prev, [key]: value }))
 
+  // Only the fields this form edits are sent. The form opens with the whole vehicle row
+  // (id, driver_id, position, ...), and anything stale in it would overwrite newer values,
+  // or stop the server linking the driver when the phone changes.
   const withNullableDocs = (data: VehicleFormData) => {
-    const payload: Record<string, unknown> = { ...data }
+    const payload: Record<string, unknown> = {}
+    for (const key of Object.keys(DEFAULT_FORM_DATA)) payload[key] = data[key as keyof VehicleFormData]
     for (const doc of DOCS) {
       if (!payload[`${doc}_expiry`]) payload[`${doc}_expiry`] = null
       if (!payload[docNumberKey(doc)]) payload[docNumberKey(doc)] = null
@@ -133,7 +137,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       else await vehiclesAPI.create(payload)
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success('Draft saved. Finish it later from the Archived filter.')
+      toast.success('Draft saved. Finish it later from the Drafts filter.')
       onClose()
     } catch {
       toast.error('We could not save the draft. Try again.')
@@ -207,7 +211,12 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
   const mutation = useMutation({
     mutationFn: (data: VehicleFormData) => {
-      const payload = withNullableDocs({ ...data, status: data.status === 'archived' ? 'available' : (data.status || 'available') })
+      const payload = withNullableDocs(data)
+      // A new vehicle starts available, and finishing a saved draft makes it a real vehicle. Editing a live
+      // vehicle never sends a status: the form's copy can be stale (a serious SOS puts a vehicle in
+      // maintenance while the form is open). Status changes only through the actions in the Fleet drawer.
+      if (!isEditing || initialData.status === 'archived') payload.status = 'available'
+      else delete payload.status
       return isEditing ? vehiclesAPI.update(initialData.id, payload) : vehiclesAPI.create(payload)
     },
     onSuccess: () => {

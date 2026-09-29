@@ -368,6 +368,12 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       res.status(404).json({ detail: 'Vehicle not found' });
       return;
     }
+    // A renamed driver keeps one name across the vehicle and their account
+    const linkedDriver = vehicle.driver_id;
+    if (!isDriver && linkedDriver && updateData.driver_name && updateData.driver_name !== current.driver_name) {
+      await supabase.from('users').update({ full_name: updateData.driver_name }).eq('id', linkedDriver).eq('role', 'driver');
+    }
+
     await invalidateVehicleCaches();
     res.json(vehicle);
   } catch (e: any) {

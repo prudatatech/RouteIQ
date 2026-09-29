@@ -125,6 +125,13 @@ describe('PATCH /vehicles/:id', () => {
     expect(supabaseMock.rows('vehicles')[0].driver_id).toBe('driver-1');
   });
 
+  it('renames the linked driver account when only the name is edited', async () => {
+    reset([veh({ driver_id: 'driver-1', driver_name: 'Ravi', driver_phone: '9876543210' })]);
+    const res = await patch({ driver_name: 'Ravi Kumar' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('users').find(u => u.id === 'driver-1')!.full_name).toBe('Ravi Kumar');
+  });
+
   it('replaces the driver TEMP placeholder when linking them to this vehicle', async () => {
     reset([veh(), veh({ id: 'temp-1', plate_number: 'TEMP-ABC123', driver_id: 'driver-1' })]);
     const res = await patch({ driver_name: 'Ravi', driver_phone: '9876543210' });
