@@ -3,6 +3,7 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
+import design from './eslint-rules/design-guardrails.js';
 
 export default tseslint.config(
   { ignores: ['dist'] },
@@ -35,6 +36,22 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  {
+    // Files that are on the shared theme. The design rules are errors here so they
+    // can't drift again. Add each page to this list when it moves to the shared
+    // components; Phase 7 replaces the list with src/**.
+    files: [
+      'src/components/ui/**/*.{ts,tsx}',
+      'src/components/vendor/vendorContext.ts',
+      'src/config/**/*.{ts,tsx}',
+      'src/pages/VendorRequestsPage.tsx',
+    ],
+    plugins: { design },
+    rules: {
+      'design/no-off-theme-classes': 'error',
+      'design/no-inline-visual-style': 'error',
     },
   },
 );
