@@ -32,6 +32,7 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
   const [km, setKm] = useState(odometer != null ? String(Math.round(odometer)) : '')
   const [details, setDetails] = useState<ServiceDetails>(emptyDetails())
   const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const refresh = useRefreshVehicle(vehicleId)
   const { confirm } = useConfirm()
   const queryClient = useQueryClient()
@@ -68,12 +69,16 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
 
   const submit = () => {
     const odo = moneyOrNull(km)
-    if (!item.trim()) { setError('Enter what was done, for example Engine oil.'); return }
-    if (odo === undefined) { setError('Enter the odometer as a number, in km.'); return }
+    const next: Record<string, string> = {}
+    if (!item.trim()) next.item = 'Enter what was done, for example Engine oil.'
+    if (odo === undefined) next.km = 'Enter the odometer as a number, in km.'
+    if (!doneAt) next.doneAt = 'Choose the date of the service.'
+    setErrors(next)
     const extra = detailsPayload(details)
     if (!extra.ok) { setError(extra.error); return }
+    if (Object.keys(next).length > 0) return
     setError('')
-    save.mutate({ item: item.trim(), done_at: doneAt, odometer_km: odo, ...extra.body })
+    save.mutate({ item: item.trim(), done_at: doneAt, odometer_km: odo ?? null, ...extra.body })
   }
 
   return (
@@ -99,13 +104,14 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
           list={listId}
           maxLength={60}
           placeholder="Engine oil, Brakes, General service…"
+          error={errors.item}
           required
           autoFocus
         />
         <datalist id={listId}>{choices.map(c => <option key={c} value={c} />)}</datalist>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Date" type="date" max={istToday()} value={doneAt} onChange={e => setDoneAt(e.target.value)} required />
-          <Input label="Odometer" type="number" inputMode="decimal" min={0} value={km} onChange={e => setKm(e.target.value)} trailing="km" hint={odometer == null ? 'The odometer is not known yet. Enter it if you can.' : undefined} />
+          <Input label="Date" type="date" max={istToday()} value={doneAt} onChange={e => setDoneAt(e.target.value)} error={errors.doneAt} required />
+          <Input label="Odometer" type="number" inputMode="numeric" min={0} value={km} onChange={e => setKm(e.target.value)} trailing="km" error={errors.km} hint={odometer == null ? 'The odometer is not known yet. Enter it if you can.' : undefined} />
         </div>
         <ServiceDetailsFields vehicleId={vehicleId} value={details} onChange={setDetails} />
         {error && <p className="text-sm text-danger" role="alert">{error}</p>}

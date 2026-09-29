@@ -154,7 +154,7 @@ export default function VehicleDetailPage() {
     <Page>
       <PageHeader
         back={{ to: '/fleet', label: 'Back to fleet' }}
-        title={<span className="inline-flex flex-wrap items-center gap-3"><span className="font-mono">{vehicle.plate_number}</span><StatusPill status={vehicle.status} /></span>}
+        title={<span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-3"><span className="min-w-0 break-all font-mono">{vehicle.plate_number}</span><StatusPill status={vehicle.status} /></span>}
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>{vehicle.vehicle_model || humanize(vehicle.vehicle_type)}</span>
@@ -230,36 +230,21 @@ export default function VehicleDetailPage() {
               </CardBody>
             </Card>
             <Card className="lg:col-span-2">
-              <CardHeader title="Vehicle" />
+              <CardHeader title="Condition" description="Location, fuel and service detail are on their own tabs" />
               <CardBody>
                 <DetailList
-                  columns={2}
+                  columns={3}
                   items={[
-                    { label: 'Status', value: <StatusPill status={vehicle.status} /> },
-                    { label: 'Last seen', value: isLive ? 'Live' : (ping ? formatRelative(ping, now) : 'No GPS data') },
-                    { label: 'Driver', value: vehicle.driver_name || 'Unassigned' },
-                    { label: 'GPS device', value: vehicle.spark_id || 'Not linked' },
-                    {
-                      label: 'Coordinates',
-                      value: vehicle.latitude != null && vehicle.longitude != null
-                        ? <span className="font-mono text-xs">{vehicle.latitude.toFixed(5)}, {vehicle.longitude.toFixed(5)}</span>
-                        : 'Unknown',
-                    },
-                    {
-                      label: 'Fuel',
-                      value: vehicle.fuel_capacity_liters
-                        ? `${(vehicle.current_fuel_liters ?? 0).toLocaleString('en-IN')} / ${vehicle.fuel_capacity_liters.toLocaleString('en-IN')} L`
-                        : 'Tank size not recorded',
-                    },
                     { label: 'Odometer', value: formatOdometer(vehicle.odometer_km) },
                     {
                       label: 'Health',
                       value: healthRow
                         ? (healthRow.score == null
                           ? 'Not enough data'
-                          : <span className="inline-flex items-center gap-2"><span className="font-semibold tabular">{healthRow.score}</span><StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill></span>)
+                          : <span className="inline-flex flex-wrap items-center gap-2"><span className="font-semibold tabular">{healthRow.score}</span><StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill></span>)
                         : (health.isLoading ? '…' : '—'),
                     },
+                    { label: 'GPS device', value: vehicle.spark_id || 'Not linked' },
                   ]}
                 />
               </CardBody>

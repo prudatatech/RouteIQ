@@ -12,7 +12,7 @@ export default function PhotoSlotTile({ label, hint, src, busy, onFile, onRemove
   onOpen?: () => void
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <div className="relative aspect-[4/3] overflow-hidden rounded-control border border-border bg-surface-subtle">
         {src ? (
           <button type="button" onClick={onOpen} className="block h-full w-full" aria-label={`View the ${label.toLowerCase()} photo`}>
@@ -31,8 +31,8 @@ export default function PhotoSlotTile({ label, hint, src, busy, onFile, onRemove
         )}
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-text">{label}</span>
-        <div className="flex items-center gap-1">
+        <span className="min-w-0 truncate text-sm font-medium text-text">{label}</span>
+        <div className="flex shrink-0 items-center gap-1">
           <FileButton variant="link" accept="image/*" disabled={busy} onFile={onFile}>
             {src ? 'Replace' : 'Add photo'}
           </FileButton>

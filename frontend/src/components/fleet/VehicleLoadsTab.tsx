@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Package, Route as RouteIcon } from 'lucide-react'
 import { supabase } from '@/services/supabase'
-import { Card, CardBody, CardHeader, DataTable, DetailList, StatusPill, buttonClasses, type Column } from '@/components/ui'
+import { Card, CardBody, CardHeader, DataTable, SectionHeader, StatusPill, buttonClasses, type Column } from '@/components/ui'
 import { formatDate, formatDateTime, formatKg, formatKm } from '@/utils/display'
 import LoadBar from './LoadBar'
-import { containerSize, type Vehicle } from './types'
+import type { Vehicle } from './types'
 
 interface RouteRow {
   id: string
@@ -64,7 +64,7 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
     { key: 'open', header: <span className="sr-only">Open</span>, align: 'right', cell: r => <Link to={`/routes/${r.id}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Open</Link> },
   ]
   const manifestColumns: Column<ManifestRow>[] = [
-    { key: 'leg', header: 'Pickup to drop', cell: m => <span>{m.pickup_location ?? '—'} <span className="text-muted">to</span> {m.drop_location ?? '—'}</span> },
+    { key: 'leg', header: 'Pickup to drop', cell: m => <span className="break-words">{m.pickup_location ?? '—'} <span className="text-muted">to</span> {m.drop_location ?? '—'}</span> },
     { key: 'weight', header: 'Load', sortValue: m => m.capacity_kg ?? 0, cell: m => (m.capacity_kg != null ? formatKg(m.capacity_kg) : '—') },
     { key: 'status', header: 'Status', sortValue: m => m.status, cell: m => <StatusPill status={m.status} /> },
     { key: 'created', header: 'Assigned', hideBelow: 'md', sortValue: m => m.created_at, cell: m => formatDate(m.created_at) },
@@ -73,26 +73,13 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="On board now" description="Weight against capacity" />
-        <CardBody className="space-y-4">
+        <CardHeader title="On board now" description="Weight against capacity. Capacity and container size are on the Overview." />
+        <CardBody>
           <LoadBar vehicle={vehicle} />
-          <DetailList
-            columns={3}
-            items={[
-              { label: 'Capacity', value: vehicle.capacity_kg ? formatKg(vehicle.capacity_kg) : 'Not recorded' },
-              { label: 'Container size', value: containerSize(vehicle) ?? 'Not recorded' },
-              {
-                label: 'Bidding window',
-                value: vehicle.bidding_window_open
-                  ? `Open${vehicle.bidding_window_closes_at ? `, closes ${formatDateTime(vehicle.bidding_window_closes_at)}` : ''}`
-                  : 'Closed',
-              },
-            ]}
-          />
         </CardBody>
       </Card>
-      <section className="space-y-2" aria-label="Routes">
-        <h2 className="text-lg font-semibold text-text">Routes</h2>
+      <section className="space-y-3" aria-label="Routes">
+        <SectionHeader title="Routes" description="Routes given to this vehicle, newest first" />
         <DataTable
           caption={`Routes of ${vehicle.plate_number}`}
           columns={routeColumns}
@@ -106,8 +93,8 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
           empty={{ icon: <RouteIcon size={22} />, title: 'No routes yet', description: 'Routes assigned to this vehicle are listed here.' }}
         />
       </section>
-      <section className="space-y-2" aria-label="Vendor loads">
-        <h2 className="text-lg font-semibold text-text">Vendor loads</h2>
+      <section className="space-y-3" aria-label="Vendor loads">
+        <SectionHeader title="Vendor loads" description="Cargo manifests a vendor has assigned to this vehicle" />
         <DataTable
           caption={`Vendor loads of ${vehicle.plate_number}`}
           columns={manifestColumns}

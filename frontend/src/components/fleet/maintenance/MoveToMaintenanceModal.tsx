@@ -28,6 +28,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   const [note, setNote] = useState(sos?.description?.replace(/^\[Raised by staff[^\]]*\]\s*/, '') ?? '')
   const [release, setRelease] = useState(false)
   const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const refresh = useRefreshVehicle(vehicleId)
   const queryClient = useQueryClient()
 
@@ -56,9 +57,12 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   })
 
   const submit = () => {
-    if (!expected) { setError('Say when the vehicle should be back.'); return }
-    if (expected < istToday()) { setError('The expected return date cannot be in the past.'); return }
-    if (work?.blocking && !release) { setError('Tick the box to release its routes and loads, or wait until they finish.'); return }
+    const next: Record<string, string> = {}
+    if (!expected) next.expected = 'Say when the vehicle should be back.'
+    else if (expected < istToday()) next.expected = 'The expected return date cannot be in the past.'
+    if (work?.blocking && !release) next.release = 'Tick the box to release its routes and loads, or wait until they finish.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
     setError('')
     save.mutate({
       reason_type: reason,
@@ -96,6 +100,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
               <Checkbox
                 checked={release}
                 onChange={e => setRelease(e.target.checked)}
+                error={errors.release}
                 label="Release its routes and shipments"
                 description="Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told."
               />
@@ -110,7 +115,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
             options={MAINTENANCE_REASONS.map(r => ({ value: r, label: REASON_LABELS[r] }))}
             required
           />
-          <Input label="Expected back on" type="date" min={istToday()} value={expected} onChange={e => setExpected(e.target.value)} required />
+          <Input label="Expected back on" type="date" min={istToday()} value={expected} onChange={e => setExpected(e.target.value)} error={errors.expected} required />
         </div>
         <Input label="Workshop or place" value={workshop} onChange={e => setWorkshop(e.target.value)} maxLength={120} hint="Optional, for example Sharma Motors, Jamshedpur" />
         <Textarea label="Note" value={note} onChange={e => setNote(e.target.value)} maxLength={500} hint="Optional, what is wrong or what needs doing" />
