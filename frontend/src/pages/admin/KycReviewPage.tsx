@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
-  Alert, Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, StatusPill, Tabs, TabPanel,
+  Alert, Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
   buttonClasses, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
@@ -73,13 +73,6 @@ const docLabels: Record<string, string> = {
 
 const TAB_IDS = ['submitted', 'approved', 'rejected', 'pending', 'all'] as const
 type TabId = typeof TAB_IDS[number]
-
-const statusText: Record<KycStatus, string> = {
-  submitted: 'Waiting for review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  pending: 'Not submitted',
-}
 
 const vendorName = (v: VendorKyc) => v.form.name || v.company_name || 'Unnamed vendor'
 
@@ -192,10 +185,10 @@ export default function KycReviewPage() {
     },
     {
       key: 'status', header: 'Status',
-      sortValue: v => statusText[v.kyc_status],
+      sortValue: v => statusToLabel(v.kyc_status, 'kyc'),
       cell: v => (
         <span className="flex flex-wrap items-center gap-2">
-          <StatusPill status={v.kyc_status}>{statusText[v.kyc_status]}</StatusPill>
+          <StatusPill status={v.kyc_status} kind="kyc" />
           {v.kyc_status === 'submitted' && v.kyc_reviewed_at && <span className="text-xs text-muted">Resubmitted</span>}
         </span>
       ),
@@ -319,7 +312,7 @@ function KycDrawer({ vendor, onClose, pending, onDecide }: {
         open={!!vendor}
         onClose={onClose}
         title={vendor ? vendorName(vendor) : 'KYC'}
-        description={vendor ? statusText[vendor.kyc_status] : undefined}
+        description={vendor ? statusToLabel(vendor.kyc_status, 'kyc') : undefined}
         size="xl"
         footer={canDecide && vendor ? (
           <>

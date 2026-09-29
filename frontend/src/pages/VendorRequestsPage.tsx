@@ -9,7 +9,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Input, Page, PageHeader, Select, SearchInput,
-  Skeleton, StatusPill, Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
+  Skeleton, StatusPill, Tabs, TabPanel, humanize, statusToLabel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -105,16 +105,6 @@ const tabStatuses: Record<Exclude<TabId, 'all'>, string[]> = {
 /** The tab a request in this status is listed under. */
 const tabOfStatus = (status: string): Exclude<TabId, 'all'> | null =>
   (Object.keys(tabStatuses) as Exclude<TabId, 'all'>[]).find(k => tabStatuses[k].includes(status)) ?? null
-
-const statusLabels: Record<string, string> = {
-  pending: 'New',
-  approved: 'Approved',
-  assigned: 'Vehicle assigned',
-  escalated: 'With 3PL partners',
-  cancelled: 'Cancelled by vendor',
-  assigned_to_partner: 'Assigned to partner',
-  fulfilled: 'Completed',
-}
 
 const shortPlace = (place: string | null | undefined) => (place ?? '').split(',')[0].trim() || '—'
 const vendorName = (r: VendorRequest) => r.vendor?.company_name || 'Unnamed vendor'
@@ -396,7 +386,7 @@ export default function VendorRequestsPage() {
     },
     {
       key: 'status', header: 'Status',
-      cell: r => <StatusPill status={r.status}>{statusLabels[r.status]}</StatusPill>,
+      cell: r => <StatusPill status={r.status} kind="request" />,
       sortValue: r => r.status,
     },
   ]
@@ -423,7 +413,7 @@ export default function VendorRequestsPage() {
       pickup: r.pickup_location,
       drop: r.drop_location,
       weight_kg: r.required_capacity_kg,
-      status: statusLabels[r.status] ?? r.status,
+      status: statusToLabel(r.status, 'request'),
       posted_at: r.created_at,
     })), [
       { key: 'vendor', header: 'Vendor' },
@@ -637,7 +627,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
       {request && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill status={request.status}>{statusLabels[request.status]}</StatusPill>
+            <StatusPill status={request.status} kind="request" />
             <span className="text-sm text-muted">Posted {formatRelative(request.created_at)}</span>
           </div>
 

@@ -190,7 +190,7 @@ export default function RouteDetailsPage() {
     <Page>
       <PageHeader
         back={{ to: '/routes', label: 'Back to routes' }}
-        title={<span className="inline-flex flex-wrap items-center gap-3">Route {shortId} <StatusPill status={route.status} /></span>}
+        title={<span className="inline-flex flex-wrap items-center gap-3">Route {shortId} <StatusPill status={route.status} kind="route" /></span>}
         description={route.created_at ? `Created ${formatDistanceToNow(new Date(route.created_at), { addSuffix: true })}` : undefined}
         actions={
           <div className="flex flex-wrap gap-2">

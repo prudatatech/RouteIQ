@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import {
   Alert, Button, Card, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, SectionHeader,
-  Skeleton, StatusPill, Tabs, TabPanel, useConfirm, useTabParam, type Column, type Tone,
+  Skeleton, StatusPill, Tabs, TabPanel, useConfirm, useTabParam, statusToLabel, type Column,
 } from '@/components/ui'
 import OpenWindowModal from '@/components/backhaul/OpenWindowModal'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -69,30 +69,13 @@ type WindowState = 'open' | 'decide' | 'awarded' | 'closed' | 'upcoming' | 'canc
 const TAB_IDS = ['open', 'decide', 'awarded', 'closed', 'all'] as const
 type TabId = typeof TAB_IDS[number]
 
-const stateLabel: Record<WindowState, { label: string; tone: Tone }> = {
-  open: { label: 'Open for bids', tone: 'info' },
-  upcoming: { label: 'Opens soon', tone: 'neutral' },
-  decide: { label: 'Needs a decision', tone: 'warning' },
-  awarded: { label: 'Awarded', tone: 'success' },
-  closed: { label: 'Closed', tone: 'neutral' },
-  cancelled: { label: 'Cancelled', tone: 'neutral' },
-}
-
-const bidStatus: Record<string, { label: string; tone: Tone }> = {
-  pending: { label: 'Waiting', tone: 'warning' },
-  won: { label: 'Approved', tone: 'success' },
-  lost: { label: 'Not selected', tone: 'neutral' },
-  rejected: { label: 'Rejected', tone: 'danger' },
-  expired: { label: 'Expired', tone: 'neutral' },
-}
-
 const triggerLabel: Record<string, string> = {
   mid_route: 'Space during a trip',
   return_trip: 'Empty return trip',
   superadmin_dispatch: 'Opened by an admin',
 }
 
-const confirmationStatus = (c: DriverConfirmation): { label: string; tone: Tone } => {
+const confirmationStatus = (c: DriverConfirmation): { label: string; tone: 'success' | 'warning' | 'danger' | 'info' } => {
   switch (c.action) {
     case 'confirmed': return { label: 'Accepted by driver', tone: 'success' }
     case 'flagged': return { label: 'Declined by driver', tone: 'danger' }
@@ -357,8 +340,8 @@ export default function BidsPage() {
       city: bid.vendor?.city || '',
       bid_amount: bid.bid_amount,
       weight_kg: bid.weight_kg ?? '',
-      status: (bidStatus[bid.status] ?? { label: bid.status }).label,
-      window_state: stateLabel[state].label,
+      status: statusToLabel(bid.status, 'bid'),
+      window_state: statusToLabel(state, 'window'),
       submitted_at: bid.submitted_at || '',
     }))), [
       { key: 'vehicle', header: 'Vehicle' },
@@ -471,7 +454,7 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-lg font-semibold text-text">{vehicle?.plate_number ?? 'Vehicle not found'}</h2>
-            <StatusPill tone={stateLabel[state].tone}>{stateLabel[state].label}</StatusPill>
+            <StatusPill status={state} kind="window" />
           </div>
           <p className="text-sm text-muted">
             {[win.trigger_type ? (triggerLabel[win.trigger_type] ?? win.trigger_type) : null, timing].filter(Boolean).join(' · ')}
@@ -509,7 +492,6 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
       ) : (
         <ul className="divide-y divide-border" aria-label={`Bids for ${vehicle?.plate_number ?? 'this vehicle'}`}>
           {bids.map(bid => {
-            const status = bidStatus[bid.status] ?? { label: bid.status, tone: 'neutral' as Tone }
             const actionable = canDecide && bid.status === 'pending'
             return (
               <li key={bid.id} className="flex flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center">
@@ -535,7 +517,7 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
                       ? <><FileCheck size={14} aria-hidden="true" className="text-success" /> E-way bill added</>
                       : <><FileX size={14} aria-hidden="true" className="text-warning" /> No e-way bill</>}
                   </span>
-                  <span className="flex items-center"><StatusPill tone={status.tone}>{status.label}</StatusPill></span>
+                  <span className="flex items-center"><StatusPill status={bid.status} kind="bid" /></span>
                 </button>
                 {actionable && (
                   <div className="flex shrink-0 gap-2">
@@ -568,7 +550,6 @@ function BidDrawer({ selection, state, busy, onClose, onApprove, onReject }: {
   const win = selection?.window
   const vehicle = win?.vehicles
   const actionable = !!bid && !!win && !win.winning_bid_id && bid.status === 'pending'
-  const status = bid ? bidStatus[bid.status] ?? { label: bid.status, tone: 'neutral' as Tone } : null
 
   const floor = win?.floor_price != null ? Number(win.floor_price) : null
   const difference = bid && floor != null ? Number(bid.bid_amount) - floor : null
@@ -588,11 +569,11 @@ function BidDrawer({ selection, state, busy, onClose, onApprove, onReject }: {
         </>
       ) : undefined}
     >
-      {bid && win && status && (
+      {bid && win && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={status.tone}>{status.label}</StatusPill>
-            {state && <span className="text-sm text-muted">Window: {stateLabel[state].label.toLowerCase()}</span>}
+            <StatusPill status={bid.status} kind="bid" />
+            {state && <span className="text-sm text-muted">Window: {statusToLabel(state, 'window').toLowerCase()}</span>}
           </div>
 
           {tooHeavy && (

@@ -25,13 +25,13 @@ const statusTone: Record<string, Tone> = {
   open: 'info', tracking: 'info', escalated: 'info', assigned_to_partner: 'info', offered: 'warning',
   // Needs attention
   pending: 'warning', delayed: 'warning', maintenance: 'warning', paused: 'warning', notified: 'warning',
-  pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', low: 'warning', gps_off: 'warning',
+  pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', medium: 'warning', gps_off: 'warning',
   // Failed / blocked
-  failed: 'danger', rejected: 'danger', declined: 'danger', cancelled: 'danger', exception: 'danger', error: 'danger',
-  sos: 'danger', escrow_failed: 'danger', expired: 'danger', critical: 'danger', denied: 'danger',
+  failed: 'danger', rejected: 'danger', declined: 'danger', exception: 'danger', error: 'danger',
+  sos: 'danger', escrow_failed: 'danger', expired: 'danger', critical: 'danger', denied: 'danger', high: 'danger',
   // Neutral
   taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', offline: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
-  unknown: 'neutral',
+  unknown: 'neutral', cancelled: 'neutral', void: 'neutral', optimizing: 'info', issued: 'info', low: 'info', won: 'success', lost: 'neutral',
 }
 
 const statusLabel: Record<string, string> = {
@@ -54,6 +54,63 @@ const statusLabel: Record<string, string> = {
   assigned_to_partner: 'Assigned to partner',
   offered: 'Waiting for answer',
   taken: 'Taken by another partner',
+  exception: 'Delivery failed',
+  assigned: 'Vehicle assigned',
+  optimizing: 'Planning',
+  won: 'Approved',
+  lost: 'Not selected',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  fulfilled: 'Completed',
+  cancelled: 'Cancelled',
+}
+
+/**
+ * The same raw value can mean different things on different records ("active" route vs
+ * "active" partner, "pending" route vs "pending" vendor load). Pass `kind` to pick the
+ * reading that fits the record.
+ */
+export type StatusKind = 'route' | 'booking' | 'request' | 'bid' | 'kyc' | 'window'
+
+const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: string }>> = {
+  route: {
+    pending: { tone: 'neutral', label: 'Not started' },
+    active: { tone: 'info', label: 'In progress' },
+    optimizing: { tone: 'info', label: 'Planning' },
+  },
+  // Staff view of a customer booking. "New" means staff have not acted on it yet.
+  booking: {
+    requested: { tone: 'warning', label: 'New' },
+    confirmed: { tone: 'info', label: 'Confirmed, needs a vehicle' },
+  },
+  // A vendor's load request.
+  request: {
+    pending: { tone: 'warning', label: 'New' },
+    approved: { tone: 'success', label: 'Approved' },
+    escalated: { tone: 'info', label: 'With 3PL partners' },
+    cancelled: { tone: 'neutral', label: 'Cancelled by vendor' },
+  },
+  bid: {
+    pending: { tone: 'warning', label: 'Waiting' },
+    won: { tone: 'success', label: 'Approved' },
+    lost: { tone: 'neutral', label: 'Not selected' },
+    rejected: { tone: 'danger', label: 'Rejected' },
+    expired: { tone: 'neutral', label: 'Expired' },
+  },
+  kyc: {
+    submitted: { tone: 'warning', label: 'Waiting for review' },
+    pending: { tone: 'neutral', label: 'Not submitted' },
+  },
+  // Capacity-bidding window states.
+  window: {
+    open: { tone: 'info', label: 'Open for bids' },
+    upcoming: { tone: 'neutral', label: 'Opens soon' },
+    decide: { tone: 'warning', label: 'Needs a decision' },
+    awarded: { tone: 'success', label: 'Awarded' },
+    closed: { tone: 'neutral', label: 'Closed' },
+    cancelled: { tone: 'neutral', label: 'Cancelled' },
+  },
 }
 
 /** "in_transit" → "In transit". */
@@ -62,12 +119,14 @@ export function humanize(value: string) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-export function statusToTone(status: string | null | undefined): Tone {
+export function statusToTone(status: string | null | undefined, kind?: StatusKind): Tone {
   if (!status) return 'neutral'
-  return statusTone[status.toLowerCase()] ?? 'neutral'
+  const key = status.toLowerCase()
+  return (kind && kindOverrides[kind][key]?.tone) ?? statusTone[key] ?? 'neutral'
 }
 
-export function statusToLabel(status: string | null | undefined): string {
+export function statusToLabel(status: string | null | undefined, kind?: StatusKind): string {
   if (!status) return 'Unknown'
-  return statusLabel[status.toLowerCase()] ?? humanize(status)
+  const key = status.toLowerCase()
+  return (kind && kindOverrides[kind][key]?.label) ?? statusLabel[key] ?? humanize(status)
 }

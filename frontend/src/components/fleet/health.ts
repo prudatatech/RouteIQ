@@ -91,8 +91,6 @@ export const checkLabel: Record<CheckState, string> = { ok: 'OK', warning: 'Watc
 export const serviceTone: Record<ServiceState, Tone> = { overdue: 'danger', due_soon: 'warning', ok: 'success', unknown: 'neutral' }
 export const serviceLabel: Record<ServiceState, string> = { overdue: 'Overdue', due_soon: 'Due soon', ok: 'On track', unknown: 'Not tracked yet' }
 
-export const severityTone = (s: string | null): Tone => (s === 'critical' ? 'danger' : s === 'high' ? 'warning' : s === 'medium' ? 'info' : 'neutral')
-
 export const ALERT_TYPE_LABELS: Record<string, string> = {
   overspeed: 'Overspeed',
   harsh_braking: 'Harsh braking',

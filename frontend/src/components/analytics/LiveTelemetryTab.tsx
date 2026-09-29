@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Clock, Gauge, Route as RouteIcon } from 'lucide-react'
 import { analyticsAPI, telemetryAPI, telemetryWS, vehiclesAPI } from '@/services/api'
-import { EmptyState, ErrorState, Select, Skeleton, Stat, StatusPill, buttonClasses } from '@/components/ui'
+import { EmptyState, ErrorState, Select, Skeleton, Stat, StatusPill, buttonClasses, statusToLabel } from '@/components/ui'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import { ChartCard, SimpleLineChart } from './charts'
 import { formatNumber, formatTime } from './format'
@@ -152,7 +152,7 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
           label="Vehicle"
           value={selectedId ?? ''}
           onChange={e => select(e.target.value)}
-          options={options.map(v => ({ value: v.id, label: `${v.plate_number}${v.status ? ` · ${v.status.replace(/_/g, ' ')}` : ''}` }))}
+          options={options.map(v => ({ value: v.id, label: `${v.plate_number}${v.status ? ` · ${statusToLabel(v.status)}` : ''}` }))}
           className="sm:w-80"
         />
         <div className="flex items-center gap-2" aria-live="polite">

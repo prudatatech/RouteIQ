@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
 import { Button, DataTable, Stat, StatusPill, Tabs, useConfirm, type Column, type TabItem } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
-import { alertTypeLabel, apiErrorMessage, fleetKeys, severityTone, type FleetAlert } from './health'
+import { alertTypeLabel, apiErrorMessage, fleetKeys, type FleetAlert } from './health'
 
 type Filter = 'active' | 'resolved'
 const FILTERS: TabItem<Filter>[] = [{ id: 'active', label: 'Open' }, { id: 'resolved', label: 'Resolved' }]
@@ -79,7 +79,7 @@ export default function AlertsView() {
     },
     {
       key: 'severity', header: 'Severity', sortValue: r => r.severity ?? '',
-      cell: r => (r.severity ? <StatusPill tone={severityTone(r.severity)}>{r.severity.charAt(0).toUpperCase() + r.severity.slice(1)}</StatusPill> : '—'),
+      cell: r => (r.severity ? <StatusPill status={r.severity} /> : '—'),
     },
     {
       key: 'message', header: 'Details', hideBelow: 'lg',
