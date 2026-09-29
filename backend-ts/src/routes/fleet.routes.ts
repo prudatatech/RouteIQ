@@ -11,7 +11,6 @@ import { requireAuth, requireRole } from '../core/auth';
 import { cacheDeletePattern } from '../core/redis';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
-import { indianDateKey } from '../core/istDate';
 import {
   acknowledgeAlert, alertSummary, listAlerts, resolveAlert, ALERT_META,
 } from '../services/alerts.service';
@@ -20,8 +19,12 @@ import {
 } from '../services/alert-settings.service';
 import { loadFleetHealth } from '../services/vehicle-health.service';
 import { loadPlans, serviceStatus } from '../services/service-plans.service';
+import { setOdometerReading } from '../services/odometer-sync.service';
+import { listServiceLog, recordService, ServiceRecordSchema } from '../services/service-records.service';
+import maintenanceRoutes from './fleet-maintenance.routes';
 
 const router = Router();
+router.use(maintenanceRoutes);
 const staff = [requireAuth, requireRole(...STAFF_ROLES)] as const;
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the date format YYYY-MM-DD');
@@ -66,21 +69,21 @@ router.get('/vehicles/:id/health', ...staff, async (req: Request, res: Response)
 
 // ── Odometer ───────────────────────────────────────────────
 
-// PUT /fleet/vehicles/:id/odometer — staff correct the reading; GPS keeps adding to it
+// PUT /fleet/vehicles/:id/odometer — staff enter the dashboard reading; GPS keeps adding to it.
+// A reading lower than the current one is refused unless `correction_reason` says why.
 router.put('/vehicles/:id/odometer', ...staff, async (req: Request, res: Response) => {
   try {
-    const parsed = z.object({ odometer_km: z.number({ invalid_type_error: 'Enter the odometer reading in km' }).min(0).max(9_999_999) }).safeParse(req.body);
+    const parsed = z.object({
+      odometer_km: z.number({ invalid_type_error: 'Enter the odometer reading in km' }).min(0).max(9_999_999),
+      correction_reason: z.string().trim().max(300).nullable().optional(),
+    }).safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     await requireVehicle(req.params.id);
-    const { data, error } = await supabase
-      .from('vehicles')
-      .update({ odometer_km: parsed.data.odometer_km, odometer_updated_at: new Date().toISOString() })
-      .eq('id', req.params.id)
-      .select('id, odometer_km, odometer_updated_at')
-      .single();
-    if (error) throw error;
+    const result = await setOdometerReading(req.params.id, parsed.data.odometer_km, {
+      reason: parsed.data.correction_reason, userId: req.user!.user_id,
+    });
     await cacheDeletePattern('vehicles:list:*');
-    res.json(data);
+    res.json(result);
   } catch (e) {
     sendError(req, res, e);
   }
@@ -163,108 +166,26 @@ router.get('/service-due', ...staff, async (req: Request, res: Response) => {
 
 // ── Service log ────────────────────────────────────────────
 
-const LogSchema = z.object({
-  item: z.string().trim().min(1, 'Enter what was serviced').max(60),
-  done_at: dateOnly.optional(),
-  odometer_km: optionalNumber('Odometer'),
-  cost: optionalNumber('Cost'),
-  note: z.string().trim().max(500).nullable().optional(),
-});
-
-// GET /fleet/vehicles/:id/service-log
+// GET /fleet/vehicles/:id/service-log — newest first, each record with its items and attachments
 router.get('/vehicles/:id/service-log', ...staff, async (req: Request, res: Response) => {
   try {
     await requireVehicle(req.params.id);
-    const { data, error } = await supabase
-      .from('vehicle_service_log')
-      .select('id, vehicle_id, item, done_at, odometer_km, cost, note, expense_id, created_at')
-      .eq('vehicle_id', req.params.id)
-      .order('done_at', { ascending: false })
-      .limit(100);
-    if (error) throw error;
-    res.json(data ?? []);
+    res.json(await listServiceLog(req.params.id));
   } catch (e) {
     sendError(req, res, e);
   }
 });
 
-// POST /fleet/vehicles/:id/service-log — record a service.
-// Moves the item's baseline forward, raises the odometer if the reading is higher, and
-// records a maintenance expense when a cost is given (if the expenses table exists).
+// POST /fleet/vehicles/:id/service-log — record a service (what was done, date, odometer, cost, workshop,
+// and optionally parts, labour and attachments). Moves the covered items' baseline forward, raises the
+// odometer if the reading is higher, and records a maintenance expense when there is a cost.
 router.post('/vehicles/:id/service-log', ...staff, async (req: Request, res: Response) => {
   try {
-    const parsed = LogSchema.safeParse(req.body);
+    const parsed = ServiceRecordSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     const vehicle = await requireVehicle(req.params.id);
-    const b = parsed.data;
-    const today = indianDateKey(new Date());
-    const doneAt = b.done_at ?? today;
-    if (doneAt > today) throw new HttpError(400, 'The service date cannot be in the future');
-
-    const currentOdo = vehicle.odometer_km != null ? Number(vehicle.odometer_km) : null;
-    const readingKm = b.odometer_km ?? currentOdo;
-
-    let expenseId: string | null = null;
-    if (b.cost != null && b.cost > 0) {
-      const { data: expense, error: expErr } = await supabase
-        .from('expenses')
-        .insert({
-          vehicle_id: vehicle.id,
-          category: 'maintenance',
-          amount: b.cost,
-          expense_date: doneAt,
-          note: b.note ? `${b.item}: ${b.note}` : b.item,
-          created_by: req.user!.user_id,
-        })
-        .select('id')
-        .single();
-      if (expErr) console.warn('Service cost was stored on the log only (no expense row):', expErr.message);
-      else expenseId = expense?.id ?? null;
-    }
-
-    const { data: entry, error } = await supabase
-      .from('vehicle_service_log')
-      .insert({
-        vehicle_id: vehicle.id,
-        item: b.item,
-        done_at: doneAt,
-        odometer_km: readingKm,
-        cost: b.cost ?? null,
-        note: b.note || null,
-        expense_id: expenseId,
-        created_by: req.user!.user_id,
-      })
-      .select('id, vehicle_id, item, done_at, odometer_km, cost, note, expense_id, created_at')
-      .single();
-    if (error) throw error;
-
-    // A reading higher than what we hold is the better odometer
-    if (b.odometer_km != null && (currentOdo == null || b.odometer_km > currentOdo)) {
-      await supabase.from('vehicles')
-        .update({ odometer_km: b.odometer_km, odometer_updated_at: new Date().toISOString() })
-        .eq('id', vehicle.id);
-      await cacheDeletePattern('vehicles:list:*');
-    }
-
-    // Move the plan's baseline forward, unless this entry is older than the last one recorded
-    const { data: plan } = await supabase
-      .from('vehicle_service_plans')
-      .select('id, last_done_at')
-      .eq('vehicle_id', vehicle.id)
-      .eq('item', b.item)
-      .maybeSingle();
-    let planUpdated = false;
-    if (plan && (!plan.last_done_at || plan.last_done_at.slice(0, 10) <= doneAt)) {
-      const { error: pErr } = await supabase
-        .from('vehicle_service_plans')
-        .update({ last_done_at: doneAt, last_done_km: readingKm, updated_at: new Date().toISOString() })
-        .eq('id', plan.id);
-      if (pErr) throw pErr;
-      planUpdated = true;
-    }
-
     // vehicle_status lets the caller offer "Return to service" when the vehicle was in maintenance
-    res.status(201).json({ ...entry, expense_recorded: expenseId != null, plan_updated: planUpdated, vehicle_status: vehicle.status });
+    res.status(201).json(await recordService(parsed.data, { vehicle, userId: req.user!.user_id }));
   } catch (e) {
     sendError(req, res, e);
   }

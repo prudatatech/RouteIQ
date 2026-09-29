@@ -47,5 +47,22 @@
         "medium",
         "high",
         "critical"
+    ],
+    "vehicle_maintenance_jobs.status": [
+        "open",
+        "closed"
+    ],
+    "vehicle_maintenance_jobs.reason_type": [
+        "scheduled_service",
+        "breakdown",
+        "accident",
+        "tyre",
+        "other"
+    ],
+    "vehicle_service_attachments.kind": [
+        "invoice",
+        "job_card",
+        "photo",
+        "other"
     ]
 }

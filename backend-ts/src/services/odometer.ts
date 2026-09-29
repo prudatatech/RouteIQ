@@ -51,3 +51,55 @@ export function pathKm(start: PingPoint | null, points: PingPoint[]): number {
 }
 
 export const roundKm = (km: number) => Math.round(km * 10) / 10;
+
+/** A ping less accurate than this (metres) is not used for distance. */
+export const MAX_ACCURACY_M = 100;
+/** After this many bad fixes in a row the path restarts from the latest one, so one bad anchor cannot stall it. */
+const MAX_CONSECUTIVE_REJECTED = 5;
+
+export interface CleanPath {
+  km: number;
+  /** Pings that moved the path forward. */
+  accepted: number;
+  /** Pings dropped as GPS spikes (an impossible jump). Jitter is not counted here. */
+  rejected: number;
+}
+
+/**
+ * Distance over ordered pings, for syncing the odometer from history.
+ * Unlike `pathKm` (one step at a time as pings arrive), the last good position stays the
+ * reference while a ping is noise, so a single bad fix does not cost the legs on either side:
+ *  - movement under the jitter limit from the reference is ignored (it does not move the reference);
+ *  - a jump that would need more than the plausible speed is a spike and is skipped.
+ * Pings need no particular order; they are sorted by time first.
+ */
+export function cleanPathKm(anchor: PingPoint | null, points: PingPoint[]): CleanPath {
+  const ordered = [...points].sort((a, b) => {
+    const ta = a.at ? Date.parse(a.at) : 0;
+    const tb = b.at ? Date.parse(b.at) : 0;
+    return ta - tb;
+  });
+  let km = 0;
+  let accepted = 0;
+  let rejected = 0;
+  let bad = 0;
+  let ref = anchor;
+  for (const p of ordered) {
+    if (!ref) { ref = p; continue; }
+    const d = haversineKm(ref, p);
+    if (!Number.isFinite(d)) { rejected++; continue; }
+    if (d < MIN_SEGMENT_KM) continue;
+    const step = segmentKm(ref, p);
+    if (step > 0) {
+      km += step;
+      accepted++;
+      bad = 0;
+      ref = p;
+    } else {
+      rejected++;
+      bad++;
+      if (bad >= MAX_CONSECUTIVE_REJECTED) { ref = p; bad = 0; }
+    }
+  }
+  return { km, accepted, rejected };
+}
