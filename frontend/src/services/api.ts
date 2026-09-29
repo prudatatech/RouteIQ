@@ -217,7 +217,8 @@ export const telemetryAPI = {
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
   resolveSos: (id: string, data?: any) => api.put(`/telemetry/sos/${id}/resolve`, data).then(r => r.data),
   /** Driver raises an SOS for their assigned vehicle. */
-  triggerSos: (data: { lat?: number, lng?: number }) => api.post('/telemetry/sos/trigger', data).then(r => r.data),
+  triggerSos: (data: { lat?: number, lng?: number, alert_type?: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other' }) =>
+    api.post('/telemetry/sos/trigger', data).then(r => r.data),
 }
 
 export const analyticsAPI = {

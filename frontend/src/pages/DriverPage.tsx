@@ -1,139 +1,159 @@
-import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Home, Map as MapIcon, Package, Bell, User, Phone, Play, Pause,
-  CheckCircle2, AlertTriangle, ShieldAlert, Loader2
-} from 'lucide-react';
-import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api';
-import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers';
-import { formatEta } from '@/utils/timeFormat';
-import DriverMap from '@/components/map/DriverMap';
-import { useAuthStore } from '@/store/authStore';
-import toast from 'react-hot-toast';
-import type { AxiosError } from 'axios';
+  AlertTriangle, Bell, CheckCircle2, Home, Map as MapIcon, Package, Phone, Play, Pause, ShieldAlert, User,
+} from 'lucide-react'
+import toast from 'react-hot-toast'
+import type { AxiosError } from 'axios'
+import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api'
+import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers'
+import { formatEta } from '@/utils/timeFormat'
+import DriverMap from '@/components/map/DriverMap'
+import { useAuthStore } from '@/store/authStore'
+import { Button } from '@/components/ui/Button'
+import { Card, DetailList } from '@/components/ui/Card'
+import { StatusPill } from '@/components/ui/StatusPill'
+import { Select } from '@/components/ui/Field'
+import { EmptyState } from '@/components/ui/States'
 
-type Point = { x: number; y: number };
+type Point = { x: number; y: number }
+type ShiftStatus = 'offline' | 'on_duty' | 'on_mission'
+type Tab = 'home' | 'nav' | 'deliveries' | 'alerts' | 'profile'
 
 // Shapes returned by GET /routes for a driver's route
-type DeliveryPoint = {
-  name?: string;
-  address?: string;
-  latitude?: number;
-  longitude?: number;
-  demand_kg?: number;
-  shipment_id?: string | null;
-};
-type RouteStop = {
-  sequence?: number;
-  status?: string;
-  delivery_points?: DeliveryPoint;
-  delivery_point?: DeliveryPoint;
-};
+interface DeliveryPoint {
+  name?: string
+  address?: string
+  latitude?: number
+  longitude?: number
+  demand_kg?: number
+  shipment_id?: string | null
+}
+interface RouteStop {
+  sequence?: number
+  status?: string
+  delivery_points?: DeliveryPoint
+  delivery_point?: DeliveryPoint
+}
 
-// Canvas can't read CSS variables, so resolve the theme colour when drawing
+type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other'
+
+const SOS_TYPES: { value: SosType; label: string }[] = [
+  { value: 'panic_button', label: 'Emergency' },
+  { value: 'accident', label: 'Accident' },
+  { value: 'breakdown', label: 'Vehicle breakdown' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'theft', label: 'Theft' },
+  { value: 'other', label: 'Other' },
+]
+
+// Canvas can't read CSS variables at paint time on some browsers without a lookup,
+// so resolve the theme colour once when drawing.
 function strokeColour(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#000';
+  return getComputedStyle(document.documentElement).getPropertyValue('--color-text').trim() || '#18181B'
 }
 
 function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onClear: () => void }) {
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false)
   // Finished strokes, plus strokes removed by Undo that Redo can bring back
-  const [strokes, setStrokes] = useState<Point[][]>([]);
-  const [undone, setUndone] = useState<Point[][]>([]);
-  const currentStroke = useRef<Point[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [strokes, setStrokes] = useState<Point[][]>([])
+  const [undone, setUndone] = useState<Point[][]>([])
+  const currentStroke = useRef<Point[]>([])
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const setupPen = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = strokeColour();
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-  };
+    ctx.strokeStyle = strokeColour()
+    ctx.lineWidth = 3
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+  }
 
   // Repaint from the stroke list whenever it changes (undo, redo, clear)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setupPen(ctx);
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    setupPen(ctx)
     for (const stroke of strokes) {
-      if (stroke.length === 0) continue;
-      ctx.beginPath();
-      ctx.moveTo(stroke[0].x, stroke[0].y);
-      for (const p of stroke.slice(1)) ctx.lineTo(p.x, p.y);
-      ctx.stroke();
+      if (stroke.length === 0) continue
+      ctx.beginPath()
+      ctx.moveTo(stroke[0].x, stroke[0].y)
+      for (const p of stroke.slice(1)) ctx.lineTo(p.x, p.y)
+      ctx.stroke()
     }
-  }, [strokes]);
+  }, [strokes])
 
   // Map the pointer to canvas pixels (the canvas is scaled by CSS)
   const getPos = (e: React.MouseEvent | React.TouchEvent): Point => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const source = 'touches' in e ? e.touches[0] : e;
+    const canvas = canvasRef.current!
+    const rect = canvas.getBoundingClientRect()
+    const source = 'touches' in e ? e.touches[0] : e
     return {
       x: (source.clientX - rect.left) * (canvas.width / rect.width),
       y: (source.clientY - rect.top) * (canvas.height / rect.height),
-    };
-  };
+    }
+  }
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    setIsDrawing(true);
-    currentStroke.current = [getPos(e)];
-  };
+    setIsDrawing(true)
+    currentStroke.current = [getPos(e)]
+  }
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    const stroke = currentStroke.current;
-    const prev = stroke[stroke.length - 1];
-    const next = getPos(e);
-    stroke.push(next);
-    setupPen(ctx);
-    ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y);
-    ctx.lineTo(next.x, next.y);
-    ctx.stroke();
-  };
+    if (!isDrawing) return
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
+    const stroke = currentStroke.current
+    const prev = stroke[stroke.length - 1]
+    const next = getPos(e)
+    stroke.push(next)
+    setupPen(ctx)
+    ctx.beginPath()
+    ctx.moveTo(prev.x, prev.y)
+    ctx.lineTo(next.x, next.y)
+    ctx.stroke()
+  }
 
   const stopDrawing = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-    const stroke = currentStroke.current;
-    currentStroke.current = [];
-    if (stroke.length === 0) return;
-    setStrokes(prev => [...prev, stroke]);
-    setUndone([]);
-    onClear(); // a saved signature no longer matches the pad
-  };
+    if (!isDrawing) return
+    setIsDrawing(false)
+    const stroke = currentStroke.current
+    currentStroke.current = []
+    if (stroke.length === 0) return
+    setStrokes(prev => [...prev, stroke])
+    setUndone([])
+    onClear() // a saved signature no longer matches the pad
+  }
 
   const undo = () => {
-    if (strokes.length === 0) return;
-    setUndone(prev => [...prev, strokes[strokes.length - 1]]);
-    setStrokes(prev => prev.slice(0, -1));
-    onClear();
-  };
+    if (strokes.length === 0) return
+    setUndone(prev => [...prev, strokes[strokes.length - 1]])
+    setStrokes(prev => prev.slice(0, -1))
+    onClear()
+  }
 
   const redo = () => {
-    if (undone.length === 0) return;
-    setStrokes(prev => [...prev, undone[undone.length - 1]]);
-    setUndone(prev => prev.slice(0, -1));
-    onClear();
-  };
+    if (undone.length === 0) return
+    setStrokes(prev => [...prev, undone[undone.length - 1]])
+    setUndone(prev => prev.slice(0, -1))
+    onClear()
+  }
 
   const clear = () => {
-    setStrokes([]);
-    setUndone([]);
-    onClear();
-  };
+    setStrokes([])
+    setUndone([])
+    onClear()
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-surface border border-border rounded-xl overflow-hidden touch-none h-48 relative shadow-inner">
-        <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-          <span className="text-3xl font-black uppercase tracking-widest text-text">SIGN HERE</span>
-        </div>
+    <div className="space-y-3">
+      <div className="relative h-40 touch-none overflow-hidden rounded-control border border-border bg-surface-subtle">
+        {strokes.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-disabled">
+            Sign here
+          </div>
+        )}
         <canvas
           onMouseDown={startDrawing}
           onMouseMove={draw}
@@ -145,145 +165,159 @@ function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void; onC
           ref={canvasRef}
           width={400}
           height={200}
-          className="w-full h-full cursor-crosshair relative z-10"
+          className="relative z-10 h-full w-full cursor-crosshair"
         />
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <button type="button" onClick={undo} disabled={strokes.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
-          Undo
-        </button>
-        <button type="button" onClick={redo} disabled={undone.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
-          Redo
-        </button>
-        <button type="button" onClick={clear} disabled={strokes.length === 0} className="h-10 bg-surface2 rounded-xl text-xs font-bold uppercase disabled:opacity-50">
-          Clear
-        </button>
+      <div className="grid grid-cols-3 gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={undo} disabled={strokes.length === 0}>Undo</Button>
+        <Button type="button" variant="secondary" size="sm" onClick={redo} disabled={undone.length === 0}>Redo</Button>
+        <Button type="button" variant="secondary" size="sm" onClick={clear} disabled={strokes.length === 0}>Clear</Button>
       </div>
-      <button
+      <Button
+        fullWidth
         onClick={() => {
-          const canvas = canvasRef.current;
+          const canvas = canvasRef.current
           if (!canvas || strokes.length === 0) {
-            toast.error('Please sign first');
-            return;
+            toast.error('Please sign first')
+            return
           }
-          onSave(canvas.toDataURL('image/png'));
-          toast.success('Signature saved');
+          onSave(canvas.toDataURL('image/png'))
+          toast.success('Signature saved')
         }}
-        className="w-full h-14 bg-yellow-500 text-black font-black uppercase tracking-widest text-xs rounded-xl shadow-lg active:scale-95 transition-transform"
       >
-        Save Signature
-      </button>
+        Save signature
+      </Button>
     </div>
-  );
+  )
+}
+
+function TabButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={`flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-control text-xs font-medium transition-colors ${active ? 'text-brand' : 'text-muted hover:text-text'}`}
+    >
+      {icon}
+      {label}
+    </button>
+  )
 }
 
 export default function DriverPage() {
-  const queryClient = useQueryClient();
-  const userId = useAuthStore((s: any) => s.userId);
-  const [activeTab, setActiveTab] = useState<'home' | 'nav' | 'deliveries' | 'alerts' | 'profile'>('home');
-  const [shiftStatus, setShiftStatus] = useState<'OFFLINE' | 'ON_DUTY' | 'ON_MISSION'>('OFFLINE');
-  const role = useAuthStore((s: any) => s.role);
-  const [isTracking, setIsTracking] = useState(false);
-  const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number; speedKmph: number } | null>(null);
+  const queryClient = useQueryClient()
+  const userId = useAuthStore(s => s.userId)
+  const role = useAuthStore(s => s.role)
+  const [activeTab, setActiveTab] = useState<Tab>('home')
+  const [shiftStatus, setShiftStatus] = useState<ShiftStatus>('offline')
+  const [isTracking, setIsTracking] = useState(false)
+  const [liveLocation, setLiveLocation] = useState<{ lat: number; lng: number; speedKmph: number } | null>(null)
   // Time of the last GPS fix from this device
-  const [lastFixAt, setLastFixAt] = useState<Date | null>(null);
+  const [lastFixAt, setLastFixAt] = useState<Date | null>(null)
+  const [sosType, setSosType] = useState<SosType>('panic_button')
 
-  // POD State
-  const [recipientName, setRecipientName] = useState('');
-  const [signature, setSignature] = useState<string | null>(null);
+  // POD state
+  const [recipientName, setRecipientName] = useState('')
+  const [signature, setSignature] = useState<string | null>(null)
 
   const { data: me } = useQuery({
     queryKey: ['me', userId],
     queryFn: () => usersAPI.me(),
     enabled: !!userId,
-  });
+  })
 
-  const { data: routes = [], isLoading: _isLoading } = useQuery({
+  const { data: routes = [] } = useQuery({
     queryKey: ['driver-routes', userId],
     queryFn: () => routesAPI.list({ status: 'active' }),
     refetchInterval: 30_000,
-  });
+  })
 
-  const activeRoute = routes[0];
+  const activeRoute = routes[0]
   // GET /routes embeds the vehicle as `vehicles` and each stop's point as `delivery_points`
-  const vehicle = activeRoute?.vehicles ?? activeRoute?.vehicle ?? null;
+  const vehicle = activeRoute?.vehicles ?? activeRoute?.vehicle ?? null
   const stops: RouteStop[] = [...((activeRoute?.route_stops ?? activeRoute?.stops ?? []) as RouteStop[])]
-    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
-  const pointOf = (stop?: RouteStop): DeliveryPoint | null => stop?.delivery_points ?? stop?.delivery_point ?? null;
-  const currentStopIndex = stops.findIndex(s => s.status === 'pending');
-  const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined;
-  const currentPoint = pointOf(currentStop);
-  const pendingStopCount = stops.filter(s => s.status === 'pending').length;
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+  const pointOf = (stop?: RouteStop): DeliveryPoint | null => stop?.delivery_points ?? stop?.delivery_point ?? null
+  const currentStopIndex = stops.findIndex(s => s.status === 'pending')
+  const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined
+  const currentPoint = pointOf(currentStop)
+  const pendingStopCount = stops.filter(s => s.status === 'pending').length
 
   // Where the route starts: its depot when it has one (optimised routes), otherwise the first stop
   const { data: depots = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ['depots'],
     queryFn: () => api.get('/depots/').then(r => r.data),
     enabled: !!activeRoute?.depot_id,
-  });
+  })
   const routeOrigin = activeRoute?.depot_id
     ? depots.find(d => d.id === activeRoute.depot_id)?.name
-    : pointOf(stops[0])?.name;
+    : pointOf(stops[0])?.name
 
   // Shipment behind the current stop, for cargo and consignee details
-  const currentShipmentId: string | undefined = currentPoint?.shipment_id ?? undefined;
+  const currentShipmentId: string | undefined = currentPoint?.shipment_id ?? undefined
   const { data: currentShipment } = useQuery({
     queryKey: ['shipment', currentShipmentId],
     queryFn: () => shipmentsAPI.get(currentShipmentId!),
     enabled: !!currentShipmentId,
-  });
+  })
   const consigneePhone: string | undefined =
-    currentShipment?.metadata?.consigneeContact || currentShipment?.metadata?.consignee?.contact || undefined;
+    currentShipment?.metadata?.consigneeContact || currentShipment?.metadata?.consignee?.contact || undefined
 
-  const computedDist = activeRoute ? getRouteDistance(activeRoute) : 0;
-  const computedDuration = activeRoute ? getRouteDuration(activeRoute, computedDist) : 0;
+  const computedDist = activeRoute ? getRouteDistance(activeRoute) : 0
+  const computedDuration = activeRoute ? getRouteDuration(activeRoute, computedDist) : 0
 
   // Last position report: this device's own fix, else the vehicle's last telemetry heartbeat
-  const lastUpdate = lastFixAt ?? (vehicle?.last_heartbeat ? new Date(vehicle.last_heartbeat) : null);
+  const lastUpdate = lastFixAt ?? (vehicle?.last_heartbeat ? new Date(vehicle.last_heartbeat) : null)
 
   const triggerSos = useMutation({
-    mutationFn: () => telemetryAPI.triggerSos(liveLocation ? { lat: liveLocation.lat, lng: liveLocation.lng } : {}),
+    mutationFn: () => telemetryAPI.triggerSos({
+      ...(liveLocation ? { lat: liveLocation.lat, lng: liveLocation.lng } : {}),
+      alert_type: sosType,
+    }),
     onSuccess: () => toast.success('SOS sent to the control room'),
     onError: (err: AxiosError<{ detail?: string }>) =>
       toast.error(err.response?.data?.detail || 'Could not send SOS. Call the control room directly.'),
-  });
+  })
 
   const updateStatus = useMutation({
-    mutationFn: ({ shipmentId, status, params }: any) =>
+    mutationFn: ({ shipmentId, status, params }: { shipmentId: string; status: string; params?: Record<string, unknown> }) =>
       shipmentsAPI.updateStatus(shipmentId, status, params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['driver-routes'] });
-      toast.success('Delivery completed successfully!');
-      setRecipientName('');
-      setSignature(null);
-    }
-  });
+      queryClient.invalidateQueries({ queryKey: ['driver-routes'] })
+      toast.success('Delivery completed')
+      setRecipientName('')
+      setSignature(null)
+    },
+    onError: (err: AxiosError<{ detail?: string }>) =>
+      toast.error(err.response?.data?.detail || 'Could not record the delivery. Try again.'),
+  })
 
   // Before the first fix, show the vehicle's last reported position
   useEffect(() => {
     if (!liveLocation && vehicle?.latitude != null && vehicle?.longitude != null) {
-      setLiveLocation({ lat: vehicle.latitude, lng: vehicle.longitude, speedKmph: 0 });
+      setLiveLocation({ lat: vehicle.latitude, lng: vehicle.longitude, speedKmph: 0 })
     }
-  }, [vehicle?.latitude, vehicle?.longitude]);
+  }, [vehicle?.latitude, vehicle?.longitude])
 
   // Share this device's real location while on a trip (drivers only)
   useEffect(() => {
-    if (!isTracking || role !== 'driver') return;
+    if (!isTracking || role !== 'driver') return
     if (!('geolocation' in navigator)) {
-      toast.error('Location is not available on this device');
-      return;
+      toast.error('Location is not available on this device')
+      return
     }
 
-    let lastSent = 0;
+    let lastSent = 0
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude, longitude, speed, heading, accuracy } = pos.coords;
-        const speedMs = Math.max(0, speed ?? 0);
-        setLiveLocation({ lat: latitude, lng: longitude, speedKmph: Math.round(speedMs * 3.6) });
-        setLastFixAt(new Date(pos.timestamp));
+        const { latitude, longitude, speed, heading, accuracy } = pos.coords
+        const speedMs = Math.max(0, speed ?? 0)
+        setLiveLocation({ lat: latitude, lng: longitude, speedKmph: Math.round(speedMs * 3.6) })
+        setLastFixAt(new Date(pos.timestamp))
 
-        if (Date.now() - lastSent < 10_000) return;
-        lastSent = Date.now();
+        if (Date.now() - lastSent < 10_000) return
+        lastSent = Date.now()
         telemetryAPI.driverPing({
           lat: latitude,
           lng: longitude,
@@ -291,153 +325,138 @@ export default function DriverPage() {
           heading: heading ?? 0,
           accuracy,
           timestamp: new Date(pos.timestamp).toISOString(),
-        }).catch(console.error);
+        }).catch(console.error)
       },
       (err) => toast.error(`Location unavailable: ${err.message}`),
-      { enableHighAccuracy: true, maximumAge: 5_000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [isTracking, role]);
+      { enableHighAccuracy: true, maximumAge: 5_000 },
+    )
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [isTracking, role])
 
   const finalizeDelivery = () => {
-    if (!recipientName || !signature) return toast.error('Check signature fields');
-    if (!currentStop) return toast.error('No active stop');
-    if (!currentShipmentId) return toast.error('This stop has no linked shipment');
+    if (!recipientName || !signature) return toast.error('Enter the receiver name and collect a signature')
+    if (!currentStop) return toast.error('No active stop')
+    if (!currentShipmentId) return toast.error('This stop has no linked shipment')
     updateStatus.mutate({
       shipmentId: currentShipmentId,
       status: 'delivered',
-      params: { received_by: recipientName, signature_data: signature }
-    });
-  };
+      params: { received_by: recipientName, signature_data: signature },
+    })
+  }
+
+  const startTrip = () => {
+    if (shiftStatus === 'offline') { setShiftStatus('on_duty'); toast.success('You are online') }
+    else { setShiftStatus('on_mission'); toast.success('Trip started'); setIsTracking(true) }
+  }
+  const pauseTrip = () => { setShiftStatus('on_duty'); setIsTracking(false); toast('Trip paused') }
+  const endShift = () => { setShiftStatus('offline'); setIsTracking(false); toast.success('Shift ended') }
 
   const renderHome = () => (
     <div className="space-y-4 pb-24">
-      {/* Driver Header */}
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-        <h2 className="text-xs font-bold text-muted uppercase tracking-widest">margixindia Driver</h2>
-        <h1 className="text-xl font-black uppercase mt-1">Welcome, {me?.full_name || 'Driver'}</h1>
-        <div className="mt-4 flex justify-between items-center text-sm">
+      <Card padded className="space-y-3">
+        <div className="flex items-center justify-between">
           <div>
-            {vehicle?.plate_number && (
-              <p className="text-muted">Vehicle: <span className="font-bold text-text">{vehicle.plate_number}</span></p>
-            )}
+            <p className="text-xs text-muted">MargixIndia driver</p>
+            <h1 className="text-lg font-semibold text-text">Welcome, {me?.full_name || 'Driver'}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${shiftStatus !== 'OFFLINE' ? 'bg-success animate-pulse' : 'bg-slate-500'}`} />
-            <span className="font-black tracking-widest text-[10px] uppercase">
-              {shiftStatus !== 'OFFLINE' ? 'ONLINE' : 'OFFLINE'}
-            </span>
-          </div>
+          <StatusPill tone={shiftStatus === 'offline' ? 'neutral' : 'success'}>{shiftStatus === 'offline' ? 'Offline' : 'Online'}</StatusPill>
         </div>
-      </div>
+        {vehicle?.plate_number && (
+          <p className="text-sm text-muted">Vehicle: <span className="font-medium text-text">{vehicle.plate_number}</span></p>
+        )}
+      </Card>
 
-      {/* Current Trip */}
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-        <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Current Trip</h2>
+      <Card padded className="space-y-4">
+        <h2 className="text-sm font-medium text-text">Current trip</h2>
         {activeRoute ? (
-          <div className="space-y-4">
-            <div className="relative pl-6 border-l-2 border-surface2">
-              <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-yellow-500" />
-              <p className="text-sm font-bold">{routeOrigin || '—'}</p>
-              <div className="h-6" />
-              <div className="absolute -left-[5px] bottom-1 w-2 h-2 rounded-full bg-primary" />
-              <p className="text-sm font-bold">{currentPoint?.name || (stops.length > 0 ? 'All stops completed' : '—')}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-              <div>
-                <p className="text-[10px] text-muted uppercase tracking-widest">ETA</p>
-                <p className="font-black text-lg">{computedDuration > 0 ? formatEta(computedDuration) : '—'}</p>
+          <>
+            <div className="relative space-y-6 border-l-2 border-border pl-4">
+              <div className="relative">
+                <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-brand-fill" aria-hidden="true" />
+                <p className="text-sm font-medium text-text">{routeOrigin || '—'}</p>
+                <p className="text-xs text-muted">Origin</p>
               </div>
-              <div>
-                <p className="text-[10px] text-muted uppercase tracking-widest">Distance</p>
-                <p className="font-black text-lg">{computedDist > 0 ? `${computedDist.toFixed(1)} km` : '—'}</p>
+              <div className="relative">
+                <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-brand" aria-hidden="true" />
+                <p className="text-sm font-medium text-text">{currentPoint?.name || (stops.length > 0 ? 'All stops completed' : '—')}</p>
+                <p className="text-xs text-muted">Next stop</p>
               </div>
             </div>
-          </div>
+            <DetailList
+              columns={2}
+              items={[
+                { label: 'ETA', value: computedDuration > 0 ? formatEta(computedDuration) : '—' },
+                { label: 'Distance', value: computedDist > 0 ? `${computedDist.toFixed(1)} km` : '—' },
+              ]}
+            />
+          </>
         ) : (
           <p className="text-sm text-muted">No active trips assigned.</p>
         )}
-      </div>
+      </Card>
 
-      {/* Live Vehicle Status */}
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-        <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Live Vehicle Status</h2>
-        <div className="grid grid-cols-2 gap-y-4">
-          <div>
-            <p className="text-xs text-muted mb-1">Speed</p>
-            <p className="font-black text-lg">{isTracking && lastFixAt && liveLocation ? `${liveLocation.speedKmph} km/h` : '—'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-1">GPS</p>
-            {isTracking && lastFixAt ? (
-              <p className="font-bold text-success flex items-center gap-1"><CheckCircle2 size={14} /> Connected</p>
-            ) : (
-              <p className="font-bold text-muted">{isTracking ? 'Waiting for fix' : 'Off'}</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-1">Last Update</p>
-            <p className="font-bold">{lastUpdate ? lastUpdate.toLocaleTimeString() : '—'}</p>
-          </div>
-        </div>
-      </div>
+      <Card padded className="space-y-3">
+        <h2 className="text-sm font-medium text-text">Live vehicle status</h2>
+        <DetailList
+          columns={2}
+          items={[
+            { label: 'Speed', value: isTracking && lastFixAt && liveLocation ? `${liveLocation.speedKmph} km/h` : '—' },
+            {
+              label: 'GPS',
+              value: isTracking && lastFixAt
+                ? <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 size={14} aria-hidden="true" /> Connected</span>
+                : isTracking ? 'Waiting for fix' : 'Off',
+            },
+            { label: 'Last update', value: lastUpdate ? lastUpdate.toLocaleTimeString() : '—' },
+          ]}
+        />
+      </Card>
 
-      {/* Cargo Details */}
       {currentStop && (
-        <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-          <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Cargo Details</h2>
-          <div className="space-y-2 text-sm">
-            {currentShipment?.tracking_id && (
-              <div className="flex justify-between"><span className="text-muted">Shipment</span><span className="font-bold uppercase">{currentShipment.tracking_id}</span></div>
-            )}
-            {(currentShipment?.total_weight_kg || currentPoint?.demand_kg) ? (
-              <div className="flex justify-between"><span className="text-muted">Weight</span><span className="font-bold">{currentShipment?.total_weight_kg || currentPoint?.demand_kg} kg</span></div>
-            ) : null}
-            {currentShipment?.metadata?.productCategory && (
-              <div className="flex justify-between"><span className="text-muted">Type</span><span className="font-bold">{currentShipment.metadata.productCategory}</span></div>
-            )}
-            <div className="flex justify-between"><span className="text-muted">Stops Left</span><span className="font-bold">{pendingStopCount}</span></div>
-          </div>
-        </div>
+        <Card padded className="space-y-3">
+          <h2 className="text-sm font-medium text-text">Cargo details</h2>
+          <DetailList
+            columns={2}
+            items={[
+              ...(currentShipment?.tracking_id ? [{ label: 'Shipment', value: currentShipment.tracking_id }] : []),
+              ...(currentShipment?.total_weight_kg || currentPoint?.demand_kg
+                ? [{ label: 'Weight', value: `${currentShipment?.total_weight_kg || currentPoint?.demand_kg} kg` }]
+                : []),
+              ...(currentShipment?.metadata?.productCategory ? [{ label: 'Type', value: currentShipment.metadata.productCategory }] : []),
+              { label: 'Stops left', value: pendingStopCount },
+            ]}
+          />
+        </Card>
       )}
 
-      {/* Actions */}
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-        <h2 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Actions</h2>
+      <Card padded className="space-y-3">
+        <h2 className="text-sm font-medium text-text">Actions</h2>
         <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => {
-              if (shiftStatus === 'OFFLINE') { setShiftStatus('ON_DUTY'); toast.success('Online'); }
-              else { setShiftStatus('ON_MISSION'); toast.success('Trip Started'); setIsTracking(true); }
-            }}
-            className="flex flex-col items-center justify-center p-4 rounded-xl bg-success/10 text-success font-black text-[10px] uppercase tracking-widest hover:bg-success/20 transition-all"
-          >
-            <Play size={20} className="mb-2" /> Start Trip
-          </button>
-          <button
-            onClick={() => { setShiftStatus('ON_DUTY'); setIsTracking(false); toast('Trip Paused'); }}
-            className="flex flex-col items-center justify-center p-4 rounded-xl bg-yellow-500/10 text-yellow-500 font-black text-[10px] uppercase tracking-widest hover:bg-yellow-500/20 transition-all"
-          >
-            <Pause size={20} className="mb-2" /> Pause Trip
-          </button>
-          <button
-            onClick={() => setActiveTab('deliveries')}
-            className="flex flex-col items-center justify-center p-4 rounded-xl bg-primary/10 text-primary font-black text-[10px] uppercase tracking-widest hover:bg-primary/20 transition-all"
-          >
-            <CheckCircle2 size={20} className="mb-2" /> Complete Delivery
-          </button>
+          {shiftStatus !== 'on_mission' ? (
+            <Button variant="secondary" icon={<Play size={16} />} onClick={startTrip}>
+              {shiftStatus === 'offline' ? 'Go online' : 'Start trip'}
+            </Button>
+          ) : (
+            <Button variant="secondary" icon={<Pause size={16} />} onClick={pauseTrip}>Pause trip</Button>
+          )}
+          <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => setActiveTab('deliveries')}>
+            Complete delivery
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
-  );
+  )
 
   const renderNav = () => {
     if (!liveLocation) {
       return (
-        <div className="h-full flex items-center justify-center text-sm text-muted text-center px-6">
-          Waiting for your location. Start the trip and allow location access to see navigation.
-        </div>
-      );
+        <EmptyState
+          compact
+          icon={<MapIcon size={22} />}
+          title="Waiting for your location"
+          description="Start the trip and allow location access to see navigation."
+        />
+      )
     }
     return (
       <DriverMap
@@ -445,125 +464,128 @@ export default function DriverPage() {
         currentLng={liveLocation.lng}
         targetLat={currentPoint?.latitude ?? liveLocation.lat}
         targetLng={currentPoint?.longitude ?? liveLocation.lng}
-        shiftStatus={shiftStatus}
+        shiftStatus={shiftStatus === 'on_mission' ? 'ON_MISSION' : shiftStatus === 'on_duty' ? 'ON_DUTY' : 'OFFLINE'}
         speed={liveLocation.speedKmph}
       />
-    );
-  };
+    )
+  }
 
   const renderDeliveries = () => (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-4 pb-24">
       {currentStop ? (
-        <div className="bg-surface p-6 rounded-2xl border border-border shadow-md">
-          <h2 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-4">Delivery Stop #{currentStopIndex + 1} of {stops.length}</h2>
-          <div className="space-y-3 mb-6">
-            {currentPoint?.name && (
-              <div><p className="text-xs text-muted uppercase">Customer</p><p className="font-bold text-lg">{currentPoint.name}</p></div>
-            )}
+        <Card padded className="space-y-4">
+          <h2 className="text-sm font-medium text-brand">Delivery stop {currentStopIndex + 1} of {stops.length}</h2>
+          <DetailList
+            columns={1}
+            items={[
+              ...(currentPoint?.name ? [{ label: 'Customer', value: currentPoint.name }] : []),
+              ...(consigneePhone ? [{ label: 'Contact', value: consigneePhone }] : []),
+              ...(currentPoint?.address ? [{ label: 'Address', value: currentPoint.address }] : []),
+            ]}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
             {consigneePhone && (
-              <div><p className="text-xs text-muted uppercase">Contact</p><p className="font-bold text-lg text-primary">{consigneePhone}</p></div>
+              <a href={`tel:${consigneePhone}`} className="inline-flex h-10 items-center justify-center gap-2 rounded-control border border-border-strong bg-surface text-sm font-medium text-text hover:bg-surface-subtle">
+                <Phone size={14} aria-hidden="true" /> Call customer
+              </a>
             )}
-            {currentPoint?.address && (
-              <div><p className="text-xs text-muted uppercase">Address</p><p className="font-bold">{currentPoint.address}</p></div>
-            )}
+            <Button variant="secondary" icon={<MapIcon size={14} />} onClick={() => setActiveTab('nav')}>Navigate</Button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            {consigneePhone && (
-              <a href={`tel:${consigneePhone}`} className="h-12 bg-surface2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase"><Phone size={14} /> Call Customer</a>
-            )}
-            <button onClick={() => setActiveTab('nav')} className="h-12 bg-primary/20 text-primary rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase"><MapIcon size={14} /> Navigate</button>
-          </div>
-
-          <hr className="border-border mb-6" />
+          <hr className="border-border" />
 
           <div className="space-y-4">
-            <div>
-              <label className="text-xs text-muted uppercase mb-1 block">Recipient Name</label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-text">Receiver name</span>
               <input
                 type="text"
                 value={recipientName}
                 onChange={e => setRecipientName(e.target.value)}
-                className="w-full h-12 bg-surface2 border border-border rounded-xl px-4 text-sm outline-none focus:border-yellow-500"
-                placeholder="Enter name"
+                className="h-control w-full rounded-control border border-border-strong bg-surface px-3 text-base text-text placeholder:text-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
+                placeholder="Who received this delivery?"
               />
-            </div>
+            </label>
             <div>
-              <label className="text-xs text-muted uppercase mb-1 block">Proof of Delivery (Signature)</label>
+              <span className="mb-1.5 block text-sm font-medium text-text">Proof of delivery (signature)</span>
               <SignaturePad onSave={setSignature} onClear={() => setSignature(null)} />
             </div>
-            <button
+            <Button
+              fullWidth
+              size="lg"
+              loading={updateStatus.isPending}
+              disabled={!signature}
               onClick={finalizeDelivery}
-              disabled={!signature || updateStatus.isPending}
-              className="w-full h-14 bg-success text-bg rounded-xl font-black uppercase text-sm disabled:opacity-50 mt-4 shadow-lg shadow-success/20 active:scale-95 transition-all"
             >
-              {updateStatus.isPending ? <Loader2 className="animate-spin mx-auto" /> : 'Mark Delivered & Upload POD'}
-            </button>
+              Mark delivered
+            </Button>
           </div>
-        </div>
+        </Card>
       ) : (
-        <div className="bg-surface p-10 rounded-2xl border border-border text-center shadow-md">
-          <CheckCircle2 size={40} className="text-success mx-auto mb-4" />
-          <h2 className="font-black text-xl uppercase">All Done!</h2>
-          <p className="text-muted text-sm mt-2">No pending deliveries right now.</p>
-        </div>
+        <Card padded>
+          <EmptyState
+            icon={<CheckCircle2 size={22} className="text-success" />}
+            title="All done"
+            description="No pending deliveries right now."
+          />
+        </Card>
       )}
     </div>
-  );
+  )
 
   const renderAlerts = () => (
-    <div className="space-y-6 pb-24">
-      <div className="bg-error/10 p-6 rounded-2xl border border-error/20 shadow-md">
-        <h2 className="text-[10px] font-black text-error uppercase tracking-widest mb-4 flex items-center gap-2"><ShieldAlert size={14} /> Alert Center</h2>
-        <p className="text-sm text-text mb-6">Report critical emergencies immediately. This raises an SOS alert for your vehicle{liveLocation ? ' with your current location' : ''} on the control room's emergency screen.</p>
-
-        <button
+    <div className="space-y-4 pb-24">
+      <Card padded className="space-y-4 border-danger/30 bg-danger-soft">
+        <h2 className="flex items-center gap-2 text-sm font-medium text-danger"><ShieldAlert size={16} aria-hidden="true" /> Alert centre</h2>
+        <p className="text-sm text-text">
+          Report a critical emergency immediately. This raises an SOS for your vehicle{liveLocation ? ', with your current location,' : ''} on the control room's emergency screen.
+        </p>
+        <Select
+          label="Type of emergency"
+          value={sosType}
+          onChange={e => setSosType(e.target.value as SosType)}
+          options={SOS_TYPES}
+        />
+        <Button
+          fullWidth
+          size="lg"
+          variant="danger"
+          loading={triggerSos.isPending}
+          icon={<AlertTriangle size={18} />}
           onClick={() => triggerSos.mutate()}
-          disabled={triggerSos.isPending}
-          className="w-full mt-6 h-14 bg-error text-white font-black uppercase text-sm rounded-xl shadow-xl shadow-error/20 active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          {triggerSos.isPending ? <Loader2 className="animate-spin" /> : <><AlertTriangle size={18} /> Send SOS</>}
-        </button>
-      </div>
+          Send SOS
+        </Button>
+      </Card>
     </div>
-  );
+  )
 
   const renderProfile = () => (
-    <div className="space-y-6 pb-24">
-      <div className="bg-surface p-6 rounded-2xl border border-border flex items-center gap-4 shadow-md">
-        <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center">
-          <User size={32} className="text-primary" />
+    <div className="space-y-4 pb-24">
+      <Card padded className="flex items-center gap-4">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
+          <User size={26} aria-hidden="true" />
         </div>
         <div>
-          <h2 className="font-black text-xl">{me?.full_name || 'Driver'}</h2>
-          {vehicle?.plate_number && <p className="text-muted text-sm uppercase">Vehicle: {vehicle.plate_number}</p>}
+          <h2 className="text-lg font-semibold text-text">{me?.full_name || 'Driver'}</h2>
+          {vehicle?.plate_number && <p className="text-sm text-muted">Vehicle: {vehicle.plate_number}</p>}
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-surface p-6 rounded-2xl border border-border shadow-md space-y-4">
-        <h3 className="text-[10px] font-black text-muted uppercase tracking-widest">Shift Controls</h3>
-        <button
-          onClick={() => { setShiftStatus('OFFLINE'); setIsTracking(false); toast.success('Shift Ended') }}
-          className="w-full h-14 bg-error/10 text-error font-black uppercase text-xs rounded-xl shadow-md active:scale-95 transition-transform"
-        >
-          End Shift
-        </button>
-      </div>
+      <Card padded className="space-y-3">
+        <h3 className="text-sm font-medium text-text">Shift controls</h3>
+        <Button fullWidth size="lg" variant="danger" onClick={endShift}>End shift</Button>
+      </Card>
     </div>
-  );
+  )
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-text font-sans selection:bg-primary sm:max-w-md sm:mx-auto sm:border-x sm:border-border sm:shadow-2xl relative">
-
-      {/* Top Bar */}
-      <div className="h-16 border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-50 flex items-center justify-center">
-        <h1 className="text-lg font-black tracking-tighter uppercase italic">
-          Route<span className="text-primary">IQ</span> <span className="text-xs font-bold text-muted ml-1 font-sans not-italic">Driver</span>
-        </h1>
+    <div className="relative mx-auto min-h-screen bg-bg text-text sm:max-w-md sm:border-x sm:border-border">
+      <div className="sticky top-0 z-50 flex h-14 items-center justify-center border-b border-border bg-surface">
+        <h1 className="text-base font-semibold text-text">MargixIndia <span className="text-sm font-normal text-muted">Driver</span></h1>
       </div>
 
-      {/* Main Content Area */}
-      <div className="p-4 h-[calc(100vh-128px)] overflow-y-auto">
+      <div className="h-[calc(100vh-7.5rem)] overflow-y-auto p-4">
         {activeTab === 'home' && renderHome()}
         {activeTab === 'nav' && renderNav()}
         {activeTab === 'deliveries' && renderDeliveries()}
@@ -571,26 +593,13 @@ export default function DriverPage() {
         {activeTab === 'profile' && renderProfile()}
       </div>
 
-      {/* Bottom Tab Bar */}
-      <div className="h-20 bg-surface border-t border-border sticky bottom-0 z-50 flex items-center justify-around px-2">
-        <TabButton active={activeTab === 'home'} icon={<Home size={22} />} label="Home" onClick={() => setActiveTab('home')} />
-        <TabButton active={activeTab === 'nav'} icon={<MapIcon size={22} />} label="Nav" onClick={() => setActiveTab('nav')} />
-        <TabButton active={activeTab === 'deliveries'} icon={<Package size={22} />} label="Deliveries" onClick={() => setActiveTab('deliveries')} />
-        <TabButton active={activeTab === 'alerts'} icon={<Bell size={22} />} label="Alerts" onClick={() => setActiveTab('alerts')} />
-        <TabButton active={activeTab === 'profile'} icon={<User size={22} />} label="Profile" onClick={() => setActiveTab('profile')} />
+      <div className="sticky bottom-0 z-50 flex h-20 items-center justify-around border-t border-border bg-surface px-2">
+        <TabButton active={activeTab === 'home'} icon={<Home size={22} aria-hidden="true" />} label="Home" onClick={() => setActiveTab('home')} />
+        <TabButton active={activeTab === 'nav'} icon={<MapIcon size={22} aria-hidden="true" />} label="Nav" onClick={() => setActiveTab('nav')} />
+        <TabButton active={activeTab === 'deliveries'} icon={<Package size={22} aria-hidden="true" />} label="Deliveries" onClick={() => setActiveTab('deliveries')} />
+        <TabButton active={activeTab === 'alerts'} icon={<Bell size={22} aria-hidden="true" />} label="Alerts" onClick={() => setActiveTab('alerts')} />
+        <TabButton active={activeTab === 'profile'} icon={<User size={22} aria-hidden="true" />} label="Profile" onClick={() => setActiveTab('profile')} />
       </div>
     </div>
-  );
-}
-
-function TabButton({ active, icon, label, onClick }: { active: boolean, icon: any, label: string, onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all ${active ? 'text-primary' : 'text-muted hover:text-white'}`}
-    >
-      <div className={`${active ? 'scale-110 mb-1' : 'mb-1'} transition-transform`}>{icon}</div>
-      <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
-    </button>
-  );
+  )
 }
