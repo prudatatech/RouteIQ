@@ -24,6 +24,11 @@ import { useGpsOffEscalation } from '../hooks/useGpsOffEscalation';
 import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
+import { useParcelScan } from '../hooks/useParcelScan';
+import { useActionQueue } from '../hooks/useActionQueue';
+import { useDispatchPhone } from '../hooks/useDispatchPhone';
+import { withQueuedStops } from '../utils/queuedStops';
+import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
 import { shortFeedback } from '../utils/feedback';
@@ -45,6 +50,8 @@ import InvoiceDialog from '../components/modals/InvoiceDialog';
 import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
 import ReturnTripScreen from './ReturnTripScreen';
 import RouteTab from './tabs/RouteTab';
+import ScanTab from './tabs/ScanTab';
+import MessagesTab from './tabs/MessagesTab';
 import WalletTab from './tabs/WalletTab';
 import ProfileTab, { AVATAR_KEY } from './tabs/ProfileTab';
 import { colors, space } from '../theme';
@@ -72,8 +79,12 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   const data = useDriverRoute();
   const { refresh } = data;
-  const route = data.routeData?.route;
-  const routeActive = !!data.routeData?.active && route?.status === 'active';
+  // Actions waiting to be sent (no signal) show on the route already: a stop done offline counts as done.
+  const queue = useActionQueue(refresh);
+  const dispatch = useDispatchPhone();
+  const routeData = useMemo(() => withQueuedStops(data.routeData, queue.items), [data.routeData, queue.items]);
+  const route = routeData?.route;
+  const routeActive = !!routeData?.active && route?.status === 'active';
 
   const assignmentKind = data.pendingConfirmation ? 'stop' : data.pendingRoute ? 'route' : null;
   const modal = useModalManager({ call: !!data.incomingCall, assignment: !!assignmentKind });
@@ -96,8 +107,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     onDeviceLocationRecheck: deviceLocation.recheck,
   });
   const { takeBreak } = tracking;
-  const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
+  const snapped = useSnappedRoute(routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
+  const messages = useDriverMessages({ routeId: routeData?.active ? route?.id ?? null : null, tabOpen: activeTab === 'messages' });
+  const scans = useParcelScan({ route, currentLoc: tracking.currentLoc, refresh });
 
   // The looping siren is only for a new assignment or a dispatch call.
   const { pulse } = useAlertSiren({
@@ -106,7 +119,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   });
 
   // Losing GPS on a route gets one short buzz, and a louder notification if it stays off for 2 minutes.
-  const gpsOffOnRoute = !!data.routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
+  const gpsOffOnRoute = !!routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
   useEffect(() => {
     if (gpsOffOnRoute) shortFeedback();
   }, [gpsOffOnRoute]);
@@ -137,7 +150,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     if (activeTab === 'route') refresh();
   }, [activeTab, refresh]);
 
-  const step = getNextStep(data.routeData, tracking.isTracking, tracking.currentLoc);
+  const step = getNextStep(routeData, tracking.isTracking, tracking.currentLoc);
   const finished = isRouteFinished(route);
   const nextPending = pendingStops(route)[0];
 
@@ -169,6 +182,16 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       onPress: () => {
         closeModal();
         takeBreak();
+      },
+    });
+    list.push({
+      key: 'call_dispatch',
+      icon: 'call-outline',
+      title: t('call_dispatch'),
+      subtitle: dispatch.phone ?? t('dispatch_no_number_title'),
+      onPress: () => {
+        closeModal();
+        dispatch.callDispatch();
       },
     });
     if (routeActive) {
@@ -224,7 +247,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       },
     });
     return list;
-  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, t]);
+  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, dispatch, t]);
 
   const sosButton = <SosButton onHoldComplete={raiseSos} onTap={() => openModal({ kind: 'sosCountdown' })} />;
 
@@ -257,10 +280,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         return data.incomingCall ? (
           <IncomingCallDialog
             caller={data.incomingCall.caller}
+            phone={dispatch.phone}
             onDecline={() => data.setIncomingCall(null)}
             onAnswer={() => {
               data.setIncomingCall(null);
-              Alert.alert(t('call_answer_title'), t('call_answer_desc'));
+              dispatch.callDispatch();
             }}
           />
         ) : null;
@@ -280,9 +304,12 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         return (
           <PodDialog
             stopName={active.stop.delivery_point?.name}
+            parcelCode={active.stop.parcel?.code}
+            parcelVerified={scans.verified.has(active.stop.id)}
+            onScanCode={(code, method) => scans.checkForStop(active.stop, code, method)}
             onCancel={closeModal}
-            onSubmit={async (receiverName) => {
-              await actions.completeStop(active.stop, receiverName);
+            onSubmit={async (pod) => {
+              await actions.completeStop(active.stop, pod);
               closeModal();
             }}
           />
@@ -357,6 +384,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           isTracking={tracking.isTracking}
           isStartingTracking={tracking.isStarting}
           syncState={data.syncState}
+          speedKmph={routeActive ? tracking.speedKmph : null}
+          waitingToSend={queue.waiting}
+          sendingQueue={queue.sending}
+          onSendQueue={queue.flush}
           onToggleTracking={tracking.toggle}
           onTakeBreak={takeBreak}
           onRetrySync={refresh}
@@ -376,7 +407,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           {syncBanner}
           {activeTab === 'route' && (
             <RouteTab
-              routeData={data.routeData}
+              routeData={routeData}
               step={step}
               noVehicle={data.noVehicle}
               currentLoc={tracking.currentLoc}
@@ -397,6 +428,21 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               onOpenMoreActions={() => openModal({ kind: 'moreActions' })}
             />
           )}
+          {activeTab === 'scan' && (
+            <ScanTab hasRoute={!!routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
+          )}
+          {activeTab === 'messages' && (
+            <MessagesTab
+              hasRoute={!!routeData?.active && !!route?.id}
+              messages={messages.messages}
+              loading={messages.loading}
+              failed={messages.failed}
+              sending={messages.sending}
+              onRetry={messages.retry}
+              onSend={messages.sendMessage}
+              onCallDispatch={dispatch.callDispatch}
+            />
+          )}
           {activeTab === 'wallet' && <WalletTab onOpenInvoice={(invoice) => openModal({ kind: 'invoice', invoice })} />}
           {activeTab === 'profile' && (
             <ProfileTab
@@ -414,7 +460,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         )}
       </View>
 
-      <DriverTabBar active={activeTab} onChange={setActiveTab} />
+      <DriverTabBar active={activeTab} onChange={setActiveTab} messagesUnread={messages.unreadCount} />
 
       {/* The only dialog host: useModalManager decides what, if anything, is shown. */}
       <DialogFrame

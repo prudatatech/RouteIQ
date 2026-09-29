@@ -79,8 +79,8 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
         <Text variant="body">{state.withLocation ? t('sos_sent_desc') : t('sos_sent_no_location')}</Text>
       </View>
 
-      {details === 'sent' ? (
-        <Banner tone="info" message={t('sos_details_sent')} />
+      {details === 'sent' || details === 'queued' ? (
+        <Banner tone="info" message={details === 'queued' ? t('sos_details_queued') : t('sos_details_sent')} />
       ) : (
         <>
           <Text variant="bodyMedium">{t('sos_what_happened')}</Text>

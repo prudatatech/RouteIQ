@@ -21,6 +21,10 @@ import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransitio
 import { parseCoordinate } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
+import { idempotent } from '../core/idempotency';
+import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
+import { isPodPathFor } from '../services/pod.service';
+import { manifestParcelCode } from '../core/parcelCode';
 
 const router = Router();
 
@@ -119,7 +123,7 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTran
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.
 const SOS_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
-router.post('/sos/trigger', requireAuth, rateLimitByUser('sos-trigger', 10, 10 * 60), async (req: Request, res: Response) => {
+router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByUser('sos-trigger', 10, 10 * 60), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can raise an SOS' });
@@ -178,7 +182,7 @@ router.post('/sos/trigger', requireAuth, rateLimitByUser('sos-trigger', 10, 10 *
 // The driver adds what happened to the alert they already raised, instead of
 // raising a second one. Only their own alert, and only while it is active.
 const SOS_SEVERITIES = ['serious', 'minor'];
-router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response) => {
+router.patch('/sos/:id/details', requireAuth, idempotent('sos-details'), async (req: Request, res: Response) => {
   try {
     const update: Record<string, string> = {};
     if (req.body.alert_type !== undefined) {
@@ -735,14 +739,14 @@ async function resetVehicleAfterRoute(vehicleId: string): Promise<void> {
   await setOperatingVehicleStatus(vehicleId, 'available');
 }
 
-router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res: Response) => {
+router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can complete stops' });
       return;
     }
 
-    const { stop_id, status = 'completed', signature_data, received_by } = req.body ?? {};
+    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by } = req.body ?? {};
     if (typeof stop_id !== 'string' || !stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
       return;
@@ -759,6 +763,14 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       res.status(400).json({ detail: 'The signature is too large' });
       return;
     }
+    // Proof-of-delivery files must be ones this stop's signed upload URLs produced
+    for (const [field, value] of [['photo_url', photo_url], ['signature_url', signature_url]] as const) {
+      if (value != null && !isPodPathFor(value, stop_id)) {
+        res.status(400).json({ detail: `${field} is not an upload for this stop` });
+        return;
+      }
+    }
+    const proofFiles = status === 'completed' ? { photo_url: photo_url ?? null, signature_url: signature_url ?? null } : {};
     const lat = parseCoordinate(req.body?.lat, 'lat', 90) ?? undefined;
     const lng = parseCoordinate(req.body?.lng, 'lng', 180) ?? undefined;
     // Why a stop failed, kept in the shipment's tamper-evident log
@@ -767,7 +779,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       res.status(400).json({ detail: 'Unknown reason' });
       return;
     }
-    const failureMetadata: Record<string, string> = {};
+    const failureMetadata: Record<string, string | boolean> = {};
     if (status === 'failed' && reason) {
       failureMetadata.failure_reason = reason;
       if (typeof note === 'string' && note.trim()) failureMetadata.failure_note = note.trim().slice(0, 300);
@@ -806,7 +818,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, target);
         const { data: moved, error: moveErr } = await supabase
           .from('cargo_manifest')
-          .update({ status: target })
+          .update({
+            status: target,
+            ...(!isPickup && received_by ? { received_by } : {}),
+            ...(!isPickup && proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+            ...(!isPickup && proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+          })
           .eq('id', manifestId)
           .eq('status', manifest.status)
           .select('id')
@@ -896,7 +913,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     if (!repeat) {
       const { data: claimed, error: stopErr } = await supabase
         .from('route_stops')
-        .update(status === 'completed' ? { status, actual_arrival_at: new Date().toISOString() } : { status }) // 'completed' or 'failed'
+        .update({
+          status, // 'completed' or 'failed'
+          ...(status === 'completed' ? { actual_arrival_at: new Date().toISOString() } : {}),
+          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+        })
         .eq('id', stop_id)
         .eq('status', 'pending')
         .select('route_id, delivery_point_id')
@@ -914,6 +936,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       .single();
 
     if (!repeat && dp?.shipment_id) {
+      if (status === 'completed') failureMetadata.parcel_verified = await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id);
       const { ShipmentService } = await import('../services/shipment.service');
       try {
         await ShipmentService.updateShipmentStatus(
@@ -923,7 +946,8 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
           received_by || null,
           signature_data || null,
           { id: req.user!.user_id, role: req.user!.role },
-          failureMetadata
+          failureMetadata,
+          proofFiles
         );
       } catch (e) {
         // The shipment was already settled another way (for example proof of delivery by
@@ -1132,7 +1156,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.pickup_lat,
             longitude: manifest.pickup_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'pickup' },
         },
         {
           id: manifest.id + '_drop',
@@ -1145,7 +1170,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.drop_lat,
             longitude: manifest.drop_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'delivery' },
         }
       ];
 
@@ -1168,6 +1194,9 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     }
 
     // Sort stops by sequence
+    const shipmentParcels = await loadShipmentParcels(
+      (route.route_stops || []).map((s: any) => s.delivery_points?.shipment_id).filter(Boolean),
+    );
     const stops = (route.route_stops || [])
       .sort((a: any, b: any) => a.sequence - b.sequence)
       .map((s: any) => ({
@@ -1182,6 +1211,10 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           longitude: s.delivery_points.longitude,
           demand_kg: s.delivery_points.demand_kg,
         } : null,
+        // The code on the parcel for this stop (its tracking ID), for scan checks in the app
+        parcel: shipmentParcels.get(s.delivery_points?.shipment_id)
+          ? { kind: 'shipment', code: shipmentParcels.get(s.delivery_points?.shipment_id)!.tracking_id, status: shipmentParcels.get(s.delivery_points?.shipment_id)!.status, purpose: 'delivery' }
+          : null,
       }));
 
     res.json({

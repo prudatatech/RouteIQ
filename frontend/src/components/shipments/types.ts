@@ -30,6 +30,9 @@ export interface ShipmentRow {
   created_at?: string | null
   received_by?: string | null
   signature_data?: string | null
+  /** Storage paths of the delivery photo and signature; the images come from GET /shipments/:id/proof. */
+  photo_url?: string | null
+  signature_url?: string | null
   vehicle_id?: string | null
   driver_name?: string | null
   freight_charge?: number | null

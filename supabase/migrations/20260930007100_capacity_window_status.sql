@@ -6,7 +6,7 @@
 -- Bids stay as they are when a window closes; staff can still approve or reject
 -- pending bids.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.capacity_windows ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'open';
 ALTER TABLE public.capacity_windows ADD COLUMN IF NOT EXISTS resolved_at timestamptz;

@@ -6,7 +6,10 @@
  * - /rest/v1/<table> answers PostgREST requests from in-memory fixtures and
  *   records every write so tests can assert on them.
  * - POST /storage/v1/object/upload/sign/<bucket>/<path> issues a signed upload
- *   URL and records the path.
+ *   URL and records the path; POST /storage/v1/object/sign/<bucket>/<path> does
+ *   the same for a signed download URL.
+ *
+ * Upserts match an existing row on the `on_conflict` columns (default `id`).
  *
  * Filters: `eq.`, `neq.`, `is.` and `in.(...)` on query params. `select`,
  * `order`, `limit` and other operators are ignored, so fixture rows are
@@ -190,6 +193,8 @@ class MockSupabase {
   requests: URL[] = [];
   /** `<bucket>/<path>` of every signed upload URL issued. */
   signedUploads: string[] = [];
+  /** `<bucket>/<path>` of every signed download URL issued. */
+  signedReads: string[] = [];
 
   private server: http.Server | null = null;
   private tables = new Map<string, Row[]>();
@@ -225,6 +230,7 @@ class MockSupabase {
     this.mutations = [];
     this.requests = [];
     this.signedUploads = [];
+    this.signedReads = [];
     this.failures.clear();
   }
 
@@ -275,6 +281,13 @@ class MockSupabase {
         const objectPath = decodeURIComponent(url.pathname.slice(signPrefix.length));
         this.signedUploads.push(objectPath);
         return send(200, { url: `/object/upload/sign/${objectPath}?token=test-upload-token` });
+      }
+      // Storage: signed download URLs (records the requested object path)
+      const readPrefix = '/storage/v1/object/sign/';
+      if (req.method === 'POST' && url.pathname.startsWith(readPrefix)) {
+        const objectPath = decodeURIComponent(url.pathname.slice(readPrefix.length));
+        this.signedReads.push(objectPath);
+        return send(200, { signedURL: `/object/sign/${objectPath}?token=test-read-token` });
       }
       if (!url.pathname.startsWith('/rest/v1/')) return send(404, { code: 404, error_code: 'not_found', msg: 'Not found' });
 

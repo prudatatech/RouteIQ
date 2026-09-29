@@ -52,7 +52,7 @@ class LocationService {
   private driverId: string | null = null;
   public onGeofenceAlert: ((alert: any) => void) | null = null;
   public onPendingCommand: ((commands: any[]) => void) | null = null;
-  public onLocationUpdate: ((loc: LocationPing) => void) | null = null;
+  public onLocationUpdate: ((loc: LocationPing, speedMps: number | null) => void) | null = null;
   /** Fired when a background error is recorded or cleared (null = cleared). */
   public onBackgroundError: ((err: BackgroundError | null) => void) | null = null;
   private lastLat: number = 0;
@@ -147,7 +147,8 @@ class LocationService {
   async start(
     onGeofence?: (alert: any) => void,
     onCommand?: (commands: any[]) => void,
-    onLocationUpdate?: (loc: LocationPing) => void,
+    /** `speedMps` is the device's own speed reading in metres per second, or null when it has none. */
+    onLocationUpdate?: (loc: LocationPing, speedMps: number | null) => void,
     onBackgroundError?: (err: BackgroundError | null) => void,
   ): Promise<{ success: boolean; error?: string }> {
     if (this.isRunning) return { success: true };
@@ -268,7 +269,9 @@ class LocationService {
     };
 
     if (this.onLocationUpdate) {
-      this.onLocationUpdate(ping);
+      // The device reports no speed (null, or a negative number) until it has one; that is not the same as standing still
+      const raw = location.coords.speed;
+      this.onLocationUpdate(ping, typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : null);
     }
 
     // Only send if position actually changed (>2m)

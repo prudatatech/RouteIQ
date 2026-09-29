@@ -29,6 +29,21 @@ export type SosSeverity = 'serious' | 'minor';
 
 export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
 
+/** A text message between the driver and dispatch. */
+export interface ChatMessage {
+  id: string;
+  route_id: string | null;
+  shipment_id: string | null;
+  shipment_tracking_id?: string | null;
+  sender_id: string | null;
+  /** 'driver', or the staff member's role. */
+  sender_role: string;
+  sender_name: string | null;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
 export class SessionExpiredError extends Error {
   constructor() {
     super('Your session has expired. Please log in again.');
@@ -51,13 +66,16 @@ async function parseBody(response: Response): Promise<any> {
   }
 }
 
+/** Header the backend uses to apply a repeated action only once. */
+const idempotencyHeader = (key?: string): Record<string, string> | undefined => (key ? { 'Idempotency-Key': key } : undefined);
+
 class ApiClient {
   /** Drop tokens left behind by older builds; they are no longer used. */
   async init() {
     await AsyncStorage.multiRemove(LEGACY_TOKEN_KEYS).catch(() => {});
   }
 
-  private send(method: string, path: string, body: any, token: string | null) {
+  private send(method: string, path: string, body: any, token: string | null, extraHeaders?: Record<string, string>) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Bypass-Tunnel-Reminder': 'true',
@@ -68,6 +86,7 @@ class ApiClient {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    if (extraHeaders) Object.assign(headers, extraHeaders);
     return fetch(`${API_V1}${path}`, {
       method,
       headers,
@@ -79,9 +98,10 @@ class ApiClient {
     method: string,
     path: string,
     body?: any,
-    requireAuth = true
+    requireAuth = true,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
-    let response = await this.send(method, path, body, requireAuth ? await currentAccessToken() : null);
+    let response = await this.send(method, path, body, requireAuth ? await currentAccessToken() : null, extraHeaders);
 
     if (response.status === 401 && requireAuth) {
       // Refresh the Supabase session once and retry; if that fails the driver must log in again.
@@ -90,7 +110,7 @@ class ApiClient {
         await this.endSession();
         throw new SessionExpiredError();
       }
-      response = await this.send(method, path, body, data.session.access_token);
+      response = await this.send(method, path, body, data.session.access_token, extraHeaders);
       if (response.status === 401) {
         await this.endSession();
         throw new SessionExpiredError();
@@ -234,13 +254,18 @@ class ApiClient {
     lng: number | null,
     alert_type?: SosType,
     description?: string,
+    idempotencyKey?: string,
   ): Promise<{ status: string; id: string | null }> {
-    return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description });
+    return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description }, true, idempotencyHeader(idempotencyKey));
   }
 
   /** Adds what happened to the alert already raised (own, active alerts only). */
-  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string; severity?: SosSeverity }): Promise<any> {
-    return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
+  async updateSosDetails(
+    id: string,
+    details: { alert_type?: SosType; description?: string; severity?: SosSeverity },
+    idempotencyKey?: string,
+  ): Promise<any> {
+    return this.request('PATCH', `/telemetry/sos/${id}/details`, details, true, idempotencyHeader(idempotencyKey));
   }
 
   /** Tells dispatch the driver has not accepted a new route yet. */
@@ -271,19 +296,70 @@ class ApiClient {
     lng?: number;
     /** Name of the person who received the goods (proof of delivery). */
     received_by?: string;
+    /** Storage paths from pod-upload-url, for the delivery photo and the signature. */
     photo_url?: string;
+    signature_url?: string;
     signature_data?: string;
     /** Why a stop failed (status 'failed'): stored in the shipment log. */
     reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
     note?: string;
-  }): Promise<any> {
-    return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
+  }, idempotencyKey?: string): Promise<any> {
+    return this.request('POST', '/telemetry/driver-ping/complete-stop', data, true, idempotencyHeader(idempotencyKey));
   }
 
 
+  /** A signed URL to upload one proof-of-delivery image (JPEG or PNG) for a stop. */
+  async getPodUploadUrl(data: {
+    stop_id: string;
+    kind: 'photo' | 'signature';
+    content_type: 'image/jpeg' | 'image/png';
+    size: number;
+  }): Promise<{ path: string; token: string; signed_url: string; bucket: string }> {
+    return this.request('POST', '/driver/pod-upload-url', data);
+  }
+
+  /**
+   * Verifies a scanned or typed parcel code. `pickup` marks a shipment picked up;
+   * `delivery` needs the `stop_id` the driver is at.
+   */
+  async scanParcel(data: {
+    code: string;
+    purpose: 'pickup' | 'delivery';
+    stop_id?: string;
+    method?: 'camera' | 'manual';
+    lat?: number;
+    lng?: number;
+  }, idempotencyKey?: string): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
+    return this.request('POST', '/driver/scan', data, true, idempotencyHeader(idempotencyKey));
+  }
+
+  /** The number to call dispatch on, or null when staff have not set one. */
+  async getDispatchContact(): Promise<{ phone: string | null }> {
+    return this.request('GET', '/driver/dispatch-contact');
+  }
+
+  // ── Messages with dispatch ─────────────────────────────────
+
+  async getMessages(route_id: string): Promise<ChatMessage[]> {
+    const res = await this.request<{ messages: ChatMessage[] }>('GET', `/messages?route_id=${encodeURIComponent(route_id)}`);
+    return res.messages ?? [];
+  }
+
+  async sendMessage(route_id: string, body: string): Promise<ChatMessage> {
+    return this.request('POST', '/messages', { route_id, body });
+  }
+
+  async markMessagesRead(route_id: string): Promise<{ updated: number }> {
+    return this.request('POST', '/messages/read', { route_id });
+  }
+
+  async getUnreadMessages(): Promise<{ total: number }> {
+    return this.request('GET', '/messages/unread');
+  }
+
   // ── Capacity Bidding / Safety Valve ──────────────────────────────────
-  async declareCapacity(vehicle_id: string, declared_load_percentage: number): Promise<any> {
-    return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage });
+  async declareCapacity(vehicle_id: string, declared_load_percentage: number, idempotencyKey?: string): Promise<any> {
+    return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage }, true, idempotencyHeader(idempotencyKey));
   }
 
   async getVehicleInfo(vehicle_id: string): Promise<any> {

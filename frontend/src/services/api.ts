@@ -258,6 +258,13 @@ export const shipmentsAPI = {
   /** Staff rate the driver of a delivered shipment, 1 to 5. */
   rateDriver: (id: string, rating: number, note?: string | null) =>
     api.post(`/shipments/${id}/rating`, { rating, note: note ?? undefined }).then(r => r.data),
+  /** Receiver, delivery photo and signature; the two images are signed links that expire in 10 minutes (staff only). */
+  proof: (id: string) => api.get(`/shipments/${id}/proof`).then(r => r.data as {
+    received_by: string | null
+    photo_url: string | null
+    signature_url: string | null
+    signature_data: string | null
+  }),
 }
 
 export const routesAPI = {
@@ -369,6 +376,46 @@ export const bookingsAPI = {
   confirm: (id: string) => api.post(`/bookings/${id}/confirm`).then(r => r.data),
   assign: (id: string, vehicle_id: string) => api.post(`/bookings/${id}/assign`, { vehicle_id }).then(r => r.data),
   cancel: (id: string, reason: string) => api.post(`/bookings/${id}/cancel`, { reason }).then(r => r.data),
+}
+
+export interface ChatMessage {
+  id: string
+  route_id: string | null
+  shipment_id: string | null
+  shipment_tracking_id?: string | null
+  sender_id: string | null
+  /** 'driver', or the staff member's role. */
+  sender_role: string
+  sender_name: string | null
+  body: string
+  created_at: string
+  read_at: string | null
+}
+
+export interface UnreadThread {
+  route_id: string | null
+  shipment_id: string | null
+  count: number
+  last_body: string
+  last_at: string
+  sender_name: string | null
+}
+
+/** Text messages between staff and the driver, per route or shipment. */
+export const messagesAPI = {
+  thread: (target: { route_id?: string; shipment_id?: string }) =>
+    api.get('/messages', { params: target }).then(r => r.data.messages as ChatMessage[]),
+  send: (target: { route_id?: string; shipment_id?: string }, body: string) =>
+    api.post('/messages', { ...target, body }).then(r => r.data as ChatMessage),
+  markRead: (target: { route_id?: string; shipment_id?: string }) =>
+    api.post('/messages/read', target).then(r => r.data as { updated: number }),
+  unread: () => api.get('/messages/unread').then(r => r.data as { total: number; threads: UnreadThread[] }),
+}
+
+/** The dispatcher's phone number, which drivers call from the driver app. */
+export const dispatchAPI = {
+  contact: () => api.get('/driver/dispatch-contact').then(r => r.data as { phone: string | null }),
+  saveContact: (phone: string | null) => api.put('/driver/dispatch-contact', { phone }).then(r => r.data as { phone: string | null }),
 }
 
 export const tplAPI = {

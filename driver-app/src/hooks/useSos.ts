@@ -6,7 +6,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { Vibration } from 'react-native';
 import * as Location from 'expo-location';
+import * as Crypto from 'expo-crypto';
 import { api, ApiError, type SosSeverity, type SosType } from '../services/api';
+import { actionQueue } from '../services/actionQueue';
 import type { LatLng } from '../types/route';
 import { isNetworkError } from '../utils/errors';
 
@@ -17,7 +19,8 @@ export type SosState =
   | { phase: 'sent'; withLocation: boolean }
   | { phase: 'failed'; reason: SosFailure };
 
-export type SosDetailsState = 'idle' | 'sending' | 'sent' | 'failed';
+/** 'queued': no signal, kept on the phone and sent when it is back. */
+export type SosDetailsState = 'idle' | 'sending' | 'sent' | 'queued' | 'failed';
 
 /** Longest wait for a fresh fix, and only when no position is known at all. */
 const FIX_TIMEOUT_MS = 3000;
@@ -49,6 +52,8 @@ export function useSos(currentLoc: LatLng | null) {
   const [state, setState] = useState<SosState>({ phase: 'sending' });
   const [details, setDetails] = useState<SosDetailsState>('idle');
   const alertIdRef = useRef<string | null>(null);
+  /** Kept between retries of one SOS, so a lost reply never raises a second alert. */
+  const triggerKeyRef = useRef<string | null>(null);
   const currentLocRef = useRef(currentLoc);
   currentLocRef.current = currentLoc;
 
@@ -58,8 +63,10 @@ export function useSos(currentLoc: LatLng | null) {
     alertIdRef.current = null;
     Vibration.vibrate(100);
     const position = await bestKnownPosition(currentLocRef.current);
+    if (!triggerKeyRef.current) triggerKeyRef.current = Crypto.randomUUID();
     try {
-      const res = await api.triggerSos(position?.lat ?? null, position?.lng ?? null, 'panic_button');
+      const res = await api.triggerSos(position?.lat ?? null, position?.lng ?? null, 'panic_button', undefined, triggerKeyRef.current);
+      triggerKeyRef.current = null;
       alertIdRef.current = res?.id ?? null;
       setState({ phase: 'sent', withLocation: !!position });
     } catch (e) {
@@ -76,8 +83,11 @@ export function useSos(currentLoc: LatLng | null) {
     }
     setDetails('sending');
     try {
-      await api.updateSosDetails(id, { alert_type: type, description: description.trim() || undefined, severity });
-      setDetails('sent');
+      const outcome = await actionQueue.submit('sos_details', {
+        alertId: id,
+        details: { alert_type: type, description: description.trim() || undefined, severity },
+      });
+      setDetails(outcome.status === 'queued' ? 'queued' : 'sent');
     } catch (e) {
       console.warn('SOS details failed', e);
       setDetails('failed');

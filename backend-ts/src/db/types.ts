@@ -212,6 +212,9 @@ export interface Shipment {
   load_type?: string;
   received_by: string | null;
   signature_data: string | null;
+  /** Storage paths of the proof-of-delivery photo and signature. */
+  photo_url?: string | null;
+  signature_url?: string | null;
   created_at: string;
   // Joined
   parcels?: Parcel[];

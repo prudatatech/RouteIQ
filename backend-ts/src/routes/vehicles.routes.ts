@@ -10,6 +10,7 @@ import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
+import { idempotent } from '../core/idempotency';
 import { notificationService } from '../services/notification.service';
 import { parseCoordinate, parseDateTime, parseNumberInRange, parseOptionalText } from '../core/validate';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
@@ -198,7 +199,7 @@ router.get('/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── PATCH /:vehicle_id ─────────────────────────────────────
-router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manager'), idempotent('vehicle-update'), async (req: Request, res: Response) => {
   try {
     const parsed = VehicleUpdateSchema.safeParse(req.body);
     if (!parsed.success) {

@@ -9,7 +9,7 @@
 --   - system_settings 'on_time_window_minutes': a stop counts as on time when it
 --     is reached within this many minutes of its planned arrival (default 30).
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.route_stops ADD COLUMN IF NOT EXISTS planned_arrival_at timestamptz;
 ALTER TABLE public.route_stops ADD COLUMN IF NOT EXISTS actual_arrival_at timestamptz;

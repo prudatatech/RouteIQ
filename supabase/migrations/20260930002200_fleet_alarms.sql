@@ -14,7 +14,7 @@
 -- Also seeds the rule thresholds in system_settings (edit them there or in
 -- Admin > Settings). Existing values are never overwritten.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.maintenance_alerts ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'open';
 ALTER TABLE public.maintenance_alerts ADD COLUMN IF NOT EXISTS source text;

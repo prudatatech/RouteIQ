@@ -14,6 +14,7 @@ import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
 import { sendError } from '../core/errors';
 import { rateDelivery } from '../services/driver-performance.service';
+import { getProofOfDelivery } from '../services/pod.service';
 
 const router = Router();
 
@@ -226,6 +227,21 @@ router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), as
       return;
     }
     res.json({ events });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /:shipment_id/proof — receiver, delivery photo and signature (staff) ──
+// The photo and signature come back as signed links that stop working after 10 minutes.
+router.get('/:shipment_id/proof', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const proof = await getProofOfDelivery(req.params.shipment_id);
+    if (!proof) {
+      res.status(404).json({ detail: 'Shipment not found' });
+      return;
+    }
+    res.json(proof);
   } catch (e: any) {
     sendError(req, res, e);
   }

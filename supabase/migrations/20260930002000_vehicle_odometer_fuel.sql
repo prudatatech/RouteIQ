@@ -6,7 +6,7 @@
 -- fuel_level_pct / fuel_reported_at are set only when a real device reports a fuel
 -- level, so "no fuel sensor" stays distinguishable from "tank is empty".
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_km numeric(12,3) CHECK (odometer_km IS NULL OR odometer_km >= 0);
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_updated_at timestamptz;

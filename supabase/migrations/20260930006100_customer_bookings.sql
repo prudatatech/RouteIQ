@@ -9,7 +9,7 @@
 -- Access: the backend writes with the service role. A customer can read only
 -- their own bookings; staff can read and change all of them.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.customer_bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

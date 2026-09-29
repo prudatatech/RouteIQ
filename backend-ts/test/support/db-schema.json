@@ -51,7 +51,10 @@
     "capacity_kg",
     "status",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "received_by",
+    "photo_url",
+    "signature_url"
   ],
   "customers": [
     "id",
@@ -254,7 +257,9 @@
     "created_at",
     "updated_at",
     "planned_arrival_at",
-    "actual_arrival_at"
+    "actual_arrival_at",
+    "photo_url",
+    "signature_url"
   ],
   "routes": [
     "id",
@@ -322,7 +327,9 @@
     "driver_rated_by",
     "rated_vehicle_id",
     "rated_driver_id",
-    "freight_charge"
+    "freight_charge",
+    "photo_url",
+    "signature_url"
   ],
   "sos_alerts": [
     "id",
@@ -651,5 +658,36 @@
     "cancel_reason",
     "created_at",
     "updated_at"
+  ],
+  "parcel_scans": [
+    "id",
+    "shipment_id",
+    "manifest_id",
+    "stop_id",
+    "driver_id",
+    "purpose",
+    "method",
+    "latitude",
+    "longitude",
+    "created_at"
+  ],
+  "messages": [
+    "id",
+    "route_id",
+    "shipment_id",
+    "sender_id",
+    "sender_role",
+    "sender_name",
+    "body",
+    "created_at",
+    "read_at"
+  ],
+  "idempotency_keys": [
+    "user_id",
+    "key",
+    "action",
+    "status_code",
+    "response",
+    "created_at"
   ]
 }

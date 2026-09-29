@@ -4,7 +4,7 @@
 -- before GST. Staff enter it when they create the shipment. The invoice
 -- created on delivery uses it when there is no winning bid on the shipment.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS freight_charge numeric(12,2);
 
