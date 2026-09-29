@@ -11,7 +11,6 @@ import { dashboardAPI, vehiclesAPI, shipmentsAPI } from '@/services/api'
 import { Spinner } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import _LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
-import VendorRequestsAdmin from '@/components/dashboard/VendorRequestsAdmin'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { useAutoAnimate } from '@formkit/auto-animate/react'
@@ -395,11 +394,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Vendor Orders / Partner Requests Panel */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
-          <VendorRequestsAdmin />
         </div>
       </div>
 

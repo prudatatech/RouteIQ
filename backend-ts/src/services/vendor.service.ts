@@ -1,5 +1,31 @@
 import { supabase } from '../core/supabase';
 import { notificationService } from './notification.service';
+import { HttpError } from '../core/errors';
+
+/** Request states an admin can still act on (approve, reject or assign a vehicle). */
+const OPEN_REQUEST_STATUSES = ['pending', 'approved'];
+
+/**
+ * Moves a request to `status` only if it is currently in one of `from`. The
+ * conditional update is atomic per row, so two admins acting at once (or a
+ * double click) cannot both succeed. Throws 404/409 when nothing was updated.
+ */
+async function transitionRequest(requestId: string, from: string[], update: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('vendor_shipment_requests')
+    .update({ ...update, updated_at: new Date().toISOString() })
+    .eq('id', requestId)
+    .in('status', from)
+    .select()
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) {
+    const { data: existing } = await supabase.from('vendor_shipment_requests').select('status').eq('id', requestId).maybeSingle();
+    if (!existing) throw new HttpError(404, 'Request not found');
+    throw new HttpError(409, `Request is already ${existing.status}`);
+  }
+  return data;
+}
 
 /** Legal identity columns this service writes; changing one on an approved profile needs a new KYC review. */
 const VENDOR_IDENTITY_FIELDS = ['company_name', 'gst_number', 'address'] as const;
@@ -144,12 +170,7 @@ export const vendorService = {
    * Super admin approves a vendor shipment request
    */
   async approveRequest(requestId: string) {
-    const { data, error } = await supabase.from('vendor_shipment_requests').update({
-      status: 'approved',
-      updated_at: new Date().toISOString()
-    }).eq('id', requestId).select().single();
-
-    if (error) throw new Error(error.message);
+    const data = await transitionRequest(requestId, ['pending'], { status: 'approved' });
 
     // Notify the vendor
     await notificationService.sendNotification(
@@ -167,12 +188,7 @@ export const vendorService = {
    * Super admin rejects a vendor shipment request
    */
   async rejectRequest(requestId: string) {
-    const { data, error } = await supabase.from('vendor_shipment_requests').update({
-      status: 'rejected',
-      updated_at: new Date().toISOString()
-    }).eq('id', requestId).select().single();
-
-    if (error) throw new Error(error.message);
+    const data = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, { status: 'rejected' });
 
     // Notify the vendor
     await notificationService.sendNotification(
@@ -190,22 +206,18 @@ export const vendorService = {
    * Admin assigns a vehicle to a vendor request and creates a cargo manifest entry
    */
   async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number, costPerKm?: number) {
-    // Get the request details
-    const { data: req, error: reqErr } = await supabase
-      .from('vendor_shipment_requests')
-      .select('*')
-      .eq('id', requestId)
-      .single();
-    if (reqErr) throw new Error(reqErr.message);
+    const { data: before, error: beforeErr } = await supabase
+      .from('vendor_shipment_requests').select('status').eq('id', requestId).maybeSingle();
+    if (beforeErr) throw new Error(beforeErr.message);
+    if (!before) throw new HttpError(404, 'Request not found');
 
-    const { error: updateErr } = await supabase.from('vendor_shipment_requests').update({
+    // Claim the request for this vehicle; fails if it was already assigned or closed
+    const req = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, {
       status: 'assigned',
       assigned_vehicle_id: vehicleId,
-      updated_at: new Date().toISOString(),
       ...(cost !== undefined ? { cost } : {}),
       ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
-    }).eq('id', requestId);
-    if (updateErr) throw new Error(`Failed to update vendor request ${requestId}: ${updateErr.message}`);
+    });
 
     // Insert into cargo_manifest
     const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
@@ -224,6 +236,11 @@ export const vendorService = {
 
     if (manifestErr) {
       console.error('Failed to create cargo_manifest:', manifestErr);
+      // Release the claim so the request can be assigned again
+      await supabase.from('vendor_shipment_requests')
+        .update({ status: before.status, assigned_vehicle_id: null, updated_at: new Date().toISOString() })
+        .eq('id', requestId)
+        .eq('status', 'assigned');
       throw new Error(`Failed to create manifest: ${manifestErr.message}`);
     }
 

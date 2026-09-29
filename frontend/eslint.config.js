@@ -51,6 +51,10 @@ export default tseslint.config(
       'src/pages/LandingPage.tsx',
       'src/services/account.ts',
       'src/utils/safeNext.ts',
+      'src/pages/BidsPage.tsx',
+      'src/pages/admin/**/*.{ts,tsx}',
+      'src/hooks/useRealtimeRefresh.ts',
+      'src/utils/display.ts',
     ],
     plugins: { design },
     rules: {
