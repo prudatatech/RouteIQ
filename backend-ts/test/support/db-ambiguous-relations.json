@@ -1,0 +1,12 @@
+[
+    "capacity_bids|capacity_windows",
+    "driver_vehicle_assignments|users",
+    "shipments|users",
+    "user_activity|users",
+    "user_documents|users",
+    "user_notes|users",
+    "user_profiles|users",
+    "user_status_history|users",
+    "users|vehicles",
+    "vehicle_maintenance_jobs|vehicle_service_log"
+]

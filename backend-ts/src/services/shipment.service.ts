@@ -888,11 +888,13 @@ export class ShipmentService {
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
+      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
       .order('created_at', { ascending: false })
       .range(skip, skip + limit - 1);
 
-    if (error || !data) return [];
+    // Surface query errors: an empty list here hides a broken query (e.g. an ambiguous embed) as "no shipments"
+    if (error) throw error;
+    if (!data) return [];
 
     // A shipment opened for vendor bidding has a capacity window pointing back at it
     // (see createShipment -> openBackhaulWindow). shipments has no bidding columns.
@@ -943,11 +945,12 @@ export class ShipmentService {
     });
 
     // Fetch Cargo Manifests to show them in the unified list
-    const { data: manifests } = await supabase
+    const { data: manifests, error: manifestError } = await supabase
       .from('cargo_manifest')
-      .select('*, vehicles(plate_number, users(full_name))')
+      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
       .order('created_at', { ascending: false })
       .limit(limit);
+    if (manifestError) throw manifestError;
 
     const mappedManifests = (manifests || []).map((m: any) => ({
       id: m.id,

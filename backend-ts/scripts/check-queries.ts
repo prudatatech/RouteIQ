@@ -61,6 +61,19 @@ function loadEnums(): Enums {
 
 let ENUMS: Enums = {};
 
+const AMBIGUOUS_PATH = path.join(ROOT, 'backend-ts', 'test', 'support', 'db-ambiguous-relations.json');
+
+/** Table pairs ("a|b", sorted) joined by more than one foreign key: an embed between them must name the key. */
+function loadAmbiguous(): Set<string> {
+  return new Set(fs.existsSync(AMBIGUOUS_PATH) ? (JSON.parse(fs.readFileSync(AMBIGUOUS_PATH, 'utf8')) as string[]) : []);
+}
+
+let AMBIGUOUS: Set<string> = new Set();
+
+function isAmbiguousPair(a: string, b: string): boolean {
+  return AMBIGUOUS.has(a < b ? `${a}|${b}` : `${b}|${a}`);
+}
+
 type Schema = Record<string, string[]>;
 
 interface Mismatch {
@@ -209,7 +222,13 @@ function checkSelect(
 
     const embed = EMBED_RE.exec(part);
     if (embed) {
-      const [, , embedTable, , inner] = embed;
+      const [, , embedTable, fkHint, inner] = embed;
+      if (!fkHint && isAmbiguousPair(table, embedTable)) {
+        mismatches.push({
+          file, line,
+          message: `embed '${embedTable}' in select on '${table}' is ambiguous (more than one foreign key joins them); name one, e.g. ${embedTable}!<constraint_name>(...)`,
+        });
+      }
       if (!(embedTable in schema)) {
         mismatches.push({ file, line, message: `unknown embedded table/relation '${embedTable}' in select on '${table}'` });
       } else {
@@ -374,6 +393,7 @@ function checkFile(file: string, schema: Schema, mismatches: Mismatch[]): void {
 function main(): void {
   const schema = loadSchema();
   ENUMS = loadEnums();
+  AMBIGUOUS = loadAmbiguous();
   const mismatches: Mismatch[] = [];
 
   const files = [
