@@ -1,8 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertTriangle, Bell, CheckCircle2, Home, Map as MapIcon, Package, Phone, Play, Pause, ShieldAlert, User,
+  AlertTriangle, Bell, CheckCircle2, Home, LogOut, Map as MapIcon, Package, Phone, Play, Pause, ShieldAlert, User,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '@/services/supabase'
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api'
@@ -228,8 +230,20 @@ function TabButton({ active, icon, label, onClick }: { active: boolean; icon: Re
 
 export default function DriverPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const userId = useAuthStore(s => s.userId)
   const role = useAuthStore(s => s.role)
+  const clearAuth = useAuthStore(s => s.clearAuth)
+
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {
+      console.error('Sign-out failed', e)
+    }
+    clearAuth()
+    navigate('/login')
+  }
   const [activeTab, setActiveTab] = useState<Tab>('home')
   const [shiftStatus, setShiftStatus] = useState<ShiftStatus>('offline')
   const [isTracking, setIsTracking] = useState(false)
@@ -616,14 +630,16 @@ export default function DriverPage() {
       <Card padded className="space-y-3">
         <h3 className="text-sm font-medium text-text">Shift controls</h3>
         <Button fullWidth size="lg" variant="danger" onClick={endShift}>End shift</Button>
+        <Button fullWidth size="lg" variant="secondary" icon={<LogOut size={18} aria-hidden="true" />} onClick={signOut}>Sign out</Button>
       </Card>
     </div>
   )
 
   return (
     <div className="relative mx-auto min-h-screen bg-bg text-text sm:max-w-md sm:border-x sm:border-border">
-      <div className="sticky top-0 z-50 flex h-14 items-center justify-center border-b border-border bg-surface">
+      <div className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-surface px-4">
         <h1 className="text-base font-semibold text-text">MargixIndia <span className="text-sm font-normal text-muted">Driver</span></h1>
+        <Button variant="ghost" size="sm" icon={<LogOut size={16} aria-hidden="true" />} onClick={signOut}>Sign out</Button>
       </div>
 
       <div className="h-[calc(100vh-7.5rem)] overflow-y-auto p-4">
