@@ -4,30 +4,19 @@
  */
 import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
+import { indianDateKey, startOfIndianDay } from '../core/istDate';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
-
-const IST_OFFSET_MS = 330 * 60 * 1000;
-
-/** Midnight in India `daysAgo` days before today, as an absolute instant. */
-function startOfIndianDay(daysAgo: number): Date {
-  const ist = new Date(Date.now() + IST_OFFSET_MS);
-  const midnightUtc = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() - daysAgo);
-  return new Date(midnightUtc - IST_OFFSET_MS);
-}
-
-/** YYYY-MM-DD of the Indian calendar day that contains `date`. */
-function indianDateKey(date: Date): string {
-  return new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
-}
 
 export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
   // FLEET OVERVIEW — today's operational figures, all counted from real rows
   // ──────────────────────────────────────────────────────────────────────────
-  static async getFleetOverview(): Promise<Record<string, any>> {
-    // "Today" is the Indian calendar day, whatever timezone the server runs in.
-    const todayISO = startOfIndianDay(0).toISOString();
+  static async getFleetOverview(range?: { start: Date; end: Date }): Promise<Record<string, any>> {
+    // Defaults to the Indian calendar "today" when no range is given, whatever timezone the server runs in.
+    const { start, end } = range ?? { start: startOfIndianDay(0), end: startOfIndianDay(-1) };
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
 
     const [
       { count: totalVehicles },
@@ -39,24 +28,26 @@ export class AnalyticsService {
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', todayISO),
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', todayISO),
+      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
+      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
     ]);
 
-    // Planned distance of the routes dispatched today
+    // Planned distance of the routes dispatched in range
     const { data: routesToday } = await supabase
       .from('routes')
       .select('total_distance_km')
       .in('status', ['active', 'completed'])
-      .gte('created_at', todayISO);
+      .gte('created_at', startISO)
+      .lt('created_at', endISO);
     const totalDistanceToday = (routesToday || []).reduce((s: number, r: any) => s + (r.total_distance_km || 0), 0);
 
-    // Backhaul revenue: agreed cost of vendor loads assigned or fulfilled today
+    // Backhaul revenue: agreed cost of vendor loads assigned or fulfilled in range
     const { data: backhaulData } = await supabase
       .from('vendor_shipment_requests')
       .select('cost')
       .in('status', ['fulfilled', 'assigned'])
-      .gte('created_at', todayISO);
+      .gte('created_at', startISO)
+      .lt('created_at', endISO);
     const backhaulLoads = (backhaulData || []).filter((b: any) => b.cost != null);
     const backhaulRevenue = backhaulLoads.reduce((s: number, b: any) => s + (b.cost || 0), 0);
 
@@ -79,20 +70,33 @@ export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
   // DAILY ACTIVITY — routes dispatched and shipments delivered per day
   // ──────────────────────────────────────────────────────────────────────────
-  static async getDailyActivity(days = 14): Promise<{ date: string; trips: number; deliveries: number }[]> {
-    const span = Math.min(Math.max(Math.round(days) || 14, 1), 90);
-    const since = startOfIndianDay(span - 1).toISOString();
+  static async getDailyActivity(range?: { start: Date; end: Date }, days = 14): Promise<{ date: string; trips: number; deliveries: number }[]> {
+    let start: Date;
+    let end: Date;
+    if (range) {
+      ({ start, end } = range);
+      // Cap the bucketed span so a very wide custom range doesn't return hundreds of days.
+      const maxSpanMs = 90 * 86_400_000;
+      if (end.getTime() - start.getTime() > maxSpanMs) start = new Date(end.getTime() - maxSpanMs);
+    } else {
+      const span = Math.min(Math.max(Math.round(days) || 14, 1), 90);
+      start = startOfIndianDay(span - 1);
+      end = startOfIndianDay(-1);
+    }
+    const sinceISO = start.toISOString();
+    const untilISO = end.toISOString();
+    const dayCount = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
 
     const [{ data: routes, error: routesErr }, { data: shipments, error: shipmentsErr }] = await Promise.all([
-      supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', since),
-      supabase.from('shipments').select('updated_at').eq('status', 'delivered').gte('updated_at', since),
+      supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', sinceISO).lt('created_at', untilISO),
+      supabase.from('shipments').select('updated_at').eq('status', 'delivered').gte('updated_at', sinceISO).lt('updated_at', untilISO),
     ]);
     if (routesErr) throw routesErr;
     if (shipmentsErr) throw shipmentsErr;
 
     const buckets = new Map<string, { trips: number; deliveries: number }>();
-    for (let i = span - 1; i >= 0; i--) {
-      buckets.set(indianDateKey(startOfIndianDay(i)), { trips: 0, deliveries: 0 });
+    for (let i = 0; i < dayCount; i++) {
+      buckets.set(indianDateKey(new Date(start.getTime() + i * 86_400_000)), { trips: 0, deliveries: 0 });
     }
     (routes || []).forEach((r: any) => {
       const b = buckets.get(indianDateKey(new Date(r.created_at)));

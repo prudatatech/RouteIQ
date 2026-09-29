@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { expiryStatus } from '@/utils/documentExpiry'
 
 interface Vehicle {
   id: string
@@ -33,6 +34,15 @@ interface Vehicle {
   driver_name?: string | null
   spark_id?: string | null
   speed_kmh?: number | null
+  rc_expiry?: string | null
+  insurance_expiry?: string | null
+  fitness_expiry?: string | null
+  permit_expiry?: string | null
+  puc_expiry?: string | null
+}
+
+const DOCUMENT_EXPIRY_LABELS: Record<string, string> = {
+  rc_expiry: 'RC', insurance_expiry: 'Insurance', fitness_expiry: 'Fitness', permit_expiry: 'Permit', puc_expiry: 'PUC',
 }
 
 // The backend's /vehicles/summary groups "idle" and "available" into one count, so
@@ -216,7 +226,13 @@ export default function FleetPage() {
           {role !== 'driver' && (
             <>
               <IconButton label={`Edit ${v.plate_number}`} icon={<Pencil size={16} />} size="sm" onClick={() => setEditingVehicle(v)} />
-              <IconButton label={`Delete ${v.plate_number}`} icon={<Trash2 size={16} />} size="sm" onClick={() => handleDelete(v)} />
+              <IconButton
+                label={v.status === 'on_route' ? `${v.plate_number} is on a route and can't be deleted` : `Delete ${v.plate_number}`}
+                icon={<Trash2 size={16} />}
+                size="sm"
+                disabled={v.status === 'on_route'}
+                onClick={() => handleDelete(v)}
+              />
             </>
           )}
         </div>
@@ -271,6 +287,7 @@ export default function FleetPage() {
               <button
                 key={s}
                 type="button"
+                aria-pressed={filter === s}
                 onClick={() => setFilter(s)}
                 className={
                   'rounded-full px-3 py-1 text-xs font-medium transition-colors ' +
@@ -358,6 +375,22 @@ export default function FleetPage() {
                 },
               ]}
             />
+            {(() => {
+              const badges = Object.entries(DOCUMENT_EXPIRY_LABELS)
+                .map(([key, label]) => ({ label, status: expiryStatus(detailVehicle[key as keyof Vehicle] as string | null | undefined) }))
+                .filter((b): b is { label: string; status: NonNullable<ReturnType<typeof expiryStatus>> } => !!b.status)
+              if (badges.length === 0) return null
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium text-text">Documents needing attention</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {badges.map(b => (
+                      <StatusPill key={b.label} tone={b.status.tone} dot={false}>{b.label}: {b.status.label}</StatusPill>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
       </Drawer>

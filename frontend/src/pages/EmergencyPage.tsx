@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
+import { AlertTriangle, CheckCircle, MapPinned, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import {
-  Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm,
+  Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm, buttonClasses,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
 import { sosTypeLabel } from '@/utils/sos'
@@ -184,14 +185,32 @@ export default function EmergencyPage() {
                       </div>
                       {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
                     </button>
-                    {isActive && (
-                      <div className="mt-3 flex gap-2">
-                        {alert.status === 'active' && (
-                          <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
-                        )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {alert.driver?.phone && (
+                        <a
+                          href={`tel:${alert.driver.phone}`}
+                          onClick={e => e.stopPropagation()}
+                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                        >
+                          <Phone size={14} aria-hidden="true" /> Call driver
+                        </a>
+                      )}
+                      {alert.vehicle_id && (
+                        <Link
+                          to={`/live-map?vehicle=${alert.vehicle_id}`}
+                          onClick={e => e.stopPropagation()}
+                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                        >
+                          <MapPinned size={14} aria-hidden="true" /> Open on live map
+                        </Link>
+                      )}
+                      {isActive && alert.status === 'active' && (
+                        <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
+                      )}
+                      {isActive && (
                         <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )
               })
@@ -213,7 +232,12 @@ export default function EmergencyPage() {
                 <p className="mt-0.5 text-xs text-muted">{new Date(selected.created_at).toLocaleString('en-IN')}</p>
                 <div className="mt-2 space-y-1 text-sm text-text">
                   <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{selected.driver?.full_name || 'Unknown'}</p>
-                  {selected.driver?.phone && <p className="inline-flex items-center gap-1.5"><Phone size={13} className="text-muted" aria-hidden="true" />{selected.driver.phone}</p>}
+                  {selected.driver?.phone && (
+                    <p className="inline-flex items-center gap-1.5">
+                      <Phone size={13} className="text-muted" aria-hidden="true" />
+                      <a href={`tel:${selected.driver.phone}`} className="text-brand hover:underline">{selected.driver.phone}</a>
+                    </p>
+                  )}
                   <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{selected.vehicle?.plate_number || 'Unknown'}</p>
                   {selected.latitude != null && selected.longitude != null && (
                     <p className="inline-flex items-center gap-1.5 font-mono text-xs"><MapPin size={13} className="text-muted" aria-hidden="true" />{selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}</p>

@@ -333,12 +333,23 @@ router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), asyn
 
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id')
+      .select('id, status')
       .eq('id', vehicleId)
       .single();
 
     if (!vehicle) {
       res.status(404).json({ detail: 'Vehicle not found' });
+      return;
+    }
+
+    const { data: activeRoutes } = await supabase
+      .from('routes')
+      .select('id')
+      .eq('vehicle_id', vehicleId)
+      .in('status', ['active', 'in_progress']);
+
+    if (vehicle.status === 'on_route' || (activeRoutes && activeRoutes.length > 0)) {
+      res.status(409).json({ detail: "This vehicle is on an active route and can't be deleted. Wait for the route to finish, or cancel it first." });
       return;
     }
 

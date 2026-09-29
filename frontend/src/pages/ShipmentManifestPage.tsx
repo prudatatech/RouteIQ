@@ -9,6 +9,7 @@ import {
 } from '@/components/ui'
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, formatDate, formatKg, formatRupees, haversineKm } from '@/components/shipments/format'
+import { emailError, indianMobileError } from '@/utils/validators'
 
 type Meta = Record<string, unknown>
 
@@ -95,6 +96,7 @@ interface FieldDef {
   value: string | null
   type?: 'text' | 'date' | 'email' | 'tel'
   mono?: boolean
+  error?: string
 }
 
 export default function ShipmentManifestPage() {
@@ -170,10 +172,18 @@ export default function ShipmentManifestPage() {
     return text(v) ?? fallback
   }
 
+  const consigneeContact = pick('consigneeContact', text(drop?.phone ?? drop?.contact_number ?? shipment.customer?.phone))
+  const consigneeEmail = pick('consigneeEmail', text(drop?.email ?? shipment.customer?.email))
   const consignee: FieldDef[] = [
     { path: 'consigneeName', label: 'Name', value: pick('consigneeName', text(drop?.name ?? shipment.dest_name ?? shipment.customer?.name)) },
-    { path: 'consigneeContact', label: 'Phone', type: 'tel', value: pick('consigneeContact', text(drop?.phone ?? drop?.contact_number ?? shipment.customer?.phone)) },
-    { path: 'consigneeEmail', label: 'Email', type: 'email', value: pick('consigneeEmail', text(drop?.email ?? shipment.customer?.email)) },
+    {
+      path: 'consigneeContact', label: 'Phone', type: 'tel', value: consigneeContact,
+      error: editing ? indianMobileError(consigneeContact ?? '') : undefined,
+    },
+    {
+      path: 'consigneeEmail', label: 'Email', type: 'email', value: consigneeEmail,
+      error: editing ? emailError(consigneeEmail ?? '') : undefined,
+    },
   ]
   const trip: FieldDef[] = [
     { path: 'dispatch_date', label: 'Dispatch date', type: 'date', value: pick('dispatch_date', shipment.created_at ? shipment.created_at.split('T')[0] : null) },
@@ -208,6 +218,7 @@ export default function ShipmentManifestPage() {
           type={f.type ?? 'text'}
           value={f.value ?? ''}
           onChange={e => change(f.path, e.target.value)}
+          error={f.error}
         />
       ))}
     </div>
@@ -217,10 +228,16 @@ export default function ShipmentManifestPage() {
 
   const startEdit = () => { setDraft(saved); setEditing(true) }
 
+  const fieldError = consignee.find(f => f.error)?.error
+  const handleSave = () => {
+    if (fieldError) { toast.error(fieldError); return }
+    save.mutate(draft)
+  }
+
   const actions = editing ? (
     <>
       <Button variant="secondary" onClick={() => setEditing(false)} disabled={save.isPending}>Cancel</Button>
-      <Button onClick={() => save.mutate(draft)} loading={save.isPending}>Save changes</Button>
+      <Button onClick={handleSave} loading={save.isPending} disabled={!!fieldError}>Save changes</Button>
     </>
   ) : (
     <>
