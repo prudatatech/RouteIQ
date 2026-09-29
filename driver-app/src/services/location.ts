@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, getCurrentSession } from './supabase';
 import { DEFAULT_PING_INTERVAL_MS, MIN_PING_INTERVAL_MS, MAX_PING_INTERVAL_MS } from '../config';
 import { colors } from '../theme';
+import { translateNow } from '../locales';
 
 const QUEUE_KEY = 'margixindia_ping_queue';
 const VEHICLE_ID_KEY = 'margixindia_vehicle_id';
@@ -301,8 +302,8 @@ class LocationService {
           // assignments and dispatch calls only.
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: 'Location is off',
-              body: 'Turn on location so dispatch can follow your delivery.',
+              title: translateNow('notify_gps_off_title'),
+              body: translateNow('notify_gps_off_body'),
               sound: 'default',
               autoDismiss: false,
             },

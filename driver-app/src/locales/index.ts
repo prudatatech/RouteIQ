@@ -107,6 +107,9 @@ export const translations = {
     alert_break_started_title: 'Break Started',
     alert_break_started_desc: 'Live tracking is paused. Turn it on again when you are back.',
     error: 'Error',
+    network_error: 'No signal. Check your internet connection and try again.',
+    server_error: 'Something went wrong on our side. Please try again in a moment.',
+    session_expired: 'Your session has expired. Please log in again.',
     alert_report_issue_title: 'Report an issue',
     alert_report_issue_desc: 'Mark this stop as failed?',
     mark_failed: 'Mark Failed',
@@ -506,6 +509,9 @@ export const translations = {
     alert_break_started_title: 'ब्रेक शुरू हुआ',
     alert_break_started_desc: 'आपका रूट रुक गया है।',
     error: 'त्रुटि',
+    network_error: 'सिग्नल नहीं है। इंटरनेट कनेक्शन जांचें और फिर से कोशिश करें।',
+    server_error: 'हमारी तरफ़ से कुछ गड़बड़ हो गई। कृपया थोड़ी देर में फिर से कोशिश करें।',
+    session_expired: 'आपका सेशन खत्म हो गया है। कृपया फिर से लॉग इन करें।',
     alert_report_issue_title: 'समस्या रिपोर्ट करें',
     alert_report_issue_desc: 'इस डिलीवरी को विफल/अपवाद के रूप में चिह्नित करें?',
     mark_failed: 'विफल चिह्नित करें',
@@ -899,6 +905,9 @@ export const translations = {
     alert_break_started_title: 'ब्रेक सुरू झाला',
     alert_break_started_desc: 'तुमचा मार्ग थांबवला आहे.',
     error: 'त्रुटी',
+    network_error: 'सिग्नल नाही. इंटरनेट कनेक्शन तपासा आणि पुन्हा प्रयत्न करा.',
+    server_error: 'आमच्या बाजूने काहीतरी चूक झाली. कृपया थोड्या वेळाने पुन्हा प्रयत्न करा.',
+    session_expired: 'तुमचे सेशन संपले आहे. कृपया पुन्हा लॉग इन करा.',
     alert_report_issue_title: 'समस्या नोंदवा',
     alert_report_issue_desc: 'ही डिलिव्हरी अयशस्वी/अपवाद म्हणून चिन्हांकित करा?',
     mark_failed: 'अयशस्वी म्हणून चिन्हांकित करा',
@@ -1295,6 +1304,9 @@ export const translations = {
     alert_break_started_title: 'విరామం ప్రారంభమైంది',
     alert_break_started_desc: 'మీ రూట్ పాజ్ చేయబడింది.',
     error: 'లోపం',
+    network_error: 'సిగ్నల్ లేదు. ఇంటర్నెట్ కనెక్షన్ చూసి మళ్లీ ప్రయత్నించండి.',
+    server_error: 'మా వైపు ఏదో తప్పు జరిగింది. దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి.',
+    session_expired: 'మీ సెషన్ ముగిసింది. దయచేసి మళ్లీ లాగిన్ అవ్వండి.',
     alert_report_issue_title: 'సమస్యను నివేదించండి',
     alert_report_issue_desc: 'ఈ డెలివరీని విఫలమైంది/మినహాయింపుగా మార్క్ చేయాలా?',
     mark_failed: 'విఫలమైనట్లు మార్క్ చేయండి',
@@ -1682,6 +1694,9 @@ export const translations = {
     alert_break_started_title: 'ವಿರಾಮ ಪ್ರಾರಂಭವಾಗಿದೆ',
     alert_break_started_desc: 'ನಿಮ್ಮ ಮಾರ್ಗ ವಿರಾಮಗೊಂಡಿದೆ.',
     error: 'ದೋಷ',
+    network_error: 'ಸಿಗ್ನಲ್ ಇಲ್ಲ. ಇಂಟರ್ನೆಟ್ ಸಂಪರ್ಕ ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+    server_error: 'ನಮ್ಮ ಕಡೆಯಿಂದ ಏನೋ ತಪ್ಪಾಗಿದೆ. ದಯವಿಟ್ಟು ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+    session_expired: 'ನಿಮ್ಮ ಸೆಷನ್ ಮುಗಿದಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಲಾಗಿನ್ ಮಾಡಿ.',
     alert_report_issue_title: 'ಸಮಸ್ಯೆ ವರದಿ ಮಾಡಿ',
     alert_report_issue_desc: 'ಈ ವಿತರಣೆಯನ್ನು ವಿಫಲ/ಹೊರತುಪಡಿಸಿ ಎಂದು ಗುರುತಿಸಬೇಕೆ?',
     mark_failed: 'ವಿಫಲ ಎಂದು ಗುರುತಿಸಿ',
@@ -2073,6 +2088,9 @@ export const translations = {
     alert_break_started_title: 'ব্রেক শুরু হয়েছে',
     alert_break_started_desc: 'আপনার রুট পজ করা হয়েছে।',
     error: 'ত্রুটি',
+    network_error: 'সিগন্যাল নেই। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।',
+    server_error: 'আমাদের দিকে কিছু সমস্যা হয়েছে। একটু পরে আবার চেষ্টা করুন।',
+    session_expired: 'আপনার সেশন শেষ হয়েছে। অনুগ্রহ করে আবার লগ ইন করুন।',
     alert_report_issue_title: 'সমস্যা রিপোর্ট করুন',
     alert_report_issue_desc: 'এই ডেলিভারি কি ব্যর্থ/ব্যতিক্রম হিসেবে চিহ্নিত করবেন?',
     mark_failed: 'ব্যর্থ চিহ্নিত করুন',
@@ -2370,3 +2388,16 @@ export const translations = {
   },
 };
 export type Language = 'en' | 'hi' | 'mr' | 'te' | 'kn' | 'bn';
+
+let currentLanguage: Language = 'en';
+
+/** Kept in step with the language the driver chose, so code outside React (the API client, background tasks) can speak it too. */
+export function setCurrentLanguage(lang: Language) {
+  currentLanguage = lang;
+}
+
+/** Looks a key up in the current language, falling back to English. */
+export function translateNow(key: string): string {
+  const dict = (translations[currentLanguage] ?? translations.en) as Record<string, string>;
+  return dict[key] || (translations.en as Record<string, string>)[key] || key;
+}

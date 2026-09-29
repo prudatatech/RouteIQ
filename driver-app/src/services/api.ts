@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_V1 } from '../config';
 import { supabase } from './supabase';
 import type { Invoice } from '../components/modals/InvoiceDialog';
+import { translateNow } from '../locales';
 
 const STORAGE_KEYS = {
   DRIVER_INFO: 'margixindia_driver_info',
@@ -44,9 +45,20 @@ export interface ChatMessage {
   read_at: string | null;
 }
 
+/** No answer from the server: no signal, or the request took too long. */
+export class NetworkError extends Error {
+  constructor() {
+    super(translateNow('network_error'));
+    this.name = 'NetworkError';
+  }
+}
+
+/** A request gives up after this long, so a weak signal never leaves a spinner running for ever. */
+const REQUEST_TIMEOUT_MS = 20_000;
+
 export class SessionExpiredError extends Error {
   constructor() {
-    super('Your session has expired. Please log in again.');
+    super(translateNow('session_expired'));
     this.name = 'SessionExpiredError';
   }
 }
@@ -64,6 +76,15 @@ async function parseBody(response: Response): Promise<any> {
   } catch {
     return {};
   }
+}
+
+/** A message a driver can read: the server's own text when it sent one, otherwise a plain sentence. */
+function apiMessage(data: any, status: number): string {
+  const detail = data?.detail ?? data?.error;
+  // Validation errors arrive as a list of { msg } objects.
+  const text = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d?.msg).filter(Boolean).join('. ') : '';
+  if (status >= 500 || !text) return translateNow('server_error');
+  return text;
 }
 
 /** Header the backend uses to apply a repeated action only once. */
@@ -87,11 +108,18 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     if (extraHeaders) Object.assign(headers, extraHeaders);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     return fetch(`${API_V1}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+      signal: controller.signal,
+    })
+      .catch(() => {
+        throw new NetworkError();
+      })
+      .finally(() => clearTimeout(timer));
   }
 
   private async request<T = any>(
@@ -119,7 +147,7 @@ class ApiClient {
 
     const data = await parseBody(response);
     if (!response.ok) {
-      throw new ApiError(data.detail || data.error || `Request failed: ${response.status}`, response.status);
+      throw new ApiError(apiMessage(data, response.status), response.status);
     }
     return data;
   }

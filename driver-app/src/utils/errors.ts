@@ -1,7 +1,7 @@
 /** fetch() rejects with a TypeError when there is no connection. */
 export function isNetworkError(error: unknown): boolean {
   if (!error) return false;
-  if (error instanceof TypeError) return true;
+  if (error instanceof TypeError || (error as { name?: string }).name === 'NetworkError') return true;
   const message = String((error as { message?: unknown })?.message ?? error);
   return /network request failed|network error|failed to fetch|timed? ?out/i.test(message);
 }
