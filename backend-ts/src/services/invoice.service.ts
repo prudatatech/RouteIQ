@@ -49,6 +49,7 @@ async function nextInvoiceNumber(now: Date): Promise<string> {
 interface NewInvoice {
   shipment_id?: string;
   manifest_id?: string;
+  vendor_request_id?: string;
   vendor_id: string | null;
   amount: number;
   gst_rate: number;
@@ -78,7 +79,7 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
     if (!error && data) return data.id;
     // 23505: unique violation. Either the number was taken (retry) or the delivery already has an invoice.
     if (error?.code !== '23505') throw new Error(`Failed to create invoice: ${error?.message}`);
-    const column = input.shipment_id ? 'shipment_id' : 'manifest_id';
+    const column = input.shipment_id ? 'shipment_id' : input.manifest_id ? 'manifest_id' : 'vendor_request_id';
     const { data: existing } = await supabase.from('invoices').select('id').eq(column, input[column]!).neq('status', 'void').maybeSingle();
     if (existing) return existing.id;
   }
@@ -158,6 +159,32 @@ export const InvoiceService = {
   },
 
   /**
+   * Invoice for a vendor load a 3PL partner delivered (there is no cargo manifest for it), priced from
+   * the request's agreed cost: the price staff agreed with the vendor, not what the partner charges.
+   * Without a price no invoice is written. Safe to call twice.
+   */
+  async createForRequest(requestId: string): Promise<InvoiceResult> {
+    const { data: existing } = await supabase.from('invoices').select('id').eq('vendor_request_id', requestId).neq('status', 'void').maybeSingle();
+    if (existing) return { status: 'exists', invoiceId: existing.id };
+
+    const { data: request, error } = await supabase
+      .from('vendor_shipment_requests').select('id, vendor_id, cost, status').eq('id', requestId).maybeSingle();
+    if (error) throw new Error(`Failed to read vendor request: ${error.message}`);
+    if (!request) return { status: 'skipped' };
+    const amount = Number(request.cost);
+    if (!Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
+
+    const invoiceId = await insertInvoice({
+      vendor_request_id: requestId,
+      vendor_id: request.vendor_id ?? null,
+      amount,
+      gst_rate: 0,
+      price_source: PRICE_SOURCE_REQUEST,
+    });
+    return { status: 'created', invoiceId };
+  },
+
+  /**
    * Same as createForShipment, for delivery paths: a billing problem is logged
    * and never fails the delivery. The invoice can be missed but not the POD.
    */
@@ -166,6 +193,14 @@ export const InvoiceService = {
       await InvoiceService.createForShipment(shipmentId);
     } catch (e) {
       console.error(`[invoice] shipment ${shipmentId}:`, e);
+    }
+  },
+
+  async onRequestDelivered(requestId: string): Promise<void> {
+    try {
+      await InvoiceService.createForRequest(requestId);
+    } catch (e) {
+      console.error(`[invoice] request ${requestId}:`, e);
     }
   },
 

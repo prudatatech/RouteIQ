@@ -20,12 +20,18 @@ const superadmin = [requireAuth, requireRole('superadmin')];
 
 const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
 
+/** A switch stored as `true`, `"true"` or `{ "enabled": true }` reads the same way. */
+export function isEnabled(value: unknown): boolean {
+  if (value && typeof value === 'object') return isEnabled((value as { enabled?: unknown }).enabled);
+  return value === true || value === 'true';
+}
+
 // Whether the cascade matcher offers low-confidence loads to 3PL partners by itself.
 router.get('/settings', ...staff, async (req, res) => {
   try {
     const { data, error } = await supabase.from('system_settings').select('value').eq('key', AUTO_ESCALATE_KEY).maybeSingle();
     if (error) throw error;
-    res.json({ auto_escalate: data?.value === true });
+    res.json({ auto_escalate: isEnabled(data?.value) });
   } catch (e) {
     sendError(req, res, e);
   }
@@ -80,7 +86,16 @@ router.get('/escalations/preview', ...staff, async (req, res) => {
 router.post('/escalations', ...staff, async (req, res) => {
   try {
     const { sourceType, id } = parseSource(req.body);
-    res.status(201).json(await tplNetworkService.escalate(sourceType, id, req.user!.user_id));
+    res.status(201).json(await tplNetworkService.escalate(sourceType, id, req.user!.user_id, { vendorPrice: req.body?.vendor_price }));
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// PUT /tpl-network/requests/:id/price  { cost }  what the vendor pays for a load a partner carries
+router.put('/requests/:id/price', ...staff, async (req, res) => {
+  try {
+    res.json(await tplNetworkService.setVendorPrice(req.params.id, req.body?.cost));
   } catch (error) {
     sendError(req, res, error, 'error');
   }

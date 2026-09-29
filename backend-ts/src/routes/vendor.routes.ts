@@ -85,7 +85,7 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
   try {
     const { data, error } = await supabase
       .from('invoices')
-      .select('id, invoice_number, shipment_id, manifest_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
+      .select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
       .eq('vendor_id', req.user.user_id)
       .neq('status', 'void')
       .order('issued_at', { ascending: false });
@@ -98,7 +98,11 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
     const tracking = new Map((shipments ?? []).map((s: any) => [s.id, s.tracking_id]));
     res.json(rows.map((r: any) => ({
       ...r,
-      reference: r.shipment_id ? (tracking.get(r.shipment_id) ?? null) : `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`,
+      reference: r.shipment_id
+        ? (tracking.get(r.shipment_id) ?? null)
+        : r.manifest_id
+          ? `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`
+          : `REQ-${String(r.vendor_request_id).slice(0, 8).toUpperCase()}`,
     })));
   } catch (error: any) {
     sendError(req, res, error, 'error');
