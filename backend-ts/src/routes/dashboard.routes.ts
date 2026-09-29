@@ -8,15 +8,15 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { sendError } from '../core/errors';
 import { FUEL_PRICE_PER_LITER } from '../services/analytics.service';
+import { startOfIndianDay } from '../core/istDate';
 
 const router = Router();
 
 // ── GET /kpis ──────────────────────────────────────────────
 router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    // "Today" is the Indian calendar day, as in analytics, whatever timezone the server runs in
+    const todayISO = startOfIndianDay(0).toISOString();
 
     let activeVehicles = 0;
     let routesToday: any[] = [];
@@ -95,7 +95,20 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
       }),
     );
     const counts = Object.fromEntries(results) as Record<(typeof SHIPMENT_STATUSES)[number], number>;
-    res.json({ counts, total: results.reduce((sum, [, n]) => sum + n, 0) });
+    // Vendor loads (cargo manifests) are part of the shipments list, so they are part of its counts:
+    // scheduled shows as created, delivered and completed as delivered.
+    const manifestStatus: Record<string, (typeof SHIPMENT_STATUSES)[number]> = {
+      scheduled: 'created', in_transit: 'in_transit', delivered: 'delivered', completed: 'delivered',
+    };
+    const manifestCounts = await Promise.all(
+      Object.keys(manifestStatus).map(async status => {
+        const { count, error } = await supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status);
+        if (error) throw error;
+        return [status, count ?? 0] as const;
+      }),
+    );
+    for (const [status, n] of manifestCounts) counts[manifestStatus[status]] += n;
+    res.json({ counts, total: Object.values(counts).reduce((sum, n) => sum + n, 0) });
   } catch (e: any) {
     sendError(req, res, e);
   }
