@@ -89,6 +89,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     'expo-font',
     'expo-secure-store',
+    [
+      'expo-camera',
+      {
+        cameraPermission: 'Allow MargixIndia Driver to use the camera to scan parcel codes and photograph deliveries.',
+        microphonePermission: false,
+        recordAudioAndroid: false,
+      },
+    ],
   ],
   extra: {
     eas: {

@@ -15,6 +15,8 @@ import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
 import { InvoiceService } from '../services/invoice.service';
+import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
+import { manifestParcelCode } from '../core/parcelCode';
 
 const router = Router();
 
@@ -680,7 +682,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       res.status(400).json({ detail: 'Unknown reason' });
       return;
     }
-    const failureMetadata: Record<string, string> = {};
+    const failureMetadata: Record<string, string | boolean> = {};
     if (status === 'failed' && reason) {
       failureMetadata.failure_reason = reason;
       if (typeof note === 'string' && note.trim()) failureMetadata.failure_note = note.trim().slice(0, 300);
@@ -776,6 +778,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       .single();
 
     if (dp?.shipment_id) {
+      if (status === 'completed') failureMetadata.parcel_verified = await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id);
       const { ShipmentService } = await import('../services/shipment.service');
       await ShipmentService.updateShipmentStatus(
         dp.shipment_id,
@@ -992,7 +995,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.pickup_lat,
             longitude: manifest.pickup_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'pickup' },
         },
         {
           id: manifest.id + '_drop',
@@ -1005,7 +1009,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.drop_lat,
             longitude: manifest.drop_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'delivery' },
         }
       ];
 
@@ -1028,6 +1033,9 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     }
 
     // Sort stops by sequence
+    const shipmentParcels = await loadShipmentParcels(
+      (route.route_stops || []).map((s: any) => s.delivery_points?.shipment_id).filter(Boolean),
+    );
     const stops = (route.route_stops || [])
       .sort((a: any, b: any) => a.sequence - b.sequence)
       .map((s: any) => ({
@@ -1042,6 +1050,10 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           longitude: s.delivery_points.longitude,
           demand_kg: s.delivery_points.demand_kg,
         } : null,
+        // The code on the parcel for this stop (its tracking ID), for scan checks in the app
+        parcel: shipmentParcels.get(s.delivery_points?.shipment_id)
+          ? { kind: 'shipment', code: shipmentParcels.get(s.delivery_points?.shipment_id)!.tracking_id, status: shipmentParcels.get(s.delivery_points?.shipment_id)!.status, purpose: 'delivery' }
+          : null,
       }));
 
     res.json({

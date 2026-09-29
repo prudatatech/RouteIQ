@@ -281,6 +281,21 @@ class ApiClient {
   }
 
 
+  /**
+   * Verifies a scanned or typed parcel code. `pickup` marks a shipment picked up;
+   * `delivery` needs the `stop_id` the driver is at.
+   */
+  async scanParcel(data: {
+    code: string;
+    purpose: 'pickup' | 'delivery';
+    stop_id?: string;
+    method?: 'camera' | 'manual';
+    lat?: number;
+    lng?: number;
+  }): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
+    return this.request('POST', '/driver/scan', data);
+  }
+
   // ── Capacity Bidding / Safety Valve ──────────────────────────────────
   async declareCapacity(vehicle_id: string, declared_load_percentage: number): Promise<any> {
     return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage });

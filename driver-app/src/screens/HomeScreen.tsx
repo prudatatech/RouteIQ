@@ -24,6 +24,7 @@ import { useGpsOffEscalation } from '../hooks/useGpsOffEscalation';
 import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
+import { useParcelScan } from '../hooks/useParcelScan';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
 import { shortFeedback } from '../utils/feedback';
@@ -45,6 +46,7 @@ import InvoiceDialog from '../components/modals/InvoiceDialog';
 import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
 import ReturnTripScreen from './ReturnTripScreen';
 import RouteTab from './tabs/RouteTab';
+import ScanTab from './tabs/ScanTab';
 import WalletTab from './tabs/WalletTab';
 import ProfileTab, { AVATAR_KEY } from './tabs/ProfileTab';
 import { colors, space } from '../theme';
@@ -98,6 +100,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { takeBreak } = tracking;
   const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
+  const scans = useParcelScan({ route, currentLoc: tracking.currentLoc, refresh });
 
   // The looping siren is only for a new assignment or a dispatch call.
   const { pulse } = useAlertSiren({
@@ -280,6 +283,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         return (
           <PodDialog
             stopName={active.stop.delivery_point?.name}
+            parcelCode={active.stop.parcel?.code}
+            parcelVerified={scans.verified.has(active.stop.id)}
+            onScanCode={(code, method) => scans.checkForStop(active.stop, code, method)}
             onCancel={closeModal}
             onSubmit={async (receiverName) => {
               await actions.completeStop(active.stop, receiverName);
@@ -396,6 +402,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               onRefresh={refresh}
               onOpenMoreActions={() => openModal({ kind: 'moreActions' })}
             />
+          )}
+          {activeTab === 'scan' && (
+            <ScanTab hasRoute={!!data.routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
           )}
           {activeTab === 'wallet' && <WalletTab onOpenInvoice={(invoice) => openModal({ kind: 'invoice', invoice })} />}
           {activeTab === 'profile' && (

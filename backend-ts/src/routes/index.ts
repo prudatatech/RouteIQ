@@ -27,6 +27,7 @@ import tplRoutes from './tpl.routes';
 import searchRoutes from './search.routes';
 import notificationsRoutes from './notifications.routes';
 import financeRoutes from './finance.routes';
+import driverRoutes from './driver.routes';
 
 const apiRouter = Router();
 
@@ -52,5 +53,6 @@ apiRouter.use('/tpl', tplRoutes);
 apiRouter.use('/search', searchRoutes);
 apiRouter.use('/notifications', notificationsRoutes);
 apiRouter.use('/finance', financeRoutes);
+apiRouter.use('/driver', driverRoutes);
 
 export default apiRouter;

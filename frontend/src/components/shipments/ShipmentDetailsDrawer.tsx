@@ -12,6 +12,7 @@ import { shipmentsAPI } from '@/services/api'
 import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
 } from './format'
+import ParcelLabel from './ParcelLabel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
@@ -273,6 +274,12 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                 </div>
               </div>
             )}
+          </Section>
+        )}
+
+        {!closed && (
+          <Section title="Parcel label">
+            <ParcelLabel trackingId={s.tracking_id} size={112} />
           </Section>
         )}
 

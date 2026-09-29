@@ -472,5 +472,17 @@
     "created_by",
     "created_at",
     "updated_at"
+  ],
+  "parcel_scans": [
+    "id",
+    "shipment_id",
+    "manifest_id",
+    "stop_id",
+    "driver_id",
+    "purpose",
+    "method",
+    "latitude",
+    "longitude",
+    "created_at"
   ]
 }

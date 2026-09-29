@@ -6,7 +6,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { Text } from '../ui';
 import { colors, size, space } from '../../theme';
 
-export type DriverTab = 'route' | 'wallet' | 'profile';
+export type DriverTab = 'route' | 'scan' | 'wallet' | 'profile';
 
 interface DriverTabBarProps {
   active: DriverTab;
@@ -15,6 +15,7 @@ interface DriverTabBarProps {
 
 const TABS: { key: DriverTab; label: string; icon: (color: string, active: boolean) => React.ReactNode }[] = [
   { key: 'route', label: 'tab_home', icon: (c, a) => <Ionicons name={a ? 'home' : 'home-outline'} size={size.icon.lg} color={c} /> },
+  { key: 'scan', label: 'tab_scan', icon: (c, a) => <Ionicons name={a ? 'qr-code' : 'qr-code-outline'} size={size.icon.lg} color={c} /> },
   {
     key: 'wallet',
     label: 'tab_trips',
