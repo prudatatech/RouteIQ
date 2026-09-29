@@ -16,29 +16,11 @@ import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { sendError } from '../core/errors';
 import { normalizePhone } from '../utils/phone';
+import { findAuthUserByEmail } from '../core/auth-users';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
-
-/**
- * Find a Supabase auth.users record by email without loading the whole user
- * base into memory. `supabase.auth.admin.listUsers()` defaults to the first
- * 50 users, so a plain call silently misses any account past that page.
- * Pages through in large batches (bounded) until the email is found.
- */
-async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
-  const perPage = 1000;
-  const maxPages = 50; // up to 50,000 users
-  for (let page = 1; page <= maxPages; page++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error || !data?.users?.length) break;
-    const match = data.users.find((u: any) => u.email === email);
-    if (match) return { id: match.id };
-    if (data.users.length < perPage) break; // last page
-  }
-  return null;
-}
 
 // ═══════════════════════════════════════════════════════════
 // DRIVER AUTH — Twilio Phone OTP (like Ola/Uber/Zomato)
@@ -682,7 +664,7 @@ async function loadTripPay(cargoTrips: any[], routeTrips: any[]): Promise<Map<st
   return pay;
 }
 
-async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
+export async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
   const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg, current_location_name').eq('driver_id', userId);
   if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
 

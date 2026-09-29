@@ -41,13 +41,18 @@ export async function createPodUploadUrl(stopId: string, input: { kind: unknown;
   if (bytes > settings.POD_UPLOAD_MAX_BYTES) {
     throw new HttpError(413, `Image must be at most ${Math.floor(settings.POD_UPLOAD_MAX_BYTES / 1024 / 1024)} MB`);
   }
-  const path = `${podFolder(stopId)}${kind}_${crypto.randomUUID()}.${extension}`;
+  return createKycUploadUrl(`${podFolder(stopId)}${kind}_${crypto.randomUUID()}.${extension}`);
+}
+
+/** A signed upload URL for exactly one path in the private kyc_documents bucket. */
+export async function createKycUploadUrl(path: string) {
   const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUploadUrl(path);
   if (error || !data) throw new Error(`Failed to create upload URL: ${error?.message}`);
   return { path: data.path, token: data.token, signed_url: data.signedUrl, bucket: settings.KYC_DOCUMENTS_BUCKET };
 }
 
-async function signedUrl(path: string | null | undefined): Promise<string | null> {
+/** A 10-minute signed link to a stored file, or null when it cannot be signed. */
+export async function signedUrl(path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
   if (error || !data) return null;
