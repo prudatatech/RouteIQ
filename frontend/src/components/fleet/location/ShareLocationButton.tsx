@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Link2, Share2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
-import { Alert, Button, Input, Modal, Select } from '@/components/ui'
+import { Alert, Button, Input, Modal, Select, Skeleton } from '@/components/ui'
 import { errorMessage, formatDateTime } from '@/utils/display'
 import { SHARE_DURATIONS, shareUrl, type ShareLink } from './format'
 import { copyText } from './clipboard'
@@ -64,46 +64,42 @@ export default function ShareLocationButton({ vehicleId, plate, disabled }: { ve
         onClose={close}
         title="Share live location"
         description={`Anyone with the link can see where ${plate} is now and where it has been in the last few hours. They cannot see its load, driver or customers.`}
-        footer={<Button variant="secondary" onClick={close}>Done</Button>}
+        onSubmit={() => create.mutate()}
+        footer={(
+          <>
+            <Button variant="secondary" onClick={close}>Close</Button>
+            <Button type="submit" icon={<Link2 size={16} />} loading={create.isPending}>{created ? 'Create another link' : 'Create link'}</Button>
+          </>
+        )}
       >
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Select
-              label="Link works for"
-              className="sm:flex-1"
-              value={hours}
-              onChange={e => setHours(e.target.value)}
-              options={SHARE_DURATIONS.map(d => ({ value: String(d.hours), label: d.label }))}
-            />
-            <Button icon={<Link2 size={16} />} loading={create.isPending} onClick={() => create.mutate()}>Create link</Button>
-          </div>
+        <div className="space-y-5">
+          <Select
+            label="Link works for"
+            hint="After this time the link stops working on its own."
+            value={hours}
+            disabled={create.isPending}
+            onChange={e => setHours(e.target.value)}
+            options={SHARE_DURATIONS.map(d => ({ value: String(d.hours), label: d.label }))}
+          />
 
           {createdUrl && (
             <div className="space-y-2">
-              <Input label="Share this link" readOnly value={createdUrl} onFocus={e => e.currentTarget.select()} />
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<Copy size={14} />}
-                onClick={copyLink}
-              >
-                Copy link
-              </Button>
-              <p className="text-xs text-muted">This link is shown once. Create a new one if you lose it.</p>
+              <Input label="Share this link" hint="This link is shown once. Create a new one if you lose it." readOnly value={createdUrl} onFocus={e => e.currentTarget.select()} />
+              <Button variant="secondary" size="sm" icon={<Copy size={14} />} onClick={copyLink}>Copy link</Button>
             </div>
           )}
 
           <div>
-            <p className="text-sm font-medium text-text">Links still open</p>
+            <h3 className="text-sm font-medium text-text">Links still open</h3>
             {links.isError ? (
               <Alert tone="danger" title="We could not load the open links" className="mt-2" />
             ) : (links.data ?? []).length === 0 ? (
-              <p className="mt-1 text-sm text-muted">{links.isLoading ? 'Loading…' : 'None. Create one above.'}</p>
+              links.isLoading ? <Skeleton className="mt-2 h-10 w-full" /> : <p className="mt-1 text-sm text-muted">None yet. Create one above.</p>
             ) : (
               <ul className="mt-2 divide-y divide-border rounded-control border border-border">
                 {links.data!.map(link => (
                   <li key={link.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                    <span className="min-w-0 text-text">
+                    <span className="min-w-0 flex-1 text-text">
                       Until {formatDateTime(link.expires_at)}
                       <span className="block text-xs text-muted">
                         Opened {link.view_count.toLocaleString('en-IN')} {link.view_count === 1 ? 'time' : 'times'}

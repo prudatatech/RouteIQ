@@ -180,7 +180,12 @@ function NavList({ items, collapsed, badges, onNavigate }: {
                         {!collapsed && <span className="flex-1 truncate">{label}</span>}
                         {count > 0 && (collapsed
                           ? <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand-fill" />
-                          : <span className="rounded-full bg-brand-fill px-2 py-0.5 text-xs font-medium text-on-brand tabular">{count}</span>
+                          : (
+                            <span className="min-w-5 shrink-0 rounded-full bg-brand-fill px-1.5 py-0.5 text-center text-xs font-medium text-on-brand tabular">
+                              {count > 99 ? '99+' : count}
+                              <span className="sr-only"> waiting</span>
+                            </span>
+                          )
                         )}
                       </>
                     )}

@@ -61,7 +61,7 @@ export function StatusLegend({ vehicles }: { vehicles: MapVehicle[] }) {
   return (
     <ul
       aria-label="Vehicle status"
-      className="absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap gap-x-3 gap-y-1 rounded-control border border-border bg-surface px-3 py-2 text-xs text-text shadow-raised"
+      className="absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-6.5rem)] flex-wrap gap-x-3 gap-y-1 rounded-control border border-border bg-surface px-3 py-2 text-xs text-text shadow-raised"
     >
       {[...counts.values()].map((s) => (
         <li key={s.label} className="flex items-center gap-1.5">

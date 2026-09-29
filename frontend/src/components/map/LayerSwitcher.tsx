@@ -40,7 +40,7 @@ export default function LayerSwitcher({ baseStyle, onBaseStyleChange, overlays, 
   }, [open])
 
   return (
-    <div ref={root} className={clsx('absolute bottom-8 right-2 z-10 flex flex-col items-end gap-2', className)}>
+    <div ref={root} className={clsx('absolute bottom-10 right-2 z-10 flex flex-col items-end gap-2', className)}>
       {open && (
         <div id={panelId} role="group" aria-label="Map layers" className="w-56 rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
           <fieldset>

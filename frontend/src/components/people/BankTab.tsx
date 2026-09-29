@@ -177,9 +177,7 @@ function BankModal({ detail, account, onClose, onDone }: {
         <Input label="Account holder" required value={holder} onChange={e => setHolder(e.target.value)} error={errors.holder} data-autofocus />
         <Input label="Account number" required={!account} inputMode="numeric" autoComplete="off" value={number} onChange={e => setNumber(e.target.value)} error={errors.number}
           hint={account ? `Leave blank to keep ${account.account_number}.` : undefined} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <IfscField label="IFSC" required value={ifsc} onChange={setIfsc} onResolved={setIfscInfo} error={errors.ifsc} className="sm:col-span-2" />
-        </div>
+        <IfscField label="IFSC code" required value={ifsc} onChange={setIfsc} onResolved={setIfscInfo} error={errors.ifsc} />
         <BankBranchFields details={ifscInfo} bankName={bank} branch={branch} onBankName={setBank} onBranch={setBranch} />
         <Input label="UPI ID" value={upi} onChange={e => setUpi(e.target.value)} hint="Optional, for example name@bank." />
         <Checkbox label="Primary account" description="Payouts go here." checked={primary} onChange={e => setPrimary(e.target.checked)} />

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, ClipboardCheck, Inbox, Route as RouteIcon, FileWarning } from 'lucide-react'
+import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon, FileWarning } from 'lucide-react'
 import { dashboardAPI, vehiclesAPI, vehicleRequestsAPI, shipmentsAPI, analyticsAPI, vendorAPI, fleetAPI, peopleAPI } from '@/services/api'
 import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
@@ -339,27 +339,20 @@ export default function DashboardPage() {
         <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vendor-requests')}>Open vendor loads</Button>
       </Card>
 
-      <Card padded className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><ClipboardCheck size={18} /></span>
-            <div>
-              <p className="text-sm font-medium text-text">
-                New vehicle requests{vehicleRequestsLoading ? '' : ` (${(vehicleRequests?.pending ?? 0).toLocaleString('en-IN')})`}
-              </p>
-              <p className="text-xs text-muted">Vehicles drivers registered from the app. They take no work until you approve them.</p>
-            </div>
-          </div>
-          <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vehicle-requests')}>Review requests</Button>
-        </div>
+      <Card>
+        <CardHeader
+          title={`New vehicle requests${vehicleRequestsLoading ? '' : ` (${(vehicleRequests?.pending ?? 0).toLocaleString('en-IN')})`}`}
+          description="Vehicles drivers registered from the app. They take no work until you approve them."
+          actions={<Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vehicle-requests')}>Review requests</Button>}
+        />
         {(vehicleRequests?.requests.length ?? 0) > 0 && (
-          <ul className="divide-y divide-border border-t border-border">
+          <ul className="divide-y divide-border">
             {vehicleRequests!.requests.slice(0, 3).map(r => (
               <li key={r.vehicle.id}>
                 <button
                   type="button"
                   onClick={() => navigate('/vehicle-requests?open=' + r.vehicle.id)}
-                  className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm hover:bg-surface-subtle"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:px-6"
                 >
                   <span className="min-w-0 truncate">
                     <span className="font-medium text-text">{r.vehicle.plate_number}</span>

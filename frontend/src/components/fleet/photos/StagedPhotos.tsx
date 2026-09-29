@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import toast from 'react-hot-toast'
+import { Card, CardBody, CardHeader } from '@/components/ui'
 import PhotoSlotTile from './PhotoSlotTile'
 import { PHOTO_SLOTS, preparePhoto, type PhotoSlot } from './photos'
 
@@ -30,10 +31,15 @@ export default function StagedPhotos({ files, onChange }: { files: StagedPhotoFi
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-      {PHOTO_SLOTS.map(({ slot, label, hint }) => (
-        <PhotoSlotTile key={slot} label={label} hint={hint} src={previews[slot] ?? null} onFile={file => pick(slot, file)} onRemove={() => drop(slot)} />
-      ))}
-    </div>
+    <Card>
+      <CardHeader title="Photos" description="Optional. They are saved with the vehicle." />
+      <CardBody>
+        <div className="grid grid-cols-2 gap-4">
+          {PHOTO_SLOTS.map(({ slot, label, hint }) => (
+            <PhotoSlotTile key={slot} label={label} hint={hint} src={previews[slot] ?? null} onFile={file => pick(slot, file)} onRemove={() => drop(slot)} />
+          ))}
+        </div>
+      </CardBody>
+    </Card>
   )
 }

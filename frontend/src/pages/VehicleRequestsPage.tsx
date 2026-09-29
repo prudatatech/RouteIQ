@@ -6,7 +6,7 @@ import { Camera, Check, ClipboardCheck, Phone, Truck, User, X } from 'lucide-rea
 import { vehicleRequestsAPI, type VehicleRequest } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
 import {
-  Page, PageHeader, Card, CardBody, Button, DetailList, EmptyState, ErrorState, LoadingState, StatusPill, humanize, useConfirm,
+  Page, PageHeader, Card, CardBody, Button, DetailList, EmptyState, ErrorState, Modal, Skeleton, StatusPill, Textarea, humanize, useConfirm,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { expiryStatus } from '@/utils/documentExpiry'
@@ -25,7 +25,10 @@ const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ?
 /** Vehicles drivers registered from the app. They take no work until someone approves them here. */
 export default function VehicleRequestsPage() {
   const queryClient = useQueryClient()
-  const { confirm, prompt } = useConfirm()
+  const { confirm } = useConfirm()
+  const [rejecting, setRejecting] = useState<VehicleRequest | null>(null)
+  const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string | undefined>()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
   const [viewing, setViewing] = useState<{ url: string; name: string } | null>(null)
@@ -65,7 +68,7 @@ export default function VehicleRequestsPage() {
   })
   const reject = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => vehicleRequestsAPI.reject(id, reason),
-    onSuccess: () => { toast.success('Vehicle rejected and archived. The driver has been told why.'); decided() },
+    onSuccess: () => { toast.success('Vehicle rejected and archived. The driver has been told why.'); closeReject(); decided() },
     onError: err => toast.error(errorMessage(err, 'We could not reject this vehicle. Try again.')),
   })
 
@@ -78,17 +81,26 @@ export default function VehicleRequestsPage() {
     if (ok) approve.mutate(r.vehicle.id)
   }
 
-  const askReject = async (r: VehicleRequest) => {
-    const reason = await prompt({
-      title: `Reject ${r.vehicle.plate_number}?`,
-      message: 'The vehicle is archived with your reason. The driver sees it in the app and can fix the details and submit again.',
-      inputLabel: 'Reason',
-      placeholder: 'For example: the plate number does not match the RC',
-      confirmLabel: 'Reject vehicle',
-      tone: 'danger',
-      required: true,
-    })
-    if (reason) reject.mutate({ id: r.vehicle.id, reason })
+  const askReject = (r: VehicleRequest) => {
+    setReason('')
+    setReasonError(undefined)
+    setRejecting(r)
+  }
+
+  function closeReject() {
+    setRejecting(null)
+    setReason('')
+    setReasonError(undefined)
+  }
+
+  const submitReject = () => {
+    if (!rejecting) return
+    const trimmed = reason.trim()
+    if (!trimmed) {
+      setReasonError('Enter a reason so the driver knows what to fix.')
+      return
+    }
+    reject.mutate({ id: rejecting.vehicle.id, reason: trimmed })
   }
 
   const pending = data?.pending ?? 0
@@ -106,7 +118,10 @@ export default function VehicleRequestsPage() {
       {error ? (
         <ErrorState title="We could not load the requests" onRetry={() => refetch()} />
       ) : isLoading ? (
-        <LoadingState label="Loading requests" />
+        <div className="space-y-4" aria-busy="true" aria-label="Loading requests">
+          <Skeleton className="h-56 w-full" />
+          <Skeleton className="h-56 w-full" />
+        </div>
       ) : requests.length === 0 ? (
         <EmptyState icon={<ClipboardCheck size={22} />} title="No vehicle requests" description="When a driver registers a vehicle in the app, it shows up here." />
       ) : (
@@ -126,6 +141,32 @@ export default function VehicleRequestsPage() {
           ))}
         </div>
       )}
+
+      <Modal
+        open={!!rejecting}
+        onClose={() => { if (!reject.isPending) closeReject() }}
+        title={`Reject ${rejecting?.vehicle.plate_number ?? 'vehicle'}?`}
+        description="The vehicle is archived with your reason. The driver sees it in the app and can fix the details and submit again."
+        size="sm"
+        onSubmit={submitReject}
+        footer={(
+          <>
+            <Button variant="secondary" disabled={reject.isPending} onClick={closeReject}>Cancel</Button>
+            <Button type="submit" variant="danger" loading={reject.isPending}>Reject vehicle</Button>
+          </>
+        )}
+      >
+        <Textarea
+          data-autofocus
+          label="Reason"
+          required
+          placeholder="For example: the plate number does not match the RC"
+          value={reason}
+          disabled={reject.isPending}
+          error={reasonError}
+          onChange={e => { setReason(e.target.value); if (reasonError) setReasonError(undefined) }}
+        />
+      </Modal>
 
       {viewing && <DocumentViewerModal isOpen onClose={() => setViewing(null)} fileUrl={viewing.url} fileName={viewing.name} />}
     </Page>
@@ -163,7 +204,7 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
         <CardBody>
           <div className="flex flex-col gap-5 lg:flex-row">
             <div className="w-full shrink-0 lg:w-56">
-              <div className="aspect-[4/3] overflow-hidden rounded-control border border-border bg-surface-subtle">
+              <div className="aspect-video lg:aspect-[4/3] overflow-hidden rounded-control border border-border bg-surface-subtle">
                 {primary ? (
                   <button type="button" className="block h-full w-full" onClick={() => onViewPhoto(primary, `${vehicle.plate_number} photo`)} aria-label={`View the photo of ${vehicle.plate_number}`}>
                     <img src={primary} alt={`${vehicle.plate_number}`} className="h-full w-full object-cover" />
@@ -188,21 +229,22 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
 
             <div className="min-w-0 flex-1 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-semibold text-text">{vehicle.plate_number}</h2>
                     <StatusPill status="pending_approval" />
                   </div>
                   <p className="mt-0.5 text-sm text-muted">{model ?? humanize(vehicle.vehicle_type)}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" icon={<X size={16} />} disabled={busy} onClick={onReject}>Reject</Button>
-                  <Button icon={<Check size={16} />} loading={busy} onClick={onApprove}>Approve</Button>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  <Button variant="secondary" className="flex-1 sm:flex-none" icon={<X size={16} />} disabled={busy} onClick={onReject}>Reject</Button>
+                  <Button className="flex-1 sm:flex-none" icon={<Check size={16} />} loading={busy} onClick={onApprove}>Approve</Button>
                 </div>
               </div>
 
               <DetailList
                 columns={3}
+                className="grid-cols-2 lg:grid-cols-3"
                 items={[
                   { label: 'Driver', value: driver ? <span className="inline-flex items-center gap-1.5"><User size={14} className="text-muted" aria-hidden="true" />{driver.full_name || 'Name not set'}</span> : 'Not linked' },
                   { label: 'Phone', value: driver?.phone ? <a className="inline-flex items-center gap-1.5 text-brand hover:underline" href={`tel:${driver.phone}`}><Phone size={14} aria-hidden="true" />{driver.phone}</a> : '—' },

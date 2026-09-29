@@ -72,6 +72,7 @@ export default function SOSListener() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [alerts, setAlerts] = useState<SosAlert[]>([])
+  const [acknowledging, setAcknowledging] = useState(false)
   const alarm = useRef(createAlarm())
   const alertsRef = useRef(alerts)
   alertsRef.current = alerts
@@ -115,12 +116,15 @@ export default function SOSListener() {
   const dismiss = () => setAlerts(list => list.slice(1))
   // Taking it on stops the siren and closes the popup for everyone else too (the update reaches their listener).
   const acknowledge = async () => {
+    setAcknowledging(true)
     try {
       await telemetryAPI.acknowledgeSos(current.id)
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       toast.success('SOS acknowledged')
     } catch (err) {
       toast.error(apiErrorMessage(err, 'We could not acknowledge this SOS. Open Emergencies to check it.'))
+    } finally {
+      setAcknowledging(false)
     }
     dismiss()
   }
@@ -141,9 +145,9 @@ export default function SOSListener() {
       description={`${current.plate ? `Vehicle ${current.plate}` : 'A driver'} · ${formatTime(current.created_at)}`}
       footer={
         <>
-          <Button variant="secondary" onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>
-          <Button variant="secondary" onClick={acknowledge}>Acknowledge</Button>
-          <Button variant="danger" onClick={open}>Open emergencies</Button>
+          <Button variant="secondary" disabled={acknowledging} onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>
+          <Button variant="secondary" loading={acknowledging} onClick={acknowledge}>Acknowledge</Button>
+          <Button variant="danger" disabled={acknowledging} onClick={open}>Open emergencies</Button>
         </>
       }
     >

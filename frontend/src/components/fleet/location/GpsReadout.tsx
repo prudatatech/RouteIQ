@@ -26,14 +26,14 @@ export default function GpsReadout({ location, place, placeLoading, now = Date.n
   return (
     <div className="space-y-3">
       <DetailList
-        columns={2}
+        columns={1}
         items={[
           {
             label: 'Coordinates',
             value: coords
               ? (
-                <span className="inline-flex items-center gap-1">
-                  <span className="font-mono text-xs">{coords}</span>
+                <span className="flex items-center gap-1">
+                  <span className="whitespace-nowrap font-mono text-xs">{coords}</span>
                   <IconButton
                     label={copied ? 'Copied' : 'Copy coordinates'}
                     size="sm"
@@ -45,6 +45,12 @@ export default function GpsReadout({ location, place, placeLoading, now = Date.n
               : 'Unknown',
           },
           { label: 'Place', value: place || (placeLoading ? 'Looking up…' : 'Not available') },
+        ]}
+      />
+      <DetailList
+        columns={1}
+        className="grid-cols-2"
+        items={[
           { label: 'Speed', value: speedText(location.speed_kmph) },
           { label: 'Heading', value: headingText(location.heading) },
           { label: 'Accuracy', value: accuracyText(location.accuracy_m) },

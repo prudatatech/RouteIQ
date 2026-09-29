@@ -310,7 +310,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     <div
       role="region"
       aria-label={ariaLabel}
-      className={clsx('relative w-full overflow-hidden bg-surface-subtle', height === undefined && 'h-full min-h-80', className)}
+      className={clsx('relative isolate w-full overflow-hidden bg-surface-subtle', height === undefined && 'h-full min-h-80', className)}
       style={height !== undefined ? { height } : undefined}
     >
       {load.status !== 'error' || load.canRetry ? (

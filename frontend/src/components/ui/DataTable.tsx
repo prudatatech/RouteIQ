@@ -16,7 +16,7 @@ export interface Column<T> {
   /** Leave out of the stacked phone layout (still shown on wider screens). */
   hideOnMobile?: boolean
   /** Hide below the given breakpoint in the table layout. */
-  hideBelow?: 'md' | 'lg' | 'xl'
+  hideBelow?: 'md' | 'lg' | 'xl' | '2xl'
   className?: string
 }
 
@@ -54,7 +54,7 @@ export interface DataTableProps<T> {
 }
 
 const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' }
-const hideClass = { md: 'hidden md:table-cell', lg: 'hidden lg:table-cell', xl: 'hidden xl:table-cell' }
+const hideClass = { md: 'hidden md:table-cell', lg: 'hidden lg:table-cell', xl: 'hidden xl:table-cell', '2xl': 'hidden 2xl:table-cell' }
 
 function isEmptyConfig(value: unknown): value is { title: ReactNode; description?: ReactNode; action?: ReactNode; icon?: ReactNode } {
   return typeof value === 'object' && value !== null && 'title' in value
