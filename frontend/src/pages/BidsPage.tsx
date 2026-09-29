@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Check, Download, FileCheck, FileX, X } from 'lucide-react'
+import { Check, Download, FileCheck, FileX, Plus, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import {
   Alert, Button, Card, DataTable, DetailList, Drawer, EmptyState, ErrorState, Page, PageHeader, SectionHeader,
   Skeleton, StatusPill, Tabs, TabPanel, useConfirm, useTabParam, type Column, type Tone,
 } from '@/components/ui'
+import OpenWindowModal from '@/components/backhaul/OpenWindowModal'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -34,6 +35,7 @@ interface CapacityWindow {
   winning_bid_id: string | null
   fallback_used: boolean | null
   trigger_type: string | null
+  status: string | null
   vehicles: WindowVehicle | null
 }
 
@@ -63,7 +65,7 @@ interface DriverConfirmation {
 
 interface Busy { approvingId: string | null; rejectingId: string | null; any: boolean }
 
-type WindowState = 'open' | 'decide' | 'awarded' | 'closed' | 'upcoming'
+type WindowState = 'open' | 'decide' | 'awarded' | 'closed' | 'upcoming' | 'cancelled'
 const TAB_IDS = ['open', 'decide', 'awarded', 'closed', 'all'] as const
 type TabId = typeof TAB_IDS[number]
 
@@ -73,6 +75,7 @@ const stateLabel: Record<WindowState, { label: string; tone: Tone }> = {
   decide: { label: 'Needs a decision', tone: 'warning' },
   awarded: { label: 'Awarded', tone: 'success' },
   closed: { label: 'Closed', tone: 'neutral' },
+  cancelled: { label: 'Cancelled', tone: 'neutral' },
 }
 
 const bidStatus: Record<string, { label: string; tone: Tone }> = {
@@ -102,6 +105,7 @@ const confirmationStatus = (c: DriverConfirmation): { label: string; tone: Tone 
 }
 
 function windowState(w: CapacityWindow, bids: Bid[], now: number): WindowState {
+  if (w.status === 'cancelled') return 'cancelled'
   if (w.winning_bid_id) return 'awarded'
   if (new Date(w.opens_at).getTime() > now) return 'upcoming'
   if (new Date(w.closes_at).getTime() > now) return 'open'
@@ -122,7 +126,7 @@ function useNow(ms: number) {
 async function loadBoard() {
   const { data: windows, error: wErr } = await supabase
     .from('capacity_windows')
-    .select('id, opens_at, closes_at, floor_price, winning_bid_id, fallback_used, trigger_type, vehicles(plate_number, vehicle_type, capacity_kg, available_capacity_kg)')
+    .select('id, opens_at, closes_at, floor_price, winning_bid_id, fallback_used, trigger_type, status, vehicles(plate_number, vehicle_type, capacity_kg, available_capacity_kg)')
     .order('opens_at', { ascending: false })
     .limit(WINDOW_LIMIT)
   if (wErr) throw wErr
@@ -170,6 +174,7 @@ export default function BidsPage() {
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
   const [shown, setShown] = useState(WINDOWS_PER_PAGE)
   const [selected, setSelected] = useState<{ bid: Bid; window: CapacityWindow } | null>(null)
+  const [opening, setOpening] = useState(false)
 
   const board = useQuery({ queryKey: ['bids-board'], queryFn: loadBoard })
   const confirmations = useQuery({ queryKey: ['driver-confirmations'], queryFn: loadConfirmations })
@@ -197,6 +202,7 @@ export default function BidsPage() {
     const c: Record<TabId, number> = { open: 0, decide: 0, awarded: 0, closed: 0, all: windows.length }
     for (const { state } of windows) {
       if (state === 'open' || state === 'upcoming') c.open++
+      else if (state === 'cancelled') c.closed++
       else c[state]++
     }
     return c
@@ -206,6 +212,7 @@ export default function BidsPage() {
     const inTab = windows.filter(({ state }) => {
       if (tab === 'all') return true
       if (tab === 'open') return state === 'open' || state === 'upcoming'
+      if (tab === 'closed') return state === 'closed' || state === 'cancelled'
       return state === tab
     })
     const rank = (s: WindowState) => (s === 'open' ? 0 : s === 'decide' ? 1 : s === 'upcoming' ? 2 : 3)
@@ -235,6 +242,27 @@ export default function BidsPage() {
     onError: err => toast.error(errorMessage(err, 'We could not reject this bid. Try again.')),
     onSettled: refresh,
   })
+
+  const endWindow = useMutation({
+    mutationFn: ({ id, mode }: { id: string; mode: 'close' | 'cancel' }) =>
+      mode === 'close' ? capacityAPI.closeWindow(id) : capacityAPI.cancelWindow(id),
+    onSuccess: (_d, { mode }) => toast.success(mode === 'close' ? 'Window closed. Vendors can no longer bid.' : 'Window cancelled. Waiting bids were turned down.'),
+    onError: err => toast.error(errorMessage(err, 'We could not change this window. Try again.')),
+    onSettled: refresh,
+  })
+  const endingId = endWindow.isPending ? endWindow.variables?.id ?? null : null
+
+  const askEnd = async (window: CapacityWindow, mode: 'close' | 'cancel', waiting: number) => {
+    const ok = await confirm({
+      title: mode === 'close' ? 'Close this window now?' : 'Cancel this window?',
+      message: mode === 'close'
+        ? `Vendors will not be able to bid any more on ${window.vehicles?.plate_number ?? 'this vehicle'}. ${waiting > 0 ? `The ${waiting === 1 ? 'bid' : `${waiting} bids`} already placed will wait for your decision.` : 'No bids have been placed.'}`
+        : `Vendors will not be able to bid any more on ${window.vehicles?.plate_number ?? 'this vehicle'}. ${waiting > 0 ? `The ${waiting === 1 ? 'bid' : `${waiting} bids`} already placed will be rejected and the vendors told.` : 'No bids have been placed.'}`,
+      confirmLabel: mode === 'close' ? 'Close window' : 'Cancel window',
+      tone: mode === 'cancel' ? 'danger' : undefined,
+    })
+    if (ok) endWindow.mutate({ id: window.id, mode })
+  }
 
   const approvingId = approve.isPending ? approve.variables ?? null : null
   const rejectingId = reject.isPending ? reject.variables?.bidId ?? null : null
@@ -282,7 +310,7 @@ export default function BidsPage() {
   ]
 
   const emptyText: Record<TabId, string> = {
-    open: 'No vehicles are taking bids right now. Windows open when a driver has spare space.',
+    open: 'No vehicles are taking bids right now. Open a window for a vehicle with free space, or wait for a driver to offer spare space.',
     decide: 'Nothing is waiting for you. Closed windows with bids to review appear here.',
     awarded: 'No bids have been approved yet.',
     closed: 'No windows closed without a winner.',
@@ -317,7 +345,12 @@ export default function BidsPage() {
       <PageHeader
         title="Bids"
         description={`Vendors bid for spare space on your vehicles. Approve one bid per vehicle; the latest ${WINDOW_LIMIT} windows are shown.`}
-        actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
+        actions={
+          <>
+            <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
+            <Button icon={<Plus size={16} />} onClick={() => setOpening(true)}>Open a window</Button>
+          </>
+        }
       >
         <Tabs label="Filter windows by status" tabs={board.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
       </PageHeader>
@@ -341,6 +374,8 @@ export default function BidsPage() {
                 onOpen={bid => setSelected({ bid, window })}
                 onApprove={bid => askApprove(bid, window)}
                 onReject={askReject}
+                endingId={endingId}
+                onEnd={mode => askEnd(window, mode, bids.filter(b => b.status === 'pending').length)}
               />
             ))}
             {visible.length > shown && (
@@ -362,6 +397,8 @@ export default function BidsPage() {
         <ConfirmationsTable query={confirmations} />
       </section>
 
+      <OpenWindowModal open={opening} onClose={() => setOpening(false)} />
+
       <BidDrawer
         selection={selected}
         state={selected ? windowState(selected.window, bidsByWindow.get(selected.window.id) ?? [], now) : null}
@@ -374,11 +411,13 @@ export default function BidsPage() {
   )
 }
 
-function WindowCard({ window: win, bids, state, busy, onOpen, onApprove, onReject }: {
+function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, onApprove, onReject }: {
   window: CapacityWindow
   bids: Bid[]
   state: WindowState
   busy: Busy
+  endingId: string | null
+  onEnd: (mode: 'close' | 'cancel') => void
   onOpen: (bid: Bid) => void
   onApprove: (bid: Bid) => void
   onReject: (bid: Bid) => void
@@ -420,6 +459,13 @@ function WindowCard({ window: win, bids, state, busy, onOpen, onApprove, onRejec
           </div>
         </dl>
       </div>
+
+      {(state === 'open' || state === 'upcoming') && (
+        <div className="flex flex-wrap justify-end gap-2 border-b border-border px-4 py-3 sm:px-6">
+          <Button size="sm" variant="secondary" disabled={endingId !== null} onClick={() => onEnd('cancel')}>Cancel window</Button>
+          <Button size="sm" variant="secondary" loading={endingId === win.id} disabled={endingId !== null} onClick={() => onEnd('close')}>Close now</Button>
+        </div>
+      )}
 
       {win.fallback_used && !win.winning_bid_id && (
         <p className="border-b border-border px-4 py-3 text-sm text-muted sm:px-6">No bid was chosen; a standby shipment was used for this space.</p>

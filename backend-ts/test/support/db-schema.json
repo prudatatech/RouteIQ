@@ -33,7 +33,10 @@
     "winning_bid_id",
     "fallback_used",
     "fallback_shipment_id",
-    "trigger_type"
+    "trigger_type",
+    "status",
+    "resolved_at",
+    "created_by"
   ],
   "cargo_manifest": [
     "id",

@@ -171,6 +171,13 @@ export const capacityAPI = {
   // Vendor views: no plate, driver or live position (plate only on a won bid)
   openWindows: () => api.get('/capacity/windows/open').then(r => ensureArray(r.data)),
   myBids: () => api.get('/capacity/bids/mine').then(r => ensureArray(r.data)),
+  /** Staff: open a bidding window on a vehicle (the vehicle's free space is offered). */
+  openWindow: (data: { vehicle_id: string; floor_price: number; duration_minutes: number; shipment_id?: string | null }) =>
+    api.post('/capacity/windows', data).then(r => r.data),
+  /** Staff: stop new bids; pending bids stay for a decision. */
+  closeWindow: (id: string) => api.post(`/capacity/windows/${id}/close`).then(r => r.data),
+  /** Staff: stop new bids and turn pending bids down. */
+  cancelWindow: (id: string) => api.post(`/capacity/windows/${id}/cancel`).then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
   rejectBid: (id: string, reason: string) => api.post(`/capacity/bids/${id}/reject`, { reason }).then(r => r.data),
 }

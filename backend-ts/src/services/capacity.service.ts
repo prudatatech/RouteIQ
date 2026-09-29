@@ -254,6 +254,7 @@ export const capacityService = {
       closes_at: closesAt.toISOString(),
       floor_price: floorPrice,
       trigger_type: triggerType,
+      status: 'open',
       fallback_shipment_id: sourceShipmentId || null
     }).select().single();
 
@@ -262,6 +263,186 @@ export const capacityService = {
     // Removed 60s auto-resolver setTimeout. Bids now wait for manual Superadmin approval.
 
     return window;
+  },
+
+  /**
+   * Staff open a bidding window on a vehicle from the console.
+   * The capacity offered is what the vehicle has free right now.
+   */
+  async openWindowForStaff(input: { vehicleId: string; floorPrice: number; durationMinutes: number; shipmentId?: string | null; createdBy?: string | null }) {
+    const { vehicleId, floorPrice, durationMinutes, shipmentId } = input;
+    if (!Number.isFinite(floorPrice) || floorPrice < 0) throw new HttpError(400, 'floor_price must be zero or more');
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 24 * 60) {
+      throw new HttpError(400, 'duration_minutes must be a whole number from 5 to 1440');
+    }
+
+    const { data: vehicle, error: vehicleErr } = await supabase
+      .from('vehicles').select('id, plate_number, available_capacity_kg').eq('id', vehicleId).maybeSingle();
+    if (vehicleErr) throw new Error(`Failed to load vehicle: ${vehicleErr.message}`);
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    const freeKg = Number(vehicle.available_capacity_kg) || 0;
+    if (freeKg <= 0) throw new HttpError(400, 'This vehicle has no free capacity to offer');
+
+    if (shipmentId) {
+      const { data: shipment, error: shipmentErr } = await supabase.from('shipments').select('id').eq('id', shipmentId).maybeSingle();
+      if (shipmentErr) throw new Error(`Failed to load shipment: ${shipmentErr.message}`);
+      if (!shipment) throw new HttpError(404, 'Shipment not found');
+    }
+
+    const { data: running, error: runningErr } = await supabase
+      .from('capacity_windows').select('id')
+      .eq('vehicle_id', vehicleId).eq('status', 'open').is('winning_bid_id', null)
+      .gt('closes_at', new Date().toISOString());
+    if (runningErr) throw new Error(`Failed to check existing windows: ${runningErr.message}`);
+    if (running && running.length > 0) throw new HttpError(409, 'This vehicle already has an open bidding window');
+
+    const opensAt = new Date();
+    const closesAt = new Date(opensAt.getTime() + durationMinutes * 60_000);
+    const window = await this.openBackhaulWindow(
+      vehicleId, freeKg, 'superadmin_dispatch', opensAt.toISOString(), closesAt.toISOString(), floorPrice, shipmentId ?? undefined,
+    );
+    if (input.createdBy) {
+      await supabase.from('capacity_windows').update({ created_by: input.createdBy }).eq('id', window.id);
+    }
+    const { error: flagErr } = await supabase
+      .from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: closesAt.toISOString() }).eq('id', vehicleId);
+    if (flagErr) console.error(`[capacity] Failed to flag vehicle ${vehicleId} as bidding: ${flagErr.message}`);
+    return window;
+  },
+
+  /**
+   * Windows for the console: recent first, with the vehicle, the linked shipment and how many bids wait.
+   */
+  async listWindowsForStaff(limit = 50) {
+    const { data, error } = await supabase
+      .from('capacity_windows')
+      .select('id, vehicle_id, opens_at, closes_at, floor_price, winning_bid_id, fallback_shipment_id, trigger_type, status, resolved_at, vehicles(plate_number, vehicle_type, available_capacity_kg)')
+      .order('opens_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`Failed to load windows: ${error.message}`);
+    const windows = data ?? [];
+    const ids = windows.map((w: any) => w.id);
+    const shipmentIds = windows.map((w: any) => w.fallback_shipment_id).filter(Boolean);
+
+    const [bids, shipments] = await Promise.all([
+      ids.length
+        ? supabase.from('capacity_bids').select('id, window_id, status').in('window_id', ids)
+        : Promise.resolve({ data: [], error: null } as any),
+      shipmentIds.length
+        ? supabase.from('shipments').select('id, tracking_id').in('id', shipmentIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    if (bids.error) throw new Error(`Failed to load bid counts: ${bids.error.message}`);
+    if (shipments.error) throw new Error(`Failed to load linked shipments: ${shipments.error.message}`);
+
+    const counts = new Map<string, { total: number; pending: number }>();
+    for (const b of bids.data ?? []) {
+      const c = counts.get(b.window_id) ?? { total: 0, pending: 0 };
+      c.total += 1;
+      if (b.status === 'pending') c.pending += 1;
+      counts.set(b.window_id, c);
+    }
+    const tracking = new Map((shipments.data ?? []).map((s: any) => [s.id, s.tracking_id]));
+
+    const now = Date.now();
+    return windows.map((w: any) => ({
+      ...w,
+      vehicles: one(w.vehicles),
+      // A window past its end that the scheduler has not closed yet counts as closed
+      state: w.status !== 'open' ? w.status : (w.winning_bid_id || new Date(w.closes_at).getTime() <= now ? 'closed' : 'open'),
+      bid_count: counts.get(w.id)?.total ?? 0,
+      pending_bid_count: counts.get(w.id)?.pending ?? 0,
+      shipment_tracking_id: w.fallback_shipment_id ? tracking.get(w.fallback_shipment_id) ?? null : null,
+    }));
+  },
+
+  /**
+   * Ends a window. Safe to call twice: only a window that is still 'open' is changed.
+   *   - 'closed': stops new bids. Pending bids stay for staff to approve or reject.
+   *   - 'cancelled': stops new bids and turns pending bids down.
+   * Returns null when the window was already closed or cancelled.
+   */
+  async endWindow(windowId: string, mode: 'closed' | 'cancelled') {
+    const nowIso = new Date().toISOString();
+    const { data: window, error } = await supabase
+      .from('capacity_windows')
+      .update({ status: mode, resolved_at: nowIso, closes_at: nowIso })
+      .eq('id', windowId)
+      .eq('status', 'open')
+      .select('id, vehicle_id, winning_bid_id')
+      .maybeSingle();
+    if (error) throw new Error(`Failed to end window ${windowId}: ${error.message}`);
+    if (!window) return null;
+
+    // The vehicle stops advertising unless a different window is still running for it
+    const { data: others } = await supabase
+      .from('capacity_windows').select('id')
+      .eq('vehicle_id', window.vehicle_id).eq('status', 'open').is('winning_bid_id', null)
+      .gt('closes_at', nowIso);
+    if (!others || others.length === 0) {
+      const { error: flagErr } = await supabase
+        .from('vehicles').update({ bidding_window_open: false, bidding_window_closes_at: null }).eq('id', window.vehicle_id);
+      if (flagErr) console.error(`[capacity] Failed to clear bidding flag on ${window.vehicle_id}: ${flagErr.message}`);
+    }
+
+    if (mode === 'cancelled') {
+      const { data: turnedDown, error: bidErr } = await supabase
+        .from('capacity_bids')
+        .update({ status: 'rejected', rejection_reason: 'The bidding window was cancelled' })
+        .eq('window_id', windowId)
+        .eq('status', 'pending')
+        .select('id, vendor_id, bid_amount');
+      if (bidErr) throw new Error(`Failed to reject bids on window ${windowId}: ${bidErr.message}`);
+      for (const bid of turnedDown ?? []) {
+        notify(() => notificationService.sendNotification(
+          bid.vendor_id, 'Bid Rejected',
+          `Your bid of ₹${bid.bid_amount} was not accepted. The bidding window was cancelled.`,
+          'bid_rejected', { bid_id: bid.id },
+        ));
+      }
+    }
+    return window;
+  },
+
+  /**
+   * Scheduler step for one window: closes it, and tells staff if bids are waiting
+   * for a decision. Idempotent (see endWindow); returns false if it was already ended.
+   */
+  async resolveWindow(windowId: string) {
+    const closed = await this.endWindow(windowId, 'closed');
+    if (!closed) return false;
+    const { data: pending } = await supabase
+      .from('capacity_bids').select('id').eq('window_id', windowId).eq('status', 'pending');
+    if (pending && pending.length > 0) {
+      notify(() => notificationService.notifyStaff(
+        'Bidding window closed',
+        `A bidding window has closed with ${pending.length} bid${pending.length === 1 ? '' : 's'} waiting for your decision.`,
+        'capacity_window_closed',
+        { window_id: windowId },
+      ));
+    }
+    return true;
+  },
+
+  /**
+   * Scheduler: closes every open window whose end time has passed. Returns how many it closed.
+   */
+  async resolveExpiredWindows() {
+    const { data, error } = await supabase
+      .from('capacity_windows')
+      .select('id')
+      .eq('status', 'open')
+      .lte('closes_at', new Date().toISOString());
+    if (error) throw new Error(`Failed to load expired windows: ${error.message}`);
+    let closed = 0;
+    for (const w of data ?? []) {
+      try {
+        if (await this.resolveWindow(w.id)) closed += 1;
+      } catch (e: any) {
+        console.error(`[capacity] Failed to close window ${w.id}: ${e.message}`);
+      }
+    }
+    return closed;
   },
 
   /**
