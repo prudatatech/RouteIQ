@@ -214,6 +214,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
 
       <DocumentsSection
         documents={people.data?.documents ?? null}
+        consentMissing={!!people.data && !people.data.consent_at}
         loading={people.loading}
         error={people.error}
         onRetry={people.reload}

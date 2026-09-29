@@ -1,31 +1,38 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Alert, Image, Linking, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { api, type DocType, type PersonDocument } from '../../services/api';
-import { uploadMyDocument } from '../../services/documentUpload';
+import { actionQueue, type QueuedAction } from '../../services/actionQueue';
+import { compressDocument, MAX_DOCUMENT_FILES } from '../../services/documentUpload';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { Language } from '../../locales';
 import { Button, Card, ErrorBanner, StatusPill, Text, TextField } from '../ui';
-import { colors, size, space } from '../../theme';
+import { colors, radius, size, space } from '../../theme';
 import {
   DRIVER_CAN_UPLOAD,
   EXPIRING_SOON_DAYS,
   NEEDS_EXPIRY,
   NEEDS_NUMBER,
   OPTIONAL_DOC_TYPES,
-  REQUIRED_DOC_TYPES,
+  REQUIRED_SLOTS,
   STATUS_TONE,
+  bestOf,
   currentDocuments,
   daysUntil,
+  displayNumber,
   displayStatus,
   formatDocDate,
   isValidDay,
   isValidDocNumber,
+  reviewState,
+  type DocSlot,
 } from '../../utils/documents';
 
 interface Props {
   documents: PersonDocument[] | null;
+  /** True once the profile loaded and no consent is recorded yet. */
+  consentMissing: boolean;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -33,18 +40,41 @@ interface Props {
   onChanged: () => void;
 }
 
-/** "Expires in {n} days" style strings: the locale files hold `{n}` and `{date}` markers. */
+/** Strings hold `{n}`, `{date}` and `{reason}` markers. */
 const fill = (text: string, values: Record<string, string | number>) =>
   text.replace(/\{(\w+)\}/g, (_, k) => String(values[k] ?? ''));
 
+/** Document types that have an upload waiting on the phone for a connection. */
+function waitingTypes(items: readonly QueuedAction[]): Set<DocType> {
+  const set = new Set<DocType>();
+  for (const a of items) if (a.kind === 'upload_document') set.add(a.payload.docType);
+  return set;
+}
+
 /** "My documents": every document the driver needs, with its status, and upload or replace. */
-export default function DocumentsSection({ documents, loading, error, onRetry, onChanged }: Props) {
+export default function DocumentsSection({ documents, consentMissing, loading, error, onRetry, onChanged }: Props) {
   const { t } = useTranslation();
+  const [waiting, setWaiting] = useState(() => waitingTypes(actionQueue.getItems()));
+  const waitingCount = useRef(waiting.size);
+  const changed = useRef(onChanged);
+  changed.current = onChanged;
+
+  // When a queued upload has been sent, the list is reloaded to show it
+  useEffect(
+    () =>
+      actionQueue.subscribe((items) => {
+        const next = waitingTypes(items);
+        if (next.size < waitingCount.current) changed.current();
+        waitingCount.current = next.size;
+        setWaiting(next);
+      }),
+    [],
+  );
 
   const current = currentDocuments(documents ?? []);
-  const types: DocType[] = [
-    ...REQUIRED_DOC_TYPES,
-    ...OPTIONAL_DOC_TYPES.filter((type) => current.has(type)),
+  const slots: DocSlot[] = [
+    ...REQUIRED_SLOTS,
+    ...OPTIONAL_DOC_TYPES.filter((type) => current.has(type)).map((type) => ({ key: type, types: [type] })),
   ];
 
   return (
@@ -64,12 +94,14 @@ export default function DocumentsSection({ documents, loading, error, onRetry, o
             <ErrorBanner message={`${t('docs_load_failed')} ${error}`} action={{ label: t('retry'), onPress: onRetry }} />
           ) : null}
           <Card padded={false}>
-            {types.map((type, idx) => (
+            {slots.map((slot, idx) => (
               <DocumentRow
-                key={type}
-                type={type}
-                doc={current.get(type)}
-                required={REQUIRED_DOC_TYPES.includes(type)}
+                key={slot.key}
+                slot={slot}
+                doc={bestOf(current, slot.types)}
+                required={REQUIRED_SLOTS.some((s) => s.key === slot.key)}
+                waiting={slot.types.some((type) => waiting.has(type))}
+                consentMissing={consentMissing}
                 first={idx === 0}
                 onChanged={onChanged}
               />
@@ -82,39 +114,45 @@ export default function DocumentsSection({ documents, loading, error, onRetry, o
 }
 
 interface RowProps {
-  type: DocType;
+  slot: DocSlot;
   doc?: PersonDocument;
   required: boolean;
+  waiting: boolean;
+  consentMissing: boolean;
   first: boolean;
   onChanged: () => void;
 }
 
 interface Draft {
   step: 'source' | 'details';
-  uri: string | null;
+  type: DocType;
+  /** Compressed JPEGs: the main page, then the back page and others. */
+  uris: string[];
   number: string;
   expiry: string;
   licenceClass: string;
 }
 
-function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
+function DocumentRow({ slot, doc, required, waiting, consentMissing, first, onChanged }: RowProps) {
   const { t, lang } = useTranslation();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const name = type === 'other' && doc?.metadata?.title ? String(doc.metadata.title) : t(`doc_type_${type}`);
-  const status = displayStatus(doc);
+  const type: DocType = doc?.doc_type ?? slot.types[0];
+  const name = slot.group === 'identity' ? t('doc_group_identity') : type === 'other' && doc?.metadata?.title ? String(doc.metadata.title) : t(`doc_type_${type}`);
+  const status = displayStatus(doc, waiting);
   const left = daysUntil(doc?.expires_on);
-  const expiringSoon = !!doc && status !== 'expired' && left !== null && left >= 0 && left <= EXPIRING_SOON_DAYS;
-  const needsNumber = NEEDS_NUMBER.includes(type);
-  const needsExpiry = NEEDS_EXPIRY.includes(type);
-  const canUpload = DRIVER_CAN_UPLOAD(type);
+  const expiringSoon = !!doc && status !== 'expired' && status !== 'grace' && left !== null && left >= 0 && left <= EXPIRING_SOON_DAYS;
+  const review = reviewState(doc);
+  const number = doc ? displayNumber(doc) : null;
+  const canUpload = slot.types.some(DRIVER_CAN_UPLOAD);
+  const rejected = doc?.status === 'rejected';
 
   const start = () => {
     setFormError('');
-    setDraft({ step: 'source', uri: null, number: '', expiry: '', licenceClass: '' });
+    setDraft({ step: 'source', type, uris: [], number: '', expiry: '', licenceClass: '' });
   };
 
   const pick = async (source: 'camera' | 'gallery') => {
@@ -133,18 +171,23 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
           ? await ImagePicker.launchCameraAsync(options)
           : await ImagePicker.launchImageLibraryAsync(options);
       if (result.canceled || !result.assets?.length) return;
-      setDraft((d) => (d ? { ...d, step: 'details', uri: result.assets[0].uri } : d));
+      // Always a JPEG afterwards, so iPhone HEIC photos are converted here
+      const jpeg = await compressDocument(result.assets[0].uri);
+      setDraft((d) => (d ? { ...d, step: 'details', uris: [...d.uris, jpeg] } : d));
     } catch {
       Alert.alert(t('error'), t('doc_pick_failed'));
     }
   };
 
   const submit = async () => {
-    if (!draft?.uri) return;
-    const number = type === 'pan' ? draft.number.trim().toUpperCase() : draft.number.trim();
+    if (!draft || draft.uris.length === 0) return;
+    const dt = draft.type;
+    const needsNumber = NEEDS_NUMBER.includes(dt);
+    const needsExpiry = NEEDS_EXPIRY.includes(dt);
+    const num = dt === 'aadhaar' ? draft.number.replace(/\s/g, '') : draft.number.trim().toUpperCase();
     const expiry = draft.expiry.trim();
-    if (needsNumber && !isValidDocNumber(type, number)) {
-      setFormError(t(type === 'aadhaar' ? 'doc_aadhaar_invalid' : type === 'pan' ? 'doc_pan_invalid' : 'doc_number_invalid'));
+    if (needsNumber && !isValidDocNumber(dt, num)) {
+      setFormError(t(`doc_${dt === 'aadhaar' || dt === 'pan' || dt === 'voter_id' || dt === 'passport' ? dt : 'number'}_invalid`));
       return;
     }
     if (needsExpiry) {
@@ -161,14 +204,23 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
     setFormError('');
     setBusy(true);
     try {
-      await uploadMyDocument(type, draft.uri, {
-        doc_number: needsNumber ? number.replace(/\s/g, '') : undefined,
-        expires_on: needsExpiry ? expiry : undefined,
-        metadata: type === 'driving_licence' && draft.licenceClass.trim() ? { licence_class: draft.licenceClass.trim().toUpperCase() } : undefined,
+      const licenceClass = draft.licenceClass.trim().toUpperCase();
+      const result = await actionQueue.submit('upload_document', {
+        docType: dt,
+        fileUris: draft.uris,
+        details: {
+          doc_number: needsNumber ? num : undefined,
+          expires_on: needsExpiry ? expiry : undefined,
+          metadata: dt === 'driving_licence' && licenceClass ? { licence_class: licenceClass } : undefined,
+        },
       });
       setDraft(null);
-      onChanged();
-      Alert.alert(name, t('doc_upload_done'));
+      if (result.status === 'sent') {
+        onChanged();
+        Alert.alert(name, t('doc_upload_done'));
+      } else {
+        Alert.alert(name, t('doc_upload_queued'));
+      }
     } catch (e: any) {
       setFormError(e?.message || t('doc_upload_failed'));
     } finally {
@@ -189,12 +241,18 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
     }
   };
 
+  const date = (value?: string | null) => formatDocDate(value, lang as Language);
+
   return (
     <View style={[styles.row, !first && styles.rowBorder]}>
       <View style={styles.head}>
         <View style={styles.flex}>
           <Text variant="bodyMedium">{name}</Text>
-          {required ? (
+          {slot.group && doc ? (
+            <Text variant="caption" color="textMuted">
+              {t(`doc_type_${doc.doc_type}`)}
+            </Text>
+          ) : required ? (
             <Text variant="caption" color="textMuted">
               {t('doc_required')}
             </Text>
@@ -202,43 +260,72 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
         </View>
         <StatusPill label={t(`doc_status_${status}`)} tone={STATUS_TONE[status]} />
       </View>
+      {waiting && doc ? <StatusPill label={t('doc_status_waiting')} tone="info" /> : null}
 
-      {doc?.doc_number ? (
+      {number ? (
         <Text variant="mono" color="textMuted">
-          {doc.doc_number}
+          {number}
         </Text>
       ) : null}
       {doc?.expires_on ? (
         <View style={styles.expiry}>
-          {expiringSoon ? <Ionicons name="warning-outline" size={size.icon.sm} color={colors.warning} /> : null}
-          <Text variant="bodySmall" color={status === 'expired' ? 'danger' : expiringSoon ? 'warning' : 'textMuted'}>
+          {expiringSoon || status === 'grace' ? <Ionicons name="warning-outline" size={size.icon.sm} color={colors.warning} /> : null}
+          <Text variant="bodySmall" color={status === 'expired' ? 'danger' : expiringSoon || status === 'grace' ? 'warning' : 'textMuted'}>
             {expiringSoon
               ? left === 0
                 ? t('doc_expires_today')
                 : fill(t('doc_expires_in_days'), { n: left ?? 0 })
-              : fill(t(status === 'expired' ? 'doc_expired_on' : 'doc_expires_on'), {
-                  date: formatDocDate(doc.expires_on, lang as Language),
-                })}
+              : fill(t(status === 'expired' || status === 'grace' ? 'doc_expired_on' : 'doc_expires_on'), { date: date(doc.expires_on) })}
           </Text>
         </View>
       ) : null}
       {expiringSoon && doc?.expires_on ? (
         <Text variant="caption" color="textMuted">
-          {fill(t('doc_expires_on'), { date: formatDocDate(doc.expires_on, lang as Language) })}
+          {fill(t('doc_expires_on'), { date: date(doc.expires_on) })}
         </Text>
       ) : null}
-      {doc?.status === 'rejected' && doc.rejection_reason ? (
-        <Text variant="bodySmall" color="danger">
-          {fill(t('doc_rejected_reason'), { reason: doc.rejection_reason })}
-        </Text>
+      {review ? (
+        <View style={styles.expiry}>
+          <Ionicons name="alarm-outline" size={size.icon.sm} color={colors.warning} />
+          <Text variant="bodySmall" color="warning">
+            {review.due ? t('doc_review_due') : fill(t('doc_review_due_on'), { date: date(doc?.review_by) })}
+          </Text>
+        </View>
+      ) : null}
+      {rejected ? (
+        <>
+          {doc?.rejection_reason ? (
+            <Text variant="bodySmall" color="danger">
+              {fill(t('doc_rejected_reason'), { reason: doc.rejection_reason })}
+            </Text>
+          ) : null}
+          <Text variant="bodySmall" color="danger">
+            {t('doc_resubmit_hint')}
+          </Text>
+        </>
       ) : null}
 
       {draft ? (
         <View style={styles.form}>
+          {draft.step === 'source' && draft.uris.length === 0 && slot.types.length > 1 ? (
+            <View style={styles.kinds} accessibilityRole="radiogroup">
+              {slot.types.map((k) => (
+                <Button
+                  key={k}
+                  title={t(`doc_type_${k}`)}
+                  variant={draft.type === k ? 'primary' : 'secondary'}
+                  block={false}
+                  onPress={() => setDraft({ ...draft, type: k })}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: draft.type === k }}
+                />
+              ))}
+            </View>
+          ) : null}
           {draft.step === 'source' ? (
             <>
               <Button
-                title={t('doc_take_photo')}
+                title={t(draft.uris.length ? 'doc_add_back_camera' : 'doc_take_photo')}
                 variant="secondary"
                 onPress={() => pick('camera')}
                 icon={(c) => <Ionicons name="camera-outline" size={size.icon.md} color={c} />}
@@ -249,67 +336,31 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
                 onPress={() => pick('gallery')}
                 icon={(c) => <Ionicons name="images-outline" size={size.icon.md} color={c} />}
               />
-              <Button title={t('cancel')} variant="ghost" onPress={() => setDraft(null)} />
+              <Button
+                title={t('cancel')}
+                variant="ghost"
+                onPress={() => (draft.uris.length ? setDraft({ ...draft, step: 'details' }) : setDraft(null))}
+              />
             </>
           ) : (
-            <>
-              {draft.uri ? <Image source={{ uri: draft.uri }} style={styles.preview} accessibilityIgnoresInvertColors /> : null}
-              {needsNumber ? (
-                <TextField
-                  label={t('doc_number_label')}
-                  value={draft.number}
-                  onChangeText={(v) => setDraft({ ...draft, number: v })}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  keyboardType={type === 'aadhaar' ? 'number-pad' : 'default'}
-                  editable={!busy}
-                />
-              ) : null}
-              {type === 'driving_licence' ? (
-                <TextField
-                  label={t('doc_licence_class')}
-                  hint={t('doc_licence_class_hint')}
-                  value={draft.licenceClass}
-                  onChangeText={(v) => setDraft({ ...draft, licenceClass: v })}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  editable={!busy}
-                />
-              ) : null}
-              {needsExpiry ? (
-                <TextField
-                  label={t('doc_expiry_label')}
-                  hint={t('doc_date_hint')}
-                  value={draft.expiry}
-                  onChangeText={(v) => setDraft({ ...draft, expiry: v })}
-                  placeholder="YYYY-MM-DD"
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={10}
-                  editable={!busy}
-                />
-              ) : null}
-              {formError ? <ErrorBanner message={formError} /> : null}
-              <Button title={t('doc_upload_button')} onPress={submit} loading={busy} />
-              <View style={styles.actions}>
-                <Button
-                  title={t('doc_retake')}
-                  variant="secondary"
-                  block={false}
-                  style={styles.flex}
-                  disabled={busy}
-                  onPress={() => setDraft({ ...draft, step: 'source', uri: null })}
-                />
-                <Button
-                  title={t('cancel')}
-                  variant="ghost"
-                  block={false}
-                  style={styles.flex}
-                  disabled={busy}
-                  onPress={() => setDraft(null)}
-                />
-              </View>
-            </>
+            <DetailsForm
+              draft={draft}
+              busy={busy}
+              formError={formError}
+              onChange={setDraft}
+              onAddPage={() => setDraft({ ...draft, step: 'source' })}
+              onSubmit={submit}
+              onCancel={() => setDraft(null)}
+            />
           )}
+          <Text variant="caption" color="textMuted">
+            {t('doc_consent_notice')}
+          </Text>
+          {consentMissing ? (
+            <Text variant="caption" color="textMuted">
+              {t('doc_consent_pending')}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <View style={styles.actions}>
@@ -326,8 +377,8 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
           ) : null}
           {canUpload ? (
             <Button
-              title={t(doc ? 'doc_replace' : 'doc_upload')}
-              variant={doc ? 'ghost' : 'primary'}
+              title={t(rejected ? 'doc_upload_again' : doc ? 'doc_replace' : 'doc_upload')}
+              variant={doc && !rejected ? 'ghost' : 'primary'}
               block={false}
               style={styles.flex}
               onPress={start}
@@ -340,6 +391,107 @@ function DocumentRow({ type, doc, required, first, onChanged }: RowProps) {
   );
 }
 
+interface DetailsProps {
+  draft: Draft;
+  busy: boolean;
+  formError: string;
+  onChange: (d: Draft | null) => void;
+  onAddPage: () => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}
+
+/** After the first picture: the pages taken, the number and expiry, and the send button. */
+function DetailsForm({ draft, busy, formError, onChange, onAddPage, onSubmit, onCancel }: DetailsProps) {
+  const { t } = useTranslation();
+  const type = draft.type;
+  return (
+    <>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pages}>
+        {draft.uris.map((uri, i) => (
+          <View key={uri} style={styles.page}>
+            <Image source={{ uri }} style={styles.thumb} accessibilityIgnoresInvertColors />
+            <Text variant="caption" color="textMuted" align="center">
+              {i === 0 ? t('doc_page_front') : `${t('doc_page_n')} ${i + 1}`}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('doc_remove_page')}
+              disabled={busy}
+              hitSlop={8}
+              onPress={() => {
+                const uris = draft.uris.filter((_, k) => k !== i);
+                onChange(uris.length ? { ...draft, uris } : { ...draft, uris, step: 'source' });
+              }}
+              style={styles.remove}
+            >
+              <Ionicons name="close" size={size.icon.sm} color={colors.onSolid} />
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+      {draft.uris.length < MAX_DOCUMENT_FILES ? (
+        <Button
+          title={t('doc_add_back')}
+          variant="secondary"
+          disabled={busy}
+          onPress={onAddPage}
+          icon={(c) => <Ionicons name="add-circle-outline" size={size.icon.md} color={c} />}
+        />
+      ) : null}
+      {NEEDS_NUMBER.includes(type) ? (
+        <TextField
+          label={t('doc_number_label')}
+          value={draft.number}
+          onChangeText={(v) => onChange({ ...draft, number: v })}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          keyboardType={type === 'aadhaar' ? 'number-pad' : 'default'}
+          editable={!busy}
+        />
+      ) : null}
+      {type === 'driving_licence' ? (
+        <TextField
+          label={t('doc_licence_class')}
+          hint={t('doc_licence_class_hint')}
+          value={draft.licenceClass}
+          onChangeText={(v) => onChange({ ...draft, licenceClass: v })}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          editable={!busy}
+        />
+      ) : null}
+      {NEEDS_EXPIRY.includes(type) ? (
+        <TextField
+          label={t('doc_expiry_label')}
+          hint={t('doc_date_hint')}
+          value={draft.expiry}
+          onChangeText={(v) => onChange({ ...draft, expiry: v })}
+          placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation"
+          maxLength={10}
+          editable={!busy}
+        />
+      ) : null}
+      {formError ? <ErrorBanner message={formError} /> : null}
+      <Button title={t('doc_upload_button')} onPress={onSubmit} loading={busy} />
+      <View style={styles.actions}>
+        <Button
+          title={t('doc_retake')}
+          variant="secondary"
+          block={false}
+          style={styles.flex}
+          disabled={busy}
+          onPress={() => onChange({ ...draft, step: 'source', uris: [] })}
+        />
+        <Button title={t('cancel')} variant="ghost" block={false} style={styles.flex} disabled={busy} onPress={onCancel} />
+      </View>
+    </>
+  );
+}
+
+const THUMB = 96;
+
 const styles = StyleSheet.create({
   section: { gap: space[3] },
   flex: { flex: 1 },
@@ -350,5 +502,19 @@ const styles = StyleSheet.create({
   expiry: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   actions: { flexDirection: 'row', gap: space[3], marginTop: space[1] },
   form: { gap: space[3], marginTop: space[2] },
-  preview: { width: '100%', height: 180, borderRadius: 8, backgroundColor: colors.neutralSoft },
+  kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
+  pages: { gap: space[3] },
+  page: { width: THUMB, gap: space[1] },
+  thumb: { width: THUMB, height: THUMB, borderRadius: radius.control, backgroundColor: colors.neutralSoft },
+  remove: {
+    position: 'absolute',
+    top: space[1],
+    right: space[1],
+    width: 24,
+    height: 24,
+    borderRadius: radius.full,
+    backgroundColor: colors.neutral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
