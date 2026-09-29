@@ -24,6 +24,24 @@ export async function setOperatingVehicleStatus(vehicleId: string | null | undef
   if (error) throw new Error(`Failed to update vehicle: ${error.message}`);
 }
 
+/** Alert types that, when serious, take the vehicle out of service. Any other SOS leaves its status alone. */
+export const VEHICLE_DOWN_SOS_TYPES = ['breakdown', 'accident'] as const;
+
+/**
+ * A serious breakdown or accident puts the vehicle in maintenance so it is not dispatched.
+ * Position, heartbeat and telemetry from the driver keep being accepted (only the status is held).
+ */
+export async function holdVehicleAfterSos(vehicleId: string | null | undefined, alertType: unknown, severity: unknown): Promise<boolean> {
+  if (!vehicleId || severity !== 'serious' || !(VEHICLE_DOWN_SOS_TYPES as readonly string[]).includes(String(alertType))) return false;
+  const { error } = await supabase
+    .from('vehicles')
+    .update({ status: 'maintenance' })
+    .eq('id', vehicleId)
+    .in('status', [...OPERATING_VEHICLE_STATUSES]);
+  if (error) throw new Error(`Failed to update vehicle: ${error.message}`);
+  return true;
+}
+
 export interface RouteStatusChange {
   id: string;
   status: string;

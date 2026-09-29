@@ -28,7 +28,7 @@ Status transitions live in one place, `backend-ts/src/core/transitions.ts`
 | `capacity_windows`, `capacity_bids` | `POST /capacity/bids` (approved KYC), `POST /capacity/bids/:id/approve` / `reject`, `POST /capacity/driver/open-backhaul-window`, `POST /vehicles/:id/return-trip` | none |
 | `routes`, `route_stops` | `PATCH /routes/:id/status` (staff any allowed transition, drivers only start their own), `PATCH /routes/:id`, `POST /telemetry/driver-ping/start-route`, `.../complete-stop` | none |
 | `shipments`, `shipment_logs`, `parcels`, `delivery_points` | `POST /shipments`, `PATCH /shipments/:id` (status, staff and drivers), `PATCH /shipments/:id/edit` (priority, items, weight), `POST /shipments/:id/assign`, `POST /cargo/verify-pod` | none |
-| `vehicles` | `POST/PATCH/DELETE /vehicles`, `PATCH /vehicles/:id` (driver: load and position only), `POST /telemetry/driver-ping`, `.../break` | driver app 1.1.0: position, heartbeat and status (`available`, `on_route`, `idle`, `offline`) of the driver's own vehicle, never while it is in maintenance or archived, coordinates range-checked |
+| `vehicles` | `POST/PATCH/DELETE /vehicles`, `PATCH /vehicles/:id` (driver: load and position only), `POST /telemetry/driver-ping`, `.../break` | driver app 1.1.0: position, heartbeat and status (`available`, `on_route`, `idle`, `offline`) of the driver's own vehicle; position and heartbeat are accepted in every vehicle status, but the driver cannot change the status of a vehicle in maintenance or archived (a trigger enforces it), coordinates range-checked |
 | `telemetry`, `gps_points` | `POST /telemetry/driver-ping`, `POST /telemetry`, `POST /gps` | driver app 1.1.0: insert for the driver's own vehicle, readings range-checked |
 | `driver_confirmations` | `POST /capacity/driver/ack-stop`, `/confirm-stop`, `/flag-stop` (answered once) | driver app 1.1.0: answer `confirmed` once, while the prompt is unanswered |
 | `sos_alerts` | `POST /telemetry/sos/trigger`, `POST /vehicles/:id/sos` (driver, notifies staff), `PATCH /telemetry/sos/:id/details` (driver), `PUT /telemetry/sos/:id/acknowledge` / `resolve` (staff) | none |
@@ -51,9 +51,11 @@ directly, with the driver's own session, only:
   inserted stop,
 - `users.push_token`.
 
-What changed for it: a vehicle in maintenance or archived ignores its position
-pings (the write matches no row and is silently dropped, so the trail pauses
-until staff put the vehicle back), and a stop prompt that was already answered
+What changed for it: a vehicle in maintenance or archived keeps accepting
+position and heartbeat writes, so tracking continues during an emergency, but
+its driver cannot change its status (a trigger on `vehicles` refuses it). An SOS
+does not change the vehicle's status; only a serious breakdown or accident does
+(maintenance), and tracking continues. A stop prompt that was already answered
 or accepted by the timeout can no longer be answered again. Builds after 1.1.0
 call `POST /capacity/driver/confirm-stop`; position can move to
 `POST /telemetry/driver-ping`, after which these direct-write policies can be

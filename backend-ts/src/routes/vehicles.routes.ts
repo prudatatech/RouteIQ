@@ -13,6 +13,7 @@ import { HttpError, sendError } from '../core/errors';
 import { notificationService } from '../services/notification.service';
 import { parseCoordinate, parseDateTime, parseNumberInRange, parseOptionalText } from '../core/validate';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { holdVehicleAfterSos } from '../services/route.service';
 
 const router = Router();
 
@@ -220,14 +221,15 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 
     // If declared_load_percentage is provided, update available_capacity_kg
     if (updateData.declared_load_percentage !== undefined && updateData.declared_load_percentage !== null) {
-      const { data: vInfo } = await supabase.from('vehicles').select('capacity_kg').eq('id', req.params.vehicle_id).single();
+      const { data: vInfo } = await supabase.from('vehicles').select('capacity_kg, status').eq('id', req.params.vehicle_id).single();
       if (vInfo && vInfo.capacity_kg) {
         const used = (updateData.declared_load_percentage / 100) * vInfo.capacity_kg;
         const available = Math.max(0, vInfo.capacity_kg - used);
         updateData.available_capacity_kg = available;
 
         // If they declared 0% load, they are fully available
-        if (updateData.declared_load_percentage === 0) {
+        // (a vehicle in maintenance or archived is only changed by staff, never by a load report)
+        if (updateData.declared_load_percentage === 0 && (!vInfo.status || (OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vInfo.status)))) {
           updateData.status = 'available';
         }
       }
@@ -268,6 +270,8 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     if (typeof alertType !== 'string' || ![...SOS_ALERT_TYPES, 'sos'].includes(alertType)) {
       throw new HttpError(400, `alert_type must be one of: ${SOS_ALERT_TYPES.join(', ')}`);
     }
+    const severity = req.body?.severity ?? null;
+    if (severity !== null && !['serious', 'minor'].includes(severity)) throw new HttpError(400, 'severity must be serious or minor');
     const description = parseOptionalText(req.body?.description, 'description', 500);
     const latitude = parseCoordinate(req.body?.latitude, 'latitude', 90);
     const longitude = parseCoordinate(req.body?.longitude, 'longitude', 180);
@@ -279,17 +283,19 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
       description: description || 'Driver triggered SOS emergency alert',
       latitude,
       longitude,
-      status: 'active'
+      status: 'active',
+      ...(severity ? { severity } : {}),
     }).select().single();
 
     if (error) throw error;
 
-    // Turn the vehicle status to maintenance or offline?
+    // The alert itself signals the emergency; the vehicle keeps its status (and keeps
+    // reporting its position) unless this is a serious breakdown or accident.
+    await holdVehicleAfterSos(req.params.vehicle_id, alertType, severity);
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .update({ status: 'maintenance' })
-      .eq('id', req.params.vehicle_id)
       .select('plate_number, driver_name')
+      .eq('id', req.params.vehicle_id)
       .maybeSingle();
 
     // Notifications are informative; a failure must not undo the SOS report.

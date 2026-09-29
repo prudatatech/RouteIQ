@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
 import { InvoiceService } from '../services/invoice.service';
 import { notificationService } from '../services/notification.service';
-import { routeService, setOperatingVehicleStatus } from '../services/route.service';
+import { routeService, setOperatingVehicleStatus, holdVehicleAfterSos } from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
 import { parseCoordinate } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
@@ -214,12 +214,15 @@ router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response
       .eq('id', req.params.id)
       .eq('driver_id', req.user!.user_id)
       .eq('status', 'active')
-      .select('id');
+      .select('id, vehicle_id, alert_type, severity');
     if (error) throw error;
     if (!data || data.length === 0) {
       res.status(404).json({ detail: 'No active alert of yours with this id' });
       return;
     }
+    // A serious breakdown or accident takes the vehicle out of dispatch; it keeps reporting its position.
+    const [alert] = data as any[];
+    await holdVehicleAfterSos(alert.vehicle_id, update.alert_type ?? alert.alert_type, update.severity ?? alert.severity);
     res.json({ success: true, id: req.params.id });
   } catch (e: any) {
     sendError(req, res, e);

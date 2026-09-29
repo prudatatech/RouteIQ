@@ -4,16 +4,22 @@
 -- Supabase with the driver's own session, so those writes stay allowed, but
 -- only in the shapes the app really sends:
 --   vehicles           position, heartbeat and idle/on_route status of the
---                      driver's own vehicle (background GPS)
+--                      driver's own vehicle (background GPS). Position and
+--                      heartbeat are accepted whatever the vehicle's status,
+--                      so tracking continues during an emergency (an SOS or a
+--                      breakdown can put the vehicle in maintenance).
 --   telemetry          one history row per position for that vehicle
 --   driver_confirmations  answering "I accept this inserted stop"
 --   users.push_token   own push token (unchanged)
 -- Everything else about those tables goes through backend-ts.
 --
 -- What changes:
---   * A vehicle that is in maintenance or archived can no longer be written by
---     its driver at all. Before, only the NEW status was checked, so a driver
---     could bring their own vehicle back from maintenance with a location ping.
+--   * A driver can no longer change the STATUS of a vehicle that is in
+--     maintenance or archived, nor move it into either state. Before, only the
+--     NEW status was checked, so a driver could bring their own vehicle back
+--     from maintenance with a location ping. Position and heartbeat updates
+--     stay allowed in every status (the guard trigger below enforces the status
+--     rule; the policy cannot compare old and new values).
 --   * Coordinates on vehicles and telemetry must be real (lat -90..90,
 --     lng -180..180, speed 0..300 km/h, fuel 0..100 %).
 --   * A driver can answer a stop prompt once, and only with 'confirmed' (flagging
@@ -35,19 +41,37 @@
 -- system_settings; the notification bell keeps working (is_read only).
 -- Safe to re-run.
 
--- ── vehicles: operating vehicles only, real coordinates ─────
+-- ── vehicles: own vehicle, real coordinates, status held by a trigger ─
 DROP POLICY IF EXISTS vehicles_update_driver ON public.vehicles;
 CREATE POLICY vehicles_update_driver ON public.vehicles FOR UPDATE TO authenticated
-  USING (
-    driver_id = auth.uid()
-    AND status::text IN ('available', 'on_route', 'idle', 'offline')
-  )
+  USING (driver_id = auth.uid())
   WITH CHECK (
     driver_id = auth.uid()
-    AND status::text IN ('available', 'on_route', 'idle', 'offline')
     AND (latitude IS NULL OR latitude BETWEEN -90 AND 90)
     AND (longitude IS NULL OR longitude BETWEEN -180 AND 180)
   );
+
+-- A driver may change status only between operating states. A vehicle in
+-- maintenance or archived stays there (only staff and the backend move it), yet
+-- its driver can still write position and heartbeat.
+CREATE OR REPLACE FUNCTION public.vehicles_driver_status_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL
+     AND OLD.driver_id = auth.uid()
+     AND NEW.status IS DISTINCT FROM OLD.status
+     AND (OLD.status::text NOT IN ('available', 'on_route', 'idle', 'offline')
+          OR NEW.status::text NOT IN ('available', 'on_route', 'idle', 'offline')) THEN
+    RAISE EXCEPTION 'A driver cannot change the status of a vehicle in maintenance or archived, or move it into either'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS vehicles_driver_status_guard ON public.vehicles;
+CREATE TRIGGER vehicles_driver_status_guard BEFORE UPDATE ON public.vehicles
+  FOR EACH ROW EXECUTE FUNCTION public.vehicles_driver_status_guard();
 
 -- ── telemetry: real readings for the driver's own vehicle ───
 DROP POLICY IF EXISTS telemetry_insert_driver ON public.telemetry;
