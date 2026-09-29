@@ -8,7 +8,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet } from '../core/redis';
 import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds, isStaff } from '../core/ownership';
 import { RouteUpdateSchema } from '../schemas';
-import { routeService } from '../services/route.service';
+import { ROUTE_STATUS_TO_MANIFEST, cancelManifest, manifestAsRoute, routeService, vehicleHasOpenWork, setOperatingVehicleStatus } from '../services/route.service';
 import { HttpError, sendError } from '../core/errors';
 import { OPERATING_VEHICLE_STATUSES, ROUTE_STATUSES } from '../core/transitions';
 
@@ -43,55 +43,18 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 
     const result = routes ? [...routes] : [];
 
-    // Also fetch cargo manifests and map them to standard routes so the admin dashboard LiveMap can plot them
-    let manifestQuery = supabase.from('cargo_manifest').select('*');
-    if (driverVehicleIds) manifestQuery = manifestQuery.in('vehicle_id', driverVehicleIds);
-    if (vehicleId) manifestQuery = manifestQuery.eq('vehicle_id', vehicleId);
-    if (status === 'active' || status === 'pending') {
-      manifestQuery = manifestQuery.in('status', ['scheduled', 'in_transit']);
-    }
-
-    const { data: manifests } = await manifestQuery;
-
-    if (manifests) {
-      for (const manifest of manifests) {
-        result.push({
-          id: manifest.id,
-          vehicle_id: manifest.vehicle_id,
-          status: manifest.status === 'scheduled' ? 'pending' : (manifest.status === 'in_transit' ? 'active' : manifest.status),
-          is_manifest: true,
-          total_distance_km: 0,
-          total_duration_minutes: 0,
-          route_stops: [
-            {
-              id: manifest.id + '_pickup',
-              sequence: 1,
-              status: manifest.status === 'scheduled' ? 'pending' : 'completed',
-              delivery_points: {
-                id: manifest.id + '_pickup_dp',
-                name: "Pickup: " + (manifest.pickup_location || '').substring(0, 20),
-                address: manifest.pickup_location,
-                latitude: manifest.pickup_lat,
-                longitude: manifest.pickup_lng,
-                demand_kg: manifest.capacity_kg
-              }
-            },
-            {
-              id: manifest.id + '_drop',
-              sequence: 2,
-              status: 'pending',
-              delivery_points: {
-                id: manifest.id + '_drop_dp',
-                name: "Drop: " + (manifest.drop_location || '').substring(0, 20),
-                address: manifest.drop_location,
-                latitude: manifest.drop_lat,
-                longitude: manifest.drop_lng,
-                demand_kg: manifest.capacity_kg
-              }
-            }
-          ]
-        });
-      }
+    // Vendor loads (cargo manifests) are routes too: listed with the same statuses, filter and vehicle
+    let manifestStatuses: string[] | null = null;
+    if (status) manifestStatuses = ROUTE_STATUS_TO_MANIFEST[status] ?? [];
+    if (!manifestStatuses || manifestStatuses.length > 0) {
+      let manifestQuery = supabase.from('cargo_manifest').select('*, vehicles(*)');
+      if (driverVehicleIds) manifestQuery = manifestQuery.in('vehicle_id', driverVehicleIds);
+      if (vehicleId) manifestQuery = manifestQuery.eq('vehicle_id', vehicleId);
+      if (manifestStatuses) manifestQuery = manifestQuery.in('status', manifestStatuses);
+      const { data: manifests, error: manifestsErr } = await manifestQuery;
+      if (manifestsErr) throw manifestsErr;
+      for (const manifest of manifests ?? []) result.push(manifestAsRoute(manifest));
+      result.sort((x: any, y: any) => Date.parse(y.created_at ?? '') - Date.parse(x.created_at ?? ''));
     }
 
     res.json(result);
@@ -138,51 +101,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
         return;
       }
 
-      // Format manifest to match the route schema so the UI doesn't break
-      const formattedManifest = {
-        id: manifest.id,
-        vehicle_id: manifest.vehicle_id,
-        status: manifest.status === 'scheduled' ? 'pending' : (manifest.status === 'in_transit' ? 'active' : manifest.status),
-        is_manifest: true,
-        created_at: manifest.created_at,
-        updated_at: manifest.updated_at,
-        total_distance_km: 0,
-        total_duration_minutes: 0,
-        estimated_fuel_liters: 0,
-        optimization_score: null,
-        vehicles: manifest.vehicles,
-        logs: manifest.logs || [],
-        route_stops: [
-          {
-            id: manifest.id + '_pickup',
-            sequence: 1,
-            status: manifest.status === 'scheduled' ? 'pending' : 'completed',
-            delivery_point_id: manifest.id + '_pickup_dp',
-            delivery_points: {
-              id: manifest.id + '_pickup_dp',
-              name: "Pickup: " + (manifest.pickup_location || '').substring(0, 20),
-              address: manifest.pickup_location,
-              latitude: manifest.pickup_lat,
-              longitude: manifest.pickup_lng,
-              demand_kg: manifest.capacity_kg
-            }
-          },
-          {
-            id: manifest.id + '_drop',
-            sequence: 2,
-            status: ['delivered', 'completed'].includes(manifest.status) ? 'completed' : 'pending',
-            delivery_point_id: manifest.id + '_drop_dp',
-            delivery_points: {
-              id: manifest.id + '_drop_dp',
-              name: "Drop: " + (manifest.drop_location || '').substring(0, 20),
-              address: manifest.drop_location,
-              latitude: manifest.drop_lat,
-              longitude: manifest.drop_lng,
-              demand_kg: manifest.capacity_kg
-            }
-          }
-        ]
-      };
+      const formattedManifest = { ...manifestAsRoute(manifest), logs: (manifest as any).logs || [] };
 
       res.json(formattedManifest);
       return;
@@ -213,8 +132,24 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       res.status(400).json({ detail: `status must be one of: ${ROUTE_STATUSES.join(', ')}` });
       return;
     }
-    if (!isStaff(req.user) && !['active', 'in_progress'].includes(newStatus)) {
+    if (!isStaff(req.user) && newStatus !== 'active') {
       res.status(403).json({ detail: 'Drivers can only start their own route' });
+      return;
+    }
+
+    // A vendor load lives in its own table: dispatch can cancel it here, the driver moves it along from the app
+    const { data: manifest } = await supabase.from('cargo_manifest').select('id, vehicle_id').eq('id', req.params.route_id).maybeSingle();
+    if (manifest) {
+      if (!isStaff(req.user)) {
+        res.status(403).json({ detail: 'Drivers start a load from the app' });
+        return;
+      }
+      if (newStatus !== 'cancelled') {
+        throw new HttpError(409, 'A vendor load is started and delivered by its driver. From here it can only be cancelled.');
+      }
+      const cancelled = await cancelManifest(manifest.id);
+      const { data: veh } = manifest.vehicle_id ? await supabase.from('vehicles').select('status').eq('id', manifest.vehicle_id).maybeSingle() : { data: null };
+      res.json({ id: cancelled.id, status: cancelled.status, vehicle_status: veh?.status ?? null });
       return;
     }
 
@@ -347,16 +282,17 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
       return;
     }
 
-    if (['active', 'in_progress', 'completed'].includes(route.status)) {
+    if (['active', 'completed'].includes(route.status)) {
       res.status(409).json({
         detail: `This route is ${String(route.status).replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`,
       });
       return;
     }
 
-    // Free up vehicle
-    if (route.vehicles && route.vehicles.status === 'on_route' && ['active', 'pending'].includes(route.status)) {
-      await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);
+    // Free the vehicle, unless it is still running another route or carrying a vendor load
+    if (route.vehicles && route.vehicles.status === 'on_route' && route.status === 'pending'
+      && !(await vehicleHasOpenWork(route.vehicle_id, { routeId: route.id }))) {
+      await setOperatingVehicleStatus(route.vehicle_id, 'available');
     }
 
     // Delete stops then route

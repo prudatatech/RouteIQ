@@ -82,7 +82,7 @@ describe('PATCH /routes/:id/status', () => {
   });
 
   it('leaves a vehicle in maintenance alone', async () => {
-    reset({ routes: [{ id: 'route-1', vehicle_id: 'veh-maint', status: 'active' }] });
+    reset({ routes: [{ id: 'route-1', vehicle_id: 'veh-maint', status: 'active' }], route_stops: [] });
     expect((await patch('completed')).status).toBe(200);
     expect(supabaseMock.rows('vehicles').find(v => v.id === 'veh-maint')?.status).toBe('maintenance');
   });
@@ -123,10 +123,12 @@ describe('POST /telemetry/driver-ping/start-route', () => {
     expect(supabaseMock.rows('routes')[0].status).toBe('completed');
   });
 
-  it('starts a scheduled load but not a delivered one', async () => {
+  it('sets off for a scheduled load without moving it, and refuses a delivered one', async () => {
     reset({ cargo_manifest: [{ id: 'm1', vehicle_id: 'veh-1', status: 'scheduled' }, { id: 'm2', vehicle_id: 'veh-1', status: 'delivered' }] });
     expect((await start('m1')).status).toBe(200);
-    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('in_transit');
+    // the load goes in transit at the pickup, not when the journey starts
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('scheduled');
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
     expect((await start('m2')).status).toBe(409);
   });
 
@@ -193,7 +195,7 @@ describe('POST /telemetry/driver-ping/complete-stop', () => {
 
   describe('vendor loads', () => {
     beforeEach(() => reset({
-      cargo_manifest: [{ id: 'm1', vehicle_id: 'veh-1', vendor_request_id: 'req-1', status: 'scheduled', weight_kg: 100 }],
+      cargo_manifest: [{ id: 'm1', vehicle_id: 'veh-1', vendor_request_id: 'req-1', status: 'scheduled', capacity_kg: 100 }],
       vendor_shipment_requests: [{ id: 'req-1', vendor_id: 'vendor-1', status: 'assigned' }],
     }));
 
@@ -203,12 +205,16 @@ describe('POST /telemetry/driver-ping/complete-stop', () => {
     });
 
     it('moves the load once per step and does not bill or load twice on a repeat', async () => {
+      // the load's weight was reserved on the vehicle when it was assigned
+      supabaseMock.rows('vehicles')[0].current_load_kg = 100;
       expect((await complete({ stop_id: 'm1_pickup' })).status).toBe(200);
+      expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('in_transit');
       expect(supabaseMock.rows('vehicles')[0].current_load_kg).toBe(100);
       expect((await complete({ stop_id: 'm1_pickup' })).status).toBe(200);
       expect(supabaseMock.rows('vehicles')[0].current_load_kg).toBe(100);
       expect((await complete({ stop_id: 'm1_drop' })).status).toBe(200);
       expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('delivered');
+      expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ current_load_kg: 0, available_capacity_kg: 1000, status: 'available' });
       expect((await complete({ stop_id: 'm1_drop' })).status).toBe(200);
       expect(supabaseMock.writes('invoices', 'POST').length).toBeLessThanOrEqual(1);
     });
@@ -226,11 +232,19 @@ describe('POST /telemetry/driver-ping/break', () => {
   const brk = (body: Record<string, unknown>, auth = driverAuth()) =>
     request(app).post('/api/v1/telemetry/driver-ping/break').set(auth).send(body);
 
-  it('sets the vehicle idle on a break and back on route after', async () => {
+  it('sets the vehicle idle on a break and back on route after when it has an active route', async () => {
+    reset({ routes: [{ id: 'route-1', vehicle_id: 'veh-1', status: 'active' }] });
     expect((await brk({ is_break: true })).status).toBe(200);
     expect(supabaseMock.rows('vehicles')[0].status).toBe('idle');
     expect((await brk({ is_break: false })).status).toBe(200);
     expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
+  });
+
+  it('makes a vehicle with no route available after a break, not on route', async () => {
+    reset({ routes: [] });
+    expect((await brk({ is_break: true })).status).toBe(200);
+    expect((await brk({ is_break: false })).status).toBe(200);
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('available');
   });
 
   it('cannot bring a vehicle out of maintenance', async () => {

@@ -5,7 +5,7 @@
  */
 import { useCallback } from 'react';
 import { Alert, Linking } from 'react-native';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import type { DriverRoute, LatLng, RouteStop } from '../types/route';
 import { errorMessage } from '../utils/errors';
 import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
@@ -132,6 +132,10 @@ export function useRouteActions({
         reason,
         ...(note ? { note } : {}),
         ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
+      }).catch(async (e) => {
+        // Dispatch changed the stop (for example cancelled the delivery): show the route as it is now
+        if (e instanceof ApiError && e.status === 409) await refresh();
+        throw e;
       });
       if (outcome.status === 'queued') Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
       else {
@@ -171,6 +175,11 @@ export function useRouteActions({
         photoUri: pod.photoUri,
         signatureUri: pod.signatureUri,
         ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
+      }).catch(async (e) => {
+        // "This delivery was cancelled by dispatch": the form shows the server's message, and the
+        // route is reloaded so the cancelled stop is gone
+        if (e instanceof ApiError && e.status === 409) await refresh();
+        throw e;
       });
       if (outcome.status === 'queued') {
         Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));

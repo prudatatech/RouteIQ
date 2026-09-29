@@ -11,6 +11,9 @@ const ALERT = '55555555-5555-5555-5555-555555555555';
 
 function reset(status: string) {
   supabaseMock.reset({
+    // an on-route vehicle is one with an active route
+    routes: status === 'on_route' ? [{ id: 'route-1', vehicle_id: VEHICLE, status: 'active' }] : [],
+    cargo_manifest: [],
     users: [
       { id: 'driver-1', role: 'driver', is_active: true },
       { id: 'admin-1', role: 'admin', is_active: true },

@@ -8,7 +8,7 @@ import {
 } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
-import { canCompleteRoute, canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
+import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { downloadCsv, toCsv } from '@/utils/csv'
 
 interface Vehicle {
@@ -142,7 +142,16 @@ export default function RoutesPage() {
               <Button variant="secondary" size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(r)}>Dispatch</Button>
             )}
             {showComplete && (
-              <Button variant="secondary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isPending} onClick={() => complete(r)}>Mark completed</Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<CheckCircle2 size={14} />}
+                disabled={isPending || completeBlockedReason(r) !== null}
+                title={completeBlockedReason(r) ?? undefined}
+                onClick={() => complete(r)}
+              >
+                Mark completed
+              </Button>
             )}
           </div>
         )

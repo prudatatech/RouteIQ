@@ -45,7 +45,7 @@ describe('DELETE /routes/:id — safe delete', () => {
     expect(supabaseMock.rows('routes')).toHaveLength(0);
   });
 
-  it.each(['active', 'in_progress', 'completed'])('refuses to delete a %s route with 409', async status => {
+  it.each(['active', 'completed'])('refuses to delete a %s route with 409', async status => {
     reset(status);
     const res = await del('route-1');
     expect(res.status).toBe(409);
