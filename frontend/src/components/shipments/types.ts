@@ -32,6 +32,7 @@ export interface ShipmentRow {
   signature_data?: string | null
   vehicle_id?: string | null
   driver_name?: string | null
+  freight_charge?: number | null
   driver_rating?: number | null
   driver_rating_note?: string | null
   delivery_points?: DeliveryPoint[]

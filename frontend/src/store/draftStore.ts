@@ -44,6 +44,8 @@ export interface DraftShipmentData {
   bidding_closes_at: string;
   bidding_duration_mins?: number;
   asking_price?: string;
+  /** Price charged to the customer, in rupees before GST. Empty when not entered. */
+  freight_charge?: string;
 }
 
 const initialDraftData: DraftShipmentData = {

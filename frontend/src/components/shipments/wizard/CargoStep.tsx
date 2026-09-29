@@ -90,6 +90,20 @@ export default function CargoStep({ data, update, errors }: StepProps) {
         </div>
       </fieldset>
 
+      <Input
+        className="sm:max-w-xs"
+        label="Price (₹)"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.01"
+        leading="₹"
+        value={data.freight_charge ?? ''}
+        error={errors.freight_charge}
+        hint="Optional. What the customer is charged, before GST. It is used for the invoice when no vendor bid is accepted."
+        onChange={e => update({ freight_charge: e.target.value })}
+      />
+
       <div className="rounded-control border border-border bg-surface-subtle px-4 py-3 text-sm">
         <div className="flex items-center justify-between gap-4">
           <span className="text-muted">Chargeable weight</span>

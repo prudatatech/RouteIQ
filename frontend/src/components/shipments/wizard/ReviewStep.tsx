@@ -51,6 +51,7 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
             { label: 'Weight', value: formatKg(Number(data.total_weight_kg)) },
             { label: 'Package size', value: `${data.length_cm} × ${data.width_cm} × ${data.height_cm} cm` },
             { label: 'Chargeable weight', value: formatKg(chargeableKg(data)) },
+            { label: 'Price', value: data.freight_charge ? formatRupees(Number(data.freight_charge)) : 'Not set' },
           ]}
         />
       </ReviewSection>

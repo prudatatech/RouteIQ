@@ -10,7 +10,7 @@ export type StepId = (typeof STEPS)[number]['id']
 
 export type FieldErrors = Partial<Record<
   'origin' | 'destination' | 'scheduled_date' | 'total_items' | 'total_weight_kg' | 'length_cm' | 'width_cm' | 'height_cm' |
-  'vehicle' | 'asking_price',
+  'vehicle' | 'asking_price' | 'freight_charge',
   string
 >>
 
@@ -36,6 +36,7 @@ export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
     if (!(Number(d.length_cm) > 0)) e.length_cm = 'Enter a length above 0.'
     if (!(Number(d.width_cm) > 0)) e.width_cm = 'Enter a width above 0.'
     if (!(Number(d.height_cm) > 0)) e.height_cm = 'Enter a height above 0.'
+    if (d.freight_charge && !(Number(d.freight_charge) >= 0)) e.freight_charge = 'Enter a price of 0 or more, or leave it empty.'
   }
   if (step === 'vehicle' && d.open_bidding) {
     if (!d.selectedVehicleId) e.vehicle = 'Choose the vehicle whose spare space vendors will bid on.'

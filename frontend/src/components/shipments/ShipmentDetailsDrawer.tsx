@@ -162,6 +162,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             items={[
               { label: 'Items', value: s.total_items != null ? s.total_items.toLocaleString('en-IN') : null },
               { label: 'Weight', value: formatKg(s.total_weight_kg) },
+              ...(s.freight_charge != null ? [{ label: 'Price', value: formatRupees(s.freight_charge) }] : []),
               { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
               { label: 'Driver', value: s.driver_name },
               { label: 'Created', value: formatDateTime(s.created_at) },

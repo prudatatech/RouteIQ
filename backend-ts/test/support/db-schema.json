@@ -272,7 +272,8 @@
     "driver_rated_at",
     "driver_rated_by",
     "rated_vehicle_id",
-    "rated_driver_id"
+    "rated_driver_id",
+    "freight_charge"
   ],
   "sos_alerts": [
     "id",

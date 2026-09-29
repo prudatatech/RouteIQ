@@ -302,7 +302,7 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const [shipRes, manRes] = await Promise.all([
-    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, updated_at').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
     supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
   ]);
   if (shipRes.error) throw new Error(`Failed to read shipments: ${shipRes.error.message}`);
@@ -332,7 +332,7 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
       label: s.tracking_id ?? s.id,
       detail: s.origin_name ?? null,
       delivered_at: s.updated_at,
-      can_invoice: !!s.bid_id && wonBids.has(s.bid_id),
+      can_invoice: (!!s.bid_id && wonBids.has(s.bid_id)) || num(s.freight_charge) > 0,
     })),
     ...manifests.filter((m: any) => !invoicedManifests.has(m.id)).map((m: any) => ({
       kind: 'manifest' as const,
