@@ -26,6 +26,10 @@ interface RouteStop {
   delivery_points?: DeliveryPoint | null
 }
 
+/** Mirrors the backend rule in routes.routes.ts DELETE /:route_id: once a route
+ * has started, deleting it would erase real movement history. Cancel it instead. */
+const UNDELETABLE_STATUSES = new Set(['active', 'in_progress', 'completed'])
+
 interface RouteDetail extends RouteLike {
   id: string
   status: string
@@ -108,6 +112,7 @@ export default function RouteDetailsPage() {
   const isCancelled = route.status === 'cancelled'
   const canRunOptimizer = route.status === 'active' || route.status === 'pending' || route.status === 'on_route' || route.status === 'in_progress'
   const canCancel = !isCompleted && !isCancelled
+  const canDelete = !UNDELETABLE_STATUSES.has(route.status)
 
   const distance = getRouteDistance(route)
   const duration = getRouteDuration(route, distance)
@@ -224,9 +229,11 @@ export default function RouteDetailsPage() {
               >
                 Cancel route
               </Button>
-              <Button variant="danger" icon={<Trash2 size={16} />} onClick={handleDelete} loading={deleteMutation.isPending}>
-                Delete
-              </Button>
+              {canDelete && (
+                <Button variant="danger" icon={<Trash2 size={16} />} onClick={handleDelete} loading={deleteMutation.isPending}>
+                  Delete
+                </Button>
+              )}
             </div>
           </Card>
         </div>

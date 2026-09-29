@@ -375,6 +375,13 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
       return;
     }
 
+    if (['active', 'in_progress', 'completed'].includes(route.status)) {
+      res.status(409).json({
+        detail: `This route is ${String(route.status).replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`,
+      });
+      return;
+    }
+
     // Free up vehicle
     if (route.vehicles && route.vehicles.status === 'on_route' && ['active', 'pending'].includes(route.status)) {
       await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);
