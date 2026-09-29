@@ -6,11 +6,10 @@
  *   FuelTabSlot         -> reported tank level + components/fleet/fuel/VehicleFuelTab (fill-ups, mileage, anomalies)
  */
 import { Fuel } from 'lucide-react'
-import { Card, CardBody, CardHeader, DetailList } from '@/components/ui'
+import { Card, CardBody, CardHeader, humanize } from '@/components/ui'
 import { VehicleLocationPanel } from '@/components/fleet/location/VehicleLocationPanel'
 import VehicleFuelTab from '@/components/fleet/fuel/VehicleFuelTab'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
-import { formatOdometer } from '@/components/fleet/health'
 import type { Vehicle } from '@/components/fleet/types'
 
 export interface SlotProps {
@@ -47,26 +46,24 @@ export function FuelTabSlot({ vehicle }: SlotProps) {
   return (
     <div data-tab-slot="fuel" className="space-y-4">
       <Card>
-        <CardHeader title="Fuel" description="What the vehicle reports" />
-        <CardBody className="space-y-4">
-          {pct != null && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="inline-flex items-center gap-1.5 text-text"><Fuel size={14} className="text-muted" aria-hidden="true" /> {current!.toLocaleString('en-IN', { maximumFractionDigits: 0 })} of {capacity.toLocaleString('en-IN')} L</span>
+        <CardHeader
+          title="Tank level"
+          description={vehicle.fuel_type ? `${humanize(vehicle.fuel_type)}, as the vehicle reports it` : 'As the vehicle reports it'}
+        />
+        <CardBody>
+          {pct != null ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-text"><Fuel size={16} className="shrink-0 text-muted" aria-hidden="true" /> {current!.toLocaleString('en-IN', { maximumFractionDigits: 0 })} of {capacity.toLocaleString('en-IN')} L</span>
                 <span className="tabular text-muted">{pct}%</span>
               </div>
               <div role="progressbar" aria-label={`Fuel ${pct}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-2 overflow-hidden rounded-full bg-neutral-soft">
                 <div className={'h-full rounded-full ' + (pct < 15 ? 'bg-danger' : pct < 30 ? 'bg-warning' : 'bg-success')} style={{ width: `${pct}%` }} />
               </div>
             </div>
+          ) : (
+            <p className="text-sm text-muted">The tank size is not recorded. Add it by editing the vehicle to see the level here.</p>
           )}
-          <DetailList
-            items={[
-              { label: 'Fuel', value: vehicle.fuel_capacity_liters ? `${(vehicle.current_fuel_liters ?? 0).toLocaleString('en-IN')} / ${vehicle.fuel_capacity_liters.toLocaleString('en-IN')} L` : 'Tank size not recorded' },
-              { label: 'Fuel type', value: vehicle.fuel_type ? vehicle.fuel_type.toUpperCase() : 'Not recorded' },
-              { label: 'Odometer', value: formatOdometer(vehicle.odometer_km) },
-            ]}
-          />
         </CardBody>
       </Card>
       <VehicleFuelTab key={vehicle.id} vehicleId={vehicle.id} />

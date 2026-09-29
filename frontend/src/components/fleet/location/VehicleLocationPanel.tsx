@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { MapPin } from 'lucide-react'
-import { EmptyState, ErrorState, Skeleton } from '@/components/ui'
+import { Card, CardBody, CardHeader, EmptyState, ErrorState, Skeleton } from '@/components/ui'
 import { MapView, type MapTrail, type MapVehicle } from '@/components/map'
 import { formatKm, formatTime } from '@/utils/display'
 import ActivitySummary from './ActivitySummary'
@@ -45,29 +45,39 @@ export function VehicleLocationPanel({ vehicleId }: { vehicleId: string }) {
 
   if (location.isLoading) {
     return (
-      <section aria-label="GPS location" className="space-y-3">
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </section>
+      <Card>
+        <CardHeader title="GPS location" />
+        <CardBody className="space-y-3">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </CardBody>
+      </Card>
     )
   }
   if (location.isError || !data) {
     return (
-      <section aria-label="GPS location">
+      <Card>
+        <CardHeader title="GPS location" />
         <ErrorState compact title="We could not load the GPS location" description="Check your connection and try again." onRetry={() => { location.refetch(); activity.refetch() }} />
-      </section>
+      </Card>
     )
   }
 
   const recent = (track.data?.points ?? []).slice(-RECENT_POINTS).reverse()
 
   return (
-    <section aria-label="GPS location" className="space-y-4">
-      <h3 className="text-sm font-semibold text-text">GPS location</h3>
+    <Card>
+      <CardHeader
+        title="GPS location"
+        description="Where it is now, what it is doing and where it has been"
+        actions={<ShareLocationButton vehicleId={vehicleId} plate={data.plate_number} disabled={!positioned} />}
+        className="flex-wrap"
+      />
+      <CardBody className="space-y-4">
 
       {positioned ? (
         <>
-          <div className="h-48 overflow-hidden rounded-card border border-border">
+          <div className="relative z-0 h-56 overflow-hidden rounded-card border border-border sm:h-72">
             <MapView
               mode="tracking"
               fitTo="content"
@@ -107,7 +117,7 @@ export function VehicleLocationPanel({ vehicleId }: { vehicleId: string }) {
 
       {positioned && (
         <div>
-          <p className="text-sm font-medium text-text">Recent trail</p>
+          <h3 className="text-sm font-medium text-text">Recent trail</h3>
           {track.isLoading ? (
             <Skeleton className="mt-1 h-10 w-full" />
           ) : track.isError ? (
@@ -121,10 +131,10 @@ export function VehicleLocationPanel({ vehicleId }: { vehicleId: string }) {
               </p>
               <ul className="mt-2 divide-y divide-border rounded-control border border-border text-sm">
                 {recent.map(point => (
-                  <li key={point.at} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                  <li key={point.at} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-1.5">
                     <span className="text-text">{formatTime(point.at, { seconds: true })}</span>
                     <span className="font-mono text-xs text-muted">{point.lat.toFixed(5)}, {point.lng.toFixed(5)}</span>
-                    <span className="text-xs text-muted">{point.speed_kmph != null ? speedText(point.speed_kmph) : ''}</span>
+                    <span className="w-16 text-right text-xs text-muted">{point.speed_kmph != null ? speedText(point.speed_kmph) : ''}</span>
                   </li>
                 ))}
               </ul>
@@ -132,9 +142,8 @@ export function VehicleLocationPanel({ vehicleId }: { vehicleId: string }) {
           )}
         </div>
       )}
-
-      <ShareLocationButton vehicleId={vehicleId} plate={data.plate_number} disabled={!positioned} />
-    </section>
+      </CardBody>
+    </Card>
   )
 }
 

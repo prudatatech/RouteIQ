@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCheck, FileText, Fuel, Paperclip, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
 import {
-  Alert, Button, Card, Checkbox, DataTable, FileButton, IconButton, Input, Select, Skeleton, Stat, StatusPill, useConfirm,
+  Alert, Button, Card, Checkbox, DataTable, FileButton, IconButton, Input, Modal, SectionHeader, Select, Skeleton, Stat, StatusPill, useConfirm,
   type Column,
 } from '@/components/ui'
 import { ChartCard, SimpleLineChart } from '@/components/analytics/charts'
@@ -135,10 +135,11 @@ export default function VehicleFuelTab({ vehicleId }: { vehicleId: string }) {
 
   return (
     <section aria-label="Fuel" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-text">Fuel</h3>
-        {!adding && <Button size="sm" icon={<Plus size={14} />} onClick={() => setAdding(true)}>Add fuel</Button>}
-      </div>
+      <SectionHeader
+        title="Fuel log"
+        description="Fill-ups, mileage and spend for this vehicle"
+        actions={<Button size="sm" icon={<Plus size={16} />} onClick={() => setAdding(true)}>Add fuel</Button>}
+      />
 
       {stats.isError && (
         <Alert tone="danger" title="We could not load fuel figures" action={<Button size="sm" variant="secondary" onClick={() => stats.refetch()}>Try again</Button>}>
@@ -146,7 +147,7 @@ export default function VehicleFuelTab({ vehicleId }: { vehicleId: string }) {
         </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Average mileage" value={formatKmpl(s?.rolling_avg_kmpl)} loading={stats.isLoading} hint="Last 5 stretches between full tanks" />
         <Stat label="Last fill mileage" value={formatKmpl(s?.last_kmpl)} loading={stats.isLoading} hint={s?.last_kmpl == null ? 'Needs two full-tank fills with odometer' : undefined} />
         <Stat label="Cost per km" value={s?.cost_per_km == null ? '—' : `${formatRupees(s.cost_per_km)}/km`} loading={stats.isLoading} />
@@ -212,6 +213,7 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
   const [hasBill, setHasBill] = useState(false)
   const [bill, setBill] = useState<File | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState('')
 
   // The vehicle's own odometer prefills the reading; it shares its cache with the health panel
   const health = useQuery({ queryKey: ['fleet-vehicle-health', vehicleId], queryFn: () => fleetAPI.vehicleHealth(vehicleId) as Promise<{ odometer_km: number | null }> })
@@ -243,11 +245,10 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
       toast.success(log.bill_status === 'with_bill' ? 'Fuel logged with bill' : 'Fuel logged without a bill. It will be shown for review.')
       onSaved()
     },
-    onError: err => toast.error(apiErrorMessage(err, err instanceof Error && !('response' in err) ? err.message : 'We could not save this fill-up. Try again.')),
+    onError: err => setFormError(apiErrorMessage(err, err instanceof Error && !('response' in err) ? err.message : 'We could not save this fill-up. Try again.')),
   })
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
+  const submit = () => {
     const next: Record<string, string> = {}
     if (!sendableAmounts(amounts, edited)) next.amounts = 'Enter any two of litres, price per litre and total amount'
     if (!filledAt) next.filledAt = 'Choose the date and time of the fill'
@@ -257,13 +258,26 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
     if (bill && !BILL_TYPES.includes(bill.type)) next.bill = 'Upload a PDF, JPG or PNG file'
     else if (bill && bill.size > MAX_BILL_BYTES) next.bill = 'The bill must be 5 MB or smaller'
     setErrors(next)
+    setFormError('')
     if (Object.keys(next).length === 0) save.mutate()
   }
 
   return (
-    <Card padded>
-      <form onSubmit={submit} noValidate className="grid gap-4 sm:grid-cols-2">
-        <p className="text-sm text-muted sm:col-span-2">Enter any two of litres, price per litre and total. The third is worked out.</p>
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      title="Add fuel"
+      description="Enter any two of litres, price per litre and total. The third is worked out."
+      onSubmit={submit}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
+          <Button type="submit" loading={save.isPending}>Save fill-up</Button>
+        </>
+      )}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
         {(['litres', 'price', 'total'] as const).map(f => (
           <Input
             key={f}
@@ -292,7 +306,7 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
           onChange={e => setOdometer(e.target.value)}
           error={errors.odometer}
         />
-        <Input label="Station or place" maxLength={120} value={station} onChange={e => setStation(e.target.value)} />
+        <Input label="Station or place" maxLength={120} value={station} onChange={e => setStation(e.target.value)} hint="Optional" />
         <Select
           label="Paid by"
           value={payment}
@@ -314,22 +328,21 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
             onChange={e => { setHasBill(e.target.checked); if (!e.target.checked) setBill(null) }}
           />
           {hasBill && (
-            <div className="pl-7">
-              <FileButton accept={BILL_TYPES.join(',')} icon={<Paperclip size={14} />} onFile={setBill} size="sm">
-                {bill ? 'Replace bill' : 'Attach bill'}
-              </FileButton>
-              {bill && <span className="ml-3 text-sm text-muted">{bill.name}</span>}
+            <div className="space-y-1 pl-7">
+              <div className="flex flex-wrap items-center gap-3">
+                <FileButton accept={BILL_TYPES.join(',')} icon={<Paperclip size={16} />} onFile={setBill} size="sm">
+                  {bill ? 'Replace bill' : 'Attach bill'}
+                </FileButton>
+                {bill && <span className="min-w-0 truncate text-sm text-muted">{bill.name}</span>}
+              </div>
               {errors.bill
-                ? <p role="alert" className="mt-1 text-xs text-danger">{errors.bill}</p>
-                : <p className="mt-1 text-xs text-muted">Photo or PDF, up to 5 MB.</p>}
+                ? <p role="alert" className="text-xs text-danger">{errors.bill}</p>
+                : <p className="text-xs text-muted">Photo or PDF, up to 5 MB.</p>}
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-2 sm:col-span-2">
-          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
-          <Button type="submit" loading={save.isPending}>Save fill-up</Button>
-        </div>
-      </form>
-    </Card>
+        {formError && <p className="text-sm text-danger sm:col-span-2" role="alert">{formError}</p>}
+      </div>
+    </Modal>
   )
 }

@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { fleetAPI } from '@/services/api'
-import { Alert, Button, Skeleton, StatusPill } from '@/components/ui'
+import { Alert, Button, Card, CardBody, CardHeader, Skeleton, StatusPill } from '@/components/ui'
 import { bandLabel, bandTone, checkLabel, checkTone, type VehicleHealth } from './health'
 import { VehicleMaintenanceTab } from './maintenance/VehicleMaintenanceTab'
 
 /**
  * Health score for one vehicle, then its maintenance: current condition (odometer, service items,
- * documents), the maintenance job in progress, and the service history. Shown in the Fleet drawer.
+ * documents), the maintenance job in progress, and the service history. Shown in the Maintenance tab of the vehicle page.
  */
 export default function VehicleHealthPanel({ vehicleId }: { vehicleId: string; plate: string }) {
   const health = useQuery<VehicleHealth>({
@@ -25,37 +25,36 @@ export default function VehicleHealthPanel({ vehicleId }: { vehicleId: string; p
   const h = health.data
 
   return (
-    <div className="space-y-6">
-      <section aria-labelledby={`health-${vehicleId}`} className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 id={`health-${vehicleId}`} className="text-base font-semibold text-text">Health</h3>
-          <StatusPill tone={bandTone[h.band]}>{bandLabel[h.band]}</StatusPill>
-        </div>
-        <div className="flex items-end gap-2">
-          <p className="text-3xl font-semibold tabular text-text">{h.score ?? '—'}</p>
-          <p className="pb-1 text-sm text-muted">
-            {h.score == null ? 'Nothing to score yet' : `out of 100, from ${h.checks_known} of ${h.checks.length} checks`}
-          </p>
-        </div>
-        <ul className="divide-y divide-border rounded-card border border-border">
-          {h.checks.map(c => (
-            <li key={c.key} className="flex items-start justify-between gap-3 px-3 py-2.5">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-text">{c.label}</p>
-                <p className="text-sm text-muted">{c.detail}</p>
-              </div>
-              <StatusPill tone={checkTone[c.state]} className="shrink-0">{checkLabel[c.state]}</StatusPill>
-            </li>
-          ))}
-        </ul>
-        {h.issues.length > 0 && (
-          <ul className="space-y-1 text-sm">
-            {h.issues.map(i => (
-              <li key={i.text} className={i.severity === 'critical' ? 'text-danger' : 'text-warning'}>{i.text}</li>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader title="Health" description="Service, documents, alarms and fuel, scored out of 100" actions={<StatusPill tone={bandTone[h.band]}>{bandLabel[h.band]}</StatusPill>} />
+        <CardBody className="space-y-4">
+          <div className="flex flex-wrap items-end gap-x-2">
+            <p className="text-3xl font-semibold tabular text-text">{h.score ?? '—'}</p>
+            <p className="pb-1 text-sm text-muted">
+              {h.score == null ? 'Nothing to score yet' : `out of 100, from ${h.checks_known} of ${h.checks.length} checks`}
+            </p>
+          </div>
+          <ul className="divide-y divide-border rounded-card border border-border">
+            {h.checks.map(c => (
+              <li key={c.key} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text">{c.label}</p>
+                  <p className="break-words text-sm text-muted">{c.detail}</p>
+                </div>
+                <StatusPill tone={checkTone[c.state]} className="shrink-0">{checkLabel[c.state]}</StatusPill>
+              </li>
             ))}
           </ul>
-        )}
-      </section>
+          {h.issues.length > 0 && (
+            <ul className="space-y-1 text-sm">
+              {h.issues.map(i => (
+                <li key={i.text} className={i.severity === 'critical' ? 'text-danger' : 'text-warning'}>{i.text}</li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
 
       <VehicleMaintenanceTab vehicleId={vehicleId} />
     </div>

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ClipboardCheck, Gauge, Pencil, Plus, RefreshCw, Trash2, Wand2 } from 'lucide-react'
+import { ClipboardCheck, Gauge, Pencil, Plus, RefreshCw, Trash2, Wand2, Wrench } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
 import { formatDate, formatRelative } from '@/utils/display'
-import { Alert, Button, IconButton, Skeleton, StatusPill, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, CardBody, CardHeader, EmptyState, IconButton, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import { apiErrorMessage, formatOdometer, type ServiceItem } from '../health'
 import { OdometerModal, PlanModal } from '../ServiceModals'
 import { documentBar, DOCUMENT_FIELDS, odometerNote, serviceBar, type ConditionBar, type ConditionState } from './condition'
@@ -24,7 +24,7 @@ function Bar({ bar, actions }: { bar: ConditionBar; actions?: React.ReactNode })
   return (
     <li className="space-y-1.5 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-sm font-medium text-text">{bar.label}</p>
+        <p className="min-w-0 truncate text-sm font-medium text-text" title={bar.label}>{bar.label}</p>
         <div className="flex shrink-0 items-center gap-1">
           {bar.state === 'overdue' && <StatusPill tone="danger" dot={false}>Overdue</StatusPill>}
           {actions}
@@ -127,40 +127,47 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
   const docs = DOCUMENT_FIELDS.map(f => ({ f, bar: documentBar(f.key, f.label, v[f.key]) }))
 
   return (
-    <section aria-label="Current condition" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-text">Current condition</h3>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" icon={<Plus size={14} />} onClick={() => setPlanEditor({ plan: null })}>Add item</Button>
-          <Button size="sm" icon={<ClipboardCheck size={14} />} onClick={() => setLogger({})}>Log service</Button>
-        </div>
-      </div>
-
+    <Card>
+      <CardHeader
+        title="Current condition"
+        description="Odometer, service items and document expiry"
+        actions={(
+          <>
+            <Button variant="secondary" size="sm" icon={<Plus size={16} />} onClick={() => setPlanEditor({ plan: null })}>Add item</Button>
+            <Button size="sm" icon={<ClipboardCheck size={16} />} onClick={() => setLogger({})}>Log service</Button>
+          </>
+        )}
+        className="flex-wrap"
+      />
+      <CardBody className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border px-3 py-2.5">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-sm text-muted"><Gauge size={14} aria-hidden="true" />Odometer</p>
+          <p className="flex items-center gap-1.5 text-sm text-muted"><Gauge size={16} aria-hidden="true" />Odometer</p>
           <p className="text-lg font-semibold tabular text-text">{formatOdometer(v.odometer_km)}</p>
           <p className="text-xs text-muted">{odometerNote(v, formatRelative)}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} loading={sync.isPending} onClick={() => sync.mutate()}>Auto sync</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" icon={<RefreshCw size={16} />} loading={sync.isPending} onClick={() => sync.mutate()}>Auto sync</Button>
           <Button variant="secondary" size="sm" onClick={() => setOdometerOpen(true)}>Correct</Button>
         </div>
       </div>
 
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-text">Service items</h4>
+        <h3 className="text-sm font-medium text-text">Service items</h3>
         {items.length === 0 ? (
-          <div className="rounded-card border border-dashed border-border px-4 py-5 text-center">
-            <p className="text-sm font-medium text-text">No service items yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
-              Add the usual ones (engine oil, brake pads, tyres, air filter, coolant, battery, clutch and more) in one click.
-              Each starts from its last logged service, or from today. Change any of them for this vehicle afterwards.
-            </p>
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-              <Button icon={<Wand2 size={16} />} loading={addDefaults.isPending} onClick={() => addDefaults.mutate()}>Add default items</Button>
-              <Button variant="secondary" icon={<Plus size={16} />} onClick={() => setPlanEditor({ plan: null })}>Add your own</Button>
-            </div>
+          <div className="rounded-card border border-dashed border-border">
+            <EmptyState
+              compact
+              icon={<Wrench size={20} />}
+              title="No service items yet"
+              description="Add the usual ones (engine oil, brake pads, tyres, air filter, coolant, battery, clutch and more) in one click. Each starts from its last logged service, or from today."
+              action={(
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button icon={<Wand2 size={16} />} loading={addDefaults.isPending} onClick={() => addDefaults.mutate()}>Add default items</Button>
+                  <Button variant="secondary" icon={<Plus size={16} />} onClick={() => setPlanEditor({ plan: null })}>Add your own</Button>
+                </div>
+              )}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-border rounded-card border border-border">
@@ -173,9 +180,9 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
                   bar={bar}
                   actions={(
                     <>
-                      <IconButton label={`Log ${p.item} as done`} icon={<ClipboardCheck size={15} />} size="sm" onClick={() => setLogger({ item: p.item })} />
-                      <IconButton label={`Change ${p.item} for this vehicle`} icon={<Pencil size={15} />} size="sm" onClick={() => setPlanEditor({ plan: p })} />
-                      <IconButton label={`Remove ${p.item}`} icon={<Trash2 size={15} />} size="sm" onClick={() => onRemove(p)} />
+                      <IconButton label={`Log ${p.item} as done`} icon={<ClipboardCheck size={16} />} size="sm" onClick={() => setLogger({ item: p.item })} />
+                      <IconButton label={`Change ${p.item} for this vehicle`} icon={<Pencil size={16} />} size="sm" onClick={() => setPlanEditor({ plan: p })} />
+                      <IconButton label={`Remove ${p.item}`} icon={<Trash2 size={16} />} size="sm" onClick={() => onRemove(p)} />
                     </>
                   )}
                 />
@@ -185,7 +192,7 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
       </div>
 
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-text">Documents</h4>
+        <h3 className="text-sm font-medium text-text">Documents</h3>
         <ul className="divide-y divide-border rounded-card border border-border">
           {docs.map(({ f, bar }) => (
             <Bar key={f.key} bar={{ ...bar, detail: v[f.key] ? `Expires ${formatDate(v[f.key])}` : null }} />
@@ -193,6 +200,7 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
         </ul>
         <p className="text-xs text-muted">Update a document's expiry date by editing the vehicle.</p>
       </div>
+      </CardBody>
 
       {odometerOpen && (
         <OdometerModal open vehicleId={vehicleId} plate={v.plate_number} current={v.odometer_km} onClose={() => { setOdometerOpen(false); queryClient.invalidateQueries({ queryKey: maintenanceKeys.vehicle(vehicleId) }) }} />
@@ -209,7 +217,7 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
           onClose={() => setLogger(null)}
         />
       )}
-    </section>
+    </Card>
   )
 }
 

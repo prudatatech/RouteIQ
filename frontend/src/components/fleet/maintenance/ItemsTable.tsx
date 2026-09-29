@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { IconButton } from '@/components/ui'
+import { IconButton, controlClasses } from '@/components/ui'
 import { formatRupees } from '@/utils/display'
 import { lineTotal, type DraftItem } from './items'
 
@@ -9,7 +9,7 @@ export interface ItemRow extends DraftItem {
   total: number
 }
 
-const cell = 'h-9 w-full rounded-control border border-border-strong bg-surface px-2 text-sm text-text placeholder:text-placeholder focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30'
+const cell = `${controlClasses} h-9 border-border-strong !px-2`
 
 /**
  * Parts replaced and repairs done: a compact table (item, qty, unit cost, total) with a quick-add
@@ -66,7 +66,7 @@ export function ItemsTable({ rows, onAdd, onRemove, readOnly = false, busy = fal
           <tbody className="divide-y divide-border">
             {rows.map(r => (
               <tr key={r.key}>
-                <td className="px-2 py-1.5 text-text">
+                <td className="max-w-[14rem] break-words px-2 py-1.5 text-text">
                   {r.description}
                   {r.kind === 'repair' && <span className="ml-1.5 rounded bg-neutral-soft px-1.5 py-0.5 text-xs text-muted">Repair</span>}
                 </td>
@@ -75,7 +75,7 @@ export function ItemsTable({ rows, onAdd, onRemove, readOnly = false, busy = fal
                 <td className="px-2 py-1.5 text-right tabular font-medium text-text">{formatRupees(r.total)}</td>
                 {!readOnly && (
                   <td className="px-1 py-1 text-right">
-                    <IconButton label={`Remove ${r.description}`} size="sm" icon={<Trash2 size={14} />} disabled={busy} onClick={() => onRemove(r.key)} />
+                    <IconButton label={`Remove ${r.description}`} size="sm" icon={<Trash2 size={16} />} disabled={busy} onClick={() => onRemove(r.key)} />
                   </td>
                 )}
               </tr>
@@ -91,7 +91,7 @@ export function ItemsTable({ rows, onAdd, onRemove, readOnly = false, busy = fal
                       aria-label="Part or repair"
                       value={kind}
                       onChange={e => setKind(e.target.value as DraftItem['kind'])}
-                      className="h-9 rounded-control border border-border-strong bg-surface px-1.5 text-sm text-text"
+                      className={`${controlClasses} h-9 !w-auto border-border-strong !px-1.5`}
                     >
                       <option value="part">Part</option>
                       <option value="repair">Repair</option>
@@ -116,7 +116,7 @@ export function ItemsTable({ rows, onAdd, onRemove, readOnly = false, busy = fal
                 </td>
                 <td className="px-2 py-1.5 text-right tabular text-muted">{draftTotal > 0 ? formatRupees(draftTotal) : '—'}</td>
                 <td className="px-1 py-1 text-right">
-                  <IconButton label="Add item" size="sm" variant="secondary" icon={<Plus size={14} />} disabled={busy} onClick={() => void submit()} />
+                  <IconButton label="Add item" size="sm" variant="secondary" icon={<Plus size={16} />} disabled={busy} onClick={() => void submit()} />
                 </td>
               </tr>
             )}

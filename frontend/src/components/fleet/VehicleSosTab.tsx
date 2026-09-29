@@ -116,7 +116,7 @@ export default function VehicleSosTab({ vehicleId, plate, canAct, onRaise }: {
       </section>
       {canAct && onRaise && (
         <div>
-          <Button variant="danger" icon={<ShieldAlert size={16} />} onClick={onRaise}>Raise SOS for {plate}</Button>
+          <Button variant="danger" icon={<ShieldAlert size={16} />} onClick={onRaise}>Raise SOS</Button>
         </div>
       )}
       <DataTable

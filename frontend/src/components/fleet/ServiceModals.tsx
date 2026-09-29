@@ -26,6 +26,7 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
   const [value, setValue] = useState(current != null ? String(Math.round(current)) : '')
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const refresh = useRefreshVehicle(vehicleId)
 
   const km = numberOrNull(value)
@@ -39,10 +40,13 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
   })
 
   const submit = () => {
-    if (km == null || km < 0) { setError('Enter the reading on the dashboard, in km.'); return }
-    if (lower && reason.trim().length < 3) { setError('This is lower than the current reading. Say why it is being corrected.'); return }
+    const next: Record<string, string> = {}
+    if (km == null || km < 0) next.km = 'Enter the reading on the dashboard, in km.'
+    if (lower && reason.trim().length < 3) next.reason = 'This is lower than the current reading. Say why it is being corrected.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
     setError('')
-    save.mutate({ km, why: lower ? reason.trim() : undefined })
+    save.mutate({ km: km!, why: lower ? reason.trim() : undefined })
   }
 
   return (
@@ -61,7 +65,7 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
       )}
     >
       <div className="space-y-4">
-        <Input label="Odometer" type="number" inputMode="decimal" min={0} value={value} onChange={e => setValue(e.target.value)} trailing="km" required />
+        <Input label="Odometer" type="number" inputMode="numeric" min={0} value={value} onChange={e => setValue(e.target.value)} trailing="km" error={errors.km} required />
         {lower && (
           <Textarea
             label="Why is it lower?"
@@ -69,6 +73,7 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
             onChange={e => setReason(e.target.value)}
             maxLength={300}
             hint="The odometer does not go back without a reason, for example a replaced instrument cluster."
+            error={errors.reason}
             required
           />
         )}
@@ -91,6 +96,7 @@ export function PlanModal({ vehicleId, plan, open, onClose }: {
   const [lastKm, setLastKm] = useState(plan?.last_done_km != null ? String(Math.round(plan.last_done_km)) : '')
   const [lastAt, setLastAt] = useState(plan?.last_done_at?.slice(0, 10) ?? '')
   const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const refresh = useRefreshVehicle(vehicleId)
 
   const save = useMutation({
@@ -103,11 +109,16 @@ export function PlanModal({ vehicleId, plan, open, onClose }: {
     const km = numberOrNull(intervalKm)
     const days = numberOrNull(intervalDays)
     const last = numberOrNull(lastKm)
-    if (!item.trim()) { setError('Enter what needs servicing, for example Engine oil.'); return }
-    if (km === undefined || days === undefined || last === undefined) { setError('Use numbers only for kilometres and days.'); return }
-    if (km == null && days == null) { setError('Set how often it is due: every some km, every some days, or both.'); return }
+    const next: Record<string, string> = {}
+    if (!item.trim()) next.item = 'Enter what needs servicing, for example Engine oil.'
+    if (km === undefined) next.km = 'Use numbers only.'
+    if (days === undefined) next.days = 'Use numbers only.'
+    if (last === undefined) next.last = 'Use numbers only.'
+    if (km === null && days === null) next.km = 'Set how often it is due: every some km, every some days, or both.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
     setError('')
-    save.mutate({ item: item.trim(), interval_km: km, interval_days: days, last_done_km: last, last_done_at: lastAt || null })
+    save.mutate({ item: item.trim(), interval_km: km ?? null, interval_days: days ?? null, last_done_km: last ?? null, last_done_at: lastAt || null })
   }
 
   return (
@@ -134,13 +145,13 @@ export function PlanModal({ vehicleId, plan, open, onClose }: {
             placeholder="Pick one, or type your own below"
           />
         )}
-        <Input label="Item" value={item} onChange={e => setItem(e.target.value)} disabled={!!plan} maxLength={60} required />
+        <Input label="Item" value={item} onChange={e => setItem(e.target.value)} disabled={!!plan} maxLength={60} error={errors.item} required />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Due every" type="number" inputMode="numeric" min={1} value={intervalKm} onChange={e => setIntervalKm(e.target.value)} trailing="km" />
-          <Input label="Or every" type="number" inputMode="numeric" min={1} value={intervalDays} onChange={e => setIntervalDays(e.target.value)} trailing="days" />
+          <Input label="Due every" type="number" inputMode="numeric" min={1} value={intervalKm} onChange={e => setIntervalKm(e.target.value)} trailing="km" error={errors.km} />
+          <Input label="Or every" type="number" inputMode="numeric" min={1} value={intervalDays} onChange={e => setIntervalDays(e.target.value)} trailing="days" error={errors.days} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Last done at" type="number" inputMode="decimal" min={0} value={lastKm} onChange={e => setLastKm(e.target.value)} trailing="km" hint="Odometer reading at that service" />
+          <Input label="Last done at" type="number" inputMode="numeric" min={0} value={lastKm} onChange={e => setLastKm(e.target.value)} trailing="km" hint="Odometer reading at that service" error={errors.last} />
           <Input label="Last done on" type="date" max={today()} value={lastAt} onChange={e => setLastAt(e.target.value)} />
         </div>
         {error && <p className="text-sm text-danger" role="alert">{error}</p>}

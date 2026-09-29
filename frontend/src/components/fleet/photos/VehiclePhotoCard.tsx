@@ -55,9 +55,9 @@ export function VehiclePhotoCard({ vehicleId }: { vehicleId: string }) {
         {error ? (
           <ErrorState compact title="We could not load the photos" onRetry={() => refetch()} />
         ) : isLoading ? (
-          <div className="grid grid-cols-2 gap-4"><Skeleton className="aspect-[4/3]" /><Skeleton className="aspect-[4/3]" /></div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5"><Skeleton className="aspect-[4/3]" /><Skeleton className="aspect-[4/3]" /><Skeleton className="aspect-[4/3]" /></div>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             {PHOTO_SLOTS.map(({ slot, label, hint }) => {
               const url = bySlot.get(slot)?.url ?? null
               return (
