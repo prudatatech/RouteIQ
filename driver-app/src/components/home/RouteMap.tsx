@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -25,11 +25,31 @@ export default function RouteMap({ route, currentLoc, line }: RouteMapProps) {
   const { t } = useTranslation();
   const mapRef = useRef<MapView>(null);
   const centredOnce = useRef(false);
+  // The phone's own position, read once when tracking has not reported one yet (no route, tracking off).
+  const [deviceLoc, setDeviceLoc] = useState<LatLng | null>(null);
+
+  useEffect(() => {
+    if (currentLoc || deviceLoc) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        if (!cancelled && loc) setDeviceLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      } catch (e) {
+        console.warn(e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLoc, deviceLoc]);
 
   // Start on the next stop, else the first stop, else the driver.
   const focus = useMemo<LatLng | null>(
-    () => stopCoord(pendingStops(route)[0]) ?? stopCoord(sortedStops(route)[0]) ?? currentLoc,
-    [route, currentLoc],
+    () => stopCoord(pendingStops(route)[0]) ?? stopCoord(sortedStops(route)[0]) ?? currentLoc ?? deviceLoc,
+    [route, currentLoc, deviceLoc],
   );
 
   // Only the first known focus is used as the starting region (MapView ignores later changes).
@@ -54,7 +74,7 @@ export default function RouteMap({ route, currentLoc, line }: RouteMapProps) {
   }, [focus]);
 
   const centreOnMe = async () => {
-    let target = currentLoc;
+    let target = currentLoc ?? deviceLoc;
     if (!target) {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
