@@ -49,6 +49,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
       }
     } catch (e) {
       console.log('Image picker error', e);
+      Alert.alert(t('error'), t('avatar_pick_failed'));
     }
   };
 
