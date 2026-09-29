@@ -397,3 +397,17 @@ export async function addJobAttachments(jobId: string, list: z.infer<typeof Atta
   const job = await loadJob(jobId);
   return addAttachments(job.vehicle_id, { job_id: job.id }, list, userId);
 }
+
+/**
+ * A vehicle taken out of maintenance by the plain status change (not "Return to service") would
+ * leave its job open for good; this closes it, noting that no service record was written.
+ */
+export async function closeOpenJobsForVehicle(vehicleId: string, actorId: string | null): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('vehicle_maintenance_jobs')
+    .update({ status: 'closed', closed_at: now, closed_by: actorId, close_note: 'Returned to service without a service record', updated_at: now })
+    .eq('vehicle_id', vehicleId)
+    .eq('status', 'open');
+  if (error) throw error;
+}

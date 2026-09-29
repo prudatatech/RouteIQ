@@ -13,6 +13,9 @@ import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone
 import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { canReturnToService } from '@/utils/vehicles'
+import { MoveToMaintenanceModal } from '@/components/fleet/maintenance/MoveToMaintenanceModal'
+import { ReturnToServiceModal } from '@/components/fleet/maintenance/ReturnToServiceModal'
+import { useOpenMaintenanceJobs } from '@/components/fleet/maintenance/useOpenMaintenanceJobs'
 
 interface SosAlert {
   id: string
@@ -47,6 +50,10 @@ export default function EmergencyPage() {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // A breakdown or accident can become a maintenance job; a vehicle with a job returns through its job
+  const [maintenanceAlert, setMaintenanceAlert] = useState<SosAlert | null>(null)
+  const [returningAlert, setReturningAlert] = useState<SosAlert | null>(null)
+  const openJobs = useOpenMaintenanceJobs()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
 
@@ -165,6 +172,7 @@ export default function EmergencyPage() {
   /** Puts the alert's vehicle back in service. `ask` shows the question first (right after resolving). */
   const returnToService = async (alert: SosAlert, ask = false) => {
     if (!alert.vehicle_id) return
+    if (openJobs.has(alert.vehicle_id)) { setReturningAlert(alert); return }
     const plate = alert.vehicle?.plate_number ?? 'this vehicle'
     if (ask) {
       const ok = await confirm({
@@ -294,6 +302,10 @@ export default function EmergencyPage() {
                       {isActive && (
                         <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
                       )}
+                      {isActive && alert.vehicle_id && ['breakdown', 'accident'].includes(alert.alert_type) && !openJobs.has(alert.vehicle_id)
+                        && alert.vehicle?.status !== 'archived' && (
+                        <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => setMaintenanceAlert(alert)}>Create maintenance job</Button>
+                      )}
                       {alert.vehicle_id && canReturnToService({ status: alert.vehicle?.status }) && (
                         <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => returnToService(alert, true)}>Return to service</Button>
                       )}
@@ -338,6 +350,23 @@ export default function EmergencyPage() {
           </MapView>
         </div>
       </div>
+      {maintenanceAlert?.vehicle_id && (
+        <MoveToMaintenanceModal
+          open
+          vehicleId={maintenanceAlert.vehicle_id}
+          plate={maintenanceAlert.vehicle?.plate_number ?? 'this vehicle'}
+          sos={{ id: maintenanceAlert.id, alert_type: maintenanceAlert.alert_type, description: maintenanceAlert.description }}
+          onClose={() => setMaintenanceAlert(null)}
+        />
+      )}
+      {returningAlert?.vehicle_id && (
+        <ReturnToServiceModal
+          open
+          vehicleId={returningAlert.vehicle_id}
+          plate={returningAlert.vehicle?.plate_number ?? 'this vehicle'}
+          onClose={() => setReturningAlert(null)}
+        />
+      )}
     </Page>
   )
 }

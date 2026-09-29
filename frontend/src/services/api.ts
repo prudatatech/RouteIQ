@@ -253,8 +253,31 @@ export const cargoAPI = {
 export const fleetAPI = {
   health: () => api.get('/fleet/health').then(r => ensureArray(r.data)),
   vehicleHealth: (id: string) => api.get(`/fleet/vehicles/${id}/health`).then(r => r.data),
-  setOdometer: (id: string, odometerKm: number) =>
-    api.put(`/fleet/vehicles/${id}/odometer`, { odometer_km: odometerKm }).then(r => r.data),
+  /** The vehicle row: documents' expiry dates, odometer and when/how it was last updated. */
+  vehicle: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
+  /** A reading lower than the current one needs `correctionReason`. */
+  setOdometer: (id: string, odometerKm: number, correctionReason?: string) =>
+    api.put(`/fleet/vehicles/${id}/odometer`, { odometer_km: odometerKm, ...(correctionReason ? { correction_reason: correctionReason } : {}) }).then(r => r.data),
+  /** Adds the distance driven since the last update (from GPS); returns before, after and the source. */
+  syncOdometer: (id: string) => api.post(`/fleet/vehicles/${id}/odometer/sync`).then(r => r.data),
+  serviceTemplates: () => api.get('/fleet/service-plan-templates').then(r => ensureArray(r.data)),
+  addDefaultPlans: (id: string) => api.post(`/fleet/vehicles/${id}/service-plans/defaults`).then(r => ensureArray(r.data)),
+  maintenanceJobs: (params: { status?: 'open' | 'closed'; vehicle_id?: string } = {}) =>
+    api.get('/fleet/maintenance/jobs', { params }).then(r => ensureArray(r.data)),
+  maintenancePreview: (id: string) => api.get(`/fleet/vehicles/${id}/maintenance/preview`).then(r => r.data),
+  openMaintenance: (id: string, body: object) => api.post(`/fleet/vehicles/${id}/maintenance`, body).then(r => r.data),
+  updateMaintenanceJob: (jobId: string, body: object) => api.patch(`/fleet/maintenance/jobs/${jobId}`, body).then(r => r.data),
+  closeMaintenanceJob: (jobId: string, body: object) => api.post(`/fleet/maintenance/jobs/${jobId}/close`, body).then(r => r.data),
+  addJobFiles: (jobId: string, attachments: object[]) => api.post(`/fleet/maintenance/jobs/${jobId}/attachments`, { attachments }).then(r => r.data),
+  attachmentUpload: (vehicleId: string, body: { content_type: string; size: number }) =>
+    api.post(`/fleet/vehicles/${vehicleId}/service-attachments/upload-url`, body)
+      .then(r => r.data as { path: string; token: string; signed_url: string; bucket: string }),
+  addRecordFiles: (logId: string, attachments: object[]) => api.post(`/fleet/service-log/${logId}/attachments`, { attachments }).then(r => r.data),
+  attachmentUrl: (id: string, download: boolean) =>
+    api.get(`/fleet/service-attachments/${id}/url`, { params: download ? { download: 1 } : undefined }).then(r => r.data as { url: string; file_name: string | null }),
+  deleteAttachment: (id: string) => api.delete(`/fleet/service-attachments/${id}`).then(r => r.data),
+  addServiceItems: (logId: string, items: object[]) => api.post(`/fleet/service-log/${logId}/items`, { items }).then(r => r.data),
+  deleteServiceItem: (id: string) => api.delete(`/fleet/service-items/${id}`).then(r => r.data),
   servicePlans: (id: string) => api.get(`/fleet/vehicles/${id}/service-plans`).then(r => ensureArray(r.data)),
   savePlan: (id: string, plan: object) => api.post(`/fleet/vehicles/${id}/service-plans`, plan).then(r => r.data),
   deletePlan: (planId: string) => api.delete(`/fleet/service-plans/${planId}`).then(r => r.data),

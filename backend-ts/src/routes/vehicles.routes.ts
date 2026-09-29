@@ -19,6 +19,7 @@ import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
 import { capacityService } from '../services/capacity.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
+import { closeOpenJobsForVehicle } from '../services/maintenance.service';
 
 const router = Router();
 
@@ -396,6 +397,10 @@ router.post('/:vehicle_id/status', requireAuth, requireRole('admin', 'manager'),
       throw new HttpError(400, `status must be one of: ${STAFF_SETTABLE_STATUSES.join(', ')}`);
     }
     const change = await changeVehicleStatus(req.params.vehicle_id, next);
+    // Leaving maintenance this way closes its open maintenance job (Return to service on the job writes the record)
+    if (change.changed && change.from === 'maintenance' && next !== 'maintenance') {
+      await closeOpenJobsForVehicle(req.params.vehicle_id, req.user!.user_id);
+    }
     await invalidateVehicleCaches();
     const { data: vehicle } = await supabase.from('vehicles').select('*').eq('id', req.params.vehicle_id).maybeSingle();
     res.json({ ...change, vehicle });

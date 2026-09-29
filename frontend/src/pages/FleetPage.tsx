@@ -21,7 +21,11 @@ import AlertsView from '@/components/fleet/AlertsView'
 import RaiseSosModal from '@/components/fleet/RaiseSosModal'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
 import { apiErrorMessage, bandLabel, bandTone, fleetKeys, formatOdometer, type HealthBand } from '@/components/fleet/health'
-import { returnVehicleToService, setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
+import { setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
+import { MoveToMaintenanceModal } from '@/components/fleet/maintenance/MoveToMaintenanceModal'
+import { ReturnToServiceModal } from '@/components/fleet/maintenance/ReturnToServiceModal'
+import { MaintenanceNote } from '@/components/fleet/maintenance/MaintenanceNote'
+import { useOpenMaintenanceJobs } from '@/components/fleet/maintenance/useOpenMaintenanceJobs'
 import { canReturnToService, isDraftVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
@@ -121,6 +125,9 @@ export default function FleetPage() {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [sosOpen, setSosOpen] = useState(false)
+  // Move to maintenance / Return to service open their own forms (reason, return date, workshop, records)
+  const [maintenanceFor, setMaintenanceFor] = useState<{ vehicle: Vehicle; mode: 'move' | 'return' } | null>(null)
+  const openJobs = useOpenMaintenanceJobs()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Keep "last seen" labels and the live threshold current.
@@ -257,32 +264,9 @@ export default function FleetPage() {
     onError: err => toast.error(apiErrorMessage(err, 'We could not change the vehicle status.')),
   })
 
-  const handleReturnToService = async (v: Vehicle) => {
-    const ok = await confirm({
-      title: `Return ${v.plate_number} to service?`,
-      message: 'It becomes available for dispatch again. Do this once it is repaired, inspected or safe to drive.',
-      confirmLabel: 'Return to service',
-    })
-    if (!ok) return
-    try {
-      await returnVehicleToService(v.id)
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
-      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success(`${v.plate_number} is back in service`)
-    } catch (err) {
-      toast.error(apiErrorMessage(err, 'We could not return the vehicle to service.'))
-    }
-  }
+  const handleReturnToService = (v: Vehicle) => setMaintenanceFor({ vehicle: v, mode: 'return' })
 
-  const handleMaintenance = async (v: Vehicle) => {
-    const ok = await confirm({
-      title: `Move ${v.plate_number} to maintenance?`,
-      message: 'It is not offered for new work until you return it to service.',
-      confirmLabel: 'Move to maintenance',
-      tone: 'danger',
-    })
-    if (ok) statusMutation.mutate({ id: v.id, status: 'maintenance' })
-  }
+  const handleMaintenance = (v: Vehicle) => setMaintenanceFor({ vehicle: v, mode: 'move' })
 
   const handleUnarchive = async (v: Vehicle) => {
     const ok = await confirm({
@@ -306,7 +290,16 @@ export default function FleetPage() {
       ),
     },
     { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span>{humanize(v.vehicle_type)}</span> },
-    { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: v => (
+        <div className="space-y-0.5">
+          <StatusPill status={v.status} />
+          {v.status === 'maintenance' && openJobs.get(v.id) && <MaintenanceNote job={openJobs.get(v.id)!} />}
+        </div>
+      ),
+    },
     {
       key: 'health',
       header: 'Health',
@@ -505,6 +498,13 @@ export default function FleetPage() {
       )}
       </TabPanel>
 
+      {maintenanceFor?.mode === 'move' && (
+        <MoveToMaintenanceModal open vehicleId={maintenanceFor.vehicle.id} plate={maintenanceFor.vehicle.plate_number} onClose={() => setMaintenanceFor(null)} />
+      )}
+      {maintenanceFor?.mode === 'return' && (
+        <ReturnToServiceModal open vehicleId={maintenanceFor.vehicle.id} plate={maintenanceFor.vehicle.plate_number} onClose={() => setMaintenanceFor(null)} />
+      )}
+
       <VehicleWizardModal
         isOpen={isAddOpen || !!editingVehicle}
         onClose={() => { setIsAddOpen(false); setEditingVehicle(null) }}
@@ -556,6 +556,9 @@ export default function FleetPage() {
                   <Button variant="secondary" icon={<ArchiveRestore size={16} />} onClick={() => handleUnarchive(detailVehicle)}>Restore vehicle</Button>
                 )}
               </div>
+            )}
+            {detailVehicle.status === 'maintenance' && openJobs.get(detailVehicle.id) && (
+              <MaintenanceNote job={openJobs.get(detailVehicle.id)!} className="text-sm text-muted" />
             )}
             <DetailList
               columns={2}

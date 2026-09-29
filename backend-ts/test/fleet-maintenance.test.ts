@@ -415,6 +415,13 @@ describe('returning a vehicle to service', () => {
     expect((await close({}, 'no-such-job')).status).toBe(404);
   });
 
+  it('closes the job when the plain status change takes the vehicle out of maintenance', async () => {
+    const res = await request(app).post(`/api/v1/vehicles/${VEHICLE}/status`).set(bearer('admin-1')).send({ status: 'available' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vehicle_maintenance_jobs')[0]).toMatchObject({ status: 'closed', close_note: 'Returned to service without a service record' });
+    expect(supabaseMock.rows('vehicle_service_log')).toHaveLength(0);
+  });
+
   it('leaves a vehicle alone that is no longer in maintenance', async () => {
     supabaseMock.rows('vehicles')[0].status = 'on_route';
     const res = await close();
