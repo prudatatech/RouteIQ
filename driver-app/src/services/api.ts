@@ -30,6 +30,47 @@ export type SosSeverity = 'serious' | 'minor';
 
 export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
 
+/** Document types in the people plan (docs/people-plan.md). */
+export type DocType =
+  | 'driving_licence'
+  | 'aadhaar'
+  | 'pan'
+  | 'photo'
+  | 'police_verification'
+  | 'medical_fitness'
+  | 'address_proof'
+  | 'offer_letter'
+  | 'other';
+
+export type DocStatus = 'pending' | 'verified' | 'rejected' | 'expired';
+
+/** One of the driver's own documents. */
+export interface PersonDocument {
+  id: string;
+  doc_type: DocType;
+  doc_number: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  status: DocStatus;
+  rejection_reason: string | null;
+  metadata?: Record<string, any> | null;
+  created_at?: string;
+}
+
+export interface EmergencyContact {
+  id: string;
+  name: string;
+  relation: string | null;
+  phone: string;
+  is_primary: boolean;
+}
+
+/** The driver's own record from GET /people/me. Any part can be missing. */
+export interface MyPeople {
+  documents: PersonDocument[];
+  emergency_contacts: EmergencyContact[];
+}
+
 /** A text message between the driver and dispatch. */
 export interface ChatMessage {
   id: string;
@@ -335,6 +376,44 @@ class ApiClient {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data, true, idempotencyHeader(idempotencyKey));
   }
 
+
+  // ── People: own documents and emergency contacts ───────────
+
+  /** The driver's own documents and emergency contacts. Tolerates a missing key. */
+  async getMyPeople(): Promise<MyPeople> {
+    const data = await this.request('GET', '/people/me');
+    return {
+      documents: Array.isArray(data?.documents) ? data.documents : [],
+      emergency_contacts: Array.isArray(data?.emergency_contacts) ? data.emergency_contacts : [],
+    };
+  }
+
+  /** A signed URL to upload one document file (PDF, JPG or PNG, up to 10 MB). */
+  async getMyDocumentUploadUrl(data: {
+    doc_type: DocType;
+    file_name: string;
+    content_type: string;
+  }): Promise<{ path: string; signed_url: string; token: string }> {
+    return this.request('POST', '/people/me/documents/upload-url', data);
+  }
+
+  /** Records an uploaded file as the driver's document of that type. It goes to pending. */
+  async createMyDocument(data: {
+    doc_type: DocType;
+    doc_number?: string;
+    issued_on?: string;
+    expires_on?: string;
+    file_path: string;
+    metadata?: Record<string, any>;
+  }): Promise<PersonDocument> {
+    const res = await this.request('POST', '/people/me/documents', data);
+    return res?.document ?? res;
+  }
+
+  /** A link to view one of the driver's documents, valid for about 10 minutes. */
+  async getMyDocumentFileUrl(docId: string): Promise<{ url: string }> {
+    return this.request('GET', `/people/me/documents/${encodeURIComponent(docId)}/file`);
+  }
 
   /** A signed URL to upload one proof-of-delivery image (JPEG or PNG) for a stop. */
   async getPodUploadUrl(data: {
