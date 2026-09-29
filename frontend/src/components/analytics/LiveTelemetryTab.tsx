@@ -82,6 +82,8 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
 
   // Pings pushed over the WebSocket since the page opened, per vehicle.
   const [live, setLive] = useState<Record<string, SpeedPoint[]>>({})
+  // null until the first status report, so nothing flashes while the first connection opens.
+  const [connected, setConnected] = useState<boolean | null>(null)
   useEffect(() => {
     const feed = telemetryWS.connect((msg: { type?: string; data?: Record<string, unknown> }) => {
       if (msg?.type !== 'TELEMETRY_UPDATE' || !msg.data) return
@@ -93,7 +95,7 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
         ...prev,
         [id]: [...(prev[id] ?? []), { at, time: formatTime(at), speed: Math.round(speed) }].slice(-MAX_POINTS),
       }))
-    })
+    }, setConnected)
     return () => feed.close()
   }, [])
 
@@ -155,6 +157,7 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
         />
         <div className="flex items-center gap-2" aria-live="polite">
           {selected && <StatusPill status={selected.status} />}
+          {connected === false && <StatusPill tone="warning" dot={false}>Reconnecting…</StatusPill>}
           {isLive
             ? <StatusPill tone="success">Live</StatusPill>
             : <StatusPill tone="neutral" dot={false}>{last ? 'No recent pings' : 'No pings yet'}</StatusPill>}
