@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, MapPin } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import { Button, Modal } from '@/components/ui'
-import { sosSeverityLabel, sosTypeLabel } from '@/utils/sos'
+import { telemetryAPI } from '@/services/api'
+import { apiErrorMessage } from '@/components/fleet/health'
+import { sosSeverityLabel, sosStatusOf, sosTypeLabel } from '@/utils/sos'
 import { formatTime } from '@/utils/display'
 
 interface SosAlert {
@@ -66,8 +70,11 @@ function createAlarm() {
 export default function SOSListener() {
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [alerts, setAlerts] = useState<SosAlert[]>([])
   const alarm = useRef(createAlarm())
+  const alertsRef = useRef(alerts)
+  alertsRef.current = alerts
 
   useEffect(() => {
     if (role !== 'superadmin' && role !== 'admin' && role !== 'manager') return
@@ -82,6 +89,17 @@ export default function SOSListener() {
         setAlerts(list => (list.some(a => a.id === alert.id) ? list : [...list, alert]))
         siren.start()
       })
+      // Someone dealt with the alert (another dispatcher acknowledged or resolved it, or the driver
+      // cancelled it in the app): stop asking, and stop the siren when nothing is left.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sos_alerts' }, payload => {
+        const next = payload.new as { id: string; status: string | null }
+        if (sosStatusOf(next.status) === 'active') return
+        const gone = alertsRef.current.find(a => a.id === next.id)
+        if (gone && next.status === 'cancelled') {
+          toast.success(`${gone.plate ? `The driver of ${gone.plate}` : 'The driver'} cancelled the SOS`)
+        }
+        setAlerts(list => list.filter(a => a.id !== next.id))
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -95,6 +113,17 @@ export default function SOSListener() {
   if (!current) return null
 
   const dismiss = () => setAlerts(list => list.slice(1))
+  // Taking it on stops the siren and closes the popup for everyone else too (the update reaches their listener).
+  const acknowledge = async () => {
+    try {
+      await telemetryAPI.acknowledgeSos(current.id)
+      queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
+      toast.success('SOS acknowledged')
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We could not acknowledge this SOS. Open Emergencies to check it.'))
+    }
+    dismiss()
+  }
   const open = () => {
     setAlerts([])
     navigate(`/emergency?open=${current.id}`)
@@ -113,6 +142,7 @@ export default function SOSListener() {
       footer={
         <>
           <Button variant="secondary" onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>
+          <Button variant="secondary" onClick={acknowledge}>Acknowledge</Button>
           <Button variant="danger" onClick={open}>Open emergencies</Button>
         </>
       }

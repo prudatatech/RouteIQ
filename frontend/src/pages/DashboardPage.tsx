@@ -11,7 +11,7 @@ import { useDraftStore } from '@/store/draftStore'
 import { ACTIVE_SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { isDraftVehicle, isFleetVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
-import { sosHeadline } from '@/utils/sos'
+import { isOpenSos, sosHeadline } from '@/utils/sos'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import { humanize } from '@/components/ui'
 import type { FleetAlert } from '@/components/fleet/health'
@@ -125,7 +125,7 @@ export default function DashboardPage() {
       const { data } = await supabase
         .from('sos_alerts')
         .select('*')
-        .neq('status', 'resolved')
+        .in('status', ['active', 'acknowledged'])
         .order('created_at', { ascending: false })
         .limit(50)
       return data || []
@@ -179,7 +179,7 @@ export default function DashboardPage() {
     : null
   // No fabricated fallback: on_time_rate_pct is null when there is no route data for today.
   const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
-  const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
+  const openAlerts = sosAlerts.filter(a => isOpenSos(a.status))
 
   const delayInsights = insights.filter(i => i.type === 'delay_risk')
   // Placeholder vehicles (a driver's first-login stub, a saved draft) are not fleet assets, so they are never "idle".
@@ -207,7 +207,7 @@ export default function DashboardPage() {
       subtitle: v.plate_number,
       time: lastSeenAt(v) ? `Last seen ${timeAgo(lastSeenAt(v)!.toISOString())}` : 'Never reported',
       actions: [
-        { label: 'View vehicle', onClick: () => navigate(`/fleet?open=${v.id}`) },
+        { label: 'View vehicle', onClick: () => navigate(`/fleet/${v.id}`) },
         { label: 'Show on map', onClick: () => navigate(`/live-map?vehicle=${v.id}`) },
       ],
     })),
@@ -228,7 +228,7 @@ export default function DashboardPage() {
       subtitle: i.insight,
       time: '',
       actions: i.vehicle_id
-        ? [{ label: 'View vehicle', onClick: () => navigate(`/fleet?open=${i.vehicle_id}`) }]
+        ? [{ label: 'View vehicle', onClick: () => navigate(`/fleet/${i.vehicle_id}`) }]
         : [],
     })),
   ]

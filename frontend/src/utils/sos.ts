@@ -25,19 +25,44 @@ export function sosTypeLabel(type: string | null | undefined): string {
   return SOS_TYPE_LABELS[type] ?? humanize(type)
 }
 
-/** Colour of an SOS alert's status: still active is urgent, acknowledged is being handled, resolved is done. */
+/**
+ * The statuses of an SOS alert (sos_alerts.status), as the server writes them: active, then
+ * acknowledged, then resolved; or cancelled from either open state (a false alarm, cancelled by
+ * the driver in the app or closed by staff).
+ */
+export type SosStatus = 'active' | 'acknowledged' | 'resolved' | 'cancelled'
+
+/** A row with no status has not been touched yet, so it is active. */
+export const sosStatusOf = (status: string | null | undefined): string => status || 'active'
+
+/** Colour of an SOS alert's status: active is urgent, acknowledged is being handled, resolved is done, cancelled is closed. */
 export function sosStatusTone(status: string | null | undefined): Tone {
-  if (status === 'resolved') return 'success'
-  if (status === 'acknowledged') return 'warning'
+  const s = sosStatusOf(status)
+  if (s === 'resolved') return 'success'
+  if (s === 'cancelled') return 'neutral'
+  if (s === 'acknowledged') return 'warning'
   return 'danger'
 }
 
 export function sosStatusLabel(status: string | null | undefined): string {
-  return humanize(status || 'active')
+  const s = sosStatusOf(status)
+  return s === 'cancelled' ? 'Cancelled (false alarm)' : humanize(s)
 }
 
-/** An alert that still needs a response. */
-export const isOpenSos = (status: string | null | undefined): boolean => status !== 'resolved'
+/** An alert that still needs a response: active or acknowledged. */
+export const isOpenSos = (status: string | null | undefined): boolean => {
+  const s = sosStatusOf(status)
+  return s === 'active' || s === 'acknowledged'
+}
+
+/** How many times a vehicle has raised an SOS, as the server counts it. */
+export interface SosCounts {
+  total: number
+  last_30_days: number
+  /** Active or acknowledged. */
+  open: number
+  cancelled: number
+}
 
 /** Type and severity as one line, e.g. "Accident · Injuries reported". */
 export function sosHeadline(alert: { alert_type?: string | null; severity?: string | null }): string {
