@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
-import { Audio } from 'expo-av';
+import { colors } from '../theme';
 
 // Configure how notifications behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -92,14 +92,14 @@ async function registerForPushNotificationsAsync() {
       name: 'default',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
+      lightColor: colors.accentFill,
       sound: 'default'
     });
     await Notifications.setNotificationChannelAsync('alarms', {
       name: 'Loud Alarms',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 500, 500],
-      lightColor: '#FF0000',
+      lightColor: colors.danger,
       sound: 'uber_driver_sound.mp3'
     });
   }

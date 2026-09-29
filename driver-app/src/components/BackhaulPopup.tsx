@@ -1,25 +1,31 @@
 import { useTranslation } from '../hooks/useTranslation';
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
+import { Text } from './ui';
+import { colors, elevation, radius, size, space } from '../theme';
 
 interface BackhaulPopupProps {
   vehicleId: string;
   onDismiss: () => void;
+  /** Distance from the bottom of the screen, to clear the tab bar. */
+  bottomOffset?: number;
 }
 
 type PopupState = 'opening' | 'bidding' | 'matched' | 'no_match';
 
-export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupProps) {
+export default function BackhaulPopup({ vehicleId, onDismiss, bottomOffset = space[4] }: BackhaulPopupProps) {
   const { t } = useTranslation();
   const [popupState, setPopupState] = useState<PopupState>('opening');
   const [biddersCount, setBiddersCount] = useState(0);
-  const [matchDetails, setMatchDetails] = useState<{ amount: number; route: string } | null>(null);
+  const [matchAmount, setMatchAmount] = useState<number | null>(null);
   const [windowId, setWindowId] = useState<string | null>(null);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
   useEffect(() => {
-    // Fake the 'opening' state for a brief moment
+    // Short "letting transporters know" step before showing live bids.
     const timer = setTimeout(() => {
       setPopupState('bidding');
     }, 1500);
@@ -28,6 +34,17 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
   }, []);
 
   useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const dismissLater = (ms: number) => timers.push(setTimeout(() => onDismissRef.current(), ms));
+
+    const handleWinningBid = async (bidId: string) => {
+      const { data: bid } = await supabase.from('capacity_bids').select('bid_amount').eq('id', bidId).single();
+      // Row-level security may hide the bid from drivers; then no amount is shown.
+      setMatchAmount(typeof bid?.bid_amount === 'number' ? bid.bid_amount : null);
+      setPopupState('matched');
+      dismissLater(5000);
+    };
+
     // 1. Find the active window
     const fetchWindow = async () => {
       const { data } = await supabase
@@ -44,7 +61,7 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
           handleWinningBid(data.winning_bid_id);
         } else if (data.fallback_used) {
           setPopupState('no_match');
-          setTimeout(onDismiss, 4000);
+          dismissLater(4000);
         }
       }
     };
@@ -62,13 +79,14 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
             handleWinningBid(payload.new.winning_bid_id);
           } else if (payload.new.fallback_used) {
             setPopupState('no_match');
-            setTimeout(onDismiss, 4000);
+            dismissLater(4000);
           }
-        }
+        },
       )
       .subscribe();
 
     return () => {
+      timers.forEach(clearTimeout);
       supabase.removeChannel(windowSub);
     };
   }, [vehicleId]);
@@ -82,7 +100,7 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
         const data = await api.getWindowBidCount(windowId);
         setBiddersCount(data.count || 0);
       } catch (err) {
-        // Ignore network errors
+        // A missed poll is retried in 3 s.
       }
     };
 
@@ -94,51 +112,45 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
     };
   }, [windowId, popupState]);
 
-  const handleWinningBid = async (bidId: string) => {
-    const { data: bid } = await supabase.from('capacity_bids').select('bid_amount').eq('id', bidId).single();
-    // Due to RLS, bid might be null for drivers. We fallback to a generic message if so.
-    setMatchDetails({ amount: bid?.bid_amount || 'Calculated', route: 'Added to your route' });
-    setPopupState('matched');
-    setTimeout(onDismiss, 5000);
-  };
-
-  const getTheme = () => {
-    switch (popupState) {
-      case 'opening': return { bg: '#FFFFFF', text: '#111827', border: '#27A150' };
-      case 'bidding': return { bg: '#FFFFFF', text: '#111827', border: '#FF9933' };
-      case 'matched': return { bg: '#FFFFFF', text: '#111827', border: '#27A150' };
-      case 'no_match': return { bg: '#FFFFFF', text: '#6B7280', border: '#E5E7EB' };
-    }
-  };
-
-  const theme = getTheme();
+  const borderColor =
+    popupState === 'matched' ? colors.success : popupState === 'no_match' ? colors.border : colors.accentFill;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme?.bg, borderColor: theme?.border }]}>
-      {popupState === 'opening' && (
-        <Text style={[styles.text, { color: theme.text }]}>Letting nearby transporters know you have space...</Text>
-      )}
+    <View
+      style={[styles.container, { borderColor, bottom: bottomOffset }]}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="summary"
+    >
+      {popupState === 'opening' && <Text variant="bodySmall">{t('backhaul_opening')}</Text>}
 
       {popupState === 'bidding' && (
-        <View>
-          <Text style={[styles.title, { color: theme.text }]}>Finding your best offer...</Text>
-          <Text style={[styles.text, { color: theme.text }]}>{biddersCount} transporters interested</Text>
+        <View style={styles.body}>
+          <Text variant="title">{t('backhaul_bidding')}</Text>
+          <Text variant="bodySmall" color="textMuted">
+            {biddersCount} {t('backhaul_bidders')}
+          </Text>
         </View>
       )}
 
       {popupState === 'matched' && (
-        <View>
-          <Text style={[styles.title, { color: theme.text }]}>
-            Best offer accepted: {typeof matchDetails?.amount === 'number' ? `₹${matchDetails.amount}` : matchDetails?.amount}
+        <View style={styles.body}>
+          <Text variant="title">
+            {matchAmount !== null
+              ? `${t('backhaul_matched_offer')} ₹${matchAmount.toLocaleString()}`
+              : t('backhaul_offer_accepted')}
           </Text>
-          <Text style={[styles.text, { color: theme.text }]}>New stop: {matchDetails?.route}</Text>
+          <Text variant="bodySmall" color="textMuted">
+            {t('backhaul_added_to_route')}
+          </Text>
         </View>
       )}
 
       {popupState === 'no_match' && (
-        <View>
-          <Text style={[styles.title, { color: theme.text }]}>No offers met your route right now.</Text>
-          <Text style={[styles.text, { color: theme.text }]}>We'll keep watching.</Text>
+        <View style={styles.body}>
+          <Text variant="title">{t('backhaul_no_match')}</Text>
+          <Text variant="bodySmall" color="textMuted">
+            {t('backhaul_no_match_desc')}
+          </Text>
         </View>
       )}
     </View>
@@ -148,24 +160,13 @@ export default function BackhaulPopup({ vehicleId, onDismiss }: BackhaulPopupPro
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 90,
-    left: 20,
-    right: 20,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 2,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
+    left: space[4],
+    right: space[4],
+    padding: space[4],
+    borderRadius: radius.card,
+    borderWidth: size.border * 2,
+    backgroundColor: colors.surface,
+    ...elevation.sm,
   },
-  title: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  text: {
-    fontSize: 14,
-  }
+  body: { gap: space[1] },
 });

@@ -1,120 +1,164 @@
 import { useTranslation } from '../hooks/useTranslation';
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, PanResponder, Dimensions } from 'react-native';
-import { Vibration } from 'react-native';
+import { View, StyleSheet, Animated, PanResponder, Vibration, type AccessibilityActionEvent } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Text } from './ui';
+import { colors, radius, size, space, type } from '../theme';
 
-const { width } = Dimensions.get('window');
-const BUTTON_HEIGHT = 60;
-const THUMB_SIZE = 52;
-// Adjust the total width depending on parent padding. 
-// Assuming the parent has some padding (e.g., 24px each side for bottom sheet).
-// We'll calculate MAX_SLIDE in onLayout to be precise.
+const BUTTON_HEIGHT = 56;
+const THUMB_SIZE = 48;
+const INSET = (BUTTON_HEIGHT - THUMB_SIZE) / 2;
+/** Share of the track the thumb must travel before release confirms. */
+const CONFIRM_AT = 0.8;
+
+type SwipeTone = 'accent' | 'success' | 'danger';
+
+const TONE: Record<SwipeTone, { thumb: string; icon: string; fill: string }> = {
+  accent: { thumb: colors.accentFill, icon: colors.onAccentFill, fill: colors.accentSoft },
+  success: { thumb: colors.success, icon: colors.onSolid, fill: colors.successSoft },
+  danger: { thumb: colors.danger, icon: colors.onSolid, fill: colors.dangerSoft },
+};
 
 interface SwipeButtonProps {
   title: string;
-  onComplete: () => void;
-  color?: string;
+  /**
+   * Called once the swipe is confirmed. Return (or resolve) `false`, or throw,
+   * to reset the button so the driver can try again.
+   */
+  onComplete: () => unknown;
+  tone?: SwipeTone;
   isCompleted?: boolean;
+  disabled?: boolean;
 }
 
-export default function SwipeButton({ title, onComplete, color = '#27A150', isCompleted = false }: SwipeButtonProps) {
+/** Swipe-to-confirm for actions that must not happen by accident. */
+export default function SwipeButton({ title, onComplete, tone = 'accent', isCompleted = false, disabled = false }: SwipeButtonProps) {
   const { t } = useTranslation();
   const [completed, setCompleted] = useState(isCompleted);
   const [width, setWidth] = useState(0);
-  const pan = useRef(new Animated.ValueXY()).current;
-  const opacityAnim = useRef(new Animated.Value(1)).current;
-  
-  const MAX_SLIDE = width > 0 ? width - THUMB_SIZE - 8 : 200;
+  const pan = useRef(new Animated.Value(0)).current;
+  const labelOpacity = useRef(new Animated.Value(1)).current;
+
+  // The pan responder is created once, so it reads live values through refs.
+  const maxSlideRef = useRef(0);
+  const completedRef = useRef(completed);
+  const disabledRef = useRef(disabled);
+  const onCompleteRef = useRef(onComplete);
+  maxSlideRef.current = width > 0 ? width - THUMB_SIZE - INSET * 2 : 0;
+  completedRef.current = completed;
+  disabledRef.current = disabled;
+  onCompleteRef.current = onComplete;
+
+  const reset = () => {
+    setCompleted(false);
+    Animated.spring(pan, { toValue: 0, friction: 6, useNativeDriver: false }).start();
+    Animated.timing(labelOpacity, { toValue: 1, duration: 150, useNativeDriver: false }).start();
+  };
+
+  const confirm = async () => {
+    Vibration.vibrate(50);
+    setCompleted(true);
+    try {
+      const result = await onCompleteRef.current();
+      if (result === false) reset();
+    } catch {
+      reset();
+    }
+  };
 
   useEffect(() => {
     setCompleted(isCompleted);
     if (!isCompleted) {
-      pan.setValue({ x: 0, y: 0 });
-      opacityAnim.setValue(1);
+      pan.setValue(0);
+      labelOpacity.setValue(1);
     }
-  }, [isCompleted]);
+  }, [isCompleted, pan, labelOpacity]);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !completed,
-      onMoveShouldSetPanResponder: () => !completed,
-      onPanResponderMove: (e, gesture) => {
-        if (gesture.dx > 0 && gesture.dx <= MAX_SLIDE) {
-          pan.setValue({ x: gesture.dx, y: 0 });
-          opacityAnim.setValue(1 - gesture.dx / MAX_SLIDE);
-        } else if (gesture.dx > MAX_SLIDE) {
-          pan.setValue({ x: MAX_SLIDE, y: 0 });
-          opacityAnim.setValue(0);
-        }
+      onStartShouldSetPanResponder: () => !completedRef.current && !disabledRef.current,
+      onMoveShouldSetPanResponder: () => !completedRef.current && !disabledRef.current,
+      onPanResponderMove: (_e, gesture) => {
+        const max = maxSlideRef.current;
+        if (max <= 0) return;
+        const x = Math.max(0, Math.min(gesture.dx, max));
+        pan.setValue(x);
+        labelOpacity.setValue(1 - x / max);
       },
-      onPanResponderRelease: (e, gesture) => {
-        if (gesture.dx >= MAX_SLIDE * 0.8) {
-          Animated.timing(pan, {
-            toValue: { x: MAX_SLIDE, y: 0 },
-            duration: 150,
-            useNativeDriver: false,
-          }).start(() => {
-            Vibration.vibrate(100);
-            setCompleted(true);
-            onComplete();
+      onPanResponderRelease: (_e, gesture) => {
+        const max = maxSlideRef.current;
+        if (max > 0 && gesture.dx >= max * CONFIRM_AT) {
+          Animated.timing(pan, { toValue: max, duration: 120, useNativeDriver: false }).start(() => {
+            confirm();
           });
         } else {
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            friction: 5,
-            useNativeDriver: false,
-          }).start();
-          Animated.timing(opacityAnim, {
-            toValue: 1,
-            duration: 150,
-            useNativeDriver: false,
-          }).start();
+          Animated.spring(pan, { toValue: 0, friction: 5, useNativeDriver: false }).start();
+          Animated.timing(labelOpacity, { toValue: 1, duration: 150, useNativeDriver: false }).start();
         }
       },
-    })
+      onPanResponderTerminate: () => {
+        Animated.spring(pan, { toValue: 0, friction: 5, useNativeDriver: false }).start();
+        Animated.timing(labelOpacity, { toValue: 1, duration: 150, useNativeDriver: false }).start();
+      },
+    }),
   ).current;
+
+  // Screen readers cannot swipe: double-tap performs the action instead.
+  const onAccessibilityAction = (event: AccessibilityActionEvent) => {
+    if (event.nativeEvent.actionName === 'activate' && !completed && !disabled) {
+      confirm();
+    }
+  };
+
+  const colorsForTone = TONE[tone];
 
   if (completed) {
     return (
-      <View style={[styles.container, { backgroundColor: color }]}>
-        <Text style={[styles.title, { color: '#FFF' }]}>✓ Completed</Text>
+      <View
+        style={[styles.container, { backgroundColor: colorsForTone.fill }]}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={`${title}: ${t('completed')}`}
+        accessibilityState={{ disabled: true, busy: true }}
+      >
+        <View style={styles.completedRow}>
+          <Ionicons name="checkmark-circle" size={size.icon.md} color={colors.text} />
+          <Text variant="label">{t('completed')}</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View 
-      style={styles.container}
+    <View
+      style={[styles.container, disabled ? styles.disabled : null]}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={t('swipe_hint')}
+      accessibilityState={{ disabled }}
+      accessibilityActions={[{ name: 'activate', label: title }]}
+      onAccessibilityAction={onAccessibilityAction}
     >
-      <Animated.View 
+      <Animated.View
         style={[
-          styles.trackFill, 
-          { 
-            backgroundColor: color,
-            width: pan.x.interpolate({
-              inputRange: [0, MAX_SLIDE > 0 ? MAX_SLIDE : 200],
-              outputRange: [THUMB_SIZE + 8, width > 0 ? width : 300],
-              extrapolate: 'clamp'
-            }) 
-          }
-        ]} 
+          styles.trackFill,
+          {
+            backgroundColor: colorsForTone.fill,
+            width: Animated.add(pan, THUMB_SIZE + INSET * 2),
+          },
+        ]}
       />
-      <Animated.Text style={[styles.title, { opacity: opacityAnim, color: color }]}>
+      <Animated.Text style={[styles.title, { opacity: labelOpacity }]} numberOfLines={1}>
         {title}
       </Animated.Text>
       {width > 0 && (
         <Animated.View
           {...panResponder.panHandlers}
-          style={[
-            styles.thumb,
-            {
-              backgroundColor: color,
-              transform: [{ translateX: pan.x }]
-            }
-          ]}
+          style={[styles.thumb, { backgroundColor: colorsForTone.thumb, transform: [{ translateX: pan }] }]}
         >
-          <Text style={styles.thumbIcon}>{'>>'}</Text>
+          <Ionicons name="chevron-forward" size={size.icon.lg} color={colorsForTone.icon} />
         </Animated.View>
       )}
     </View>
@@ -125,50 +169,35 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     height: BUTTON_HEIGHT,
-    backgroundColor: '#F3F4F6',
-    borderRadius: BUTTON_HEIGHT / 2,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.full,
+    borderWidth: size.border,
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
+  disabled: { opacity: 0.5 },
   trackFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    borderRadius: BUTTON_HEIGHT / 2,
-    opacity: 0.2,
+    borderRadius: radius.full,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    zIndex: 1,
+    ...type.label,
+    color: colors.text,
+    paddingHorizontal: THUMB_SIZE + space[3],
   },
+  completedRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   thumb: {
     position: 'absolute',
-    left: 4,
+    left: INSET,
     width: THUMB_SIZE,
     height: THUMB_SIZE,
-    borderRadius: THUMB_SIZE / 2,
+    borderRadius: radius.full,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-    zIndex: 2,
   },
-  thumbIcon: {
-    color: '#FFF',
-    fontWeight: '900',
-    fontSize: 20,
-    letterSpacing: -2,
-    marginLeft: -2,
-  }
 });
