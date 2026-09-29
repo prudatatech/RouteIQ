@@ -183,6 +183,14 @@ export default function TplDashboardPage() {
 
   const handleSaveSettings = async () => {
     if (!settingsForm) return
+    const ok = await confirm({
+      title: 'Save these settings?',
+      message: "Saving these changes will send your profile back for approval and pause any active operations until it's reviewed again.",
+      confirmLabel: 'Save and resubmit',
+      tone: 'danger',
+    })
+    if (!ok) return
+
     setIsSubmittingSettings(true)
     try {
       const updates = {
