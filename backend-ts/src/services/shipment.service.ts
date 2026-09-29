@@ -850,6 +850,7 @@ export class ShipmentService {
       return {
         id: manifestData.id,
         tracking_id: manifestParcelCode(manifestData.id),
+        vendor_request_id: manifestData.vendor_request_id ?? null,
         status: manifestData.status,
         metadata: metadata,
         pickup_location: { address: manifestData.pickup_location, lat: manifestData.pickup_lat, lng: manifestData.pickup_lng },
@@ -948,6 +949,7 @@ export class ShipmentService {
     const mappedManifests = (manifests || []).map((m: any) => ({
       id: m.id,
       tracking_id: manifestParcelCode(m.id),
+      vendor_request_id: m.vendor_request_id ?? null,
       status: m.status === 'scheduled' ? 'created' : m.status, // maps scheduled to created
       priority: 'high',
       // cargo_manifest only stores lat/lng plus one address string per point, so the
