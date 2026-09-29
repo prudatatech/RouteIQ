@@ -7,7 +7,7 @@
 -- maintenance row to `expenses` (when that table exists) and keeps its id in
 -- expense_id.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.vehicle_service_plans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

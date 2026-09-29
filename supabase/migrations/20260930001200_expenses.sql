@@ -6,7 +6,7 @@
 -- on a fuel expense, lets the fuel cost of a route be shown as actual instead
 -- of estimated.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.expenses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

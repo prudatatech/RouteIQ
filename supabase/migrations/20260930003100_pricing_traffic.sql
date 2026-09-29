@@ -8,7 +8,7 @@
 -- per_kg_surcharge, fuel_price_per_litre, ...) live in system_settings and are
 -- edited by staff from the Backhaul page; nothing is seeded here on purpose.
 --
--- NOT YET APPLIED to the live project.
+-- Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.price_quotes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
