@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "ts-node src/scripts/seed.ts"
+    "seed": "ts-node src/scripts/seed.ts",
+    "check:queries": "ts-node --transpile-only scripts/check-queries.ts"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",

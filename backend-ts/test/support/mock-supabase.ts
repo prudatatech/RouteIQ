@@ -11,11 +11,120 @@
  * Filters: `eq.`, `neq.`, `is.` and `in.(...)` on query params. `select`,
  * `order`, `limit` and other operators are ignored, so fixture rows are
  * returned as written (including any embedded relations they carry).
+ *
+ * Schema validation: every request's `select` (including embedded relations),
+ * write body (insert/update/upsert) and column filters (`eq`, `order`, ...)
+ * are checked against `db-schema.json` (table -> column list, snapshotted
+ * from the live database by `backend-ts/scripts/dump-schema.sql`). An unknown
+ * table or column gets a PostgREST-shaped 400 (code 42703), the same as the
+ * real API would return, so a query that names a column the database doesn't
+ * have fails a test instead of quietly succeeding. See `validateRequest`.
  */
 import http from 'http';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import jwt from 'jsonwebtoken';
 import type { AddressInfo } from 'net';
+
+type Schema = Record<string, string[]>;
+
+const schema: Schema = JSON.parse(fs.readFileSync(path.join(__dirname, 'db-schema.json'), 'utf8'));
+
+interface ColumnError {
+  message: string;
+}
+
+/** Split a select-list string at top-level commas (respecting nested parens). */
+function splitTopLevel(str: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const c of str) {
+    if (c === '(') depth++;
+    if (c === ')') depth--;
+    if (c === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += c;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts;
+}
+
+const EMBED_RE = /^(?:(\w+):)?(\w+)(?:!(\w+))?\(([\s\S]*)\)$/;
+const COLUMN_RE = /^(?:(\w+):)?(\w+)(?:::\w+)?$/;
+
+/** Validates a PostgREST `select=` value (with possible embedded relations) against `schema`. */
+function validateSelect(selectStr: string, table: string): ColumnError | null {
+  for (const rawPart of splitTopLevel(selectStr)) {
+    const part = rawPart.trim();
+    if (!part || part === '*') continue;
+
+    const embed = EMBED_RE.exec(part);
+    if (embed) {
+      const [, , embedTable, , inner] = embed;
+      if (!(embedTable in schema)) {
+        return { message: `Could not find a relationship between '${table}' and '${embedTable}' in the schema cache` };
+      }
+      const nested = validateSelect(inner, embedTable);
+      if (nested) return nested;
+      continue;
+    }
+
+    const col = COLUMN_RE.exec(part);
+    if (!col) continue; // aggregate/expression syntax this mock doesn't need to understand
+    const column = col[2];
+    const columns = schema[table];
+    if (columns && column && !columns.includes(column)) {
+      return { message: `column ${table}.${column} does not exist` };
+    }
+  }
+  return null;
+}
+
+const NON_COLUMN_PARAMS = new Set(['select', 'limit', 'offset', 'on_conflict', 'columns', 'or', 'and']);
+
+/** Validates the filter/order query params of a request against `schema`. */
+function validateFilters(table: string, params: URLSearchParams): ColumnError | null {
+  const columns = schema[table];
+  if (!columns) return null;
+  for (const [key] of params) {
+    if (NON_COLUMN_PARAMS.has(key) || key.includes('.')) continue; // cross-table filters aren't checked
+    if (key === 'order') {
+      const value = params.get('order') ?? '';
+      for (const part of value.split(',')) {
+        const column = part.split('.')[0].trim();
+        if (column && !columns.includes(column)) {
+          return { message: `column ${table}.${column} does not exist` };
+        }
+      }
+      continue;
+    }
+    if (!columns.includes(key)) {
+      return { message: `column ${table}.${key} does not exist` };
+    }
+  }
+  return null;
+}
+
+/** Validates the literal keys of an insert/update/upsert body against `schema`. */
+function validateBody(table: string, body: any): ColumnError | null {
+  const columns = schema[table];
+  if (!columns) return null;
+  const rows = Array.isArray(body) ? body : [body];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    for (const key of Object.keys(row)) {
+      if (!columns.includes(key)) {
+        return { message: `column ${table}.${key} does not exist` };
+      }
+    }
+  }
+  return null;
+}
 
 export type Row = Record<string, any>;
 
@@ -153,6 +262,28 @@ class MockSupabase {
       const table = url.pathname.slice('/rest/v1/'.length);
       const failure = this.failures.get(table);
       if (failure) return send(400, { code: 'XX000', message: failure, details: null, hint: null });
+
+      const sendColumnError = (err: ColumnError) => send(400, { code: '42703', details: null, hint: null, message: err.message });
+
+      const selectParam = url.searchParams.get('select');
+      if (selectParam) {
+        const err = validateSelect(selectParam, table);
+        if (err) return sendColumnError(err);
+      }
+      const filterErr = validateFilters(table, url.searchParams);
+      if (filterErr) return sendColumnError(filterErr);
+      if ((req.method === 'POST' || req.method === 'PATCH') && raw) {
+        let parsedBody: any;
+        try {
+          parsedBody = JSON.parse(raw);
+        } catch {
+          parsedBody = undefined;
+        }
+        if (parsedBody !== undefined) {
+          const bodyErr = validateBody(table, parsedBody);
+          if (bodyErr) return sendColumnError(bodyErr);
+        }
+      }
 
       const rows = this.rows(table);
       const matching = rows.filter(row => matches(row, url.searchParams));

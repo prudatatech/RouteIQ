@@ -9,7 +9,7 @@ export const matchingService = {
     // 1. Fetch Shipment Details
     const { data: shipment, error: shipErr } = await supabase
       .from('shipments')
-      .select('origin_lat, origin_lng, required_vehicle_type, metadata_json')
+      .select('origin_lat, origin_lng, required_vehicle_type, metadata')
       .eq('id', shipmentId)
       .single();
 
@@ -27,9 +27,9 @@ export const matchingService = {
     // In production, we'd use PostGIS ST_DWithin. Here we fetch idle trucks and calculate distance.
     const { data: vehicles, error: vehErr } = await supabase
       .from('vehicles')
-      .select('id, latitude, longitude, status, type')
+      .select('id, latitude, longitude, status, vehicle_type')
       .in('status', ['idle', 'available', 'active']) // Allow active if they have available capacity, but idle preferred
-      .eq('type', required_vehicle_type || 'Tractor Trailer');
+      .eq('vehicle_type', required_vehicle_type || 'Tractor Trailer');
 
     if (vehErr) {
       console.error('Scoring Engine - Vehicle Fetch Error:', vehErr);
@@ -70,8 +70,8 @@ export const matchingService = {
     const { error: updateErr } = await supabase
       .from('shipments')
       .update({
-        metadata_json: {
-          ...shipment.metadata_json,
+        metadata: {
+          ...shipment.metadata,
           scoring_engine: {
             last_run: new Date().toISOString(),
             available_count: availableCount,

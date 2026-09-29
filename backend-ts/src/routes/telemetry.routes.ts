@@ -751,12 +751,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     } else {
       // Partial delivery: subtract this stop's shipment weight from the truck
       if (dp?.shipment_id) {
-        const { data: shipment } = await supabase.from('shipments').select('weight_kg').eq('id', dp.shipment_id).single();
-        if (shipment?.weight_kg) {
+        const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).single();
+        if (shipment?.total_weight_kg) {
           const driverId = req.user!.user_id;
           const { data: vehicle } = await supabase.from('vehicles').select('id, current_load_kg, capacity_kg').eq('driver_id', driverId).single();
           if (vehicle) {
-            const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.weight_kg, 0);
+            const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.total_weight_kg, 0);
             await supabase.from('vehicles').update({
               current_load_kg: newLoad,
               available_capacity_kg: Math.max((vehicle.capacity_kg || 1000) - newLoad, 0),
