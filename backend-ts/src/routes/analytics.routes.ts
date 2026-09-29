@@ -41,13 +41,17 @@ router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── GET /fleet-overview ────────────────────────────────────
+// Defaults to today (IST); pass from/to (YYYY-MM-DD, IST calendar days) to
+// report on a different range, e.g. from the shared DateRangeControl.
 router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view fleet overview' });
       return;
     }
-    const data = await AnalyticsService.getFleetOverview();
+    const hasRange = typeof req.query.from === 'string' || typeof req.query.to === 'string';
+    const range = hasRange ? resolveIndianDateRange(req.query.from, req.query.to, 1) : undefined;
+    const data = await AnalyticsService.getFleetOverview(range);
     res.json(data);
   } catch (e: any) {
     sendError(req, res, e);
@@ -55,6 +59,8 @@ router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) =
 });
 
 // ── GET /daily-activity ────────────────────────────────────
+// `days` (default 14, back-compat) or an explicit from/to (YYYY-MM-DD, IST
+// calendar days) range; from/to takes priority when both are given.
 router.get('/daily-activity', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
@@ -62,7 +68,9 @@ router.get('/daily-activity', requireAuth, async (req: Request, res: Response) =
       return;
     }
     const days = parseInt(req.query.days as string, 10) || 14;
-    const data = await AnalyticsService.getDailyActivity(days);
+    const hasRange = typeof req.query.from === 'string' || typeof req.query.to === 'string';
+    const range = hasRange ? resolveIndianDateRange(req.query.from, req.query.to, days) : undefined;
+    const data = await AnalyticsService.getDailyActivity(range, days);
     res.json(data);
   } catch (e: any) {
     sendError(req, res, e);

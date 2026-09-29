@@ -243,9 +243,11 @@ export const analyticsAPI = {
     api.get('/analytics/audit-logs', { params }).then(r => r.data as { items: unknown[]; limit: number; offset: number; hasMore: boolean }),
   driverPerformance: () => api.get('/analytics/driver-performance').then(r => ensureArray(r.data)),
   vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => ensureArray(r.data)),
-  fleetOverview: () => api.get('/analytics/fleet-overview').then(r => r.data),
-  /** Trips dispatched and deliveries per day, oldest first. */
-  dailyActivity: (days = 14) => api.get('/analytics/daily-activity', { params: { days } }).then(r => ensureArray(r.data)),
+  /** `from`/`to` (YYYY-MM-DD, IST calendar days) report on that range instead of "today". */
+  fleetOverview: (range?: { from?: string; to?: string }) => api.get('/analytics/fleet-overview', { params: range }).then(r => r.data),
+  /** Trips dispatched and deliveries per day, oldest first. `from`/`to` override `days`. */
+  dailyActivity: (params: { days?: number; from?: string; to?: string } = { days: 14 }) =>
+    api.get('/analytics/daily-activity', { params }).then(r => ensureArray(r.data)),
 }
 
 export const tplAPI = {

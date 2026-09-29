@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { IndianRupee, PackageCheck, Route, Truck } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
-import { Alert, Button, Stat } from '@/components/ui'
+import { Alert, Button, DateRangeControl, presetRange, Stat, type DateRangeValue } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
 import { formatDay, formatNumber, formatRupees } from './format'
 
@@ -25,16 +26,18 @@ interface DayActivity {
 
 const REFRESH_MS = 60_000
 
-/** Today's numbers and the last two weeks of trips and deliveries. */
+/** The selected range's numbers and daily trips/deliveries within it. */
 export default function OverviewTab() {
+  const [range, setRange] = useState<DateRangeValue>({ preset: '7d', ...presetRange('7d') })
+
   const overview = useQuery<FleetOverview>({
-    queryKey: ['analytics', 'fleet-overview'],
-    queryFn: () => analyticsAPI.fleetOverview(),
+    queryKey: ['analytics', 'fleet-overview', range.from, range.to],
+    queryFn: () => analyticsAPI.fleetOverview({ from: range.from, to: range.to }),
     refetchInterval: REFRESH_MS,
   })
   const activity = useQuery<DayActivity[]>({
-    queryKey: ['analytics', 'daily-activity', 14],
-    queryFn: () => analyticsAPI.dailyActivity(14) as Promise<DayActivity[]>,
+    queryKey: ['analytics', 'daily-activity', range.from, range.to],
+    queryFn: () => analyticsAPI.dailyActivity({ from: range.from, to: range.to }) as Promise<DayActivity[]>,
     refetchInterval: REFRESH_MS,
   })
 
@@ -42,9 +45,12 @@ export default function OverviewTab() {
   const loading = overview.isLoading
   const days = activity.data ?? []
   const hasActivity = days.some(d => d.trips > 0 || d.deliveries > 0)
+  const rangeLabel = range.preset === 'today' ? 'today' : `${range.from} to ${range.to}`
 
   return (
     <div className="space-y-6">
+      <DateRangeControl value={range} onChange={setRange} />
+
       {overview.isError ? (
         <Alert
           tone="danger"
@@ -54,16 +60,16 @@ export default function OverviewTab() {
           Check your connection and try again.
         </Alert>
       ) : (
-        <section aria-label="Today" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <section aria-label={`Figures for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Stat
-            label="Trips today"
+            label="Trips"
             icon={<Route size={18} />}
             loading={loading}
             value={formatNumber(ov?.trips_today)}
             hint={ov && ov.total_distance_km > 0 ? `${formatNumber(ov.total_distance_km)} km planned` : 'No distance planned yet'}
           />
           <Stat
-            label="Deliveries today"
+            label="Deliveries"
             icon={<PackageCheck size={18} />}
             loading={loading}
             value={formatNumber(ov?.deliveries_today)}
@@ -79,14 +85,14 @@ export default function OverviewTab() {
               : undefined}
           />
           <Stat
-            label="Backhaul revenue today"
+            label="Backhaul revenue"
             icon={<IndianRupee size={18} />}
             loading={loading}
             value={ov && ov.backhaul_loads_today > 0 ? formatRupees(ov.backhaul_revenue) : '—'}
             hint={ov
               ? (ov.backhaul_loads_today > 0
                 ? `${formatNumber(ov.backhaul_loads_today)} vendor load${ov.backhaul_loads_today === 1 ? '' : 's'} assigned`
-                : 'No vendor loads assigned today')
+                : 'No vendor loads assigned in this range')
               : undefined}
           />
         </section>
@@ -94,12 +100,12 @@ export default function OverviewTab() {
 
       <ChartCard
         title="Trips and deliveries"
-        description="Routes dispatched and shipments delivered each day, last 14 days"
+        description={`Routes dispatched and shipments delivered each day, ${rangeLabel}`}
         loading={activity.isLoading}
         error={activity.isError}
         onRetry={() => activity.refetch()}
         empty={!hasActivity}
-        emptyTitle="No trips or deliveries in the last 14 days"
+        emptyTitle="No trips or deliveries in this range"
         emptyDescription="Dispatch a route or deliver a shipment and it will show here."
         height="h-72"
       >
