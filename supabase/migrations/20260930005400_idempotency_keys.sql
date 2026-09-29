@@ -12,7 +12,7 @@
 -- policies, so no client role can touch it. Rows are only needed for as long as
 -- the app may retry; the backend removes those older than 7 days.
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.idempotency_keys (
   user_id uuid NOT NULL,

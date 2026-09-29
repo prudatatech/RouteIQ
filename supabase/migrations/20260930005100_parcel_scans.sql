@@ -10,7 +10,7 @@
 -- text rather than a foreign key.
 --
 -- Written only by the backend (service role). Staff can read; a driver reads
--- their own scans. Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- their own scans. Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE TABLE IF NOT EXISTS public.parcel_scans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

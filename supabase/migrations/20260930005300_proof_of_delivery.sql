@@ -15,7 +15,7 @@
 -- No storage policy is added: signed uploads bypass policies, and the bucket
 -- already accepts only PDF, JPG and PNG (20260929000200_tpl_signed_uploads.sql).
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS photo_url text;
 ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS signature_url text;

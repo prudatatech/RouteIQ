@@ -15,7 +15,7 @@
 -- backend, which checks the caller owns the route. Drivers and the console
 -- still subscribe to inserts over Realtime (RLS applies to those too).
 --
--- Additive and safe to re-run. NOT YET APPLIED to the live project.
+-- Additive and safe to re-run. Applied to the live project on 2026-09-29.
 
 CREATE OR REPLACE FUNCTION public.my_manifest_ids()
 RETURNS SETOF uuid
