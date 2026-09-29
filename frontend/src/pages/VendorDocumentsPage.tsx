@@ -112,6 +112,8 @@ export default function VendorDocumentsPage() {
   const [otherDocs, setOtherDocs] = useState<DocRef[]>([])
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const draftRestoredRef = useRef(false)
 
   const setField = <K extends keyof KycFormData>(key: K, value: KycFormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
@@ -156,6 +158,41 @@ export default function VendorDocumentsPage() {
       .subscribe()
     return () => { cancelled = true; supabase.removeChannel(channel) }
   }, [userId])
+
+  // --- Draft autosave (localStorage) ---------------------------------------
+  // Files themselves are never restorable from localStorage — only the storage
+  // paths of documents already uploaded, plus the form fields and step reached.
+  const draftKey = userId ? `vendor-kyc-draft-${userId}` : null
+
+  useEffect(() => {
+    if (!draftKey || loading || draftRestoredRef.current) return
+    draftRestoredRef.current = true
+    if (hasProfile) return // a saved server profile takes priority over a local draft
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw) as { form?: Partial<KycFormData>; otherDocs?: DocRef[]; step?: number }
+      if (draft.form) setForm(prev => ({ ...prev, ...draft.form }))
+      if (draft.otherDocs) setOtherDocs(draft.otherDocs)
+      if (typeof draft.step === 'number') setStep(draft.step)
+      toast('Restored your saved draft. Files must be re-attached.', { icon: '📝' })
+    } catch (e) {
+      console.error('Failed to restore draft', e)
+    }
+  }, [draftKey, loading, hasProfile])
+
+  useEffect(() => {
+    if (!draftKey || loading) return
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({ form, otherDocs, step }))
+        setDraftSavedAt(Date.now())
+      } catch (e) {
+        console.error('Failed to save draft', e)
+      }
+    }, 400)
+    return () => window.clearTimeout(id)
+  }, [draftKey, loading, form, otherDocs, step])
 
   const readOnly = mode === 'documents' && hasProfile && (kycStatus === 'submitted' || kycStatus === 'approved') && !isEditing
 
@@ -203,7 +240,20 @@ export default function VendorDocumentsPage() {
     setUploadingKey(key)
     try {
       const path = await uploadKycDocument(userId, key, file)
-      setField('docUrls', { ...form.docUrls, [key]: path })
+      const updatedUrls = { ...form.docUrls, [key]: path }
+      setField('docUrls', updatedUrls)
+      // Persist the storage path immediately (mirrors uploadOtherDoc below) so the
+      // upload is not lost if the vendor closes the tab before hitting submit.
+      if (hasProfile) {
+        try {
+          const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
+          const kycData = (profile?.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] }) || { data: form, otherDocs }
+          kycData.data = { ...(kycData.data ?? {}), docUrls: updatedUrls }
+          await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
+        } catch (e) {
+          console.error('Failed to persist document reference', e)
+        }
+      }
       toast.success('Document uploaded')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to upload document')
@@ -430,7 +480,10 @@ export default function VendorDocumentsPage() {
               </div>
 
               <div>
-                <p className="mb-3 text-sm font-medium text-text">Documents</p>
+                <div className="mb-3 flex items-center gap-2">
+                  <p className="text-sm font-medium text-text">Documents</p>
+                  {draftSavedAt && <span className="text-xs text-muted">Saved</span>}
+                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {DOC_FIELDS.map(f => (
                     <DocUploadField
