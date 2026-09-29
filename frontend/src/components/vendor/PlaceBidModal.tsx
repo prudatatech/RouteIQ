@@ -18,7 +18,7 @@ interface CapacityWindow {
   id: string
   floor_price: number | null
   closes_at: string
-  vehicles?: { vehicle_type?: string | null; available_capacity_kg?: number | null; origin_city?: string | null } | null
+  vehicles?: { vehicle_type?: string | null; available_capacity_kg?: number | null } | null
 }
 
 function useCountdown(until: string) {
@@ -94,7 +94,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       open
       onClose={onClose}
       title="Place a bid"
-      description={`${w.vehicles?.vehicle_type ?? 'Vehicle'}${w.vehicles?.origin_city ? ` · from ${w.vehicles.origin_city}` : ''} · ${capacityKg != null ? `${capacityKg.toLocaleString('en-IN')} kg free` : 'capacity unknown'}`}
+      description={`${w.vehicles?.vehicle_type ?? 'Vehicle'} · ${capacityKg != null ? `${capacityKg.toLocaleString('en-IN')} kg free` : 'capacity unknown'}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

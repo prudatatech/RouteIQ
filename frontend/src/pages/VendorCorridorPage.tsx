@@ -15,7 +15,7 @@ interface OpenWindow {
   opens_at: string
   closes_at: string
   floor_price: number | null
-  vehicles: { vehicle_type: string | null; available_capacity_kg: number | null; origin_city: string | null } | null
+  vehicles: { vehicle_type: string | null; available_capacity_kg: number | null } | null
 }
 
 interface PassingRoute {
@@ -177,10 +177,7 @@ export default function VendorCorridorPage() {
               return (
                 <Card key={w.id} padded className="flex min-h-[220px] flex-col gap-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <TriggerBadge trigger={w.trigger_type} />
-                      <p className="text-xs text-muted">{w.vehicles?.origin_city || 'Origin unknown'}</p>
-                    </div>
+                    <TriggerBadge trigger={w.trigger_type} />
                     <div className="flex items-center gap-1 text-xs">
                       <Clock size={12} className="text-muted" />
                       <ClosesIn until={w.closes_at} />

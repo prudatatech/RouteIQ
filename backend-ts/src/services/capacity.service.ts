@@ -26,7 +26,7 @@ function toVendorWindow(w: any) {
     closes_at: w.closes_at,
     floor_price: w.floor_price,
     vehicles: v
-      ? { vehicle_type: v.vehicle_type ?? null, available_capacity_kg: v.available_capacity_kg ?? null, origin_city: v.city ?? null }
+      ? { vehicle_type: v.vehicle_type ?? null, available_capacity_kg: v.available_capacity_kg ?? null }
       : null,
   };
 }
@@ -56,7 +56,7 @@ export const capacityService = {
   async listOpenWindowsForVendors() {
     const { data, error } = await supabase
       .from('capacity_windows')
-      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg, city)')
+      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg)')
       .gt('closes_at', new Date().toISOString())
       .is('winning_bid_id', null)
       .order('opens_at', { ascending: false });
@@ -88,7 +88,7 @@ export const capacityService = {
 
     const { data: window, error: windowErr } = await supabase
       .from('capacity_windows')
-      .select('id, opens_at, closes_at, floor_price, winning_bid_id, vehicles(plate_number, latitude, longitude, city, available_capacity_kg)')
+      .select('id, opens_at, closes_at, floor_price, winning_bid_id, vehicles(plate_number, latitude, longitude, available_capacity_kg)')
       .eq('id', data.window_id)
       .maybeSingle();
     if (windowErr) throw new Error(`Failed to load window ${data.window_id}: ${windowErr.message}`);
