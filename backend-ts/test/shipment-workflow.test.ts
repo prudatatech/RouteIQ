@@ -417,3 +417,35 @@ describe('vehicle capacity', () => {
     expect(one('vehicles', VEHICLE).status).toBe('available');
   });
 });
+
+describe('cancelling or deleting a route through the API', () => {
+  const routeFixture = (status: string) => reset({
+    shipments: [shipmentRow({ status: 'assigned' })],
+    delivery_points: dps.map(d => ({ ...d })),
+    routes: [{ id: 'route-1', vehicle_id: VEHICLE, status, started_at: status === 'active' ? NOW : null }],
+    route_stops: [
+      { id: 'st1', route_id: 'route-1', delivery_point_id: DP1, sequence: 1, status: 'pending' },
+      { id: 'st2', route_id: 'route-1', delivery_point_id: DP2, sequence: 2, status: 'pending' },
+    ],
+    customer_bookings: [bookingRow({ status: 'assigned', shipment_id: SHIPMENT, tracking_id: 'RTX-AAAA1111', vehicle_id: VEHICLE })],
+  });
+
+  it('puts the shipments back in the queue and tells the driver when an active route is cancelled', async () => {
+    routeFixture('active');
+    one('vehicles', VEHICLE).status = 'on_route';
+    const res = await request(app).patch('/api/v1/routes/route-1/status').set(admin()).send({ status: 'cancelled' });
+    expect(res.status).toBe(200);
+    expect(one('shipments', SHIPMENT).status).toBe('created');
+    expect(one('customer_bookings', BOOKING).status).toBe('confirmed');
+    expect(one('vehicles', VEHICLE).status).toBe('available');
+    expect(notesFor(DRIVER).some(n => n.type === 'route_cancelled')).toBe(true);
+  });
+
+  it('puts the shipments back in the queue when a pending route is deleted', async () => {
+    routeFixture('pending');
+    const res = await request(app).delete('/api/v1/routes/route-1').set(admin());
+    expect(res.status).toBe(200);
+    expect(one('shipments', SHIPMENT).status).toBe('created');
+    expect(supabaseMock.rows('routes')).toHaveLength(0);
+  });
+});

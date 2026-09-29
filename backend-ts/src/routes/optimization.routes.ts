@@ -22,9 +22,9 @@ import { parseNumberInRange } from '../core/validate';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { markAssigned } from '../services/shipment.service';
+import { isPlaceholderPlate } from '../core/vehicles';
 
 /** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
-const isPlaceholderPlate = (plate: unknown) => /^(TEMP|DRFT)-/i.test(String(plate ?? ''));
 
 /** Shipment statuses the optimizer plans: new loads and failed deliveries waiting for another attempt. */
 const PLANNABLE_STATUSES = ['created', 'exception'];

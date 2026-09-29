@@ -7,6 +7,7 @@ import { cacheGet } from '../core/redis';
 import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { getVehicleDriverStats } from './driver-performance.service';
 import { selectIn } from './finance.service';
+import { isPlaceholderPlate } from '../core/vehicles';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
 
@@ -227,7 +228,7 @@ export class AnalyticsService {
       .eq('status', 'idle');
 
     // A TEMP-/DRFT- placeholder is not a real vehicle, so it is never reported as idle
-    for (const v of (idleVehicles || []).filter((x: any) => !/^(TEMP|DRFT)-/i.test(String(x.plate_number ?? '')))) {
+    for (const v of (idleVehicles || []).filter((x: any) => !isPlaceholderPlate(x.plate_number))) {
       const idleMs = Date.now() - new Date(v.updated_at).getTime();
       const idleDays = idleMs / (1000 * 60 * 60 * 24);
       if (idleDays >= 1) {

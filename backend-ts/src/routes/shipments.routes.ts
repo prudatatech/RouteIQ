@@ -15,6 +15,7 @@ import { SecurityService } from '../services/security.service';
 import { sendError } from '../core/errors';
 import { rateDelivery } from '../services/driver-performance.service';
 import { getProofOfDelivery } from '../services/pod.service';
+import { isPlaceholderPlate } from '../core/vehicles';
 
 const router = Router();
 
@@ -318,7 +319,7 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
     const { data: vehicles, error } = await supabase.from('vehicles').select('*').in('status', [...OPERATING_VEHICLE_STATUSES]);
     if (error) throw error;
 
-    let options = (vehicles || []).filter((v: any) => !/^(TEMP|DRFT)-/i.test(String(v.plate_number ?? '')));
+    let options = (vehicles || []).filter((v: any) => !isPlaceholderPlate(v.plate_number));
 
     if (mode === 'near' && shipment.origin_lat && shipment.origin_lng) {
       // Calculate haversine distance
