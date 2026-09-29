@@ -142,12 +142,16 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
   try {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
-      .select('status');
+      .select('status, plate_number');
 
     if (error) throw error;
 
     const counts: Record<string, number> = {};
     for (const v of vehicles || []) {
+      // A TEMP-… plate is an auto-created placeholder for a driver who hasn't
+      // registered a real vehicle yet (see auth.routes.ts) — not a fleet asset,
+      // so it shouldn't move the counts an ops dashboard alerts on.
+      if (v.plate_number?.startsWith('TEMP-')) continue;
       counts[v.status] = (counts[v.status] || 0) + 1;
     }
 
