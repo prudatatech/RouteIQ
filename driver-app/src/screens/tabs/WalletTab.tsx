@@ -139,7 +139,7 @@ export default function WalletTab({ onOpenInvoice }: WalletTabProps) {
                   >
                     <View style={styles.flex}>
                       <Text variant="caption" color="textMuted">
-                        {`${formatDate(inv.date)} · ${inv.cargo_type ?? ''}`}
+                        {inv.cargo_type ? `${formatDate(inv.date)} · ${inv.cargo_type}` : formatDate(inv.date)}
                       </Text>
                       <Text variant="bodyMedium" numberOfLines={1}>
                         {`${inv.pickup ?? '—'} → ${inv.drop ?? '—'}`}

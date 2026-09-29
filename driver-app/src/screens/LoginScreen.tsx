@@ -288,7 +288,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   );
 }
 
-const OTP_BOX_WIDTH = 44;
+const OTP_BOX_WIDTH = 44; // boxes share the row and shrink on a 360 dp phone
 const OTP_BOX_HEIGHT = 56;
 
 const styles = StyleSheet.create({
@@ -326,7 +326,9 @@ const styles = StyleSheet.create({
   otpRow: { flexDirection: 'row', justifyContent: 'space-between', gap: space[2] },
   otpInput: {
     ...type.heading,
-    width: OTP_BOX_WIDTH,
+    flex: 1,
+    maxWidth: OTP_BOX_WIDTH + space[1],
+    minWidth: 0,
     height: OTP_BOX_HEIGHT,
     borderRadius: radius.control,
     borderWidth: size.border,
