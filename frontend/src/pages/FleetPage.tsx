@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
@@ -64,6 +64,7 @@ export default function FleetPage() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [detailVehicle, setDetailVehicle] = useState<Vehicle | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Keep "last seen" labels and the live threshold current.
   const [now, setNow] = useState(() => Date.now())
@@ -113,6 +114,16 @@ export default function FleetPage() {
     queryKey: ['fleet-summary'],
     queryFn: vehiclesAPI.summary,
   })
+
+  // Opened from a link elsewhere (e.g. global search): ?open=<id> selects the
+  // matching vehicle and opens its drawer, then the param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || isLoading) return
+    const match = vehicles.find(v => v.id === openId)
+    if (match) setDetailVehicle(match)
+    setSearchParams(params => { params.delete('open'); return params }, { replace: true })
+  }, [searchParams, setSearchParams, vehicles, isLoading])
 
   const counts: Record<string, number> = {
     all: summary?.total ?? 0,

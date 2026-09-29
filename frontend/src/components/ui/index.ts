@@ -1,6 +1,7 @@
 export * from './Button'
 export * from './buttonStyles'
 export * from './Card'
+export * from './CommandPalette'
 export * from './ConfirmDialog'
 export * from './confirmContext'
 export * from './DataTable'
