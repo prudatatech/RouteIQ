@@ -1,428 +1,340 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
-import { useAuthStore } from '@/store/authStore';
-import toast from 'react-hot-toast';
+import { useState, type ReactNode } from 'react'
+import { useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
+import { Pencil, Printer } from 'lucide-react'
 import {
-  ArrowLeft, Edit3, Save, X, Printer, Loader2
-} from 'lucide-react';
-import { shipmentsAPI } from '@/services/api';
+  Button, Card, CardBody, CardHeader, Checkbox, DetailList, ErrorState, Input, LoadingState, Page, PageHeader, StatusPill,
+  Textarea, humanize,
+} from '@/components/ui'
+import { shipmentsAPI } from '@/services/api'
+import { apiErrorMessage, formatDate, formatKg, formatRupees, haversineKm } from '@/components/shipments/format'
+
+type Meta = Record<string, unknown>
+
+interface ManifestPoint {
+  name?: string | null
+  address?: string | null
+  phone?: string | null
+  contact_number?: string | null
+  email?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  lat?: number | null
+  lng?: number | null
+}
+
+/** GET /shipments/:id also resolves vendor requests and cargo manifests, so most fields are optional. */
+interface ManifestShipment {
+  id: string
+  tracking_id: string
+  status?: string | null
+  metadata?: Meta | null
+  created_at?: string | null
+  origin_address?: string | null
+  origin_lat?: number | null
+  origin_lng?: number | null
+  dest_name?: string | null
+  dest_address?: string | null
+  dest_lat?: number | null
+  dest_lng?: number | null
+  total_items?: number | null
+  total_weight_kg?: number | null
+  asking_price?: number | null
+  pickup_location?: ManifestPoint | null
+  drop_location?: ManifestPoint | null
+  delivery_points?: ManifestPoint[]
+  delivery_point?: ManifestPoint | null
+  parcels?: { category?: string | null }[]
+  customer?: { name?: string | null; phone?: string | null; email?: string | null } | null
+}
+
+const HANDLING_FLAGS = [
+  { key: 'fragile', label: 'Fragile' },
+  { key: 'hazardous', label: 'Hazardous' },
+  { key: 'coldChain', label: 'Cold chain (temperature controlled)' },
+  { key: 'stackable', label: 'Stackable' },
+  { key: 'highValue', label: 'High value' },
+  { key: 'longHaul', label: 'Long haul' },
+] as const
+
+const text = (v: unknown): string | null => (v == null || v === '' ? null : String(v))
+
+function getPath(obj: Meta, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => (acc && typeof acc === 'object' ? (acc as Meta)[key] : undefined), obj)
+}
+
+function setPath(obj: Meta, path: string, value: unknown): Meta {
+  const [key, ...rest] = path.split('.')
+  if (rest.length === 0) return { ...obj, [key]: value }
+  const child = obj[key] && typeof obj[key] === 'object' ? (obj[key] as Meta) : {}
+  return { ...obj, [key]: setPath(child, rest.join('.'), value) }
+}
+
+/** Straight-line distance from the pickup through each drop, in km. */
+function routeDistanceKm(s: ManifestShipment, points: ManifestPoint[]) {
+  if (!s.origin_lat || !s.origin_lng) return null
+  let lat = s.origin_lat
+  let lng = s.origin_lng
+  let total = 0
+  const drops = points.length > 0 ? points : [{ lat: s.drop_location?.lat ?? s.dest_lat, lng: s.drop_location?.lng ?? s.dest_lng }]
+  for (const p of drops) {
+    const pLat = p.latitude ?? p.lat
+    const pLng = p.longitude ?? p.lng
+    if (!pLat || !pLng) continue
+    total += haversineKm(lat, lng, pLat, pLng)
+    lat = pLat
+    lng = pLng
+  }
+  return total > 0 ? total : null
+}
+
+interface FieldDef {
+  path: string
+  label: string
+  value: string | null
+  type?: 'text' | 'date' | 'email' | 'tel'
+  mono?: boolean
+}
 
 export default function ShipmentManifestPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const token = useAuthStore(s => s.token);
-  const queryClient = useQueryClient();
+  const { id } = useParams<{ id: string }>()
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<Meta>({})
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState<any>(null);
-
-  const { data: shipment, isLoading, isError } = useQuery({
+  const { data: shipment, isLoading, isError, refetch } = useQuery<ManifestShipment>({
     queryKey: ['shipment', id],
     queryFn: () => shipmentsAPI.get(id!),
-    enabled: !!id && !!token,
-  });
+    enabled: !!id,
+  })
 
-  useEffect(() => {
-    if (shipment?.metadata) {
-      setEditData(shipment.metadata);
-    }
-  }, [shipment, isEditing]);
-
-  const updateMutation = useMutation({
-    mutationFn: async (updatedMetadata: any) => {
-      const res = await axios.put(`/api/v1/shipments/${id}/metadata`, updatedMetadata, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      return res.data;
-    },
+  const save = useMutation({
+    mutationFn: (metadata: Meta) => shipmentsAPI.updateMetadata(id!, metadata),
     onSuccess: () => {
-      toast.success('Manifest updated successfully');
-      queryClient.invalidateQueries({ queryKey: ['shipment', id] });
-      setIsEditing(false);
+      toast.success('Manifest saved')
+      queryClient.invalidateQueries({ queryKey: ['shipment', id] })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      setEditing(false)
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || 'Failed to update manifest');
-    }
-  });
+    onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not save the manifest. Try again.')),
+  })
+
+  const back = { to: '/shipments', label: 'Shipments' }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
-        <Loader2 className="animate-spin text-gray-500 w-8 h-8" />
-      </div>
-    );
+      <Page>
+        <PageHeader back={back} title="Manifest" />
+        <LoadingState label="Loading manifest" />
+      </Page>
+    )
   }
 
   if (isError || !shipment) {
     return (
-      <div className="p-8 font-sans">
-        <div className="bg-red-50 text-red-600 p-4 border border-red-200">
-          Failed to load shipment details. Please try again later.
-        </div>
-        <button onClick={() => navigate(-1)} className="mt-4 flex items-center gap-2 text-gray-600 hover:text-black">
-          <ArrowLeft size={16} /> Back
-        </button>
-      </div>
-    );
+      <Page>
+        <PageHeader back={back} title="Manifest" />
+        <Card>
+          <ErrorState
+            title="We could not load this manifest"
+            description="Check your connection and try again. If the shipment was deleted, go back to Shipments."
+            onRetry={() => refetch()}
+          />
+        </Card>
+      </Page>
+    )
   }
 
-  const meta = isEditing ? editData : (shipment.metadata || {});
+  const saved: Meta = shipment.metadata ?? {}
+  const meta = editing ? draft : saved
 
-  const handleInputChange = (field: string, value: any) => {
-    setEditData((prev: any) => {
-      const keys = field.split('.');
-      if (keys.length === 1) return { ...prev, [field]: value };
-      
-      const newData = { ...prev };
-      let current = newData;
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] || {}) };
-        current = current[keys[i]];
-      }
-      current[keys[keys.length - 1]] = value;
-      return newData;
-    });
-  };
+  const points = shipment.delivery_points?.length
+    ? shipment.delivery_points
+    : (shipment.delivery_point ? [shipment.delivery_point] : [])
+  const drop: ManifestPoint | null = points.length > 0 ? points[points.length - 1] : (shipment.drop_location ?? null)
 
-  const handleCheckboxChange = (field: string) => {
-    setEditData((prev: any) => ({
-      ...prev,
-      specialHandling: {
-        ...prev.specialHandling,
-        [field]: !prev.specialHandling?.[field]
-      }
-    }));
-  };
+  const distance = routeDistanceKm(shipment, points)
+  const estimatedArrival = distance
+    ? (() => {
+      const d = new Date(shipment.created_at || Date.now())
+      d.setHours(d.getHours() + distance / 40)
+      return `${d.toISOString().split('T')[0]} (Est.)`
+    })()
+    : null
 
-  // Smart Fallbacks
-  const dps = Array.isArray(shipment?.delivery_points) ? shipment.delivery_points : (shipment?.delivery_point ? [shipment.delivery_point] : []);
-  const dp = dps.length > 0 ? dps[dps.length - 1] : (shipment?.drop_location || {lat: shipment?.dest_lat, lng: shipment?.dest_lng});
-  
-  const calcDist = () => {
-    if (!shipment?.origin_lat || !shipment?.origin_lng) return null;
-    const toRad = (value: number) => (value * Math.PI) / 180;
-    const R = 6371;
-    const getDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    };
+  // Values saved on the manifest win; otherwise show what the shipment itself records.
+  const pick = (path: string, fallback: string | null) => {
+    const v = getPath(meta, path)
+    if (editing) return v === undefined ? fallback : text(v)
+    return text(v) ?? fallback
+  }
 
-    let totalDist = 0;
-    let currLat = shipment.origin_lat;
-    let currLng = shipment.origin_lng;
-    
-    let points = [...dps];
-    if (points.length === 0) {
-      const destLat = shipment?.drop_location?.lat || shipment?.dest_lat;
-      const destLng = shipment?.drop_location?.lng || shipment?.dest_lng;
-      if (destLat && destLng) {
-         points = [{ latitude: destLat, longitude: destLng }];
-      }
-    }
+  const consignee: FieldDef[] = [
+    { path: 'consigneeName', label: 'Name', value: pick('consigneeName', text(drop?.name ?? shipment.dest_name ?? shipment.customer?.name)) },
+    { path: 'consigneeContact', label: 'Phone', type: 'tel', value: pick('consigneeContact', text(drop?.phone ?? drop?.contact_number ?? shipment.customer?.phone)) },
+    { path: 'consigneeEmail', label: 'Email', type: 'email', value: pick('consigneeEmail', text(drop?.email ?? shipment.customer?.email)) },
+  ]
+  const trip: FieldDef[] = [
+    { path: 'dispatch_date', label: 'Dispatch date', type: 'date', value: pick('dispatch_date', shipment.created_at ? shipment.created_at.split('T')[0] : null) },
+    { path: 'reporting_date', label: 'Reporting date', type: 'date', value: pick('reporting_date', null) },
+    { path: 'eta_details.eta_text', label: 'Estimated arrival', value: pick('eta_details.eta_text', estimatedArrival) },
+    { path: 'eta_details.distance_km', label: 'Distance (km)', value: pick('eta_details.distance_km', distance ? distance.toFixed(1) : null) },
+  ]
+  const category = shipment.parcels?.[0]?.category
+  const cargo: FieldDef[] = [
+    { path: 'productCategory', label: 'Product category', value: pick('productCategory', category ? humanize(category) : null) },
+    { path: 'productName', label: 'Product name', value: pick('productName', null) },
+    { path: 'brand', label: 'Brand or make', value: pick('brand', null) },
+    { path: 'packagingType', label: 'Packaging', value: pick('packagingType', null) },
+    { path: 'noOfPackages', label: 'Packages', value: pick('noOfPackages', shipment.total_items != null ? String(shipment.total_items) : null) },
+    { path: 'grossWeight', label: 'Gross weight', value: pick('grossWeight', formatKg(shipment.total_weight_kg)) },
+    { path: 'declaredValue', label: 'Declared value', value: pick('declaredValue', formatRupees(shipment.asking_price)) },
+  ]
 
-    if (points.length === 0) return null;
+  const handling = (getPath(meta, 'specialHandling') as Meta | undefined) ?? {}
+  const activeFlags = HANDLING_FLAGS.filter(f => handling[f.key])
+  const remarks = text(meta.remarks)
+  const transporterSignature = text(saved.transporter_signature)
 
-    points.forEach((p: any) => {
-      const pLat = p?.latitude || p?.lat;
-      const pLng = p?.longitude || p?.lng;
-      if (pLat && pLng) {
-        totalDist += getDist(currLat, currLng, pLat, pLng);
-        currLat = pLat;
-        currLng = pLng;
-      }
-    });
+  const change = (path: string, value: unknown) => setDraft(prev => setPath(prev, path, value))
 
-    return totalDist === 0 ? null : totalDist;
-  };
+  const renderFields = (fields: FieldDef[], columns: 1 | 2 | 3 = 2) => editing ? (
+    <div className={columns === 1 ? 'grid gap-4' : columns === 3 ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'grid gap-4 sm:grid-cols-2'}>
+      {fields.map(f => (
+        <Input
+          key={f.path}
+          label={f.label}
+          type={f.type ?? 'text'}
+          value={f.value ?? ''}
+          onChange={e => change(f.path, e.target.value)}
+        />
+      ))}
+    </div>
+  ) : (
+    <DetailList columns={columns} items={fields.map(f => ({ label: f.label, value: f.value }))} />
+  )
 
-  const calculatedDist = calcDist();
-  const calculatedEta = calculatedDist ? (() => {
-    const hrs = calculatedDist / 40;
-    const d = new Date(shipment.created_at || Date.now());
-    d.setHours(d.getHours() + hrs);
-    return `${d.toISOString().split('T')[0]} (Est.)`;
-  })() : null;
+  const startEdit = () => { setDraft(saved); setEditing(true) }
 
-  const fallbackData = {
-    consigneeName: meta.consigneeName || dp?.name || shipment?.dest_name || shipment?.customer?.name || null,
-    consigneeContact: meta.consigneeContact || dp?.phone || dp?.contact_number || shipment?.customer?.phone || null,
-    consigneeEmail: meta.consigneeEmail || dp?.email || shipment?.customer?.email || null,
-    dispatch_date: meta.dispatch_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
-    reporting_date: meta.reporting_date || (shipment?.created_at ? shipment.created_at.split('T')[0] : null),
-    eta_text: calculatedEta || meta.eta_details?.eta_text,
-    distance_km: (calculatedDist ? calculatedDist.toFixed(1) : null) || meta.eta_details?.distance_km,
-    productCategory: meta.productCategory || shipment?.parcels?.[0]?.category || 'General Cargo',
-    productName: meta.productName || (shipment?.parcels?.[0]?.is_hazardous ? 'Hazardous Materials' : 'Standard Items'),
-    brand: meta.brand || 'Generic',
-    packagingType: meta.packagingType || 'Standard Box/Pallet',
-    noOfPackages: meta.noOfPackages || String(shipment?.total_items || 1),
-    grossWeight: meta.grossWeight || (shipment?.total_weight_kg ? `${shipment.total_weight_kg} KG` : 'Unknown'),
-    declaredValue: meta.declaredValue || (shipment?.asking_price ? `₹${shipment.asking_price}` : null)
-  };
-
-  const handleSave = () => {
-    updateMutation.mutate(editData);
-  };
-
-  const printDocument = () => {
-    window.print();
-  };
-
-  const renderField = (label: string, value: any, fieldKey: string, type = 'text') => {
-    if (isEditing) {
-      if (type === 'checkbox') {
-        const isChecked = meta.specialHandling?.[fieldKey] || false;
-        return (
-          <label className="flex items-center gap-2 text-sm text-black cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isChecked}
-              onChange={() => handleCheckboxChange(fieldKey)}
-              className="w-4 h-4 rounded-none border-black focus:ring-black"
-            />
-            {label}
-          </label>
-        );
-      }
-
-      return (
-        <div className="flex flex-col gap-1 w-full">
-          <label className="text-xs font-bold text-gray-600 uppercase tracking-tight">{label}</label>
-          <input
-            type={type}
-            value={value || ''}
-            onChange={(e) => handleInputChange(fieldKey, e.target.value)}
-            className="w-full bg-white border border-gray-300 rounded-none px-2 py-1 text-sm text-black focus:outline-none focus:border-black transition-colors"
-          />
-        </div>
-      );
-    }
-
-    if (type === 'checkbox') {
-      const isChecked = meta.specialHandling?.[fieldKey] || false;
-      return (
-        <div className="flex items-center gap-2 text-sm text-black">
-          <div className="w-3 h-3 border border-black flex items-center justify-center">
-            {isChecked && <div className="w-1.5 h-1.5 bg-black" />}
-          </div>
-          {label}
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex flex-col gap-1 w-full">
-        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{label}</label>
-        <div className="text-sm font-semibold text-black uppercase">
-          {value || <span className="text-gray-400 italic normal-case font-normal">N/A</span>}
-        </div>
-      </div>
-    );
-  };
+  const actions = editing ? (
+    <>
+      <Button variant="secondary" onClick={() => setEditing(false)} disabled={save.isPending}>Cancel</Button>
+      <Button onClick={() => save.mutate(draft)} loading={save.isPending}>Save changes</Button>
+    </>
+  ) : (
+    <>
+      <Button variant="secondary" icon={<Printer size={16} />} onClick={() => window.print()}>Print</Button>
+      <Button icon={<Pencil size={16} />} onClick={startEdit}>Edit manifest</Button>
+    </>
+  )
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans print:bg-white print:p-0">
+    <Page>
+      <PageHeader
+        back={back}
+        title="Manifest"
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span className="font-mono text-text">{shipment.tracking_id}</span>
+            {shipment.status && <StatusPill status={shipment.status} />}
+          </span>
+        }
+        actions={<div className="flex flex-wrap gap-2 print:hidden">{actions}</div>}
+      />
 
-      {/* Action Bar (Hidden in Print) */}
-      <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-black transition-colors font-medium text-sm"
-        >
-          <ArrowLeft size={16} /> Back to Shipments
-        </button>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ManifestCard title="Consignor">
+          <DetailList
+            columns={1}
+            items={[{ label: 'Pickup address', value: text(shipment.pickup_location?.address ?? shipment.origin_address) }]}
+          />
+          {editing && <p className="mt-3 text-xs text-muted">The pickup comes from the shipment's route and cannot be changed here.</p>}
+        </ManifestCard>
+        <ManifestCard title="Consignee">
+          <div className="space-y-4">
+            {renderFields(consignee, 1)}
+            <DetailList
+              columns={1}
+              items={[{ label: 'Delivery address', value: text(drop?.address ?? shipment.drop_location?.address ?? shipment.dest_address) }]}
+            />
+          </div>
+        </ManifestCard>
+      </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={printDocument}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
-          >
-            <Printer size={16} /> Print Document
-          </button>
+      <ManifestCard title="Trip" description={editing ? undefined : 'Arrival and distance are estimates unless entered on the manifest.'}>
+        {renderFields(trip, 2)}
+      </ManifestCard>
 
-          {isEditing ? (
-            <>
-              <button
-                onClick={() => setIsEditing(false)}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-sm text-black font-semibold shadow-sm transition-colors"
-                disabled={updateMutation.isPending}
-              >
-                <X size={16} /> Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
-                disabled={updateMutation.isPending}
-              >
-                {updateMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <Save size={16} />}
-                Save Changes
-              </button>
-            </>
+      <ManifestCard title="Cargo">{renderFields(cargo, 3)}</ManifestCard>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ManifestCard title="Special handling">
+          {editing ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {HANDLING_FLAGS.map(f => (
+                <Checkbox
+                  key={f.key}
+                  label={f.label}
+                  checked={!!handling[f.key]}
+                  onChange={e => change(`specialHandling.${f.key}`, e.target.checked)}
+                />
+              ))}
+            </div>
+          ) : activeFlags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {activeFlags.map(f => <StatusPill key={f.key} tone={f.key === 'hazardous' ? 'danger' : 'neutral'} dot={false}>{f.label}</StatusPill>)}
+            </div>
           ) : (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-black bg-black hover:bg-gray-800 text-sm text-white font-semibold shadow-sm transition-colors"
-            >
-              <Edit3 size={16} /> Edit Manifest
-            </button>
+            <p className="text-sm text-muted">No special handling.</p>
           )}
-        </div>
+        </ManifestCard>
+        <ManifestCard title="Remarks">
+          {editing ? (
+            <Textarea
+              label="Remarks and instructions"
+              hideLabel
+              rows={4}
+              placeholder="Anything the transporter or consignee should know"
+              value={remarks ?? ''}
+              onChange={e => change('remarks', e.target.value)}
+            />
+          ) : (
+            <p className="whitespace-pre-line text-sm text-text">{remarks ?? <span className="text-muted">No remarks.</span>}</p>
+          )}
+        </ManifestCard>
       </div>
 
-      {/* Formal Document Container */}
-      <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-sm p-8 print:border-none print:shadow-none print:max-w-full">
-
-        {/* Document Header */}
-        <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-widest text-black uppercase">Cargo Manifest / Waybill</h1>
-            <p className="text-xs font-semibold text-gray-600 tracking-wider mt-1">GOVERNMENT PORTAL FORMAT COMPLIANT</p>
-          </div>
-          <div className="text-right flex flex-col items-end">
-            <div className="border-2 border-black p-2 bg-gray-50 mb-2">
-              <p className="font-mono font-bold text-lg tracking-[0.2em]">{shipment.tracking_id}</p>
-            </div>
-            <div className="text-[10px] uppercase font-bold text-gray-500">
-              System ID: <span className="text-black font-mono">{shipment.id.substring(0, 18)}...</span>
-            </div>
-          </div>
+      <ManifestCard title="Signatures">
+        <div className="grid gap-6 sm:grid-cols-3">
+          <SignatureLine label="Consignor" />
+          <SignatureLine label="Transporter" value={transporterSignature} />
+          <SignatureLine label="Consignee" hint="Signed on delivery" />
         </div>
+      </ManifestCard>
 
-        {/* Section 1: Addresses */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-t border-l border-black mb-6">
-          <div className="border-b border-r border-black p-4">
-            <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">1. Consignor (Origin)</div>
-            <p className="text-sm font-semibold text-black uppercase mt-2">{shipment.pickup_location?.address || shipment.origin_address || 'N/A'}</p>
-            {isEditing && (
-              <p className="text-[10px] text-gray-400 mt-2 italic">* Origin address is system-generated from route details.</p>
-            )}
-          </div>
-          <div className="border-b border-r border-black p-4">
-            <div className="text-xs font-bold uppercase tracking-wider mb-2 bg-gray-100 p-1 border border-gray-300 inline-block">2. Consignee (Destination)</div>
-            <div className="space-y-3 mt-3">
-              {renderField('Full Name', fallbackData.consigneeName, 'consigneeName')}
-              {renderField('Contact Number', fallbackData.consigneeContact, 'consigneeContact')}
-              {renderField('Email Address', fallbackData.consigneeEmail, 'consigneeEmail')}
-              <div>
-                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Destination Address</label>
-                <p className="text-sm font-semibold text-black uppercase">{dp?.address || shipment.drop_location?.address || shipment.dest_address || 'N/A'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      <p className="text-xs text-muted">
+        Printed from MargixIndia on {formatDate(new Date().toISOString())}. Reference <span className="font-mono">{shipment.id}</span>.
+      </p>
+    </Page>
+  )
+}
 
-        {/* Section 2: Logistics Details */}
-        <div className="mb-6">
-          <div className="bg-black text-white text-xs font-bold uppercase tracking-wider p-1.5 pl-3 border border-black">3. Logistics Parameters</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-l border-b border-black">
-            <div className="border-r border-black p-3">
-              {renderField('Dispatch Date', fallbackData.dispatch_date, 'dispatch_date', 'date')}
-            </div>
-            <div className="border-r border-black p-3">
-              {renderField('Reporting Date', fallbackData.reporting_date, 'reporting_date', 'date')}
-            </div>
-            <div className="border-r border-black p-3">
-              {renderField('Estimated ETA', fallbackData.eta_text, 'eta_details.eta_text')}
-            </div>
-            <div className="border-r border-black p-3">
-              {renderField('Distance (KM)', fallbackData.distance_km, 'eta_details.distance_km')}
-            </div>
-          </div>
-        </div>
+function ManifestCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <Card className="break-inside-avoid">
+      <CardHeader title={title} description={description} />
+      <CardBody>{children}</CardBody>
+    </Card>
+  )
+}
 
-        {/* Section 3: Cargo Particulars */}
-        <div className="mb-6">
-          <div className="bg-black text-white text-xs font-bold uppercase tracking-wider p-1.5 pl-3 border border-black">4. Cargo Particulars</div>
-          <div className="border-l border-black">
-            <div className="grid grid-cols-1 md:grid-cols-3 border-b border-black">
-              <div className="border-r border-black p-3">
-                {renderField('Product Category', fallbackData.productCategory, 'productCategory')}
-              </div>
-              <div className="border-r border-black p-3">
-                {renderField('Product Name', fallbackData.productName, 'productName')}
-              </div>
-              <div className="border-r border-black p-3">
-                {renderField('Brand / Make', fallbackData.brand, 'brand')}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 border-b border-black">
-              <div className="border-r border-black p-3">
-                {renderField('Packaging Type', fallbackData.packagingType, 'packagingType')}
-              </div>
-              <div className="border-r border-black p-3">
-                {renderField('No. of Packages', fallbackData.noOfPackages, 'noOfPackages', 'number')}
-              </div>
-              <div className="border-r border-black p-3 bg-gray-50">
-                {renderField('Gross Weight', fallbackData.grossWeight, 'grossWeight')}
-              </div>
-              <div className="border-r border-black p-3 bg-gray-50">
-                {renderField('Declared Value', fallbackData.declaredValue, 'declaredValue')}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 4: Special Handling & Remarks */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-t border-l border-black mb-12">
-          <div className="border-b border-r border-black p-4 bg-gray-50">
-            <div className="text-xs font-bold uppercase tracking-wider mb-4 border-b border-gray-300 pb-1">5. Special Handling Flags</div>
-            <div className="grid grid-cols-2 gap-4">
-              {renderField('Fragile Cargo', null, 'fragile', 'checkbox')}
-              {renderField('Hazardous (Hazmat)', null, 'hazardous', 'checkbox')}
-              {renderField('Cold Chain / Temp Controlled', null, 'coldChain', 'checkbox')}
-              {renderField('Stackable', null, 'stackable', 'checkbox')}
-              {renderField('High Value', null, 'highValue', 'checkbox')}
-              {renderField('Long Haul', null, 'longHaul', 'checkbox')}
-            </div>
-          </div>
-          <div className="border-b border-r border-black p-4">
-            <div className="text-xs font-bold uppercase tracking-wider mb-3 border-b border-gray-300 pb-1">6. Remarks & Instructions</div>
-            {isEditing ? (
-              <textarea
-                value={meta.remarks || ''}
-                onChange={(e) => handleInputChange('remarks', e.target.value)}
-                className="w-full bg-white border border-gray-300 p-2 text-sm text-black focus:outline-none focus:border-black min-h-[100px]"
-                placeholder="Enter remarks or special instructions..."
-              />
-            ) : (
-              <div className="text-sm font-semibold text-black uppercase min-h-[100px]">
-                {meta.remarks || <span className="text-gray-400 italic normal-case font-normal">No additional remarks</span>}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer Signatures */}
-        <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t border-dashed border-gray-400">
-          <div className="text-center">
-            <div className="border-b border-black h-12 mb-2"></div>
-            <p className="text-xs font-bold uppercase text-black">Consignor Signature</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-black h-12 mb-2 flex items-end justify-center pb-1 overflow-hidden">
-              {meta.transporter_signature && (
-                <span className="font-serif italic font-bold text-lg text-blue-800 transform -rotate-2">{meta.transporter_signature}</span>
-              )}
-            </div>
-            <p className="text-xs font-bold uppercase text-black">Transporter Signature</p>
-          </div>
-          <div className="text-center">
-            <div className="border-b border-black h-12 mb-2"></div>
-            <p className="text-xs font-bold uppercase text-black">Consignee Signature</p>
-            <p className="text-[9px] text-gray-500 mt-1">(Sign upon delivery)</p>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center text-[9px] text-gray-400 uppercase tracking-widest border-t border-black pt-2">
-          System Generated Document • margixindia Logistics Platform • {new Date().toISOString().split('T')[0]}
-        </div>
-
-      </div>
+function SignatureLine({ label, value, hint }: { label: string; value?: string | null; hint?: string }) {
+  return (
+    <div>
+      <div className="flex h-12 items-end border-b border-border-strong pb-1 text-sm text-text">{value}</div>
+      <p className="mt-2 text-sm font-medium text-text">{label}</p>
+      {hint && <p className="text-xs text-muted">{hint}</p>}
     </div>
-  );
+  )
 }
