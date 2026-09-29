@@ -376,7 +376,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
       // Fallback: Local greedy re-optimization
       const { data: pendingStops } = await supabase
         .from('route_stops')
-        .select('id, delivery_point_id, delivery_points(id, latitude, longitude, lat, lng)')
+        .select('id, delivery_point_id, delivery_points(id, latitude, longitude)')
         .eq('route_id', route_id)
         .eq('status', 'pending');
         
