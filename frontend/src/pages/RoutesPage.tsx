@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
+import { Download, Play, CheckCircle2 } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
 import {
   Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Select, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
+import { canCompleteRoute, canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { downloadCsv, toCsv } from '@/utils/csv'
 
 interface Vehicle {
@@ -20,6 +21,7 @@ interface Vehicle {
 
 interface RouteRow extends RouteLike {
   id: string
+  is_manifest?: boolean
   status: string
   vehicle_id?: string | null
   created_at?: string | null
@@ -38,6 +40,7 @@ export default function RoutesPage() {
   const navigate = useNavigate()
   const [status, setStatus] = useUrlState('status', { fallback: 'all' })
   const [q, setQ] = useUrlState('q', { debounceMs: 300 })
+  const { dispatch, complete, isPending } = useRouteStatusActions()
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
 
@@ -123,6 +126,27 @@ export default function RoutesPage() {
       sortValue: r => r.updated_at ?? r.created_at ?? '',
       align: 'right',
       hideOnMobile: true,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: r => {
+        const showDispatch = canDispatchRoute(r)
+        const showComplete = canCompleteRoute(r)
+        if (!showDispatch && !showComplete) return null
+        return (
+          // Keep button clicks and key presses from opening the row.
+          <div className="flex justify-end" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+            {showDispatch && (
+              <Button variant="secondary" size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(r)}>Dispatch</Button>
+            )}
+            {showComplete && (
+              <Button variant="secondary" size="sm" icon={<CheckCircle2 size={14} />} disabled={isPending} onClick={() => complete(r)}>Mark completed</Button>
+            )}
+          </div>
+        )
+      },
     },
   ]
 

@@ -110,7 +110,7 @@ export class AnalyticsService {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // LIVE INSIGHTS — enhanced with all AI fleet intelligence types
+  // LIVE INSIGHTS — only conditions read from live data (no invented scores or trends)
   // ──────────────────────────────────────────────────────────────────────────
   static async getLiveInsights(): Promise<Record<string, any>[]> {
     const insights: Record<string, any>[] = [];
@@ -153,32 +153,12 @@ export class AnalyticsService {
               type: 'delay_risk',
               title: `High Delay Risk: ${plate}`,
               insight: `Vehicle is ${(dist * 111).toFixed(1)}km from next stop with low speed (${latestTelemetry.speed_kmph}km/h). Possible congestion detected.`,
-              score: 85.5,
-              trend: 'down',
               vehicle_id: route.vehicle_id,
               plate_number: plate,
               severity: 'high',
               icon: 'alert',
             });
           }
-        }
-
-        // Fuel efficiency drop insight
-        const fuelPct = latestTelemetry.fuel_level_pct ?? 100;
-        const totalKmApprox = (route.total_distance_km || 0) * ((route.route_stops?.length || 1) - pendingStops.length);
-        if (fuelPct < 30) {
-          insights.push({
-            id: `fuel_${route.vehicle_id}`,
-            type: 'fuel_efficiency',
-            title: `Fuel Efficiency Drop: ${plate}`,
-            insight: `Fuel efficiency has dropped by ~14%. Fuel level at ${fuelPct.toFixed(0)}%. Possible engine or driving issue detected.`,
-            score: 72.0,
-            trend: 'down',
-            vehicle_id: route.vehicle_id,
-            plate_number: plate,
-            severity: 'medium',
-            icon: 'fuel',
-          });
         }
 
         // Backhaul opportunity — return trip empty
@@ -188,8 +168,6 @@ export class AnalyticsService {
             type: 'backhaul_opportunity',
             title: `Backhaul Opportunity: ${plate}`,
             insight: `Truck ${plate} is likely to return empty. Open bidding for available capacity?`,
-            score: 91.0,
-            trend: 'up',
             vehicle_id: route.vehicle_id,
             plate_number: plate,
             severity: 'low',
@@ -214,8 +192,6 @@ export class AnalyticsService {
           type: 'idle_vehicle',
           title: `Idle Vehicle: ${v.plate_number}`,
           insight: `This truck has remained idle for ${Math.floor(idleDays)} day${Math.floor(idleDays) > 1 ? 's' : ''}. Consider reassignment or maintenance check.`,
-          score: 60.0,
-          trend: 'down',
           vehicle_id: v.id,
           plate_number: v.plate_number,
           severity: idleDays >= 3 ? 'high' : 'medium',
@@ -224,39 +200,7 @@ export class AnalyticsService {
       }
     }
 
-    // 3. Maintenance due alerts (vehicles with high distance)
-    const { data: allVehicles } = await supabase
-      .from('vehicles')
-      .select('id, plate_number');
-
-    for (const v of (allVehicles || [])) {
-      const { data: routesData } = await supabase
-        .from('routes')
-        .select('total_distance_km')
-        .eq('vehicle_id', v.id)
-        .in('status', ['active', 'completed']);
-
-      const totalKm = (routesData || []).reduce((s: number, r: any) => s + (r.total_distance_km || 0), 0);
-      const kmSinceOil = totalKm % 5000;
-      const oilRemaining = 5000 - kmSinceOil;
-
-      if (oilRemaining < 1000 && oilRemaining > 0) {
-        insights.push({
-          id: `maint_${v.id}`,
-          type: 'maintenance_due',
-          title: `Maintenance Due: ${v.plate_number}`,
-          insight: `Service is due in ${Math.round(oilRemaining)} km. Schedule maintenance now to avoid breakdowns.`,
-          score: 78.0,
-          trend: 'down',
-          vehicle_id: v.id,
-          plate_number: v.plate_number,
-          severity: oilRemaining < 500 ? 'high' : 'medium',
-          icon: 'wrench',
-        });
-      }
-    }
-
-    // 4. Reroute suggestions from Redis cache
+    // 3. Reroute suggestions from Redis cache
     const suggestions = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
     for (const s of suggestions) {
       insights.push({
@@ -264,8 +208,6 @@ export class AnalyticsService {
         type: 'reroute_suggestion',
         title: `Reroute Alert: ${s.vehicle_id.substring(0, 8)}`,
         insight: `Better path found! ${s.trigger}. Potential savings: ${s.saved_minutes} mins.`,
-        score: 92.0,
-        trend: 'up',
         vehicle_id: s.vehicle_id,
         route_id: s.route_id,
         new_sequence: s.new_stop_sequence,

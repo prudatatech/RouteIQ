@@ -91,3 +91,6 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   if (typeof detail === 'string' && detail) return detail
   return fallback
 }
+
+/** True while a shipment is open to vendor bids and no bid has been accepted yet. */
+export const isBiddingOpen = (s: { open_bidding?: boolean | null; bid_id?: string | null }) => !!s.open_bidding && !s.bid_id

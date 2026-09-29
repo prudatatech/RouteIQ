@@ -1,10 +1,11 @@
 import { memo, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Marker, type MarkerDragEvent } from 'react-map-gl/maplibre'
-import { Boxes, Flag, MapPin, Package, TriangleAlert, Truck, Warehouse, type LucideIcon } from 'lucide-react'
+import { Bike, Boxes, Bus, Car, Flag, MapPin, Package, TriangleAlert, Truck, Warehouse, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { MAP_TONES, stopStatusStyle, vehicleStatusStyle } from '@/config/mapConfig'
 import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { POINT_TONES } from './layers'
+import type { VehicleCluster } from './cluster'
 import type { LatLng, MapPoint, MapPointKind, MapRouteStop, MapVehicle } from './types'
 
 /** How long a vehicle takes to glide to a new position. */
@@ -17,6 +18,13 @@ const POINT_KINDS: Record<MapPointKind, { icon: LucideIcon; name: string }> = {
   hub: { icon: Warehouse, name: 'Hub' },
   load: { icon: Boxes, name: 'Open load' },
   location: { icon: MapPin, name: 'Location' },
+}
+
+const VEHICLE_ICONS: Record<string, { icon: LucideIcon; name: string }> = {
+  truck: { icon: Truck, name: 'truck' },
+  van: { icon: Bus, name: 'van' },
+  bike: { icon: Bike, name: 'bike' },
+  car: { icon: Car, name: 'car' },
 }
 
 /** Clicks on markers must not also count as a click on the map (picker mode). */
@@ -63,13 +71,15 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, selected, sh
   const position = useAnimatedPosition(vehicle.position, route)
   const status = vehicleStatusStyle(vehicle.status)
   const tone = MAP_TONES[status.tone]
+  const kind = VEHICLE_ICONS[(vehicle.vehicle_type ?? '').toLowerCase()] ?? VEHICLE_ICONS.truck
+  const KindIcon = kind.icon
   const hasHeading = typeof vehicle.heading === 'number' && Number.isFinite(vehicle.heading)
 
   return (
     <Marker longitude={position.lng} latitude={position.lat} anchor="center" style={{ zIndex: selected ? 3 : 1 }}>
       <button
         type="button"
-        aria-label={`${vehicle.label}, ${status.label}`}
+        aria-label={`${vehicle.label}, ${vehicle.vehicle_type ? `${kind.name}, ` : ''}${status.label}`}
         aria-pressed={selected}
         title={`${vehicle.label} · ${status.label}`}
         onClick={(e) => { stop(e); onSelect?.(vehicle.id) }}
@@ -91,7 +101,7 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, selected, sh
             selected ? 'h-9 w-9 ring-2 ring-brand ring-offset-1' : 'h-8 w-8',
           )}
         >
-          <Truck size={16} aria-hidden />
+          <KindIcon size={16} aria-hidden />
         </span>
         {(selected || showLabel) && (
           <span className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-text shadow-raised">
@@ -112,7 +122,7 @@ interface PointMarkerProps {
 
 export const PointMarker = memo(function PointMarker({ point, selected, onSelect, onMove }: PointMarkerProps) {
   const kind = POINT_KINDS[point.kind]
-  const tone = MAP_TONES[POINT_TONES[point.kind]]
+  const tone = MAP_TONES[point.muted ? 'muted' : POINT_TONES[point.kind]]
   const Icon = kind.icon
   const pulsing = point.kind === 'incident' && point.active
 
@@ -169,6 +179,26 @@ export const StopMarker = memo(function StopMarker({ stop: routeStop }: { stop: 
       >
         {routeStop.sequence}
       </span>
+    </Marker>
+  )
+})
+
+/** A count of nearby vehicles. Activating it zooms in on the group. */
+export const ClusterMarker = memo(function ClusterMarker({ cluster, onOpen }: {
+  cluster: VehicleCluster
+  onOpen: (cluster: VehicleCluster) => void
+}) {
+  return (
+    <Marker longitude={cluster.position.lng} latitude={cluster.position.lat} anchor="center" style={{ zIndex: 2 }}>
+      <button
+        type="button"
+        aria-label={`${cluster.count} vehicles close together. Zoom in to see them.`}
+        title={`${cluster.count} vehicles`}
+        onClick={(e) => { stop(e); onOpen(cluster) }}
+        className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-surface bg-brand-fill text-sm font-semibold text-white shadow-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        {cluster.count.toLocaleString('en-IN')}
+      </button>
     </Marker>
   )
 })

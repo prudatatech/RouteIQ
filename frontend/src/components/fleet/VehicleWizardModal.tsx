@@ -55,12 +55,14 @@ interface VehicleFormData {
   status: string
   rc_number: string; rc_expiry: string; rc_document_url: string
   insurance_number: string; insurance_expiry: string; insurance_document_url: string
-  fitness_number: string; fitness_expiry: string; fitness_document_url: string
+  fitness_certificate_number: string; fitness_expiry: string; fitness_document_url: string
   permit_number: string; permit_expiry: string; permit_document_url: string
   puc_number: string; puc_expiry: string; puc_document_url: string
 }
 
-const docNumberKey = (doc: DocKind) => `${doc}_number` as const
+const docNumberKey = (doc: DocKind) =>
+  (doc === 'fitness' ? 'fitness_certificate_number' : `${doc}_number`) as
+    'rc_number' | 'insurance_number' | 'fitness_certificate_number' | 'permit_number' | 'puc_number'
 const docExpiryKey = (doc: DocKind) => `${doc}_expiry` as const
 
 const DEFAULT_FORM_DATA: VehicleFormData = {
@@ -70,7 +72,7 @@ const DEFAULT_FORM_DATA: VehicleFormData = {
   container_length_ft: 0, container_width_ft: 0, container_height_ft: 0,
   rc_number: '', rc_expiry: '', rc_document_url: '',
   insurance_number: '', insurance_expiry: '', insurance_document_url: '',
-  fitness_number: '', fitness_expiry: '', fitness_document_url: '',
+  fitness_certificate_number: '', fitness_expiry: '', fitness_document_url: '',
   permit_number: '', permit_expiry: '', permit_document_url: '',
   puc_number: '', puc_expiry: '', puc_document_url: '',
   status: 'available',
@@ -109,7 +111,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     const payload: Record<string, unknown> = { ...data }
     for (const doc of DOCS) {
       if (!payload[`${doc}_expiry`]) payload[`${doc}_expiry`] = null
-      if (!payload[`${doc}_number`]) payload[`${doc}_number`] = null
+      if (!payload[docNumberKey(doc)]) payload[docNumberKey(doc)] = null
     }
     return payload
   }

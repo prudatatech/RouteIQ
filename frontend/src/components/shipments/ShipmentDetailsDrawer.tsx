@@ -10,7 +10,7 @@ import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import {
-  apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isCargoManifest, plateOf, priorityTone,
+  apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
 } from './format'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
@@ -167,9 +167,24 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             ]}
           />
           {!manifestOnly && !s.vehicle_id && !closed && (
-            <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>Assign vehicle</Button>
+            isBiddingOpen(s)
+              ? <Alert tone="info">Open to vendor bids. A vehicle is assigned when you accept a bid, so it can't be assigned by hand while bidding is open.</Alert>
+              : <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>Assign vehicle</Button>
           )}
         </Section>
+
+        {s.open_bidding && (
+          <Section title="Vendor bidding">
+            <DetailList
+              items={[
+                { label: 'State', value: isBiddingOpen(s) ? 'Bidding open' : 'Bid accepted' },
+                { label: 'Asking price', value: s.asking_price != null ? formatRupees(s.asking_price) : null },
+                { label: 'Opens', value: s.bidding_opens_at ? formatDateTime(s.bidding_opens_at) : null },
+                { label: 'Closes', value: s.bidding_closes_at ? formatDateTime(s.bidding_closes_at) : null },
+              ]}
+            />
+          </Section>
+        )}
 
         {!manifestOnly && (
           <Section title="Status history">

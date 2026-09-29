@@ -108,7 +108,7 @@ export default function LiveMap({
     const live = livePositions[v.id]
     const position = live ?? (v.latitude != null && v.longitude != null ? { lat: Number(v.latitude), lng: Number(v.longitude) } : null)
     // Vehicles without a GPS position are left off the map, never placed at a guessed spot.
-    return position ? [{ id: v.id, position, status: v.status, label: v.plate_number }] : []
+    return position ? [{ id: v.id, position, status: v.status, label: v.plate_number, vehicle_type: v.vehicle_type }] : []
   }), [vehicles, livePositions])
 
   const selectedVehicle = selectedId ? mapVehicles.find((v) => v.id === selectedId) : undefined

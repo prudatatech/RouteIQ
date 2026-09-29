@@ -699,7 +699,22 @@ export class ShipmentService {
 
     if (error || !data) return [];
 
+    // A shipment opened for vendor bidding has a capacity window pointing back at it
+    // (see createShipment -> openBackhaulWindow). shipments has no bidding columns.
+    const biddingByShipment = new Map<string, any>();
+    if (data.length > 0) {
+      const { data: windows } = await supabase
+        .from('capacity_windows')
+        .select('fallback_shipment_id, floor_price, opens_at, closes_at, winning_bid_id')
+        .eq('trigger_type', 'superadmin_dispatch')
+        .in('fallback_shipment_id', data.map((d: any) => d.id));
+      for (const w of windows || []) {
+        if (w.fallback_shipment_id) biddingByShipment.set(w.fallback_shipment_id, w);
+      }
+    }
+
     const mappedShipments = data.map((d: any) => {
+      const bidWindow = biddingByShipment.get(d.id);
       const deliveryPoints = d.delivery_points || [];
       const primaryDp = deliveryPoints[0];
       const activeRouteStop = primaryDp?.route_stops?.find((rs: any) => rs.routes);
@@ -723,6 +738,10 @@ export class ShipmentService {
         capacity_bids: d.capacity_bids || null,
         vehicle_id: vehicleId,
         driver_name: driverName,
+        open_bidding: !!bidWindow,
+        asking_price: bidWindow?.floor_price ?? null,
+        bidding_opens_at: bidWindow?.opens_at ?? null,
+        bidding_closes_at: bidWindow?.closes_at ?? null,
       };
     });
 

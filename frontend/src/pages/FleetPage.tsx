@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatTimeAgo } from '@/utils/timeFormat'
+import { formatDateTime } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
   parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
@@ -25,6 +26,11 @@ interface Vehicle {
   capacity_kg?: number | null
   current_load_kg?: number | null
   available_capacity_kg?: number | null
+  container_length_ft?: number | null
+  container_width_ft?: number | null
+  container_height_ft?: number | null
+  bidding_window_open?: boolean | null
+  bidding_window_closes_at?: string | null
   current_fuel_liters?: number | null
   fuel_capacity_liters?: number | null
   latitude?: number | null
@@ -54,6 +60,18 @@ const STATUS_FILTER_LABELS: Record<(typeof STATUS_FILTERS)[number], string> = {
 
 // A vehicle counts as live when its last position report is at most this old.
 const LIVE_GPS_THRESHOLD_MS = 5 * 60 * 1000
+
+/** Load and free space for a vehicle; free falls back to capacity minus load when the API does not send it. */
+function vehicleLoad(v: Vehicle) {
+  const total = v.capacity_kg ?? 0
+  const load = Math.max(0, v.current_load_kg ?? (v.available_capacity_kg != null ? total - v.available_capacity_kg : 0))
+  const free = Math.max(0, v.available_capacity_kg ?? total - load)
+  const pct = total > 0 ? Math.min(100, Math.round((load / total) * 100)) : 0
+  return { total, load, free, pct }
+}
+
+const hasContainer = (v: Vehicle) => (v.container_length_ft ?? 0) > 0
+const containerSize = (v: Vehicle) => `${v.container_length_ft} × ${v.container_width_ft ?? 0} × ${v.container_height_ft ?? 0} ft`
 
 // Latest position report: telemetry/driver pings set last_heartbeat, the GPS provider sync sets last_sync.
 function lastPingAt(v: Vehicle): Date | null {
@@ -187,6 +205,32 @@ export default function FleetPage() {
     },
     { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span className="capitalize">{v.vehicle_type}</span> },
     { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
+    {
+      key: 'capacity',
+      header: 'Capacity',
+      hideBelow: 'md',
+      sortValue: v => vehicleLoad(v).free,
+      cell: v => {
+        const { total, free, pct } = vehicleLoad(v)
+        if (total <= 0) return <span className="text-muted">—</span>
+        return (
+          <div className="w-32 space-y-1">
+            <p className="text-sm text-text">{free.toLocaleString('en-IN')} / {total.toLocaleString('en-IN')} kg free</p>
+            <div
+              role="progressbar"
+              aria-label={`${pct}% loaded`}
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-1.5 overflow-hidden rounded-full bg-neutral-soft"
+            >
+              <div className={pct >= 90 ? 'h-full bg-warning' : 'h-full bg-brand-fill'} style={{ width: `${pct}%` }} />
+            </div>
+            {v.bidding_window_open && <StatusPill tone="info" dot={false}>Bidding window open</StatusPill>}
+          </div>
+        )
+      },
+    },
     {
       key: 'fuel',
       header: 'Fuel',
@@ -344,6 +388,7 @@ export default function FleetPage() {
                     position: { lat: detailVehicle.latitude, lng: detailVehicle.longitude },
                     status: detailVehicle.status,
                     label: detailVehicle.plate_number,
+                    vehicle_type: detailVehicle.vehicle_type,
                   }]}
                   selectedId={detailVehicle.id}
                   interactive={false}
@@ -368,6 +413,15 @@ export default function FleetPage() {
                   value: detailVehicle.latitude != null
                     ? <span className="font-mono text-xs">{detailVehicle.latitude.toFixed(5)}, {detailVehicle.longitude!.toFixed(5)}</span>
                     : 'Unknown',
+                },
+                { label: 'Capacity', value: `${(detailVehicle.capacity_kg ?? 0).toLocaleString('en-IN')} kg` },
+                { label: 'Current load', value: `${vehicleLoad(detailVehicle).load.toLocaleString('en-IN')} kg (${vehicleLoad(detailVehicle).free.toLocaleString('en-IN')} kg free)` },
+                { label: 'Container size', value: hasContainer(detailVehicle) ? containerSize(detailVehicle) : 'Not recorded' },
+                {
+                  label: 'Bidding window',
+                  value: detailVehicle.bidding_window_open
+                    ? `Open${detailVehicle.bidding_window_closes_at ? `, closes ${formatDateTime(detailVehicle.bidding_window_closes_at)}` : ''}`
+                    : 'Closed',
                 },
                 {
                   label: 'Fuel',

@@ -7,16 +7,17 @@ import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
-  Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, useConfirm,
+  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, useConfirm,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
 interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; priority: number | null }
+interface PendingCorridor { id?: string; name: string; vehicles: string; rate: string; priority: string | number }
 interface PendingUpdates {
   sla_commitment?: string
   tax_treatment?: string
-  corridors?: { name: string; vehicles: string; rate: string; priority: string }[]
+  corridors?: PendingCorridor[]
 }
 interface TplPartnerDetail {
   id: string
@@ -24,6 +25,7 @@ interface TplPartnerDetail {
   company_name: string
   email: string | null
   status: string
+  rejection_reason?: string | null
   created_at: string
   pan_number: string | null
   gstin: string | null
@@ -35,6 +37,70 @@ interface TplPartnerDetail {
   tpl_documents?: TplDocument[]
   tpl_corridors?: TplCorridor[]
   pending_updates?: PendingUpdates | null
+}
+
+type DiffKind = 'added' | 'modified' | 'unchanged'
+interface DiffRow { key: string; kind: DiffKind; next: PendingCorridor; prev?: TplCorridor }
+
+const vehiclesText = (v: string[] | string | null | undefined) => (Array.isArray(v) ? v.join(', ') : v ?? '')
+
+/** Compares the live corridors with the requested ones: added, modified, unchanged, and removed. */
+function diffCorridors(current: TplCorridor[], requested: PendingCorridor[]) {
+  const matchOf = (n: PendingCorridor) =>
+    current.find(c => (n.id ? c.id === n.id : c.corridor_name === n.name))
+  const matched = new Set<string>()
+  const rows: DiffRow[] = requested.map((next, i) => {
+    const prev = matchOf(next)
+    if (!prev) return { key: `n${i}`, kind: 'added', next }
+    matched.add(prev.id)
+    const changed = prev.corridor_name !== next.name
+      || (prev.proposed_rate ?? '') !== (next.rate ?? '')
+      || String(prev.priority ?? '') !== String(next.priority ?? '')
+      || vehiclesText(prev.vehicle_types) !== (next.vehicles ?? '')
+    return { key: `n${i}`, kind: changed ? 'modified' : 'unchanged', next, prev }
+  })
+  const removed = current.filter(c => !matched.has(c.id))
+  return { rows, removed }
+}
+
+const Was = ({ from, to }: { from?: string | number | null; to?: string | number | null }) => (
+  String(from ?? '') !== String(to ?? '')
+    ? <><span className="text-muted line-through">{from || 'none'}</span> <span className="text-muted" aria-hidden="true">to</span> <span className="font-medium text-text">{to || 'none'}</span></>
+    : <span className="text-text">{to || 'none'}</span>
+)
+
+function CorridorDiff({ current, requested }: { current: TplCorridor[]; requested: PendingCorridor[] }) {
+  const { rows, removed } = diffCorridors(current, requested)
+  if (rows.length === 0 && removed.length === 0) return <p className="text-sm text-muted">No corridor changes requested.</p>
+  return (
+    <ul className="space-y-2">
+      {rows.map(r => (
+        <li key={r.key} className="rounded-control border border-border bg-surface px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-text">{r.next.name}</span>
+            {r.kind === 'added' && <StatusPill tone="success" dot={false}>Added</StatusPill>}
+            {r.kind === 'modified' && <StatusPill tone="warning" dot={false}>Modified</StatusPill>}
+          </div>
+          <div className="mt-1 grid gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+            <span className="text-muted">Vehicles: {r.prev ? <Was from={vehiclesText(r.prev.vehicle_types)} to={r.next.vehicles} /> : (r.next.vehicles || 'none')}</span>
+            <span className="text-muted">Rate: {r.prev ? <Was from={r.prev.proposed_rate} to={r.next.rate} /> : (r.next.rate || 'none')}</span>
+            <span className="text-muted">Priority: {r.prev ? <Was from={r.prev.priority} to={r.next.priority} /> : (r.next.priority || 'none')}</span>
+          </div>
+        </li>
+      ))}
+      {removed.map(c => (
+        <li key={c.id} className="rounded-control border border-border bg-surface px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-muted line-through">{c.corridor_name}</span>
+            <StatusPill tone="danger" dot={false}>Removed</StatusPill>
+          </div>
+          <div className="mt-1 text-xs text-muted line-through">
+            {[vehiclesText(c.vehicle_types), c.proposed_rate, c.priority != null ? `Priority ${c.priority}` : ''].filter(Boolean).join(' · ')}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 export default function TplPartnerDetailPage() {
@@ -159,6 +225,10 @@ export default function TplPartnerDetailPage() {
         actions={<StatusPill status={partner.status} />}
       />
 
+      {partner.status === 'rejected' && partner.rejection_reason && (
+        <Alert tone="danger" title="Application rejected">{partner.rejection_reason}</Alert>
+      )}
+
       {partner.pending_updates && (
         <Card padded className="border-warning/30 bg-warning-soft">
           <div className="mb-4 flex items-center gap-2 text-warning">
@@ -173,16 +243,10 @@ export default function TplPartnerDetailPage() {
               { label: 'Requested tax treatment', value: partner.pending_updates.tax_treatment || 'No change' },
             ]}
           />
-          {partner.pending_updates.corridors && partner.pending_updates.corridors.length > 0 && (
+          {partner.pending_updates.corridors && (
             <div className="mt-4 space-y-2">
-              <p className="text-xs text-muted">Requested corridors</p>
-              {partner.pending_updates.corridors.map((c, i) => (
-                <div key={i} className="flex items-center justify-between rounded-control border border-border bg-surface px-3 py-2 text-sm">
-                  <span className="font-medium text-text">{c.name}</span>
-                  <span className="text-muted">{c.vehicles}</span>
-                  <span className="font-mono">{c.rate}</span>
-                </div>
-              ))}
+              <p className="text-xs text-muted">Requested corridor changes</p>
+              <CorridorDiff current={partner.tpl_corridors ?? []} requested={partner.pending_updates.corridors} />
             </div>
           )}
         </Card>

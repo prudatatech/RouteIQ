@@ -122,3 +122,24 @@ describe('GET /shipments/:id/history', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /shipments - bidding state', () => {
+  it('flags a shipment with a superadmin dispatch window and exposes price and window', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+      shipments: [shipment('created'), shipment('created', { id: 'ship-2', tracking_id: 'RTX-BBBB2222' })],
+      delivery_points: [], parcels: [], shipment_logs: [], invoices: [], payments: [],
+      cargo_manifest: [], vendor_shipment_requests: [],
+      capacity_windows: [{
+        id: 'w1', vehicle_id: 'veh-1', trigger_type: 'superadmin_dispatch', fallback_shipment_id: 'ship-1',
+        floor_price: 4500, opens_at: '2026-09-01T10:00:00.000Z', closes_at: '2026-09-01T10:05:00.000Z',
+      }],
+    });
+    const res = await request(app).get('/api/v1/shipments').set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(200);
+    const one = res.body.find((s: any) => s.id === 'ship-1');
+    const two = res.body.find((s: any) => s.id === 'ship-2');
+    expect(one).toMatchObject({ open_bidding: true, asking_price: 4500, bidding_closes_at: '2026-09-01T10:05:00.000Z' });
+    expect(two).toMatchObject({ open_bidding: false, asking_price: null });
+  });
+});

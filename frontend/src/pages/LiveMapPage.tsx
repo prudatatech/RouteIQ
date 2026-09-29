@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Truck } from 'lucide-react'
-import { vehiclesAPI } from '@/services/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { RefreshCw, Truck } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { analyticsAPI, vehiclesAPI } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
 import LiveMap from '@/components/map/LiveMap'
-import { StatusPill, SearchInput, EmptyState, Skeleton } from '@/components/ui'
+import { Button, StatusPill, SearchInput, EmptyState, Skeleton } from '@/components/ui'
 
 interface VehicleRow {
   id: string
@@ -26,6 +28,22 @@ export default function LiveMapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(requestedVehicleId)
   const [zoomEvent, setZoomEvent] = useState(0)
   const [search, setSearch] = useState('')
+
+  const role = useAuthStore(s => s.role)
+  const isStaff = role === 'admin' || role === 'superadmin'
+  const queryClient = useQueryClient()
+  const syncGps = useMutation({
+    mutationFn: analyticsAPI.syncSparkGPS,
+    onSuccess: result => {
+      if (result.status === 'success') {
+        toast.success('GPS positions updated.')
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      } else {
+        toast(result.message || 'GPS sync is not set up, so nothing was updated.')
+      }
+    },
+    onError: () => toast.error('We could not sync GPS. Try again.'),
+  })
 
   const { data: vehicles = [], isLoading } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
@@ -57,6 +75,18 @@ export default function LiveMapPage() {
         <div className="border-b border-border p-4">
           <h1 className="text-lg font-semibold text-text">Live map</h1>
           <p className="mt-0.5 text-sm text-muted">{withPosition.length} of {fleet.length} vehicles reporting</p>
+          {isStaff && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              icon={<RefreshCw size={14} />}
+              loading={syncGps.isPending}
+              onClick={() => syncGps.mutate()}
+            >
+              Sync GPS now
+            </Button>
+          )}
           <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" className="mt-3" />
         </div>
         <div className="flex-1 overflow-y-auto">

@@ -241,6 +241,8 @@ export const telemetryAPI = {
 
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
+  /** Pulls the latest positions from the SparkGPS provider. Staff only. */
+  syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data as { status: string; message?: string }),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
   /** Newest-first, paged. `from`/`to` are YYYY-MM-DD IST calendar days. */
   auditLogs: (params: { limit?: number; offset?: number; from?: string; to?: string } = {}) =>
@@ -288,25 +290,57 @@ export const telemetryWS = {
   },
   /**
    * Open the live telemetry feed with the current session token (staff only).
-   * Returns a handle whose close() also cancels a connection still being set up.
+   * Reconnects with a growing delay (5 s, doubling up to 30 s) after the connection drops,
+   * and reports whether it is connected through `onStatus`.
+   * Returns a handle whose close() also stops reconnecting and cancels a connection still being set up.
    */
-  connect: <T = unknown>(onMessage: (data: T) => void) => {
+  connect: <T = unknown>(onMessage: (data: T) => void, onStatus?: (connected: boolean) => void) => {
+    const RETRY_MIN_MS = 5_000
+    const RETRY_MAX_MS = 30_000
     let ws: WebSocket | null = null
     let closed = false
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (closed || !session?.access_token) return
-      ws = new WebSocket(`${telemetryWS.getURL()}?token=${encodeURIComponent(session.access_token)}`)
-      ws.onmessage = (event) => {
-        try {
-          onMessage(JSON.parse(event.data))
-        } catch (err) {
-          console.error('WS Parse Error', err)
+    let retryDelay = RETRY_MIN_MS
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    const scheduleRetry = () => {
+      if (closed) return
+      retryTimer = setTimeout(open, retryDelay)
+      retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS)
+    }
+
+    const open = () => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (closed) return
+        if (!session?.access_token) { scheduleRetry(); return }
+        const socket = new WebSocket(`${telemetryWS.getURL()}?token=${encodeURIComponent(session.access_token)}`)
+        ws = socket
+        socket.onopen = () => {
+          retryDelay = RETRY_MIN_MS
+          onStatus?.(true)
         }
-      }
-    })
+        socket.onmessage = (event) => {
+          try {
+            onMessage(JSON.parse(event.data))
+          } catch (err) {
+            console.error('WS Parse Error', err)
+          }
+        }
+        socket.onclose = () => {
+          if (ws === socket) ws = null
+          if (closed) return
+          onStatus?.(false)
+          scheduleRetry()
+        }
+      }).catch(() => {
+        if (!closed) { onStatus?.(false); scheduleRetry() }
+      })
+    }
+    open()
+
     return {
       close: () => {
         closed = true
+        clearTimeout(retryTimer)
         ws?.close()
       },
     }

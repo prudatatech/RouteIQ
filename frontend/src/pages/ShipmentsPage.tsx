@@ -10,7 +10,7 @@ import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
 import ShipmentDetailsDrawer from '@/components/shipments/ShipmentDetailsDrawer'
 import {
-  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, plateOf,
+  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, isBiddingOpen, plateOf,
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
@@ -116,6 +116,7 @@ export default function ShipmentsPage() {
         return (
           <div className="flex flex-col items-end gap-1 md:items-start">
             <StatusPill status={s.status} />
+            {isBiddingOpen(s) && <StatusPill tone="warning" dot={false}>Bidding open</StatusPill>}
             {urgent && <span className={s.priority === 'critical' ? 'text-xs font-medium text-danger' : 'text-xs font-medium text-warning'}>{humanize(s.priority!)} priority</span>}
           </div>
         )

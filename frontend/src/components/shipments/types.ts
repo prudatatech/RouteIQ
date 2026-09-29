@@ -36,6 +36,12 @@ export interface ShipmentRow {
   /** Only set on cargo manifests merged into the list. */
   delivery_point?: DeliveryPoint
   capacity_bids?: CapacityBidInfo | null
+  /** Set when the shipment was opened to vendor bids (a capacity window points at it). */
+  bid_id?: string | null
+  open_bidding?: boolean | null
+  asking_price?: number | null
+  bidding_opens_at?: string | null
+  bidding_closes_at?: string | null
 }
 
 /** One entry of GET /shipments/:id/history (backend-ts ShipmentService.getShipmentHistory). */
