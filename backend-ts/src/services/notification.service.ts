@@ -3,7 +3,7 @@ import { pushService } from './push.service';
 
 /** Notification types managers receive too: the day-to-day work they act on. */
 export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
-  'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'capacity_bid', 'route_postponed', 'document_expiring', 'stop_prompts_released',
+  'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'capacity_bid', 'route_postponed', 'document_expiring', 'stop_prompts_released', 'vehicle_request',
 ]);
 
 export const notificationService = {

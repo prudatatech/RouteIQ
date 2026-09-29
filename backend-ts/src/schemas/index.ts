@@ -90,6 +90,32 @@ export const VehicleCreateSchema = z.object({
 });
 export type VehicleCreate = z.infer<typeof VehicleCreateSchema>;
 
+/**
+ * What a driver sends to register a vehicle from the app. The plate is
+ * normalised by the approval service; the driver's name and phone come from
+ * their account, and the status is always pending approval.
+ */
+export const DriverVehicleRegisterSchema = VehicleCreateSchema.pick({
+  plate_number: true,
+  vehicle_type: true,
+  capacity_kg: true,
+  vehicle_model: true,
+  container_length_ft: true,
+  container_width_ft: true,
+  container_height_ft: true,
+  rc_number: true,
+  rc_expiry: true,
+  insurance_number: true,
+  insurance_expiry: true,
+  fitness_certificate_number: true,
+  fitness_expiry: true,
+  permit_number: true,
+  permit_expiry: true,
+  puc_number: true,
+  puc_expiry: true,
+}).extend({ plate_number: z.string().min(4).max(24) });
+export type DriverVehicleRegister = z.infer<typeof DriverVehicleRegisterSchema>;
+
 export const VehicleUpdateSchema = z.object({
   plate_number: z.string().min(4).max(20).optional(),
   vehicle_type: z.enum(['truck', 'van', 'bike', 'car']).optional(),

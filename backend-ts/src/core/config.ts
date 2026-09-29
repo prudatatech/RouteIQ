@@ -92,6 +92,7 @@ export const settings = {
   EXPENSE_RECEIPT_MAX_BYTES: envInt('EXPENSE_RECEIPT_MAX_BYTES', 5 * 1024 * 1024),
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
   POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
+  VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 5 * 1024 * 1024),
 
   // Secret for the keyed hash of identity numbers (Aadhaar, PAN, licence...) used to spot duplicates.
   // Never store the numbers themselves where a hash will do. Required in production.

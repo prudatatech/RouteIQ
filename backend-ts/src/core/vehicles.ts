@@ -10,7 +10,7 @@
  */
 import { supabase } from './supabase';
 import { HttpError } from './errors';
-import { OPERATING_VEHICLE_STATUSES, VEHICLE_STATUS_TRANSITIONS, assertTransition } from './transitions';
+import { OPERATING_VEHICLE_STATUSES, PENDING_VEHICLE_STATUS, VEHICLE_STATUS_TRANSITIONS, assertTransition } from './transitions';
 
 export const PLACEHOLDER_PLATE_PREFIXES = ['TEMP-', 'DRFT-'] as const;
 
@@ -35,6 +35,36 @@ export const DISPATCHABLE_STATUSES = OPERATING_VEHICLE_STATUSES;
 export function isDispatchable(vehicle: { status?: string | null; plate_number?: string | null }): boolean {
   return (DISPATCHABLE_STATUSES as readonly string[]).includes(String(vehicle.status ?? ''))
     && !isPlaceholderPlate(vehicle.plate_number);
+}
+
+/** True while a driver-registered vehicle waits for staff approval. */
+export function isPendingApproval(vehicle: { status?: string | null }): boolean {
+  return vehicle.status === PENDING_VEHICLE_STATUS;
+}
+
+/** True for a vehicle staff rejected: archived, with the decision kept on the row. */
+export function isRejected(vehicle: { status?: string | null; review_decision?: string | null }): boolean {
+  return vehicle.status === 'archived' && vehicle.review_decision === 'rejected';
+}
+
+/**
+ * A driver drives one vehicle. Before giving `driverId` the vehicle `vehicleId`
+ * (null for one not created yet) look at what they already have: a real vehicle
+ * (approved or waiting for approval) is a 409; a TEMP-… placeholder from their
+ * first login is returned so the caller can adopt it (create) or archive it
+ * (edit of a different vehicle, approval).
+ */
+export async function findDriverPlaceholder(driverId: string, vehicleId: string | null): Promise<string | null> {
+  const { data: owned, error } = await supabase
+    .from('vehicles')
+    .select('id, plate_number, status')
+    .eq('driver_id', driverId)
+    .neq('status', 'archived');
+  if (error) throw error;
+  const others = (owned ?? []).filter(v => v.id !== vehicleId);
+  const real = others.find(v => !isTempPlate(v.plate_number));
+  if (real) throw new HttpError(409, `This driver is already assigned to ${real.plate_number}. Reassign or archive that vehicle first.`);
+  return others[0]?.id ?? null;
 }
 
 /** The newer of last_heartbeat and last_sync, in ms; null when the vehicle never reported. */

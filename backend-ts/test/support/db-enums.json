@@ -19,7 +19,8 @@
         "idle",
         "maintenance",
         "offline",
-        "archived"
+        "archived",
+        "pending_approval"
     ],
     "shipments.status": [
         "created",

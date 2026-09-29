@@ -70,7 +70,7 @@ export class AnalyticsService {
       { count: tripsToday },
       deliveredTimes,
     ] = await Promise.all([
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived'),
+      supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived').neq('status', 'pending_approval'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),

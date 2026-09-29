@@ -197,7 +197,7 @@ describe('GET /vehicles and /vehicles/summary', () => {
       veh({ id: 'f', plate_number: 'DRFT-1', status: 'archived' }),
     ]);
     const res = await request(app).get('/api/v1/vehicles/summary').set(staff());
-    expect(res.body).toEqual({ total: 2, active: 1, idle: 1, maintenance: 0, offline: 0, archived: 1, drafts: 2 });
+    expect(res.body).toEqual({ total: 2, active: 1, idle: 1, maintenance: 0, offline: 0, archived: 1, drafts: 2, pending_approval: 0 });
   });
 });
 

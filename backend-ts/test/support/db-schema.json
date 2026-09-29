@@ -525,6 +525,15 @@
     "created_at",
     "updated_at"
   ],
+  "vehicle_photos": [
+    "id",
+    "vehicle_id",
+    "slot",
+    "file_path",
+    "uploaded_by",
+    "created_at",
+    "updated_at"
+  ],
   "vehicles": [
     "id",
     "plate_number",
@@ -577,7 +586,13 @@
     "odometer_km",
     "odometer_updated_at",
     "fuel_level_pct",
-    "fuel_reported_at"
+    "fuel_reported_at",
+    "submitted_at",
+    "submitted_by",
+    "reviewed_at",
+    "reviewed_by",
+    "review_decision",
+    "rejection_reason"
   ],
   "vendor_profiles": [
     "id",

@@ -89,7 +89,7 @@ export interface Vehicle {
   capacity_kg: number;
   available_capacity_kg?: number;
   capacity_updated_at?: string;
-  status: 'available' | 'on_route' | 'idle' | 'maintenance' | 'offline';
+  status: 'available' | 'on_route' | 'idle' | 'maintenance' | 'offline' | 'archived' | 'pending_approval';
   fuel_type: string;
   fuel_capacity_liters: number;
   fuel_efficiency_kmpl: number;

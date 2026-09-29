@@ -51,6 +51,24 @@ export const CARGO_MANIFEST_TRANSITIONS: TransitionMap = {
 export const OPERATING_VEHICLE_STATUSES = ['available', 'on_route', 'idle', 'offline'] as const;
 
 /**
+ * A vehicle a driver registered from the app waits in this status until staff
+ * approve or reject it. It is not an operating status, so dispatch, bidding
+ * and the live map leave it out.
+ */
+export const PENDING_VEHICLE_STATUS = 'pending_approval';
+
+/**
+ * The moves the approval review makes (POST /vehicles/:id/approve and /reject),
+ * kept apart from VEHICLE_STATUS_TRANSITIONS so no status endpoint can approve
+ * a vehicle without a decision on record. Rejected vehicles are archived and
+ * can still be approved later (archived -> available).
+ */
+export const VEHICLE_REVIEW_TRANSITIONS: TransitionMap = {
+  pending_approval: ['available', 'archived'],
+  archived: ['available'],
+};
+
+/**
  * Which vehicle status can follow which when staff change it. `on_route` is
  * never set by hand (starting a route does it). A vehicle in maintenance,
  * for example after a serious SOS, comes back with "Return to service"
@@ -64,6 +82,8 @@ export const VEHICLE_STATUS_TRANSITIONS: TransitionMap = {
   offline: ['available', 'idle', 'on_route', 'maintenance', 'archived'],
   maintenance: ['available', 'idle', 'archived'],
   archived: ['idle', 'available'],
+  // Left only through the approval review (VEHICLE_REVIEW_TRANSITIONS)
+  pending_approval: [],
 };
 
 export function canTransition(map: TransitionMap, from: string, to: string): boolean {
