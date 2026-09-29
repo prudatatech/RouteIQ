@@ -7,11 +7,14 @@ import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
 import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline, type TimelineEvent, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
-import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
+import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapPoint, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatDateTime } from '@/utils/display'
 import { formatEta } from '@/utils/timeFormat'
+import RouteConditions from '@/components/traffic/RouteConditions'
+import { useRouteIncidents } from '@/components/traffic/hooks'
+import { describeIncident } from '@/utils/traffic'
 
 interface DeliveryPoint {
   name?: string | null
@@ -57,6 +60,8 @@ export default function RouteDetailsPage() {
     queryFn: () => routesAPI.get(id as string),
     enabled: !!id,
   })
+
+  const incidents = useRouteIncidents(id)
 
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) => routesAPI.updateStatus((route as RouteDetail).id, status),
@@ -136,6 +141,13 @@ export default function RouteDetailsPage() {
       : []
   ))
 
+  const incidentPoints: MapPoint[] = (incidents.data?.incidents ?? []).map(i => ({
+    id: `traffic-${i.id}`,
+    kind: 'incident',
+    position: { lat: i.lat, lng: i.lng },
+    label: `Traffic: ${describeIncident(i)}`,
+  }))
+
   const timeline: TimelineEvent[] = [
     { status: 'created', at: route.created_at },
     { status: 'in_progress', at: route.started_at },
@@ -205,6 +217,7 @@ export default function RouteDetailsPage() {
               mode="route"
               route={{ coordinates: road?.coordinates ?? [], stops: mapStops, planned: !road }}
               vehicles={mapVehicles}
+              points={incidentPoints}
               ariaLabel="Route map"
             />
           </div>
@@ -229,6 +242,8 @@ export default function RouteDetailsPage() {
               </ol>
             )}
           </Card>
+
+          <RouteConditions routeId={route.id} />
 
           <Card padded className="space-y-4">
             <h2 className="text-lg font-semibold text-text">Details</h2>

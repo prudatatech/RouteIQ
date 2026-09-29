@@ -76,15 +76,34 @@ interface OptimizeResult {
   algorithm?: string
   message?: string
   new_eta_minutes?: number
+  /** Where the weather effect came from: live conditions, a value set by hand, or none. */
+  weather?: { source: 'off' | 'manual' | 'live' | 'unavailable'; severity: number; description: string | null }
+}
+
+const MANUAL_WEATHER = [
+  { value: '0', label: 'None' },
+  { value: '0.3', label: 'Light' },
+  { value: '0.5', label: 'Moderate' },
+  { value: '0.8', label: 'Severe' },
+]
+
+function weatherNote(w: NonNullable<OptimizeResult['weather']>): string | null {
+  if (w.source === 'live') return `Weather: live conditions${w.description ? ` (${w.description})` : ''} were used.`
+  if (w.source === 'manual') return 'Weather: the level you chose was used.'
+  if (w.source === 'unavailable') return 'Weather: live conditions were not available, so weather did not change the result.'
+  return null
 }
 
 interface RerouteSuggestion {
   id: string
   vehicle_id: string
   route_id: string
-  new_sequence: string[]
-  saved_mins: number
+  new_sequence: string[] | null
+  /** Minutes a better stop order saves. Null when the solver found no better order. */
+  saved_mins: number | null
   insight: string
+  /** Why the suggestion exists, for example "Accident on NH48, +25 min". */
+  cause: string | null
 }
 
 interface Insight {
@@ -92,9 +111,10 @@ interface Insight {
   type: string
   vehicle_id: string
   route_id: string
-  new_sequence: string[]
-  saved_mins: number
+  new_sequence: string[] | null
+  saved_mins: number | null
   insight: string
+  cause?: string | null
 }
 
 // useMutation's onError is called with the generic query-error type, so these read the
@@ -113,6 +133,8 @@ export default function OptimizePage() {
   const [solveTime, setSolveTime] = useState(30)
   const [considerTraffic, setConsiderTraffic] = useState(true)
   const [considerWeather, setConsiderWeather] = useState(true)
+  const [manualWeather, setManualWeather] = useState(false)
+  const [weatherLevel, setWeatherLevel] = useState('0.5')
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set())
   const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string>>(new Set())
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
@@ -194,6 +216,8 @@ export default function OptimizePage() {
         algorithm,
         consider_traffic: considerTraffic,
         consider_weather: considerWeather,
+        // Left out, the server uses live OpenWeather conditions
+        ...(considerWeather && manualWeather ? { weather_severity: Number(weatherLevel) } : {}),
         max_solve_time_seconds: solveTime,
       })
     },
@@ -223,7 +247,7 @@ export default function OptimizePage() {
   })
   const suggestions: RerouteSuggestion[] = insights
     .filter((i) => i.type === 'reroute_suggestion' && !dismissedSuggestions.has(i.id))
-    .map((i) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight }))
+    .map((i) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight, cause: i.cause ?? null }))
 
   const { data: activeVehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'active-for-suggestions'],
@@ -231,7 +255,7 @@ export default function OptimizePage() {
   })
 
   const applySuggestion = useMutation({
-    mutationFn: (s: RerouteSuggestion) => routesAPI.reroute(s.route_id, s.new_sequence),
+    mutationFn: (s: RerouteSuggestion) => routesAPI.reroute(s.route_id, s.new_sequence as string[]),
     onSuccess: (_data, s) => {
       toast.success('Reroute applied')
       setDismissedSuggestions(prev => new Set(prev).add(s.id))
@@ -360,6 +384,17 @@ export default function OptimizePage() {
               <div className="space-y-2 border-t border-border pt-4">
                 <Checkbox label="Consider real-time traffic" checked={considerTraffic} onChange={e => setConsiderTraffic(e.target.checked)} />
                 <Checkbox label="Consider weather conditions" checked={considerWeather} onChange={e => setConsiderWeather(e.target.checked)} />
+                {considerWeather && (
+                  <div className="space-y-2 pl-6">
+                    <p className="text-xs text-muted">
+                      {manualWeather ? 'Using the level you choose below.' : 'Uses live conditions from OpenWeather where the vehicles are. With no live data, weather does not change the result.'}
+                    </p>
+                    <Checkbox label="Set the weather level myself" checked={manualWeather} onChange={e => setManualWeather(e.target.checked)} />
+                    {manualWeather && (
+                      <Select label="Weather level" value={weatherLevel} onChange={e => setWeatherLevel(e.target.value)} options={MANUAL_WEATHER} />
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 border-t border-border pt-4">
@@ -460,6 +495,10 @@ export default function OptimizePage() {
                     <Stat label="Algorithm used" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
                   </div>
 
+                  {result.weather && weatherNote(result.weather) && (
+                    <p className="text-sm text-muted">{weatherNote(result.weather)}</p>
+                  )}
+
                   <div className="space-y-2">
                     {(result.routes ?? []).map((r, i) => {
                       const vehicle = r.vehicles?.plate_number || (r.vehicle_id ? vehicleById.get(r.vehicle_id)?.plate_number : undefined)
@@ -522,18 +561,30 @@ export default function OptimizePage() {
                       <li key={s.id} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-text">{vehicle?.plate_number || s.vehicle_id.slice(0, 8)}</div>
+                          {s.cause && <div className="text-sm text-text">{s.cause}</div>}
                           <div className="text-xs text-muted">{s.insight}</div>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
-                          <StatusPill tone="brand" dot={false}>-{s.saved_mins} min</StatusPill>
-                          <Button
-                            size="sm"
-                            icon={<Check size={14} />}
-                            loading={applySuggestion.isPending && applySuggestion.variables?.id === s.id}
-                            onClick={() => applySuggestion.mutate(s)}
-                          >
-                            Apply
-                          </Button>
+                          {s.saved_mins != null && <StatusPill tone="brand" dot={false}>-{s.saved_mins} min</StatusPill>}
+                          {s.new_sequence && s.new_sequence.length > 0 ? (
+                            <Button
+                              size="sm"
+                              icon={<Check size={14} />}
+                              loading={applySuggestion.isPending && applySuggestion.variables?.id === s.id}
+                              onClick={() => applySuggestion.mutate(s)}
+                            >
+                              Apply
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              icon={<RotateCw size={14} />}
+                              onClick={() => { reset(); navigate('/optimize', { state: { routeId: s.route_id } }) }}
+                            >
+                              Re-optimize route
+                            </Button>
+                          )}
                         </div>
                       </li>
                     )

@@ -75,7 +75,12 @@ async function startup(): Promise<void> {
     console.log('✅ SparkGPS Background Sync started (30s interval)');
   }
 
-  // 5. Start HTTP server
+  // 5. Check TomTom for traffic incidents along active routes (skipped when TOMTOM_API_KEY is not set)
+  const { startTrafficMonitor } = await import('./services/traffic.service');
+  if (startTrafficMonitor()) console.log(`✅ Traffic incident check started (every ${settings.TRAFFIC_REFRESH_MINUTES} min)`);
+  else console.log('ℹ️  Traffic incident check off: TOMTOM_API_KEY is not set');
+
+  // 6. Start HTTP server
   server.listen(settings.PORT, () => {
     console.log(`🚀 Server listening on http://0.0.0.0:${settings.PORT}`);
     console.log(`📡 WebSocket at ws://0.0.0.0:${settings.PORT}/api/v1/telemetry/ws`);

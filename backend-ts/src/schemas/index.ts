@@ -202,7 +202,8 @@ export const OptimizationRequestSchema = z.object({
   consider_traffic: z.boolean().default(true),
   consider_weather: z.boolean().default(true),
   traffic_density: z.number().min(0).max(1).default(0.5),
-  weather_severity: z.number().min(0).max(1).default(0.0),
+  // Manual override. Leave it out to use live OpenWeather conditions (no weather effect when they are unavailable).
+  weather_severity: z.number().min(0).max(1).optional(),
   max_solve_time_seconds: z.number().int().min(5).max(300).default(30),
 });
 export type OptimizationRequest = z.infer<typeof OptimizationRequestSchema>;

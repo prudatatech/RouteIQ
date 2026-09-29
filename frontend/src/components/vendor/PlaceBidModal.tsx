@@ -1,7 +1,11 @@
 import { errorMessage } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { capacityAPI } from '@/services/api'
+import { useQuery } from '@tanstack/react-query'
+import { capacityAPI, vendorAPI } from '@/services/api'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import type { QuoteRequest } from '@/services/pricing'
 import { Alert, Button, Input, Modal, Select } from '@/components/ui'
 import AddressPicker from '@/components/map/AddressPicker'
 import type { ResolvedPlace } from '@/services/geocoding'
@@ -46,6 +50,25 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   const [ewayBill, setEwayBill] = useState('')
   const [loadConfiguration, setLoadConfiguration] = useState(LOAD_CONFIGURATIONS[0].value)
   const [submitting, setSubmitting] = useState(false)
+
+  // Suggested price: the truck collects from the vendor's own address (from the company profile)
+  const profile = useQuery({
+    queryKey: ['vendor-profile'],
+    queryFn: () => vendorAPI.profile() as Promise<{ address?: string | null; latitude?: number | null; longitude?: number | null }>,
+  })
+  const pickupPoint = profile.data?.latitude != null && profile.data?.longitude != null
+    ? { lat: profile.data.latitude, lng: profile.data.longitude, label: profile.data.address ?? null }
+    : null
+  const quoteInput: QuoteRequest | null = pickupPoint && dropoff && Number(weightKg) > 0
+    ? {
+        pickup: pickupPoint,
+        drop: { lat: dropoff.lat, lng: dropoff.lng, label: dropoff.address },
+        weight_kg: Number(weightKg),
+        vehicle_type: w.vehicles?.vehicle_type ?? null,
+        source: 'bid',
+      }
+    : null
+  const quote = usePriceQuote(quoteInput)
 
   const remainingMs = useCountdown(w.closes_at)
   const closed = remainingMs === 0
@@ -133,6 +156,20 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
           showMap
           mapHeight={170}
         />
+
+        <div className="space-y-2 rounded-control border border-border p-3">
+          <p className="text-sm font-medium text-text">Suggested price</p>
+          {profile.isSuccess && !pickupPoint ? (
+            <p className="text-sm text-muted">Add your warehouse address under Company &amp; KYC to see a suggested price. The truck collects from that address.</p>
+          ) : (
+            <PriceSuggestion
+              query={quote}
+              onUse={q => setBidAmount(String(Math.max(q.suggested, floorPrice)))}
+              useLabel="Bid this price"
+              idle="Enter the load weight and a drop-off location to see a suggested price."
+            />
+          )}
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input

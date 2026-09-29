@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { marketplaceAPI, routesAPI } from '@/services/api'
+import { trafficAPI } from '@/services/pricing'
+import { describeIncident } from '@/utils/traffic'
+import { useAuthStore } from '@/store/authStore'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
 import { supabase } from '@/services/supabase'
@@ -197,6 +200,22 @@ export default function LiveMap({
         }]
       : []), [openLoads, compact])
 
+  // ── Traffic incidents on active routes (staff only) ───────────────────
+  const role = useAuthStore((s) => s.role)
+  const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
+  const { data: traffic } = useQuery({
+    queryKey: ['traffic-incidents'],
+    queryFn: () => trafficAPI.incidents(),
+    refetchInterval: 60_000,
+    enabled: !compact && isStaff,
+  })
+  const incidentPoints = useMemo<MapPoint[]>(() => (traffic?.incidents ?? []).map((i) => ({
+    id: `traffic-${i.id}`,
+    kind: 'incident' as const,
+    position: { lat: i.lat, lng: i.lng },
+    label: `Traffic: ${describeIncident(i)}`,
+  })), [traffic])
+
   // ── Camera: fly to the selected vehicle on request ────────────────────
   const lastZoomEvent = useRef<number | undefined>()
   useEffect(() => {
@@ -206,7 +225,7 @@ export default function LiveMap({
   }, [zoomFocusEvent, selectedVehicle])
 
   const handleSelect = (id: string) => {
-    if (id.startsWith('load-')) return
+    if (id.startsWith('load-') || id.startsWith('traffic-')) return
     setClickedId(id)
     onVehicleSelect?.(id)
   }
@@ -219,7 +238,7 @@ export default function LiveMap({
       mode={mode}
       vehicles={mapVehicles}
       route={route}
-      points={loadPoints}
+      points={[...loadPoints, ...incidentPoints]}
       selectedId={selectedId}
       onSelect={handleSelect}
       flyToSelected={false}
@@ -230,6 +249,15 @@ export default function LiveMap({
       {!compact && (
         <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
           <MapPlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 13)} />
+          {isStaff && traffic && (
+            <p className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-muted shadow-raised">
+              {!traffic.configured
+                ? 'Traffic incidents are off. Add a TomTom key to show them.'
+                : traffic.incidents.length === 0
+                  ? 'No traffic incidents on active routes.'
+                  : `${traffic.incidents.length.toLocaleString('en-IN')} traffic ${traffic.incidents.length === 1 ? 'incident' : 'incidents'} on active routes.`}
+            </p>
+          )}
           {selectedId && activeRoute && (
             <section aria-label="Active route" className="rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
               <p className="truncate font-medium text-text">{activeRoute.name || `Route ${activeRoute.id.slice(0, 8)}`}</p>

@@ -5,9 +5,10 @@ import OpenLoadsTab from '@/components/backhaul/OpenLoadsTab'
 import PoolLoadsTab from '@/components/backhaul/PoolLoadsTab'
 import MatchReturnLoadTab from '@/components/backhaul/MatchReturnLoadTab'
 import ConfirmDeliveryTab from '@/components/backhaul/ConfirmDeliveryTab'
+import PriceLoadTab from '@/components/backhaul/PriceLoadTab'
 import { useOpenLoads, type DuplicatedManifest } from '@/components/backhaul/data'
 
-const TAB_IDS = ['loads', 'pool', 'match', 'delivery'] as const
+const TAB_IDS = ['loads', 'pool', 'match', 'price', 'delivery'] as const
 type TabId = typeof TAB_IDS[number]
 
 export default function BackhaulPage() {
@@ -27,6 +28,7 @@ export default function BackhaulPage() {
     { id: 'loads', label: 'Open loads', count: loads.data?.length },
     { id: 'pool', label: 'Pool loads' },
     { id: 'match', label: 'Match a return load' },
+    { id: 'price', label: 'Price a load' },
     { id: 'delivery', label: 'Confirm delivery' },
   ]
 
@@ -42,6 +44,7 @@ export default function BackhaulPage() {
         {tab === 'loads' && <OpenLoadsTab />}
         {tab === 'pool' && <PoolLoadsTab />}
         {tab === 'match' && <MatchReturnLoadTab manifest={manifest} onDismissManifest={dismissManifest} />}
+        {tab === 'price' && <PriceLoadTab />}
         {tab === 'delivery' && <ConfirmDeliveryTab />}
       </TabPanel>
     </Page>

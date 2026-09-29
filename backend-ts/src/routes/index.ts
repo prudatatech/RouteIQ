@@ -29,6 +29,9 @@ import notificationsRoutes from './notifications.routes';
 import financeRoutes from './finance.routes';
 import telematicsRoutes from './telematics.routes';
 import fleetRoutes from './fleet.routes';
+import pricingRoutes from './pricing.routes';
+import trafficRoutes from './traffic.routes';
+import weatherRoutes from './weather.routes';
 
 const apiRouter = Router();
 
@@ -56,5 +59,8 @@ apiRouter.use('/notifications', notificationsRoutes);
 apiRouter.use('/finance', financeRoutes);
 apiRouter.use('/telematics', telematicsRoutes);
 apiRouter.use('/fleet', fleetRoutes);
+apiRouter.use('/pricing', pricingRoutes);
+apiRouter.use('/traffic', trafficRoutes);
+apiRouter.use('/weather', weatherRoutes);
 
 export default apiRouter;

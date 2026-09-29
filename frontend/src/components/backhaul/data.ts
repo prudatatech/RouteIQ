@@ -24,6 +24,7 @@ export interface BackhaulVehicle {
   id: string
   plate_number: string
   status: string | null
+  vehicle_type?: string | null
   capacity_kg: number | null
   available_capacity_kg?: number | null
 }

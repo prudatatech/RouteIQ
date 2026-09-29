@@ -12,6 +12,9 @@ import {
   Button, Card, Checkbox, Input, Page, PageHeader, Select, Textarea,
 } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import type { QuoteRequest } from '@/services/pricing'
 
 const PRODUCT_CATEGORIES = ['FMCG', 'Electronics', 'Textile', 'Steel', 'Cement', 'Agriculture', 'Chemicals', 'Furniture', 'Automobile parts', 'Machinery']
   .map(v => ({ value: v, label: v }))
@@ -72,6 +75,7 @@ export default function VendorShipmentRequestPage() {
 
   const [specialHandling, setSpecialHandling] = useState<Record<string, boolean>>({})
   const [remarks, setRemarks] = useState('')
+  const [myPrice, setMyPrice] = useState('')
 
   // Restore a pending request after sign-in, or seed the drop location from a link elsewhere in the app.
   useEffect(() => {
@@ -174,6 +178,22 @@ export default function VendorShipmentRequestPage() {
     return errors
   }, [pickup, drop, consigneeContact, consigneeEmail, productCategory, productName, capacity])
 
+  // Suggested price for the Review step (signed-in vendors only)
+  const loadType = specialHandling.hazardous ? 'hazardous' : specialHandling.coldChain ? 'cold_chain' : specialHandling.fragile ? 'fragile' : 'general'
+  const quoteInput: QuoteRequest | null = step === 2 && token && pickup && drop && Number(capacity) > 0
+    ? {
+        pickup: { lat: pickup.lat, lng: pickup.lng, label: pickup.address },
+        drop: { lat: drop.lat, lng: drop.lng, label: drop.address },
+        weight_kg: Number(capacity),
+        load_type: loadType,
+        source: 'vendor_request',
+      }
+    : null
+  const quote = usePriceQuote(quoteInput)
+  const quoteId = quote.data?.status === 'ok' ? quote.data.quote_id : null
+  const myPriceNumber = myPrice.trim() === '' ? null : Number(myPrice)
+  const myPriceError = myPriceNumber !== null && !(myPriceNumber > 0) ? 'Enter a price above 0, or leave it blank' : undefined
+
   const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
   const missingSummary = [...Object.values(stepErrors[0]), ...Object.values(stepErrors[1])]
@@ -188,13 +208,16 @@ export default function VendorShipmentRequestPage() {
 
   const submit = async () => {
     setAttempted({ 0: true, 1: true, 2: true })
-    if (!stepValid(0) || !stepValid(1) || !pickup || !drop) return
+    if (!stepValid(0) || !stepValid(1) || !pickup || !drop || myPriceError) return
 
     const payload = {
       pickup,
       drop,
       capacity: Number(capacity),
       metadata: {
+        ...(quoteId ? { quote_id: quoteId } : {}),
+        ...(quote.data?.status === 'ok' ? { suggested_price_inr: quote.data.suggested } : {}),
+        ...(myPriceNumber ? { offered_price_inr: myPriceNumber } : {}),
         consignee: { name: consigneeName, contact: consigneeContact, email: consigneeEmail },
         cargo: {
           category: productCategory,
@@ -389,6 +412,26 @@ export default function VendorShipmentRequestPage() {
                 ['Name', consigneeName || '—'],
                 ['Contact', [consigneeContact, consigneeEmail].filter(Boolean).join(' · ') || '—'],
               ]} />
+              <div>
+                <p className="mb-2 text-sm font-medium text-text">Price</p>
+                <div className="space-y-4 rounded-card border border-border p-4">
+                  {token ? (
+                    <PriceSuggestion
+                      query={quote}
+                      onUse={q => setMyPrice(String(q.suggested))}
+                      useLabel="Offer this price"
+                      idle="Enter a gross weight to see a suggested price."
+                    />
+                  ) : (
+                    <p className="text-sm text-muted">Sign in to see a suggested price for this load. You can still submit without one.</p>
+                  )}
+                  <Input
+                    label="Your price (₹)" type="number" min={0} value={myPrice} onChange={e => setMyPrice(e.target.value)}
+                    hint="Optional. Dispatch sees your price when they assign a vehicle."
+                    error={myPriceError}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
