@@ -3,34 +3,58 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 /**
- * Everything in VITE_* is published in the site's JavaScript. Refuse to build or
- * serve with a privileged Supabase key: only the anon/publishable key belongs here,
- * row-level security does the rest.
+ * Everything in VITE_* is published in the site's JavaScript, so only the
+ * anon/publishable Supabase key belongs there; row-level security does the rest.
+ * Returns why a key is privileged (a secret or non-anon JWT), or null when it is public.
  */
-function assertPublicSupabaseKey(key: string | undefined) {
-  if (!key) return
-  if (key.startsWith('sb_secret_')) {
-    throw new Error('VITE_SUPABASE_ANON_KEY is a secret key. Use the publishable (anon) key.')
-  }
+function privilegedKeyReason(key: string): string | null {
+  if (key.startsWith('sb_secret_')) return 'it is a secret key'
   const parts = key.split('.')
-  if (parts.length !== 3) return
+  if (parts.length !== 3) return null
   let role: unknown
   try {
     role = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')).role
   } catch {
-    return
+    return null
   }
-  if (role !== 'anon') {
-    throw new Error(`VITE_SUPABASE_ANON_KEY has role "${String(role)}". Use the publishable (anon) key.`)
+  return role === 'anon' ? null : `it has role "${String(role)}"`
+}
+
+/**
+ * The Supabase key the site is built with. VITE_SUPABASE_ANON_KEY wins when it is
+ * public. A privileged value there is never shipped: the build falls back to
+ * VITE_SUPABASE_PUBLISHABLE_KEY (committed in .env.production) with a warning,
+ * and fails when there is no public key to use.
+ */
+function publicSupabaseKey(env: Record<string, string>): string | undefined {
+  const configured = env.VITE_SUPABASE_ANON_KEY
+  const publishable = env.VITE_SUPABASE_PUBLISHABLE_KEY
+  if (publishable && privilegedKeyReason(publishable)) {
+    throw new Error(`VITE_SUPABASE_PUBLISHABLE_KEY is not public: ${privilegedKeyReason(publishable)}.`)
   }
+  if (!configured) return publishable
+  const reason = privilegedKeyReason(configured)
+  if (!reason) return configured
+  if (!publishable) {
+    throw new Error(`VITE_SUPABASE_ANON_KEY is not public: ${reason}. Use the publishable (anon) key.`)
+  }
+  console.warn(
+    `\n[supabase] VITE_SUPABASE_ANON_KEY is ignored because ${reason}; building with VITE_SUPABASE_PUBLISHABLE_KEY instead. ` +
+    'Replace it with the publishable key in the hosting settings, and rotate the leaked key.\n',
+  )
+  return publishable
 }
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  assertPublicSupabaseKey(env.VITE_SUPABASE_ANON_KEY)
+  const supabaseKey = publicSupabaseKey(env)
 
   return {
     plugins: [react()],
+    define: {
+      // Replaces the configured value everywhere, so a privileged key can never reach the bundle.
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseKey ?? ''),
+    },
     resolve: {
       alias: { '@': path.resolve(__dirname, './src') },
     },
