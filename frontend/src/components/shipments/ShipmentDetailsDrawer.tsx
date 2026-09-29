@@ -7,6 +7,7 @@ import {
   Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm,
 } from '@/components/ui'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
+import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isCargoManifest, plateOf, priorityTone,
@@ -85,6 +86,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
   const historyEvents = historyQuery.data?.events ?? []
+  const deliveredEvent = historyEvents.find(e => e.status === 'delivered')
 
   const remove = async () => {
     const ok = await confirm({
@@ -228,6 +230,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
               columns={1}
               items={[
                 { label: 'Received by', value: s.received_by },
+                { label: 'When', value: formatDateTime(deliveredEvent?.at) },
                 {
                   label: 'Signature',
                   value: s.signature_data
@@ -238,6 +241,23 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                 },
               ]}
             />
+            {deliveredEvent?.location && (
+              <div className="space-y-1.5">
+                <p className="text-sm text-muted">Delivered near</p>
+                <div className="overflow-hidden rounded-control border border-border">
+                  <MapView
+                    mode="tracking"
+                    height={160}
+                    points={[{
+                      id: 'pod-location',
+                      kind: 'drop',
+                      label: `Delivered near ${deliveredEvent.location.lat.toFixed(4)}, ${deliveredEvent.location.lng.toFixed(4)}`,
+                      position: deliveredEvent.location,
+                    }]}
+                  />
+                </div>
+              </div>
+            )}
           </Section>
         )}
 
