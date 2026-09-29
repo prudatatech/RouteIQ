@@ -10,7 +10,7 @@ import {
   parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatDate } from '@/utils/display'
 
 interface TplPartner {
   id: string
@@ -52,7 +52,10 @@ export default function TplPartnersPage() {
   const stats = useQuery({ queryKey: ['tpl-partner-stats'], queryFn: tplNetworkAPI.allStats, refetchInterval: 30000 })
   const statsFor = (p: TplPartner) => stats.data?.[p.id]
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+    queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+  }
 
   const approve = useMutation({
     mutationFn: (id: string) => tplAPI.approve(id),
@@ -96,7 +99,10 @@ export default function TplPartnersPage() {
   const filtered = useMemo(() => {
     return partners
       .filter(p => tab === 'all' || p.status === tab)
-      .filter(p => !search || p.company_name.toLowerCase().includes(search.toLowerCase()) || (p.custom_id ?? '').includes(search.toLowerCase()))
+      .filter(p => {
+        const q = search.trim().toLowerCase()
+        return !q || p.company_name.toLowerCase().includes(q) || (p.custom_id ?? '').toLowerCase().includes(q)
+      })
   }, [partners, tab, search])
 
   const selection = useRowSelection(filtered, p => p.id)
@@ -133,7 +139,7 @@ export default function TplPartnersPage() {
       key: 'name', header: 'Partner', sortValue: p => p.company_name, cell: p => (
         <div>
           <p className="font-medium text-text">{p.company_name}</p>
-          <p className="font-mono text-xs text-muted">{p.custom_id || p.id.slice(0, 8)}</p>
+          <p className="font-mono text-xs text-muted">{p.custom_id || 'No 3PL ID yet'}</p>
         </div>
       ),
     },
@@ -173,7 +179,7 @@ export default function TplPartnersPage() {
     },
     {
       key: 'created_at', header: 'Submitted', hideBelow: 'md', sortValue: p => p.created_at,
-      cell: p => <span className="text-sm text-muted">{new Date(p.created_at).toLocaleDateString('en-IN')}</span>,
+      cell: p => <span className="text-sm text-muted">{formatDate(p.created_at)}</span>,
     },
     { key: 'status', header: 'Status', cell: p => <StatusPill status={p.status} /> },
     {
@@ -181,14 +187,14 @@ export default function TplPartnersPage() {
         isPending(p) ? (
           <span className="inline-flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <IconButton
-              label="Approve"
+              label={`Approve ${p.company_name}`}
               icon={<Check size={16} />}
               size="sm"
               disabled={(approve.isPending && approve.variables === p.id) || (reject.isPending && reject.variables?.id === p.id)}
               onClick={() => askApprove(p)}
             />
             <IconButton
-              label="Reject"
+              label={`Reject ${p.company_name}`}
               icon={<X size={16} />}
               size="sm"
               disabled={(approve.isPending && approve.variables === p.id) || (reject.isPending && reject.variables?.id === p.id)}
@@ -229,7 +235,9 @@ export default function TplPartnersPage() {
         onRowClick={p => navigate(`/3pl-partners/${p.id}`)}
         sort={sort}
         onSortChange={s => setSortParam(serializeSort(s))}
-        empty={{ title: tab === 'pending' ? 'No pending applications' : 'No partners here yet', description: 'Applications appear here once submitted.' }}
+        empty={search.trim()
+          ? { title: 'No partners match your search', action: <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> }
+          : { title: tab === 'pending' ? 'No pending applications' : 'No partners here yet', description: 'Applications appear here once submitted.' }}
         selection={{
           selectedKeys: selection.selectedKeys,
           onToggleRow: key => selection.toggleRow(key),

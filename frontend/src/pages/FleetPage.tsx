@@ -7,7 +7,7 @@ import { formatTimeAgo } from '@/utils/timeFormat'
 import { formatDateTime } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
-  Tabs, TabPanel, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
+  Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
 } from '@/components/ui'
 import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
@@ -236,11 +236,11 @@ export default function FleetPage() {
       cell: v => (
         <div>
           <p className="font-medium text-text">{v.plate_number}</p>
-          <p className="text-xs text-muted">{v.vehicle_model || v.vehicle_type}</p>
+          <p className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type)}</p>
         </div>
       ),
     },
-    { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span className="capitalize">{v.vehicle_type}</span> },
+    { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span>{humanize(v.vehicle_type)}</span> },
     { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
     {
       key: 'health',
@@ -446,7 +446,7 @@ export default function FleetPage() {
         open={!!detailVehicle}
         onClose={() => setDetailVehicle(null)}
         title={detailVehicle?.plate_number ?? ''}
-        description={detailVehicle?.vehicle_model || detailVehicle?.vehicle_type}
+        description={detailVehicle?.vehicle_model || (detailVehicle ? humanize(detailVehicle.vehicle_type) : undefined)}
       >
         {detailVehicle && (
           <div className="space-y-4">

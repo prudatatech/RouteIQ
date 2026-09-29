@@ -8,7 +8,7 @@ import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, DetailList, Drawer, EmptyState, ErrorState, Input, Page, PageHeader, Select, SearchInput,
-  Skeleton, StatusPill, Tabs, TabPanel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
+  Skeleton, StatusPill, Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -657,7 +657,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                         <span className="min-w-0 flex-1">
                           <span className="block font-mono text-sm font-medium text-text">{vehicle.plate_number}</span>
                           <span className="block text-xs text-muted">
-                            {[vehicle.vehicle_type, `${distanceKm.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km from pickup`].filter(Boolean).join(' · ')}
+                            {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${distanceKm.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km from pickup`].filter(Boolean).join(' · ')}
                           </span>
                         </span>
                         <span className="shrink-0 text-right">

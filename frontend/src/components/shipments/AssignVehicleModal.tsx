@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Button, DataTable, Modal, StatusPill, type Column } from '@/components/ui'
+import { Button, DataTable, Modal, StatusPill, humanize, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, formatKg, freeCapacityKg, knownDistance } from './format'
@@ -36,7 +36,7 @@ export default function AssignVehicleModal({ shipment, onClose }: { shipment: Sh
       cell: v => (
         <div className="min-w-0">
           <div className="font-mono font-medium">{v.plate_number}</div>
-          {(v.vehicle_model || v.vehicle_type) && <div className="text-xs text-muted">{v.vehicle_model || v.vehicle_type}</div>}
+          {(v.vehicle_model || v.vehicle_type) && <div className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type!)}</div>}
         </div>
       ),
     },

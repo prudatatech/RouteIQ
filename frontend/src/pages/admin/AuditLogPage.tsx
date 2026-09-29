@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import {
@@ -42,6 +42,8 @@ export default function AuditLogPage() {
   const logs = useQuery({
     queryKey: ['audit-logs', range.from, range.to, limit],
     queryFn: () => analyticsAPI.auditLogs({ limit, offset: 0, from: range.from, to: range.to }) as Promise<{ items: AuditEntry[]; hasMore: boolean }>,
+    // Keep the rows on screen while "Load more" fetches the next batch.
+    placeholderData: keepPreviousData,
   })
 
   const changeRange = (next: DateRangeValue) => { setRange(next); setLoadedPages(1) }
@@ -83,7 +85,7 @@ export default function AuditLogPage() {
 
   const exportCsv = () => {
     const csv = toCsv(rows.map(l => ({
-      when: l.timestamp,
+      when: formatDateTime(l.timestamp),
       source: l.agent ? humanize(l.agent) : '',
       action: l.action || '',
       result: l.status || '',
