@@ -37,13 +37,13 @@ export default function RoutesPage() {
 
   const { data: routes = [], isLoading, isError, refetch } = useQuery<RouteRow[]>({
     queryKey: ['routes'],
-    queryFn: () => routesAPI.list({ limit: 50 }),
+    queryFn: () => routesAPI.list({ limit: 50 }) as Promise<RouteRow[]>,
     refetchInterval: 20_000,
   })
 
   const { data: vehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
-    queryFn: () => vehiclesAPI.list({ limit: 100 }),
+    queryFn: () => vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>,
   })
 
   const vehicleById = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles])

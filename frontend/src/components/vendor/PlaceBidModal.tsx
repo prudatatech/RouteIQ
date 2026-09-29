@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
+import type { AxiosError } from 'axios'
 import { capacityAPI } from '@/services/api'
 import { Alert, Button, Input, Modal, PlaceSearch, Select } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
@@ -80,8 +81,9 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       toast.success('Bid placed. You will be notified when it is reviewed.')
       onPlaced()
       onClose()
-    } catch (err: any) {
-      toast.error(err.response?.data?.error ?? err.response?.data?.detail ?? 'Failed to place bid')
+    } catch (err) {
+      const e = err as AxiosError<{ error?: string; detail?: string }>
+      toast.error(e.response?.data?.error ?? e.response?.data?.detail ?? 'Failed to place bid')
     } finally {
       setSubmitting(false)
     }

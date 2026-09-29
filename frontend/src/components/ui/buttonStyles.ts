@@ -1,9 +1,6 @@
 import clsx from 'clsx'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-/** `accent` is the old name for `primary`, accepted until every page has migrated. */
-export type ButtonVariantInput = ButtonVariant | 'accent'
-export const resolveVariant = (v: ButtonVariantInput): ButtonVariant => (v === 'accent' ? 'primary' : v)
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 export const variantClasses: Record<ButtonVariant, string> = {

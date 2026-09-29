@@ -4,11 +4,9 @@ import clsx from 'clsx'
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   /** Adds the standard inner padding. Leave off when the card holds a table or map edge to edge. */
   padded?: boolean
-  /** @deprecated Ignored; kept so pages that still pass it compile until they migrate. */
-  glass?: boolean
 }
 
-export function Card({ children, className, padded = false, glass: _glass, ...props }: CardProps) {
+export function Card({ children, className, padded = false, ...props }: CardProps) {
   return (
     <div className={clsx('rounded-card border border-border bg-surface', padded && 'p-4 sm:p-6', className)} {...props}>
       {children}
@@ -16,18 +14,12 @@ export function Card({ children, className, padded = false, glass: _glass, ...pr
   )
 }
 
-export function CardHeader({ title, description, actions, subtitle, action, className }: {
+export function CardHeader({ title, description, actions, className }: {
   title: ReactNode
   description?: ReactNode
   actions?: ReactNode
-  /** @deprecated Use description. */
-  subtitle?: ReactNode
-  /** @deprecated Use actions. */
-  action?: ReactNode
   className?: string
 }) {
-  description ??= subtitle
-  actions ??= action
   return (
     <div className={clsx('flex items-start justify-between gap-4 border-b border-border px-4 py-4 sm:px-6', className)}>
       <div className="min-w-0">

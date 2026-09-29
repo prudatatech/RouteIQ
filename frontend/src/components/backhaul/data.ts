@@ -55,7 +55,7 @@ export const backhaulKeys = {
 export function useOpenLoads() {
   return useQuery<OpenLoad[]>({
     queryKey: backhaulKeys.openLoads,
-    queryFn: () => cargoAPI.openLoads(),
+    queryFn: () => cargoAPI.openLoads() as Promise<OpenLoad[]>,
     refetchInterval: 60_000,
   })
 }
@@ -63,7 +63,7 @@ export function useOpenLoads() {
 export function useBackhaulVehicles() {
   return useQuery<BackhaulVehicle[]>({
     queryKey: backhaulKeys.vehicles,
-    queryFn: () => vehiclesAPI.list({ limit: 200 }),
+    queryFn: () => vehiclesAPI.list({ limit: 200 }) as Promise<BackhaulVehicle[]>,
     select: rows => rows.filter(v => v.status !== 'archived'),
   })
 }
@@ -71,7 +71,7 @@ export function useBackhaulVehicles() {
 export function useCargoAlerts() {
   return useQuery<CargoAlert[]>({
     queryKey: backhaulKeys.alerts,
-    queryFn: () => cargoAPI.securityAlerts(),
+    queryFn: () => cargoAPI.securityAlerts() as Promise<CargoAlert[]>,
     refetchInterval: 30_000,
   })
 }

@@ -85,7 +85,8 @@ export default function VendorCorridorPage() {
       ])
       setWindows(w as OpenWindow[])
       setPassingRoutes(p as PassingRoute[])
-      setMyBidWindowIds(new Set(((b as any).data ?? []).map((r: any) => r.window_id)))
+      const bidRows = (b as { data: { window_id: string }[] | null }).data ?? []
+      setMyBidWindowIds(new Set(bidRows.map(r => r.window_id)))
       setError(null)
     } catch {
       setError('We could not load corridors. Check your connection and try again.')

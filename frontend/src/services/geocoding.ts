@@ -23,7 +23,7 @@ export async function suggestPlaces(query: string, signal?: AbortSignal): Promis
   const url = `${ARCGIS_GEOCODER}/suggest?text=${encodeURIComponent(query)}&countryCode=IND&maxSuggestions=5&f=json`
   const res = await fetch(url, { signal })
   const data = await res.json()
-  return (data.suggestions ?? []).map((s: any) => ({
+  return (data.suggestions ?? []).map((s: { magicKey: string; text: string }) => ({
     id: s.magicKey,
     text: s.text.split(', ')[0],
     place_name: s.text,

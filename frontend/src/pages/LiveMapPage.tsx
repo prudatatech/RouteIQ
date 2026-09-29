@@ -26,7 +26,7 @@ export default function LiveMapPage() {
 
   const { data: vehicles = [], isLoading } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
-    queryFn: () => vehiclesAPI.list({ limit: 500 }),
+    queryFn: () => vehiclesAPI.list({ limit: 500 }) as Promise<VehicleRow[]>,
     refetchInterval: 10_000,
   })
 

@@ -2,12 +2,12 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Spinner } from './Spinner'
 import {
-  buttonBase, buttonClasses, iconSizeClasses, resolveVariant, variantClasses,
-  type ButtonSize, type ButtonVariant, type ButtonVariantInput,
+  buttonBase, buttonClasses, iconSizeClasses, variantClasses,
+  type ButtonSize, type ButtonVariant,
 } from './buttonStyles'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariantInput
+  variant?: ButtonVariant
   size?: ButtonSize
   /** Shows a spinner and blocks clicks while an action runs. */
   loading?: boolean
@@ -16,10 +16,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant: variantInput = 'primary', size = 'md', loading = false, icon, fullWidth, className, children, disabled, type = 'button', ...props },
+  { variant = 'primary', size = 'md', loading = false, icon, fullWidth, className, children, disabled, type = 'button', ...props },
   ref,
 ) {
-  const variant = resolveVariant(variantInput)
   return (
     <button
       ref={ref}

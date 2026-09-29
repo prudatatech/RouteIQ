@@ -36,6 +36,28 @@ interface TplDocument {
   uploaded_at: string
 }
 
+interface TplPendingUpdates {
+  sla_commitment?: string
+  tax_treatment?: string
+  corridors?: CorridorFormRow[]
+}
+
+interface TplPartner {
+  id: string
+  company_name: string
+  custom_id?: string | null
+  gstin?: string | null
+  pan_number?: string | null
+  msme_status?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  status: string
+  created_at: string
+  sla_commitment?: string | null
+  tax_treatment?: string | null
+  pending_updates?: TplPendingUpdates | null
+}
+
 export default function TplDashboardPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -44,7 +66,7 @@ export default function TplDashboardPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [partner, setPartner] = useState<any>(null)
+  const [partner, setPartner] = useState<TplPartner | null>(null)
   const [corridors, setCorridors] = useState<Corridor[]>([])
   const [documents, setDocuments] = useState<TplDocument[]>([])
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
@@ -83,7 +105,7 @@ export default function TplDashboardPage() {
     const channel = supabase.channel(`public:tpl_partners:id=eq.${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, payload => {
         if (payload.new) {
-          setPartner(payload.new)
+          setPartner(payload.new as TplPartner)
           supabase.from('tpl_corridors').select('*').eq('partner_id', id).then(({ data }) => {
             if (data) setCorridors(data)
           })
@@ -124,7 +146,7 @@ export default function TplDashboardPage() {
       const { error: partnerError } = await supabase.from('tpl_partners').update({ status: 'pending' }).eq('id', id)
       if (partnerError) throw new Error('Failed to update partner status.')
 
-      setPartner((p: any) => ({ ...p, status: 'pending' }))
+      setPartner((p) => p && ({ ...p, status: 'pending' }))
       setDocuments(docs => docs.map(d => (d.id === doc.id ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d)))
       toast.success(`${doc.doc_type} updated. Status changed to pending approval.`)
     } catch (err) {
@@ -174,7 +196,7 @@ export default function TplDashboardPage() {
         .eq('id', id)
       if (updateError) throw updateError
 
-      setPartner((p: any) => ({ ...p, pending_updates: updates, status: 'pending' }))
+      setPartner((p) => p && ({ ...p, pending_updates: updates, status: 'pending' }))
       toast.success('Settings update requested. Awaiting approval.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit the settings update.')

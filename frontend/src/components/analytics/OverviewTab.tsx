@@ -34,7 +34,7 @@ export default function OverviewTab() {
   })
   const activity = useQuery<DayActivity[]>({
     queryKey: ['analytics', 'daily-activity', 14],
-    queryFn: () => analyticsAPI.dailyActivity(14),
+    queryFn: () => analyticsAPI.dailyActivity(14) as Promise<DayActivity[]>,
     refetchInterval: REFRESH_MS,
   })
 

@@ -21,7 +21,7 @@ function ReviewSection({ title, onEdit, children }: { title: string; onEdit: () 
 }
 
 export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; goTo: (step: StepId) => void }) {
-  const { data: vehicles = [] } = useQuery<VehicleOption[]>({ queryKey: ['vehicles'], queryFn: () => vehiclesAPI.list() })
+  const { data: vehicles = [] } = useQuery<VehicleOption[]>({ queryKey: ['vehicles'], queryFn: () => vehiclesAPI.list() as Promise<VehicleOption[]> })
   const vehicle = vehicles.find(v => v.id === data.selectedVehicleId)
   const cargoName = CARGO_TYPES.find(c => c.id === data.cargo_type)?.name ?? humanize(data.cargo_type || 'standard')
   const stops = data.stops || []

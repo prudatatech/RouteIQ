@@ -39,7 +39,7 @@ export default function ShipmentsPage() {
 
   const { data: shipments = [], isLoading, isError, refetch } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments'],
-    queryFn: () => shipmentsAPI.list(),
+    queryFn: () => shipmentsAPI.list() as Promise<ShipmentRow[]>,
   })
 
   // Keep the list current when shipments or cargo manifests change anywhere.
