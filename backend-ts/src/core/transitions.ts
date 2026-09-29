@@ -48,6 +48,22 @@ export const CARGO_MANIFEST_TRANSITIONS: TransitionMap = {
 /** Vehicle states in which a vehicle takes part in dispatch. Maintenance and archived vehicles do not. */
 export const OPERATING_VEHICLE_STATUSES = ['available', 'on_route', 'idle', 'offline'] as const;
 
+/**
+ * Which vehicle status can follow which when staff change it. `on_route` is
+ * never set by hand (starting a route does it). A vehicle in maintenance,
+ * for example after a serious SOS, comes back with "Return to service"
+ * (maintenance -> available or idle). Archived is only left through
+ * unarchiving (archived -> idle).
+ */
+export const VEHICLE_STATUS_TRANSITIONS: TransitionMap = {
+  available: ['idle', 'on_route', 'maintenance', 'offline', 'archived'],
+  idle: ['available', 'on_route', 'maintenance', 'offline', 'archived'],
+  on_route: ['available', 'idle', 'maintenance', 'offline'],
+  offline: ['available', 'idle', 'on_route', 'maintenance', 'archived'],
+  maintenance: ['available', 'idle', 'archived'],
+  archived: ['idle', 'available'],
+};
+
 export function canTransition(map: TransitionMap, from: string, to: string): boolean {
   return (map[from] ?? []).includes(to);
 }

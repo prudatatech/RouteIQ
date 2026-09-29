@@ -57,10 +57,34 @@ describe('DELETE /vehicles/:id — refuses while on an active route', () => {
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);
   });
 
-  it('allows deleting a vehicle whose route is completed', async () => {
+  it('archives instead of deleting a vehicle whose route is completed', async () => {
     reset('available', [{ id: 'route-1', vehicle_id: 'veh-1', status: 'completed' }]);
     const res = await del('veh-1');
+    expect(res.status).toBe(200);
+    expect(res.body.archived).toBe(true);
+    expect(supabaseMock.rows('vehicles')).toHaveLength(1);
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('archived');
+    expect(supabaseMock.rows('routes')).toHaveLength(1);
+  });
+
+  it('archives a vehicle whose load has an invoice', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+      vehicles: [vehicle('idle')],
+      routes: [],
+      cargo_manifest: [{ id: 'man-1', vehicle_id: 'veh-1', status: 'scheduled' }],
+      invoices: [{ id: 'inv-1', manifest_id: 'man-1' }],
+    });
+    const res = await del('veh-1');
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('archived');
+  });
+
+  it('removes a vehicle that only has a cancelled route', async () => {
+    reset('available', [{ id: 'route-1', vehicle_id: 'veh-1', status: 'cancelled' }]);
+    const res = await del('veh-1');
     expect(res.status).toBe(204);
+    expect(supabaseMock.rows('vehicles')).toHaveLength(0);
   });
 
   it('returns 404 for an unknown vehicle', async () => {

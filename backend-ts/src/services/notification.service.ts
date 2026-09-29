@@ -1,6 +1,11 @@
 import { supabase } from '../core/supabase';
 import { pushService } from './push.service';
 
+/** Notification types managers receive too: the day-to-day work they act on. */
+export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
+  'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'capacity_bid', 'route_postponed',
+]);
+
 export const notificationService = {
   /**
    * Send an in-app notification to a user (driver, admin, or vendor)
@@ -41,17 +46,20 @@ export const notificationService = {
   },
 
   /**
-   * Notify every active staff member (admin and superadmin) — e.g. a new SOS,
-   * a new vendor shipment request, a bid waiting for a decision, KYC
-   * submitted, or a 3PL application submitted (see docs/ux-plan-2.md, D2).
-   * Unlike `notifySuperAdmins`, this also reaches plain `admin` accounts and
-   * excludes any account that has been deactivated.
+   * Notify active staff about something that needs attention (a new SOS,
+   * a vendor shipment request, a bid waiting for a decision, ...).
+   *
+   * Operational types (OPERATIONS_NOTIFICATION_TYPES) also reach managers,
+   * who can acknowledge and resolve them. Anything else (KYC, 3PL partner
+   * applications) goes to admin and superadmin only. Deactivated accounts
+   * are excluded.
    */
   async notifyStaff(title: string, body: string, type: string, data: any = {}) {
+    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
     const { data: staff, error } = await supabase
       .from('users')
       .select('id')
-      .in('role', ['admin', 'superadmin'])
+      .in('role', roles)
       .eq('is_active', true);
 
     if (error || !staff) return;
