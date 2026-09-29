@@ -31,9 +31,12 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // ── POST /bookings/:id/confirm — creates the shipment ──────
+// Optional { price }: what to charge, in rupees before GST. Left out, the customer's quote is used.
 router.post('/:id/confirm', async (req: Request, res: Response) => {
   try {
-    res.json(await confirmBooking(bookingId(req), actor(req)));
+    const parsed = z.object({ price: z.number().min(0).max(99_999_999.99).nullish() }).safeParse(req.body ?? {});
+    if (!parsed.success) throw new HttpError(400, 'The price must be zero or more');
+    res.json(await confirmBooking(bookingId(req), actor(req), { price: parsed.data.price }));
   } catch (e) {
     sendError(req, res, e);
   }
