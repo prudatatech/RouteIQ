@@ -9,7 +9,7 @@ import {
   Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm, buttonClasses,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
-import { sosTypeLabel } from '@/utils/sos'
+import { sosSeverityLabel, sosTypeLabel } from '@/utils/sos'
 
 interface SosAlert {
   id: string
@@ -17,6 +17,7 @@ interface SosAlert {
   vehicle_id: string | null
   alert_type: string
   description: string | null
+  severity?: 'serious' | 'minor' | null
   latitude: number | null
   longitude: number | null
   status: string
@@ -183,6 +184,9 @@ export default function EmergencyPage() {
                         <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{alert.driver?.full_name || 'Unknown driver'}</p>
                         <p className="inline-flex items-center gap-1.5"><Truck size={13} className="text-muted" aria-hidden="true" />{alert.vehicle?.plate_number || 'Unknown vehicle'}</p>
                       </div>
+                      {sosSeverityLabel(alert.severity) && (
+                        <p className={'mt-2 text-xs font-medium ' + (alert.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(alert.severity)}</p>
+                      )}
                       {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
                     </button>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -230,6 +234,9 @@ export default function EmergencyPage() {
               <div className="absolute left-3 top-3 z-10 max-w-xs rounded-control border border-border bg-surface p-3 shadow-raised">
                 <p className="text-sm font-medium text-text">{sosTypeLabel(selected.alert_type)}</p>
                 <p className="mt-0.5 text-xs text-muted">{new Date(selected.created_at).toLocaleString('en-IN')}</p>
+                {sosSeverityLabel(selected.severity) && (
+                  <p className={'mt-1 text-xs font-medium ' + (selected.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(selected.severity)}</p>
+                )}
                 <div className="mt-2 space-y-1 text-sm text-text">
                   <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{selected.driver?.full_name || 'Unknown'}</p>
                   {selected.driver?.phone && (

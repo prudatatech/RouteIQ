@@ -820,7 +820,8 @@ export class ShipmentService {
     lng?: number | null,
     receivedBy?: string | null,
     signatureData?: string | null,
-    actor?: LogActor | null
+    actor?: LogActor | null,
+    extraMetadata?: Record<string, any>
   ): Promise<Shipment | null> {
     const updateData: Record<string, any> = { status };
     if (receivedBy) updateData.received_by = receivedBy;
@@ -834,7 +835,7 @@ export class ShipmentService {
     if (error) return null;
 
     // Record tamper-evident log
-    const metadata: Record<string, any> = {};
+    const metadata: Record<string, any> = { ...(extraMetadata || {}) };
     if (status === 'delivered') {
       metadata.received_by = receivedBy;
       metadata.signature_captured = !!signatureData;

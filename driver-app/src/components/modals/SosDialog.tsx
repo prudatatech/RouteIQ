@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { SosDetailsState, SosState } from '../../hooks/useSos';
-import type { SosType } from '../../services/api';
+import type { SosSeverity, SosType } from '../../services/api';
 import { Banner, Button, Text, TextField } from '../ui';
 import { colors, radius, size, space } from '../../theme';
 
@@ -11,7 +11,7 @@ interface SosDialogProps {
   state: SosState;
   details: SosDetailsState;
   onRetry: () => void;
-  onSendDetails: (type: SosType, description: string) => void;
+  onSendDetails: (type: SosType, description: string, severity?: SosSeverity) => void;
   onClose: () => void;
 }
 
@@ -28,6 +28,7 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
   const { t } = useTranslation();
   const [type, setType] = useState<SosType | null>(null);
   const [description, setDescription] = useState('');
+  const [injured, setInjured] = useState<boolean | null>(null);
 
   if (state.phase === 'sending') {
     return (
@@ -103,6 +104,33 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
               );
             })}
           </View>
+          {type === 'accident' ? (
+            <View style={styles.injured}>
+              <Text variant="bodyMedium">{t('sos_injured_q')}</Text>
+              <View style={styles.types} accessibilityRole="radiogroup">
+                {[
+                  { value: true, label: t('yes') },
+                  { value: false, label: t('no') },
+                ].map((option) => {
+                  const selected = injured === option.value;
+                  return (
+                    <Pressable
+                      key={String(option.value)}
+                      onPress={() => setInjured(option.value)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={option.label}
+                      style={[styles.type, selected && styles.typeSelected]}
+                    >
+                      <Text variant="bodySmallMedium" color={selected ? 'danger' : 'text'}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           <TextField
             label={t('sos_details_label')}
             placeholder={t('sos_details')}
@@ -117,7 +145,10 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
             variant="secondary"
             disabled={!type}
             loading={details === 'sending'}
-            onPress={() => type && onSendDetails(type, description)}
+            onPress={() =>
+              type &&
+              onSendDetails(type, description, type === 'accident' && injured !== null ? (injured ? 'serious' : 'minor') : undefined)
+            }
           />
         </>
       )}
@@ -130,6 +161,7 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
 const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: space[3], paddingVertical: space[4] },
   header: { gap: space[2] },
+  injured: { gap: space[2] },
   types: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   type: {
     flexDirection: 'row',

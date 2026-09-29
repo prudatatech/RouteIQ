@@ -58,6 +58,7 @@ export default function RouteTab(props: RouteTabProps) {
         onNavigate={props.onNavigate}
         onArrivedManually={props.onArrivedManually}
         onConfirmStop={props.onConfirmStop}
+        onReportIssue={props.onReportIssue}
         onFindReturnLoad={props.onFindReturnLoad}
         onRefresh={props.onRefresh}
       />

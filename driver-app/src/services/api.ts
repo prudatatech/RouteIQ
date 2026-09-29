@@ -24,6 +24,9 @@ export class ApiError extends Error {
 }
 
 /** Emergency types accepted by POST /telemetry/sos/trigger. */
+/** 'serious' when someone is injured, 'minor' when not. */
+export type SosSeverity = 'serious' | 'minor';
+
 export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
 
 export class SessionExpiredError extends Error {
@@ -226,8 +229,23 @@ class ApiClient {
    * known yet; the alert is never held back waiting for one. Answers 404 when
    * no vehicle is linked to the driver.
    */
-  async triggerSos(lat: number | null, lng: number | null, alert_type?: SosType, description?: string): Promise<any> {
+  async triggerSos(
+    lat: number | null,
+    lng: number | null,
+    alert_type?: SosType,
+    description?: string,
+  ): Promise<{ status: string; id: string | null }> {
     return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description });
+  }
+
+  /** Adds what happened to the alert already raised (own, active alerts only). */
+  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string; severity?: SosSeverity }): Promise<any> {
+    return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
+  }
+
+  /** Tells dispatch the driver has not accepted a new route yet. */
+  async postponeRoute(route_id: string): Promise<any> {
+    return this.request('POST', '/capacity/driver/postpone-route', { route_id });
   }
 
   async getMyRoute(): Promise<any> {
@@ -255,6 +273,9 @@ class ApiClient {
     received_by?: string;
     photo_url?: string;
     signature_data?: string;
+    /** Why a stop failed (status 'failed'): stored in the shipment log. */
+    reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
+    note?: string;
   }): Promise<any> {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
   }

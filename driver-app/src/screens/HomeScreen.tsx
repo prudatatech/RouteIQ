@@ -20,6 +20,7 @@ import { useDriverRoute } from '../hooks/useDriverRoute';
 import { useLocationTracking } from '../hooks/useLocationTracking';
 import { useDeviceLocationStatus } from '../hooks/useDeviceLocationStatus';
 import { useSnappedRoute } from '../hooks/useSnappedRoute';
+import { useGpsOffEscalation } from '../hooks/useGpsOffEscalation';
 import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
@@ -35,7 +36,9 @@ import DriverTabBar, { type DriverTab } from '../components/home/DriverTabBar';
 import MoreActionsSheet, { type MoreAction } from '../components/home/MoreActionsSheet';
 import AssignmentDialog from '../components/modals/AssignmentDialog';
 import PodDialog from '../components/modals/PodDialog';
+import IssueDialog from '../components/modals/IssueDialog';
 import SosDialog from '../components/modals/SosDialog';
+import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
 import IncomingCallDialog from '../components/modals/IncomingCallDialog';
 import InvoiceDialog from '../components/modals/InvoiceDialog';
@@ -77,6 +80,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { open: openModal, close: closeModal } = modal;
 
   const openPod = useCallback((stop: RouteStop) => openModal({ kind: 'pod', stop }), [openModal]);
+  const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop }), [openModal]);
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
   const arrivedStops = useRef(new Set<string>());
@@ -101,11 +105,12 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     assignmentWaiting: assignmentKind,
   });
 
-  // Losing GPS on a route gets one short buzz; the status strip keeps showing it.
+  // Losing GPS on a route gets one short buzz, and a louder notification if it stays off for 2 minutes.
   const gpsOffOnRoute = !!data.routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
   useEffect(() => {
     if (gpsOffOnRoute) shortFeedback();
   }, [gpsOffOnRoute]);
+  useGpsOffEscalation(gpsOffOnRoute);
 
   const showBackhaul = useCallback(() => setShowBackhaulPopup(true), []);
   const hideBackhaul = useCallback(() => setShowBackhaulPopup(false), []);
@@ -119,6 +124,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     refresh,
     startTracking: tracking.start,
     openPod,
+    openIssue,
     showBackhaulPopup: showBackhaul,
   });
 
@@ -154,6 +160,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   const moreActions = useMemo<MoreAction[]>(() => {
     const list: MoreAction[] = [];
+    // The break comes first: it is the one drivers reach for most.
+    list.push({
+      key: 'break',
+      icon: 'cafe-outline',
+      title: t('action_break'),
+      subtitle: t('take_break_sub'),
+      onPress: () => {
+        closeModal();
+        takeBreak();
+      },
+    });
     if (routeActive) {
       list.push({
         key: 'full_route',
@@ -197,16 +214,6 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       });
     }
     list.push({
-      key: 'break',
-      icon: 'cafe-outline',
-      title: t('action_break'),
-      subtitle: t('take_break_sub'),
-      onPress: () => {
-        closeModal();
-        tracking.takeBreak();
-      },
-    });
-    list.push({
       key: 'refresh',
       icon: 'refresh',
       title: t('refresh'),
@@ -219,7 +226,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     return list;
   }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, t]);
 
-  const sosButton = <SosButton onPress={raiseSos} />;
+  const sosButton = <SosButton onHoldComplete={raiseSos} onTap={() => openModal({ kind: 'sosCountdown' })} />;
 
   const renderDialog = (active: ActiveModal) => {
     switch (active.kind) {
@@ -257,6 +264,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             }}
           />
         ) : null;
+      case 'sosCountdown':
+        return <SosCountdownDialog onSend={raiseSos} onCancel={closeModal} />;
       case 'sos':
         return (
           <SosDialog
@@ -274,6 +283,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             onCancel={closeModal}
             onSubmit={async (receiverName) => {
               await actions.completeStop(active.stop, receiverName);
+              closeModal();
+            }}
+          />
+        );
+      case 'issue':
+        return (
+          <IssueDialog
+            stopName={active.stop.delivery_point?.name}
+            onCancel={closeModal}
+            onSubmit={async (reason, note) => {
+              await actions.submitIssue(active.stop, reason, note);
               closeModal();
             }}
           />
@@ -338,6 +358,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           isStartingTracking={tracking.isStarting}
           syncState={data.syncState}
           onToggleTracking={tracking.toggle}
+          onTakeBreak={takeBreak}
           onRetrySync={refresh}
           backgroundError={tracking.backgroundError}
           onRetryBackgroundTracking={tracking.retryBackgroundTracking}

@@ -266,7 +266,8 @@
     "longitude",
     "status",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "severity"
   ],
   "system_settings": [
     "key",
