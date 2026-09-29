@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Check, FileText, Trash2, Upload } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
@@ -194,6 +195,10 @@ export default function VendorDocumentsPage() {
     return () => window.clearTimeout(id)
   }, [draftKey, loading, form, otherDocs, step])
 
+  const clearDraft = () => {
+    if (draftKey) { try { localStorage.removeItem(draftKey) } catch { /* ignore */ } }
+  }
+
   const readOnly = mode === 'documents' && hasProfile && (kycStatus === 'submitted' || kycStatus === 'approved') && !isEditing
 
   // --- Step validation -----------------------------------------------------
@@ -340,22 +345,21 @@ export default function VendorDocumentsPage() {
     setSubmitting(true)
     try {
       const kycData = { data: form, otherDocs }
-      // upsert() targets the primary key, so this both creates the profile on a
-      // first-time save (onboarding) and updates it on every later save.
-      const { error } = await supabase.from('vendor_profiles').upsert({
-        id: userId,
-        company_name: form.name,
-        gst_number: form.gstNumber || '',
+      // Goes through the backend so staff are notified (vendorService.submitKyc
+      // calls notificationService.notifyStaff) instead of writing to Supabase
+      // directly from the client.
+      await vendorAPI.submitKyc({
+        companyName: form.name,
+        gstNumber: form.gstNumber || '',
         city: form.city,
         address: form.addressLine1,
-        latitude: Number(form.latitude),
-        longitude: Number(form.longitude),
-        company_logo: form.docUrls.companyLogo || null,
-        kyc_data: kycData,
-        kyc_status: 'submitted',
+        lat: Number(form.latitude),
+        lng: Number(form.longitude),
+        companyLogo: form.docUrls.companyLogo || null,
+        kycData,
       })
-      if (error) throw error
 
+      clearDraft()
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
       setKycStatus('submitted')

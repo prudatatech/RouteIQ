@@ -83,6 +83,65 @@ export const vendorService = {
   },
 
   /**
+   * Submit (or resubmit) the vendor's full KYC wizard: company, contact,
+   * bank and document details, plus the wizard's own draft blob (`kycData`).
+   * Always moves the profile to `kyc_status: 'submitted'` and notifies staff
+   * (D2) so this is the one path that should be used for a KYC submission —
+   * never a direct Supabase write from the client, which would skip the
+   * notification.
+   */
+  async submitKyc(vendorId: string, payload: {
+    companyName: string;
+    gstNumber: string;
+    city: string;
+    address: string;
+    lat: number;
+    lng: number;
+    companyLogo?: string | null;
+    kycData: unknown;
+  }) {
+    const { data: existing, error: currentErr } = await supabase
+      .from('vendor_profiles')
+      .select('kyc_status')
+      .eq('id', vendorId)
+      .maybeSingle();
+    if (currentErr) throw new Error(currentErr.message);
+
+    const changes = {
+      id: vendorId,
+      company_name: payload.companyName,
+      gst_number: payload.gstNumber || '',
+      city: payload.city,
+      address: payload.address,
+      latitude: payload.lat,
+      longitude: payload.lng,
+      company_logo: payload.companyLogo ?? null,
+      kyc_data: payload.kycData,
+      kyc_status: 'submitted',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('vendor_profiles').upsert(changes).select().single();
+    if (error) throw new Error(error.message);
+
+    // A notification failure must not undo the profile save.
+    if (existing?.kyc_status !== 'submitted') {
+      try {
+        await notificationService.notifyStaff(
+          'KYC submitted',
+          `${payload.companyName} submitted KYC details for review.`,
+          'kyc_submitted',
+          { profile_id: vendorId },
+        );
+      } catch (e) {
+        console.error('[vendor] KYC notification failed:', e);
+      }
+    }
+
+    return data;
+  },
+
+  /**
    * Fetch a vendor profile
    */
   async getProfile(vendorId: string) {
