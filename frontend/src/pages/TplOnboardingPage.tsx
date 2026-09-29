@@ -8,7 +8,7 @@ import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
-import { emptyCorridorRow, TPL_DOCUMENT_TYPES, type CorridorFormRow } from '@/components/tpl/constants'
+import { corridorToFormRow, emptyCorridorRow, normaliseDraftCorridor, TPL_DOCUMENT_TYPES, type CorridorFormRow, type StoredCorridor } from '@/components/tpl/constants'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { uploadTplDocument } from '@/services/tplDocuments'
@@ -146,18 +146,7 @@ export default function TplOnboardingPage() {
       setSlaCommitment(data.sla_commitment || '2 Hours')
       setTaxTreatment(data.tax_treatment || '12% GTA (With ITC) - Forward Charge')
       if (data.tpl_corridors?.length > 0) {
-        setCorridors(data.tpl_corridors.map((c: {
-          corridor_name: string
-          vehicle_types?: string[] | null
-          proposed_rate?: string | null
-          priority?: string | number | null
-        }, i: number) => ({
-          id: i + 1,
-          name: c.corridor_name,
-          vehicles: (c.vehicle_types || []).join(', '),
-          rate: c.proposed_rate || '',
-          priority: String(c.priority || '1'),
-        })))
+        setCorridors(data.tpl_corridors.map((c: StoredCorridor, i: number) => corridorToFormRow(c, i + 1)))
       }
       if (data.tpl_documents?.length > 0) {
         setExistingDocs(data.tpl_documents.map((d: { doc_type: string; file_url: string }) => ({ type: d.doc_type, url: d.file_url })))
@@ -189,7 +178,7 @@ export default function TplOnboardingPage() {
       if (typeof draft.bankIfsc === 'string') setBankIfsc(draft.bankIfsc)
       if (typeof draft.slaCommitment === 'string') setSlaCommitment(draft.slaCommitment)
       if (typeof draft.taxTreatment === 'string') setTaxTreatment(draft.taxTreatment)
-      if (Array.isArray(draft.corridors) && draft.corridors.length > 0) setCorridors(draft.corridors as CorridorFormRow[])
+      if (Array.isArray(draft.corridors) && draft.corridors.length > 0) setCorridors((draft.corridors as CorridorFormRow[]).map(normaliseDraftCorridor))
       if (typeof draft.step === 'number') setStep(draft.step)
       toast('We restored the details you had typed. Attach your documents again.')
     } catch (e) {

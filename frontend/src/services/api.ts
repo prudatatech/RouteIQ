@@ -230,6 +230,8 @@ export const vendorAPI = {
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
   rejectRequest: (id: string, reason: string) => api.put(`/vendor/shipment-request/${id}/reject`, { reason }).then(r => r.data),
+  /** The vendor withdraws a load they posted, while it has no vehicle yet. */
+  cancelRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/cancel`).then(r => r.data),
   approveKyc: (id: string) => api.put(`/vendor/kyc/${id}/approve`).then(r => r.data),
   rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
   /** Signed upload URL for one KYC document; use uploadKycDocument() from services/kycDocuments. */
@@ -546,8 +548,9 @@ export interface TplPartnerStats {
 }
 
 export interface TplEarnings {
-  totals: { total: number; paid: number; unpaid: number }
-  months: { month: string; total: number; paid: number; unpaid: number; orders: TplOrder[] }[]
+  /** paid: delivered and paid. payable: delivered, not paid yet. in_progress: accepted, picked up or in transit. unpaid = payable + in_progress. */
+  totals: { total: number; paid: number; payable: number; in_progress: number; unpaid: number }
+  months: { month: string; total: number; paid: number; payable: number; in_progress: number; unpaid: number; orders: TplOrder[] }[]
 }
 
 const sourceParams = (source: TplSource) => ({ ...source })
@@ -558,10 +561,13 @@ export const tplNetworkAPI = {
   // Staff
   escalations: (source: TplSource): Promise<{ offers: TplOffer[]; order: TplOrder | null }> =>
     api.get('/tpl-network/escalations', { params: sourceParams(source) }).then(r => r.data),
-  preview: (source: TplSource): Promise<{ pickup: string; drop: string; partners: { partner_id: string; company_name: string; corridor_name: string; price: number | null }[] }> =>
+  preview: (source: TplSource): Promise<{ pickup: string; drop: string; distance_km: number | null; partners: { partner_id: string; company_name: string; corridor_name: string; price: number | null; rate: { amount: number; unit: 'per_trip' | 'per_km' } | null }[] }> =>
     api.get('/tpl-network/escalations/preview', { params: sourceParams(source) }).then(r => r.data),
-  escalate: (source: TplSource): Promise<{ created: number; already_offered: number; matched: number }> =>
-    api.post('/tpl-network/escalations', source).then(r => r.data),
+  /** `vendor_price` (requests only) is what the vendor pays for the load, which their invoice is made from. */
+  escalate: (source: TplSource, vendorPrice?: number): Promise<{ created: number; already_offered: number; matched: number }> =>
+    api.post('/tpl-network/escalations', vendorPrice ? { ...source, vendor_price: vendorPrice } : source).then(r => r.data),
+  setVendorPrice: (requestId: string, cost: number): Promise<{ request_id: string; cost: number; invoice: string | null }> =>
+    api.put(`/tpl-network/requests/${requestId}/price`, { cost }).then(r => r.data),
   withdrawAll: (source: TplSource) => api.post('/tpl-network/escalations/withdraw', source).then(r => r.data),
   withdrawOffer: (offerId: string) => api.post(`/tpl-network/offers/${offerId}/withdraw`).then(r => r.data),
   orders: (partnerId?: string): Promise<TplOrder[]> =>

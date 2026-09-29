@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ArrowRight, Check, Truck, X } from 'lucide-react'
@@ -27,14 +28,15 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
   const [amount, setAmount] = useState('')
   const needsAmount = offer != null && offer.proposed_price == null
   const amountNumber = Number(amount)
-  const amountError = needsAmount && amount !== '' && (!Number.isFinite(amountNumber) || amountNumber <= 0) ? 'Enter an amount above 0' : undefined
+  const amountError = amount !== '' && (!Number.isFinite(amountNumber) || amountNumber <= 0) ? 'Enter an amount above 0' : undefined
   const timeError = pickup && delivery && new Date(delivery) <= new Date(pickup) ? 'Delivery must be after pickup' : undefined
 
   const accept = useMutation({
     mutationFn: () => tplNetworkAPI.accept(offer!.id, {
       pickup_eta: toIso(pickup),
       delivery_eta: toIso(delivery),
-      ...(needsAmount ? { agreed_amount: amountNumber } : {}),
+      // An amount the partner types is what they will charge, and wins over the rate on their corridor
+      ...(amount !== '' ? { agreed_amount: amountNumber } : {}),
     }),
     onSuccess: () => { toast.success('Load accepted. It is now in your orders.'); onDone(); onClose() },
     onError: err => { toast.error(errorMessage(err, 'We could not accept this load. Try again.')); onDone() },
@@ -65,12 +67,19 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
         <div className="space-y-4">
           <p className="text-sm text-text">
             {offer.proposed_price != null
-              ? <>You will be paid <span className="font-semibold">{formatRupees(offer.proposed_price)}</span>, your rate on {offer.corridor_name}.</>
-              : 'Your rate on this corridor is not a number, so enter the amount you will charge.'}
+              ? <>At your corridor rate on {offer.corridor_name} you will be paid <span className="font-semibold">{formatRupees(offer.proposed_price)}</span>.</>
+              : 'There is no rate for this load on your corridor (or it is per km and the distance is not known), so enter the amount you will charge.'}
           </p>
-          {needsAmount && (
-            <Input label="Amount (₹)" type="number" min={0} required value={amount} onChange={e => setAmount(e.target.value)} error={amountError} />
-          )}
+          <Input
+            label="Amount (₹)"
+            type="number"
+            min={0}
+            required={needsAmount}
+            hint={needsAmount ? undefined : 'Optional. Enter a different amount if you will charge more or less than your rate.'}
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            error={amountError}
+          />
           <Input
             label="Pickup time"
             type="datetime-local"
@@ -97,9 +106,19 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   const queryClient = useQueryClient()
   const { prompt } = useConfirm()
   const [accepting, setAccepting] = useState<TplOffer | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const offers = useQuery({ queryKey: ['tpl-my-offers'], queryFn: tplNetworkAPI.myOffers })
   const orders = useQuery({ queryKey: ['tpl-my-orders'], queryFn: tplNetworkAPI.myOrders })
+
+  // Opened from a notification: ?open=<offer id> opens that offer to accept, then the param is dropped
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || offers.isLoading) return
+    const match = (offers.data ?? []).find(o => o.id === openId && o.status === 'offered')
+    if (match) setAccepting(match)
+    setSearchParams(params => { params.delete('open'); return params }, { replace: true })
+  }, [searchParams, setSearchParams, offers.data, offers.isLoading])
   useRealtimeRefresh('tpl_partner_orders', ['tpl_offers', 'tpl_orders'], [['tpl-my-offers'], ['tpl-my-orders'], ['tpl-my-earnings'], ['tpl-my-stats']])
 
   const refresh = () => {

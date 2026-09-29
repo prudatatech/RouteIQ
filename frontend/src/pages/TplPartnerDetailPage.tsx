@@ -10,12 +10,13 @@ import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
 import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
+import { corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
-interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; priority: number | null }
-interface PendingCorridor { id?: string; name: string; vehicles: string; rate: string; priority: string | number }
+interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; rate_amount?: number | null; rate_unit?: RateUnit | null; priority: number | null }
+interface PendingCorridor { id?: string; name: string; vehicles: string; rate: string; rate_unit?: RateUnit; legacy_rate?: string; priority: string | number }
 interface PendingUpdates {
   sla_commitment?: string
   tax_treatment?: string
@@ -56,7 +57,7 @@ function diffCorridors(current: TplCorridor[], requested: PendingCorridor[]) {
     if (!prev) return { key: `n${i}`, kind: 'added', next }
     matched.add(prev.id)
     const changed = prev.corridor_name !== next.name
-      || (prev.proposed_rate ?? '') !== (next.rate ?? '')
+      || corridorRateText(prev) !== rateText(next.rate, next.rate_unit, next.legacy_rate)
       || String(prev.priority ?? '') !== String(next.priority ?? '')
       || vehiclesText(prev.vehicle_types) !== (next.vehicles ?? '')
     return { key: `n${i}`, kind: changed ? 'modified' : 'unchanged', next, prev }
@@ -85,7 +86,7 @@ function CorridorDiff({ current, requested }: { current: TplCorridor[]; requeste
           </div>
           <div className="mt-1 grid gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
             <span className="text-muted">Vehicles: {r.prev ? <Was from={vehiclesText(r.prev.vehicle_types)} to={r.next.vehicles} /> : (r.next.vehicles || 'none')}</span>
-            <span className="text-muted">Rate: {r.prev ? <Was from={r.prev.proposed_rate} to={r.next.rate} /> : (r.next.rate || 'none')}</span>
+            <span className="text-muted">Rate: {r.prev ? <Was from={corridorRateText(r.prev)} to={rateText(r.next.rate, r.next.rate_unit, r.next.legacy_rate)} /> : rateText(r.next.rate, r.next.rate_unit, r.next.legacy_rate)}</span>
             <span className="text-muted">Priority: {r.prev ? <Was from={r.prev.priority} to={r.next.priority} /> : (r.next.priority || 'none')}</span>
           </div>
         </li>
@@ -97,7 +98,7 @@ function CorridorDiff({ current, requested }: { current: TplCorridor[]; requeste
             <StatusPill tone="danger" dot={false}>Removed</StatusPill>
           </div>
           <div className="mt-1 text-xs text-muted line-through">
-            {[vehiclesText(c.vehicle_types), c.proposed_rate, c.priority != null ? `Priority ${c.priority}` : ''].filter(Boolean).join(' · ')}
+            {[vehiclesText(c.vehicle_types), corridorRateText(c), c.priority != null ? `Priority ${c.priority}` : ''].filter(Boolean).join(' · ')}
           </div>
         </li>
       ))}
@@ -328,7 +329,7 @@ export default function TplPartnerDetailPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono text-sm text-text">{c.proposed_rate || '—'}</p>
+                          <p className="font-mono text-sm text-text">{corridorRateText(c)}</p>
                           <p className="text-xs text-muted">Priority {c.priority ?? 1}</p>
                         </div>
                       </div>
