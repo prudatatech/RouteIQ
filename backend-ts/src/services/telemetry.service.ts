@@ -8,6 +8,8 @@ import { wsManager } from '../core/websocket';
 import type { Telemetry } from '../db/types';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
+import { segmentKm } from './odometer';
+import { evaluatePing } from './alerts.service';
 
 export class TelemetryService {
   /**
@@ -63,16 +65,32 @@ export class TelemetryService {
       throw new Error(`Failed to insert telemetry: ${tErr?.message}`);
     }
 
-    // 3. Update vehicle live position and fuel
+    // 3. Update vehicle live position, odometer and fuel
     const vehicleUpdate: Record<string, any> = {
       latitude: data.latitude,
       longitude: data.longitude,
       last_heartbeat: timestamp,
     };
 
+    // Odometer: real distance since the last known position
+    if (vehicle.latitude != null && vehicle.longitude != null) {
+      const km = segmentKm(
+        { lat: vehicle.latitude, lng: vehicle.longitude, at: vehicle.last_heartbeat },
+        { lat: data.latitude, lng: data.longitude, at: timestamp },
+      );
+      if (km > 0) {
+        vehicleUpdate.odometer_km = Math.round(((Number(vehicle.odometer_km) || 0) + km) * 1000) / 1000;
+        vehicleUpdate.odometer_updated_at = timestamp;
+      }
+    }
+
+    // Fuel: only when the device reported a level. The tank size is not guessed.
     if (data.fuel_level_pct !== undefined && data.fuel_level_pct !== null) {
-      const capacity = vehicle.fuel_capacity_liters || 60.0;
-      vehicleUpdate.current_fuel_liters = (data.fuel_level_pct / 100) * capacity;
+      vehicleUpdate.fuel_level_pct = data.fuel_level_pct;
+      vehicleUpdate.fuel_reported_at = timestamp;
+      if (vehicle.fuel_capacity_liters) {
+        vehicleUpdate.current_fuel_liters = (data.fuel_level_pct / 100) * vehicle.fuel_capacity_liters;
+      }
     }
 
     await supabase.from('vehicles').update(vehicleUpdate).eq('id', vehicleId);
@@ -95,15 +113,11 @@ export class TelemetryService {
       data: liveData,
     });
 
-    // 6. Speed alert
-    if ((data.speed_kmph || 0) > 85.0) {
-      await wsManager.broadcast({
-        type: 'ALERT_WARNING',
-        title: 'High Speed Alert',
-        message: `Vehicle ${vehicle.plate_number} exceeding safety limit: ${data.speed_kmph?.toFixed(1)} km/h`,
-        payload: { vehicle_id: vehicleId, plate_number: vehicle.plate_number },
-      });
-    }
+    // 6. Alarm rules (overspeed, low fuel) against the thresholds in system_settings
+    await evaluatePing(
+      { id: vehicleId, plate_number: vehicle.plate_number },
+      { speedKmph: data.speed_kmph ?? null, fuelPct: data.fuel_level_pct ?? null },
+    );
 
     return telemetry as Telemetry;
   }

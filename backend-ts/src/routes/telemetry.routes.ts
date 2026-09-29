@@ -14,6 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { pathKm, type PingPoint } from '../services/odometer';
+import { evaluatePing } from '../services/alerts.service';
 
 const router = Router();
 
@@ -346,7 +348,6 @@ router.post('/mobile-push/:session_token', async (req: Request, res: Response) =
       longitude: lng,
       speed_kmph: speed ? parseFloat((speed * 3.6).toFixed(1)) : 0, // m/s → km/h
       heading,
-      fuel_level_pct: 100.0, // Not available from mobile
     };
 
     await TelemetryService.ingestTelemetry(telemetryData);
@@ -392,7 +393,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     // Find the driver's assigned vehicle
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id, plate_number, status, current_load_kg')
+      .select('id, plate_number, status, current_load_kg, latitude, longitude, last_heartbeat, odometer_km')
       .eq('driver_id', driverId)
       .single();
 
@@ -409,6 +410,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     let latestLng = 0;
     let latestSpeed = 0;
     let geofenceAlert: any = null;
+    const drivenPoints: PingPoint[] = [];
 
     for (const ping of pings) {
       const lat = ping.lat || ping.latitude;
@@ -450,15 +452,26 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       latestLat = lat;
       latestLng = lng;
       latestSpeed = speedKmph;
+      drivenPoints.push({ lat, lng, at: timestamp });
       processedCount++;
     }
 
     if (processedCount > 0) {
+      // Odometer: real distance from the last known position through every ping in this batch
+      const start = vehicle.latitude != null && vehicle.longitude != null
+        ? { lat: vehicle.latitude, lng: vehicle.longitude, at: vehicle.last_heartbeat }
+        : null;
+      const drivenKm = pathKm(start, [...drivenPoints].sort((a, b) => Date.parse(a.at!) - Date.parse(b.at!)));
+
       // Update vehicle live position
       await supabase.from('vehicles').update({
         latitude: latestLat,
         longitude: latestLng,
         last_heartbeat: new Date().toISOString(),
+        ...(drivenKm > 0 ? {
+          odometer_km: Math.round(((Number(vehicle.odometer_km) || 0) + drivenKm) * 1000) / 1000,
+          odometer_updated_at: new Date().toISOString(),
+        } : {}),
         status: (vehicle.current_load_kg || 0) > 0 ? 'on_route' : (vehicle.status === 'offline' ? 'available' : vehicle.status),
       }).eq('id', vehicle.id);
 
@@ -537,15 +550,8 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
         }
       }
 
-      // ── Speed Alert ──
-      if (latestSpeed > 85.0) {
-        await wsManager.broadcast({
-          type: 'ALERT_WARNING',
-          title: 'High Speed Alert',
-          message: `Vehicle ${vehicle.plate_number} exceeding safety limit: ${latestSpeed.toFixed(1)} km/h`,
-          payload: { vehicle_id: vehicle.id, plate_number: vehicle.plate_number },
-        });
-      }
+      // ── Alarm rules (overspeed against the limit in system_settings) ──
+      await evaluatePing({ id: vehicle.id, plate_number: vehicle.plate_number }, { speedKmph: latestSpeed, fuelPct: null });
     }
 
     // ── Adaptive Interval ──

@@ -221,7 +221,7 @@ export const TelemetryCreateSchema = z.object({
   longitude: z.number().min(-180).max(180),
   speed_kmph: z.number().min(0).max(300),
   heading: z.number().min(0).max(360),
-  fuel_level_pct: z.number().min(0).max(100),
+  fuel_level_pct: z.number().min(0).max(100).optional(),
   engine_temp: z.number().optional().nullable(),
   odometer_km: z.number().optional().nullable(),
 });

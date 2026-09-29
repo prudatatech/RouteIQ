@@ -26,6 +26,8 @@ import vendorRoutes from './vendor.routes';
 import tplRoutes from './tpl.routes';
 import searchRoutes from './search.routes';
 import notificationsRoutes from './notifications.routes';
+import telematicsRoutes from './telematics.routes';
+import fleetRoutes from './fleet.routes';
 
 const apiRouter = Router();
 
@@ -50,5 +52,7 @@ apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/tpl', tplRoutes);
 apiRouter.use('/search', searchRoutes);
 apiRouter.use('/notifications', notificationsRoutes);
+apiRouter.use('/telematics', telematicsRoutes);
+apiRouter.use('/fleet', fleetRoutes);
 
 export default apiRouter;

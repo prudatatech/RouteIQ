@@ -99,7 +99,8 @@ export const settings = {
   EWAYBILL_GSP_USERNAME: env('EWAYBILL_GSP_USERNAME'),
   EWAYBILL_GSP_PASSWORD: env('EWAYBILL_GSP_PASSWORD'),
   EWAYBILL_GSP_CLIENT_ID: env('EWAYBILL_GSP_CLIENT_ID'),
-  FLEET_TELEMATICS_WEBHOOK_SECRET: env('FLEET_TELEMATICS_WEBHOOK_SECRET', 'test_secret'),
+  // Secures POST /telematics/webhook (Bearer token or HMAC-SHA256 body signature). No default: unset means the webhook is off.
+  FLEET_TELEMATICS_WEBHOOK_SECRET: env('FLEET_TELEMATICS_WEBHOOK_SECRET'),
 
   // CORS: exact origins, comma-separated. '*' is not supported.
   get ALLOWED_ORIGINS(): string[] {
