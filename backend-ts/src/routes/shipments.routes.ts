@@ -4,7 +4,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
-import { requireAuth, requireRole } from '../core/auth';
+import { requireAuth, requireRole, optionalAuth } from '../core/auth';
 import { STAFF_ROLES, canAccessShipment } from '../core/ownership';
 import { ShipmentCreateSchema } from '../schemas';
 import { ShipmentService } from '../services/shipment.service';
@@ -40,8 +40,10 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, r
   }
 });
 
-// ── GET /track/:tracking_id (PUBLIC — no auth) ─────────────
-router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Response) => {
+// ── GET /track/:tracking_id (PUBLIC — the tracking id is the secret, like a courier's) ──
+// Anyone with the id can track it (this is what the public /track page and mobile links
+// rely on); an authenticated vendor is still restricted to their own manifests below.
+router.get('/track/:tracking_id', optionalAuth, async (req: Request, res: Response) => {
   try {
     const info = await ShipmentService.getPublicTracking(req.params.tracking_id);
     if (!info) {
@@ -49,11 +51,13 @@ router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Respons
       return;
     }
 
-    const user = (req as any).user;
-    const isAdmin = ['admin', 'superadmin'].includes(user.role);
-    if (!isAdmin && user.user_id !== info.vendor_id) {
-      res.status(403).json({ detail: 'Forbidden: You do not have access to this tracking information.' });
-      return;
+    const user = req.user;
+    if (user && info.vendor_id) {
+      const isAdmin = ['admin', 'superadmin'].includes(user.role);
+      if (!isAdmin && user.user_id !== info.vendor_id) {
+        res.status(403).json({ detail: 'Forbidden: You do not have access to this tracking information.' });
+        return;
+      }
     }
 
     res.json(info);
