@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, routes, routeDetails, analytics, optimize, shipments, shipmentManifest, emergency, bids,
-  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit,
+  backhaul, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -28,6 +28,9 @@ const OptimizePage = optimize.Component
 const UsersPage = adminUsers.Component
 const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
+const FinancePage = finance.Component
+const SettingsPage = adminSettings.Component
+const VendorInvoicesPage = vendorInvoices.Component
 const BackhaulPage = backhaul.Component
 const ShipmentsPage = shipments.Component
 const ShipmentManifestPage = shipmentManifest.Component
@@ -243,6 +246,11 @@ export default function App() {
                 <VendorShipmentsPage />
               </PrivateRoute>
             } />
+            <Route path="invoices" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorInvoicesPage />
+              </PrivateRoute>
+            } />
             <Route path="request" element={
               <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
                 <VendorShipmentRequestPage />
@@ -324,6 +332,16 @@ export default function App() {
             <Route path="analytics" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <AnalyticsPage />
+              </PrivateRoute>
+            } />
+            <Route path="finance" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <FinancePage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/settings" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <SettingsPage />
               </PrivateRoute>
             } />
             <Route path="admin/users" element={

@@ -19,6 +19,7 @@ export const fleet = page(() => import('@/pages/FleetPage'))
 export const routes = page(() => import('@/pages/RoutesPage'))
 export const routeDetails = page(() => import('@/pages/RouteDetailsPage'))
 export const analytics = page(() => import('@/pages/AnalyticsPage'))
+export const finance = page(() => import('@/pages/FinancePage'))
 export const optimize = page(() => import('@/pages/OptimizePage'))
 export const shipments = page(() => import('@/pages/ShipmentsPage'))
 export const shipmentManifest = page(() => import('@/pages/ShipmentManifestPage'))
@@ -32,6 +33,7 @@ export const tplPartnerDetail = page(() => import('@/pages/TplPartnerDetailPage'
 export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminKyc = page(() => import('@/pages/admin/KycReviewPage'))
 export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
+export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
 
 // Behind VendorLayout
 export const vendorPortal = page(() => import('@/pages/VendorPortalPage'))
@@ -39,6 +41,7 @@ export const vendorCorridor = page(() => import('@/pages/VendorCorridorPage'))
 export const vendorOnboarding = page(() => import('@/pages/VendorOnboardingPage'))
 export const vendorDocuments = page(() => import('@/pages/VendorDocumentsPage'))
 export const vendorShipments = page(() => import('@/pages/VendorShipmentsPage'))
+export const vendorInvoices = page(() => import('@/pages/VendorInvoicesPage'))
 export const vendorShipmentRequest = page(() => import('@/pages/VendorShipmentRequestPage'))
 export const vendorTracking = page(() => import('@/pages/VendorTrackingPage'))
 
@@ -69,13 +72,16 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/vendor-requests': vendorRequests.preload,
   '/3pl-partners': tplPartners.preload,
   '/analytics': analytics.preload,
+  '/finance': finance.preload,
   '/admin/users': adminUsers.preload,
   '/admin/kyc': adminKyc.preload,
   '/admin/audit': adminAudit.preload,
+  '/admin/settings': adminSettings.preload,
   '/track': customerTracking.preload,
   '/vendor': vendorPortal.preload,
   '/vendor/corridor': vendorCorridor.preload,
   '/vendor/shipments': vendorShipments.preload,
+  '/vendor/invoices': vendorInvoices.preload,
   '/vendor/tracking': vendorTracking.preload,
   '/vendor/documents': vendorDocuments.preload,
 }
