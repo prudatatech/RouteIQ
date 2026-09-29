@@ -10,6 +10,8 @@ import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { resolveIndianDateRange, indianDateKey } from '../core/istDate';
 import { InvoiceService } from '../services/invoice.service';
+import { auditService } from '../services/audit.service';
+import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
   EXPENSE_CATEGORIES, ExpenseCategory, getFinanceSettings, getFinanceSummary, getUnpricedDeliveries, selectIn, setFuelPrice,
@@ -119,6 +121,7 @@ async function moveInvoice(req: Request, res: Response, to: 'paid' | 'void') {
       if (!existing) throw new HttpError(404, 'Invoice not found');
       throw new HttpError(409, `Invoice is already ${existing.status}`);
     }
+    await auditService.record('staff-console', req.user!, `invoice_${to}`, { invoice_id: data.id, invoice_number: data.invoice_number ?? null, total: data.total ?? null });
     res.json(data);
   } catch (e) {
     sendError(req, res, e);
@@ -229,7 +232,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
 });
 
 // Signed upload URL for an optional receipt (private bucket, expenses/ folder)
-router.post('/expenses/receipt-upload', async (req: Request, res: Response) => {
+router.post('/expenses/receipt-upload', rateLimitByUser('expense-receipt-upload', 60, 60 * 60), async (req: Request, res: Response) => {
   try {
     const extension = typeof req.body?.content_type === 'string' ? TPL_UPLOAD_CONTENT_TYPES[req.body.content_type.toLowerCase()] : undefined;
     if (!extension) throw new HttpError(415, 'Upload a PDF, JPG or PNG file');
@@ -270,6 +273,7 @@ router.delete('/expenses/:id', async (req: Request, res: Response) => {
     const { data, error } = await supabase.from('expenses').delete().eq('id', req.params.id).select('id, receipt_path').maybeSingle();
     if (error) throw new Error(`Failed to delete expense: ${error.message}`);
     if (!data) throw new HttpError(404, 'Expense not found');
+    await auditService.record('staff-console', req.user!, 'expense_deleted', { expense_id: data.id });
     if (data.receipt_path) {
       // Best effort: the row is gone either way
       await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).remove([data.receipt_path]).catch(() => undefined);
@@ -305,7 +309,9 @@ router.put('/settings', async (req: Request, res: Response) => {
   try {
     const price = Number(req.body?.fuel_price_per_litre);
     if (!Number.isFinite(price) || price <= 0 || price > 1000) throw new HttpError(400, 'Enter a fuel price per litre between ₹0 and ₹1,000');
+    const before = await getFinanceSettings();
     await setFuelPrice(Math.round(price * 100) / 100);
+    await auditService.record('staff-console', req.user!, 'fuel_price_changed', { from: before.fuel_price_per_litre, to: Math.round(price * 100) / 100 });
     res.json(await getFinanceSettings());
   } catch (e) {
     sendError(req, res, e);

@@ -588,11 +588,15 @@ export default function DriverPage() {
           size="lg"
           variant="danger"
           loading={triggerSos.isPending}
+          disabled={role !== 'driver'}
           icon={<AlertTriangle size={18} />}
           onClick={() => triggerSos.mutate()}
         >
           Send SOS
         </Button>
+        {role !== 'driver' && (
+          <p className="text-xs text-muted">Only a driver's own account can raise an SOS.</p>
+        )}
       </Card>
     </div>
   )

@@ -1,5 +1,8 @@
 import { supabase } from '../core/supabase';
+import crypto from 'crypto';
+import { settings } from '../core/config';
 import { notificationService } from './notification.service';
+import { auditService, type AuditActor } from './audit.service';
 import { HttpError } from '../core/errors';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
@@ -12,6 +15,14 @@ function cleanVendorGstin(raw: unknown): string {
   if (problem) throw new HttpError(400, problem);
   return gstin;
 }
+import { assertOwnDocumentPaths } from '../schemas/vendor';
+
+/** Formats a KYC document may be uploaded in, and the extension each is stored under. */
+const KYC_UPLOAD_CONTENT_TYPES: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
 
 /** Request states an admin can still act on (approve, reject or assign a vehicle). */
 const OPEN_REQUEST_STATUSES = ['pending', 'approved'];
@@ -166,7 +177,20 @@ export const vendorService = {
   /**
    * Vendor creates a custom shipment request
    */
-  async createShipmentRequest(vendorId: string, pickup: any, drop: any, capacity: number, metadata: any = {}) {
+  async createShipmentRequest(
+    vendorId: string,
+    pickup: { address: string; lat: number; lng: number },
+    drop: { address: string; lat: number; lng: number },
+    capacity: number,
+    metadata: Record<string, any> = {},
+  ) {
+    // Posting loads needs an approved KYC, the same rule as bidding
+    const { data: profile, error: profileErr } = await supabase.from('vendor_profiles').select('kyc_status').eq('id', vendorId).maybeSingle();
+    if (profileErr) throw new Error(profileErr.message);
+    if (profile?.kyc_status !== 'approved') {
+      throw new HttpError(403, 'Complete KYC verification before posting a load');
+    }
+
     // 1. Calculate ETA and Distance
     const distanceKm = Math.sqrt(
       Math.pow(pickup.lat - drop.lat, 2) + Math.pow(pickup.lng - drop.lng, 2)
@@ -185,7 +209,7 @@ export const vendorService = {
     reportingDate.setHours(reportingDate.getHours() + Math.ceil(totalHours));
 
     // Enrich metadata with ETA and Consignor/Transporter rules
-    const enrichedMetadata = {
+    const enrichedMetadata: Record<string, any> = {
       ...metadata,
       transporter: "Route IQ",
       consignor_id: vendorId, // We'll assume the client fetches actual vendor name if needed
@@ -291,14 +315,60 @@ export const vendorService = {
   },
 
   /**
+   * Staff approves a vendor's KYC. Only a submission still waiting for review
+   * can be decided, so a vendor who edits mid-review (or a second reviewer)
+   * is not overwritten. Tells the vendor and leaves an audit entry.
+   */
+  async approveKyc(vendorId: string, actor: AuditActor) {
+    const { data, error } = await supabase
+      .from('vendor_profiles')
+      .update({
+        kyc_status: 'approved',
+        kyc_rejection_reason: null,
+        kyc_reviewed_at: new Date().toISOString(),
+        kyc_reviewed_by: actor.user_id,
+      })
+      .eq('id', vendorId)
+      .eq('kyc_status', 'submitted')
+      .select('id, company_name')
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) {
+      const { data: existing } = await supabase.from('vendor_profiles').select('id').eq('id', vendorId).maybeSingle();
+      if (!existing) throw new HttpError(404, 'Vendor not found');
+      throw new HttpError(409, 'This KYC is no longer waiting for review');
+    }
+
+    // The decision stands even if telling the vendor fails
+    try {
+      await notificationService.sendNotification(
+        vendorId,
+        'KYC Approved',
+        'Your KYC was approved. You can now bid for space and post loads.',
+        'kyc_approved',
+        { vendor_id: vendorId },
+      );
+    } catch (e) {
+      console.error('[vendor] KYC approval notification failed:', e);
+    }
+    await auditService.record('staff-console', actor, 'kyc_approved', { vendor_id: vendorId, company_name: data.company_name });
+    return data;
+  },
+
+  /**
    * Staff rejects a vendor's KYC, storing why. Only a submission still
    * waiting for review can be decided, so a vendor who edits mid-review (or
    * a second reviewer) is not overwritten.
    */
-  async rejectKyc(vendorId: string, reason: string) {
+  async rejectKyc(vendorId: string, reason: string, actor?: AuditActor) {
     const { data, error } = await supabase
       .from('vendor_profiles')
-      .update({ kyc_status: 'rejected', kyc_rejection_reason: reason, kyc_reviewed_at: new Date().toISOString() })
+      .update({
+        kyc_status: 'rejected',
+        kyc_rejection_reason: reason,
+        kyc_reviewed_at: new Date().toISOString(),
+        ...(actor ? { kyc_reviewed_by: actor.user_id } : {}),
+      })
       .eq('id', vendorId)
       .eq('kyc_status', 'submitted')
       .select('id, company_name')
@@ -313,7 +383,85 @@ export const vendorService = {
       'kyc_rejected',
       { vendor_id: vendorId }
     );
+    if (actor) {
+      await auditService.record('staff-console', actor, 'kyc_rejected', { vendor_id: vendorId, company_name: data.company_name, reason });
+    }
 
+    return data;
+  },
+
+  /**
+   * Signed upload URL for one KYC document, at a path chosen here inside the
+   * vendor's own folder. The bucket only accepts PDF, JPG and PNG; the size is
+   * checked here before the URL is issued.
+   */
+  async createKycUploadUrl(vendorId: string, input: { key: unknown; contentType: unknown; size: unknown }) {
+    const { key, contentType, size } = input;
+    if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(key)) {
+      throw new HttpError(400, 'Choose which document this is before uploading');
+    }
+    const extension = typeof contentType === 'string' ? KYC_UPLOAD_CONTENT_TYPES[contentType.toLowerCase()] : undefined;
+    if (!extension) throw new HttpError(415, 'Upload a PDF, JPG or PNG file');
+    const bytes = Number(size);
+    if (!Number.isInteger(bytes) || bytes <= 0) throw new HttpError(400, 'File size is required');
+    if (bytes > settings.TPL_UPLOAD_MAX_BYTES) {
+      throw new HttpError(413, `File must be at most ${Math.floor(settings.TPL_UPLOAD_MAX_BYTES / 1024 / 1024 * 10) / 10} MB`);
+    }
+    const path = `${vendorId}/${key}_${crypto.randomUUID()}.${extension}`;
+    const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUploadUrl(path);
+    if (error || !data) throw new Error(`Failed to create upload URL: ${error?.message}`);
+    return { path: data.path, token: data.token, signed_url: data.signedUrl };
+  },
+
+  /**
+   * Save the vendor's uploaded KYC documents on their profile before they
+   * submit the form. Changing the documents of an approved profile sends it
+   * back to review (as any change to its legal identity does) and tells staff.
+   */
+  async saveKycDocuments(
+    vendorId: string,
+    input: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] },
+  ) {
+    assertOwnDocumentPaths(vendorId, input.docUrls, input.otherDocs);
+
+    const { data: profile, error: loadErr } = await supabase
+      .from('vendor_profiles')
+      .select('company_name, kyc_status, kyc_data')
+      .eq('id', vendorId)
+      .maybeSingle();
+    if (loadErr) throw new Error(loadErr.message);
+    if (!profile) throw new HttpError(404, 'Set up your company profile first');
+
+    const current = (profile.kyc_data ?? {}) as { data?: Record<string, unknown>; otherDocs?: unknown[] } & Record<string, unknown>;
+    const kycData = {
+      ...current,
+      data: { ...(current.data ?? {}), ...(input.docUrls !== undefined ? { docUrls: input.docUrls } : {}) },
+      otherDocs: input.otherDocs ?? current.otherDocs ?? [],
+    };
+    const changes: Record<string, unknown> = { kyc_data: kycData, updated_at: new Date().toISOString() };
+    const backToReview = profile.kyc_status === 'approved';
+    if (backToReview) Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
+
+    const { data, error } = await supabase
+      .from('vendor_profiles')
+      .update(changes)
+      .eq('id', vendorId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+
+    if (backToReview) {
+      try {
+        await notificationService.notifyStaff(
+          'KYC submitted',
+          `${profile.company_name} changed its KYC documents and needs a new review.`,
+          'kyc_submitted',
+          { profile_id: vendorId },
+        );
+      } catch (e) {
+        console.error('[vendor] KYC notification failed:', e);
+      }
+    }
     return data;
   },
 
@@ -321,6 +469,19 @@ export const vendorService = {
    * Admin assigns a vehicle to a vendor request and creates a cargo manifest entry
    */
   async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number, costPerKm?: number) {
+    for (const [label, amount] of [['Cost', cost], ['Cost per km', costPerKm]] as const) {
+      if (amount !== undefined && amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) {
+        throw new HttpError(400, `${label} must be a number between 0 and 10,000,000`);
+      }
+    }
+    const { data: assignee, error: assigneeErr } = await supabase
+      .from('vehicles').select('id, status').eq('id', vehicleId).maybeSingle();
+    if (assigneeErr) throw new Error(assigneeErr.message);
+    if (!assignee) throw new HttpError(404, 'Vehicle not found');
+    if (['maintenance', 'archived'].includes(String(assignee.status))) {
+      throw new HttpError(409, `This vehicle is in ${assignee.status} and can't take a load`);
+    }
+
     const { data: before, error: beforeErr } = await supabase
       .from('vendor_shipment_requests').select('status').eq('id', requestId).maybeSingle();
     if (beforeErr) throw new Error(beforeErr.message);

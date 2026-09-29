@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import { locationService } from '../services/location';
 import { supabase } from '../services/supabase';
 import type { MyRouteResponse } from '../types/route';
@@ -237,11 +237,13 @@ export function useDriverRoute() {
   /** Driver accepted the new route or the inserted stop. */
   const acceptAssignment = useCallback(async (): Promise<'stop' | 'route' | null> => {
     if (pendingConfirmation) {
-      const { error } = await supabase
-        .from('driver_confirmations')
-        .update({ action: 'confirmed', responded_at: new Date().toISOString() })
-        .eq('id', pendingConfirmation.id);
-      if (error) throw error;
+      // The backend records the answer; 409 means it was already answered (for example
+      // accepted automatically), which is the outcome the driver wanted.
+      try {
+        await api.confirmStop(pendingConfirmation.id);
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) throw e;
+      }
       setPendingConfirmation(null);
       loadData();
       return 'stop';

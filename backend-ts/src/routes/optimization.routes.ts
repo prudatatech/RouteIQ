@@ -18,6 +18,7 @@ import { notificationService } from '../services/notification.service';
 import { sendError, HttpError } from '../core/errors';
 import { liveWeatherAt } from '../services/weather.service';
 import { isValidPoint, LatLng } from '../services/geo';
+import { parseNumberInRange } from '../core/validate';
 
 const router = Router();
 
@@ -284,14 +285,24 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
 });
 
 // ── POST /eta — ETA prediction ─────────────────────────────
-router.post('/eta', requireAuth, async (req: Request, res: Response) => {
+router.post('/eta', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
+    // Only known numbers go on to the ML service, and only sane ones
+    const input = req.body ?? {};
+    const etaInput = {
+      distance_km: parseNumberInRange(input.distance_km ?? 10, 'distance_km', 0, 5000),
+      traffic_density: parseNumberInRange(input.traffic_density ?? 0.5, 'traffic_density', 0, 1),
+      weather_severity: parseNumberInRange(input.weather_severity ?? 0, 'weather_severity', 0, 1),
+      ...(typeof input.vehicle_type === 'string' ? { vehicle_type: input.vehicle_type.slice(0, 30) } : {}),
+    };
+    req.body = etaInput;
+
     // Try calling ML service
     try {
       const mlRes = await fetch(`${settings.ML_SERVICE_URL}/predict-eta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body),
+        body: JSON.stringify(etaInput),
         signal: AbortSignal.timeout(10_000),
       });
       if (mlRes.ok) {

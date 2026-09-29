@@ -126,20 +126,10 @@ export default function KycReviewPage() {
 
   const review = useMutation({
     mutationFn: async ({ id, status, reason }: { id: string; status: 'approved' | 'rejected'; reason?: string }) => {
-      if (status === 'rejected') {
-        await vendorAPI.rejectKyc(id, reason!)
-        return
-      }
-      // Only a submission still waiting for review can be decided, so a vendor who
-      // edits their details mid-review (or a second reviewer) is not overwritten.
-      const { data, error } = await supabase
-        .from('vendor_profiles')
-        .update({ kyc_status: status, kyc_reviewed_at: new Date().toISOString() })
-        .eq('id', id)
-        .eq('kyc_status', 'submitted')
-        .select('id')
-      if (error) throw error
-      if (!data || data.length === 0) throw new Error('This KYC is no longer waiting for review. The list has been refreshed.')
+      // The backend decides only a submission still waiting for review, tells the
+      // vendor and records the decision in the audit log.
+      if (status === 'rejected') await vendorAPI.rejectKyc(id, reason!)
+      else await vendorAPI.approveKyc(id)
     },
     onSuccess: (_d, { status }) => {
       toast.success(status === 'approved' ? 'KYC approved. The vendor can now bid.' : 'KYC rejected. The vendor can correct and resubmit it.')
