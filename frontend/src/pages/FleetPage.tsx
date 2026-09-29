@@ -17,6 +17,7 @@ import { downloadCsv, toCsv } from '@/utils/csv'
 import { expiryStatus } from '@/utils/documentExpiry'
 import { fleetAPI } from '@/services/api'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
+import VehicleFuelTab from '@/components/fleet/fuel/VehicleFuelTab'
 import AlertsView from '@/components/fleet/AlertsView'
 import RaiseSosModal from '@/components/fleet/RaiseSosModal'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
@@ -606,6 +607,7 @@ export default function FleetPage() {
             })()}
             <RaiseSosModal key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} open={sosOpen} onClose={() => setSosOpen(false)} />
             <VehicleHealthPanel key={detailVehicle.id} vehicleId={detailVehicle.id} plate={detailVehicle.plate_number} />
+            <VehicleFuelTab key={`fuel-${detailVehicle.id}`} vehicleId={detailVehicle.id} />
           </div>
         )}
       </Drawer>
