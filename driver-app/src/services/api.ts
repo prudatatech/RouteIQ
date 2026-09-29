@@ -39,6 +39,8 @@ export type DocType =
   | 'police_verification'
   | 'medical_fitness'
   | 'address_proof'
+  | 'voter_id'
+  | 'passport'
   | 'offer_letter'
   | 'other';
 
@@ -55,6 +57,14 @@ export interface PersonDocument {
   rejection_reason: string | null;
   metadata?: Record<string, any> | null;
   created_at?: string;
+  /** Aadhaar is never sent in full: only the last four digits. */
+  number_last4?: string | null;
+  /** Expired, but still usable under the licence grace period. */
+  in_grace?: boolean;
+  /** A date to re-check a document that does not expire. */
+  review_by?: string | null;
+  extra_file_paths?: string[] | null;
+  resubmission_count?: number;
 }
 
 export interface EmergencyContact {
@@ -67,6 +77,8 @@ export interface EmergencyContact {
 
 /** The driver's own record from GET /people/me. Any part can be missing. */
 export interface MyPeople {
+  /** When the driver's consent to store documents was recorded; empty when not yet. */
+  consent_at: string | null;
   documents: PersonDocument[];
   emergency_contacts: EmergencyContact[];
 }
@@ -383,6 +395,7 @@ class ApiClient {
   async getMyPeople(): Promise<MyPeople> {
     const data = await this.request('GET', '/people/me');
     return {
+      consent_at: data?.profile?.consent_at ?? null,
       documents: Array.isArray(data?.documents) ? data.documents : [],
       emergency_contacts: Array.isArray(data?.emergency_contacts) ? data.emergency_contacts : [],
     };
@@ -405,8 +418,10 @@ class ApiClient {
     expires_on?: string;
     file_path: string;
     metadata?: Record<string, any>;
-  }): Promise<PersonDocument> {
-    const res = await this.request('POST', '/people/me/documents', data);
+    /** Back page and further pages (up to 4). */
+    extra_file_paths?: string[];
+  }, idempotencyKey?: string): Promise<PersonDocument> {
+    const res = await this.request('POST', '/people/me/documents', data, true, idempotencyHeader(idempotencyKey));
     return res?.document ?? res;
   }
 
