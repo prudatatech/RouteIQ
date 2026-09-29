@@ -815,5 +815,33 @@
     "assigned_at",
     "unassigned_at",
     "assigned_by"
+  ],
+  "vehicle_fuel_logs": [
+    "id",
+    "vehicle_id",
+    "filled_at",
+    "litres",
+    "price_per_litre",
+    "total_amount",
+    "odometer_km",
+    "is_full_tank",
+    "station_name",
+    "payment_mode",
+    "fill_latitude",
+    "fill_longitude",
+    "bill_status",
+    "bill_path",
+    "logged_by",
+    "logged_by_role",
+    "reviewed_at",
+    "reviewed_by",
+    "expense_id",
+    "distance_km",
+    "litres_used",
+    "mileage_kmpl",
+    "flags",
+    "note",
+    "created_at",
+    "updated_at"
   ]
 }
