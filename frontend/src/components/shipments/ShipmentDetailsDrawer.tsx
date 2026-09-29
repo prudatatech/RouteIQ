@@ -4,14 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ExternalLink, FileText, MapPin, Pencil, Trash2, Truck } from 'lucide-react'
 import {
-  Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm,
+  Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, useConfirm,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import {
-  apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
+  apiErrorMessage, deliveryPointsOf, destinationOf, formatDate, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, pickupDateOf, plateOf, priorityTone, shipmentStatusLabel,
 } from './format'
 import DriverRating from './DriverRating'
 import ParcelLabel from './ParcelLabel'
@@ -58,7 +58,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       queryClient.invalidateQueries({ queryKey: ['shipment-history', id] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success(`Status changed to ${statusToLabel(status).toLowerCase()}`)
+      toast.success(`Status changed to ${shipmentStatusLabel(status).toLowerCase()}`)
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not change the status. Try again.')),
   })
@@ -103,6 +103,9 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const currentStep = FORWARD_STATUSES.indexOf(s.status as (typeof FORWARD_STATUSES)[number])
   const nextStatuses = FORWARD_STATUSES.filter((_, i) => i > currentStep)
   const canCancel = currentStep < 0
+  // Dispatch can (re)assign a load that is waiting, already assigned, or whose delivery failed
+  const canAssign = ['created', 'assigned', 'exception'].includes(s.status ?? '')
+  const assignLabel = s.status === 'exception' ? 'Assign again' : s.status === 'assigned' ? 'Change vehicle' : 'Assign vehicle'
   const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
@@ -130,6 +133,15 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     if (ok) statusMutation.mutate({ id: s.id, status: 'cancelled' })
   }
 
+  const unassignShipment = async () => {
+    const ok = await confirm({
+      title: `Take ${s.tracking_id} off its vehicle?`,
+      message: 'The shipment goes back to created, its stop leaves the route and the driver is told. You can assign it again.',
+      confirmLabel: 'Take off vehicle',
+    })
+    if (ok) statusMutation.mutate({ id: s.id, status: 'created' })
+  }
+
   const changeStatus = async (status: (typeof FORWARD_STATUSES)[number]) => {
     if (status === 'delivered') {
       const ok = await confirm({
@@ -155,7 +167,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       title={<span className="font-mono">{s.tracking_id}</span>}
       description={
         <div className="flex flex-wrap items-center gap-2">
-          <StatusPill status={s.status} />
+          <StatusPill status={s.status}>{shipmentStatusLabel(s.status)}</StatusPill>
           {s.priority && <StatusPill tone={priorityTone[s.priority] ?? 'neutral'} dot={false}>{humanize(s.priority)} priority</StatusPill>}
         </div>
       }
@@ -198,12 +210,18 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
               { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
               { label: 'Driver', value: s.driver_name },
               { label: 'Created', value: formatDateTime(s.created_at) },
+              ...(pickupDateOf(s) ? [{ label: 'Pickup date', value: formatDate(pickupDateOf(s)) }] : []),
             ]}
           />
-          {!manifestOnly && !s.vehicle_id && !closed && (
+          {s.status === 'exception' && (
+            <Alert tone="danger" title="The delivery attempt failed">
+              The driver could not deliver this load. Assign a vehicle again to try another delivery, or cancel the shipment.
+            </Alert>
+          )}
+          {!manifestOnly && !closed && canAssign && (s.status !== 'created' || !s.vehicle_id) && (
             isBiddingOpen(s)
               ? <Alert tone="info">Open to vendor bids. A vehicle is assigned when you accept a bid, so it can't be assigned by hand while bidding is open.</Alert>
-              : <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>Assign vehicle</Button>
+              : <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>{assignLabel}</Button>
           )}
         </Section>
 
@@ -234,7 +252,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                   status: e.status,
                   at: e.at,
                   actorLabel: e.actor ? [e.actor.name, e.actor.role ? humanize(e.actor.role) : null].filter(Boolean).join(' · ') || null : null,
-                  note: e.note,
+                  note: e.status === 'exception' ? [e.note, 'Delivery attempt failed'].filter(Boolean).join(' · ') : e.note,
                 }))}
                 formatAt={formatDateTime}
               />
@@ -247,7 +265,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             <DetailList
               items={[
                 { label: 'Vendor', value: bid.vendor_profiles?.company_name },
-                { label: 'Bid amount', value: formatRupees(bid.bid_amount) },
+                { label: 'Bid amount (before GST)', value: formatRupees(bid.bid_amount) },
                 { label: 'E-way bill', value: bid.eway_bill_ref ? <span className="font-mono">{bid.eway_bill_ref}</span> : null },
                 { label: 'Load', value: bid.load_configuration },
               ]}
@@ -270,6 +288,11 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                   {statusAction[st]}
                 </Button>
               ))}
+              {s.status === 'assigned' && (
+                <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={unassignShipment}>
+                  Take off vehicle
+                </Button>
+              )}
               {canCancel && (
                 <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={cancelShipment}>
                   Cancel shipment

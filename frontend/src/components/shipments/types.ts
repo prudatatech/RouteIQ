@@ -36,6 +36,8 @@ export interface ShipmentRow {
   vehicle_id?: string | null
   driver_name?: string | null
   freight_charge?: number | null
+  /** Free-form details; a customer booking sets pickup_date and dispatch_date (YYYY-MM-DD). */
+  metadata?: Record<string, unknown> | null
   driver_rating?: number | null
   driver_rating_note?: string | null
   delivery_points?: DeliveryPoint[]

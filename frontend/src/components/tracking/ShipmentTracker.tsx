@@ -85,6 +85,7 @@ function useRemainingRoute(vehicle: LatLngPoint | null, stop: LatLngPoint | null
 
 const STEPS = [
   { key: 'created', label: 'Booked' },
+  { key: 'assigned', label: 'Assigned' },
   { key: 'picked_up', label: 'Picked up' },
   { key: 'in_transit', label: 'In transit' },
   { key: 'delivered', label: 'Delivered' },
@@ -94,8 +95,11 @@ function stepIndex(status: string | undefined) {
   if (!status) return -1
   const idx = STEPS.findIndex(s => s.key === status)
   if (idx >= 0) return idx
-  // Any other in-progress status (e.g. "assigned", "dispatched") counts as "picked up".
-  if (status !== 'cancelled') return 1
+  // A failed delivery happens with the load already on its way, so it sits at "In transit"
+  // (its own message says what happened).
+  if (status === 'exception') return STEPS.findIndex(s => s.key === 'in_transit')
+  // Any other in-progress status (e.g. "dispatched") is before pickup; only real pickups show as "Picked up".
+  if (status !== 'cancelled') return 0
   return -1
 }
 
@@ -155,6 +159,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
   const cancelled = shipment.status === 'cancelled'
   const delivered = shipment.status === 'delivered'
+  const failed = shipment.status === 'exception'
   const currentStepIdx = cancelled ? -1 : stepIndex(shipment.status)
 
   const vehicles: MapVehicle[] = (shipment.vehicle?.lat != null && shipment.vehicle?.lng != null)
@@ -185,8 +190,14 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
             <p className="text-xs text-muted">Tracking ID</p>
             <p className="truncate font-mono text-2xl font-semibold text-text">{shipment.tracking_id}</p>
           </div>
-          <StatusPill status={shipment.status} />
+          <StatusPill status={shipment.status}>{failed ? 'Delivery attempt failed' : undefined}</StatusPill>
         </div>
+
+        {failed && (
+          <p role="status" className="text-sm text-danger">
+            The delivery attempt failed. The carrier will arrange another attempt, and this page updates when they do.
+          </p>
+        )}
 
         {cancelled ? (
           <p className="text-sm text-muted">This shipment was cancelled.</p>
@@ -197,7 +208,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
               const active = i === currentStepIdx
               return (
                 <li key={step.key} className="flex min-w-0 flex-1 items-center last:flex-none">
-                  <div className="flex w-16 shrink-0 flex-col items-center gap-2 text-center sm:w-20">
+                  <div className="flex w-14 shrink-0 flex-col items-center gap-2 text-center sm:w-20">
                     <span
                       aria-hidden="true"
                       className={clsx(
@@ -242,12 +253,12 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatEta(etaMinutes)) : '—'}
+              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatEta(etaMinutes)) : '—'}
             </p>
-            {!delivered && !cancelled && etaMinutes == null && (
+            {!delivered && !cancelled && !failed && etaMinutes == null && (
               <p className="mt-1 text-xs text-muted">Shown once a vehicle is on its way and sharing its location.</p>
             )}
-            {!delivered && !cancelled && etaMinutes != null && (
+            {!delivered && !cancelled && !failed && etaMinutes != null && (
               <p className="mt-1 text-xs text-muted">An estimate from the vehicle's position now. Traffic and stops can change it.</p>
             )}
           </Card>
@@ -274,7 +285,10 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
       {shipment.history && shipment.history.length > 0 && (
         <Card padded>
           <p className="mb-4 text-sm font-medium text-text">Status history</p>
-          <Timeline events={shipment.history} formatAt={formatEventTime} />
+          <Timeline
+            events={shipment.history.map(e => (e.status === 'exception' ? { ...e, note: 'Delivery attempt failed' } : e))}
+            formatAt={formatEventTime}
+          />
         </Card>
       )}
     </div>

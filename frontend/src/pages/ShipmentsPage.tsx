@@ -3,14 +3,14 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus } from 'lucide-react'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort, statusToLabel,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort,
   useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
 import ShipmentDetailsDrawer from '@/components/shipments/ShipmentDetailsDrawer'
 import {
-  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, isBiddingOpen, plateOf,
+  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, isBiddingOpen, pickupDateOf, plateOf, shipmentStatusLabel,
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
@@ -103,18 +103,19 @@ export default function ShipmentsPage() {
         <div className="whitespace-nowrap">
           <div className="font-mono font-medium">{s.tracking_id}</div>
           {s.created_at && <div className="text-xs font-normal text-muted">{formatDate(s.created_at)}</div>}
+          {pickupDateOf(s) && <div className="text-xs font-normal text-muted">Pickup {formatDate(pickupDateOf(s))}</div>}
         </div>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      sortValue: s => statusToLabel(s.status),
+      sortValue: s => shipmentStatusLabel(s.status),
       cell: s => {
         const urgent = s.priority === 'high' || s.priority === 'critical'
         return (
           <div className="flex flex-col items-end gap-1 md:items-start">
-            <StatusPill status={s.status} />
+            <StatusPill status={s.status}>{shipmentStatusLabel(s.status)}</StatusPill>
             {isBiddingOpen(s) && <StatusPill tone="warning" dot={false}>Bidding open</StatusPill>}
             {urgent && <span className={s.priority === 'critical' ? 'text-xs font-medium text-danger' : 'text-xs font-medium text-warning'}>{humanize(s.priority!)} priority</span>}
           </div>
@@ -182,7 +183,7 @@ export default function ShipmentsPage() {
       const dest = destinationOf(s)
       return {
         tracking_id: s.tracking_id,
-        status: statusToLabel(s.status),
+        status: shipmentStatusLabel(s.status),
         pickup: s.origin_name || s.origin_address || '',
         destination: dest?.name || dest?.address || '',
         vehicle: plateOf(s) || '',
@@ -190,6 +191,7 @@ export default function ShipmentsPage() {
         load_kg: s.total_weight_kg ?? '',
         items: s.total_items ?? '',
         created_at: s.created_at || '',
+        pickup_date: pickupDateOf(s) || '',
       }
     }), [
       { key: 'tracking_id', header: 'Tracking ID' },
@@ -201,6 +203,7 @@ export default function ShipmentsPage() {
       { key: 'load_kg', header: 'Load (kg)' },
       { key: 'items', header: 'Items' },
       { key: 'created_at', header: 'Created at' },
+      { key: 'pickup_date', header: 'Pickup date' },
     ])
     downloadCsv(`shipments-${new Date().toISOString().slice(0, 10)}.csv`, csv)
   }
@@ -223,7 +226,7 @@ export default function ShipmentsPage() {
           onChange={setTab}
           tabs={TAB_IDS.map(id => ({
             id,
-            label: id === 'all' ? 'All' : statusToLabel(id),
+            label: id === 'all' ? 'All' : shipmentStatusLabel(id),
             count: isLoading ? undefined : counts[id] ?? 0,
           }))}
         />
