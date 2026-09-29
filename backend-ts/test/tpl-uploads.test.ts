@@ -200,3 +200,13 @@ describe('upload URL rate limit', () => {
     expect(status).toBe(429);
   });
 });
+
+describe('3PL applicant phone', () => {
+  it('rejects a phone number that is not a 10-digit Indian mobile', async () => {
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics', email: 'new-partner@acme.in', pan: 'ABCDE1234F', phone: '12345',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.detail ?? res.body.error).toMatch(/mobile/i);
+  });
+});

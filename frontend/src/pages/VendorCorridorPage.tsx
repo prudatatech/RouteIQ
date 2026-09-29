@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import { formatEta } from '@/utils/timeFormat'
 import { capacityAPI, vendorAPI } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
+import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import PlaceBidModal from '@/components/vendor/PlaceBidModal'
 import { Alert, Card, EmptyState, Page, PageHeader, Skeleton } from '@/components/ui'
 
@@ -26,9 +27,6 @@ interface PassingRoute {
   routes?: {
     vehicles?: {
       vehicle_type?: string
-      latitude?: number | null
-      longitude?: number | null
-      current_location_name?: string | null
     }
   }
 }
@@ -111,14 +109,19 @@ export default function VendorCorridorPage() {
   }, [userId, session])
 
   /** Send the vendor to post-a-load with the passing truck's current position pre-set as the drop point. */
-  const claimCapacity = (pr: PassingRoute) => {
-    const vehicle = pr.routes?.vehicles
-    if (vehicle?.latitude != null && vehicle?.longitude != null) {
-      const name = vehicle.current_location_name || pr.city || 'Passing truck location'
-      navigate(`/vendor/request?query=${encodeURIComponent(name)}&lat=${vehicle.latitude}&lng=${vehicle.longitude}`)
-    } else {
-      navigate(`/vendor/request?query=${encodeURIComponent(pr.city || '')}`)
+  // Opens post-a-load with the city the truck passes already placed on the map.
+  // The truck's own position stays private; the city is resolved by place search.
+  const claimCapacity = async (pr: PassingRoute) => {
+    const city = pr.city?.trim()
+    if (!city) {
+      navigate('/vendor/request')
+      return
     }
+    const [first] = await suggestPlaces(city).catch(() => [])
+    const place = first ? await resolvePlace(first).catch(() => null) : null
+    navigate(place
+      ? `/vendor/request?query=${encodeURIComponent(place.address)}&lat=${place.lat}&lng=${place.lng}`
+      : `/vendor/request?query=${encodeURIComponent(city)}`)
   }
 
   const handlePlaceBid = (w: OpenWindow) => {

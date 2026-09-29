@@ -51,6 +51,14 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
+/** A 10-digit Indian mobile number (optional leading +91 or 0), or null when empty. */
+function parseMobile(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const digits = String(value).replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '');
+  if (!/^[6-9]\d{9}$/.test(digits)) throw new HttpError(400, 'Enter a valid 10-digit mobile number');
+  return digits;
+}
+
 export const tplService = {
   /**
    * Submit a new 3PL onboarding application
@@ -59,6 +67,7 @@ export const tplService = {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+    const phone = parseMobile(data.phone);
 
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
     if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
@@ -81,6 +90,7 @@ export const tplService = {
         custom_id: custom_id || null,
         company_name: companyName,
         email: email,
+        phone,
         pan_number: pan,
         gstin: gst,
         msme_status: msmeStatus || 'Not Registered',
@@ -244,6 +254,7 @@ export const tplService = {
       .update({
         custom_id: custom_id || null,
         company_name: companyName,
+        ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         pan_number: pan,
         gstin: gst,
         msme_status: msmeStatus || 'Not Registered',

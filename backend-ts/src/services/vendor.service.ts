@@ -478,9 +478,8 @@ export const vendorService = {
   async getPassingRoutes(vendorId: string) {
     const { data, error } = await supabase
       .from('vendor_route_opportunities')
-      // Only what the card shows, plus the vehicle's current position so "Claim
-      // capacity" can pre-fill the drop point — never the plate or driver phone.
-      .select('*, routes(id, vehicles(vehicle_type, latitude, longitude, current_location_name))')
+      // Only what the card shows: never the full route or vehicle (plate, driver phone, live position)
+      .select('*, routes(id, vehicles(vehicle_type))')
       .eq('vendor_id', vendorId)
       .eq('status', 'notified')
       .order('created_at', { ascending: false });

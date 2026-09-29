@@ -118,6 +118,7 @@ export default function TplOnboardingPage() {
       }
       setCompanyName(data.company_name || '')
       setCustomId(data.custom_id || '')
+      setPhone(data.phone || '')
       setPan(data.pan_number || '')
       setGst(data.gstin || '')
       setMsmeStatus(data.msme_status || 'Not Registered')

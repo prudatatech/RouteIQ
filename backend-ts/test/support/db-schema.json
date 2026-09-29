@@ -319,7 +319,8 @@
     "custom_id",
     "email",
     "pending_updates",
-    "rejection_reason"
+    "rejection_reason",
+    "phone"
   ],
   "users": [
     "id",
