@@ -11,6 +11,7 @@
  * reported as missing, never replaced by a made-up number.
  */
 import { supabase } from '../core/supabase';
+import { manifestParcelCode } from '../core/parcelCode';
 import { indianDateKey } from '../core/istDate';
 
 export const EXPENSE_CATEGORIES = ['fuel', 'maintenance', 'toll', 'driver', 'other'] as const;
@@ -349,7 +350,7 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
     ...manifests.filter((m: any) => !invoicedManifests.has(m.id)).map((m: any) => ({
       kind: 'manifest' as const,
       id: m.id,
-      label: `CM-${String(m.id).slice(0, 8).toUpperCase()}`,
+      label: manifestParcelCode(String(m.id)),
       detail: [m.pickup_location, m.drop_location].filter(Boolean).join(' to ') || null,
       delivered_at: m.updated_at,
       can_invoice: pricedRequests.has(m.vendor_request_id),

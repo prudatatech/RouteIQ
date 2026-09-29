@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
+import { manifestParcelCode } from '../core/parcelCode';
 import { settings } from '../core/config';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
@@ -69,7 +70,7 @@ router.get('/invoices', async (req: Request, res: Response) => {
 
     res.json(rows.map((r: any) => ({
       ...r,
-      reference: r.shipment_id ? (tracking.get(r.shipment_id) ?? null) : (manifestIds.has(r.manifest_id) ? `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}` : null),
+      reference: r.shipment_id ? (tracking.get(r.shipment_id) ?? null) : (manifestIds.has(r.manifest_id) ? manifestParcelCode(String(r.manifest_id)) : null),
       vendor_name: r.vendor_id ? (companies.get(r.vendor_id) ?? null) : null,
     })));
   } catch (e) {

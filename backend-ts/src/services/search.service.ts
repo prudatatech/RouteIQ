@@ -13,6 +13,7 @@
  * the mock and the real database, and keeps the query cheap.
  */
 import { supabase } from '../core/supabase';
+import { manifestParcelCode } from '../core/parcelCode';
 
 export interface SearchResultItem {
   id: string;
@@ -109,7 +110,7 @@ async function searchCargoManifests(term: string): Promise<SearchResultItem[]> {
 
   // Display tracking id, minted the same way as shipment.service.ts's
   // createManifest/listShipments: 'CM-' + the id's first 8 characters, uppercased.
-  const displayId = (id: string) => 'CM-' + String(id).substring(0, 8).toUpperCase();
+  const displayId = (id: string) => manifestParcelCode(String(id));
 
   const cmMatch = CM_PREFIX_RE.exec(term.toUpperCase());
   const matches = cmMatch
