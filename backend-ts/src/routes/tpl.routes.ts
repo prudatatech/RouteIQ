@@ -31,6 +31,7 @@ function publicView(partner: any) {
     company_name: partner.company_name,
     status: partner.status,
     created_at: partner.created_at,
+    rejection_reason: partner.status === 'rejected' ? partner.rejection_reason ?? null : null,
     email_masked: maskEmail(partner.email),
     corridor_count: partner.tpl_corridors?.length ?? 0,
     document_count: partner.tpl_documents?.length ?? 0,
@@ -121,6 +122,18 @@ router.get('/:id', optionalAuth, async (req, res) => {
 router.post('/approve/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
     const data = await tplService.approve(req.params.id, req.user!.user_id);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/tpl/reject/:id
+router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!reason) throw new HttpError(400, 'A reason is required');
+    const data = await tplService.reject(req.params.id, reason);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');

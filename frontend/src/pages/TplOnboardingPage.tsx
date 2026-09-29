@@ -96,6 +96,9 @@ export default function TplOnboardingPage() {
   const [bankIfsc, setBankIfsc] = useState('')
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
   const [previewFile, setPreviewFile] = useState<{file: File, url: string, name: string} | null>(null)
+  // Documents already on the application being edited, kept so saving edits that
+  // don't re-upload every file doesn't wipe out the ones left untouched.
+  const [existingDocs, setExistingDocs] = useState<{ type: string, url: string }[]>([])
   
   // ID Recommendation logic
   const recommendIds = (name: string) => {
@@ -210,6 +213,9 @@ export default function TplOnboardingPage() {
               rate: c.proposed_rate || '',
               priority: c.priority || '1'
             })))
+          }
+          if (data.tpl_documents && data.tpl_documents.length > 0) {
+            setExistingDocs(data.tpl_documents.map((d: any) => ({ type: d.doc_type, url: d.file_url })))
           }
         } else {
           toast.error('Invalid credentials for editing this application.')
@@ -625,7 +631,9 @@ export default function TplOnboardingPage() {
                       const payload = {
                         custom_id: customId,
                         companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors,
-                        documents: [] as { type: string, url: string }[],
+                        // Keep documents that aren't being replaced by a new upload in this
+                        // save, so editing without re-uploading every file doesn't delete them.
+                        documents: existingDocs.filter(d => !(d.type in uploadedDocs)) as { type: string, url: string }[],
                         // Proves ownership of the application when editing without an account
                         ...(editId && editPan ? { verify_pan: editPan } : {})
                       };

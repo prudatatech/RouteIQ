@@ -214,14 +214,15 @@ export const tplService = {
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
 
-    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(file_url)').eq('id', id).maybeSingle();
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
     if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+    const existingDocuments = (current.tpl_documents as { id: string; file_url: string; doc_type: string }[] | null) ?? [];
     assertDocumentPaths(
       documents,
       [current.id, ...(current.custom_id ? [applicationFolder(current.custom_id)] : [])],
-      ((current.tpl_documents as { file_url: string }[] | null) ?? []).map(d => d.file_url),
+      existingDocuments.map(d => d.file_url),
     );
 
     // 1. Update Partner Record
@@ -258,16 +259,25 @@ export const tplService = {
       }
     }
 
-    // 3. Overwrite Documents
+    // 3. Documents: `documents`, when given, is the desired final list (the client
+    // sends every document that should remain, including ones it isn't re-uploading —
+    // see services/tplDocuments and the onboarding/edit forms). We diff against what's
+    // already stored instead of blindly deleting everything, so a request that merely
+    // forgot to include an untouched document doesn't wipe out the rest, and so a
+    // failed insert can't leave the application with no documents at all.
     if (documents) {
-      await supabase.from('tpl_documents').delete().eq('partner_id', id);
-      if (documents.length > 0) {
-        const docsData = documents.map((d: any) => ({
-          partner_id: id,
-          doc_type: d.type,
-          file_url: d.url
-        }));
-        await supabase.from('tpl_documents').insert(docsData);
+      const keepUrls = new Set((documents as { url: string }[]).map(d => d.url));
+      const toRemove = existingDocuments.filter(d => !keepUrls.has(d.file_url));
+      const existingUrls = new Set(existingDocuments.map(d => d.file_url));
+      const toAdd = (documents as { type: string; url: string }[]).filter(d => !existingUrls.has(d.url));
+
+      if (toAdd.length > 0) {
+        const docsData = toAdd.map(d => ({ partner_id: id, doc_type: d.type, file_url: d.url }));
+        const { error: insertErr } = await supabase.from('tpl_documents').insert(docsData);
+        if (insertErr) throw new Error(`Failed to save documents: ${insertErr.message}`);
+      }
+      for (const doc of toRemove) {
+        await supabase.from('tpl_documents').delete().eq('id', doc.id);
       }
     }
 
@@ -332,6 +342,32 @@ export const tplService = {
     return updatedPartner;
   },
   
+  /**
+   * Reject a pending 3PL application (or a partner's pending profile update),
+   * recording why so the applicant can see it on the tracking page.
+   */
+  async reject(id: string, reason: string) {
+    const { data: partner, error: fetchErr } = await supabase
+      .from('tpl_partners')
+      .select('id, status, pending_updates')
+      .eq('id', id)
+      .maybeSingle();
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Application not found');
+
+    // Rejecting a profile update just clears the request and keeps the partner active;
+    // rejecting a first-time application moves it out of the queue.
+    const nextStatus = partner.pending_updates ? 'active' : 'rejected';
+    const { data: updated, error } = await supabase
+      .from('tpl_partners')
+      .update({ status: nextStatus, pending_updates: null, rejection_reason: reason })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(`Rejection failed: ${error.message}`);
+    return updated;
+  },
+
   /**
    * Activate a 3PL partner (Called when they set their password)
    */
