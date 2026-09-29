@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -7,15 +7,28 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavItem } from '@/config/navigation'
-import AddShipmentModal from '@/components/modals/AddShipmentModal'
+import { routePrefetch } from '@/config/lazyPages'
+import { useDraftStore } from '@/store/draftStore'
 import SOSListener from '@/components/SOSListener'
 import { GlobalDeliveryCelebration } from './GlobalDeliveryCelebration'
 import { IconButton } from './Button'
+import { LoadingState } from './Spinner'
+
+// Pulls in the live map (maplibre) to place the shipment's stops, so it is
+// only fetched once a "Create shipment" button is actually clicked.
+const AddShipmentModal = lazy(() => import('@/components/modals/AddShipmentModal'))
 
 const COLLAPSE_KEY = 'sidebar_collapsed'
 
 function readCollapsed() {
   try { return localStorage.getItem(COLLAPSE_KEY) === 'true' } catch { return false }
+}
+
+/** Warms a route's JS chunk on hover/focus of its nav link, so the page has usually already
+ * arrived by the time the click lands. A failed prefetch is silent; the real navigation (and
+ * `ChunkErrorBoundary`) handles it if the chunk still can't be loaded. */
+function prefetchRoute(to: string) {
+  routePrefetch[to]?.().catch(() => { /* surfaced on navigation instead */ })
 }
 
 /** Counts for the navigation badges; each refreshes when its table changes. */
@@ -90,6 +103,8 @@ function NavList({ items, collapsed, badges, onNavigate }: {
                   <NavLink
                     to={to}
                     onClick={onNavigate}
+                    onMouseEnter={() => prefetchRoute(to)}
+                    onFocus={() => prefetchRoute(to)}
                     title={collapsed ? label : undefined}
                     aria-label={collapsed ? (count ? `${label} (${count})` : label) : undefined}
                     className={({ isActive }) => clsx(
@@ -127,7 +142,15 @@ function SidebarFooter({ collapsed, onSignOut, onToggle }: { collapsed: boolean;
   const TrackingIcon = trackingPageLink.icon
   return (
     <div className={clsx('shrink-0 space-y-0.5 border-t border-border py-3', collapsed ? 'px-2' : 'px-3')}>
-      <a href={trackingPageLink.to} target="_blank" rel="noreferrer" className={item} title={collapsed ? trackingPageLink.label : undefined}>
+      <a
+        href={trackingPageLink.to}
+        target="_blank"
+        rel="noreferrer"
+        className={item}
+        title={collapsed ? trackingPageLink.label : undefined}
+        onMouseEnter={() => prefetchRoute(trackingPageLink.to)}
+        onFocus={() => prefetchRoute(trackingPageLink.to)}
+      >
         <TrackingIcon size={18} aria-hidden="true" className="shrink-0" />
         {collapsed ? <span className="sr-only">{trackingPageLink.label} (opens in a new tab)</span> : (
           <>
@@ -158,6 +181,8 @@ export default function AppLayout() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // The modal (and the map it pulls in) is only fetched once a "Create shipment" button opens it.
+  const isShipmentModalOpen = useDraftStore(s => s.isModalOpen)
 
   const isStaff = role === 'admin' || role === 'superadmin'
   const badges = useNavBadges(isStaff, role === 'superadmin')
@@ -251,16 +276,22 @@ export default function AppLayout() {
         id="main"
         className={clsx('min-w-0 transition-[padding] duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
       >
-        {fullBleed ? (
-          <div className="h-[calc(100dvh-3.5rem)] lg:h-dvh"><Outlet /></div>
-        ) : (
-          <div className="mx-auto w-full max-w-content px-4 py-6 sm:px-6 lg:py-8">
-            <Outlet />
-          </div>
-        )}
+        <Suspense fallback={<LoadingState label="Loading page…" className="min-h-[50vh]" />}>
+          {fullBleed ? (
+            <div className="h-[calc(100dvh-3.5rem)] lg:h-dvh"><Outlet /></div>
+          ) : (
+            <div className="mx-auto w-full max-w-content px-4 py-6 sm:px-6 lg:py-8">
+              <Outlet />
+            </div>
+          )}
+        </Suspense>
       </main>
 
-      <AddShipmentModal />
+      {isShipmentModalOpen && (
+        <Suspense fallback={null}>
+          <AddShipmentModal />
+        </Suspense>
+      )}
       <SOSListener />
       <GlobalDeliveryCelebration />
     </div>

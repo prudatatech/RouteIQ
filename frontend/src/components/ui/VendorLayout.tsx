@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
@@ -6,11 +6,18 @@ import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
+import { routePrefetch } from '@/config/lazyPages'
 import { buttonClasses } from './buttonStyles'
 import { IconButton } from './Button'
 import { StatusPill } from './StatusPill'
+import { LoadingState } from './Spinner'
 
 const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'approved', 'rejected']
+
+/** Warms a route's JS chunk on hover/focus of its nav link (see `AppLayout` for the same pattern). */
+function prefetchRoute(to: string) {
+  routePrefetch[to]?.().catch(() => { /* surfaced on navigation instead */ })
+}
 
 const links = [
   { to: '/vendor', label: 'Find capacity', end: true, requiresSignIn: false },
@@ -112,6 +119,8 @@ export default function VendorLayout() {
       key={link.to}
       to={target(link)}
       end={link.end}
+      onMouseEnter={() => prefetchRoute(link.to)}
+      onFocus={() => prefetchRoute(link.to)}
       className={({ isActive }) => clsx(
         'relative flex items-center rounded-control text-sm transition-colors',
         vertical ? 'h-11 px-3' : 'h-9 px-3',
@@ -176,7 +185,9 @@ export default function VendorLayout() {
       </header>
 
       <main className="mx-auto w-full max-w-content flex-1 px-4 py-6 sm:px-6 lg:py-8">
-        <Outlet context={context} />
+        <Suspense fallback={<LoadingState label="Loading page…" className="min-h-[50vh]" />}>
+          <Outlet context={context} />
+        </Suspense>
       </main>
     </div>
   )
