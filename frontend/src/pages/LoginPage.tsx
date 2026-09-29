@@ -70,7 +70,7 @@ export default function LoginPage() {
 
       toast.success(`Welcome back, ${role}!`)
       if (role === 'superadmin') {
-        navigate('/superadmin')
+        navigate('/dashboard')
       } else if (role === 'vendor') {
         if (tplPartner) {
           navigate(`/3pl-portal/${tplPartner.id}`)

@@ -13,7 +13,9 @@ import RoutesPage from '@/pages/RoutesPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
 import LandingPage from '@/pages/LandingPage'
 import OptimizePage from '@/pages/OptimizePage'
-import SuperadminPage from '@/pages/SuperadminPage'
+import UsersPage from '@/pages/admin/UsersPage'
+import KycReviewPage from '@/pages/admin/KycReviewPage'
+import AuditLogPage from '@/pages/admin/AuditLogPage'
 import AIHubPage from '@/pages/AIHubPage'
 import CargoNetworkPage from '@/pages/CargoNetworkPage'
 import ShipmentsPage from '@/pages/ShipmentsPage'
@@ -276,9 +278,19 @@ export default function App() {
                 <AnalyticsPage />
               </PrivateRoute>
             } />
-            <Route path="admin/:section" element={
+            <Route path="admin/users" element={
               <PrivateRoute allowedRoles={['superadmin']}>
-                <SuperadminPage />
+                <UsersPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/kyc" element={
+              <PrivateRoute allowedRoles={['superadmin']}>
+                <KycReviewPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/audit" element={
+              <PrivateRoute allowedRoles={['superadmin']}>
+                <AuditLogPage />
               </PrivateRoute>
             } />
             <Route path="3pl-partners" element={
@@ -313,6 +325,8 @@ export default function App() {
             <Route path="3pl-network/verify" element={<MovedTo to="/3pl-partners/verify" />} />
             <Route path="superadmin" element={<MovedTo to="/admin/users" />} />
             <Route path="admin" element={<MovedTo to="/admin/users" />} />
+            <Route path="admin/bids" element={<MovedTo to="/bids" />} />
+            <Route path="admin/requests" element={<MovedTo to="/vendor-requests" />} />
             <Route path="live-map" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <LiveMapPage />
