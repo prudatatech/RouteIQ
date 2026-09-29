@@ -21,7 +21,7 @@ router.post('/', requireAuth, requireRole('superadmin', 'admin', 'manager'), asy
       res.status(400).json({ detail: parsed.error.issues[0].message });
       return;
     }
-    const shipment = await ShipmentService.createShipment(parsed.data);
+    const shipment = await ShipmentService.createShipment(parsed.data, { id: req.user!.user_id, role: req.user!.role });
     res.status(201).json(shipment);
   } catch (e: any) {
     sendError(req, res, e);
@@ -166,13 +166,31 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
     }
 
     const shipment = await ShipmentService.updateShipmentStatus(
-      req.params.shipment_id, status, lat, lng, receivedBy, signatureData
+      req.params.shipment_id, status, lat, lng, receivedBy, signatureData,
+      { id: req.user!.user_id, role: req.user!.role }
     );
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });
       return;
     }
     res.json(shipment);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /:shipment_id/history (staff) ──────────────────────
+// Ordered status timeline from the tamper-evident `shipment_logs` chain, with
+// who made each change (when known) and a short note. See
+// ShipmentTracker's public tracking response for the customer-safe cut.
+router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const events = await ShipmentService.getShipmentHistory(req.params.shipment_id);
+    if (!events) {
+      res.status(404).json({ detail: 'Shipment not found' });
+      return;
+    }
+    res.json({ events });
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -284,7 +302,7 @@ router.post('/:shipment_id/assign', requireAuth, requireRole('superadmin', 'admi
       res.status(400).json({ detail: 'vehicle_id is required' });
       return;
     }
-    const shipment = await ShipmentService.assignDriver(req.params.shipment_id, vehicle_id);
+    const shipment = await ShipmentService.assignDriver(req.params.shipment_id, vehicle_id, { id: req.user!.user_id, role: req.user!.role });
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found or could not be assigned' });
       return;
