@@ -1,432 +1,201 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
-import { useAuthStore } from '@/store/authStore';
-import toast from 'react-hot-toast';
-import { MapPin, ArrowLeft, Send, Search, Package, User, FileText, Settings, ShieldAlert, Sparkles, Zap } from 'lucide-react';
-import * as turf from '@turf/turf';
-import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase';
-import { vendorAPI } from '@/services/api';
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
+import { Navigation, Sparkles, Warehouse } from 'lucide-react'
+import { useAuthStore } from '@/store/authStore'
+import { vendorAPI } from '@/services/api'
+import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase'
+import { MapView, type MapPoint, type MapRoute } from '@/components/map'
+import {
+  Button, Card, Checkbox, Input, Page, PageHeader, PlaceSearch, Select, Textarea,
+} from '@/components/ui'
+import type { ResolvedPlace } from '@/services/geocoding'
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-const DEFAULT_CENTER = { longitude: 72.8464, latitude: 19.1197 }; // Mumbai
+const PRODUCT_CATEGORIES = ['FMCG', 'Electronics', 'Textile', 'Steel', 'Cement', 'Agriculture', 'Chemicals', 'Furniture', 'Automobile parts', 'Machinery']
+  .map(v => ({ value: v, label: v }))
+const PACKAGING_TYPES = ['Box', 'Carton', 'Bag', 'Drum', 'Pallet', 'Roll', 'Loose', 'Bundle', 'Container'].map(v => ({ value: v, label: v }))
+const UNITS = ['Kg', 'Ton', 'Piece', 'Box', 'Bag', 'Drum', 'Litre', 'Roll', 'Carton'].map(v => ({ value: v, label: v }))
+const SPECIAL_HANDLING = [
+  { id: 'fragile', label: 'Fragile' },
+  { id: 'hazardous', label: 'Hazardous' },
+  { id: 'coldChain', label: 'Cold chain' },
+  { id: 'stackable', label: 'Stackable' },
+  { id: 'highValue', label: 'High value' },
+] as const
 
-const PRODUCT_CATEGORIES = [
-  "FMCG", "Electronics", "Textile", "Steel", "Cement", 
-  "Agriculture", "Chemicals", "Furniture", "Automobile Parts", "Machinery"
-];
+const STEPS = ['Route', 'Cargo', 'Review'] as const
 
-const PACKAGING_TYPES = [
-  "Box", "Carton", "Bag", "Drum", "Pallet", "Roll", "Loose", "Bundle", "Container"
-];
-
-const UNITS = [
-  "Kg", "Ton", "Piece", "Box", "Bag", "Drum", "Litre", "Roll", "Carton"
-];
+interface VendorProfileLite {
+  company_name?: string
+  address?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}
 
 export default function VendorShipmentRequestPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const token = useAuthStore(s => s.token);
-  
-  // State
-  const [viewState, setViewState] = useState({
-    ...DEFAULT_CENTER,
-    zoom: 10
-  });
-  
-  // Form State
-  const [capacity, setCapacity] = useState('');
+  const navigate = useNavigate()
+  const location = useLocation()
+  const token = useAuthStore(s => s.token)
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [vendorProfile, setVendorProfile] = useState<any>(null);
-  
-  // New Detailed Form State
-  const [consigneeName, setConsigneeName] = useState('');
-  const [consigneeContact, setConsigneeContact] = useState('');
-  const [consigneeEmail, setConsigneeEmail] = useState('');
-  
-  const [productCategory, setProductCategory] = useState('');
-  const [productName, setProductName] = useState('');
-  const [brand, setBrand] = useState('');
-  const [modelVariant, setModelVariant] = useState('');
-  
-  const [packagingType, setPackagingType] = useState('');
-  const [noOfPackages, setNoOfPackages] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState('');
-  const [declaredValue, setDeclaredValue] = useState('');
-  
-  // HSN Code State
-  const [hsnCode, setHsnCode] = useState('');
-  const [hsnDescription, setHsnDescription] = useState('');
-  const [gstRate, setGstRate] = useState('');
-  const [hsnSuggestions, setHsnSuggestions] = useState<HSNEntry[]>([]);
-  const [showHsnDropdown, setShowHsnDropdown] = useState(false);
-  const hsnDropdownRef = useRef<HTMLDivElement>(null);
-  
-  const [specialHandling, setSpecialHandling] = useState({
-    fragile: false,
-    hazardous: false,
-    coldChain: false,
-    stackable: false,
-    highValue: false
-  });
-  const [remarks, setRemarks] = useState('');
-  
-  // Pickup State
-  const [pickupSearch, setPickupSearch] = useState('');
-  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
-  const [pickupLocation, setPickupLocation] = useState<any>(null);
-  
-  // Drop State
-  const [dropSearch, setDropSearch] = useState('');
-  const [dropSuggestions, setDropSuggestions] = useState<any[]>([]);
-  const [dropLocation, setDropLocation] = useState<any>(null);
-  
-  // Fetch market rates & profile & handle initial state
+  const [step, setStep] = useState(0)
+  const [attempted, setAttempted] = useState<Record<number, boolean>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [vendorProfile, setVendorProfile] = useState<VendorProfileLite | null>(null)
+
+  const [pickup, setPickup] = useState<ResolvedPlace | null>(null)
+  const [drop, setDrop] = useState<ResolvedPlace | null>(null)
+
+  const [consigneeName, setConsigneeName] = useState('')
+  const [consigneeContact, setConsigneeContact] = useState('')
+  const [consigneeEmail, setConsigneeEmail] = useState('')
+
+  const [productCategory, setProductCategory] = useState('')
+  const [productName, setProductName] = useState('')
+  const [brand, setBrand] = useState('')
+  const [modelVariant, setModelVariant] = useState('')
+
+  const [packagingType, setPackagingType] = useState('')
+  const [noOfPackages, setNoOfPackages] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [unit, setUnit] = useState('')
+  const [capacity, setCapacity] = useState('')
+  const [declaredValue, setDeclaredValue] = useState('')
+
+  const [hsnCode, setHsnCode] = useState('')
+  const [hsnDescription, setHsnDescription] = useState('')
+  const [gstRate, setGstRate] = useState('')
+  const [hsnSuggestions, setHsnSuggestions] = useState<HSNEntry[]>([])
+  const [showHsnDropdown, setShowHsnDropdown] = useState(false)
+  const hsnDropdownRef = useRef<HTMLDivElement>(null)
+
+  const [specialHandling, setSpecialHandling] = useState<Record<string, boolean>>({})
+  const [remarks, setRemarks] = useState('')
+
+  // Restore a pending request after sign-in, or seed the drop location from a link elsewhere in the app.
   useEffect(() => {
-    // 1. Restore from session if pending (Deferred Auth)
-    let restored = false;
+    let restored = false
     if (token) {
-      const pendingMapRequest = sessionStorage.getItem('pendingMapRequest');
-      if (pendingMapRequest) {
-        const data = JSON.parse(pendingMapRequest);
-        setPickupLocation(data.pickup);
-        setPickupSearch(data.pickup?.address || '');
-        setDropLocation(data.drop);
-        setDropSearch(data.drop?.address || '');
-        setCapacity(data.capacity?.toString() || '');
-        sessionStorage.removeItem('pendingMapRequest');
-        restored = true;
-      }
-    } 
-    
-    if (!restored) {
-      // 2. Parse URL query params (from Hero Search)
-      const params = new URLSearchParams(location.search);
-      const query = params.get('query');
-      const lat = params.get('lat');
-      const lng = params.get('lng');
-      
-      if (query && !dropLocation) {
-        setDropSearch(query);
-        if (lat && lng) {
-          const newLoc = { address: query, lat: parseFloat(lat), lng: parseFloat(lng) };
-          setDropLocation(newLoc);
-          setViewState({ longitude: newLoc.lng, latitude: newLoc.lat, zoom: 14 });
-        }
-      }
-    }
-
-    const fetchData = async () => {
-      try {
-        const profileData = await vendorAPI.profile();
-        setVendorProfile(profileData);
-      } catch (e) {
-        console.warn('Failed to fetch data', e);
-      }
-    };
-    if (token) fetchData();
-  }, [token, location.search]);
-
-  // Geocoding Search
-  const searchArcGIS = async (query: string, setSuggestions: any) => {
-    if (!query || query.length < 3) {
-      setSuggestions([]);
-      return;
-    }
-    try {
-      const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query)}&countryCode=IND&maxSuggestions=5&f=json`;
-      const res = await fetch(url);
-      const data = await res.json();
-      
-      if (data.suggestions) {
-        const mapped = data.suggestions.map((s: any) => {
-          const parts = s.text.split(', ');
-          return {
-            id: s.magicKey,
-            text: parts[0],
-            place_name: s.text,
-            magicKey: s.magicKey
-          };
-        });
-        setSuggestions(mapped);
-      } else {
-        setSuggestions([]);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  useEffect(() => {
-    if (pickupLocation && pickupSearch === pickupLocation.address) {
-      setPickupSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(() => searchArcGIS(pickupSearch, setPickupSuggestions), 500);
-    return () => clearTimeout(timer);
-  }, [pickupSearch, pickupLocation]);
-
-  useEffect(() => {
-    if (dropLocation && dropSearch === dropLocation.address) {
-      setDropSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(() => searchArcGIS(dropSearch, setDropSuggestions), 500);
-    return () => clearTimeout(timer);
-  }, [dropSearch, dropLocation]);
-
-  const updateMapBounds = (newPickup: any, newDrop: any) => {
-    if (newPickup && newDrop) {
-      const minLng = Math.min(newPickup.lng, newDrop.lng);
-      const maxLng = Math.max(newPickup.lng, newDrop.lng);
-      const minLat = Math.min(newPickup.lat, newDrop.lat);
-      const maxLat = Math.max(newPickup.lat, newDrop.lat);
-
-      const latDiff = maxLat - minLat;
-      const lngDiff = maxLng - minLng;
-      const maxDiff = Math.max(latDiff, lngDiff);
-      
-      const centerLng = (minLng + maxLng) / 2;
-      const centerLat = (minLat + maxLat) / 2 + (maxDiff * 0.1); // Shift center up slightly to accommodate curve
-      
-      let calculatedZoom = 11;
-      if (maxDiff > 0) {
-        calculatedZoom = Math.max(3.5, Math.min(14, 7.5 - Math.log2(maxDiff)));
-      }
-
-      setViewState({ longitude: centerLng, latitude: centerLat, zoom: calculatedZoom });
-    } else if (newPickup) {
-      setViewState({ longitude: newPickup.lng, latitude: newPickup.lat, zoom: 16 });
-    } else if (newDrop) {
-      setViewState({ longitude: newDrop.lng, latitude: newDrop.lat, zoom: 16 });
-    }
-  };
-
-  const handleSelectPickup = async (feature: any) => {
-    setPickupSearch(feature.place_name);
-    setPickupSuggestions([]);
-    
-    try {
-      let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${feature.magicKey}&f=json`;
-      let res = await fetch(url);
-      let data = await res.json();
-      
-      if (!data.candidates || data.candidates.length === 0) {
-        url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(feature.place_name)}&f=json`;
-        res = await fetch(url);
-        data = await res.json();
-      }
-      
-      if (data.candidates && data.candidates.length > 0) {
-        const loc = data.candidates[0].location;
-        const newLoc = {
-          address: feature.place_name,
-          lng: loc.x,
-          lat: loc.y
-        };
-        setPickupLocation(newLoc);
-        updateMapBounds(newLoc, dropLocation);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleSelectDrop = async (feature: any) => {
-    setDropSearch(feature.place_name);
-    setDropSuggestions([]);
-    
-    try {
-      let url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?magicKey=${feature.magicKey}&f=json`;
-      let res = await fetch(url);
-      let data = await res.json();
-      
-      if (!data.candidates || data.candidates.length === 0) {
-        url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(feature.place_name)}&f=json`;
-        res = await fetch(url);
-        data = await res.json();
-      }
-      
-      if (data.candidates && data.candidates.length > 0) {
-        const loc = data.candidates[0].location;
-        const newLoc = {
-          address: feature.place_name,
-          lng: loc.x,
-          lat: loc.y
-        };
-        setDropLocation(newLoc);
-        updateMapBounds(pickupLocation, newLoc);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleMarkerDrag = async (evt: any, type: 'pickup' | 'drop') => {
-    const lng = evt.lngLat.lng;
-    const lat = evt.lngLat.lat;
-    
-    try {
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}`);
-      const data = await res.json();
-      const placeName = data.features?.[0]?.place_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-      
-      if (type === 'pickup') {
-        setPickupLocation({ address: placeName, lng, lat });
-        setPickupSearch(placeName);
-      } else {
-        setDropLocation({ address: placeName, lng, lat });
-        setDropSearch(placeName);
-      }
-    } catch (e) {
-      console.error(e);
-      // Fallback if API fails
-      if (type === 'pickup') setPickupLocation((prev: any) => prev ? { ...prev, lng, lat } : null);
-      else setDropLocation((prev: any) => prev ? { ...prev, lng, lat } : null);
-    }
-  };
-
-  const handleUseWarehouse = () => {
-    if (vendorProfile?.latitude && vendorProfile?.longitude) {
-      const address = vendorProfile.address || `${vendorProfile.company_name} Warehouse`;
-      const lng = vendorProfile.longitude;
-      const lat = vendorProfile.latitude;
-      const newLoc = { address, lng, lat };
-      
-      setPickupLocation(newLoc);
-      setPickupSearch(address);
-      updateMapBounds(newLoc, dropLocation);
-      toast.success('Warehouse location selected');
-    } else {
-      toast.error('Warehouse location not found in profile');
-    }
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (navigator.geolocation) {
-      toast.loading('Getting location...', { id: 'geo' });
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
+      const pending = sessionStorage.getItem('pendingMapRequest')
+      if (pending) {
         try {
-          const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_TOKEN}`);
-          const data = await res.json();
-          const placeName = data.features?.[0]?.place_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-          const newLoc = { address: placeName, lng: longitude, lat: latitude };
-          setPickupLocation(newLoc);
-          setPickupSearch(placeName);
-          updateMapBounds(newLoc, dropLocation);
-          toast.success('Location found', { id: 'geo' });
-        } catch (e) {
-          console.error(e);
-          const newLoc = { address: 'Current Location', lng: longitude, lat: latitude };
-          setPickupLocation(newLoc);
-          setPickupSearch('Current Location');
-          updateMapBounds(newLoc, dropLocation);
-          toast.success('Location found (coordinates)', { id: 'geo' });
-        }
-      }, (_error) => {
-        toast.error('Could not get your location.', { id: 'geo' });
-      });
-    } else {
-      toast.error('Geolocation is not supported by your browser.');
-    }
-  };
-
-  // Generate GeoJSON Circles for 5km geofencing
-  const createGeoFence = (center: any) => {
-    if (!center) return null;
-    const centerPoint = turf.point([center.lng, center.lat]);
-    const options = { steps: 64, units: 'kilometers' as turf.Units };
-    return turf.circle(centerPoint, 5, options);
-  };
-
-  const pickupFence = createGeoFence(pickupLocation);
-  const dropFence = createGeoFence(dropLocation);
-
-  const routeCurve = useMemo(() => {
-    if (!pickupLocation || !dropLocation) return null;
-    if (pickupLocation.lng === dropLocation.lng && pickupLocation.lat === dropLocation.lat) return null;
-    
-    const start = turf.point([pickupLocation.lng, pickupLocation.lat]);
-    const end = turf.point([dropLocation.lng, dropLocation.lat]);
-    const distance = turf.distance(start, end, { units: 'kilometers' });
-    
-    if (distance < 0.1) return null;
-
-    try {
-      const midpoint = turf.midpoint(start, end);
-      const bearing = turf.bearing(start, end);
-      const offsetDistance = distance * 0.2; 
-      
-      // If bearing > 0 (Eastwards), subtract 90 to point Northwards
-      // If bearing < 0 (Westwards), add 90 to point Northwards
-      const offsetBearing = bearing > 0 ? bearing - 90 : bearing + 90;
-      
-      const controlPoint = turf.destination(midpoint, offsetDistance, offsetBearing, { units: 'kilometers' });
-      
-      const line = turf.lineString([start.geometry.coordinates, controlPoint.geometry.coordinates, end.geometry.coordinates]);
-      return turf.bezierSpline(line, { resolution: 10000, sharpness: 0.85 });
-    } catch (_e) {
-      try {
-        return turf.greatCircle(start, end, { properties: { name: 'route' }, npoints: 100 });
-      } catch (_e2) {
-        return turf.lineString([start.geometry.coordinates, end.geometry.coordinates]);
+          const data = JSON.parse(pending)
+          setPickup(data.pickup ?? null)
+          setDrop(data.drop ?? null)
+          setCapacity(data.capacity ? String(data.capacity) : '')
+        } catch { /* ignore malformed session data */ }
+        sessionStorage.removeItem('pendingMapRequest')
+        restored = true
       }
     }
-  }, [pickupLocation, dropLocation]);
+    if (!restored) {
+      const params = new URLSearchParams(location.search)
+      const query = params.get('query')
+      const lat = params.get('lat')
+      const lng = params.get('lng')
+      if (query && lat && lng) {
+        setDrop({ address: query, lat: parseFloat(lat), lng: parseFloat(lng) })
+      }
+    }
+    if (token) {
+      vendorAPI.profile().then(setVendorProfile).catch(err => console.warn('Failed to load vendor profile', err))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
-  // HSN Auto-suggest: triggers on product name or HSN input changes
   useEffect(() => {
-    const query = hsnCode || productName;
+    const query = hsnCode || productName
     if (query && query.length >= 2) {
-      const results = searchHSN(query, productCategory);
-      setHsnSuggestions(results);
-      if (results.length > 0 && !hsnCode) setShowHsnDropdown(true);
+      const results = searchHSN(query, productCategory)
+      setHsnSuggestions(results)
+      if (results.length > 0 && !hsnCode) setShowHsnDropdown(true)
     } else {
-      setHsnSuggestions([]);
+      setHsnSuggestions([])
     }
-  }, [hsnCode, productName, productCategory]);
+  }, [hsnCode, productName, productCategory])
 
-  // Close HSN dropdown on outside click
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (hsnDropdownRef.current && !hsnDropdownRef.current.contains(e.target as Node)) {
-        setShowHsnDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleSelectHSN = (entry: HSNEntry) => {
-    setHsnCode(entry.hsn);
-    setHsnDescription(entry.description);
-    setGstRate(String(entry.gstRate));
-    setShowHsnDropdown(false);
-    toast.success(`HSN ${entry.hsn} selected — ${entry.gstRate}% GST`);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pickupLocation || !dropLocation || !capacity || !productCategory || !productName) {
-      toast.error('Please complete all required fields');
-      return;
+    const onOutside = (e: MouseEvent) => {
+      if (hsnDropdownRef.current && !hsnDropdownRef.current.contains(e.target as Node)) setShowHsnDropdown(false)
     }
-    
-    
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [])
+
+  const selectHSN = (entry: HSNEntry) => {
+    setHsnCode(entry.hsn)
+    setHsnDescription(entry.description)
+    setGstRate(String(entry.gstRate))
+    setShowHsnDropdown(false)
+  }
+
+  const useWarehouse = () => {
+    if (vendorProfile?.address && vendorProfile.latitude != null && vendorProfile.longitude != null) {
+      setPickup({ address: vendorProfile.address, lat: vendorProfile.latitude, lng: vendorProfile.longitude })
+      toast.success('Warehouse address selected')
+    } else {
+      toast.error('No warehouse address on file yet. Add one under Company & KYC.')
+    }
+  }
+
+  const useCurrentLocation = () => {
+    if (!('geolocation' in navigator)) { toast.error('Your browser does not support location.'); return }
+    toast.loading('Finding your location…', { id: 'geo' })
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude, longitude } = pos.coords
+        setPickup({ address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, lat: latitude, lng: longitude })
+        toast.success('Location set', { id: 'geo' })
+      },
+      () => toast.error('Could not get your location.', { id: 'geo' }),
+    )
+  }
+
+  const onPointMove = (id: string, pos: { lat: number; lng: number }) => {
+    const address = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`
+    if (id === 'pickup') setPickup({ address, ...pos })
+    else if (id === 'drop') setDrop({ address, ...pos })
+  }
+
+  const mapPoints: MapPoint[] = [
+    pickup && { id: 'pickup', kind: 'pickup', label: `Pickup: ${pickup.address}`, position: pickup, radiusKm: 5, draggable: true },
+    drop && { id: 'drop', kind: 'drop', label: `Drop: ${drop.address}`, position: drop, radiusKm: 5, draggable: true },
+  ].filter(Boolean) as MapPoint[]
+  const mapRoute: MapRoute | null = pickup && drop
+    ? { coordinates: [[pickup.lng, pickup.lat], [drop.lng, drop.lat]], planned: true }
+    : null
+
+  const stepErrors = useMemo(() => {
+    const errors: Record<number, Record<string, string>> = { 0: {}, 1: {}, 2: {} }
+    if (!pickup) errors[0].pickup = 'Search or pick a pickup location'
+    if (!drop) errors[0].drop = 'Search or pick a drop location'
+    if (!productCategory) errors[1].productCategory = 'Choose a product category'
+    if (!productName.trim()) errors[1].productName = 'Enter the product name'
+    if (!capacity || Number(capacity) <= 0) errors[1].capacity = 'Enter the gross weight'
+    return errors
+  }, [pickup, drop, productCategory, productName, capacity])
+
+  const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
+  const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
+  const missingSummary = [...Object.values(stepErrors[0]), ...Object.values(stepErrors[1])]
+
+  const goNext = () => {
+    setAttempted(prev => ({ ...prev, [step]: true }))
+    if (!stepValid(step)) return
+    setStep(s => Math.min(STEPS.length - 1, s + 1))
+    window.scrollTo(0, 0)
+  }
+  const goBack = () => { setStep(s => Math.max(0, s - 1)); window.scrollTo(0, 0) }
+
+  const submit = async () => {
+    setAttempted({ 0: true, 1: true, 2: true })
+    if (!stepValid(0) || !stepValid(1) || !pickup || !drop) return
+
     const payload = {
-      pickup: pickupLocation,
-      drop: dropLocation,
+      pickup,
+      drop,
       capacity: Number(capacity),
       metadata: {
-        consignee: {
-          name: consigneeName,
-          contact: consigneeContact,
-          email: consigneeEmail,
-        },
+        consignee: { name: consigneeName, contact: consigneeContact, email: consigneeEmail },
         cargo: {
           category: productCategory,
           name: productName,
@@ -442,442 +211,218 @@ export default function VendorShipmentRequestPage() {
           grossWeightKg: Number(capacity),
           declaredValue,
           specialHandling,
-          remarks
-        }
-      }
-    };
+          remarks,
+        },
+      },
+    }
 
     if (!token) {
-      sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload));
-      toast('Please log in or create an account to post this load.', { icon: '🔒' });
-      navigate('/vendor/login');
-      return;
+      sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload))
+      toast('Sign in to post this load — we will bring you right back.', { icon: '🔒' })
+      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request')}`)
+      return
     }
 
-    setIsSubmitting(true);
+    setIsSubmitting(true)
     try {
-      await vendorAPI.createShipmentRequest(payload);
-
-      toast.success('Shipment Request Created!');
-      navigate('/vendor/shipments');
+      await vendorAPI.createShipmentRequest(payload)
+      toast.success('Shipment request created')
+      navigate('/vendor/shipments')
     } catch (err: any) {
-      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message;
-      toast.error('Failed to submit request: ' + message);
+      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message ?? 'Please try again.'
+      toast.error(`Failed to submit request: ${message}`)
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
-
-  const InputSectionHeader = ({ title, icon: Icon }: { title: string, icon: any }) => (
-    <div className="flex items-center gap-2 mb-4 mt-8 first:mt-0 pb-2 border-b border-border">
-      <Icon size={18} className="text-primary" />
-      <h3 className="font-display font-bold text-text uppercase tracking-wider text-sm">{title}</h3>
-    </div>
-  );
+  }
 
   return (
-    <div className="min-h-screen bg-bg text-text flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border bg-surface sticky top-0 z-30 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="text-muted hover:text-text transition-colors">
-            <ArrowLeft size={24} />
-          </button>
-          <h1 className="text-2xl font-display font-black uppercase tracking-tight text-text">New Shipment Request</h1>
-        </div>
-      </header>
+    <Page>
+      <PageHeader
+        title="Post a load"
+        description="Tell us the route and cargo — we'll match it with available capacity."
+        back={{ to: '/vendor', label: 'Back to find capacity' }}
+      />
 
-      <main className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-73px)]">
-        {/* Left Side: Form */}
-        <div className="w-full lg:w-[500px] bg-surface2 border-r border-border p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6 relative z-10 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6 flex-1 flex flex-col">
-            
-            <InputSectionHeader title="Routing Details" icon={MapPin} />
-            
-            {/* Pickup */}
-            <div className="space-y-2 relative z-20">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-success"></span> Pickup Location <span className="text-error">*</span>
-                </label>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {STEPS.map((label, i) => (
+          <span key={label} className="flex items-center gap-2">
+            <span className={i === step ? 'font-medium text-text' : i < step ? 'text-brand' : 'text-muted'}>
+              {i + 1}. {label}
+            </span>
+            {i < STEPS.length - 1 && <span className="text-border">/</span>}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <Card padded className={step === 0 ? 'space-y-6 lg:col-span-5' : 'space-y-6 lg:col-span-3'}>
+          {step === 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-text">Pickup location <span className="text-danger">*</span></p>
                 <div className="flex gap-2">
-                  <button type="button" onClick={handleUseWarehouse} className="text-[10px] bg-indigo-500/10 text-indigo-500 font-bold px-2 py-1 rounded hover:bg-indigo-500/20 transition-colors">Warehouse</button>
-                  <button type="button" onClick={handleUseCurrentLocation} className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-1 rounded hover:bg-primary/20 transition-colors">Your Location</button>
+                  <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Warehouse</Button>
+                  <Button type="button" variant="secondary" size="sm" icon={<Navigation size={14} />} onClick={useCurrentLocation}>My location</Button>
                 </div>
               </div>
-              <div className="relative">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                <input 
-                  id="pickup-search"
-                  type="text"
-                  value={pickupSearch}
-                  onChange={e => setPickupSearch(e.target.value)}
-                  onFocus={() => {
-                    if (pickupLocation) {
-                      setViewState({ longitude: pickupLocation.lng, latitude: pickupLocation.lat, zoom: 16 });
-                    }
-                  }}
-                  placeholder="Search pickup address..."
-                  className="w-full bg-surface border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none transition-all"
-                />
+              <PlaceSearch value={pickup} onChange={setPickup} placeholder="Search pickup address" error={err(0, 'pickup')} />
+
+              <PlaceSearch label="Drop location" required value={drop} onChange={setDrop} placeholder="Search drop address" error={err(0, 'drop')} />
+
+              <div className="overflow-hidden rounded-card border border-border">
+                <MapView mode="picker" height={280} points={mapPoints} route={mapRoute} onPointMove={onPointMove} />
               </div>
-              {pickupSuggestions.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto">
-                  {pickupSuggestions.map(f => (
-                    <button key={f.id} type="button" onClick={() => handleSelectPickup(f)} className="w-full text-left px-4 py-3 hover:bg-surface2 border-b border-border/50 last:border-0">
-                      <div className="font-bold text-sm text-text">{f.text}</div>
-                      <div className="text-[10px] text-muted truncate">{f.place_name}</div>
-                    </button>
-                  ))}
+              <p className="text-xs text-muted">Drag a pin to fine-tune the pickup or drop point. The dashed line and shaded circles show the 5&nbsp;km match radius.</p>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="space-y-6">
+              <div>
+                <p className="mb-3 text-sm font-medium text-text">Consignee (receiver)</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input label="Name" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
+                  <Input label="Contact number" value={consigneeContact} onChange={e => setConsigneeContact(e.target.value)} />
+                  <div className="sm:col-span-2">
+                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} />
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Drop */}
-            <div className="space-y-2 relative z-10">
-              <label className="block text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-error"></span> Drop Location <span className="text-error">*</span>
-              </label>
-              <div className="relative">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
-                <input 
-                  type="text"
-                  value={dropSearch}
-                  onChange={e => setDropSearch(e.target.value)}
-                  onFocus={() => {
-                    if (dropLocation) {
-                      setViewState({ longitude: dropLocation.lng, latitude: dropLocation.lat, zoom: 16 });
-                    }
-                  }}
-                  placeholder="Search drop address..."
-                  className="w-full bg-surface border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none transition-all"
-                />
               </div>
-              {dropSuggestions.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-xl shadow-2xl max-h-48 overflow-y-auto">
-                  {dropSuggestions.map(f => (
-                    <button key={f.id} type="button" onClick={() => handleSelectDrop(f)} className="w-full text-left px-4 py-3 hover:bg-surface2 border-b border-border/50 last:border-0">
-                      <div className="font-bold text-sm text-text">{f.text}</div>
-                      <div className="text-[10px] text-muted truncate">{f.place_name}</div>
-                    </button>
-                  ))}
+
+              <div>
+                <p className="mb-3 text-sm font-medium text-text">Product</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Select label="Category" required options={PRODUCT_CATEGORIES} placeholder="Select a category" value={productCategory} onChange={e => setProductCategory(e.target.value)} error={err(1, 'productCategory')} />
+                  <Input label="Product name" required value={productName} onChange={e => setProductName(e.target.value)} error={err(1, 'productName')} />
+                  <Input label="Brand" value={brand} onChange={e => setBrand(e.target.value)} />
+                  <Input label="Model / variant" value={modelVariant} onChange={e => setModelVariant(e.target.value)} />
                 </div>
-              )}
-            </div>
-
-            <InputSectionHeader title="Consignee Details (Receiver)" icon={User} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Name</label>
-                <input type="text" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} placeholder="E.g. Rahul Sharma" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Contact Number</label>
-                <input type="text" value={consigneeContact} onChange={e => setConsigneeContact(e.target.value)} placeholder="+91 9876543210" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Email Address</label>
-                <input type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} placeholder="rahul@example.com" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-            </div>
-
-            <InputSectionHeader title="Product Details" icon={Package} />
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Product Category <span className="text-error">*</span></label>
-                <select required value={productCategory} onChange={e => setProductCategory(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
-                  <option value="" disabled>Select Category</option>
-                  {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Product Name <span className="text-error">*</span></label>
-                <input required type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="E.g. Basmati Rice" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Brand</label>
-                <input type="text" value={brand} onChange={e => setBrand(e.target.value)} placeholder="E.g. India Gate" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Model / Variant</label>
-                <input type="text" value={modelVariant} onChange={e => setModelVariant(e.target.value)} placeholder="E.g. 1121 Steam" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-            </div>
-
-            {/* HSN Auto-Suggest Section */}
-            <div className="mt-6 p-4 bg-gradient-to-br from-primary/5 to-accent/5 border border-primary/20 rounded-2xl">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles size={18} className="text-primary" />
-                <h4 className="font-display font-bold text-text uppercase tracking-wider text-xs">Smart HSN Classification</h4>
-                <span className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Auto-Suggest</span>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* HSN Code Input */}
-                <div className="space-y-2 relative" ref={hsnDropdownRef}>
-                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">HSN Code <span className="text-error">*</span></label>
+              <div ref={hsnDropdownRef} className="relative space-y-3 rounded-card border border-border p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-brand" />
+                  <p className="text-sm font-medium text-text">HSN classification <span className="font-normal text-muted">(auto-suggest)</span></p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div className="relative">
-                    <input 
-                      type="text" 
-                      value={hsnCode} 
-                      onChange={e => { setHsnCode(e.target.value); setShowHsnDropdown(true); }}
-                      onFocus={() => { if (hsnSuggestions.length > 0) setShowHsnDropdown(true); }}
-                      placeholder="E.g. 1006 or type product" 
-                      className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-mono font-bold focus:outline-none transition-all pr-10" 
+                    <Input
+                      label="HSN code" value={hsnCode}
+                      onChange={e => { setHsnCode(e.target.value); setShowHsnDropdown(true) }}
+                      onFocus={() => { if (hsnSuggestions.length > 0) setShowHsnDropdown(true) }}
+                      placeholder="e.g. 1006 or type the product"
                     />
-                    {hsnSuggestions.length > 0 && (
-                      <Zap size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-pulse" />
+                    {showHsnDropdown && hsnSuggestions.length > 0 && (
+                      <ul className="absolute z-20 mt-1 w-[280px] max-h-64 overflow-y-auto rounded-control border border-border bg-surface shadow-raised">
+                        {hsnSuggestions.map((entry, i) => (
+                          <li key={`${entry.hsn}-${i}`}>
+                            <button type="button" onClick={() => selectHSN(entry)} className="w-full px-3 py-2 text-left hover:bg-surface-subtle">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium text-text">{entry.hsn}</span>
+                                <span className="text-xs text-success">{entry.gstRate}% GST</span>
+                              </div>
+                              <div className="text-xs text-muted">{entry.description}</div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </div>
-                  
-                  {/* Auto-suggest Dropdown */}
-                  {showHsnDropdown && hsnSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-[320px] mt-1 bg-surface border border-border rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-                      <div className="px-3 py-2 bg-surface2 border-b border-border">
-                        <p className="text-[9px] font-bold text-muted uppercase tracking-widest">🟡 Suggestions based on {hsnCode ? 'HSN/Product' : 'Product Name'}</p>
-                      </div>
-                      {hsnSuggestions.map((entry, i) => (
-                        <button 
-                          key={`${entry.hsn}-${i}`} 
-                          type="button" 
-                          onClick={() => handleSelectHSN(entry)}
-                          className="w-full text-left px-4 py-3 hover:bg-primary/10 border-b border-border/30 last:border-0 transition-colors group"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-black text-sm text-primary">{entry.hsn}</span>
-                            <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">{entry.gstRate}% GST</span>
-                          </div>
-                          <div className="text-xs font-bold text-text mt-1 group-hover:text-primary transition-colors">{entry.description}</div>
-                          <div className="text-[10px] text-muted mt-0.5">{entry.category}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Product Description */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">Description <span className="text-[9px] text-primary">🟡 Auto-suggest</span></label>
-                  <input 
-                    type="text" 
-                    value={hsnDescription} 
-                    onChange={e => setHsnDescription(e.target.value)} 
-                    placeholder="Based on Product Name" 
-                    className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" 
-                  />
-                </div>
-                
-                {/* GST Rate */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-muted uppercase tracking-widest">GST Rate (%) <span className="text-[9px] text-primary">🟡 Auto-suggest</span></label>
-                  <input 
-                    type="text" 
-                    value={gstRate ? `${gstRate}%` : ''} 
-                    onChange={e => setGstRate(e.target.value.replace('%', ''))} 
-                    placeholder="Based on HSN/Product" 
-                    className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-bold text-emerald-400 focus:outline-none transition-all" 
-                  />
+                  <Input label="Description" value={hsnDescription} onChange={e => setHsnDescription(e.target.value)} />
+                  <Input label="GST rate (%)" value={gstRate} onChange={e => setGstRate(e.target.value.replace('%', ''))} />
                 </div>
               </div>
-              
-              {/* Smart tip */}
-              {!hsnCode && productName && hsnSuggestions.length > 0 && (
-                <div className="mt-3 flex items-center gap-2 text-[10px] text-primary font-bold uppercase tracking-widest animate-pulse">
-                  <Sparkles size={12} />
-                  <span>We found {hsnSuggestions.length} HSN codes matching "{productName}" — click above to auto-fill</span>
+
+              <div>
+                <p className="mb-3 text-sm font-medium text-text">Packaging & quantity</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Select label="Packaging" options={PACKAGING_TYPES} placeholder="Select type" value={packagingType} onChange={e => setPackagingType(e.target.value)} />
+                  <Input label="No. of packages" type="number" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} />
+                  <Input label="Quantity" type="number" value={quantity} onChange={e => setQuantity(e.target.value)} />
+                  <Select label="Unit" options={UNITS} placeholder="Select unit" value={unit} onChange={e => setUnit(e.target.value)} />
+                  <Input label="Gross weight (kg)" type="number" required value={capacity} onChange={e => setCapacity(e.target.value)} error={err(1, 'capacity')} />
+                  <Input label="Declared value (₹)" type="number" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
                 </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-medium text-text">Special handling</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {SPECIAL_HANDLING.map(opt => (
+                    <Checkbox
+                      key={opt.id}
+                      label={opt.label}
+                      checked={!!specialHandling[opt.id]}
+                      onChange={e => setSpecialHandling(s => ({ ...s, [opt.id]: e.target.checked }))}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Textarea label="Remarks" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Handling instructions, delivery notes…" />
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <ReviewSection title="Route" rows={[
+                ['Pickup', pickup?.address ?? '—'],
+                ['Drop', drop?.address ?? '—'],
+              ]} />
+              <ReviewSection title="Cargo" rows={[
+                ['Category', productCategory || '—'],
+                ['Product', [productName, brand].filter(Boolean).join(' · ') || '—'],
+                ['HSN code', hsnCode || '—'],
+                ['Gross weight', capacity ? `${Number(capacity).toLocaleString('en-IN')} kg` : '—'],
+                ['Declared value', declaredValue ? `₹${Number(declaredValue).toLocaleString('en-IN')}` : '—'],
+              ]} />
+              <ReviewSection title="Consignee" rows={[
+                ['Name', consigneeName || '—'],
+                ['Contact', [consigneeContact, consigneeEmail].filter(Boolean).join(' · ') || '—'],
+              ]} />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            <Button type="button" variant="secondary" onClick={goBack} disabled={step === 0}>Back</Button>
+            <div className="flex flex-col items-end gap-1">
+              {attempted[step] && missingSummary.length > 0 && step < STEPS.length - 1 && (
+                <p className="text-xs text-danger">{missingSummary[0]}</p>
+              )}
+              {step < STEPS.length - 1 ? (
+                <Button type="button" onClick={goNext}>Continue</Button>
+              ) : (
+                <Button type="button" onClick={submit} loading={isSubmitting}>Submit request</Button>
               )}
             </div>
-
-            <InputSectionHeader title="Packaging & Quantity" icon={Settings} />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Packaging</label>
-                <select value={packagingType} onChange={e => setPackagingType(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
-                  <option value="" disabled>Select Type</option>
-                  {PACKAGING_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">No. Packages</label>
-                <input type="number" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} placeholder="E.g. 250" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Quantity</label>
-                <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="E.g. 250" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-              
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Unit</label>
-                <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all cursor-pointer">
-                  <option value="" disabled>Select Unit</option>
-                  {UNITS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Gross Wt (KG) <span className="text-error">*</span></label>
-                <input required type="number" value={capacity} onChange={e => setCapacity(e.target.value)} placeholder="E.g. 5000" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm font-bold text-primary focus:outline-none transition-all" />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted uppercase tracking-widest">Declared Value</label>
-                <input type="text" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} placeholder="₹5,80,000" className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all" />
-              </div>
-            </div>
-
-            <InputSectionHeader title="Special Handling" icon={ShieldAlert} />
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {[
-                { id: 'fragile', label: 'Fragile' },
-                { id: 'hazardous', label: 'Hazardous' },
-                { id: 'coldChain', label: 'Cold Chain' },
-                { id: 'stackable', label: 'Stackable' },
-                { id: 'highValue', label: 'High Value' }
-              ].map(opt => (
-                <label key={opt.id} className="flex items-center gap-2 cursor-pointer bg-surface border border-border p-3 rounded-xl hover:border-primary transition-all">
-                  <input 
-                    type="checkbox" 
-                    // @ts-expect-error - opt.id is a dynamic string key not in the specialHandling type
-                    checked={specialHandling[opt.id]}
-                    onChange={(e) => setSpecialHandling(s => ({ ...s, [opt.id]: e.target.checked }))}
-                    className="w-4 h-4 text-primary rounded focus:ring-primary focus:ring-offset-surface bg-surface border-border"
-                  />
-                  <span className="text-sm font-medium">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-
-            <InputSectionHeader title="Remarks" icon={FileText} />
-            <div className="space-y-2">
-              <textarea 
-                value={remarks} 
-                onChange={e => setRemarks(e.target.value)} 
-                placeholder="Handle Carefully..." 
-                className="w-full bg-surface border border-border focus:border-primary rounded-xl px-4 py-3 text-sm focus:outline-none transition-all min-h-[100px] resize-y"
-              />
-            </div>
-
-            <div className="pt-6 border-t border-border mt-8">
-              <button 
-                type="submit" 
-                disabled={isSubmitting || !pickupLocation || !dropLocation || !capacity || !productCategory || !productName}
-                className="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20"
-              >
-                {isSubmitting ? 'Creating Shipment...' : 'Submit Request'} <Send size={18} />
-              </button>
-            </div>
-
-          </form>
-        </div>
-
-        {/* Right Side: Map */}
-        <div className="flex-1 relative bg-surface z-0 hidden lg:block">
-          <Map
-            {...viewState}
-            onMove={(evt: any) => setViewState(evt.viewState)}
-            mapStyle="/map-style.json?v=3"
-          >
-            <NavigationControl position="bottom-right" />
-            
-            {/* Pickup Marker and Geofence */}
-            {pickupLocation && (
-              <>
-                <Marker 
-                  longitude={pickupLocation.lng} 
-                  latitude={pickupLocation.lat}
-                  draggable
-                  onDragEnd={(e) => handleMarkerDrag(e, 'pickup')}
-                >
-                  <div className="text-success animate-bounce cursor-grab active:cursor-grabbing"><MapPin size={32} /></div>
-                </Marker>
-                {pickupFence && (
-                  <Source id="pickup-geo" type="geojson" data={pickupFence}>
-                    <Layer
-                      id="pickup-geo-layer"
-                      type="fill"
-                      paint={{
-                        'fill-color': '#10B981', // success color
-                        'fill-opacity': 0.1
-                      }}
-                    />
-                    <Layer
-                      id="pickup-geo-outline"
-                      type="line"
-                      paint={{
-                        'line-color': '#10B981',
-                        'line-width': 2,
-                        'line-dasharray': [2, 2]
-                      }}
-                    />
-                  </Source>
-                )}
-              </>
-            )}
-
-            {/* Drop Marker and Geofence */}
-            {dropLocation && (
-              <>
-                <Marker 
-                  longitude={dropLocation.lng} 
-                  latitude={dropLocation.lat}
-                  draggable
-                  onDragEnd={(e) => handleMarkerDrag(e, 'drop')}
-                >
-                  <div className="text-error animate-bounce cursor-grab active:cursor-grabbing"><MapPin size={32} /></div>
-                </Marker>
-                {dropFence && (
-                  <Source id="drop-geo" type="geojson" data={dropFence}>
-                    <Layer
-                      id="drop-geo-layer"
-                      type="fill"
-                      paint={{
-                        'fill-color': '#EF4444', // error color
-                        'fill-opacity': 0.1
-                      }}
-                    />
-                    <Layer
-                      id="drop-geo-outline"
-                      type="line"
-                      paint={{
-                        'line-color': '#EF4444',
-                        'line-width': 2,
-                        'line-dasharray': [2, 2]
-                      }}
-                    />
-                  </Source>
-                )}
-              </>
-            )}
-
-            {/* Route Curve */}
-            {routeCurve && (
-              <Source id="route-curve" type="geojson" data={routeCurve}>
-                <Layer
-                  id="route-curve-layer"
-                  type="line"
-                  paint={{
-                    'line-color': '#0ea5e9', // primary color
-                    'line-width': 3,
-                    'line-dasharray': [2, 2]
-                  }}
-                />
-              </Source>
-            )}
-          </Map>
-          
-          <div className="absolute top-6 right-6 bg-surface2/90 backdrop-blur border border-border rounded-xl p-4 shadow-xl">
-            <h4 className="font-bold text-sm mb-2 flex items-center gap-2 text-text"><MapPin size={14} className="text-primary"/> Geofencing Active</h4>
-            <p className="text-xs text-muted max-w-xs">The 5km operating radius (dashed lines) represents the pickup and delivery catchment zones for matching nearby vehicles.</p>
           </div>
-        </div>
-      </main>
+        </Card>
+
+        {step !== 0 && (
+          <div className="hidden lg:col-span-2 lg:block">
+            <div className="sticky top-6 overflow-hidden rounded-card border border-border">
+              <MapView mode="picker" height={420} points={mapPoints} route={mapRoute} onPointMove={onPointMove} interactive={step !== 2} />
+            </div>
+          </div>
+        )}
+      </div>
+    </Page>
+  )
+}
+
+function ReviewSection({ title, rows }: { title: string; rows: [string, string][] }) {
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-text">{title}</p>
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-card border border-border p-4 sm:grid-cols-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-xs text-muted">{label}</dt>
+            <dd className="mt-0.5 break-words text-sm text-text">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
-  );
+  )
 }
