@@ -4,7 +4,7 @@ import { AlertTriangle, MapPin } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { Button, Modal } from '@/components/ui'
-import { sosTypeLabel } from '@/utils/sos'
+import { sosSeverityLabel, sosTypeLabel } from '@/utils/sos'
 
 interface SosAlert {
   id: string
@@ -13,6 +13,7 @@ interface SosAlert {
   description: string | null
   latitude: number | null
   longitude: number | null
+  severity?: string | null
   created_at: string
   plate?: string | null
 }
@@ -68,7 +69,7 @@ export default function SOSListener() {
   const alarm = useRef(createAlarm())
 
   useEffect(() => {
-    if (role !== 'superadmin' && role !== 'admin') return
+    if (role !== 'superadmin' && role !== 'admin' && role !== 'manager') return
     const siren = alarm.current
     const channel = openChannel('sos_alerts_channel')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sos_alerts' }, async payload => {
@@ -95,7 +96,7 @@ export default function SOSListener() {
   const dismiss = () => setAlerts(list => list.slice(1))
   const open = () => {
     setAlerts([])
-    navigate('/emergency')
+    navigate(`/emergency?open=${current.id}`)
   }
   const title = !current.alert_type || current.alert_type === 'panic_button' ? 'SOS from a driver' : sosTypeLabel(current.alert_type)
   const note = current.description && !DEFAULT_DESCRIPTIONS.has(current.description) ? current.description : null
@@ -116,6 +117,9 @@ export default function SOSListener() {
       }
     >
       <div role="alert" className="space-y-3 text-sm">
+        {sosSeverityLabel(current.severity) && (
+          <p className={'font-medium ' + (current.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(current.severity)}</p>
+        )}
         {note && <p className="text-text">“{note}”</p>}
         {current.latitude != null && current.longitude != null ? (
           <p className="flex items-center gap-2 text-muted">

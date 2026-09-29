@@ -7,6 +7,8 @@ import { analyticsAPI, vehiclesAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import LiveMap from '@/components/map/LiveMap'
 import { Button, StatusPill, SearchInput, EmptyState, Skeleton } from '@/components/ui'
+import { isFleetVehicle, isVehicleLive } from '@/utils/vehicles'
+import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 
 interface VehicleRow {
   id: string
@@ -14,6 +16,8 @@ interface VehicleRow {
   status: string
   latitude?: number | null
   longitude?: number | null
+  last_heartbeat?: string | null
+  last_sync?: string | null
 }
 
 /**
@@ -51,7 +55,11 @@ export default function LiveMapPage() {
     refetchInterval: 10_000,
   })
 
-  const fleet = vehicles.filter(v => v.status !== 'archived')
+  // Fleet vehicles only: no archived ones, no placeholder stubs (TEMP-/DRFT-).
+  const fleet = vehicles.filter(isFleetVehicle)
+  const liveMinutes = useLiveMinutes()
+  // "Reporting" = live: heard from within the limit, not merely having a stored position once.
+  const liveCount = fleet.filter(v => isVehicleLive(v, liveMinutes)).length
   const withPosition = fleet.filter(v => v.latitude != null && v.longitude != null)
   const filtered = withPosition.filter(v => v.plate_number.toLowerCase().includes(search.trim().toLowerCase()))
 
@@ -74,7 +82,7 @@ export default function LiveMapPage() {
       <aside className="flex h-64 shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-80 md:border-b-0 md:border-r">
         <div className="border-b border-border p-4">
           <h1 className="text-lg font-semibold text-text">Live map</h1>
-          <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${withPosition.length.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles reporting`}</p>
+          <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${liveCount.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles live`}</p>
           {isStaff && (
             <Button
               variant="secondary"

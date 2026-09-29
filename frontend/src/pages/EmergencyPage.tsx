@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
+import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User, Wrench } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
 import toast from 'react-hot-toast'
@@ -9,7 +9,10 @@ import {
   Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm, buttonClasses,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
-import { sosSeverityLabel, sosTypeLabel } from '@/utils/sos'
+import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel } from '@/utils/sos'
+import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
+import { apiErrorMessage } from '@/components/fleet/health'
+import { canReturnToService } from '@/utils/vehicles'
 
 interface SosAlert {
   id: string
@@ -23,7 +26,7 @@ interface SosAlert {
   status: string
   created_at: string
   driver?: { full_name: string; phone: string } | null
-  vehicle?: { plate_number: string } | null
+  vehicle?: { plate_number: string; status: string | null } | null
 }
 
 async function attachDetails(alert: SosAlert): Promise<SosAlert> {
@@ -34,7 +37,7 @@ async function attachDetails(alert: SosAlert): Promise<SosAlert> {
     if (data) driver = data
   }
   if (alert.vehicle_id) {
-    const { data } = await supabase.from('vehicles').select('plate_number').eq('id', alert.vehicle_id).maybeSingle()
+    const { data } = await supabase.from('vehicles').select('plate_number, status').eq('id', alert.vehicle_id).maybeSingle()
     if (data) vehicle = data
   }
   return { ...alert, driver, vehicle }
@@ -44,6 +47,8 @@ export default function EmergencyPage() {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const openId = searchParams.get('open')
 
   const { data: alerts = [], isLoading, error, refetch } = useQuery<SosAlert[]>({
     queryKey: ['sos-alerts', 'emergency-page'],
@@ -90,9 +95,34 @@ export default function EmergencyPage() {
     return () => { supabase.removeChannel(channel) }
   }, [selected?.vehicle_id])
 
+  // Opened from a link elsewhere (a notification, the dashboard): ?open=<id> selects that alert,
+  // fetching it first when it is older than the 50 listed, then the param is dropped from the URL.
   useEffect(() => {
-    if (!selectedId && alerts.length > 0) setSelectedId(alerts[0].id)
-  }, [alerts, selectedId])
+    if (!openId || isLoading) return
+    let cancelled = false
+    const finish = () => setSearchParams(params => { params.delete('open'); return params }, { replace: true })
+    if (alerts.some(a => a.id === openId)) {
+      setSelectedId(openId)
+      finish()
+      return
+    }
+    supabase.from('sos_alerts').select('*').eq('id', openId).maybeSingle().then(async ({ data }) => {
+      if (cancelled) return
+      if (data) {
+        const enhanced = await attachDetails(data as SosAlert)
+        queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev => [...(prev ?? []), enhanced])
+        setSelectedId(openId)
+      } else {
+        toast.error('That alert could not be found.')
+      }
+      finish()
+    })
+    return () => { cancelled = true }
+  }, [openId, isLoading, alerts, queryClient, setSearchParams])
+
+  useEffect(() => {
+    if (!selectedId && !openId && alerts.length > 0) setSelectedId(alerts[0].id)
+  }, [alerts, selectedId, openId])
 
   const acknowledge = async (alert: SosAlert) => {
     try {
@@ -121,14 +151,44 @@ export default function EmergencyPage() {
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       toast.success('Alert resolved')
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(message || 'Failed to resolve the alert')
+      toast.error(apiErrorMessage(err, 'Failed to resolve the alert'))
+      return
+    }
+    // A serious accident or breakdown put the vehicle in maintenance; resolving does not bring it back.
+    if (alert.vehicle_id && canReturnToService({ status: alert.vehicle?.status })) await returnToService(alert, true)
+  }
+
+  const setVehicleStatusLocal = (vehicleId: string, status: string) =>
+    queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
+      prev?.map(a => a.vehicle_id === vehicleId && a.vehicle ? { ...a, vehicle: { ...a.vehicle, status } } : a))
+
+  /** Puts the alert's vehicle back in service. `ask` shows the question first (right after resolving). */
+  const returnToService = async (alert: SosAlert, ask = false) => {
+    if (!alert.vehicle_id) return
+    const plate = alert.vehicle?.plate_number ?? 'this vehicle'
+    if (ask) {
+      const ok = await confirm({
+        title: `Return ${plate} to service?`,
+        message: `${plate} was taken out of service after this emergency. Return it once it is safe to dispatch again, or leave it in maintenance.`,
+        confirmLabel: 'Return to service',
+        cancelLabel: 'Keep in maintenance',
+      })
+      if (!ok) return
+    }
+    try {
+      await returnVehicleToService(alert.vehicle_id)
+      setVehicleStatusLocal(alert.vehicle_id, 'available')
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      toast.success(`${plate} is back in service`)
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'Failed to return the vehicle to service'))
     }
   }
 
-  const activeAlerts = alerts.filter(a => a.status !== 'resolved')
+  const activeAlerts = alerts.filter(a => isOpenSos(a.status))
   // Open alerts are always pinned. A resolved alert gets a muted pin only while it is selected.
-  const pinned = alerts.filter(a => a.status !== 'resolved' || a.id === selectedId)
+  const pinned = alerts.filter(a => isOpenSos(a.status) || a.id === selectedId)
   const points: MapPoint[] = pinned.flatMap(a => {
     const isSelected = a.id === selectedId
     const isResolved = a.status === 'resolved'
@@ -139,7 +199,7 @@ export default function EmergencyPage() {
       id: a.id,
       kind: 'incident' as const,
       position: { lat, lng },
-      label: `${sosTypeLabel(a.alert_type)}: ${a.vehicle?.plate_number ?? 'Unknown vehicle'}`,
+      label: `${sosHeadline(a)}: ${a.vehicle?.plate_number ?? 'Unknown vehicle'}`,
       active: !isResolved,
       muted: isResolved,
     }]
@@ -165,7 +225,7 @@ export default function EmergencyPage() {
               <EmptyState compact icon={<ShieldAlert size={22} />} title="No emergency alerts" description="SOS alerts from drivers will appear here." />
             ) : (
               alerts.map(alert => {
-                const isActive = alert.status !== 'resolved'
+                const isActive = isOpenSos(alert.status)
                 const isSelected = alert.id === selectedId
                 return (
                   <div
@@ -180,10 +240,10 @@ export default function EmergencyPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-text">
-                          {isActive ? <AlertTriangle size={14} className="text-danger" aria-hidden="true" /> : <CheckCircle size={14} className="text-success" aria-hidden="true" />}
+                          {isActive ? <AlertTriangle size={14} className={alert.status === 'acknowledged' ? 'text-warning' : 'text-danger'} aria-hidden="true" /> : <CheckCircle size={14} className="text-success" aria-hidden="true" />}
                           {sosTypeLabel(alert.alert_type)}
                         </span>
-                        <StatusPill status={alert.status} />
+                        <StatusPill tone={sosStatusTone(alert.status)}>{sosStatusLabel(alert.status)}</StatusPill>
                       </div>
                       <p className="mt-1 text-xs text-muted">{new Date(alert.created_at).toLocaleString('en-IN')}</p>
                       <div className="mt-2 space-y-0.5 text-sm text-text">
@@ -192,6 +252,9 @@ export default function EmergencyPage() {
                       </div>
                       {sosSeverityLabel(alert.severity) && (
                         <p className={'mt-2 text-xs font-medium ' + (alert.severity === 'serious' ? 'text-danger' : 'text-muted')}>{sosSeverityLabel(alert.severity)}</p>
+                      )}
+                      {canReturnToService({ status: alert.vehicle?.status }) && (
+                        <p className="mt-2"><StatusPill tone="warning" dot={false}>Vehicle in maintenance</StatusPill></p>
                       )}
                       {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
                     </button>
@@ -230,6 +293,9 @@ export default function EmergencyPage() {
                       )}
                       {isActive && (
                         <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
+                      )}
+                      {alert.vehicle_id && canReturnToService({ status: alert.vehicle?.status }) && (
+                        <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => returnToService(alert, true)}>Return to service</Button>
                       )}
                     </div>
                   </div>
