@@ -16,7 +16,10 @@ import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
 import { InvoiceService } from '../services/invoice.service';
 import { notificationService } from '../services/notification.service';
-import { routeService, setOperatingVehicleStatus, holdVehicleAfterSos } from '../services/route.service';
+import {
+  routeService, setOperatingVehicleStatus, holdVehicleAfterSos, manifestRouteStops, operatingStatusFor,
+  releaseVehicleLoad, vehicleHasOpenWork, OPEN_MANIFEST_STATUSES,
+} from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
 import { parseCoordinate } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
@@ -459,6 +462,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     let latestLat = 0;
     let latestLng = 0;
     let latestSpeed = 0;
+    let latestFuelPct: number | null = null;
     let geofenceAlert: any = null;
     const drivenPoints: PingPoint[] = [];
 
@@ -503,6 +507,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       latestLat = lat;
       latestLng = lng;
       latestSpeed = speedKmph;
+      if (ping.fuel_level_pct != null && Number.isFinite(Number(ping.fuel_level_pct))) latestFuelPct = Number(ping.fuel_level_pct);
       drivenPoints.push({ lat, lng, at: timestamp });
       processedCount++;
     }
@@ -523,10 +528,9 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
           odometer_km: Math.round(((Number(vehicle.odometer_km) || 0) + drivenKm) * 1000) / 1000,
           odometer_updated_at: new Date().toISOString(),
         } : {}),
-        // A vehicle in maintenance or archived stays that way however it reports
-        status: !(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))
-          ? vehicle.status
-          : (vehicle.current_load_kg || 0) > 0 ? 'on_route' : (vehicle.status === 'offline' ? 'available' : vehicle.status),
+        // The status follows the vehicle's work (an active route or a load on board); maintenance,
+        // archived and a break are left as they are
+        status: await operatingStatusFor(vehicle.id, String(vehicle.status)),
       }).eq('id', vehicle.id);
 
       // Cache in Redis
@@ -605,7 +609,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       }
 
       // ── Alarm rules (overspeed against the limit in system_settings) ──
-      await evaluatePing({ id: vehicle.id, plate_number: vehicle.plate_number }, { speedKmph: latestSpeed, fuelPct: null });
+      await evaluatePing({ id: vehicle.id, plate_number: vehicle.plate_number }, { speedKmph: latestSpeed, fuelPct: latestFuelPct });
     }
 
     // ── Adaptive Interval ──
@@ -667,12 +671,16 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
     // Find the vehicle assigned to this driver
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id')
+      .select('id, status')
       .eq('driver_id', req.user!.user_id)
-      .single();
+      .maybeSingle();
 
-    // A vehicle in maintenance or archived stays that way; only staff change those
-    if (vehicle) await setOperatingVehicleStatus(vehicle.id, isBreak ? 'idle' : 'on_route');
+    // A vehicle in maintenance or archived stays that way; only staff change those. Coming back
+    // from a break, the vehicle is on route only if it has work; otherwise it is available.
+    if (vehicle) {
+      const next = isBreak ? 'idle' : await operatingStatusFor(vehicle.id, String(vehicle.status), { resume: true });
+      if (next === 'idle' || next === 'on_route' || next === 'available') await setOperatingVehicleStatus(vehicle.id, next);
+    }
 
     res.json({ success: true });
   } catch (e: any) {
@@ -698,21 +706,12 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       return;
     }
 
-    // A cargo manifest is started from "scheduled"; a route from "pending". Starting one that
-    // is already under way succeeds (a retry), and one that is finished is refused.
+    // A vendor load is not moved by starting the journey: the driver sets off for the pickup, and the
+    // load goes in transit when the pickup is completed. A load that is finished or cancelled cannot be started.
     const { data: manifest } = await supabase.from('cargo_manifest').select('id, status, vehicle_id').eq('id', route_id).maybeSingle();
     if (manifest) {
-      if (manifest.status !== 'in_transit') {
+      if (!(OPEN_MANIFEST_STATUSES as readonly string[]).includes(manifest.status)) {
         assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, 'in_transit');
-        const { data: moved, error } = await supabase
-          .from('cargo_manifest')
-          .update({ status: 'in_transit' })
-          .eq('id', route_id)
-          .eq('status', manifest.status)
-          .select('id')
-          .maybeSingle();
-        if (error) throw error;
-        if (!moved) throw new HttpError(409, 'This load was just changed by someone else. Refresh and try again.');
       }
       await setOperatingVehicleStatus(manifest.vehicle_id, 'on_route');
     } else {
@@ -729,15 +728,28 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
 const MAX_SIGNATURE_CHARS = 400_000;
 
-/** Free up a vehicle after its last stop: no load, full capacity, available (unless staff hold it in maintenance). */
-async function resetVehicleAfterRoute(vehicleId: string): Promise<void> {
-  const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', vehicleId).single();
-  await supabase.from('vehicles').update({
-    current_load_kg: 0,
-    available_capacity_kg: veh ? (veh.capacity_kg || 1000) : 1000,
-  }).eq('id', vehicleId);
-  await setOperatingVehicleStatus(vehicleId, 'available');
+/**
+ * The last stop of a route is done: the route completes through the same path staff use, which frees
+ * the vehicle only if it has no other active route or load. A route the driver never started is
+ * started first, so it goes pending, active, completed like any other.
+ */
+async function completeRouteAfterLastStop(routeId: string): Promise<void> {
+  const { data: route } = await supabase.from('routes').select('status').eq('id', routeId).maybeSingle();
+  if (!route || !['pending', 'active'].includes(route.status)) return;
+  if (route.status === 'pending') {
+    try {
+      await routeService.changeStatus(routeId, 'active');
+    } catch {
+      // e.g. the vehicle went into maintenance after an SOS: the delivery still counts
+      const now = new Date().toISOString();
+      await supabase.from('routes').update({ status: 'active', started_at: now, updated_at: now }).eq('id', routeId).eq('status', 'pending');
+    }
+  }
+  await routeService.changeStatus(routeId, 'completed');
 }
+
+/** The message a driver sees for a delivery dispatch has cancelled. */
+const CANCELLED_BY_DISPATCH = 'This delivery was cancelled by dispatch.';
 
 router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
@@ -809,6 +821,8 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         return;
       }
 
+      if (manifest.status === 'cancelled') throw new HttpError(409, CANCELLED_BY_DISPATCH);
+
       const target = isPickup ? 'in_transit' : 'delivered';
       // Pickup comes first and each step happens once: a repeat of the step already recorded
       // succeeds without billing or moving load again.
@@ -832,35 +846,16 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         firstTime = Boolean(moved);
       }
 
-      if (firstTime && isPickup) {
-        // Add load to truck on pickup
-        const pickupWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;
-        if (pickupWeight > 0 && manifest.vehicle_id) {
-          const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', manifest.vehicle_id).single();
-          if (veh) {
-            const newLoad = Math.min((veh.current_load_kg || 0) + pickupWeight, veh.capacity_kg || 50000);
-            await supabase.from('vehicles').update({
-              current_load_kg: newLoad,
-              available_capacity_kg: Math.max((veh.capacity_kg || 1000) - newLoad, 0),
-            }).eq('id', manifest.vehicle_id);
-          }
-        }
-      } else if (firstTime) {
+      // The load's weight was put on the vehicle when the load was assigned to it, so the pickup
+      // moves nothing; the delivery takes it off again.
+      if (firstTime && !isPickup) {
         await InvoiceService.onManifestDelivered(manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
-        // Auto-empty: subtract delivered weight from truck
-        const deliveredWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;
-        if (deliveredWeight > 0 && manifest.vehicle_id) {
-          const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', manifest.vehicle_id).single();
-          if (veh) {
-            const newLoad = Math.max((veh.current_load_kg || 0) - deliveredWeight, 0);
-            await supabase.from('vehicles').update({
-              current_load_kg: newLoad,
-              available_capacity_kg: Math.max((veh.capacity_kg || 1000) - newLoad, 0),
-            }).eq('id', manifest.vehicle_id);
-          }
+        await releaseVehicleLoad(manifest.vehicle_id, Number(manifest.capacity_kg) || 0);
+        // Free the vehicle only if this was its last open load and it has no other active route
+        if (manifest.vehicle_id && !(await vehicleHasOpenWork(manifest.vehicle_id, { manifestId }))) {
+          await setOperatingVehicleStatus(manifest.vehicle_id, 'available');
         }
-        await setOperatingVehicleStatus(manifest.vehicle_id, 'available');
       }
 
       if (firstTime) {
@@ -871,12 +866,20 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         });
       }
 
+      // What is left for this vehicle: each load still to be delivered has a drop, and one still waiting has a pickup
+      let remaining = 0;
+      if (manifest.vehicle_id) {
+        const { data: open } = await supabase
+          .from('cargo_manifest').select('id, status').eq('vehicle_id', manifest.vehicle_id).in('status', [...OPEN_MANIFEST_STATUSES]);
+        remaining = (open ?? []).reduce((n: number, m: any) => n + (m.status === 'scheduled' ? 2 : 1), 0);
+      }
+
       res.json({
         status: 'completed',
         stop_id,
         route_id: manifestId,
-        remaining_stops: isPickup ? 1 : 0,
-        route_completed: !isPickup,
+        remaining_stops: remaining,
+        route_completed: remaining === 0,
       });
       return;
     }
@@ -889,7 +892,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
 
     const { data: current, error: currentErr } = await supabase
       .from('route_stops')
-      .select('id, status, route_id, delivery_point_id, routes(status)')
+      .select('id, status, route_id, delivery_point_id, routes(status, vehicle_id)')
       .eq('id', stop_id)
       .maybeSingle();
     if (currentErr) throw currentErr;
@@ -897,10 +900,27 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       res.status(404).json({ detail: 'Stop not found' });
       return;
     }
-    const routeRaw = current.routes as { status?: string } | { status?: string }[] | null | undefined;
-    const routeStatus = Array.isArray(routeRaw) ? routeRaw[0]?.status : routeRaw?.status;
-    if (routeStatus && !['pending', 'active', 'in_progress'].includes(routeStatus)) {
+    const routeRaw = current.routes as { status?: string; vehicle_id?: string } | { status?: string; vehicle_id?: string }[] | null | undefined;
+    const routeInfo = Array.isArray(routeRaw) ? routeRaw[0] : routeRaw;
+    const routeStatus = routeInfo?.status;
+    if (routeStatus && !['pending', 'active'].includes(routeStatus)) {
       throw new HttpError(409, `This route is ${routeStatus.replace('_', ' ')}, so its stops can't be changed.`);
+    }
+    // Dispatch may have cancelled this delivery: nothing is recorded for it, and the stop is closed
+    // so the route is not held open by a delivery that will never happen
+    if (current.status === 'cancelled') throw new HttpError(409, CANCELLED_BY_DISPATCH);
+    if (current.status === 'pending') {
+      const { data: stopPoint } = await supabase.from('delivery_points').select('shipment_id').eq('id', current.delivery_point_id).maybeSingle();
+      if (stopPoint?.shipment_id) {
+        const { data: cancelledShipment } = await supabase
+          .from('shipments').select('status').eq('id', stopPoint.shipment_id).maybeSingle();
+        if (cancelledShipment?.status === 'cancelled') {
+          await supabase.from('route_stops').update({ status: 'cancelled' }).eq('id', stop_id).eq('status', 'pending');
+          const { data: stillPending } = await supabase.from('route_stops').select('id').eq('route_id', current.route_id).eq('status', 'pending');
+          if (!stillPending || stillPending.length === 0) await completeRouteAfterLastStop(current.route_id);
+          throw new HttpError(409, CANCELLED_BY_DISPATCH);
+        }
+      }
     }
     // A stop is decided once: a repeat of the same answer succeeds without changing anything
     const repeat = current.status === status;
@@ -964,36 +984,22 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       .eq('status', 'pending');
 
     if (!remainingStops || remainingStops.length === 0) {
-      if (!repeat) {
-        // All stops done → mark route as completed
-        await supabase
-          .from('routes')
-          .update({ status: 'completed', completed_at: new Date().toISOString() })
-          .eq('id', stop.route_id)
-          .in('status', ['pending', 'active']);
+      // All stops done: the route completes through the shared status path
+      if (!repeat) await completeRouteAfterLastStop(stop.route_id);
+    } else if (!repeat && status === 'completed' && dp?.shipment_id && routeInfo?.vehicle_id) {
+      // Partial delivery: the delivered parcel comes off the truck (a failed one stays on it)
+      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).maybeSingle();
+      await releaseVehicleLoad(routeInfo.vehicle_id, Number(shipment?.total_weight_kg) || 0);
+    }
 
-        const { data: route } = await supabase
-          .from('routes')
-          .select('vehicle_id')
-          .eq('id', stop.route_id)
-          .single();
-
-        if (route) await resetVehicleAfterRoute(route.vehicle_id);
-      }
-    } else if (!repeat && dp?.shipment_id) {
-      // Partial delivery: subtract this stop's shipment weight from the truck
-      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).single();
-      if (shipment?.total_weight_kg) {
-        const driverId = req.user!.user_id;
-        const { data: vehicle } = await supabase.from('vehicles').select('id, current_load_kg, capacity_kg').eq('driver_id', driverId).single();
-        if (vehicle) {
-          const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.total_weight_kg, 0);
-          await supabase.from('vehicles').update({
-            current_load_kg: newLoad,
-            available_capacity_kg: Math.max((vehicle.capacity_kg || 1000) - newLoad, 0),
-          }).eq('id', vehicle.id);
-        }
-      }
+    // Tell dispatch a delivery failed, with what they need to follow it up
+    if (!repeat && status === 'failed') {
+      await notificationService.notifyStaff(
+        'Driver could not complete a stop',
+        `A driver could not complete a delivery${reason ? ` (${String(reason).replace(/_/g, ' ')})` : ''}.`,
+        'stop_failed',
+        { route_id: stop.route_id, shipment_id: dp?.shipment_id ?? null },
+      ).catch(e => console.error('[telemetry] failed-stop notification failed:', e));
     }
 
     // Broadcast completion to dashboard
@@ -1011,7 +1017,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
     }
 
     res.json({
-      status: 'completed',
+      status,
       stop_id,
       route_id: stop.route_id,
       remaining_stops: remainingStops?.length || 0,
@@ -1033,7 +1039,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     // Find driver's vehicle
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id')
+      .select('id, status')
       .eq('driver_id', req.user!.user_id)
       .maybeSingle();
 
@@ -1059,21 +1065,22 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     // Stale: if route exists but has 0 stops, ignore it and fall through to manifest.
     // (Deletion is a side effect that must not happen on a GET; a write path should clean these up.)
     const hasStops = route && (route.route_stops || []).length > 0;
-    if (route && !hasStops) {
-    }
-
     if (error || !route || !hasStops) {
-      // Check for cargo manifest instead
-      const { data: manifest, error: manifestErr } = await supabase
+      // Vendor loads instead: every open one for this vehicle, in the order to drive them
+      const { data: openLoads } = await supabase
         .from('cargo_manifest')
         .select('*')
         .eq('vehicle_id', vehicle.id)
-        .in('status', ['scheduled', 'in_transit'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .in('status', [...OPEN_MANIFEST_STATUSES])
+        .order('created_at', { ascending: true });
+      const manifests = (openLoads ?? []).sort((x: any, y: any) => {
+        // A load already on the truck is delivered first; then the waiting ones, oldest first
+        const rank = (m: any) => (m.status === 'in_transit' ? 0 : 1);
+        return rank(x) - rank(y) || Date.parse(x.created_at ?? '') - Date.parse(y.created_at ?? '');
+      });
+      const manifest = manifests[0];
 
-      if (manifestErr || !manifest) {
+      if (!manifest) {
         // No active route and no active manifest. 
         // Check for recently completed routes or delivered manifests
         const { data: compRoute } = await supabase
@@ -1140,54 +1147,37 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
         return;
       }
 
-      // Map manifest to route shape
-      // 'scheduled' = assigned but driver hasn't started
-      // 'in_transit' = driver clicked Start Journey OR completed pickup
-      const mStatus = manifest.status === 'scheduled' ? 'pending' : 'active';
-      const manifestStops = [
-        {
-          id: manifest.id + '_pickup',
-          sequence: 1,
-          status: manifest.status === 'scheduled' ? 'pending' : 'completed',
-          delivery_point: {
-            id: manifest.id + '_pickup_dp',
-            name: "Pickup: " + (manifest.pickup_location || '').substring(0, 20),
-            address: manifest.pickup_location,
-            latitude: manifest.pickup_lat,
-            longitude: manifest.pickup_lng,
-            demand_kg: manifest.capacity_kg
-          },
-          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'pickup' },
+      // The loads become one route of pickup and drop stops. The journey counts as started once
+      // the driver has set off (the vehicle is on route) or a load is already on the truck.
+      const journeyStarted = vehicle.status === 'on_route' || manifests.some((m: any) => m.status === 'in_transit');
+      const manifestStops = manifests.flatMap((m: any, i: number) => manifestRouteStops(m, i * 2 + 1).map(st => ({
+        id: st.id,
+        sequence: st.sequence,
+        status: st.status,
+        delivery_point: st.delivery_points,
+        parcel: {
+          kind: 'manifest',
+          code: manifestParcelCode(m.id),
+          status: m.status,
+          purpose: st.id.endsWith('_pickup') ? 'pickup' : 'delivery',
         },
-        {
-          id: manifest.id + '_drop',
-          sequence: 2,
-          status: 'pending', // always pending until manifest is delivered
-          delivery_point: {
-            id: manifest.id + '_drop_dp',
-            name: "Drop: " + (manifest.drop_location || '').substring(0, 20),
-            address: manifest.drop_location,
-            latitude: manifest.drop_lat,
-            longitude: manifest.drop_lng,
-            demand_kg: manifest.capacity_kg
-          },
-          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'delivery' },
-        }
-      ];
+      })));
+      const doneStops = manifestStops.filter(st => st.status === 'completed').length;
 
       res.json({
         active: true,
         is_manifest: true,
         route: {
           id: manifest.id,
-          status: mStatus,
+          manifest_ids: manifests.map((m: any) => m.id),
+          status: journeyStarted ? 'active' : 'pending',
           total_distance_km: 0,
           total_duration_minutes: 0,
           depot: null,
           stops: manifestStops,
-          completed_stops: manifest.status === 'scheduled' ? 0 : 1,
-          remaining_stops: manifest.status === 'scheduled' ? 2 : 1,
-          progress_pct: manifest.status === 'scheduled' ? 0 : 50,
+          completed_stops: doneStops,
+          remaining_stops: manifestStops.length - doneStops,
+          progress_pct: Math.round((doneStops / manifestStops.length) * 100),
         },
       });
       return;
@@ -1198,6 +1188,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       (route.route_stops || []).map((s: any) => s.delivery_points?.shipment_id).filter(Boolean),
     );
     const stops = (route.route_stops || [])
+      // A delivery dispatch cancelled is no longer the driver's to make
+      .filter((s: any) => s.status !== 'cancelled' && shipmentParcels.get(s.delivery_points?.shipment_id)?.status !== 'cancelled')
       .sort((a: any, b: any) => a.sequence - b.sequence)
       .map((s: any) => ({
         id: s.id,

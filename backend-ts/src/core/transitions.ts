@@ -12,14 +12,13 @@ export type TransitionMap = Record<string, readonly string[]>;
 
 export const ROUTE_TRANSITIONS: TransitionMap = {
   optimizing: ['pending', 'cancelled'],
-  pending: ['active', 'in_progress', 'cancelled'],
-  active: ['in_progress', 'completed', 'cancelled'],
-  in_progress: ['active', 'completed', 'cancelled'],
+  pending: ['active', 'cancelled'],
+  active: ['completed', 'cancelled'],
   completed: [],
   cancelled: [],
 };
 
-/** Statuses a route can be moved to through the API (`in_progress` is legacy). */
+/** Statuses a route can be moved to through the API. */
 export const ROUTE_STATUSES = Object.keys(ROUTE_TRANSITIONS);
 
 export const SHIPMENT_TRANSITIONS: TransitionMap = {
@@ -39,10 +38,11 @@ export const SHIPMENT_PATCH_STATUSES = ['created', 'picked_up', 'in_transit', 'd
 export const DRIVER_SHIPMENT_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const;
 
 export const CARGO_MANIFEST_TRANSITIONS: TransitionMap = {
-  scheduled: ['in_transit'],
-  in_transit: ['delivered'],
+  scheduled: ['in_transit', 'cancelled'],
+  in_transit: ['delivered', 'cancelled'],
   delivered: [],
   completed: [],
+  cancelled: [],
 };
 
 /** Vehicle states in which a vehicle takes part in dispatch. Maintenance and archived vehicles do not. */

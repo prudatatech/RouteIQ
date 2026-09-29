@@ -395,9 +395,16 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
       .from('routes')
       .select('vehicle_id, status')
       .eq('id', route_id)
-      .single();
+      .maybeSingle();
 
-    if (!route || !['active', 'on_route', 'pending', 'in_progress'].includes(route.status)) {
+    if (!route) {
+      const { data: manifest } = await supabase.from('cargo_manifest').select('id').eq('id', route_id).maybeSingle();
+      if (manifest) {
+        res.status(409).json({ detail: 'A vendor load has one pickup and one drop, so there is nothing to optimize.' });
+        return;
+      }
+    }
+    if (!route || !['active', 'pending'].includes(route.status)) {
       res.status(400).json({ detail: 'Route not found or not in an optimizable state' });
       return;
     }
