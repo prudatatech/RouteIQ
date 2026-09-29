@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
+import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation, Wrench, ArchiveRestore } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import { formatDateTime } from '@/utils/display'
@@ -20,7 +20,9 @@ import { fleetAPI } from '@/services/api'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
 import AlertsView from '@/components/fleet/AlertsView'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
-import { bandLabel, bandTone, fleetKeys, formatOdometer, type HealthBand } from '@/components/fleet/health'
+import { apiErrorMessage, bandLabel, bandTone, fleetKeys, formatOdometer, type HealthBand } from '@/components/fleet/health'
+import { returnVehicleToService, setVehicleStatus, useLiveMinutes } from '@/components/fleet/vehicleStatus'
+import { canReturnToService, isDraftVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
 const VIEW_IDS = ['vehicles', 'alerts', 'service'] as const
@@ -62,13 +64,34 @@ const DOCUMENT_EXPIRY_LABELS: Record<string, string> = {
 
 // The backend's /vehicles/summary groups "idle" and "available" into one count, so
 // they share a single filter tab here rather than showing a fabricated split.
-const STATUS_FILTERS = ['all', 'on_route', 'idle', 'maintenance', 'offline', 'archived'] as const
-const STATUS_FILTER_LABELS: Record<(typeof STATUS_FILTERS)[number], string> = {
-  all: 'All', on_route: 'On route', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived',
+// "All" is the active fleet: no archived vehicles and no drafts (placeholder stubs and saved
+// drafts), which have their own filter and never count in the totals. This is the same rule the
+// summary uses, so the tab counts and the rows always agree.
+const STATUS_FILTERS = ['all', 'on_route', 'idle', 'maintenance', 'offline', 'archived', 'drafts'] as const
+type StatusFilter = (typeof STATUS_FILTERS)[number]
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
+  all: 'All', on_route: 'On route', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived', drafts: 'Drafts',
 }
 
-// A vehicle counts as live when its last position report is at most this old.
-const LIVE_GPS_THRESHOLD_MS = 5 * 60 * 1000
+function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
+  if (filter === 'drafts') return isDraftVehicle(v)
+  if (isDraftVehicle(v)) return false
+  if (filter === 'all') return v.status !== 'archived'
+  if (filter === 'idle') return v.status === 'idle' || v.status === 'available'
+  return v.status === filter
+}
+
+/** Every vehicle, page by page (the server caps a page at 500), in the server's stable plate order. */
+async function fetchAllVehicles(): Promise<Vehicle[]> {
+  const PAGE = 500
+  const rows: Vehicle[] = []
+  for (let skip = 0; skip < 20 * PAGE; skip += PAGE) {
+    const page = await vehiclesAPI.list({ limit: PAGE, skip }) as Vehicle[]
+    rows.push(...page)
+    if (page.length < PAGE) break
+  }
+  return rows
+}
 
 /** Load and free space for a vehicle; free falls back to capacity minus load when the API does not send it. */
 function vehicleLoad(v: Vehicle) {
@@ -82,15 +105,6 @@ function vehicleLoad(v: Vehicle) {
 const hasContainer = (v: Vehicle) => (v.container_length_ft ?? 0) > 0
 const containerSize = (v: Vehicle) => `${v.container_length_ft} × ${v.container_width_ft ?? 0} × ${v.container_height_ft ?? 0} ft`
 
-// Latest position report: telemetry/driver pings set last_heartbeat, the GPS provider sync sets last_sync.
-function lastPingAt(v: Vehicle): Date | null {
-  const times = [v.last_heartbeat, v.last_sync]
-    .filter((t): t is string => !!t)
-    .map(t => new Date(t).getTime())
-    .filter(t => !Number.isNaN(t))
-  return times.length > 0 ? new Date(Math.max(...times)) : null
-}
-
 export default function FleetPage() {
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
@@ -99,6 +113,7 @@ export default function FleetPage() {
 
   const [view, setView] = useTabParam(VIEW_IDS, 'vehicles')
   const [filter, setFilter] = useTabParam(STATUS_FILTERS, 'all', 'status')
+  const liveMinutes = useLiveMinutes()
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
@@ -141,12 +156,11 @@ export default function FleetPage() {
     return () => ws.close()
   }, [queryClient])
 
-  // "idle" covers both idle and available statuses (see STATUS_FILTER_LABELS), so it
-  // is filtered on the client rather than passed as a single status to the backend.
+  // Every vehicle is loaded once and the filter tabs are applied here (matchesFilter), so the
+  // tab counts, the rows and the summary all follow one rule.
   const { data: vehicles = [], isLoading, error, refetch } = useQuery<Vehicle[]>({
-    queryKey: ['vehicles', filter],
-    queryFn: () => vehiclesAPI.list({ status: filter === 'all' || filter === 'idle' ? undefined : filter, limit: 200 }) as Promise<Vehicle[]>,
-    select: rows => filter === 'idle' ? rows.filter(v => v.status === 'idle' || v.status === 'available') : rows,
+    queryKey: ['vehicles', 'fleet'],
+    queryFn: fetchAllVehicles,
     refetchInterval: 15_000,
   })
 
@@ -192,15 +206,17 @@ export default function FleetPage() {
     maintenance: summary?.maintenance ?? 0,
     offline: summary?.offline ?? 0,
     archived: summary?.archived ?? 0,
+    drafts: summary?.drafts ?? 0,
   }
 
   const filtered = useMemo(
     () => {
       const q = search.trim().toLowerCase()
-      if (!q) return vehicles
-      return vehicles.filter(v => [v.plate_number, v.vehicle_model, v.driver_name].some(t => t?.toLowerCase().includes(q)))
+      const inFilter = vehicles.filter(v => matchesFilter(v, filter))
+      if (!q) return inFilter
+      return inFilter.filter(v => [v.plate_number, v.vehicle_model, v.driver_name].some(t => t?.toLowerCase().includes(q)))
     },
-    [vehicles, search],
+    [vehicles, search, filter],
   )
 
   // Read the open vehicle from the live list so the drawer follows realtime updates.
@@ -209,11 +225,13 @@ export default function FleetPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => vehiclesAPI.delete(id),
-    onSuccess: (_data, id) => {
-      queryClient.setQueriesData({ queryKey: ['vehicles'] }, (old: Vehicle[] | undefined) => old?.filter(v => v.id !== id))
+    onSuccess: (response: { data?: { archived?: boolean } }, id) => {
+      // A vehicle with trips on record is archived by the server, not removed.
+      const archived = !!response?.data?.archived
+      if (!archived) queryClient.setQueriesData({ queryKey: ['vehicles'] }, (old: Vehicle[] | undefined) => old?.filter(v => v.id !== id))
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success('Vehicle deleted')
+      toast.success(archived ? 'Vehicle archived. Its trips stay on record.' : 'Vehicle deleted')
     },
     onError: (err: { response?: { data?: { detail?: string } } }) => toast.error(err.response?.data?.detail || 'Failed to delete vehicle'),
   })
@@ -221,11 +239,57 @@ export default function FleetPage() {
   const handleDelete = async (v: Vehicle) => {
     const ok = await confirm({
       title: `Delete ${v.plate_number}?`,
-      message: 'This removes the vehicle from the fleet. This cannot be undone.',
+      message: 'A vehicle with no trips on record is removed for good. One that has completed trips is archived instead, so its history is kept.',
       confirmLabel: 'Delete',
       tone: 'danger',
     })
     if (ok) deleteMutation.mutate(v.id)
+  }
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'available' | 'idle' | 'maintenance' }) => setVehicleStatus(id, status),
+    onSuccess: (_data, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      toast.success(status === 'maintenance' ? 'Vehicle moved to maintenance' : 'Vehicle is back in service')
+    },
+    onError: err => toast.error(apiErrorMessage(err, 'We could not change the vehicle status.')),
+  })
+
+  const handleReturnToService = async (v: Vehicle) => {
+    const ok = await confirm({
+      title: `Return ${v.plate_number} to service?`,
+      message: 'It becomes available for dispatch again. Do this once it is repaired, inspected or safe to drive.',
+      confirmLabel: 'Return to service',
+    })
+    if (!ok) return
+    try {
+      await returnVehicleToService(v.id)
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      toast.success(`${v.plate_number} is back in service`)
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We could not return the vehicle to service.'))
+    }
+  }
+
+  const handleMaintenance = async (v: Vehicle) => {
+    const ok = await confirm({
+      title: `Move ${v.plate_number} to maintenance?`,
+      message: 'It is not offered for new work until you return it to service.',
+      confirmLabel: 'Move to maintenance',
+      tone: 'danger',
+    })
+    if (ok) statusMutation.mutate({ id: v.id, status: 'maintenance' })
+  }
+
+  const handleUnarchive = async (v: Vehicle) => {
+    const ok = await confirm({
+      title: `Restore ${v.plate_number}?`,
+      message: 'The vehicle returns to the fleet as idle.',
+      confirmLabel: 'Restore',
+    })
+    if (ok) statusMutation.mutate({ id: v.id, status: 'idle' })
   }
 
   const columns: Column<Vehicle>[] = [
@@ -305,11 +369,10 @@ export default function FleetPage() {
     {
       key: 'lastSeen',
       header: 'Last seen',
-      sortValue: v => lastPingAt(v)?.getTime() ?? 0,
+      sortValue: v => lastSeenAt(v)?.getTime() ?? 0,
       cell: v => {
-        const pingAt = lastPingAt(v)
-        const isLive = !!pingAt && now - pingAt.getTime() <= LIVE_GPS_THRESHOLD_MS
-        if (isLive) return <StatusPill tone="success">Live</StatusPill>
+        const pingAt = lastSeenAt(v)
+        if (isVehicleLive(v, liveMinutes, now)) return <StatusPill tone="success">Live</StatusPill>
         return <span className="text-sm text-muted">{pingAt ? formatTimeAgo(pingAt, now) : 'No GPS data'}</span>
       },
     },
@@ -344,8 +407,8 @@ export default function FleetPage() {
     { id: 'service', label: 'Service due', count: serviceDue.data?.length },
   ]
 
-  const detailPing = detailVehicle ? lastPingAt(detailVehicle) : null
-  const detailIsLive = !!detailPing && now - detailPing.getTime() <= LIVE_GPS_THRESHOLD_MS
+  const detailPing = detailVehicle ? lastSeenAt(detailVehicle) : null
+  const detailIsLive = !!detailVehicle && isVehicleLive(detailVehicle, liveMinutes, now)
 
   const exportCsv = () => {
     const csv = toCsv(filtered.map(v => ({
@@ -356,7 +419,7 @@ export default function FleetPage() {
       fuel_current_l: v.current_fuel_liters ?? '',
       fuel_capacity_l: v.fuel_capacity_liters ?? '',
       driver: v.driver_name || '',
-      last_seen: lastPingAt(v)?.toISOString() ?? '',
+      last_seen: lastSeenAt(v)?.toISOString() ?? '',
     })), [
       { key: 'plate_number', header: 'Plate number' },
       { key: 'type', header: 'Type' },
@@ -472,6 +535,19 @@ export default function FleetPage() {
                 </div>
               )}
             </div>
+            {role !== 'driver' && (
+              <div className="flex flex-wrap gap-2">
+                {canReturnToService(detailVehicle) && (
+                  <Button icon={<Wrench size={16} />} onClick={() => handleReturnToService(detailVehicle)}>Return to service</Button>
+                )}
+                {!isDraftVehicle(detailVehicle) && ['available', 'idle', 'offline', 'on_route'].includes(detailVehicle.status) && (
+                  <Button variant="secondary" icon={<Wrench size={16} />} onClick={() => handleMaintenance(detailVehicle)}>Move to maintenance</Button>
+                )}
+                {detailVehicle.status === 'archived' && !isDraftVehicle(detailVehicle) && (
+                  <Button variant="secondary" icon={<ArchiveRestore size={16} />} onClick={() => handleUnarchive(detailVehicle)}>Restore vehicle</Button>
+                )}
+              </div>
+            )}
             <DetailList
               columns={2}
               items={[

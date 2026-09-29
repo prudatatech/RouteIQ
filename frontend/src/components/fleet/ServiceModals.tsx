@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
-import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, Input, Modal, Select, Textarea, useConfirm } from '@/components/ui'
+import { returnVehicleToService } from './vehicleStatus'
 import { apiErrorMessage, fleetKeys, SERVICE_PRESETS, type ServiceItem } from './health'
 
 /** Today's date in the browser's time zone as YYYY-MM-DD, for date inputs. */
@@ -159,13 +160,35 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const refresh = useRefreshVehicle(vehicleId)
+  const { confirm } = useConfirm()
+  const queryClient = useQueryClient()
+
+  // A vehicle held in maintenance (e.g. after a serious SOS) is usually serviced next: offer to put it back.
+  const offerReturnToService = async () => {
+    const ok = await confirm({
+      title: `Return ${plate} to service?`,
+      message: `${plate} is in maintenance. If the service is done, put it back in service so it can be dispatched again.`,
+      confirmLabel: 'Return to service',
+      cancelLabel: 'Keep in maintenance',
+    })
+    if (!ok) return
+    try {
+      await returnVehicleToService(vehicleId)
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      toast.success(`${plate} is back in service`)
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'We could not return the vehicle to service.'))
+    }
+  }
 
   const save = useMutation({
     mutationFn: (body: object) => fleetAPI.logService(vehicleId, body),
-    onSuccess: (res: { expense_recorded?: boolean; cost?: number | null }) => {
+    onSuccess: (res: { expense_recorded?: boolean; cost?: number | null; vehicle_status?: string }) => {
       toast.success(res.expense_recorded ? 'Service logged and the cost added to expenses' : 'Service logged')
       refresh()
       onClose()
+      if (res.vehicle_status === 'maintenance') void offerReturnToService()
     },
     onError: err => setError(apiErrorMessage(err, 'We could not log this service. Try again.')),
   })

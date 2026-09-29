@@ -5,6 +5,8 @@
 import { supabase } from '../core/supabase';
 import { wsManager } from '../core/websocket';
 import { runAlertSweep } from './alerts.service';
+import { getAlertThresholds } from './alert-settings.service';
+import { isPlaceholderPlate, lastSeenMs } from '../core/vehicles';
 
 export class FleetHealthMonitor {
   private timeoutSeconds: number;
@@ -33,20 +35,41 @@ export class FleetHealthMonitor {
     console.log('Fleet Health Monitor stopped.');
   }
 
-  private async checkFleetHealth(): Promise<void> {
+  /**
+   * One pass of the heartbeat monitor.
+   *
+   * A vehicle that has not sent a heartbeat for `timeoutSeconds` goes offline,
+   * except:
+   *  - placeholder vehicles (TEMP-…, DRFT-…), which are not fleet assets;
+   *  - a vehicle whose GPS provider synced recently (last_sync);
+   *  - a vehicle on an active route that was last seen within the GPS-lost
+   *    window (the alarm settings): a short signal gap on the road is not an
+   *    outage. The GPS-lost alarm takes over once the window is exceeded.
+   * An offline vehicle that reports again returns to service: on_route while it
+   * has an active route, otherwise available.
+   */
+  async checkFleetHealth(nowMs: number = Date.now()): Promise<void> {
     try {
-      const thresholdDate = new Date(Date.now() - this.timeoutSeconds * 1000).toISOString();
+      const thresholdMs = nowMs - this.timeoutSeconds * 1000;
+      const thresholdDate = new Date(thresholdMs).toISOString();
+      const limits = await getAlertThresholds();
+
+      const { data: activeRoutes } = await supabase.from('routes').select('vehicle_id').eq('status', 'active');
+      const onActiveRoute = new Set((activeRoutes ?? []).map((r: any) => r.vehicle_id));
 
       const { data: staleVehicles } = await supabase
         .from('vehicles')
-        .select('id, plate_number, status, cargo_types, last_heartbeat')
+        .select('id, plate_number, status, cargo_types, last_heartbeat, last_sync')
         .in('status', ['available', 'on_route', 'idle'])
         .not('last_heartbeat', 'is', null)
         .lt('last_heartbeat', thresholdDate);
 
-      if (!staleVehicles || staleVehicles.length === 0) return;
+      for (const vehicle of staleVehicles ?? []) {
+        if (isPlaceholderPlate(vehicle.plate_number)) continue;
+        const seen = lastSeenMs(vehicle);
+        if (seen != null && seen >= thresholdMs) continue; // the GPS provider synced recently
+        if (onActiveRoute.has(vehicle.id) && seen != null && nowMs - seen <= limits.gps_lost_minutes * 60_000) continue;
 
-      for (const vehicle of staleVehicles) {
         const cargoTypes: string[] = vehicle.cargo_types || [];
         const isHighPriority = cargoTypes.some((ct: string) =>
           ['cold_chain', 'hazardous'].includes(ct)
@@ -72,6 +95,22 @@ export class FleetHealthMonitor {
               : `${vehicle.plate_number} went offline.`,
           },
         });
+      }
+
+      // Offline vehicles that are reporting again come back per their route
+      const { data: offlineVehicles } = await supabase
+        .from('vehicles')
+        .select('id, plate_number, last_heartbeat, last_sync')
+        .eq('status', 'offline');
+      for (const vehicle of offlineVehicles ?? []) {
+        if (isPlaceholderPlate(vehicle.plate_number)) continue;
+        const seen = lastSeenMs(vehicle);
+        if (seen == null || seen < thresholdMs) continue;
+        await supabase
+          .from('vehicles')
+          .update({ status: onActiveRoute.has(vehicle.id) ? 'on_route' : 'available' })
+          .eq('id', vehicle.id)
+          .eq('status', 'offline');
       }
     } catch (e: any) {
       console.error(`Error in fleet health check: ${e.message}`);

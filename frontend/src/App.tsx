@@ -318,7 +318,7 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="emergency" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
                 <EmergencyPage />
               </PrivateRoute>
             } />

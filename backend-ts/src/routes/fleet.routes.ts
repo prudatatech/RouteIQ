@@ -32,11 +32,11 @@ const optionalNumber = (label: string, opts: { int?: boolean; positive?: boolean
   return n.nullable().optional();
 };
 
-async function requireVehicle(id: string): Promise<{ id: string; plate_number: string; odometer_km: number | null }> {
-  const { data, error } = await supabase.from('vehicles').select('id, plate_number, odometer_km').eq('id', id).maybeSingle();
+async function requireVehicle(id: string): Promise<{ id: string; plate_number: string; odometer_km: number | null; status: string }> {
+  const { data, error } = await supabase.from('vehicles').select('id, plate_number, odometer_km, status').eq('id', id).maybeSingle();
   if (error) throw error;
   if (!data) throw new HttpError(404, 'Vehicle not found');
-  return data as { id: string; plate_number: string; odometer_km: number | null };
+  return data as { id: string; plate_number: string; odometer_km: number | null; status: string };
 }
 
 // ── Health ─────────────────────────────────────────────────
@@ -263,7 +263,8 @@ router.post('/vehicles/:id/service-log', ...staff, async (req: Request, res: Res
       planUpdated = true;
     }
 
-    res.status(201).json({ ...entry, expense_recorded: expenseId != null, plan_updated: planUpdated });
+    // vehicle_status lets the caller offer "Return to service" when the vehicle was in maintenance
+    res.status(201).json({ ...entry, expense_recorded: expenseId != null, plan_updated: planUpdated, vehicle_status: vehicle.status });
   } catch (e) {
     sendError(req, res, e);
   }

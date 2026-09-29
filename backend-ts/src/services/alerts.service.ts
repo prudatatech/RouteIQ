@@ -16,6 +16,7 @@ import { wsManager } from '../core/websocket';
 import { notificationService } from './notification.service';
 import { getAlertThresholds } from './alert-settings.service';
 import { haversineKm } from './odometer';
+import { lastSeenMs } from '../core/vehicles';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -214,8 +215,7 @@ export async function runAlertSweep(nowMs: number = Date.now()): Promise<{ gpsLo
     if (!v) continue;
     const plate: string | null = v.plate_number ?? null;
 
-    const times = [v.last_heartbeat, v.last_sync].filter(Boolean).map((t: string) => Date.parse(t)).filter(Number.isFinite);
-    const lastPing = times.length ? Math.max(...times) : null;
+    const lastPing = lastSeenMs(v); // newer of heartbeat and sync: the same "last seen" the fleet views use
     const lostSince = lastPing ?? (route.started_at ? Date.parse(route.started_at) : null);
 
     if (lostSince != null && nowMs - lostSince > limits.gps_lost_minutes * 60_000) {

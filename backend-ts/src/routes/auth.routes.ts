@@ -581,11 +581,15 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
       : undefined;
 
     // Check if the driver has a vehicle assigned
-    const { data: existingVehicle } = await supabase
+    // (a driver has one live vehicle: the unique index on driver_id, see
+    // migration 20260930009400; first() so a leftover duplicate can never make this "none")
+    const { data: existingRows } = await supabase
       .from('vehicles')
       .select('id')
       .eq('driver_id', userId)
-      .single();
+      .neq('status', 'archived')
+      .limit(1);
+    const existingVehicle = existingRows?.[0];
 
     if (!existingVehicle) {
       // Create a new vehicle for the driver
@@ -628,30 +632,76 @@ interface EarningsFilter {
   to?: string;
 }
 
+/**
+ * What a driver earns per completed trip. A trip has no price of its own; money
+ * lives on invoices (one per delivered shipment or cargo manifest, before GST):
+ *  - cargo manifest trip: its invoice (invoices.manifest_id). Before an invoice
+ *    exists, the agreed cost of the vendor request it carries out
+ *    (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost).
+ *  - route trip: the invoices of the shipments delivered on it
+ *    (route_stops -> delivery_points.shipment_id -> invoices.shipment_id), each
+ *    shipment counted once.
+ * Voided invoices do not count. A trip is 'paid' when all of its invoices are
+ * paid, otherwise 'pending'. A trip with no price yet earns 0 until it is invoiced.
+ */
+interface TripPay { amount: number; paid: boolean }
+
+async function loadTripPay(cargoTrips: any[], routeTrips: any[]): Promise<Map<string, TripPay>> {
+  const pay = new Map<string, TripPay>();
+  const add = (tripId: string, amount: number, paid: boolean) => {
+    const cur = pay.get(tripId);
+    pay.set(tripId, { amount: (cur?.amount ?? 0) + amount, paid: (cur ? cur.paid : true) && paid });
+  };
+
+  const manifestIds = cargoTrips.map(t => t.id);
+  const shipmentsByRoute = new Map<string, Set<string>>();
+  for (const r of routeTrips) {
+    const ids = new Set<string>();
+    for (const stop of r.route_stops ?? []) if (stop.delivery_points?.shipment_id) ids.add(stop.delivery_points.shipment_id);
+    shipmentsByRoute.set(r.id, ids);
+  }
+  const shipmentIds = [...new Set([...shipmentsByRoute.values()].flatMap(s => [...s]))];
+
+  const [byManifest, byShipment] = await Promise.all([
+    manifestIds.length
+      ? supabase.from('invoices').select('manifest_id, shipment_id, amount, status').in('manifest_id', manifestIds).is('voided_at', null)
+      : Promise.resolve({ data: [] as any[] }),
+    shipmentIds.length
+      ? supabase.from('invoices').select('manifest_id, shipment_id, amount, status').in('shipment_id', shipmentIds).is('voided_at', null)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const invoicedManifests = new Set<string>();
+  for (const inv of byManifest.data ?? []) {
+    invoicedManifests.add(inv.manifest_id);
+    add(inv.manifest_id, Number(inv.amount) || 0, inv.status === 'paid');
+  }
+  for (const [routeId, ids] of shipmentsByRoute) {
+    for (const inv of byShipment.data ?? []) if (ids.has(inv.shipment_id)) add(routeId, Number(inv.amount) || 0, inv.status === 'paid');
+  }
+
+  // Not invoiced yet: the vendor request's agreed cost
+  const uninvoiced = cargoTrips.filter(t => !invoicedManifests.has(t.id) && t.vendor_request_id);
+  if (uninvoiced.length) {
+    const { data: requests } = await supabase
+      .from('vendor_shipment_requests')
+      .select('id, cost')
+      .in('id', [...new Set(uninvoiced.map(t => t.vendor_request_id))]);
+    const cost = new Map((requests ?? []).map((r: any) => [r.id, Number(r.cost) || 0]));
+    for (const t of uninvoiced) add(t.id, cost.get(t.vendor_request_id) ?? 0, false);
+  }
+  return pay;
+}
+
 async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
-  const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg').eq('driver_id', userId);
+  const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg, current_location_name').eq('driver_id', userId);
   if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
 
   const activeVehicle = vehicles[0];
-  // No default coordinates: without a real GPS fix on the vehicle we don't know where the
-  // driver is, so we skip the reverse-geocode below rather than pretending they're in Dhanbad.
   const driverLat = activeVehicle.latitude;
   const driverLng = activeVehicle.longitude;
-  let driverLocationName = 'Origin Depot';
-
-  if (driverLat && driverLng) {
-    try {
-      // Use Nominatim (OpenStreetMap) for server-side reverse geocoding to avoid Google Maps API referer restrictions
-      const url = `https://nominatim.openstreetmap.org/reverse?lat=${driverLat}&lon=${driverLng}&format=json`;
-      const response = await fetch(url, { headers: { 'User-Agent': 'margixindia-Backend' } });
-      const data: any = await response.json();
-      if (data && data.address) {
-        driverLocationName = data.address.city || data.address.town || data.address.county || data.address.state_district || data.display_name.split(',')[0];
-      }
-    } catch (e) {
-      console.error("Geocoding failed", e);
-    }
-  }
+  // The vehicle's stored place name; no reverse geocoding on every request.
+  const driverLocationName = activeVehicle.current_location_name || 'Origin Depot';
 
   const vehicleIds = vehicles.map(v => v.id);
   let cargoQuery = supabase.from('cargo_manifest').select('*').in('vehicle_id', vehicleIds).eq('status', 'delivered').order('updated_at', { ascending: false });
@@ -659,7 +709,7 @@ async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
     *,
     route_stops (
       sequence,
-      delivery_points ( name, address, latitude, longitude, demand_kg )
+      delivery_points ( name, address, latitude, longitude, demand_kg, shipment_id )
     )
   `).in('vehicle_id', vehicleIds).eq('status', 'completed').order('updated_at', { ascending: false });
   if (filter.from) {
@@ -679,6 +729,8 @@ async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
   ].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   if (allTrips.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
+
+  const pay = await loadTripPay(cargoTrips || [], routeTrips || []);
 
   const invoices = allTrips.map((t: any) => {
     // Determine proper pickup/drop based on type
@@ -728,7 +780,8 @@ async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
           : 0;
     }
 
-    const cost = t.cost || 0;
+    const tripPay = pay.get(t.id);
+    const cost = tripPay?.amount ?? 0;
 
     let weightKg = t.capacity_kg || 0;
     if (t.trip_type === 'route' && t.route_stops) {
@@ -747,9 +800,8 @@ async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
       bonus: 0,
       tax: 0,
       total_payout: cost,
-      // Neither cargo_manifest nor routes trips are linked to an invoices/payments row in
-      // this schema, so we have no real payment status to report — don't claim 'paid'.
-      status: 'pending'
+      // 'paid' only when every invoice behind the trip is paid (see loadTripPay)
+      status: tripPay?.paid && cost > 0 ? 'paid' : 'pending'
     };
   });
 

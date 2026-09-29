@@ -3,20 +3,25 @@ import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon } from 'lucide-react'
-import { dashboardAPI, vehiclesAPI, shipmentsAPI, analyticsAPI, vendorAPI } from '@/services/api'
+import { dashboardAPI, vehiclesAPI, shipmentsAPI, analyticsAPI, vendorAPI, fleetAPI } from '@/services/api'
 import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { ACTIVE_SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
-import { isDraftVehicle } from '@/utils/vehicles'
+import { isDraftVehicle, isFleetVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
+import { sosHeadline } from '@/utils/sos'
+import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
+import { humanize } from '@/components/ui'
+import type { FleetAlert } from '@/components/fleet/health'
 
 interface VehicleRow {
   id: string
   plate_number: string
   status: string
   last_sync?: string | null
+  last_heartbeat?: string | null
 }
 
 interface SosAlertRow {
@@ -24,6 +29,7 @@ interface SosAlertRow {
   vehicle_id?: string | null
   alert_type?: string | null
   description?: string | null
+  severity?: string | null
   status?: string | null
   created_at: string
 }
@@ -39,7 +45,7 @@ interface Insight {
 
 interface AttentionItem {
   id: string
-  kind: 'incident' | 'offline' | 'delay' | 'idle'
+  kind: 'incident' | 'alarm' | 'offline' | 'delay' | 'idle'
   title: string
   subtitle: string
   time: string
@@ -54,6 +60,22 @@ function timeAgo(dateStr: string): string {
   const hours = Math.floor(mins / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
+}
+
+/** One "Needs attention" row for all open fleet alarms: the count, the kinds, and a link to Fleet > Alerts. */
+function alarmItem(alarms: FleetAlert[], open: () => void): AttentionItem {
+  const byType = new Map<string, number>()
+  for (const a of alarms) byType.set(a.type, (byType.get(a.type) ?? 0) + 1)
+  const kinds = [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([type, n]) => `${humanize(type)} ${n}`).join(' · ')
+  const newest = alarms.reduce((latest, a) => (a.created_at > latest ? a.created_at : latest), alarms[0].created_at)
+  return {
+    id: 'fleet-alarms',
+    kind: 'alarm',
+    title: `${alarms.length.toLocaleString('en-IN')} open fleet ${alarms.length === 1 ? 'alarm' : 'alarms'}`,
+    subtitle: kinds,
+    time: timeAgo(newest),
+    actions: [{ label: 'View alerts', onClick: open }],
+  }
 }
 
 export default function DashboardPage() {
@@ -110,6 +132,13 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   })
 
+  // Open fleet alarms (tamper, overspeed, low fuel, GPS lost, ...), the same list as Fleet > Alerts.
+  const { data: fleetAlarms = [] } = useQuery<FleetAlert[]>({
+    queryKey: ['fleet-alerts', 'active'],
+    queryFn: () => fleetAPI.alerts('active') as Promise<FleetAlert[]>,
+    refetchInterval: 30_000,
+  })
+
   const { data: insights = [] } = useQuery<Insight[]>({
     queryKey: ['insights'],
     queryFn: () => analyticsAPI.insights() as Promise<Insight[]>,
@@ -126,8 +155,13 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   })
 
-  const activeVehicles = vehicles.filter(v => !isDraftVehicle(v))
+  const liveMinutes = useLiveMinutes()
+  const activeVehicles = vehicles.filter(isFleetVehicle)
   const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
+  // Live uses the same rule as Fleet and the live map: the newer of heartbeat and sync within the limit.
+  const liveVehicleCount = activeVehicles.filter(v => isVehicleLive(v, liveMinutes)).length
+  const draftVehicleIds = new Set(vehicles.filter(isDraftVehicle).map(v => v.id))
+  const openFleetAlarms = fleetAlarms.filter(a => !a.is_test && a.status !== 'resolved')
   const activeShipments = shipments.filter(s => isActiveShipmentStatus(s.status))
   const activeShipmentCount = shipmentCounts
     ? ACTIVE_SHIPMENT_STATUSES.reduce((sum, status) => sum + (shipmentCounts.counts[status] ?? 0), 0)
@@ -137,7 +171,8 @@ export default function DashboardPage() {
   const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
 
   const delayInsights = insights.filter(i => i.type === 'delay_risk')
-  const idleInsights = insights.filter(i => i.type === 'idle_vehicle')
+  // Placeholder vehicles (a driver's first-login stub, a saved draft) are not fleet assets, so they are never "idle".
+  const idleInsights = insights.filter(i => i.type === 'idle_vehicle' && !(i.vehicle_id && draftVehicleIds.has(i.vehicle_id)))
   const rerouteCount = insights.filter(i => i.type === 'reroute_suggestion').length
 
   // Needs attention: the same list backs both the count badge and the rows below.
@@ -147,18 +182,19 @@ export default function DashboardPage() {
       return {
         id: `sos-${alert.id}`,
         kind: 'incident' as const,
-        title: alert.alert_type === 'accident' ? 'Serious accident' : 'Emergency alert',
+        title: sosHeadline(alert),
         subtitle: `${v?.plate_number || 'Unknown vehicle'} · ${alert.description || 'Reported'}`,
         time: timeAgo(alert.created_at),
-        actions: [{ label: 'Review incident', onClick: () => navigate('/emergency') }],
+        actions: [{ label: 'Review incident', onClick: () => navigate(`/emergency?open=${alert.id}`) }],
       }
     }),
+    ...(openFleetAlarms.length > 0 ? [alarmItem(openFleetAlarms, () => navigate('/fleet?tab=alerts'))] : []),
     ...offlineVehicles.map(v => ({
       id: `offline-${v.id}`,
       kind: 'offline' as const,
       title: 'Vehicle offline',
       subtitle: v.plate_number,
-      time: v.last_sync ? timeAgo(v.last_sync) : '',
+      time: lastSeenAt(v) ? `Last seen ${timeAgo(lastSeenAt(v)!.toISOString())}` : 'Never reported',
       actions: [
         { label: 'View vehicle', onClick: () => navigate(`/fleet?open=${v.id}`) },
         { label: 'Show on map', onClick: () => navigate(`/live-map?vehicle=${v.id}`) },
@@ -220,7 +256,7 @@ export default function DashboardPage() {
         <Stat
           label="Tracked vehicles"
           value={activeVehicles.length}
-          hint={`${activeVehicles.length - offlineVehicles.length} reporting · ${offlineVehicles.length} offline`}
+          hint={`${liveVehicleCount} live · ${offlineVehicles.length} offline`}
           loading={vehiclesLoading}
           icon={<Truck size={18} />}
         />
@@ -278,7 +314,7 @@ export default function DashboardPage() {
                     className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.kind === 'delay' || item.kind === 'idle' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger'}`}
                     aria-hidden="true"
                   >
-                    {item.kind === 'incident' ? <AlertCircle size={16} /> : item.kind === 'offline' ? <WifiOff size={16} /> : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
+                    {item.kind === 'incident' || item.kind === 'alarm' ? <AlertCircle size={16} /> : item.kind === 'offline' ? <WifiOff size={16} /> : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-text">{item.title}</p>

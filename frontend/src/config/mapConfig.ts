@@ -1,4 +1,5 @@
 import tokens from '@/theme/tokens.json'
+import { statusToLabel, statusToTone, type Tone } from '@/components/ui/status'
 
 /**
  * Map settings shared by every map in the app (see components/map/MapView).
@@ -70,32 +71,23 @@ interface StatusStyle {
   tone: MapTone
 }
 
+/** Theme tone (components/ui/status.ts) -> map colour role. */
+const TONE_TO_MAP_TONE: Record<Tone, MapTone> = {
+  success: 'success', warning: 'warning', danger: 'danger', info: 'info', neutral: 'neutral', brand: 'brand',
+}
+
 /**
- * Vehicle status -> label and colour. This is the only place that decides
- * how a vehicle status looks on a map.
+ * Vehicle status -> label and colour. It reads components/ui/status.ts, the single
+ * source for how a status looks, so a vehicle is the same colour and name on a
+ * map and in every table and pill.
  */
-const VEHICLE_STATUS: Record<string, StatusStyle> = {
-  on_route: { label: 'On route', tone: 'info' },
-  in_transit: { label: 'In transit', tone: 'info' },
-  active: { label: 'Active', tone: 'info' },
-  available: { label: 'Available', tone: 'success' },
-  idle: { label: 'Idle', tone: 'neutral' },
-  maintenance: { label: 'In maintenance', tone: 'warning' },
-  gps_off: { label: 'GPS off', tone: 'warning' },
-  offline: { label: 'Offline', tone: 'muted' },
-  archived: { label: 'Archived', tone: 'muted' },
-  sos: { label: 'SOS', tone: 'danger' },
+export function vehicleStatusStyle(status: string | null | undefined): StatusStyle {
+  return { label: statusToLabel(status), tone: TONE_TO_MAP_TONE[statusToTone(status)] }
 }
 
 const humanize = (value: string) => {
   const text = value.replace(/[_-]+/g, ' ').trim()
   return text ? text[0].toUpperCase() + text.slice(1).toLowerCase() : 'Unknown'
-}
-
-/** Label and tone for any vehicle status, including ones not listed above. */
-export function vehicleStatusStyle(status: string | null | undefined): StatusStyle {
-  const key = (status ?? '').toLowerCase()
-  return VEHICLE_STATUS[key] ?? { label: humanize(key), tone: 'neutral' }
 }
 
 /** Route stop status -> label and colour. */

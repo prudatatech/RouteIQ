@@ -25,12 +25,12 @@ const statusTone: Record<string, Tone> = {
   open: 'info', tracking: 'info', escalated: 'info', assigned_to_partner: 'info', offered: 'warning',
   // Needs attention
   pending: 'warning', delayed: 'warning', maintenance: 'warning', paused: 'warning', notified: 'warning',
-  pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', low: 'warning',
+  pending_escrow: 'warning', under_review: 'warning', on_hold: 'warning', acknowledged: 'warning', low: 'warning', gps_off: 'warning',
   // Failed / blocked
-  failed: 'danger', rejected: 'danger', declined: 'danger', cancelled: 'danger', offline: 'danger', exception: 'danger', error: 'danger',
-  sos: 'danger', escrow_failed: 'danger', gps_off: 'danger', expired: 'danger', critical: 'danger', denied: 'danger',
+  failed: 'danger', rejected: 'danger', declined: 'danger', cancelled: 'danger', exception: 'danger', error: 'danger',
+  sos: 'danger', escrow_failed: 'danger', expired: 'danger', critical: 'danger', denied: 'danger',
   // Neutral
-  taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
+  taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', offline: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
   unknown: 'neutral',
 }
 
@@ -41,6 +41,7 @@ const statusLabel: Record<string, string> = {
   picked_up: 'Picked up',
   out_for_delivery: 'Out for delivery',
   gps_off: 'GPS off',
+  maintenance: 'In maintenance',
   sos: 'SOS',
   pending_escrow: 'Awaiting payment',
   escrow_held: 'Payment held',
