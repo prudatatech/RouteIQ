@@ -85,7 +85,7 @@ export default function TplVerificationPage() {
              </h1>
              <div className="text-muted font-bold tracking-tight mt-4 flex items-center gap-3 text-sm">
                <Building2 size={16} className="text-primary" />
-               Submitted 2 hours ago by admin@safexpress.com
+               Submitted {partner.created_at ? new Date(partner.created_at).toLocaleString() : ''}{partner.email ? ` by ${partner.email}` : ''}
              </div>
            </div>
         </div>
@@ -432,7 +432,7 @@ export default function TplVerificationPage() {
                 <div>
                   <h3 className="text-lg font-black text-text uppercase tracking-tight">Provisioning Complete</h3>
                   <p className="text-xs text-muted font-medium mt-1">
-                    An activation link has been sent to admin@safexpress.com. They will appear as 'Active' once they log in.
+                    Approved. The partner can now set a password on the 3PL credential setup page{partner.email ? ` using ${partner.email}` : ''}.
                   </p>
                 </div>
              </div>
