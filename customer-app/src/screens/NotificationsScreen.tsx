@@ -8,12 +8,14 @@ import { colors, radius, size, space } from '../theme';
 import { api, NOTIFICATIONS_CHANGED_EVENT, type NotificationItem } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { formatDateTime } from '../utils/format';
+import { useTranslation } from '../hooks/useTranslation';
 
 export default function NotificationsScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const { data, loading, error, reload } = useRemote(
     () => api.getNotifications({ limit: 50 }),
     'notifications',
-    'Could not load notifications. Check your internet connection and try again.',
+    t('notif_load_failed'),
   );
   // Notifications the customer has opened since the last load, shown as read straight away.
   const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
@@ -57,7 +59,7 @@ export default function NotificationsScreen({ navigation }: any) {
       DeviceEventEmitter.emit(NOTIFICATIONS_CHANGED_EVENT);
       reload();
     } catch (e: any) {
-      setMarkError(e?.message || 'Could not mark these as read. Check your internet connection and try again.');
+      setMarkError(e?.message || t('notif_mark_failed'));
     } finally {
       setMarkingAll(false);
     }
@@ -74,7 +76,7 @@ export default function NotificationsScreen({ navigation }: any) {
     if (error && !data) {
       return (
         <View style={styles.errorWrap}>
-          <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} />
+          <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} />
         </View>
       );
     }
@@ -83,8 +85,8 @@ export default function NotificationsScreen({ navigation }: any) {
         <View style={styles.center}>
           <EmptyState
             icon={<Feather name="bell-off" size={size.icon.xl} color={colors.accent} />}
-            title="No notifications yet"
-            message="We'll let you know here when there's something new."
+            title={t('notif_empty_title')}
+            message={t('notif_empty_msg')}
           />
         </View>
       );
@@ -98,7 +100,7 @@ export default function NotificationsScreen({ navigation }: any) {
         ListHeaderComponent={
           error || markError ? (
             <View style={styles.errorWrap}>
-              <ErrorBanner message={(markError ?? error) as string} action={markError ? undefined : { label: 'Try again', onPress: reload }} />
+              <ErrorBanner message={(markError ?? error) as string} action={markError ? undefined : { label: t('try_again'), onPress: reload }} />
             </View>
           ) : null
         }
@@ -107,7 +109,7 @@ export default function NotificationsScreen({ navigation }: any) {
           return (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`${read ? '' : 'Unread. '}${item.title}. ${item.body}`}
+              accessibilityLabel={`${read ? '' : t('unread') + ' '}${item.title}. ${item.body}`}
               onPress={() => openNotification(item)}
               style={({ pressed }) => [styles.row, !read ? styles.unread : null, pressed ? styles.pressed : null]}
             >
@@ -133,10 +135,10 @@ export default function NotificationsScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader
-        title="Notifications"
+        title={t('tab_notifications')}
         right={
           unreadCount > 0 ? (
-            <Button title="Mark all read" variant="ghost" block={false} loading={markingAll} onPress={markAllRead} />
+            <Button title={t('mark_all_read')} variant="ghost" block={false} loading={markingAll} onPress={markAllRead} />
           ) : undefined
         }
       />

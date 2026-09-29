@@ -9,6 +9,7 @@ import { api, type BookingDetail } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { BOOKING_STATUS, BOOKING_STEPS, canCancel, formatMinutes } from '../utils/bookingStatus';
 import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
+import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
 
 /** How often live tracking refreshes while the shipment is moving. */
 const LIVE_REFRESH_MS = 30_000;
@@ -26,8 +27,9 @@ function stepTimes(detail: BookingDetail): Partial<Record<string, string>> {
 }
 
 export default function BookingDetailScreen({ navigation, route }: any) {
+  const { t } = useTranslation();
   const id: string = route.params.id;
-  const { data, loading, error, reload } = useRemote(() => api.getBooking(id), id, 'Could not load this booking. Check your internet connection and try again.');
+  const { data, loading, error, reload } = useRemote(() => api.getBooking(id), id, t('booking_load_failed'));
 
   const status = data?.booking.status;
   const live = !!data?.tracking && (status === 'assigned' || status === 'in_transit');
@@ -39,10 +41,10 @@ export default function BookingDetailScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Booking" onBack={() => navigation.goBack()} backLabel="Back" />
+      <ScreenHeader title={t('booking_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
       {!data ? (
         <View style={styles.center}>
-          {loading ? <ActivityIndicator color={colors.accent} /> : <ErrorBanner message={error ?? 'Could not load this booking.'} action={{ label: 'Try again', onPress: reload }} />}
+          {loading ? <ActivityIndicator color={colors.accent} /> : <ErrorBanner message={error ?? t('booking_load_failed_short')} action={{ label: t('try_again'), onPress: reload }} />}
         </View>
       ) : (
         <Details detail={data} error={error} reload={reload} loading={loading} />
@@ -52,6 +54,7 @@ export default function BookingDetailScreen({ navigation, route }: any) {
 }
 
 function Details({ detail, error, reload, loading }: { detail: BookingDetail; error?: string; reload: () => void; loading: boolean }) {
+  const { t } = useTranslation();
   const { booking, tracking } = detail;
   const status = BOOKING_STATUS[booking.status];
   const times = stepTimes(detail);
@@ -77,7 +80,7 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
       await api.cancelBooking(booking.id);
       reload();
     } catch (e: any) {
-      setCancelError(e?.message || 'Could not cancel this booking. Check your internet connection and try again.');
+      setCancelError(e?.message || t('cancel_failed'));
       // The booking may have been picked up in the meantime, so show its current state.
       reload();
     } finally {
@@ -87,11 +90,11 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
 
   const askCancel = () =>
     Alert.alert(
-      'Cancel this booking?',
-      'Our team will be told and no truck will be sent. You can book again any time.',
+      t('cancel_confirm_title'),
+      t('cancel_confirm_body'),
       [
-        { text: 'Keep booking', style: 'cancel' },
-        { text: 'Cancel booking', style: 'destructive', onPress: cancel },
+        { text: t('cancel_keep'), style: 'cancel' },
+        { text: t('cancel_booking'), style: 'destructive', onPress: cancel },
       ],
     );
   const vehiclePoint = vehicle?.lat != null && vehicle?.lng != null ? { latitude: vehicle.lat, longitude: vehicle.lng } : null;
@@ -102,52 +105,52 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={pulling} onRefresh={pull} tintColor={colors.accent} />}
     >
-      {error ? <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} /> : null}
+      {error ? <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} /> : null}
 
       <Card style={styles.card}>
-        <StatusPill label={status.label} tone={status.tone} />
+        <StatusPill label={t(status.label)} tone={status.tone} />
         <View style={styles.place}>
           <Text variant="caption" color="textMuted">
-            Pickup
+            {t('pickup')}
           </Text>
           <Text variant="bodyMedium">{booking.pickup_address}</Text>
         </View>
         <View style={styles.place}>
           <Text variant="caption" color="textMuted">
-            Drop-off
+            {t('dropoff')}
           </Text>
           <Text variant="bodyMedium">{booking.drop_address}</Text>
         </View>
         <View style={styles.facts}>
-          <Fact label="Pickup date" value={formatDay(booking.pickup_date)} />
-          <Fact label="Weight" value={`${formatNumber(Number(booking.weight_kg))} kg`} />
-          <Fact label="Load" value={booking.load_type === 'part' ? 'Part load' : 'Full truck'} />
+          <Fact label={t('fact_pickup_date')} value={formatDay(booking.pickup_date)} />
+          <Fact label={t('fact_weight')} value={`${formatNumber(Number(booking.weight_kg))} kg`} />
+          <Fact label={t('fact_load')} value={booking.load_type === 'part' ? t('load_part') : t('load_full')} />
           <Fact
-            label="Price"
-            value={booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : 'To be confirmed'}
+            label={t('fact_price')}
+            value={booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : t('fact_price_tbc')}
           />
-          {booking.tracking_id ? <Fact label="Tracking ID" value={booking.tracking_id} mono /> : null}
+          {booking.tracking_id ? <Fact label={t('fact_tracking')} value={booking.tracking_id} mono /> : null}
         </View>
       </Card>
 
       {cancelled ? (
-        <Banner tone="warning" icon="x-circle" message={booking.cancel_reason ? `This booking was cancelled: ${booking.cancel_reason}` : 'This booking was cancelled.'} />
+        <Banner tone="warning" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />
       ) : (
         <Card style={styles.card}>
           <Text variant="title" accessibilityRole="header">
-            Progress
+            {t('progress')}
           </Text>
           {BOOKING_STEPS.map((step, index) => {
             const done = index <= reached;
             const time = times[step.status];
             return (
-              <View key={step.status} style={styles.step} accessible accessibilityLabel={`${step.label}${done ? ', done' : ', not yet'}${time ? `, ${formatDateTime(time)}` : ''}`}>
+              <View key={step.status} style={styles.step} accessible accessibilityLabel={`${t(step.label)}${done ? ', ' + t('step_done') : ', ' + t('step_not_yet')}${time ? `, ${formatDateTime(time)}` : ''}`}>
                 <View style={[styles.stepDot, done && styles.stepDotDone]}>
                   {done ? <Feather name="check" size={size.icon.sm} color={colors.onAccentFill} /> : null}
                 </View>
                 <View style={styles.flex}>
                   <Text variant="bodyMedium" color={done ? 'text' : 'textMuted'}>
-                    {step.label}
+                    {t(step.label)}
                   </Text>
                   {time && done ? (
                     <Text variant="caption" color="textMuted">
@@ -164,7 +167,7 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
       {tracking && !cancelled && booking.status !== 'delivered' ? (
         <View style={styles.live}>
           <Text variant="title" accessibilityRole="header">
-            Live tracking
+            {t('live_tracking')}
           </Text>
           <TrackingMap
             pickup={{ latitude: booking.pickup_lat, longitude: booking.pickup_lng }}
@@ -174,16 +177,16 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
           />
           {vehicle ? (
             <Text variant="bodySmall" color="textMuted">
-              {vehicle.plate_number ? `Vehicle ${vehicle.plate_number}. ` : ''}
+              {vehicle.plate_number ? `${t('vehicle')} ${vehicle.plate_number}. ` : ''}
               {vehiclePoint
                 ? tracking.eta_minutes != null
-                  ? `Estimated arrival in about ${formatMinutes(tracking.eta_minutes)}, worked out from its position now.`
-                  : 'Its position is shown on the map.'
-                : 'Its position is not available right now.'}
+                  ? t('eta_text', { time: formatMinutes(tracking.eta_minutes, t) })
+                  : t('position_shown')
+                : t('position_unavailable')}
             </Text>
           ) : (
             <Text variant="bodySmall" color="textMuted">
-              A vehicle has not been assigned yet. Its position will show here once it is.
+              {t('no_vehicle_yet')}
             </Text>
           )}
         </View>
@@ -193,14 +196,14 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
         <View style={styles.live}>
           {cancelError ? <ErrorBanner message={cancelError} /> : null}
           <Button
-            title="Cancel booking"
+            title={t('cancel_booking')}
             variant="danger"
             loading={cancelling}
-            accessibilityHint="Asks you to confirm before cancelling"
+            accessibilityHint={t('cancel_hint')}
             onPress={askCancel}
           />
           <Text variant="caption" color="textMuted" align="center">
-            You can cancel until your load is picked up.
+            {t('cancel_until')}
           </Text>
         </View>
       ) : null}

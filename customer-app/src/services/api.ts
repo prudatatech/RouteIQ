@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
 import { API_V1 } from '../config';
 import { secureStorage } from './secureStorage';
+import { translateNow } from '../locales';
 
 // Access/refresh tokens live in SecureStore (see secureStorage.ts). Non-sensitive
 // profile data (customer name/phone) stays in AsyncStorage. STORAGE_KEYS also
@@ -25,16 +26,16 @@ export const NOTIFICATIONS_CHANGED_EVENT = 'customer:notifications-changed';
 /** A request gives up after this long, so a weak signal never leaves a spinner running for ever. */
 const REQUEST_TIMEOUT_MS = 20_000;
 
-const NETWORK_MESSAGE = 'No signal. Check your internet connection and try again.';
-const SERVER_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
-const SESSION_MESSAGE = 'Your session has ended. Please sign in again.';
+const NETWORK_MESSAGE = () => translateNow('err_network');
+const SERVER_MESSAGE = () => translateNow('err_server');
+const SESSION_MESSAGE = () => translateNow('err_session');
 
 /** The server's own text when it sent one, otherwise a plain sentence. */
 function apiMessage(data: any, status: number): string {
   const detail = data?.detail ?? data?.error;
   // Validation errors arrive as a list of { msg } objects.
   const text = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d?.msg).filter(Boolean).join('. ') : '';
-  return status >= 500 || !text ? SERVER_MESSAGE : text;
+  return status >= 500 || !text ? SERVER_MESSAGE() : text;
 }
 
 class ApiClient {
@@ -141,7 +142,7 @@ class ApiClient {
         signal: controller.signal,
       });
     } catch {
-      throw new Error(NETWORK_MESSAGE);
+      throw new Error(NETWORK_MESSAGE());
     } finally {
       clearTimeout(timer);
     }
@@ -152,7 +153,7 @@ class ApiClient {
       }
       await this.clearTokens();
       DeviceEventEmitter.emit(SESSION_EXPIRED_EVENT);
-      throw new Error(SESSION_MESSAGE);
+      throw new Error(SESSION_MESSAGE());
     }
 
     const data = await response.json().catch(() => ({}));

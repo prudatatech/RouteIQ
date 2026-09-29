@@ -7,6 +7,7 @@ import BookingsScreen from '../screens/BookingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
 import { api, NOTIFICATIONS_CHANGED_EVENT } from '../services/api';
+import { useTranslation } from '../hooks/useTranslation';
 import { colors, size, type } from '../theme';
 
 /** How often the unread count is checked while the app is open. */
@@ -22,6 +23,7 @@ function icon(name: keyof typeof Feather.glyphMap) {
 
 /** The signed-in destinations. Safe-area insets are applied by the tab bar. */
 export default function MainTabs() {
+  const { t } = useTranslation();
   const [unread, setUnread] = useState(0);
   const refreshUnread = useCallback(() => {
     api
@@ -52,20 +54,20 @@ export default function MainTabs() {
         tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
       }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home', tabBarIcon: icon('home') }} />
-      <Tab.Screen name="Bookings" component={BookingsScreen} options={{ title: 'Bookings', tabBarIcon: icon('package') }} />
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: t('tab_home'), tabBarIcon: icon('home') }} />
+      <Tab.Screen name="Bookings" component={BookingsScreen} options={{ title: t('tab_bookings'), tabBarIcon: icon('package') }} />
       <Tab.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{
-          title: 'Notifications',
+          title: t('tab_notifications'),
           tabBarIcon: icon('bell'),
           tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
           tabBarBadgeStyle: { backgroundColor: colors.danger, color: colors.onSolid },
-          tabBarAccessibilityLabel: unread > 0 ? `Notifications, ${unread} unread` : 'Notifications',
+          tabBarAccessibilityLabel: unread > 0 ? t('tab_notifications_unread', { n: unread }) : t('tab_notifications'),
         }}
       />
-      <Tab.Screen name="Account" component={AccountScreen} options={{ title: 'Account', tabBarIcon: icon('user') }} />
+      <Tab.Screen name="Account" component={AccountScreen} options={{ title: t('tab_account'), tabBarIcon: icon('user') }} />
     </Tab.Navigator>
   );
 }

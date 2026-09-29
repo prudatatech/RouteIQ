@@ -14,6 +14,7 @@ import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import QuoteScreen from './src/screens/QuoteScreen';
 import BookingDetailScreen from './src/screens/BookingDetailScreen';
 import { SESSION_EXPIRED_EVENT } from './src/services/api';
+import { TranslationProvider } from './src/hooks/useTranslation';
 import { themeFonts } from './src/theme/fonts';
 import { colors } from './src/theme';
 
@@ -52,6 +53,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <TranslationProvider>
       <NavigationContainer ref={navigationRef} theme={navigationTheme}>
         <StatusBar style="dark" />
         <Stack.Navigator
@@ -70,6 +72,7 @@ export default function App() {
           <Stack.Screen name="BookingDetail" component={BookingDetailScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
+      </TranslationProvider>
     </SafeAreaProvider>
   );
 }

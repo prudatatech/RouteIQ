@@ -7,6 +7,7 @@ import { colors, radius, size, space } from '../theme';
 import { api, BOOKING_CREATED_EVENT, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
+import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
 
 /** How far ahead a pickup can be planned from the date list. */
 const DAYS_AHEAD = 60;
@@ -14,6 +15,7 @@ const DAYS_AHEAD = 60;
 type DayChoice = 'today' | 'tomorrow' | 'other';
 
 export default function QuoteScreen({ navigation, route }: any) {
+  const { t } = useTranslation();
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType, weightKg, vehicleType } = route.params || {};
 
   const today = dayKey(0);
@@ -36,7 +38,7 @@ export default function QuoteScreen({ navigation, route }: any) {
         date,
       }),
     `${weightKg}|${loadType}|${vehicleType}|${date}`,
-    'Could not get a price. Check your internet connection and try again.',
+    t('quote_failed'),
   );
 
   const days = useMemo(() => Array.from({ length: DAYS_AHEAD }, (_, i) => dayKey(i + 2)), []);
@@ -72,7 +74,7 @@ export default function QuoteScreen({ navigation, route }: any) {
       setBookedId(created.id);
       DeviceEventEmitter.emit(BOOKING_CREATED_EVENT);
     } catch (e: any) {
-      setBookingError(e?.message || 'Could not send your booking. Check your internet connection and try again.');
+      setBookingError(e?.message || t('book_failed'));
     } finally {
       setBooking(false);
     }
@@ -96,10 +98,10 @@ export default function QuoteScreen({ navigation, route }: any) {
         <View style={styles.doneWrap}>
           <EmptyState
             icon={<Feather name="check-circle" size={size.icon.xl} color={colors.success} />}
-            title="Booking sent"
-            message={`Our team will confirm your pickup on ${formatDay(date)} and let you know here.`}
+            title={t('booked_title')}
+            message={t('booked_msg', { date: formatDay(date) })}
             action={{
-              label: 'View my booking',
+              label: t('booked_view'),
               variant: 'primary',
               onPress: () => {
                 navigation.popToTop();
@@ -107,7 +109,7 @@ export default function QuoteScreen({ navigation, route }: any) {
               },
             }}
           />
-          <Button title="Back to home" variant="ghost" onPress={() => navigation.popToTop()} style={styles.doneHome} />
+          <Button title={t('back_home')} variant="ghost" onPress={() => navigation.popToTop()} style={styles.doneHome} />
         </View>
       </SafeAreaView>
     );
@@ -115,22 +117,22 @@ export default function QuoteScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Price and pickup date" onBack={() => navigation.goBack()} backLabel="Back" />
+      <ScreenHeader title={t('quote_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Card style={styles.routeCard}>
           <View style={styles.pills}>
-            <StatusPill label={loadType === 'part' ? 'Part load' : 'Full truck'} tone="neutral" />
+            <StatusPill label={loadType === 'part' ? t('load_part') : t('load_full')} tone="neutral" />
             <StatusPill label={`${formatNumber(weightKg)} kg`} tone="neutral" />
           </View>
           <Text variant="caption" color="textMuted">
-            Pickup
+            {t('pickup')}
           </Text>
           <Text variant="bodyMedium" numberOfLines={2}>
             {pickupLocation}
           </Text>
           <Text variant="caption" color="textMuted">
-            Drop-off
+            {t('dropoff')}
           </Text>
           <Text variant="bodyMedium" numberOfLines={2}>
             {dropoffLocation}
@@ -139,13 +141,13 @@ export default function QuoteScreen({ navigation, route }: any) {
 
         <View style={styles.section}>
           <Text variant="title" accessibilityRole="header">
-            Pickup date
+            {t('fact_pickup_date')}
           </Text>
-          <View style={styles.dateRow} accessibilityRole="radiogroup" accessibilityLabel="Pickup date">
-            <DateChip label="Today" selected={choice === 'today'} onPress={() => setChoice('today')} />
-            <DateChip label="Tomorrow" selected={choice === 'tomorrow'} onPress={() => setChoice('tomorrow')} />
+          <View style={styles.dateRow} accessibilityRole="radiogroup" accessibilityLabel={t('fact_pickup_date')}>
+            <DateChip label={t('today')} selected={choice === 'today'} onPress={() => setChoice('today')} />
+            <DateChip label={t('tomorrow')} selected={choice === 'tomorrow'} onPress={() => setChoice('tomorrow')} />
             <DateChip
-              label={choice === 'other' && otherDay ? formatDay(otherDay) : 'Pick a date'}
+              label={choice === 'other' && otherDay ? formatDay(otherDay) : t('pick_date')}
               selected={choice === 'other'}
               onPress={() => setPickerOpen(true)}
               icon="calendar"
@@ -155,35 +157,35 @@ export default function QuoteScreen({ navigation, route }: any) {
 
         <View style={styles.section}>
           <Text variant="title" accessibilityRole="header">
-            Price
+            {t('fact_price')}
           </Text>
           {loading ? (
             <Card style={styles.priceCard}>
               <ActivityIndicator color={colors.accent} />
               <Text variant="bodySmall" color="textMuted" align="center">
-                Working out your price
+                {t('quote_working')}
               </Text>
             </Card>
           ) : error ? (
-            <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} />
+            <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} />
           ) : quote && !quote.available ? (
             <Card style={styles.priceCard}>
               <Feather name="info" size={size.icon.lg} color={colors.info} />
               <Text variant="bodyMedium" align="center">
-                {quote.message ?? 'We cannot show a price for this trip yet.'}
+                {quote.message ?? t('quote_unavailable')}
               </Text>
             </Card>
           ) : quote ? (
             <Card style={styles.priceCard}>
               <Text variant="caption" color="textMuted">
-                {isRange ? 'Price range' : 'Estimated price'}
+                {isRange ? t('quote_range') : t('quote_estimated')}
               </Text>
-              <Text variant="display" accessibilityLabel={priceLabel(quote)}>
-                {isRange ? `${formatINR(quote.low!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} to ${formatINR(quote.high!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}` : formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}
+              <Text variant="display" accessibilityLabel={priceLabel(quote, t)}>
+                {isRange ? t('price_to', { low: formatINR(quote.low!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }), high: formatINR(quote.high!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) }) : formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}
               </Text>
               {isRange ? (
                 <Text variant="bodySmall" color="textMuted">
-                  Suggested {formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}
+                  {t('quote_suggested', { price: formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) })}
                 </Text>
               ) : null}
             </Card>
@@ -192,7 +194,7 @@ export default function QuoteScreen({ navigation, route }: any) {
           {quote && quote.factors.length > 0 ? (
             <Card style={styles.factors}>
               <Text variant="bodyMedium" accessibilityRole="header">
-                How this price is worked out
+                {t('quote_how')}
               </Text>
               {quote.factors.map((factor) => (
                 <View key={factor.label} style={styles.factor}>
@@ -210,18 +212,18 @@ export default function QuoteScreen({ navigation, route }: any) {
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
         {quote && !quote.available && !loading ? (
           <Text variant="caption" color="textMuted" align="center">
-            No price yet. Book and our team will send you one.
+            {t('quote_no_price')}
           </Text>
         ) : null}
         {bookingError ? <ErrorBanner message={bookingError} /> : null}
         <Button
-          title="Book this shipment"
+          title={t('quote_book')}
           loading={booking}
           disabled={loading || !!error}
-          accessibilityHint={quote && !quote.available ? 'Sends your request so our team can quote it' : undefined}
+          accessibilityHint={quote && !quote.available ? t('quote_book_hint') : undefined}
           onPress={book}
         />
-        <Button title="Change details" variant="secondary" disabled={booking} onPress={() => navigation.goBack()} />
+        <Button title={t('quote_change')} variant="secondary" disabled={booking} onPress={() => navigation.goBack()} />
       </SafeAreaView>
 
       <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
@@ -229,9 +231,9 @@ export default function QuoteScreen({ navigation, route }: any) {
           <SafeAreaView edges={['bottom']} style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text variant="title" accessibilityRole="header">
-                Choose a pickup date
+                {t('quote_choose_date')}
               </Text>
-              <Button title="Close" variant="ghost" block={false} onPress={() => setPickerOpen(false)} />
+              <Button title={t('close')} variant="ghost" block={false} onPress={() => setPickerOpen(false)} />
             </View>
             <FlatList
               data={days}
@@ -259,9 +261,9 @@ export default function QuoteScreen({ navigation, route }: any) {
 /** The first part of an address, used as the place's short name. */
 const placeName = (address: string) => address.split(',')[0].trim() || address;
 
-function priceLabel(quote: Quote): string {
+function priceLabel(quote: Quote, t: TranslateFn): string {
   if (quote.low != null && quote.high != null && quote.low !== quote.high) {
-    return `Between ${formatINR(quote.low)} and ${formatINR(quote.high)}`;
+    return t('price_between', { low: formatINR(quote.low), high: formatINR(quote.high) });
   }
   return formatINR(quote.suggested ?? 0);
 }

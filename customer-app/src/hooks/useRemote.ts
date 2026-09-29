@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { translateNow } from '../locales';
 
 interface Settled<T> {
   id: string;
@@ -6,7 +7,6 @@ interface Settled<T> {
   error?: string;
 }
 
-const DEFAULT_FAILURE = 'Could not load this. Check your internet connection and try again.';
 
 /**
  * Loads data from the API and reloads when `key` changes or `reload()` is
@@ -14,7 +14,7 @@ const DEFAULT_FAILURE = 'Could not load this. Check your internet connection and
  * set while an effect starts. `data` keeps the last good result while a new
  * request is loading (for pull-to-refresh).
  */
-export function useRemote<T>(fetcher: () => Promise<T>, key: string, failure: string = DEFAULT_FAILURE) {
+export function useRemote<T>(fetcher: () => Promise<T>, key: string, failure: string = translateNow('load_failed')) {
   const [nonce, setNonce] = useState(0);
   const [settled, setSettled] = useState<Settled<T> | null>(null);
   const fetcherRef = useRef(fetcher);

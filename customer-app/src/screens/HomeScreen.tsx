@@ -7,13 +7,14 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, UrlTile } from 'react-nativ
 import { BOOKING_CREATED_EVENT, STORAGE_KEYS } from '../services/api';
 import { Button, Card, IconButton, Text } from '../components/ui';
 import { colors, elevation, radius, size, space } from '../theme';
+import { useTranslation } from '../hooks/useTranslation';
 
 type Coord = { latitude: number; longitude: number };
 type LoadType = 'full' | 'part';
 
 const LOAD_TYPES: { id: LoadType; label: string }[] = [
-  { id: 'full', label: 'Full truck' },
-  { id: 'part', label: 'Part load' },
+  { id: 'full', label: 'load_full' },
+  { id: 'part', label: 'load_part' },
 ];
 
 /** A gentle arc between two points, drawn as a guide line (not a road route). */
@@ -42,14 +43,15 @@ const generateCurve = (start: Coord, end: Coord) => {
   return points;
 };
 
-const getGreeting = () => {
+const getGreetingKey = () => {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return 'greet_morning';
+  if (hour < 18) return 'greet_afternoon';
+  return 'greet_evening';
 };
 
 export default function HomeScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [loadType, setLoadType] = useState<LoadType>('full');
 
@@ -103,7 +105,7 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   const canContinue = !!pickupLocation && !!dropoffLocation && !!pickupCoord && !!dropoffCoord;
-  const greeting = getGreeting();
+  const greeting = t(getGreetingKey());
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -119,7 +121,7 @@ export default function HomeScreen({ navigation }: any) {
         </View>
 
         {/* --- LOAD TYPE --- */}
-        <View style={styles.toggle} accessibilityRole="radiogroup" accessibilityLabel="Load type">
+        <View style={styles.toggle} accessibilityRole="radiogroup" accessibilityLabel={t('load_type')}>
           {LOAD_TYPES.map((option) => {
             const selected = loadType === option.id;
             return (
@@ -129,7 +131,7 @@ export default function HomeScreen({ navigation }: any) {
                 onPress={() => setLoadType(option.id)}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
-                accessibilityLabel={option.label}
+                accessibilityLabel={t(option.label)}
               >
                 {option.id === 'full' ? (
                   <Feather name="box" size={size.icon.sm} color={selected ? colors.text : colors.textMuted} />
@@ -141,7 +143,7 @@ export default function HomeScreen({ navigation }: any) {
                   />
                 )}
                 <Text variant={selected ? 'bodySmallMedium' : 'bodySmall'} color={selected ? 'text' : 'textMuted'}>
-                  {option.label}
+                  {t(option.label)}
                 </Text>
               </Pressable>
             );
@@ -151,7 +153,7 @@ export default function HomeScreen({ navigation }: any) {
         {/* --- BOOKING CARD --- */}
         <Card style={styles.bookingCard}>
           <Text variant="title" accessibilityRole="header">
-            Plan a shipment
+            {t('plan_shipment')}
           </Text>
 
           <View style={styles.locations}>
@@ -166,15 +168,15 @@ export default function HomeScreen({ navigation }: any) {
                 style={({ pressed }) => [styles.locationItem, pressed && styles.pressed]}
                 onPress={() => navigation.navigate('LocationSearch', { type: 'pickup' })}
                 accessibilityRole="button"
-                accessibilityLabel={pickupLocation ? `Pickup: ${pickupLocation}` : 'Choose pickup location'}
-                accessibilityHint="Opens location search"
+                accessibilityLabel={pickupLocation ? `${t('pickup')}: ${pickupLocation}` : t('home_choose_pickup')}
+                accessibilityHint={t('home_opens_search')}
               >
                 <View style={styles.flex}>
                   <Text variant="caption" color="textMuted">
-                    Pickup
+                    {t('pickup')}
                   </Text>
                   <Text variant="bodyMedium" color={pickupLocation ? 'text' : 'textDisabled'} numberOfLines={1}>
-                    {pickupLocation || 'Search pickup location'}
+                    {pickupLocation || t('home_search_pickup')}
                   </Text>
                 </View>
                 <MaterialCommunityIcons name="crosshairs-gps" size={size.icon.md} color={colors.accent} />
@@ -186,15 +188,15 @@ export default function HomeScreen({ navigation }: any) {
                 style={({ pressed }) => [styles.locationItem, pressed && styles.pressed]}
                 onPress={() => navigation.navigate('LocationSearch', { type: 'dropoff' })}
                 accessibilityRole="button"
-                accessibilityLabel={dropoffLocation ? `Drop-off: ${dropoffLocation}` : 'Choose drop-off location'}
-                accessibilityHint="Opens location search"
+                accessibilityLabel={dropoffLocation ? `${t('dropoff')}: ${dropoffLocation}` : t('home_choose_drop')}
+                accessibilityHint={t('home_opens_search')}
               >
                 <View style={styles.flex}>
                   <Text variant="caption" color="textMuted">
-                    Drop-off
+                    {t('dropoff')}
                   </Text>
                   <Text variant="bodyMedium" color={dropoffLocation ? 'text' : 'textDisabled'} numberOfLines={1}>
-                    {dropoffLocation || 'Where is it going?'}
+                    {dropoffLocation || t('home_where_to')}
                   </Text>
                 </View>
               </Pressable>
@@ -203,7 +205,7 @@ export default function HomeScreen({ navigation }: any) {
 
           {pickupCoord && dropoffCoord && (
             <Button
-              title="View on map"
+              title={t('home_view_map')}
               variant="secondary"
               onPress={() => setIsMapVisible(true)}
               icon={(color) => <Feather name="map" size={size.icon.sm} color={color} />}
@@ -211,9 +213,9 @@ export default function HomeScreen({ navigation }: any) {
           )}
 
           <Button
-            title="Find a truck"
+            title={t('home_find_truck')}
             disabled={!canContinue}
-            accessibilityHint={canContinue ? undefined : 'Choose pickup and drop-off first'}
+            accessibilityHint={canContinue ? undefined : t('home_need_both')}
             onPress={() => navigation.navigate('CargoConfig', { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType })}
             icon={(color) => <Feather name="arrow-right" size={size.icon.md} color={color} />}
           />
@@ -243,15 +245,15 @@ export default function HomeScreen({ navigation }: any) {
                   flipY={false}
                 />
               )}
-              <Marker coordinate={pickupCoord} pinColor={colors.accent} title="Pickup" description={pickupLocation ?? undefined} />
-              <Marker coordinate={dropoffCoord} pinColor={colors.info} title="Drop-off" description={dropoffLocation ?? undefined} />
+              <Marker coordinate={pickupCoord} pinColor={colors.accent} title={t('pickup')} description={pickupLocation ?? undefined} />
+              <Marker coordinate={dropoffCoord} pinColor={colors.info} title={t('dropoff')} description={dropoffLocation ?? undefined} />
               <Polyline coordinates={curve} strokeColor={colors.accent} strokeWidth={3} lineDashPattern={[8, 8]} />
             </MapView>
           )}
 
           <SafeAreaView edges={['top']} style={styles.mapHeader} pointerEvents="box-none">
             <IconButton
-              accessibilityLabel="Close map"
+              accessibilityLabel={t('home_close_map')}
               variant="secondary"
               style={styles.mapClose}
               onPress={() => setIsMapVisible(false)}

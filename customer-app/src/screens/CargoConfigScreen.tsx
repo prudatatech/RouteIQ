@@ -13,15 +13,16 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
 import { formatNumber } from '../utils/format';
+import { useTranslation } from '../hooks/useTranslation';
 
 /** Weight presets with the vehicle class usually used for them in India. */
 const TRUCK_TIERS = [
-  { id: '1', weight: 1.0, title: 'Light load', desc: 'Boxes, pallets, e-commerce', truck: 'Tata Ace / Chota Hathi' },
-  { id: '2', weight: 2.5, title: 'Utility pickup', desc: 'Furniture, appliances, FMCG', truck: 'Mahindra Bolero Pickup' },
-  { id: '3', weight: 4.5, title: 'Medium cargo', desc: 'Retail stock, machinery', truck: 'Eicher 14 ft (6 wheeler)' },
-  { id: '4', weight: 9.0, title: 'Heavy freight', desc: 'Industrial raw materials', truck: 'Eicher 19 ft (6 wheeler)' },
-  { id: '5', weight: 15.0, title: 'Full truckload', desc: 'Bulk haulage and steel', truck: 'Taurus (10 wheeler)' },
-  { id: '6', weight: 21.0, title: 'Maximum payload', desc: 'Long-haul, heavy loads', truck: '32 ft multi-axle container' },
+  { id: '1', weight: 1.0, title: 'tier1_title', desc: 'tier1_desc', truck: 'Tata Ace / Chota Hathi' },
+  { id: '2', weight: 2.5, title: 'tier2_title', desc: 'tier2_desc', truck: 'Mahindra Bolero Pickup' },
+  { id: '3', weight: 4.5, title: 'tier3_title', desc: 'tier3_desc', truck: 'Eicher 14 ft (6 wheeler)' },
+  { id: '4', weight: 9.0, title: 'tier4_title', desc: 'tier4_desc', truck: 'Eicher 19 ft (6 wheeler)' },
+  { id: '5', weight: 15.0, title: 'tier5_title', desc: 'tier5_desc', truck: 'Taurus (10 wheeler)' },
+  { id: '6', weight: 21.0, title: 'tier6_title', desc: 'tier6_desc', truck: '32 ft multi-axle container' },
 ];
 
 const MAX_WEIGHT_T = 25;
@@ -30,17 +31,18 @@ const SLIDER_MARKS_T = [0, 5, 10, 15, 25];
 const sliderLabel = (tonnes: number, unit: 't' | 'kg') =>
   unit === 't' ? (tonnes === 0 ? '0' : `${tonnes} t${tonnes === MAX_WEIGHT_T ? '+' : ''}`) : formatNumber(tonnes * 1000);
 
-const getTierForWeight = (weight: number) => {
-  if (weight <= 1.0) return 'Light';
-  if (weight <= 2.5) return 'Utility';
-  if (weight <= 9.0) return 'Medium';
-  return 'Heavy';
+const getTierKey = (weight: number) => {
+  if (weight <= 1.0) return 'tier_light';
+  if (weight <= 2.5) return 'tier_utility';
+  if (weight <= 9.0) return 'tier_medium';
+  return 'tier_heavy';
 };
 
 const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
   unit === 't' ? tonnes.toFixed(1) : formatNumber(Math.round(tonnes * 1000));
 
 export default function CargoConfigScreen({ navigation, route }: any) {
+  const { t } = useTranslation();
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType } = route.params || {};
 
   const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
@@ -103,12 +105,12 @@ export default function CargoConfigScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Cargo and weight" onBack={() => navigation.goBack()} backLabel="Back" />
+      <ScreenHeader title={t('cargo_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* ROUTE */}
         <Card style={styles.routeCard}>
-          {loadType ? <StatusPill label={loadType === 'part' ? 'Part load' : 'Full truck'} tone="neutral" /> : null}
+          {loadType ? <StatusPill label={loadType === 'part' ? t('load_part') : t('load_full')} tone="neutral" /> : null}
           <View style={styles.routeRow}>
             <View style={styles.timeline}>
               <View style={styles.dotFilled} />
@@ -116,10 +118,10 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </View>
             <View style={styles.flex}>
               <Text variant="caption" color="textMuted">
-                Pickup
+                {t('pickup')}
               </Text>
               <Text variant="bodyMedium" numberOfLines={2}>
-                {pickupLocation || 'Not selected'}
+                {pickupLocation || t('not_selected')}
               </Text>
             </View>
           </View>
@@ -129,10 +131,10 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </View>
             <View style={styles.flex}>
               <Text variant="caption" color="textMuted">
-                Drop-off
+                {t('dropoff')}
               </Text>
               <Text variant="bodyMedium" numberOfLines={2}>
-                {dropoffLocation || 'Not selected'}
+                {dropoffLocation || t('not_selected')}
               </Text>
             </View>
           </View>
@@ -141,19 +143,19 @@ export default function CargoConfigScreen({ navigation, route }: any) {
         {/* WEIGHT */}
         <View style={styles.section}>
           <Text variant="title" accessibilityRole="header">
-            Estimated weight of goods
+            {t('cargo_weight_title')}
           </Text>
           <Text variant="bodySmall" color="textMuted">
-            Choose the approximate weight so the right size of vehicle can be matched.
+            {t('cargo_weight_hint')}
           </Text>
         </View>
 
         <Card style={styles.weightCard}>
           <View style={styles.weightHeader}>
             <Text variant="captionMedium" color="textMuted">
-              Gross weight
+              {t('cargo_gross')}
             </Text>
-            <View style={styles.unitToggle} accessibilityRole="radiogroup" accessibilityLabel="Weight unit">
+            <View style={styles.unitToggle} accessibilityRole="radiogroup" accessibilityLabel={t('cargo_unit')}>
               {(['t', 'kg'] as const).map((u) => {
                 const selected = unit === u;
                 return (
@@ -162,11 +164,11 @@ export default function CargoConfigScreen({ navigation, route }: any) {
                     onPress={() => setUnit(u)}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={u === 't' ? 'Tonnes' : 'Kilograms'}
+                    accessibilityLabel={u === 't' ? t('tonnes') : t('kilograms')}
                     style={[styles.unitBtn, selected && styles.unitBtnActive]}
                   >
                     <Text variant="captionMedium" color={selected ? 'onAccentFill' : 'textMuted'}>
-                      {u === 't' ? 'Tonnes' : 'kg'}
+                      {u === 't' ? t('tonnes') : 'kg'}
                     </Text>
                   </Pressable>
                 );
@@ -181,7 +183,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
                 {unit === 't' ? 't' : 'kg'}
               </Text>
             </View>
-            <StatusPill label={getTierForWeight(selectedWeight)} tone="accent" />
+            <StatusPill label={t(getTierKey(selectedWeight))} tone="accent" />
           </View>
 
           {/* SLIDER */}
@@ -191,8 +193,8 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             style={styles.sliderTrack}
             accessible
             accessibilityRole="adjustable"
-            accessibilityLabel="Estimated weight"
-            accessibilityValue={{ text: `${formatWeight(selectedWeight, unit)} ${unit === 't' ? 'tonnes' : 'kilograms'}` }}
+            accessibilityLabel={t('cargo_est_weight')}
+            accessibilityValue={{ text: `${formatWeight(selectedWeight, unit)} ${unit === 't' ? t('tonnes') : t('kilograms')}` }}
             accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
             onAccessibilityAction={onSliderAction}
           >
@@ -211,7 +213,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
 
         {/* PRESETS */}
         <Text variant="title" accessibilityRole="header">
-          Common loads
+          {t('cargo_common')}
         </Text>
         <View style={styles.grid} accessibilityRole="radiogroup">
           {TRUCK_TIERS.map((tier) => {
@@ -226,15 +228,15 @@ export default function CargoConfigScreen({ navigation, route }: any) {
                 }}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${tier.title}, ${tier.weight.toFixed(1)} tonnes, ${tier.desc}`}
+                accessibilityLabel={`${t(tier.title)}, ${tier.weight.toFixed(1)} ${t('tonnes')}, ${t(tier.desc)}`}
               >
                 <View style={styles.gridItemHeader}>
                   <Text variant="bodyMedium">{tier.weight.toFixed(1)} t</Text>
                   <View style={[styles.radioDot, isSelected && styles.radioDotActive]} />
                 </View>
-                <Text variant="bodySmallMedium">{tier.title}</Text>
+                <Text variant="bodySmallMedium">{t(tier.title)}</Text>
                 <Text variant="caption" color="textMuted" numberOfLines={1}>
-                  {tier.desc}
+                  {t(tier.desc)}
                 </Text>
               </Pressable>
             );
@@ -248,11 +250,11 @@ export default function CargoConfigScreen({ navigation, route }: any) {
           </View>
           <View style={styles.flex}>
             <Text variant="caption" color="textMuted">
-              Suggested vehicle
+              {t('cargo_suggested')}
             </Text>
-            <Text variant="bodyMedium">{suggestedTruck ?? 'Our team will match a vehicle to this weight'}</Text>
+            <Text variant="bodyMedium">{suggestedTruck ?? t('cargo_no_suggestion')}</Text>
             <Text variant="caption" color="textMuted">
-              For loads up to {formatNumber(Math.round(selectedWeight * 1000))} kg
+              {t('cargo_up_to', { kg: formatNumber(Math.round(selectedWeight * 1000)) })}
             </Text>
           </View>
         </Card>
@@ -261,8 +263,8 @@ export default function CargoConfigScreen({ navigation, route }: any) {
       {/* NEXT */}
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
         <Button
-          title="See price"
-          accessibilityHint="Shows the price and lets you choose a pickup date"
+          title={t('cargo_see_price')}
+          accessibilityHint={t('cargo_see_price_hint')}
           onPress={() =>
             navigation.navigate('Quote', {
               pickupLocation,

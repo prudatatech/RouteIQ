@@ -5,6 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, STORAGE_KEYS } from '../services/api';
 import { Button, Card, ScreenHeader, Text } from '../components/ui';
+import LanguagePicker from '../components/LanguagePicker';
+import { useTranslation } from '../hooks/useTranslation';
 import { colors, radius, size, space } from '../theme';
 
 interface CustomerInfo {
@@ -13,6 +15,7 @@ interface CustomerInfo {
 }
 
 export default function AccountScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<CustomerInfo | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -34,9 +37,9 @@ export default function AccountScreen({ navigation }: any) {
   };
 
   const confirmSignOut = () => {
-    Alert.alert('Sign out?', 'You will need an OTP to sign in again.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOut },
+    Alert.alert(t('signout_title'), t('signout_body'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('signout'), style: 'destructive', onPress: signOut },
     ]);
   };
 
@@ -45,7 +48,7 @@ export default function AccountScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="Account" />
+      <ScreenHeader title={t('tab_account')} />
       <ScrollView contentContainerStyle={styles.content}>
         <Card style={styles.profile}>
           <View style={styles.avatar} accessible={false}>
@@ -53,18 +56,23 @@ export default function AccountScreen({ navigation }: any) {
           </View>
           <View style={styles.flex}>
             <Text variant="title" numberOfLines={1}>
-              {name || 'Your account'}
+              {name || t('your_account')}
             </Text>
             {phone ? (
-              <Text variant="mono" color="textMuted" accessibilityLabel={`Phone ${phone}`}>
+              <Text variant="mono" color="textMuted" accessibilityLabel={`${t('phone')} ${phone}`}>
                 {phone}
               </Text>
             ) : null}
           </View>
         </Card>
 
+        <Text variant="title" accessibilityRole="header">
+          {t('language')}
+        </Text>
+        <LanguagePicker />
+
         <Button
-          title="Sign out"
+          title={t('signout')}
           variant="secondary"
           onPress={confirmSignOut}
           loading={signingOut}

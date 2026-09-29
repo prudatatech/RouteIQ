@@ -21,6 +21,7 @@ import MapView, { PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button, ErrorBanner, IconButton, Text } from '../components/ui';
 import { colors, radius, size, space, type } from '../theme';
+import { useTranslation } from '../hooks/useTranslation';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -46,17 +47,18 @@ type LocationProblem =
   | { kind: 'search' }
   | { kind: 'place' };
 
+/** Translation keys for each problem's message. */
 const PROBLEM_MESSAGES: Record<LocationProblem['kind'], string> = {
-  permission:
-    'Location access is off for MargixIndia. Allow it in Settings to use your current location, or type the address instead.',
-  services: 'Location services are turned off on this phone. Turn them on in Settings, or type the address instead.',
-  no_fix: 'Could not get your position. Move to an open area and try again, or type the address instead.',
-  no_address: 'We found your position but not an address for it. Drag the map to adjust, or type the address.',
-  search: 'Could not search right now. Check your internet connection and try again.',
-  place: 'Could not open that place. Try again, or choose it on the map.',
+  permission: 'loc_permission',
+  services: 'loc_services',
+  no_fix: 'loc_no_fix',
+  no_address: 'loc_no_address',
+  search: 'loc_search',
+  place: 'loc_place',
 };
 
 export default function LocationSearchScreen({ navigation, route }: any) {
+  const { t } = useTranslation();
   const { type: locationType } = route.params || { type: 'pickup' }; // 'pickup' or 'dropoff'
   const isPickup = locationType === 'pickup';
   const [query, setQuery] = useState('');
@@ -358,10 +360,10 @@ export default function LocationSearchScreen({ navigation, route }: any) {
     return (
       <View style={styles.problem}>
         <ErrorBanner
-          message={PROBLEM_MESSAGES[problem.kind]}
+          message={t(PROBLEM_MESSAGES[problem.kind])}
           action={
             problem.kind === 'search' && trimmedQuery.length >= 3
-              ? { label: 'Try again', onPress: () => fetchPlaces(trimmedQuery) }
+              ? { label: t('try_again'), onPress: () => fetchPlaces(trimmedQuery) }
               : undefined
           }
         />
@@ -369,7 +371,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
           <View style={styles.problemActions}>
             {needsSettings ? (
               <Button
-                title="Open settings"
+                title={t('open_settings')}
                 variant="secondary"
                 block={false}
                 style={styles.flex}
@@ -378,7 +380,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
               />
             ) : null}
             <Button
-              title="Try again"
+              title={t('try_again')}
               variant="ghost"
               block={false}
               style={styles.flex}
@@ -412,14 +414,14 @@ export default function LocationSearchScreen({ navigation, route }: any) {
     </Pressable>
   );
 
-  const placeholder = isPickup ? 'Search pickup location' : 'Where is it going?';
+  const placeholder = isPickup ? t('home_search_pickup') : t('home_where_to');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* --- HEADER --- */}
       <View style={styles.header}>
         <IconButton
-          accessibilityLabel="Back"
+          accessibilityLabel={t('back')}
           onPress={() => navigation.goBack()}
           icon={(color) => <Feather name="arrow-left" size={size.icon.lg} color={color} />}
         />
@@ -431,7 +433,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
           <TextInput
             style={styles.input}
             placeholder={placeholder}
-            accessibilityLabel={isPickup ? 'Pickup location' : 'Drop-off location'}
+            accessibilityLabel={isPickup ? t('loc_field_pickup') : t('loc_field_drop')}
             value={query}
             onChangeText={setQuery}
             autoFocus
@@ -439,14 +441,14 @@ export default function LocationSearchScreen({ navigation, route }: any) {
             placeholderTextColor={colors.textDisabled}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Clear search">
+            <Pressable onPress={() => setQuery('')} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('loc_clear')}>
               <Feather name="x" size={size.icon.md} color={colors.textMuted} />
             </Pressable>
           )}
         </View>
 
         <IconButton
-          accessibilityLabel="Choose on map"
+          accessibilityLabel={t('loc_choose_map')}
           variant="secondary"
           onPress={() => {
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -463,7 +465,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         onPress={handleCurrentLocation}
         disabled={gpsLoading}
         accessibilityRole="button"
-        accessibilityLabel="Use your current location"
+        accessibilityLabel={t('loc_use_current')}
         accessibilityState={{ disabled: gpsLoading, busy: gpsLoading }}
       >
         {gpsLoading ? (
@@ -472,7 +474,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
           <MaterialCommunityIcons name="crosshairs-gps" size={size.icon.md} color={colors.accent} />
         )}
         <Text variant="bodyMedium" color="accent">
-          {gpsLoading ? 'Finding your location…' : 'Use your current location'}
+          {gpsLoading ? t('loc_finding') : t('loc_use_current')}
         </Text>
       </Pressable>
 
@@ -483,7 +485,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       {/* --- PREDICTIONS OR HISTORY --- */}
       {loading && query.length > 2 ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} accessibilityLabel="Searching" />
+          <ActivityIndicator size="large" color={colors.accent} accessibilityLabel={t('loc_searching')} />
         </View>
       ) : visiblePredictions.length > 0 ? (
         <FlatList
@@ -495,12 +497,12 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         />
       ) : !showMap && trimmedQuery.length >= 3 && searchedQuery === trimmedQuery && !problem ? (
         <Text variant="bodySmall" color="textMuted" style={styles.noResults} accessibilityLiveRegion="polite">
-          No matching places. Try a different search, or choose the place on the map.
+          {t('loc_no_results')}
         </Text>
       ) : query.length === 0 && history.length > 0 && !showMap ? (
         <View style={styles.flex}>
           <Text variant="bodySmallMedium" color="textMuted" style={styles.historyTitle} accessibilityRole="header">
-            {isPickup ? 'Recent pickups' : 'Recent drop-offs'}
+            {isPickup ? t('loc_recent_pickups') : t('loc_recent_drops')}
           </Text>
           <FlatList
             data={history}
@@ -554,10 +556,10 @@ export default function LocationSearchScreen({ navigation, route }: any) {
           {selectedCoord && (
             <SafeAreaView edges={['bottom']} style={styles.confirmContainer}>
               <Button
-                title="Confirm location"
+                title={t('loc_confirm')}
                 loading={resolving}
                 disabled={!(confirmedAddress || query.trim())}
-                accessibilityHint={confirmedAddress || query.trim() ? undefined : 'Move the map until an address appears'}
+                accessibilityHint={confirmedAddress || query.trim() ? undefined : t('loc_move_map')}
                 onPress={confirmAndReturn}
                 icon={(color) => <Feather name="check" size={size.icon.md} color={color} />}
               />
