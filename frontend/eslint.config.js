@@ -47,6 +47,10 @@ export default tseslint.config(
       'src/components/vendor/vendorContext.ts',
       'src/config/**/*.{ts,tsx}',
       'src/pages/VendorRequestsPage.tsx',
+      'src/pages/BidsPage.tsx',
+      'src/pages/admin/**/*.{ts,tsx}',
+      'src/hooks/useRealtimeRefresh.ts',
+      'src/utils/display.ts',
     ],
     plugins: { design },
     rules: {
