@@ -15,6 +15,7 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { sendError } from '../core/errors';
+import { normalizePhone } from '../utils/phone';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -53,18 +54,6 @@ const OTP_FAILURES_PER_HOUR = 10;      // wrong guesses per phone per hour, acro
 function generateOTP(): string {
   const len = Math.min(Math.max(settings.OTP_LENGTH || 6, 4), 8);
   return crypto.randomInt(0, 10 ** len).toString().padStart(len, '0');
-}
-
-/** Normalise an Indian phone number to E.164 (+91XXXXXXXXXX); null when invalid. */
-function normalizePhone(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  let phone = raw.replace(/\s+/g, '').replace(/^0+/, '');
-  if (!phone.startsWith('+')) {
-    if (phone.startsWith('91') && phone.length === 12) phone = '+' + phone;
-    else if (phone.length === 10) phone = '+91' + phone;
-    else phone = '+' + phone;
-  }
-  return phone.replace(/\D/g, '').length >= 10 ? phone : null;
 }
 
 function twilioConfigured(): boolean {
