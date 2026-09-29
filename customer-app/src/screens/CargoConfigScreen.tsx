@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   unitBtn: {
-    minHeight: 36,
+    minHeight: size.control,
     minWidth: size.control,
     paddingHorizontal: space[3],
     borderRadius: radius.control - 2,

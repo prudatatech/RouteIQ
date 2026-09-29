@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: space[2],
-    minHeight: size.control - space[2],
+    minHeight: size.control,
     borderRadius: radius.control - 2,
     alignItems: 'center',
     justifyContent: 'center',
