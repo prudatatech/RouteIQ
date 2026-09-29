@@ -127,11 +127,6 @@ export const usersAPI = {
   update: (id: string, data: any) => api.patch(`/users/${id}`, data).then(r => r.data),
 }
 
-export const trafficAPI = {
-  simulateEvent: (lat: number, lng: number, type: string, severity: number) => 
-    api.post('/traffic/event', { lat, lng, event_type: type, severity }).then(r => r.data),
-}
-
 export const cargoAPI = {
   scenarios: () => api.get('/cargo/scenarios').then(r => r.data),
   securityAlerts: () => api.get('/cargo/security-alerts').then(r => r.data),
