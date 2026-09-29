@@ -38,7 +38,8 @@ The app shell (`AppLayout`, `VendorLayout`) already provides the page width and 
 | Text, number, select, textarea, checkbox | `Input`, `Select`, `Textarea`, `Checkbox`; they include label, hint, error and required mark |
 | Address with coordinates | `PlaceSearch` |
 | Filter a list | `SearchInput` |
-| Status of anything | `StatusPill status={row.status}`; colours and labels live in `components/ui/status.ts` |
+| Status of anything | `StatusPill status={row.status}`; colours and labels live in `components/ui/status.ts`. Pass `kind` (`route`, `booking`, `request`, `bid`, `kyc`, `window`) when the same value means something different on that record |
+| Money, weight, distance, time, dates | `formatRupees`, `formatKg`, `formatKm`, `formatMinutes`, `formatDate`, `formatDateTime`, `formatTime` from `@/utils/display` (India time, whole rupees); never a local formatter |
 | Lists of records | `DataTable` (sorting, paging, loading, empty, error, phone layout) |
 | Record details | `Drawer` + `DetailList` |
 | Dialogs | `Modal`; `useConfirm()` for confirm and prompt; never `alert`, `confirm` or `prompt` |
@@ -60,11 +61,13 @@ The design rules apply to every file under `frontend/src/**/*.{ts,tsx}` (see `fr
 ## Writing
 
 - Sentence case everywhere: "Create shipment", not "Create Shipment" or "CREATE SHIPMENT".
-- Use the names a dispatcher uses: Shipments, Fleet, Routes, Route optimization, Bids, Vendor requests, 3PL partners, Backhaul pooling.
+- Use the names a dispatcher uses: Shipments, Fleet, Routes, Route optimization, Bids, Vendor loads, 3PL partners, Backhaul pooling.
 - Buttons say what they do: "Approve bid", "Assign vehicle", "Sign in".
 - Never use internal code names or marketing words in the product: no "neural", "nexus", "AI grid", "command", "vector" or "synchronizing".
 - Empty states say what is missing and give one next step.
 - Error messages say what happened and what to do: "We could not load routes. Check your connection and try again."
+- One term per concept: vendor (never shipper), route for the plan, receiver on screen (consignee only on the printed manifest), alert for fleet events, SOS for emergencies, minimum bid, Vendor loads.
+- Confirm buttons say verb and object ("Resolve alert", "Delete route"); one-clause toasts have no trailing period.
 - Numbers use the Indian format: `toLocaleString('en-IN')`, and ₹ for money.
 - Never show a number, name or status that does not come from real data. If there is no data, show an empty state.
 
