@@ -44,3 +44,11 @@ export async function resolvePlace(suggestion: PlaceSuggestion): Promise<Resolve
   if (!location) return null
   return { address: suggestion.place_name, lat: location.y, lng: location.x }
 }
+
+/** Address nearest to a coordinate, or null when the geocoder has none. */
+export async function reversePlace(lat: number, lng: number): Promise<ResolvedPlace | null> {
+  const res = await fetch(`${ARCGIS_GEOCODER}/reverseGeocode?location=${lng},${lat}&f=json`)
+  const data = await res.json()
+  const address: string | undefined = data.address?.LongLabel || data.address?.Match_addr
+  return address ? { address, lat, lng } : null
+}

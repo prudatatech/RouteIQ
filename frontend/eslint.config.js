@@ -60,6 +60,10 @@ export default tseslint.config(
       'src/pages/LiveMapPage.tsx',
       'src/pages/FleetPage.tsx',
       'src/pages/EmergencyPage.tsx',
+      'src/pages/ShipmentsPage.tsx',
+      'src/pages/ShipmentManifestPage.tsx',
+      'src/components/modals/AddShipmentModal.tsx',
+      'src/components/shipments/**/*.{ts,tsx}',
     ],
     plugins: { design },
     rules: {

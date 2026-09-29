@@ -193,6 +193,7 @@ export const shipmentsAPI = {
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
   updateStatus: (id: string, status: string, fields?: Record<string, unknown>) => api.patch(`/shipments/${id}`, { status, ...fields }).then(r => r.data),
   edit: (id: string, data: any) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),
+  updateMetadata: (id: string, metadata: object) => api.put(`/shipments/${id}/metadata`, metadata).then(r => r.data),
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),
   assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
