@@ -1,5 +1,8 @@
 import axios from 'axios'
 import { supabase } from '@/services/supabase'
+import type {
+  PeopleAttention, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
+} from '@/components/people/types'
 
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
@@ -130,6 +133,62 @@ export const usersAPI = {
   me: () => api.get('/users/me').then(r => r.data),
   list: () => api.get('/users/').then(r => r.data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data).then(r => r.data),
+}
+
+export interface PeopleListParams {
+  role?: string
+  status?: string
+  q?: string
+  docs?: 'expiring' | 'expired' | 'missing' | 'pending'
+  limit?: number
+  offset?: number
+}
+
+/** People profiles (docs/people-plan.md). Staff manage them; drivers use the `me` calls in their app. */
+export const peopleAPI = {
+  list: (params?: PeopleListParams) => api.get('/people', { params }).then(r => {
+    const d = r.data
+    return (Array.isArray(d) ? d : Array.isArray(d?.items) ? d.items : []) as PersonRow[]
+  }),
+  create: (data: {
+    role: string; full_name: string; phone?: string; email?: string; profile?: Record<string, unknown>
+  }) => api.post('/people', data).then(r => r.data as { id?: string; user?: { id: string } }),
+  get: (id: string) => api.get(`/people/${id}`).then(r => r.data as PersonDetail),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/people/${id}`, data).then(r => r.data),
+  setStatus: (id: string, status: string, reason?: string) => api.post(`/people/${id}/status`, { status, reason }).then(r => r.data),
+  attention: () => api.get('/dashboard/people-attention').then(r => r.data as PeopleAttention),
+
+  documentUploadUrl: (id: string, data: { doc_type: string; file_name: string; content_type: string }) =>
+    api.post(`/people/${id}/documents/upload-url`, data).then(r => r.data as { path: string; signed_url: string; token: string }),
+  addDocument: (id: string, data: {
+    doc_type: string; doc_number?: string; issued_on?: string; expires_on?: string; file_path: string; metadata?: Record<string, unknown>
+  }) => api.post(`/people/${id}/documents`, data).then(r => r.data as PersonDocument),
+  updateDocument: (id: string, docId: string, data: Record<string, unknown>) =>
+    api.patch(`/people/${id}/documents/${docId}`, data).then(r => r.data),
+  documentFile: (id: string, docId: string) => api.get(`/people/${id}/documents/${docId}/file`).then(r => r.data as { url: string }),
+  archiveDocument: (id: string, docId: string) => api.delete(`/people/${id}/documents/${docId}`).then(r => r.data),
+
+  emergencyContacts: (id: string) => api.get(`/people/${id}/emergency-contacts`).then(r => ensureArray(r.data) as EmergencyContact[]),
+  addEmergencyContact: (id: string, data: Partial<EmergencyContact>) => api.post(`/people/${id}/emergency-contacts`, data).then(r => r.data),
+  updateEmergencyContact: (id: string, contactId: string, data: Partial<EmergencyContact>) =>
+    api.patch(`/people/${id}/emergency-contacts/${contactId}`, data).then(r => r.data),
+  deleteEmergencyContact: (id: string, contactId: string) => api.delete(`/people/${id}/emergency-contacts/${contactId}`).then(r => r.data),
+
+  bankAccounts: (id: string) => api.get(`/people/${id}/bank-accounts`).then(r => ensureArray(r.data) as BankAccount[]),
+  addBankAccount: (id: string, data: Partial<BankAccount>) => api.post(`/people/${id}/bank-accounts`, data).then(r => r.data),
+  updateBankAccount: (id: string, accountId: string, data: Partial<BankAccount>) =>
+    api.patch(`/people/${id}/bank-accounts/${accountId}`, data).then(r => r.data),
+  deleteBankAccount: (id: string, accountId: string) => api.delete(`/people/${id}/bank-accounts/${accountId}`).then(r => r.data),
+  /** Superadmin only; the backend logs every reveal. */
+  revealBankAccount: (id: string, accountId: string) =>
+    api.post(`/people/${id}/bank-accounts/${accountId}/reveal`).then(r => r.data as { account_number: string }),
+
+  notes: (id: string) => api.get(`/people/${id}/notes`).then(r => ensureArray(r.data) as PersonNote[]),
+  addNote: (id: string, body: string) => api.post(`/people/${id}/notes`, { body }).then(r => r.data),
+}
+
+export const depotsAPI = {
+  list: () => api.get('/depots/').then(r => ensureArray(r.data) as { id: string; name: string }[]),
 }
 
 export interface SearchResultItem {
