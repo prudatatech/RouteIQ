@@ -11,6 +11,18 @@ export interface DeliveryPoint {
   demand_kg?: number | null;
 }
 
+/**
+ * The parcel to deliver (or, for a vendor load, pick up) at a stop. `code` is the
+ * tracking ID printed as a QR code or barcode on the parcel.
+ */
+export interface StopParcel {
+  kind: 'shipment' | 'manifest' | string;
+  code: string;
+  /** Shipment or load status: created, picked_up, in_transit, scheduled ... */
+  status?: string;
+  purpose?: 'pickup' | 'delivery' | string;
+}
+
 export interface RouteStop {
   id: string;
   sequence: number;
@@ -18,6 +30,8 @@ export interface RouteStop {
   /** Not sent by the current API; used when present. */
   stop_type?: 'pickup' | 'dropoff' | string;
   delivery_point: DeliveryPoint | null;
+  /** Null for a stop with no shipment attached. */
+  parcel?: StopParcel | null;
 }
 
 export interface Depot {

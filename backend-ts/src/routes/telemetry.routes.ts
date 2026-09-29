@@ -18,6 +18,10 @@ import { stampPlannedArrivals } from '../services/driver-performance.service';
 import { InvoiceService } from '../services/invoice.service';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
+import { idempotent } from '../core/idempotency';
+import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
+import { isPodPathFor } from '../services/pod.service';
+import { manifestParcelCode } from '../core/parcelCode';
 
 const router = Router();
 
@@ -116,7 +120,7 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTran
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.
 const SOS_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
-router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => {
+router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), async (req: Request, res: Response) => {
   try {
     const { lat, lng } = req.body;
     const userId = req.user?.user_id;
@@ -157,7 +161,7 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
 // The driver adds what happened to the alert they already raised, instead of
 // raising a second one. Only their own alert, and only while it is active.
 const SOS_SEVERITIES = ['serious', 'minor'];
-router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response) => {
+router.patch('/sos/:id/details', requireAuth, idempotent('sos-details'), async (req: Request, res: Response) => {
   try {
     const update: Record<string, string> = {};
     if (req.body.alert_type !== undefined) {
@@ -670,25 +674,33 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 
 // ── POST /driver-ping/complete-stop — Driver marks delivery complete ──
 const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
-router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res: Response) => {
+router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can complete stops' });
       return;
     }
 
-    const { stop_id, status = 'completed', photo_url, signature_data, received_by, lat, lng } = req.body;
+    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by, lat, lng } = req.body;
     if (!stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
       return;
     }
+    // Proof-of-delivery files must be ones this stop's signed upload URLs produced
+    for (const [field, value] of [['photo_url', photo_url], ['signature_url', signature_url]] as const) {
+      if (value != null && !isPodPathFor(value, stop_id)) {
+        res.status(400).json({ detail: `${field} is not an upload for this stop` });
+        return;
+      }
+    }
+    const proofFiles = status === 'completed' ? { photo_url: photo_url ?? null, signature_url: signature_url ?? null } : {};
     // Why a stop failed, kept in the shipment's tamper-evident log
     const { reason, note } = req.body;
     if (reason !== undefined && !STOP_FAILURE_REASONS.includes(reason)) {
       res.status(400).json({ detail: 'Unknown reason' });
       return;
     }
-    const failureMetadata: Record<string, string> = {};
+    const failureMetadata: Record<string, string | boolean> = {};
     if (status === 'failed' && reason) {
       failureMetadata.failure_reason = reason;
       if (typeof note === 'string' && note.trim()) failureMetadata.failure_note = note.trim().slice(0, 300);
@@ -721,7 +733,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
           }
         }
       } else {
-        await supabase.from('cargo_manifest').update({ status: 'delivered' }).eq('id', manifestId);
+        await supabase.from('cargo_manifest').update({
+          status: 'delivered',
+          ...(received_by ? { received_by } : {}),
+          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+        }).eq('id', manifestId);
         await InvoiceService.onManifestDelivered(manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
         // Auto-empty: subtract delivered weight from truck
@@ -766,7 +783,12 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     // Update route stop status
     const { data: stop, error: stopErr } = await supabase
       .from('route_stops')
-      .update(status === 'completed' ? { status, actual_arrival_at: new Date().toISOString() } : { status }) // 'completed' or 'failed'
+      .update({
+        status, // 'completed' or 'failed'
+        ...(status === 'completed' ? { actual_arrival_at: new Date().toISOString() } : {}),
+        ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+        ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+      })
       .eq('id', stop_id)
       .select('route_id, delivery_point_id')
       .single();
@@ -784,6 +806,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
       .single();
 
     if (dp?.shipment_id) {
+      if (status === 'completed') failureMetadata.parcel_verified = await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id);
       const { ShipmentService } = await import('../services/shipment.service');
       await ShipmentService.updateShipmentStatus(
         dp.shipment_id,
@@ -792,7 +815,8 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         received_by || null,
         signature_data || null,
         { id: req.user!.user_id, role: req.user!.role },
-        failureMetadata
+        failureMetadata,
+        proofFiles
       );
     }
 
@@ -1000,7 +1024,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.pickup_lat,
             longitude: manifest.pickup_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'pickup' },
         },
         {
           id: manifest.id + '_drop',
@@ -1013,7 +1038,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
             latitude: manifest.drop_lat,
             longitude: manifest.drop_lng,
             demand_kg: manifest.capacity_kg
-          }
+          },
+          parcel: { kind: 'manifest', code: manifestParcelCode(manifest.id), status: manifest.status, purpose: 'delivery' },
         }
       ];
 
@@ -1036,6 +1062,9 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
     }
 
     // Sort stops by sequence
+    const shipmentParcels = await loadShipmentParcels(
+      (route.route_stops || []).map((s: any) => s.delivery_points?.shipment_id).filter(Boolean),
+    );
     const stops = (route.route_stops || [])
       .sort((a: any, b: any) => a.sequence - b.sequence)
       .map((s: any) => ({
@@ -1050,6 +1079,10 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           longitude: s.delivery_points.longitude,
           demand_kg: s.delivery_points.demand_kg,
         } : null,
+        // The code on the parcel for this stop (its tracking ID), for scan checks in the app
+        parcel: shipmentParcels.get(s.delivery_points?.shipment_id)
+          ? { kind: 'shipment', code: shipmentParcels.get(s.delivery_points?.shipment_id)!.tracking_id, status: shipmentParcels.get(s.delivery_points?.shipment_id)!.status, purpose: 'delivery' }
+          : null,
       }));
 
     res.json({

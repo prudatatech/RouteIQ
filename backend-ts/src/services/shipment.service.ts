@@ -842,11 +842,15 @@ export class ShipmentService {
     receivedBy?: string | null,
     signatureData?: string | null,
     actor?: LogActor | null,
-    extraMetadata?: Record<string, any>
+    extraMetadata?: Record<string, any>,
+    /** Storage paths of the proof-of-delivery photo and signature, already uploaded. */
+    proofFiles?: { photo_url?: string | null; signature_url?: string | null }
   ): Promise<Shipment | null> {
     const updateData: Record<string, any> = { status };
     if (receivedBy) updateData.received_by = receivedBy;
     if (signatureData) updateData.signature_data = signatureData;
+    if (proofFiles?.photo_url) updateData.photo_url = proofFiles.photo_url;
+    if (proofFiles?.signature_url) updateData.signature_url = proofFiles.signature_url;
 
     const { error } = await supabase
       .from('shipments')
@@ -859,7 +863,8 @@ export class ShipmentService {
     const metadata: Record<string, any> = { ...(extraMetadata || {}) };
     if (status === 'delivered') {
       metadata.received_by = receivedBy;
-      metadata.signature_captured = !!signatureData;
+      metadata.signature_captured = !!signatureData || !!proofFiles?.signature_url;
+      metadata.photo_captured = !!proofFiles?.photo_url;
     }
     await ShipmentService.recordShipmentLog(shipmentId, status, lat, lng, metadata, actor);
 

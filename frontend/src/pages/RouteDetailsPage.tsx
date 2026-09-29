@@ -15,6 +15,7 @@ import { formatEta } from '@/utils/timeFormat'
 import RouteConditions from '@/components/traffic/RouteConditions'
 import { useRouteIncidents } from '@/components/traffic/hooks'
 import { describeIncident } from '@/utils/traffic'
+import MessagesPanel from '@/components/messages/MessagesPanel'
 
 interface DeliveryPoint {
   name?: string | null
@@ -254,6 +255,14 @@ export default function RouteDetailsPage() {
               { label: 'Stops', value: sortedStops.length.toLocaleString('en-IN') },
             ]} />
             {timeline.length > 0 && <Timeline events={timeline} formatAt={formatDateTime} />}
+          </Card>
+
+          <Card padded className="space-y-4">
+            <h2 className="text-lg font-semibold text-text">Messages</h2>
+            <MessagesPanel
+              target={{ route_id: route.id }}
+              unavailable={route.vehicles?.driver_id ? undefined : 'No driver is assigned to this vehicle, so nobody would see a message.'}
+            />
           </Card>
 
           <Card padded className="space-y-4">

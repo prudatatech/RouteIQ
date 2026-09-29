@@ -10,6 +10,7 @@ import {
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, formatDate, formatKg, formatRupees, haversineKm } from '@/components/shipments/format'
 import { emailError, indianMobileError } from '@/utils/validators'
+import ParcelLabel from '@/components/shipments/ParcelLabel'
 
 type Meta = Record<string, unknown>
 
@@ -321,6 +322,10 @@ export default function ShipmentManifestPage() {
           )}
         </ManifestCard>
       </div>
+
+      <ManifestCard title="Parcel label" description="The driver scans this code to check the parcel at pickup and delivery.">
+        <ParcelLabel trackingId={shipment.tracking_id} showPrint={false} />
+      </ManifestCard>
 
       <ManifestCard title="Signatures">
         <div className="grid gap-6 sm:grid-cols-3">

@@ -14,6 +14,8 @@ import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
 } from './format'
 import DriverRating from './DriverRating'
+import ParcelLabel from './ParcelLabel'
+import MessagesPanel from '@/components/messages/MessagesPanel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
@@ -74,6 +76,15 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     queryKey: ['shipment-history', shipment?.id],
     queryFn: () => shipmentsAPI.history(shipment!.id) as Promise<{ events: ShipmentHistoryEvent[] }>,
     enabled: !!shipment && !isCargoManifest(shipment),
+  })
+
+  const hasProofFiles = !!(shipment?.photo_url || shipment?.signature_url)
+  const proofQuery = useQuery({
+    queryKey: ['shipment-proof', shipment?.id],
+    queryFn: () => shipmentsAPI.proof(shipment!.id),
+    enabled: !!shipment && hasProofFiles,
+    // The signed links last 10 minutes
+    staleTime: 5 * 60_000,
   })
 
   if (!shipment) return null
@@ -254,7 +265,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {(s.received_by || s.signature_data) && (
+        {(s.received_by || s.signature_data || hasProofFiles) && (
           <Section title="Proof of delivery">
             <DetailList
               columns={1}
@@ -263,14 +274,23 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                 { label: 'When', value: formatDateTime(deliveredEvent?.at) },
                 {
                   label: 'Signature',
-                  value: s.signature_data
-                    ? (signatureIsImage
-                      ? <img src={s.signature_data} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-surface" />
-                      : s.signature_data)
-                    : null,
+                  value: proofQuery.data?.signature_url
+                    ? <img src={proofQuery.data.signature_url} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-white" />
+                    : s.signature_data
+                      ? (signatureIsImage
+                        ? <img src={s.signature_data} alt={`Signature of ${s.received_by || 'the receiver'}`} className="h-24 max-w-full rounded-control border border-border bg-surface" />
+                        : s.signature_data)
+                      : (s.signature_url && proofQuery.isLoading ? 'Loading…' : null),
+                },
+                {
+                  label: 'Photo',
+                  value: proofQuery.data?.photo_url
+                    ? <a href={proofQuery.data.photo_url} target="_blank" rel="noreferrer"><img src={proofQuery.data.photo_url} alt="Photo of the delivery" className="max-h-48 max-w-full rounded-control border border-border" /></a>
+                    : (s.photo_url && proofQuery.isLoading ? 'Loading…' : null),
                 },
               ]}
             />
+            {hasProofFiles && proofQuery.isError && <p className="text-sm text-muted">We could not load the photo and signature. Close and reopen this shipment to try again.</p>}
             {deliveredEvent?.location && (
               <div className="space-y-1.5">
                 <p className="text-sm text-muted">Delivered near</p>
@@ -290,6 +310,19 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             )}
           </Section>
         )}
+
+        {!closed && (
+          <Section title="Parcel label">
+            <ParcelLabel trackingId={s.tracking_id} size={112} />
+          </Section>
+        )}
+
+        <Section title="Messages">
+          <MessagesPanel
+            target={{ shipment_id: s.id }}
+            unavailable={s.vehicle_id || manifestOnly ? undefined : 'Assign a vehicle to message its driver about this shipment.'}
+          />
+        </Section>
 
         {!manifestOnly && (
           <Section title="Live location">
