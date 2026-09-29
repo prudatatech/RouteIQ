@@ -477,7 +477,8 @@
     "updated_at",
     "phone",
     "vehicle_type",
-    "push_token"
+    "push_token",
+    "status"
   ],
   "vehicle_service_log": [
     "id",
@@ -622,20 +623,6 @@
     "metadata",
     "rejection_reason"
   ],
-  "expenses": [
-    "id",
-    "vehicle_id",
-    "route_id",
-    "category",
-    "amount",
-    "expense_date",
-    "litres",
-    "note",
-    "receipt_path",
-    "created_by",
-    "created_at",
-    "updated_at"
-  ],
   "customer_bookings": [
     "id",
     "customer_id",
@@ -691,6 +678,96 @@
     "action",
     "status_code",
     "response",
+    "created_at"
+  ],
+  "user_profiles": [
+    "user_id",
+    "employee_code",
+    "designation",
+    "department",
+    "employment_type",
+    "date_of_joining",
+    "date_of_birth",
+    "gender",
+    "blood_group",
+    "alternate_phone",
+    "personal_email",
+    "address_line",
+    "city",
+    "state",
+    "pincode",
+    "latitude",
+    "longitude",
+    "base_depot_id",
+    "reporting_manager_id",
+    "photo_path",
+    "created_at",
+    "updated_at",
+    "updated_by"
+  ],
+  "user_documents": [
+    "id",
+    "user_id",
+    "doc_type",
+    "doc_number",
+    "issued_on",
+    "expires_on",
+    "file_path",
+    "status",
+    "rejection_reason",
+    "metadata",
+    "uploaded_by",
+    "verified_by",
+    "verified_at",
+    "archived_at",
+    "created_at",
+    "updated_at"
+  ],
+  "user_emergency_contacts": [
+    "id",
+    "user_id",
+    "name",
+    "relation",
+    "phone",
+    "is_primary",
+    "created_at",
+    "updated_at"
+  ],
+  "user_bank_accounts": [
+    "id",
+    "user_id",
+    "account_holder",
+    "account_number",
+    "ifsc",
+    "bank_name",
+    "upi_id",
+    "is_primary",
+    "is_verified",
+    "created_at",
+    "updated_at"
+  ],
+  "user_status_history": [
+    "id",
+    "user_id",
+    "from_status",
+    "to_status",
+    "reason",
+    "changed_by",
+    "created_at"
+  ],
+  "user_notes": [
+    "id",
+    "user_id",
+    "body",
+    "author_id",
+    "created_at"
+  ],
+  "user_activity": [
+    "id",
+    "user_id",
+    "actor_id",
+    "action",
+    "details",
     "created_at"
   ]
 }
