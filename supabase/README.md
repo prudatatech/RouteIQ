@@ -35,6 +35,8 @@ Deploy backend-ts and the web app from the same branch **first** (the web app th
 
 - `migrations/20260929000000_vendor_vehicle_exposure.sql` — vendors no longer read `vehicles` rows. They see open windows and their own bids through `GET /capacity/windows/open` and `GET /capacity/bids/mine` (vehicle type, free capacity, origin city; the plate only on a bid they won). Staff and drivers keep their access.
 
+- `migrations/20260929000100_vendor_kyc_reverification.sql` — an approved vendor that changes its company name, GST number, registered address or KYC form/documents (`kyc_data`) goes back to `submitted` with the review stamp cleared. Staff edits do not reset it. The backend applies the same rule on `POST /vendor/profile`.
+
 Check:
 ```sql
 -- vendors have no branch in the vehicles policy

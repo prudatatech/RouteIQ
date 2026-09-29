@@ -82,7 +82,7 @@ Production was edited by hand: `tpl_partners`, `tpl_corridors`, `tpl_documents` 
 - Frontend reads KYC from the new columns and opens documents through signed URLs; superadmins can now open 3PL applicants' documents.
 - Follow-ups (migrations `20260929*`, runbook section 1b in `supabase/README.md`):
   - **Done** — vendors no longer read vehicle rows. `20260929000000` removes the vendor branch of the `vehicles` policy; vendors get open windows (`GET /capacity/windows/open`) and their own bids (`GET /capacity/bids/mine`) from the backend with vehicle type, free capacity and origin city only (plate only on a won bid). The passing-routes feed and its notification no longer include the full vehicle row or the plate.
-  - Open — a verified vendor can edit company name/GST without re-verification.
+  - **Done** — a verified vendor that edits its legal identity is re-reviewed. `20260929000100` extends the vendor field guard: a non-staff change to `company_name`, `gst_number`, `address` or `kyc_data` (legal name, PAN, GST, registered address, documents) on an approved profile sets `kyc_status` back to `submitted` and clears `kyc_reviewed_at`/`kyc_reviewed_by`; staff edits keep the approval. `POST /vendor/profile` (service role, so not covered by the trigger) applies the same rule. City and map position are operating data and do not trigger a review. Bidding already requires `approved`, so a re-submitted vendor cannot bid until re-approved.
   - Open — managers can approve KYC (matches backend staff roles — confirm intended).
   - Open — anonymous 3PL applicants can upload any file under `tpl-applications/` (move to backend-issued signed upload URLs).
 
