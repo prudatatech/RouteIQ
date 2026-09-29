@@ -44,6 +44,7 @@ export default tseslint.config(
     // components; Phase 7 replaces the list with src/**.
     files: [
       'src/components/ui/**/*.{ts,tsx}',
+      'src/components/SOSListener.tsx',
       'src/components/tpl/**/*.{ts,tsx}',
       'src/components/vendor/vendorContext.ts',
       'src/components/fleet/VehicleWizardModal.tsx',

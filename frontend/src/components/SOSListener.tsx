@@ -1,137 +1,144 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '@/services/supabase';
-import { useAuthStore } from '@/store/authStore';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, MapPin } from 'lucide-react'
+import { supabase } from '@/services/supabase'
+import { useAuthStore } from '@/store/authStore'
+import { Button, Modal, humanize } from '@/components/ui'
 
+interface SosAlert {
+  id: string
+  vehicle_id: string | null
+  alert_type: string | null
+  description: string | null
+  latitude: number | null
+  longitude: number | null
+  created_at: string
+  plate?: string | null
+}
+
+const ALERT_TITLES: Record<string, string> = {
+  panic_button: 'SOS from a driver',
+  accident: 'Accident reported',
+  accident_serious: 'Serious accident reported',
+  accident_non_serious: 'Accident reported',
+  breakdown: 'Vehicle breakdown',
+  vehicle_damage: 'Vehicle damage reported',
+  medical: 'Medical emergency',
+  theft: 'Theft reported',
+  other: 'Emergency reported',
+}
+
+const DEFAULT_DESCRIPTIONS = new Set(['Driver triggered SOS from mobile app', 'Driver triggered SOS emergency alert'])
+
+/**
+ * Repeating two-tone alarm made with the Web Audio API, so it needs no audio file.
+ * Browsers only allow sound after the user has interacted with the page.
+ */
+function createAlarm() {
+  let ctx: AudioContext | null = null
+  let timer: ReturnType<typeof setInterval> | null = null
+  const beep = () => {
+    if (!ctx) return
+    const now = ctx.currentTime
+    ;[880, 660].forEach((freq, i) => {
+      const osc = ctx!.createOscillator()
+      const gain = ctx!.createGain()
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.2, now + i * 0.25)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.25 + 0.22)
+      osc.connect(gain).connect(ctx!.destination)
+      osc.start(now + i * 0.25)
+      osc.stop(now + i * 0.25 + 0.24)
+    })
+  }
+  return {
+    start() {
+      if (timer) return
+      try {
+        ctx = new AudioContext()
+        beep()
+        timer = setInterval(beep, 1000)
+      } catch (err) {
+        console.warn('Alarm sound unavailable', err)
+      }
+    },
+    stop() {
+      if (timer) clearInterval(timer)
+      timer = null
+      ctx?.close().catch(() => undefined)
+      ctx = null
+    },
+  }
+}
+
+/** Raises new driver SOS alerts to staff anywhere in the console, with an alarm. */
 export default function SOSListener() {
-  const role = useAuthStore(s => s.role);
-  const navigate = useNavigate();
-  const [alert, setAlert] = useState<any>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const role = useAuthStore(s => s.role)
+  const navigate = useNavigate()
+  const [alerts, setAlerts] = useState<SosAlert[]>([])
+  const alarm = useRef(createAlarm())
 
   useEffect(() => {
-    // Only superadmins and admins should hear/see the siren
-    if (role !== 'superadmin' && role !== 'admin') return;
-
-    audioRef.current = new Audio('https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg');
-    audioRef.current.loop = true;
-
+    if (role !== 'superadmin' && role !== 'admin') return
+    const siren = alarm.current
     const channel = supabase
       .channel('sos_alerts_channel')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sos_alerts' },
-        (payload) => {
-          setAlert(payload.new);
-          if (audioRef.current) {
-            audioRef.current.play().catch(e => console.error('Audio play prevented by browser:', e));
-          }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sos_alerts' }, async payload => {
+        const alert = payload.new as SosAlert
+        if (alert.vehicle_id) {
+          const { data } = await supabase.from('vehicles').select('plate_number').eq('id', alert.vehicle_id).maybeSingle()
+          alert.plate = data?.plate_number ?? null
         }
-      )
-      .subscribe();
-
+        setAlerts(list => (list.some(a => a.id === alert.id) ? list : [...list, alert]))
+        siren.start()
+      })
+      .subscribe()
     return () => {
-      channel.unsubscribe();
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    };
-  }, [role]);
-
-  if (!alert) return null;
-
-  const dismissAlert = () => {
-    setAlert(null);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+      supabase.removeChannel(channel)
+      siren.stop()
     }
-  };
+  }, [role])
 
-  const getAlertTitle = () => {
-    switch(alert.alert_type) {
-      case 'accident_serious': return 'SERIOUS ACCIDENT';
-      case 'accident_non_serious': return 'NON-SERIOUS ACCIDENT';
-      case 'vehicle_damage': return 'VEHICLE DAMAGE';
-      default: return 'SOS EMERGENCY';
-    }
-  };
+  const current = alerts[0]
+  useEffect(() => { if (!current) alarm.current.stop() }, [current])
+
+  if (!current) return null
+
+  const dismiss = () => setAlerts(list => list.slice(1))
+  const open = () => {
+    setAlerts([])
+    navigate('/emergency')
+  }
+  const type = current.alert_type ?? 'panic_button'
+  const title = ALERT_TITLES[type] ?? humanize(type)
+  const note = current.description && !DEFAULT_DESCRIPTIONS.has(current.description) ? current.description : null
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(239, 68, 68, 0.9)',
-      zIndex: 999999,
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      color: 'white',
-      padding: '2rem',
-      textAlign: 'center'
-    }}>
-      <h1 style={{ fontSize: '4rem', fontWeight: '900', marginBottom: '1rem', textTransform: 'uppercase', animation: 'pulse 1s infinite' }}>
-        {getAlertTitle()}
-      </h1>
-      <p style={{ fontSize: '1.5rem', marginBottom: '2rem' }}>
-        Driver triggered an emergency alert!
-      </p>
-      
-      {alert.latitude && alert.longitude && (
-        <button 
-          onClick={() => {
-            dismissAlert();
-            navigate('/emergency');
-          }}
-          style={{
-            backgroundColor: 'white',
-            color: '#EF4444',
-            padding: '1rem 2rem',
-            borderRadius: '0.5rem',
-            fontSize: '1.5rem',
-            fontWeight: 'bold',
-            textDecoration: 'none',
-            marginBottom: '2rem',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-            border: 'none',
-            cursor: 'pointer'
-          }}
-        >
-          VIEW IN EMERGENCY DASHBOARD
-        </button>
-      )}
-
-      {alert.description && alert.description !== 'Driver triggered SOS emergency alert' && (
-        <p style={{ fontSize: '1.25rem', marginBottom: '2rem', fontStyle: 'italic', maxWidth: '600px' }}>
-          "{alert.description}"
-        </p>
-      )}
-
-      <button 
-        onClick={dismissAlert}
-        style={{
-          background: 'transparent',
-          border: '2px solid white',
-          color: 'white',
-          padding: '0.75rem 1.5rem',
-          borderRadius: '0.5rem',
-          fontSize: '1rem',
-          cursor: 'pointer',
-          marginTop: 'auto'
-        }}
-      >
-        DISMISS SIREN
-      </button>
-
-      <style>{`
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.05); color: #FFF0F0; }
-          100% { transform: scale(1); }
-        }
-      `}</style>
-    </div>
-  );
+    <Modal
+      open
+      onClose={dismiss}
+      closeOnBackdrop={false}
+      size="sm"
+      title={<span className="inline-flex items-center gap-2 text-danger"><AlertTriangle size={20} aria-hidden="true" /> {title}</span>}
+      description={`${current.plate ? `Vehicle ${current.plate}` : 'A driver'} · ${new Date(current.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>
+          <Button variant="danger" onClick={open}>Open emergencies</Button>
+        </>
+      }
+    >
+      <div role="alert" className="space-y-3 text-sm">
+        {note && <p className="text-text">“{note}”</p>}
+        {current.latitude != null && current.longitude != null ? (
+          <p className="flex items-center gap-2 text-muted">
+            <MapPin size={16} aria-hidden="true" />
+            <span className="mono">{current.latitude.toFixed(5)}, {current.longitude.toFixed(5)}</span>
+          </p>
+        ) : (
+          <p className="text-muted">No location was sent with this alert.</p>
+        )}
+      </div>
+    </Modal>
+  )
 }
