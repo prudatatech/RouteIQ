@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
 import { tplAPI } from '@/services/api'
-import { Button, Card, Checkbox, FileButton, Input, Select, Spinner } from '@/components/ui'
+import { Button, Card, Checkbox, FileButton, IfscField, Input, Select, Spinner } from '@/components/ui'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
@@ -258,6 +258,7 @@ export default function TplOnboardingPage() {
       }))
 
       const data = editId ? await tplAPI.updateApplication(editId, payload) : await tplAPI.onboard(payload)
+      for (const w of (data?.warning_messages as string[] | undefined) ?? []) toast(w, { duration: 8000 })
       setTrackingId(customId || editId || data.id)
       clearDraft()
       setStep(3)
@@ -365,13 +366,7 @@ export default function TplOnboardingPage() {
                     error={err(1, 'bankAccount')}
                     hint="9–18 digits"
                   />
-                  <Input
-                    label="IFSC code" required value={bankIfsc}
-                    maxLength={11}
-                    onChange={e => setBankIfsc(e.target.value.toUpperCase())}
-                    className="font-mono" error={err(1, 'bankIfsc')}
-                    placeholder="HDFC0001234"
-                  />
+                  <IfscField label="IFSC code" required value={bankIfsc} onChange={setBankIfsc} error={err(1, 'bankIfsc')} />
                 </div>
               </div>
             </div>

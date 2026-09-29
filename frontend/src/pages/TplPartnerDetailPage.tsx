@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
-  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
+  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
 import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
 import { corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
@@ -37,6 +37,9 @@ interface TplPartnerDetail {
   sla_commitment: string | null
   bank_account_no: string | null
   bank_ifsc: string | null
+  bank_name?: string | null
+  bank_branch?: string | null
+  bank_ifsc_verified_at?: string | null
   tpl_documents?: TplDocument[]
   tpl_corridors?: TplCorridor[]
   pending_updates?: PendingUpdates | null
@@ -272,7 +275,8 @@ export default function TplPartnerDetailPage() {
                 { label: 'GTA tax treatment', value: partner.tax_treatment || '—' },
                 { label: 'MSME status', value: partner.msme_status || '—' },
                 { label: 'Bank account', value: partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—' },
-                { label: 'IFSC code', value: partner.bank_ifsc ? <span className="font-mono">{partner.bank_ifsc}</span> : '—' },
+                { label: 'IFSC code', value: partner.bank_ifsc ? <div><span className="font-mono">{partner.bank_ifsc}</span> <IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} /></div> : '—' },
+                { label: 'Bank and branch', value: [partner.bank_name, partner.bank_branch].filter(Boolean).join(', ') || '—' },
               ]}
             />
             <div className="mt-6 border-t border-border pt-4">

@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff, Pencil, Plus, Star, Trash2 } from 'lucide-react'
-import { peopleAPI } from '@/services/api'
-import { Alert, Button, Card, CardHeader, Checkbox, EmptyState, Input, Modal, Select, StatusPill, Textarea, useConfirm } from '@/components/ui'
+import { peopleAPI, type IfscDetails } from '@/services/api'
+import { Alert, BankBranchFields, Button, Card, CardHeader, Checkbox, EmptyState, IfscField, IfscVerifiedHint, Input, Modal, Select, StatusPill, Textarea, useConfirm } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { errorMessage, formatDateTime } from '@/utils/display'
 import { liveDocuments } from './docs'
-import { ifscError, namesDiffer } from './validators'
+import { namesDiffer } from './validators'
 import type { BankAccount, PersonDetail } from './types'
 const REVEAL_SECONDS = 30
 
@@ -98,6 +98,9 @@ export function BankTab({ detail, canReveal }: { detail: PersonDetail; canReveal
                 {a.bank_name ? `${a.bank_name} · ` : ''}<span className="font-mono">{revealed[a.id] ?? a.account_number}</span> · IFSC <span className="font-mono">{a.ifsc}</span>
                 {a.upi_id && <> · UPI <span className="font-mono">{a.upi_id}</span></>}
               </p>
+              <p className="text-xs text-muted">
+                {[a.branch_name, a.bank_city, a.bank_state].filter(Boolean).join(', ') || 'Branch not recorded'} · <IfscVerifiedHint verifiedAt={a.ifsc_verified_at} />
+              </p>
               <div className="flex flex-wrap gap-2">
                 {a.proof_document_id && <Button variant="secondary" size="sm" icon={<Eye size={16} />} onClick={() => openProof(a.proof_document_id!)}>View proof</Button>}
                 <Button variant="secondary" size="sm" icon={<Pencil size={16} />} onClick={() => setEditing(a)}>Edit</Button>
@@ -128,6 +131,8 @@ function BankModal({ detail, account, onClose, onDone }: {
   const [number, setNumber] = useState('')
   const [ifsc, setIfsc] = useState(account?.ifsc ?? '')
   const [bank, setBank] = useState(account?.bank_name ?? '')
+  const [branch, setBranch] = useState(account?.branch_name ?? '')
+  const [ifscInfo, setIfscInfo] = useState<IfscDetails | null>(null)
   const [upi, setUpi] = useState(account?.upi_id ?? '')
   const [primary, setPrimary] = useState(account?.is_primary ?? false)
   const [verified, setVerified] = useState(account?.is_verified ?? false)
@@ -143,7 +148,11 @@ function BankModal({ detail, account, onClose, onDone }: {
       }
       return account ? peopleAPI.updateBankAccount(personId, account.id, data) : peopleAPI.addBankAccount(personId, data)
     },
-    onSuccess: () => { toast.success(account ? 'Bank account saved' : 'Bank account added'); onDone(); onClose() },
+    onSuccess: (saved: { warning_messages?: string[] }) => {
+      toast.success(account ? 'Bank account saved' : 'Bank account added')
+      for (const w of saved?.warning_messages ?? []) toast(w, { duration: 8000 })
+      onDone(); onClose()
+    },
     onError: err => toast.error(errorMessage(err, 'We could not save the bank account. Check the details and try again.')),
   })
 
@@ -153,8 +162,7 @@ function BankModal({ detail, account, onClose, onDone }: {
     if (!holder.trim()) e.holder = 'Enter the account holder name.'
     if (!account && !number.trim()) e.number = 'Enter the account number.'
     if (number.trim() && !/^\d{9,18}$/.test(number.replace(/\s/g, ''))) e.number = 'Account numbers are 9 to 18 digits.'
-    const ifscProblem = ifscError(ifsc)
-    if (ifscProblem) e.ifsc = ifscProblem
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase())) e.ifsc = 'IFSC looks like HDFC0001234.'
     if (mismatch && verified && !note.trim()) e.note = 'Say why this account is in a different name.'
     setErrors(e)
     if (Object.keys(e).length === 0) save.mutate()
@@ -170,9 +178,9 @@ function BankModal({ detail, account, onClose, onDone }: {
         <Input label="Account number" required={!account} inputMode="numeric" autoComplete="off" value={number} onChange={e => setNumber(e.target.value)} error={errors.number}
           hint={account ? `Leave blank to keep ${account.account_number}.` : undefined} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input label="IFSC" required value={ifsc} onChange={e => setIfsc(e.target.value.toUpperCase())} error={errors.ifsc} maxLength={11} />
-          <Input label="Bank name" value={bank} onChange={e => setBank(e.target.value)} />
+          <IfscField label="IFSC" required value={ifsc} onChange={setIfsc} onResolved={setIfscInfo} error={errors.ifsc} className="sm:col-span-2" />
         </div>
+        <BankBranchFields details={ifscInfo} bankName={bank} branch={branch} onBankName={setBank} onBranch={setBranch} />
         <Input label="UPI ID" value={upi} onChange={e => setUpi(e.target.value)} hint="Optional, for example name@bank." />
         <Checkbox label="Primary account" description="Payouts go here." checked={primary} onChange={e => setPrimary(e.target.checked)} />
         {proofDocs.length > 0 ? (

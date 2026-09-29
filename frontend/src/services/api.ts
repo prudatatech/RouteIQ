@@ -580,6 +580,30 @@ export const gstinAPI = {
     api.post('/gstin/verify', { gstin, pan }).then(r => r.data),
 }
 
+export interface IfscDetails {
+  ifsc: string
+  bank: string | null
+  bank_code: string | null
+  branch: string | null
+  address: string | null
+  city: string | null
+  district: string | null
+  state: string | null
+  centre: string | null
+  micr: string | null
+  contact: string | null
+  neft: boolean
+  rtgs: boolean
+  imps: boolean
+  upi: boolean
+  swift: string | null
+}
+
+export const bankAPI = {
+  /** Branch details for an IFSC (Razorpay public IFSC data). 404 when no branch has it, 503 when the lookup is down. */
+  ifsc: (code: string): Promise<IfscDetails> => api.get(`/bank/ifsc/${encodeURIComponent(code)}`).then(r => r.data),
+}
+
 export type TplSource = { request_id: string } | { shipment_id: string }
 
 export interface TplOffer {
