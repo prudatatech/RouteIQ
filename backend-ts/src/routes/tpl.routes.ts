@@ -11,6 +11,7 @@ import { optionalAuth, requireAuth, requireRole } from '../core/auth';
 import { isStaff } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
+import { settings } from '../core/config';
 
 const router = Router();
 
@@ -49,6 +50,33 @@ router.post('/onboard', rateLimitByIp('tpl-onboard', 5, 60 * 60), async (req, re
   try {
     const partner = await tplService.onboard(req.body);
     res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status } });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/tpl/applications/upload-url — signed URL to upload one document.
+// New application: { custom_id, doc_type, content_type, size }.
+// Existing one: { application_id, doc_type, content_type, size } as staff or the
+// partner, or with verify_pan while the application is pending.
+router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings.TPL_UPLOAD_URLS_PER_HOUR, 60 * 60), optionalAuth, async (req, res) => {
+  try {
+    const { application_id, custom_id, doc_type, content_type, size, verify_pan } = req.body ?? {};
+    let partnerId: string | undefined;
+    if (application_id !== undefined) {
+      if (typeof application_id !== 'string' || !application_id) throw new HttpError(400, 'application_id must be a string');
+      const partner = await tplService.getPartner(application_id);
+      const owner = isStaff(req.user) || (!!req.user && partner.user_id === req.user.user_id);
+      if (!owner) {
+        if (!(await panMatches(req, partner, verify_pan))) throw new HttpError(403, 'PAN does not match this application');
+        if (partner.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+      }
+      partnerId = partner.id;
+    }
+    const upload = await tplService.createDocumentUploadUrl({
+      docType: doc_type, contentType: content_type, size, customId: custom_id, partnerId,
+    });
+    res.json(upload);
   } catch (error) {
     sendError(req, res, error, 'error');
   }

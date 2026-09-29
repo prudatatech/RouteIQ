@@ -12,6 +12,7 @@ import { supabase } from '@/services/supabase'
 import { tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { openKycDocument } from '@/services/kycDocuments'
+import { uploadTplDocument } from '@/services/tplDocuments'
 
 function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
   const [isOpen, setIsOpen] = useState(false);
@@ -169,23 +170,9 @@ export default function TplDashboardPage() {
     try {
       setUploadingDoc(docId)
       
-      // Sanitize filename to prevent 400 Bad Request
-      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
-      const fileName = `${id}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
-      
-      // Upload to storage with upsert and explicit content type
-      const { error: uploadError } = await supabase.storage
-        .from('kyc_documents')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: file.type
-        })
-        
-      if (uploadError) {
-        console.error('Supabase upload error details:', uploadError)
-        throw new Error(`Upload failed: ${uploadError.message}`)
-      }
+      // Backend-issued signed upload (checks type, format and size; picks the path)
+      const fileName = await uploadTplDocument(file, docType, { applicationId: id! })
+        .catch((err: Error) => { throw new Error(`Upload failed: ${err.message}`) })
 
       // Update document record
       const { error: docError } = await supabase

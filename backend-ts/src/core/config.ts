@@ -77,6 +77,11 @@ export const settings = {
   OTP_EXPIRY_SECONDS: envInt('OTP_EXPIRY_SECONDS', 300), // 5 minutes
   OTP_LENGTH: envInt('OTP_LENGTH', 6),
 
+  // KYC / 3PL document uploads (backend-issued signed upload URLs)
+  KYC_DOCUMENTS_BUCKET: env('KYC_DOCUMENTS_BUCKET', 'kyc_documents'),
+  TPL_UPLOAD_MAX_BYTES: envInt('TPL_UPLOAD_MAX_BYTES', 2 * 1024 * 1024),
+  TPL_UPLOAD_URLS_PER_HOUR: envInt('TPL_UPLOAD_URLS_PER_HOUR', 30),
+
   // Feature Flags
   ENABLE_MOBILE_GPS: envBool('ENABLE_MOBILE_GPS', false),
   ENABLE_HARDWARE_SYNC: envBool('ENABLE_HARDWARE_SYNC', false),

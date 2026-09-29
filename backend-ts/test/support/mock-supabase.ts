@@ -5,6 +5,8 @@
  *   signUserToken() mints Supabase-style user tokens with the private key.
  * - /rest/v1/<table> answers PostgREST requests from in-memory fixtures and
  *   records every write so tests can assert on them.
+ * - POST /storage/v1/object/upload/sign/<bucket>/<path> issues a signed upload
+ *   URL and records the path.
  *
  * Filters: `eq.`, `neq.`, `is.` and `in.(...)` on query params. `select`,
  * `order`, `limit` and other operators are ignored, so fixture rows are
@@ -64,6 +66,8 @@ class MockSupabase {
   mutations: Mutation[] = [];
   /** Every request URL (path and query), in order. */
   requests: URL[] = [];
+  /** `<bucket>/<path>` of every signed upload URL issued. */
+  signedUploads: string[] = [];
 
   private server: http.Server | null = null;
   private tables = new Map<string, Row[]>();
@@ -87,6 +91,7 @@ class MockSupabase {
     this.tables = new Map(Object.entries(fixtures).map(([table, rows]) => [table, rows.map(r => structuredClone(r))]));
     this.mutations = [];
     this.requests = [];
+    this.signedUploads = [];
     this.failures.clear();
   }
 
@@ -131,6 +136,13 @@ class MockSupabase {
         return send(200, { keys: [jwk] });
       }
       if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
+      // Storage: signed upload URLs (records the requested object path)
+      const signPrefix = '/storage/v1/object/upload/sign/';
+      if (req.method === 'POST' && url.pathname.startsWith(signPrefix)) {
+        const objectPath = decodeURIComponent(url.pathname.slice(signPrefix.length));
+        this.signedUploads.push(objectPath);
+        return send(200, { url: `/object/upload/sign/${objectPath}?token=test-upload-token` });
+      }
       if (!url.pathname.startsWith('/rest/v1/')) return send(404, { code: 404, error_code: 'not_found', msg: 'Not found' });
 
       const table = url.pathname.slice('/rest/v1/'.length);

@@ -7,7 +7,7 @@ import { tplAPI } from '@/services/api'
 import { Card } from '@/components/ui'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { supabase } from '@/services/supabase'
+import { uploadTplDocument } from '@/services/tplDocuments'
 
 function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
   const [isOpen, setIsOpen] = useState(false);
@@ -633,19 +633,9 @@ export default function TplOnboardingPage() {
                       // Actually upload the files to Supabase Storage
                       const uploadPromises = Object.keys(uploadedDocs).map(async (docType) => {
                         const file = uploadedDocs[docType]
-                        const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_')
-                        const fileName = `tpl-applications/${customId || Date.now()}/${docType.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${cleanFileName}`
+                        const fileName = await uploadTplDocument(file, docType, editId ? { applicationId: editId, verifyPan: editPan } : { customId })
+                          .catch((err: Error) => { throw new Error(`Failed to upload ${docType}: ${err.message}`) })
 
-                        const { error } = await supabase.storage
-                          .from('kyc_documents')
-                          .upload(fileName, file, {
-                            cacheControl: '3600',
-                            upsert: false,
-                            contentType: file.type
-                          })
-                          
-                        if (error) throw new Error(`Failed to upload ${docType}: ${error.message}`)
-                        
                         payload.documents.push({ type: docType, url: fileName })
                       });
                       
