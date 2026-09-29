@@ -6,9 +6,10 @@ import PoolLoadsTab from '@/components/backhaul/PoolLoadsTab'
 import MatchReturnLoadTab from '@/components/backhaul/MatchReturnLoadTab'
 import CargoAlertsTab from '@/components/backhaul/CargoAlertsTab'
 import ConfirmDeliveryTab from '@/components/backhaul/ConfirmDeliveryTab'
+import PriceLoadTab from '@/components/backhaul/PriceLoadTab'
 import { useCargoAlerts, useOpenLoads, type DuplicatedManifest } from '@/components/backhaul/data'
 
-const TAB_IDS = ['loads', 'pool', 'match', 'alerts', 'delivery'] as const
+const TAB_IDS = ['loads', 'pool', 'match', 'price', 'alerts', 'delivery'] as const
 type TabId = typeof TAB_IDS[number]
 
 export default function BackhaulPage() {
@@ -29,6 +30,7 @@ export default function BackhaulPage() {
     { id: 'loads', label: 'Open loads', count: loads.data?.length },
     { id: 'pool', label: 'Pool loads' },
     { id: 'match', label: 'Match a return load' },
+    { id: 'price', label: 'Price a load' },
     { id: 'alerts', label: 'Cargo alerts', count: alerts.data?.length },
     { id: 'delivery', label: 'Confirm delivery' },
   ]
@@ -45,6 +47,7 @@ export default function BackhaulPage() {
         {tab === 'loads' && <OpenLoadsTab />}
         {tab === 'pool' && <PoolLoadsTab />}
         {tab === 'match' && <MatchReturnLoadTab manifest={manifest} onDismissManifest={dismissManifest} />}
+        {tab === 'price' && <PriceLoadTab />}
         {tab === 'alerts' && <CargoAlertsTab />}
         {tab === 'delivery' && <ConfirmDeliveryTab />}
       </TabPanel>

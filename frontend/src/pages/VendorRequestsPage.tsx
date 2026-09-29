@@ -13,6 +13,9 @@ import {
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import type { QuoteRequest } from '@/services/pricing'
 
 /**
  * A vehicle can be assigned to a request only if it is within this straight-line
@@ -52,6 +55,8 @@ interface VendorRequest {
   metadata: {
     consignee?: { name?: string; contact?: string; email?: string }
     cargo?: CargoDetails
+    /** The price the vendor offered on the Review step, in rupees. */
+    offered_price_inr?: number
   } | null
   vendor: { company_name: string | null; city: string | null } | null
 }
@@ -495,6 +500,25 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
     () => (request && vehicles.data ? eligibleVehicles(request, vehicles.data) : { eligible: [], withSpaceCount: 0 }),
     [request, vehicles.data],
   )
+  // Suggested price for this load, using the chosen vehicle's type
+  const chosenVehicle = vehicles.data?.find(v => v.id === vehicleId)
+  const quoteInput: QuoteRequest | null = request && canAssign
+    ? {
+        pickup: { lat: request.pickup_lat, lng: request.pickup_lng, label: request.pickup_location },
+        drop: { lat: request.drop_lat, lng: request.drop_lng, label: request.drop_location },
+        weight_kg: request.required_capacity_kg,
+        vehicle_type: chosenVehicle?.vehicle_type ?? null,
+        source: 'assign',
+      }
+    : null
+  const quote = usePriceQuote(quoteInput)
+  const suggestedPrice = quote.data?.status === 'ok' ? quote.data.suggested : null
+  // Prefill the flat price once a vehicle is chosen: the vendor's own price if they gave one, else the suggestion
+  useEffect(() => {
+    if (!vehicleId) return
+    const prefill = request?.metadata?.offered_price_inr ?? suggestedPrice
+    if (prefill) setFlatPrice(prev => (prev === '' ? String(Math.round(prefill)) : prev))
+  }, [vehicleId, suggestedPrice, request?.metadata?.offered_price_inr])
   const assignedPlate = request?.assigned_vehicle_id
     ? vehicles.data?.find(v => v.id === request.assigned_vehicle_id)?.plate_number
     : undefined
@@ -560,6 +584,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
               { label: 'Pickup', value: request.pickup_location },
               { label: 'Drop-off', value: request.drop_location },
               { label: 'Weight', value: <span className="tabular">{formatKg(request.required_capacity_kg)}</span> },
+              ...(request.metadata?.offered_price_inr ? [{ label: 'Vendor’s price', value: <span className="tabular">{formatRupees(request.metadata.offered_price_inr)}</span> }] : []),
               { label: 'Vendor city', value: request.vendor?.city ?? 'Not given' },
               ...(cargo?.name || cargo?.category ? [{ label: 'Goods', value: [cargo.name, cargo.category].filter(Boolean).join(' · ') }] : []),
               ...(cargo?.noOfPackages ? [{ label: 'Packages', value: `${Number(cargo.noOfPackages).toLocaleString('en-IN')}${cargo.packagingType ? ` · ${cargo.packagingType}` : ''}` }] : []),
@@ -630,6 +655,14 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                   </div>
                 </fieldset>
               )}
+              <div className="space-y-2 rounded-control border border-border p-3">
+                <p className="text-sm font-medium text-text">Suggested price</p>
+                <PriceSuggestion
+                  query={quote}
+                  onUse={q => setFlatPrice(String(q.suggested))}
+                  useLabel="Use as flat price"
+                />
+              </div>
               {vehicleId && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Input
