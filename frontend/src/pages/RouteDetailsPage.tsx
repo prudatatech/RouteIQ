@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
-import { Copy, Edit2, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Copy, Edit2, Play, Trash2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
-import { Page, PageHeader, Card, Button, StatusPill, Stat, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
+import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline, type TimelineEvent, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
 import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
+import { canCompleteRoute, canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
+import { formatDateTime } from '@/utils/display'
 import { formatEta } from '@/utils/timeFormat'
 
 interface DeliveryPoint {
@@ -35,9 +37,11 @@ interface RouteDetail extends RouteLike {
   status: string
   vehicle_id?: string | null
   created_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
   is_manifest?: boolean
   optimization_score?: number | null
-  vehicles?: (DeliveryPoint & { plate_number?: string | null; status?: string | null; driver_id?: string | null }) | null
+  vehicles?: (DeliveryPoint & { plate_number?: string | null; status?: string | null; driver_id?: string | null; driver_name?: string | null }) | null
   route_stops?: RouteStop[] | null
 }
 
@@ -46,6 +50,7 @@ export default function RouteDetailsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
+  const statusActions = useRouteStatusActions()
 
   const { data: route, isLoading, isError, refetch } = useQuery<RouteDetail>({
     queryKey: ['route', id],
@@ -131,6 +136,12 @@ export default function RouteDetailsPage() {
       : []
   ))
 
+  const timeline: TimelineEvent[] = [
+    { status: 'created', at: route.created_at },
+    { status: 'in_progress', at: route.started_at },
+    { status: 'completed', at: route.completed_at },
+  ].filter((e): e is TimelineEvent => !!e.at)
+
   const handleCancel = async () => {
     const ok = await confirm({
       title: 'Cancel this route?',
@@ -162,13 +173,21 @@ export default function RouteDetailsPage() {
         title={<span className="inline-flex flex-wrap items-center gap-3">Route {shortId} <StatusPill status={route.status} /></span>}
         description={route.created_at ? `Created ${formatDistanceToNow(new Date(route.created_at), { addSuffix: true })}` : undefined}
         actions={
-          <Button
-            variant="secondary"
-            onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
-            disabled={!canRunOptimizer}
-          >
-            Run optimizer
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {canDispatchRoute(route) && (
+              <Button icon={<Play size={16} />} onClick={() => statusActions.dispatch(route)} loading={statusActions.isPending}>Dispatch</Button>
+            )}
+            {canCompleteRoute(route) && (
+              <Button icon={<CheckCircle2 size={16} />} onClick={() => statusActions.complete(route)} loading={statusActions.isPending}>Mark completed</Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
+              disabled={!canRunOptimizer}
+            >
+              Run optimizer
+            </Button>
+          </div>
         }
       />
 
@@ -209,6 +228,17 @@ export default function RouteDetailsPage() {
                 ))}
               </ol>
             )}
+          </Card>
+
+          <Card padded className="space-y-4">
+            <h2 className="text-lg font-semibold text-text">Details</h2>
+            <DetailList columns={2} items={[
+              { label: 'Vehicle', value: vehicleName },
+              { label: 'Driver', value: route.vehicles?.driver_name || 'Not assigned' },
+              { label: 'Created', value: formatDateTime(route.created_at) },
+              { label: 'Stops', value: sortedStops.length.toLocaleString('en-IN') },
+            ]} />
+            {timeline.length > 0 && <Timeline events={timeline} formatAt={formatDateTime} />}
           </Card>
 
           <Card padded className="space-y-4">
