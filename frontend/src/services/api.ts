@@ -17,10 +17,10 @@ export const api = axios.create({
  * Sanitizes an object by removing common "junk" from React Query (context, signals, etc.)
  * that shouldn't be serialized into query strings.
  */
-const sanitizeParams = (params: any) => {
+const sanitizeParams = (params: Record<string, unknown> | undefined) => {
   if (!params || typeof params !== 'object') return params
   
-  const clean: any = {}
+  const clean: Record<string, unknown> = {}
   Object.keys(params).forEach(key => {
     const val = params[key]
     // Filter out internal React Query / Event / Signal objects
@@ -93,10 +93,10 @@ api.interceptors.response.use(
 // ═══════════════════════════════════════════════════════════
 
 // Safety helper: ensure API list calls always return arrays
-const ensureArray = (data: any): any[] => Array.isArray(data) ? data : []
+const ensureArray = (data: unknown): unknown[] => Array.isArray(data) ? data : []
 // Vehicles API
 export const vehiclesAPI = {
-  list: (params?: any) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
+  list: (params?: Record<string, unknown>) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
@@ -105,8 +105,8 @@ export const vehiclesAPI = {
 }
 
 export const optimizationAPI = {
-  optimize: (data: any) => api.post('/optimize', data).then(r => r.data),
-  predictETA: (data: any) => api.post('/optimize/eta', data).then(r => r.data),
+  optimize: (data: Record<string, unknown>) => api.post('/optimize', data).then(r => r.data),
+  predictETA: (data: Record<string, unknown>) => api.post('/optimize/eta', data).then(r => r.data),
   incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`).then(r => r.data),
   reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`).then(r => r.data),
 }
@@ -116,7 +116,7 @@ export const dashboardAPI = {
 }
 
 export const deliveryPointsAPI = {
-  list: (params?: any) => api.get('/routes/delivery-points/', { params }).then(r => r.data),
+  list: (params?: Record<string, unknown>) => api.get('/routes/delivery-points/', { params }).then(r => r.data),
 }
 
 
@@ -124,7 +124,7 @@ export const deliveryPointsAPI = {
 export const usersAPI = {
   me: () => api.get('/users/me').then(r => r.data),
   list: () => api.get('/users/').then(r => r.data),
-  update: (id: string, data: any) => api.patch(`/users/${id}`, data).then(r => r.data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data).then(r => r.data),
 }
 
 export const cargoAPI = {
@@ -165,7 +165,7 @@ export const capacityAPI = {
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
   passingRoutes: () => api.get('/vendor/passing-routes').then(r => ensureArray(r.data)),
-  createShipmentRequest: (data: any) => api.post('/vendor/shipment-request', data).then(r => r.data),
+  createShipmentRequest: (data: Record<string, unknown>) => api.post('/vendor/shipment-request', data).then(r => r.data),
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
   rejectRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/reject`).then(r => r.data),
@@ -179,12 +179,12 @@ export const authAPI = {
 }
 
 export const shipmentsAPI = {
-  list: (params?: any) => api.get('/shipments/', { params }).then(r => ensureArray(r.data)),
+  list: (params?: Record<string, unknown>) => api.get('/shipments/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
   trackPublicly: (trackingId: string) => api.get(`/shipments/track/${trackingId}`).then(r => r.data),
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
   updateStatus: (id: string, status: string, fields?: Record<string, unknown>) => api.patch(`/shipments/${id}`, { status, ...fields }).then(r => r.data),
-  edit: (id: string, data: any) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),
+  edit: (id: string, data: Record<string, unknown>) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),
   updateMetadata: (id: string, metadata: object) => api.put(`/shipments/${id}/metadata`, metadata).then(r => r.data),
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),
@@ -192,9 +192,9 @@ export const shipmentsAPI = {
 }
 
 export const routesAPI = {
-  list: (params?: any) => api.get('/routes/', { params }).then(r => ensureArray(r.data)),
+  list: (params?: Record<string, unknown>) => api.get('/routes/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/routes/${id}`).then(r => r.data),
-  update: (id: string, data: any) => api.patch(`/routes/${id}`, data).then(r => r.data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/routes/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/routes/${id}`).then(r => r.data),
   updateStatus: (id: string, status: string) => api.patch(`/routes/${id}/status`, { status }).then(r => r.data),
   reroute: (id: string, newSequence: string[]) => api.post(`/routes/${id}/reroute`, { new_sequence: newSequence }).then(r => r.data),
@@ -211,11 +211,11 @@ export const telemetryAPI = {
     api.post('/telemetry/driver-ping', ping).then(r => r.data),
   history: (vehicleId: string, limit = 100) => api.get(`/telemetry/${vehicleId}/history`, { params: { limit } }).then(r => r.data),
   live: (vehicleId: string) => api.get(`/telemetry/${vehicleId}/live`).then(r => r.data),
-  logStoppage: (data: any) => api.post('/telemetry/stoppages', data).then(r => r.data),
+  logStoppage: (data: Record<string, unknown>) => api.post('/telemetry/stoppages', data).then(r => r.data),
   createMobileSession: (vehicleId: string, phone?: string) =>
     api.post('/telemetry/mobile-session', { vehicle_id: vehicleId, phone }).then(r => r.data),
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
-  resolveSos: (id: string, data?: any) => api.put(`/telemetry/sos/${id}/resolve`, data).then(r => r.data),
+  resolveSos: (id: string, data?: Record<string, unknown>) => api.put(`/telemetry/sos/${id}/resolve`, data).then(r => r.data),
   /** Driver raises an SOS for their assigned vehicle. */
   triggerSos: (data: { lat?: number, lng?: number, alert_type?: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other' }) =>
     api.post('/telemetry/sos/trigger', data).then(r => r.data),
@@ -235,14 +235,14 @@ export const analyticsAPI = {
 }
 
 export const tplAPI = {
-  onboard: (data: any) => api.post('/tpl/onboard', data).then(r => r.data),
+  onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** Full record for staff/the partner, or for an applicant who supplies the application's PAN; otherwise status only. */
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/tpl/reject/${id}`, { reason }).then(r => r.data),
-  updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
+  updateApplication: (id: string, data: Record<string, unknown>) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   /** Signed upload URL for one application document; use uploadTplDocument() from services/tplDocuments. */
   documentUploadUrl: (data: {
     doc_type: string
@@ -271,7 +271,7 @@ export const telemetryWS = {
    * Open the live telemetry feed with the current session token (staff only).
    * Returns a handle whose close() also cancels a connection still being set up.
    */
-  connect: (onMessage: (data: any) => void) => {
+  connect: <T = unknown>(onMessage: (data: T) => void) => {
     let ws: WebSocket | null = null
     let closed = false
     supabase.auth.getSession().then(({ data: { session } }) => {

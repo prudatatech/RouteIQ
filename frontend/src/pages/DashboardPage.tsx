@@ -75,13 +75,13 @@ export default function DashboardPage() {
 
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
-    queryFn: () => vehiclesAPI.list({ limit: 500 }),
+    queryFn: () => vehiclesAPI.list({ limit: 500 }) as Promise<VehicleRow[]>,
     refetchInterval: 5_000,
   })
 
   const { data: shipments = [], isLoading: shipmentsLoading, error: shipmentsError, refetch: refetchShipments } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments', 'active'],
-    queryFn: () => shipmentsAPI.list({ status: 'in_transit', limit: 200 }),
+    queryFn: () => shipmentsAPI.list({ status: 'in_transit', limit: 200 }) as Promise<ShipmentRow[]>,
     refetchInterval: 30_000,
   })
 

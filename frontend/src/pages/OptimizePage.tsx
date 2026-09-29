@@ -87,6 +87,22 @@ interface RerouteSuggestion {
   insight: string
 }
 
+interface Insight {
+  id: string
+  type: string
+  vehicle_id: string
+  route_id: string
+  new_sequence: string[]
+  saved_mins: number
+  insight: string
+}
+
+// useMutation's onError is called with the generic query-error type, so these read the
+// Axios error shape defensively rather than asserting a specific AxiosError generic.
+type ApiError = Error & {
+  response?: { data?: { detail?: string | { msg: string }[] } }
+}
+
 export default function OptimizePage() {
   const queryClient = useQueryClient()
   const location = useLocation() as { state?: { routeId?: string } }
@@ -102,7 +118,7 @@ export default function OptimizePage() {
 
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'optimizable'],
-    queryFn: () => vehiclesAPI.list({ limit: 100 }).then((list: Vehicle[]) =>
+    queryFn: () => (vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>).then((list: Vehicle[]) =>
       list.filter(v => ['available', 'idle', 'on_route', 'offline'].includes(v.status)),
     ),
   })
@@ -190,27 +206,27 @@ export default function OptimizePage() {
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
       }
     },
-    onError: (err: any) => {
+    onError: (err: ApiError) => {
       const msg = err.response?.data?.detail
-      setError(Array.isArray(msg) ? msg.map((e: any) => e.msg).join(', ') : (msg || err.message || 'Optimization failed'))
+      setError(Array.isArray(msg) ? msg.map((e) => e.msg).join(', ') : (msg || err.message || 'Optimization failed'))
     },
   })
 
   const canOptimize = !!routeIdToReoptimize || (effectiveVehicleIds.size > 0 && effectiveShipmentIds.size > 0)
 
   // ── Suggestions panel: reroute suggestions the ML service has already found ──
-  const { data: insights = [], isLoading: insightsLoading } = useQuery<any[]>({
+  const { data: insights = [], isLoading: insightsLoading } = useQuery<Insight[]>({
     queryKey: ['ai-insights'],
-    queryFn: () => analyticsAPI.insights(),
+    queryFn: () => analyticsAPI.insights() as Promise<Insight[]>,
     refetchInterval: 15_000,
   })
   const suggestions: RerouteSuggestion[] = insights
-    .filter((i: any) => i.type === 'reroute_suggestion' && !dismissedSuggestions.has(i.id))
-    .map((i: any) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight }))
+    .filter((i) => i.type === 'reroute_suggestion' && !dismissedSuggestions.has(i.id))
+    .map((i) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight }))
 
   const { data: activeVehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'active-for-suggestions'],
-    queryFn: () => vehiclesAPI.list({ limit: 100 }).then((list: Vehicle[]) => list.filter(v => v.status === 'on_route')),
+    queryFn: () => (vehiclesAPI.list({ limit: 100 }) as Promise<Vehicle[]>).then((list: Vehicle[]) => list.filter(v => v.status === 'on_route')),
   })
 
   const applySuggestion = useMutation({
@@ -221,17 +237,17 @@ export default function OptimizePage() {
       queryClient.invalidateQueries({ queryKey: ['ai-insights'] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
-    onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not apply the reroute'),
+    onError: (err: ApiError) => toast.error((typeof err.response?.data?.detail === 'string' ? err.response.data.detail : undefined) || 'Could not apply the reroute'),
   })
 
   const checkVehicle = useMutation({
     mutationFn: (vehicleId: string) => optimizationAPI.incubate(vehicleId),
-    onSuccess: (data: any) => {
+    onSuccess: (data: { status: string; message: string }) => {
       if (data.status === 'suggested') toast.success(data.message)
       else toast(data.message, { icon: 'ℹ️' })
       queryClient.invalidateQueries({ queryKey: ['ai-insights'] })
     },
-    onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not check this vehicle'),
+    onError: (err: ApiError) => toast.error((typeof err.response?.data?.detail === 'string' ? err.response.data.detail : undefined) || 'Could not check this vehicle'),
   })
 
   // ── Map: the optimized routes' actual stops, not the raw shipment list ──

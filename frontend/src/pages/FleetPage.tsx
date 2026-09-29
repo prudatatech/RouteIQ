@@ -104,7 +104,7 @@ export default function FleetPage() {
   // is filtered on the client rather than passed as a single status to the backend.
   const { data: vehicles = [], isLoading, error, refetch } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', filter],
-    queryFn: () => vehiclesAPI.list({ status: filter === 'all' || filter === 'idle' ? undefined : filter, limit: 200 }),
+    queryFn: () => vehiclesAPI.list({ status: filter === 'all' || filter === 'idle' ? undefined : filter, limit: 200 }) as Promise<Vehicle[]>,
     select: rows => filter === 'idle' ? rows.filter(v => v.status === 'idle' || v.status === 'available') : rows,
     refetchInterval: 15_000,
   })

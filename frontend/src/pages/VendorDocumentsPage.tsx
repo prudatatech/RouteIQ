@@ -202,8 +202,8 @@ export default function VendorDocumentsPage() {
       const path = await uploadKycDocument(userId, key, file)
       setField('docUrls', { ...form.docUrls, [key]: path })
       toast.success('Document uploaded')
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to upload document')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
     } finally {
       setUploadingKey(null)
     }
@@ -232,12 +232,12 @@ export default function VendorDocumentsPage() {
       const updated = [...otherDocs, { name: file.name, path }]
       setOtherDocs(updated)
       const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
-      const kycData = (profile?.kyc_data as any) || { data: form, otherDocs: [] }
+      const kycData = (profile?.kyc_data as Record<string, unknown>) || { data: form, otherDocs: [] }
       kycData.otherDocs = updated
       await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
       toast.success('Document uploaded')
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to upload document')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
     } finally {
       setUploadingKey(null)
     }
@@ -248,7 +248,7 @@ export default function VendorDocumentsPage() {
     setOtherDocs(updated)
     try {
       const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
-      const kycData = (profile?.kyc_data as any) || { data: form, otherDocs: [] }
+      const kycData = (profile?.kyc_data as Record<string, unknown>) || { data: form, otherDocs: [] }
       kycData.otherDocs = updated
       await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
     } catch (err) {
@@ -319,9 +319,9 @@ export default function VendorDocumentsPage() {
       toast.success(mode === 'onboarding' ? 'Company profile created' : 'KYC submitted for review')
       if (mode === 'onboarding') navigate('/vendor')
       else window.scrollTo(0, 0)
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      toast.error(err.message || 'We could not save your details. Check your connection and try again.')
+      toast.error(err instanceof Error ? err.message : 'We could not save your details. Check your connection and try again.')
     } finally {
       setSubmitting(false)
     }

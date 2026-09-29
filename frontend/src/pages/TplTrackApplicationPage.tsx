@@ -5,12 +5,22 @@ import { tplAPI } from '@/services/api'
 import { Button, Card, Input, StatusPill } from '@/components/ui'
 import toast from 'react-hot-toast'
 
+interface TplApplication {
+  id: string
+  company_name: string
+  status: string
+  corridor_count?: number
+  document_count?: number
+  created_at?: string
+  rejection_reason?: string | null
+}
+
 export default function TplTrackApplicationPage() {
   const navigate = useNavigate()
   const [trackingId, setTrackingId] = useState('')
   const [editPan, setEditPan] = useState('')
   const [loading, setLoading] = useState(false)
-  const [application, setApplication] = useState<any>(null)
+  const [application, setApplication] = useState<TplApplication | null>(null)
 
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,7 +32,7 @@ export default function TplTrackApplicationPage() {
     setLoading(true)
     try {
       const data = await tplAPI.getPartner(cleaned)
-      setApplication(data)
+      setApplication(data as TplApplication)
     } catch (err) {
       console.error(err)
       toast.error(err instanceof Error ? err.message : 'Application not found. Check your tracking ID.')

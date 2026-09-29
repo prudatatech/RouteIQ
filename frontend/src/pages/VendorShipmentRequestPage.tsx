@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import type { AxiosError } from 'axios'
 import { Navigation, Sparkles, Warehouse } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { vendorAPI } from '@/services/api'
@@ -228,8 +229,9 @@ export default function VendorShipmentRequestPage() {
       await vendorAPI.createShipmentRequest(payload)
       toast.success('Shipment request created')
       navigate('/vendor/shipments')
-    } catch (err: any) {
-      const message = err.response?.data?.error ?? err.response?.data?.detail ?? err.message ?? 'Please try again.'
+    } catch (err) {
+      const e = err as AxiosError<{ error?: string; detail?: string }>
+      const message = e.response?.data?.error ?? e.response?.data?.detail ?? e.message ?? 'Please try again.'
       toast.error(`Failed to submit request: ${message}`)
     } finally {
       setIsSubmitting(false)

@@ -6,7 +6,7 @@ import {
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services/api'
-import { getRouteDistance, getRouteDuration } from '@/utils/routeHelpers'
+import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { formatEta } from '@/utils/timeFormat'
 import DriverMap from '@/components/map/DriverMap'
 import { useAuthStore } from '@/store/authStore'
@@ -34,6 +34,23 @@ interface RouteStop {
   status?: string
   delivery_points?: DeliveryPoint
   delivery_point?: DeliveryPoint
+}
+interface DriverVehicle {
+  id?: string
+  plate_number?: string
+  latitude?: number | null
+  longitude?: number | null
+  last_heartbeat?: string | null
+}
+interface DriverRoute {
+  vehicles?: DriverVehicle | null
+  vehicle?: DriverVehicle | null
+  route_stops?: RouteStop[]
+  stops?: RouteStop[]
+  depot_id?: string | null
+  total_distance_km?: number | null
+  total_duration_minutes?: number | null
+  estimated_fuel_liters?: number | null
 }
 
 type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other'
@@ -227,9 +244,9 @@ export default function DriverPage() {
     enabled: !!userId,
   })
 
-  const { data: routes = [] } = useQuery({
+  const { data: routes = [] } = useQuery<DriverRoute[]>({
     queryKey: ['driver-routes', userId],
-    queryFn: () => routesAPI.list({ status: 'active' }),
+    queryFn: () => routesAPI.list({ status: 'active' }) as Promise<DriverRoute[]>,
     refetchInterval: 30_000,
   })
 
@@ -264,8 +281,8 @@ export default function DriverPage() {
   const consigneePhone: string | undefined =
     currentShipment?.metadata?.consigneeContact || currentShipment?.metadata?.consignee?.contact || undefined
 
-  const computedDist = activeRoute ? getRouteDistance(activeRoute) : 0
-  const computedDuration = activeRoute ? getRouteDuration(activeRoute, computedDist) : 0
+  const computedDist = activeRoute ? getRouteDistance(activeRoute as unknown as RouteLike) : 0
+  const computedDuration = activeRoute ? getRouteDuration(activeRoute as unknown as RouteLike, computedDist) : 0
 
   // Last position report: this device's own fix, else the vehicle's last telemetry heartbeat
   const lastUpdate = lastFixAt ?? (vehicle?.last_heartbeat ? new Date(vehicle.last_heartbeat) : null)
@@ -298,7 +315,7 @@ export default function DriverPage() {
     if (!liveLocation && vehicle?.latitude != null && vehicle?.longitude != null) {
       setLiveLocation({ lat: vehicle.latitude, lng: vehicle.longitude, speedKmph: 0 })
     }
-  }, [vehicle?.latitude, vehicle?.longitude])
+  }, [vehicle?.latitude, vehicle?.longitude, liveLocation])
 
   // Share this device's real location while on a trip (drivers only)
   useEffect(() => {

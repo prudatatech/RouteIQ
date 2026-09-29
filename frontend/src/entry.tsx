@@ -8,6 +8,18 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import toast from 'react-hot-toast'
 
+interface ValidationIssue {
+  loc?: (string | number)[]
+  msg?: string
+}
+
+// The global mutation error handler runs for every mutation in the app, so it can't
+// assume a specific AxiosError generic; these fields are read defensively instead.
+type MutationError = Error & {
+  code?: string
+  response?: { status?: number; data?: { detail?: string | ValidationIssue[] } }
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -17,7 +29,7 @@ const queryClient = new QueryClient({
       // Silently fail for network errors in background queries
     },
     mutations: {
-      onError: (err: any) => {
+      onError: (err: MutationError) => {
         // Skip 401 errors — handled by auth interceptor
         if (err?.response?.status === 401) return
 
@@ -30,7 +42,7 @@ const queryClient = new QueryClient({
         const detail = err?.response?.data?.detail
         let message: string
         if (Array.isArray(detail)) {
-          message = detail.map((e: any) => `${e.loc?.join('.')}: ${e.msg}`).join(', ')
+          message = detail.map((e) => `${e.loc?.join('.')}: ${e.msg}`).join(', ')
         } else if (typeof detail === 'string') {
           message = detail
         } else {

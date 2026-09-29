@@ -29,7 +29,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
 
   const { data: vehicles = [], isLoading, isError, refetch } = useQuery<VehicleOption[]>({
     queryKey: ['vehicles'],
-    queryFn: () => vehiclesAPI.list(),
+    queryFn: () => vehiclesAPI.list() as Promise<VehicleOption[]>,
   })
 
   const hasOrigin = !!(data.origin_lat && data.origin_lng)

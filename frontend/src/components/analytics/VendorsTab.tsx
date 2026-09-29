@@ -41,7 +41,7 @@ export default function VendorsTab() {
   const [search, setSearch] = useState('')
   const { data = [], isLoading, isError, refetch } = useQuery<VendorRow[]>({
     queryKey: ['analytics', 'vendor-performance'],
-    queryFn: () => analyticsAPI.vendorPerformance(),
+    queryFn: () => analyticsAPI.vendorPerformance() as Promise<VendorRow[]>,
     refetchInterval: 60_000,
   })
 

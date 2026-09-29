@@ -93,7 +93,12 @@ export default function TplOnboardingPage() {
       setSlaCommitment(data.sla_commitment || '2 Hours')
       setTaxTreatment(data.tax_treatment || '12% GTA (With ITC) - Forward Charge')
       if (data.tpl_corridors?.length > 0) {
-        setCorridors(data.tpl_corridors.map((c: any, i: number) => ({
+        setCorridors(data.tpl_corridors.map((c: {
+          corridor_name: string
+          vehicle_types?: string[] | null
+          proposed_rate?: string | null
+          priority?: string | number | null
+        }, i: number) => ({
           id: i + 1,
           name: c.corridor_name,
           vehicles: (c.vehicle_types || []).join(', '),
@@ -102,7 +107,7 @@ export default function TplOnboardingPage() {
         })))
       }
       if (data.tpl_documents?.length > 0) {
-        setExistingDocs(data.tpl_documents.map((d: any) => ({ type: d.doc_type, url: d.file_url })))
+        setExistingDocs(data.tpl_documents.map((d: { doc_type: string; file_url: string }) => ({ type: d.doc_type, url: d.file_url })))
       }
     }).catch(() => {
       toast.error('Failed to load application data.')

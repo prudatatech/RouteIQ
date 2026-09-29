@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import { Copy, Edit2, Trash2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
 import { Page, PageHeader, Card, Button, StatusPill, Stat, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
 import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
@@ -54,7 +55,7 @@ export default function RouteDetailsPage() {
       toast.success('Route status updated')
       queryClient.invalidateQueries({ queryKey: ['route', id] })
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to update route status'),
+    onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to update route status'),
   })
 
   const deleteMutation = useMutation({
@@ -63,7 +64,7 @@ export default function RouteDetailsPage() {
       toast.success('Route deleted')
       navigate('/routes')
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to delete route'),
+    onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to delete route'),
   })
 
   const sortedStops = useMemo(

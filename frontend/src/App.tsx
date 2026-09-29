@@ -134,9 +134,8 @@ function TplVerifyRedirect() {
 }
 
 export default function App() {
-  const store = useAuthStore()
-
   useEffect(() => {
+    const store = useAuthStore.getState()
     // Roles come from the database (users, vendor_profiles, tpl_partners), never from
     // user_metadata, which users can edit themselves.
     const restore = async (session: Session | null) => {

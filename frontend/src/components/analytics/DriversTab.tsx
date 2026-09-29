@@ -64,7 +64,7 @@ export default function DriversTab() {
   const [status, setStatus] = useState('')
   const { data = [], isLoading, isError, refetch } = useQuery<DriverRow[]>({
     queryKey: ['analytics', 'driver-performance'],
-    queryFn: () => analyticsAPI.driverPerformance(),
+    queryFn: () => analyticsAPI.driverPerformance() as Promise<DriverRow[]>,
     refetchInterval: 60_000,
   })
 

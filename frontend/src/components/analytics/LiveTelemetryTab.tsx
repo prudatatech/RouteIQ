@@ -50,11 +50,11 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
 }) {
   const vehicles = useQuery<VehicleOption[]>({
     queryKey: ['vehicles', 'analytics-list'],
-    queryFn: () => vehiclesAPI.list({ limit: 200 }),
+    queryFn: () => vehiclesAPI.list({ limit: 200 }) as Promise<VehicleOption[]>,
   })
   const missions = useQuery<Mission[]>({
     queryKey: ['analytics', 'active-missions'],
-    queryFn: () => analyticsAPI.activeMissions(),
+    queryFn: () => analyticsAPI.activeMissions() as Promise<Mission[]>,
     refetchInterval: 30_000,
   })
 
