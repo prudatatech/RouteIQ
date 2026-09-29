@@ -20,7 +20,7 @@ Before applying, list the current storage policies — the migration drops every
 select policyname, cmd, roles, qual, with_check from pg_policies where schemaname = 'storage';
 ```
 
-1. Deploy the web app from this branch (it no longer reads `vendor_profiles.dummy2`/`kyc_profiles`, opens KYC documents through signed URLs, and uploads 3PL application documents under `tpl-applications/`).
+1. Deploy the web app from this branch (it no longer reads `vendor_profiles.dummy2`/`kyc_profiles`, opens KYC documents through signed URLs, and uploads 3PL documents through backend-issued signed upload URLs).
 2. In the SQL editor (or `supabase db push` once the baseline below is in place), run, in order:
    - `migrations/20260928000000_secure_user_roles.sql` — roles only from server-set `app_metadata`; clients cannot write `public.users` except `push_token`.
    - `migrations/20260928000100_vendor_kyc_columns.sql` — `vendor_profiles.kyc_status` / `kyc_data`, backfilled from `dummy2`. Rows whose `dummy2` is not valid JSON are listed as NOTICEs; review them by hand.
@@ -28,6 +28,29 @@ select policyname, cmd, roles, qual, with_check from pg_policies where schemanam
    - `migrations/20260928000300_status_alignment.sql` — enum/constraint values the code writes.
    - `migrations/20260928000400_unique_tpl_custom_id.sql` — 3PL partner IDs (which name their document folders) must be unique. If it prints duplicate NOTICEs, rename those partners' `custom_id` and run it again.
 3. Deploy backend-ts.
+
+## 1b. Follow-up security migrations (`20260929*`)
+
+Deploy backend-ts and the web app from the same branch **first** (the web app then reads vendor views through the backend), then run, in order:
+
+- `migrations/20260929000000_vendor_vehicle_exposure.sql` — vendors no longer read `vehicles` rows. They see open windows and their own bids through `GET /capacity/windows/open` and `GET /capacity/bids/mine` (vehicle type, free capacity, origin city; the plate only on a bid they won). Staff and drivers keep their access.
+
+- `migrations/20260929000100_vendor_kyc_reverification.sql` — an approved vendor that changes its company name, GST number, registered address or KYC form/documents (`kyc_data`) goes back to `submitted` with the review stamp cleared. Staff edits do not reset it. The backend applies the same rule on `POST /vendor/profile`.
+
+- `migrations/20260929000200_tpl_signed_uploads.sql` — nobody inserts 3PL documents directly any more: drops the anonymous `tpl-applications/` upload policy and the 3PL partner-folder branch of `kyc_documents_upload_own` (vendors still upload into their own `<user id>/` folder). 3PL applicants and partners upload through `POST /tpl/applications/upload-url`, which checks the application, document type, format and size and returns a signed upload URL for a path the backend chooses. Also restricts the `kyc_documents` bucket to PDF, JPG and PNG (the only formats any uploader in the app offers), which binds signed uploads too.
+
+These files re-apply safely. If `20260928000200` is ever re-run, re-run the `20260929*` files after it (it recreates the policies they replace).
+
+Optional, recommended: set a per-file size limit on the bucket (Dashboard → Storage → `kyc_documents` → Edit bucket → Restrict file size). A signed upload URL cannot carry a size limit of its own, so the backend's check (`TPL_UPLOAD_MAX_BYTES`, default 2 MB) covers the declared size and the bucket limit covers the actual upload. Vendor KYC uploads share the bucket, so choose a value that suits them too.
+
+Check:
+```sql
+-- vendors have no branch in the vehicles policy
+select qual from pg_policies where schemaname = 'public' and tablename = 'vehicles' and policyname = 'vehicles_select';
+-- expected storage policies: kyc_documents_read (SELECT), kyc_documents_upload_own (INSERT, authenticated)
+select policyname, cmd, roles from pg_policies where schemaname = 'storage';
+select allowed_mime_types from storage.buckets where id = 'kyc_documents';
+```
 4. Check:
    ```sql
    -- every public table has RLS on
@@ -59,9 +82,9 @@ Then, in one commit:
 1. Move every migration older than the baseline (everything before `20260927000000`, and the unversioned `add_phone_to_users.sql`; not the `20260928*` files), plus `../scripts/supabase_init.sql`, `../backend-ts/kyc_migration.sql` and `../backend-ts/scripts/*.sql`, into `migrations/_archive/` (history only, never applied again).
 2. The `storage` schema is managed by Supabase and is not dumped; the `kyc_documents` bucket policies live in `20260928000200_row_level_security.sql`.
 3. Grep the baseline for `tpl_partners`, `customers`, `cargo_manifest`, `sos_alerts`, `system_settings`, `kyc_profiles` to confirm they were captured.
-4. Mark the baseline and the `20260928*` migrations as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300 20260928000400`.
+4. Mark the baseline and the `20260928*`/`20260929*` migrations that have been applied as applied: `supabase migration repair --status applied 20260927000000 20260928000000 20260928000100 20260928000200 20260928000300 20260928000400 20260929000000` (append the other `20260929*` versions once applied).
 
-The baseline is stamped just before the `20260928*` files; those are idempotent, so on a fresh `supabase db reset` they re-apply cleanly on top of it (and add the storage policies, which the dump does not contain).
+The baseline is stamped just before the `20260928*` and `20260929*` files; those are idempotent, so on a fresh `supabase db reset` they re-apply cleanly on top of it (and add the storage policies, which the dump does not contain).
 
 From then on every schema change is a new file from `supabase migration new <name>`, tested with `supabase db reset` locally before it is pushed.
 

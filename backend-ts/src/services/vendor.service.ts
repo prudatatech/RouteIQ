@@ -1,12 +1,17 @@
 import { supabase } from '../core/supabase';
 import { notificationService } from './notification.service';
 
+/** Legal identity columns this service writes; changing one on an approved profile needs a new KYC review. */
+const VENDOR_IDENTITY_FIELDS = ['company_name', 'gst_number', 'address'] as const;
+
 export const vendorService = {
   /**
-   * Save or update vendor profile coordinates and details
+   * Save or update a vendor's own profile. Changing a legal identity field on
+   * an approved profile sends it back to KYC review, as the database field
+   * guard does for direct client edits (20260929000100).
    */
   async upsertProfile(vendorId: string, companyName: string, gstNumber: string, city: string, address: string, lat: number, lng: number) {
-    const { data, error } = await supabase.from('vendor_profiles').upsert({
+    const changes: Record<string, unknown> = {
       id: vendorId,
       company_name: companyName,
       gst_number: gstNumber,
@@ -15,7 +20,21 @@ export const vendorService = {
       latitude: lat,
       longitude: lng,
       updated_at: new Date().toISOString()
-    }).select().single();
+    };
+
+    const { data: current, error: currentErr } = await supabase
+      .from('vendor_profiles')
+      .select(['kyc_status', ...VENDOR_IDENTITY_FIELDS].join(', '))
+      .eq('id', vendorId)
+      .maybeSingle();
+    if (currentErr) throw new Error(currentErr.message);
+    const existing = current as Record<string, unknown> | null;
+    if (existing?.kyc_status === 'approved'
+        && VENDOR_IDENTITY_FIELDS.some(f => (changes[f] ?? null) !== (existing[f] ?? null))) {
+      Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
+    }
+
+    const { data, error } = await supabase.from('vendor_profiles').upsert(changes).select().single();
 
     if (error) throw new Error(error.message);
     return data;
@@ -263,8 +282,9 @@ export const vendorService = {
       
       if (error || !data || data.length === 0) return;
       
-      const { data: vehicleData } = await supabase.from('vehicles').select('plate_number, capacity_kg, available_capacity_kg').eq('id', vehicleId).single();
-      const vehicleDesc = vehicleData?.plate_number ? `Truck ${vehicleData.plate_number}` : 'A truck';
+      const { data: vehicleData } = await supabase.from('vehicles').select('vehicle_type, capacity_kg, available_capacity_kg').eq('id', vehicleId).single();
+      // Vendors are not told which vehicle it is (plate) until they win capacity on it
+      const vehicleDesc = vehicleData?.vehicle_type ? `A ${vehicleData.vehicle_type}` : 'A truck';
       
       // Notify matched vendors
       for (const match of data) {
@@ -339,7 +359,8 @@ export const vendorService = {
   async getPassingRoutes(vendorId: string) {
     const { data, error } = await supabase
       .from('vendor_route_opportunities')
-      .select('*, routes(*, vehicles(*))')
+      // Only what the card shows: never the full route or vehicle (plate, driver phone, live position)
+      .select('*, routes(id, vehicles(vehicle_type))')
       .eq('vendor_id', vendorId)
       .eq('status', 'notified')
       .order('created_at', { ascending: false });

@@ -9,6 +9,37 @@ const OTP_MAX_ATTEMPTS = 5;
 
 const otpKey = (email: string) => `otp:tpl:${email.toLowerCase()}`;
 
+const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/;
+
+/** Documents a 3PL applicant or partner can upload. */
+export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'] as const;
+
+/** Accepted upload formats and the file extension each is stored under. */
+export const TPL_UPLOAD_CONTENT_TYPES: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
+
+/** Folder of a new application's documents (applicant has no account yet). */
+const applicationFolder = (customId: string) => `tpl-applications/${customId}`;
+
+/**
+ * Reject document paths the applicant was not issued: every path must lie in
+ * one of `folders` or already be one of the partner's documents.
+ */
+function assertDocumentPaths(documents: unknown, folders: string[], existing: string[] = []): void {
+  if (documents == null) return;
+  if (!Array.isArray(documents)) throw new HttpError(400, 'documents must be a list');
+  for (const d of documents) {
+    const url = typeof d?.url === 'string' ? d.url : '';
+    const inFolder = folders.some(f => url.startsWith(`${f}/`) && !url.slice(f.length + 1).includes('/'));
+    if (!url || (!inFolder && !existing.includes(url))) {
+      throw new HttpError(400, 'Upload documents through the application form');
+    }
+  }
+}
+
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -33,12 +64,14 @@ export const tplService = {
 
     // custom_id names the partner's document folder, so it must be unique
     if (custom_id) {
-      if (typeof custom_id !== 'string' || !/^[a-z0-9_]{5,20}$/.test(custom_id)) {
+      if (typeof custom_id !== 'string' || !CUSTOM_ID_PATTERN.test(custom_id)) {
         throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
       }
       const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', custom_id).maybeSingle();
       if (takenId) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
     }
+
+    assertDocumentPaths(documents, custom_id ? [applicationFolder(custom_id)] : []);
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
@@ -93,6 +126,45 @@ export const tplService = {
   },
 
   /**
+   * Signed upload URL for one application document, at a path chosen here.
+   * `partnerId` set: a document of an existing application/partner (the caller
+   * has already been authorised for it). Otherwise a new application's document,
+   * filed under its chosen 3PL ID, which must not belong to anyone yet.
+   */
+  async createDocumentUploadUrl(input: { docType: unknown; contentType: unknown; size: unknown; customId?: unknown; partnerId?: string }) {
+    const { docType, contentType, size, customId, partnerId } = input;
+    if (typeof docType !== 'string' || !(TPL_DOCUMENT_TYPES as readonly string[]).includes(docType)) {
+      throw new HttpError(400, `Document type must be one of: ${TPL_DOCUMENT_TYPES.join(', ')}`);
+    }
+    const extension = typeof contentType === 'string' ? TPL_UPLOAD_CONTENT_TYPES[contentType.toLowerCase()] : undefined;
+    if (!extension) throw new HttpError(415, 'Upload a PDF, JPG or PNG file');
+    const bytes = Number(size);
+    if (!Number.isInteger(bytes) || bytes <= 0) throw new HttpError(400, 'File size is required');
+    if (bytes > settings.TPL_UPLOAD_MAX_BYTES) {
+      throw new HttpError(413, `File must be at most ${Math.floor(settings.TPL_UPLOAD_MAX_BYTES / 1024 / 1024 * 10) / 10} MB`);
+    }
+
+    let folder: string;
+    if (partnerId) {
+      folder = partnerId;
+    } else {
+      if (typeof customId !== 'string' || !CUSTOM_ID_PATTERN.test(customId)) {
+        throw new HttpError(400, 'Choose a valid 3PL ID before uploading documents');
+      }
+      const { data: taken, error } = await supabase.from('tpl_partners').select('id').eq('custom_id', customId).maybeSingle();
+      if (error) throw new Error(`Failed to check 3PL ID: ${error.message}`);
+      if (taken) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+      folder = applicationFolder(customId);
+    }
+
+    const slug = docType.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const path = `${folder}/${slug}_${crypto.randomUUID()}.${extension}`;
+    const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUploadUrl(path);
+    if (error || !data) throw new Error(`Failed to create upload URL: ${error?.message}`);
+    return { path: data.path, token: data.token, signed_url: data.signedUrl };
+  },
+
+  /**
    * Get list of pending applications (or all by status)
    */
   async getQueue(status: string = 'pending') {
@@ -142,10 +214,15 @@ export const tplService = {
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
 
-    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('status').eq('id', id).maybeSingle();
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(file_url)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
     if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+    assertDocumentPaths(
+      documents,
+      [current.id, ...(current.custom_id ? [applicationFolder(current.custom_id)] : [])],
+      ((current.tpl_documents as { file_url: string }[] | null) ?? []).map(d => d.file_url),
+    );
 
     // 1. Update Partner Record
     const { error: partnerErr } = await supabase

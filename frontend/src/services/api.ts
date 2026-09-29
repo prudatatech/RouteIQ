@@ -163,6 +163,9 @@ export const capacityAPI = {
     eway_bill_ref?: string
     load_configuration?: string
   }) => api.post('/capacity/bids', data).then(r => r.data),
+  // Vendor views: no plate, driver or live position (plate only on a won bid)
+  openWindows: () => api.get('/capacity/windows/open').then(r => ensureArray(r.data)),
+  myBids: () => api.get('/capacity/bids/mine').then(r => ensureArray(r.data)),
   pendingBids: () => api.get('/capacity/bids/pending').then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
 }
@@ -246,6 +249,16 @@ export const tplAPI = {
   getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
+  /** Signed upload URL for one application document; use uploadTplDocument() from services/tplDocuments. */
+  documentUploadUrl: (data: {
+    doc_type: string
+    content_type: string
+    size: number
+    custom_id?: string
+    application_id?: string
+    verify_pan?: string
+  }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post('/tpl/applications/upload-url', data).then(r => r.data),
   pause: (id: string) => api.post(`/tpl/${id}/pause`).then(r => r.data),
   resume: (id: string) => api.post(`/tpl/${id}/resume`).then(r => r.data),
   delete: (id: string) => api.delete(`/tpl/${id}`).then(r => r.data),

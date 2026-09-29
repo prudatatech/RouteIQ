@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { formatEta } from '@/utils/timeFormat'
 import toast from 'react-hot-toast'
-import { vendorAPI } from '@/services/api'
+import { capacityAPI, vendorAPI } from '@/services/api'
 import PlaceBidModal from '@/components/vendor/PlaceBidModal'
 
 export default function VendorCorridorPage() {
@@ -39,7 +39,7 @@ export default function VendorCorridorPage() {
 
   const fetchData = async () => {
     try {
-      const wPromise = supabase.from('capacity_windows').select('*, vehicles(plate_number, available_capacity_kg, vehicle_type)').gt('closes_at', new Date().toISOString()).is('winning_bid_id', null).order('opens_at', { ascending: false })
+      const wPromise = session ? capacityAPI.openWindows().then(data => ({ data })) : Promise.resolve({ data: [] })
       let bPromise: any = Promise.resolve({ data: [] })
       const pPromise = session ? vendorAPI.passingRoutes().catch(() => []) : Promise.resolve([])
 

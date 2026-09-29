@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Activity, Package, CheckCircle, TrendingUp, Zap, Plus, ArrowRight } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { capacityAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate } from 'react-router-dom'
 
@@ -32,7 +33,7 @@ export default function VendorShipmentsPage() {
   const fetchData = async () => {
     if (!userId) return
     try {
-      const bPromise = supabase.from('capacity_bids').select('*, capacity_windows!capacity_bids_window_id_fkey(trigger_type, vehicles(plate_number, vehicle_type))').eq('vendor_id', userId).order('submitted_at', { ascending: false })
+      const bPromise = capacityAPI.myBids().then(data => ({ data }))
       const rPromise = supabase.from('vendor_shipment_requests').select('*, cargo_manifest(id)').eq('vendor_id', userId).order('created_at', { ascending: false })
 
       const [resB, resR] = await Promise.all([bPromise, rPromise])
