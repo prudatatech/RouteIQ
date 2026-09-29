@@ -1,4 +1,4 @@
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatDate } from '@/utils/display'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -6,7 +6,7 @@ import {
   Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
 import {
-  Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
+  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
@@ -45,6 +45,12 @@ interface TplPendingUpdates {
   sla_commitment?: string
   tax_treatment?: string
   corridors?: CorridorFormRow[]
+}
+
+/** Vehicle types come as a list, or occasionally as one comma-separated string. */
+function vehicleList(value: string[] | string | null | undefined): string[] {
+  if (Array.isArray(value)) return value
+  return (value ?? '').split(',').map(v => v.trim()).filter(Boolean)
 }
 
 interface TplPartner {
@@ -91,20 +97,22 @@ export default function TplDashboardPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     useAuthStore.getState().clearAuth()
-    navigate('/login', { replace: true })
+    navigate('/login?as=vendor', { replace: true })
   }
+
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       setLoading(true)
       setError(null)
       try {
-        if (!id) throw new Error('No partner ID provided')
+        if (!id) throw new Error('This address is missing the partner ID.')
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
-        if (!uuidRegex.test(id)) throw new Error('Invalid partner ID format')
+        if (!uuidRegex.test(id)) throw new Error('This address is not a valid partner dashboard link.')
 
         const partnerData = await tplAPI.getPartner(id)
-        if (!partnerData) throw new Error('Partner not found')
+        if (!partnerData) throw new Error('We could not find this partner profile.')
         // The backend only shows the full record (and accepts changes) to the partner's own
         // account, so anyone else would see a dashboard they cannot use.
         if (partnerData.user_id !== useAuthStore.getState().userId) {
@@ -116,7 +124,7 @@ export default function TplDashboardPage() {
         setDocuments(partnerData.tpl_documents || [])
       } catch (err) {
         console.error('Dashboard fetch error:', err)
-        setError(errorMessage(err, 'Failed to load dashboard'))
+        setError(errorMessage(err, 'We could not load your dashboard. Check your connection and try again.'))
       } finally {
         setLoading(false)
       }
@@ -139,12 +147,12 @@ export default function TplDashboardPage() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [id])
+  }, [id, reloadKey])
 
   const handleReplaceDocument = async (doc: TplDocument, file: File | undefined) => {
     if (!file) return
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('File must be under 2 MB.')
+      toast.error('The file is over the 2 MB limit. Choose a smaller file.')
       return
     }
     const ok = await confirm({
@@ -208,12 +216,17 @@ export default function TplDashboardPage() {
     })
     if (!ok) return
 
+    const namedCorridors = settingsForm.corridors.filter(c => c.name.trim())
+    if (namedCorridors.length === 0) {
+      toast.error('Add at least one corridor you serve, for example DEL-BOM.')
+      return
+    }
     setIsSubmittingSettings(true)
     try {
       const requested = {
         sla_commitment: settingsForm.slaCommitment,
         tax_treatment: settingsForm.taxTreatment,
-        corridors: settingsForm.corridors.filter(c => c.name.trim()),
+        corridors: namedCorridors,
       }
       const updates = { ...requested, requested_at: new Date().toISOString() }
       // Nothing changes until staff approve; the backend validates the request and tells staff.
@@ -241,11 +254,12 @@ export default function TplDashboardPage() {
       <div className="flex min-h-screen items-center justify-center bg-bg p-6">
         <div className="w-full max-w-md">
           <ErrorState
-            title="Can't open this dashboard"
-            description={error || 'This partner profile either does not exist or you do not have access to it.'}
+            title="We could not open this dashboard"
+            description={error || 'This partner profile does not exist, or you do not have access to it.'}
+            onRetry={() => setReloadKey(k => k + 1)}
           />
           <div className="mt-4 flex justify-center">
-            <Button variant="secondary" icon={<LogOut size={16} />} onClick={handleLogout}>Sign out and retry</Button>
+            <Button variant="ghost" icon={<LogOut size={16} />} onClick={handleLogout}>Sign out and use another account</Button>
           </div>
         </div>
       </div>
@@ -257,14 +271,14 @@ export default function TplDashboardPage() {
     {
       key: 'vehicles', header: 'Vehicle types', cell: c => (
         <div className="flex flex-wrap gap-1">
-          {(Array.isArray(c.vehicle_types) ? c.vehicle_types : []).map(v => (
+          {vehicleList(c.vehicle_types).map(v => (
             <span key={v} className="rounded-full bg-neutral-soft px-2 py-0.5 text-xs text-neutral">{v}</span>
           ))}
         </div>
       ),
     },
     { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span>, sortValue: c => c.priority ?? null },
-    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span className="tabular">₹{c.proposed_rate || '—'}</span>, sortValue: c => c.proposed_rate ?? null },
+    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span>{c.proposed_rate || '—'}</span>, sortValue: c => c.proposed_rate ?? null },
   ]
 
   return (
@@ -297,8 +311,8 @@ export default function TplDashboardPage() {
             description={
               <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span className="flex items-center gap-1.5"><Hash size={12} /> {partner.custom_id || partner.id.split('-')[0]}</span>
-                <span className="flex items-center gap-1.5"><CreditCard size={12} /> GST: {partner.gstin}</span>
-                <span className="flex items-center gap-1.5"><Calendar size={12} /> Since {new Date(partner.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
+                {partner.gstin && <span className="flex items-center gap-1.5"><CreditCard size={12} /> GSTIN {partner.gstin}</span>}
+                <span className="flex items-center gap-1.5"><Calendar size={12} /> Partner since {formatDate(partner.created_at)}</span>
               </span>
             }
             actions={<StatusPill status={partner.status} />}
@@ -317,6 +331,17 @@ export default function TplDashboardPage() {
               ]}
             />
           </PageHeader>
+
+          {partner.status !== 'active' && (
+            <Alert
+              tone={partner.status === 'rejected' || partner.status === 'suspended' ? 'danger' : 'warning'}
+              title={partner.status === 'pending' ? 'Your profile is in review' : 'Your account is not active'}
+            >
+              {partner.status === 'pending'
+                ? 'You cannot accept new loads until we approve it. Your existing orders stay open. We will notify you.'
+                : 'You cannot accept new loads. Contact MargixIndia dispatch to have your account reviewed.'}
+            </Alert>
+          )}
 
           {tab === 'overview' && (
             <div className="space-y-6">
@@ -370,16 +395,16 @@ export default function TplDashboardPage() {
                 <Card padded>
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><MapPin size={16} className="text-brand" /> Active corridors</h3>
                   {corridors.length === 0 ? (
-                    <EmptyState compact title="No corridors configured" />
+                    <EmptyState compact title="No corridors yet" description="Add the routes you serve so dispatch can offer you loads." action={<Button variant="secondary" onClick={() => setTab('settings')}>Add corridors</Button>} />
                   ) : (
                     <div className="space-y-2">
                       {corridors.map(c => (
                         <div key={c.id} className="flex items-center justify-between rounded-control border border-border bg-surface-subtle px-3 py-2 text-sm">
                           <div>
                             <p className="font-medium text-text">{c.corridor_name}</p>
-                            <p className="text-xs text-muted">{Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : c.vehicle_types}</p>
+                            <p className="text-xs text-muted">{vehicleList(c.vehicle_types).join(', ') || 'No vehicle types'}</p>
                           </div>
-                          <span className="font-mono text-brand">₹{c.proposed_rate || '—'}</span>
+                          <span className="text-right text-brand">{c.proposed_rate || '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -397,7 +422,9 @@ export default function TplDashboardPage() {
                 columns={corridorColumns}
                 rows={filteredCorridors}
                 rowKey={c => c.id}
-                empty={{ title: 'No corridors configured', description: 'Contact an admin to modify your operational corridors.' }}
+                empty={corridorSearch
+                  ? { title: 'No corridors match your search' }
+                  : { title: 'No corridors yet', description: 'Add the routes you serve so dispatch can offer you loads.', action: <Button onClick={() => setTab('settings')}>Add corridors</Button> }}
               />
             </div>
           )}
@@ -407,7 +434,7 @@ export default function TplDashboardPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {documents.length === 0 && (
                   <div className="md:col-span-2 lg:col-span-3">
-                    <EmptyState title="No documents uploaded" />
+                    <EmptyState title="No documents on file" description="Your application documents appear here once they are uploaded. Contact MargixIndia dispatch if some are missing." />
                   </div>
                 )}
                 {documents.map(doc => (
@@ -418,7 +445,7 @@ export default function TplDashboardPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <h4 className="truncate text-sm font-medium text-text">{doc.doc_type}</h4>
-                        <p className="mt-0.5 text-xs text-muted">{new Date(doc.uploaded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                        <p className="mt-0.5 text-xs text-muted">Uploaded {formatDate(doc.uploaded_at)}</p>
                       </div>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
@@ -434,13 +461,13 @@ export default function TplDashboardPage() {
                       >
                         View
                       </Button>
-                      <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-subtle">
+                      <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-subtle focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
                         {uploadingDoc === doc.id ? <Spinner size={14} /> : <UploadCloud size={14} />}
                         Update
                         <input
                           type="file"
                           accept=".pdf,.png,.jpg,.jpeg"
-                          className="hidden"
+                          className="sr-only"
                           disabled={uploadingDoc === doc.id}
                           onChange={e => { handleReplaceDocument(doc, e.target.files?.[0]); e.target.value = '' }}
                         />
@@ -461,10 +488,9 @@ export default function TplDashboardPage() {
               <CardHeader title="Operational settings" />
               <div className="space-y-8 pt-6">
                 {partner.pending_updates && (
-                  <div className="rounded-control border border-warning/30 bg-warning-soft p-4 text-sm">
-                    <p className="font-medium text-warning">Update pending approval</p>
-                    <p className="mt-1 text-text">You have changes awaiting review. A new request replaces the pending one.</p>
-                  </div>
+                  <Alert tone="warning" title="Your update is waiting for approval">
+                    A new request replaces this one. Your current terms stay in place until it is approved.
+                  </Alert>
                 )}
                 <OperationalTermsFields
                   slaCommitment={settingsForm.slaCommitment}
