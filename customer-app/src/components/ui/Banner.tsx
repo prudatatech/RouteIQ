@@ -6,7 +6,7 @@ import { TONES } from './StatusPill';
 import { Text } from './Text';
 
 export interface BannerProps {
-  tone: 'danger' | 'warning' | 'info';
+  tone: 'danger' | 'warning' | 'info' | 'neutral';
   message: string;
   icon?: keyof typeof Feather.glyphMap;
   action?: { label: string; onPress: () => void };

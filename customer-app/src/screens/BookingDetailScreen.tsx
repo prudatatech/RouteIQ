@@ -138,7 +138,7 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
       {deliveryFailed(booking) ? <Banner tone="warning" icon="alert-triangle" message={t('delivery_failed_note')} /> : null}
 
       {cancelled ? (
-        <Banner tone="warning" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />
+        <Banner tone="neutral" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />
       ) : (
         <Card style={styles.card}>
           <Text variant="title" accessibilityRole="header">
