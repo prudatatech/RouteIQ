@@ -404,7 +404,7 @@ export default function VendorRequestsPage() {
     assigned: 'No requests with a vehicle',
     completed: 'No completed requests',
     rejected: 'No rejected or cancelled requests',
-    all: 'No vendor requests yet',
+    all: 'No vendor loads yet',
   }
 
   const exportCsv = () => {
@@ -429,7 +429,7 @@ export default function VendorRequestsPage() {
   return (
     <Page>
       <PageHeader
-        title="Vendor requests"
+        title="Vendor loads"
         description="Loads posted by vendors that need a vehicle. New requests appear here as they come in."
         actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
@@ -441,12 +441,12 @@ export default function VendorRequestsPage() {
 
       <TabPanel id={tab}>
         <DataTable
-          caption="Vendor shipment requests"
+          caption="Vendor loads"
           columns={columns}
           rows={rows}
           rowKey={r => r.id}
           loading={requests.isLoading}
-          error={requests.error ? 'We could not load vendor requests. Check your connection and try again.' : undefined}
+          error={requests.error ? 'We could not load vendor loads. Check your connection and try again.' : undefined}
           onRetry={() => requests.refetch()}
           onRowClick={r => setSelectedId(r.id)}
           selectedKey={selectedId}

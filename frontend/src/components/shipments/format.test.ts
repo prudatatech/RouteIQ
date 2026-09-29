@@ -15,7 +15,7 @@ describe('shipment statuses', () => {
 
   it('names a failed delivery for what happened', () => {
     expect(shipmentStatusLabel('exception')).toBe('Delivery failed')
-    expect(shipmentStatusLabel('assigned')).toBe('Assigned')
+    expect(shipmentStatusLabel('assigned')).toBe('Vehicle assigned')
   })
 })
 

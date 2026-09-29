@@ -280,7 +280,7 @@ export default function ShipmentManifestPage() {
         </ManifestCard>
       </div>
 
-      <ManifestCard title="Trip" description={editing ? undefined : 'Arrival and distance are estimates unless entered on the manifest.'}>
+      <ManifestCard title="Route" description={editing ? undefined : 'Arrival and distance are estimates unless entered on the manifest.'}>
         {renderFields(trip, 2)}
       </ManifestCard>
 

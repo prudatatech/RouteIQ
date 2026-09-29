@@ -190,7 +190,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
               options={BIDDING_WINDOWS.map(m => ({ value: String(m), label: `${m} minutes` }))}
             />
             <Input
-              label="Asking price"
+              label="Minimum bid"
               hint="Optional."
               type="number"
               inputMode="decimal"

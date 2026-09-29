@@ -210,7 +210,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
               <p className="px-4 py-6 text-center text-sm text-muted">
                 {audience === 'vendor'
                   ? 'No notifications yet. Updates on your loads, bids, offers and verification will show up here.'
-                  : 'No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.'}
+                  : 'No notifications yet. New SOS alerts, vendor loads, bids and reviews will show up here.'}
               </p>
             )}
             <ul>

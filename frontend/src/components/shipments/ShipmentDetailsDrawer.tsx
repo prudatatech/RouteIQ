@@ -234,7 +234,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             <DetailList
               items={[
                 { label: 'State', value: isBiddingOpen(s) ? 'Bidding open' : 'Bid accepted' },
-                { label: 'Asking price', value: s.asking_price != null ? formatRupees(s.asking_price) : null },
+                { label: 'Minimum bid', value: s.asking_price != null ? formatRupees(s.asking_price) : null },
                 { label: 'Opens', value: s.bidding_opens_at ? formatDateTime(s.bidding_opens_at) : null },
                 { label: 'Closes', value: s.bidding_closes_at ? formatDateTime(s.bidding_closes_at) : null },
               ]}

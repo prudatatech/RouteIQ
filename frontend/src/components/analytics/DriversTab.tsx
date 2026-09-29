@@ -47,7 +47,7 @@ const columns: Column<DriverRow>[] = [
     cell: r => (r.vehicle_type ? humanize(r.vehicle_type) : '—'),
   },
   {
-    key: 'completed', header: 'Trips completed', align: 'right', sortValue: r => r.completed_routes,
+    key: 'completed', header: 'Routes completed', align: 'right', sortValue: r => r.completed_routes,
     cell: r => <span className="tabular">{formatNumber(r.completed_routes)}</span>,
   },
   {
@@ -137,21 +137,21 @@ export default function DriversTab() {
       </section>
 
       <ChartCard
-        title="Most trips completed"
+        title="Most routes completed"
         description="Top eight drivers or vehicles by completed routes"
         loading={isLoading}
         error={isError}
         onRetry={() => refetch()}
         empty={top.length === 0}
-        emptyTitle="No completed trips yet"
+        emptyTitle="No completed routes yet"
         emptyDescription="Drivers appear here once they complete a route."
       >
         <SimpleBarChart
           data={top}
           categoryKey="name"
           horizontal
-          series={[{ key: 'trips', label: 'Trips completed' }]}
-          label={`Completed trips for the top ${top.length} drivers.`}
+          series={[{ key: 'trips', label: 'Routes completed' }]}
+          label={`Completed routes for the top ${top.length} drivers.`}
         />
       </ChartCard>
 

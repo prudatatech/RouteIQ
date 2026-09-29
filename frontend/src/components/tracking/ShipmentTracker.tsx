@@ -151,7 +151,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         <EmptyState
           icon={<MapPin size={22} />}
           title={trackingId ? `No shipment found for ${trackingId}` : 'No shipment found'}
-          description="Check the tracking ID for typos. You can find it in the message or email you got from your shipper."
+          description="Check the tracking ID for typos. You can find it in the message or email you got from the vendor or company that booked it."
         />
       </Card>
     )

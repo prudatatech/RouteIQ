@@ -78,7 +78,7 @@ export default function VendorsTab() {
           icon={<Percent size={18} />}
           loading={isLoading}
           value={noValue ?? formatPercent(kpis.rate)}
-          hint={kpis.rate == null ? 'No vendor requests yet' : 'Average across vendors with requests'}
+          hint={kpis.rate == null ? 'No vendor loads yet' : 'Average across vendors with loads'}
         />
         <Stat
           label="Average cost per load"

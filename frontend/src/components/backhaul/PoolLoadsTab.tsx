@@ -89,7 +89,7 @@ export default function PoolLoadsTab() {
                     label={
                       <span className="flex flex-wrap items-baseline gap-x-2">
                         <span className="font-mono">{load.tracking_id}</span>
-                        <span className="text-muted">{load.shipper ?? 'Unknown shipper'}</span>
+                        <span className="text-muted">{load.shipper ?? 'Unknown vendor'}</span>
                       </span>
                     }
                     description={missing

@@ -19,7 +19,7 @@ interface Summary {
 const statusLabel = { open: 'Open', acknowledged: 'Acknowledged', resolved: 'Resolved' } as const
 const statusTone = { open: 'danger', acknowledged: 'warning', resolved: 'neutral' } as const
 
-/** Alarms from vehicles and server rules, with acknowledge and resolve. Test alarms are marked and left out of the counts. */
+/** Alerts from vehicles and server rules, with acknowledge and resolve. Test alerts are marked and left out of the counts. */
 export default function AlertsView() {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
@@ -125,7 +125,7 @@ export default function AlertsView() {
           label="Critical or high"
           value={(s?.by_severity.critical ?? 0) + (s?.by_severity.high ?? 0)}
           loading={summary.isLoading}
-          hint="Test alarms are not counted"
+          hint="Test alerts are not counted"
         />
       </div>
       <Tabs tabs={FILTERS} value={filter} onChange={setFilter} label="Alert status" />
@@ -141,7 +141,7 @@ export default function AlertsView() {
         empty={{
           title: filter === 'active' ? 'No open alerts' : 'No resolved alerts yet',
           description: filter === 'active'
-            ? 'Overspeed, long idle, GPS lost, low fuel and device alarms show up here as they happen.'
+            ? 'Overspeed, long idle, GPS lost, low fuel and device alerts show up here as they happen.'
             : undefined,
         }}
       />

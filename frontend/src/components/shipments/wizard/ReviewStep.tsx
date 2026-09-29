@@ -63,7 +63,7 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
             { label: 'Vehicle', value: vehicle ? <span className="font-mono">{vehicle.plate_number}</span> : 'Assign later' },
             ...(data.open_bidding ? [
               { label: 'Bidding window', value: `${data.bidding_duration_mins || 5} minutes` },
-              { label: 'Asking price', value: data.asking_price ? formatRupees(Number(data.asking_price)) : 'Not set' },
+              { label: 'Minimum bid', value: data.asking_price ? formatRupees(Number(data.asking_price)) : 'Not set' },
             ] : []),
             { label: 'Phone tracking', value: data.enable_mobile_gps ? 'On' : 'Off' },
           ]}

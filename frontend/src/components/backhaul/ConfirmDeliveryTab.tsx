@@ -59,7 +59,7 @@ export default function ConfirmDeliveryTab() {
               label="Received by"
               value={recipient}
               onChange={e => { deliver.reset(); setRecipient(e.target.value) }}
-              placeholder="Recipient's full name"
+              placeholder="Receiver's full name"
               autoComplete="off"
               required
             />

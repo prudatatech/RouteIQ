@@ -8,7 +8,7 @@ const columns: Column<OpenLoad>[] = [
     key: 'tracking', header: 'Tracking ID', sortValue: r => r.tracking_id,
     cell: r => <span className="font-mono text-sm">{r.tracking_id}</span>,
   },
-  { key: 'shipper', header: 'Shipper', sortValue: r => r.shipper ?? '', cell: r => r.shipper ?? '—' },
+  { key: 'shipper', header: 'Vendor', sortValue: r => r.shipper ?? '', cell: r => r.shipper ?? '—' },
   { key: 'from', header: 'From', hideBelow: 'lg', sortValue: r => r.origin ?? '', cell: r => r.origin ?? '—' },
   {
     key: 'to', header: 'To', sortValue: r => r.destination ?? '',
@@ -46,7 +46,7 @@ export default function OpenLoadsTab() {
 
   return (
     <div className="space-y-3">
-      <SearchInput value={search} onChange={setSearch} placeholder="Search by tracking ID, shipper or city" label="Search open loads" className="sm:max-w-sm" />
+      <SearchInput value={search} onChange={setSearch} placeholder="Search by tracking ID, vendor or city" label="Search open loads" className="sm:max-w-sm" />
       <DataTable
         caption="Open loads"
         columns={columns}

@@ -4,7 +4,7 @@ import { Button, DataTable, Stat, StatusPill, type Column } from '@/components/u
 import { bandLabel, bandTone, type VehicleHealth } from '@/components/fleet/health'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
-/** Vehicles that need attention: overdue service, expired documents, recent alarms or low fuel. */
+/** Vehicles that need attention: overdue service, expired documents, recent alerts or low fuel. */
 export default function FleetHealthTab() {
   const navigate = useNavigate()
   const { data = [], isLoading, isError, refetch } = useFleetHealth()
@@ -65,7 +65,7 @@ export default function FleetHealthTab() {
         initialSort={{ key: 'score', direction: 'asc' }}
         empty={{
           title: data.length === 0 ? 'No vehicles yet' : 'No vehicle needs attention',
-          description: data.length === 0 ? undefined : 'Scores come from service schedules, document expiry dates, alarms and device fuel levels.',
+          description: data.length === 0 ? undefined : 'Scores come from service schedules, document expiry dates, alerts and device fuel levels.',
         }}
       />
     </div>
