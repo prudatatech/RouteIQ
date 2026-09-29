@@ -1,8 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Search, X } from 'lucide-react'
 import { marketplaceAPI, routesAPI } from '@/services/api'
-import { resolvePlace, suggestPlaces } from '@/services/geocoding'
+import type { ResolvedPlace } from '@/services/geocoding'
+import { PlaceSearch } from '@/components/ui'
 import { supabase } from '@/services/supabase'
 import { formatEta } from '@/utils/timeFormat'
 import MapView from './MapView'
@@ -229,7 +229,7 @@ export default function LiveMap({
     >
       {!compact && (
         <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
-          <PlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 12)} />
+          <MapPlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 13)} />
           {selectedId && activeRoute && (
             <section aria-label="Active route" className="rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
               <p className="truncate font-medium text-text">{activeRoute.name || `Route ${activeRoute.id.slice(0, 8)}`}</p>
@@ -251,58 +251,21 @@ export default function LiveMap({
   )
 }
 
-/** Search box that moves the map to a place in India. */
-function PlaceSearch({ onFound }: { onFound: (position: LatLng) => void }) {
-  const [query, setQuery] = useState('')
-  const [searching, setSearching] = useState(false)
-  const [notFound, setNotFound] = useState(false)
-  const inputId = useId()
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!query.trim()) return
-    setSearching(true)
-    setNotFound(false)
-    try {
-      const [first] = await suggestPlaces(query)
-      const place = first ? await resolvePlace(first) : null
-      if (place) onFound({ lat: place.lat, lng: place.lng })
-      else setNotFound(true)
-    } catch (err) {
-      console.warn('Place search failed', err)
-      setNotFound(true)
-    } finally {
-      setSearching(false)
-    }
-  }
-
+/** Search box that moves the map to a place in India, with live suggestions. */
+function MapPlaceSearch({ onFound }: { onFound: (position: LatLng) => void }) {
+  const [place, setPlace] = useState<ResolvedPlace | null>(null)
   return (
-    <form role="search" onSubmit={submit}>
-      <label htmlFor={inputId} className="sr-only">Search for a place</label>
-      <div className="relative">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
-          {searching ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Search size={16} aria-hidden />}
-        </span>
-        <input
-          id={inputId}
-          type="search"
-          placeholder="Search for a place"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setNotFound(false) }}
-          className="h-control w-full rounded-control border border-border bg-surface pl-9 pr-9 text-sm text-text shadow-raised placeholder:text-muted focus:border-brand focus:outline-none"
-        />
-        {query && (
-          <button
-            type="button"
-            aria-label="Clear search"
-            onClick={() => { setQuery(''); setNotFound(false) }}
-            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted hover:text-text"
-          >
-            <X size={14} aria-hidden />
-          </button>
-        )}
-      </div>
-      {notFound && <p role="status" className="mt-1 rounded-control bg-surface px-2 py-1 text-xs text-muted shadow-raised">No place found for “{query}”.</p>}
-    </form>
+    <div role="search" className="rounded-control shadow-raised">
+      <PlaceSearch
+        label="Search for a place"
+        hideLabel
+        placeholder="Search for a place"
+        value={place}
+        onChange={p => {
+          setPlace(p)
+          if (p) onFound({ lat: p.lat, lng: p.lng })
+        }}
+      />
+    </div>
   )
 }

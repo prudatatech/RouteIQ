@@ -8,6 +8,8 @@ import { Spinner } from './Spinner'
 
 export interface PlaceSearchProps {
   label?: ReactNode
+  /** Keep the label for screen readers only (for search boxes laid over a map). */
+  hideLabel?: boolean
   hint?: ReactNode
   error?: ReactNode
   required?: boolean
@@ -30,7 +32,7 @@ export interface PlaceSearchProps {
  * suggestion, so a place always has coordinates.
  */
 export function PlaceSearch({
-  label, hint, error, required, placeholder = 'Search for an address', value, onChange, className, disabled, recentPlacesKey,
+  label, hideLabel, hint, error, required, placeholder = 'Search for an address', value, onChange, className, disabled, recentPlacesKey,
 }: PlaceSearchProps) {
   const [text, setText] = useState(value?.address ?? '')
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([])
@@ -113,7 +115,7 @@ export function PlaceSearch({
   }
 
   return (
-    <Field label={label} hint={hint} error={lookupError ?? error} required={required} className={className}>
+    <Field label={label} hideLabel={hideLabel} hint={hint} error={lookupError ?? error} required={required} className={className}>
       {control => (
         <div ref={wrapper} className="relative">
           <MapPin size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
