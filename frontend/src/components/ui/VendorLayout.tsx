@@ -96,11 +96,11 @@ export default function VendorLayout() {
       console.error('Sign-out failed', e)
     }
     clearAuth()
-    navigate('/vendor/login')
+    navigate('/login?as=vendor')
   }
 
   const target = (link: typeof links[number]) =>
-    link.requiresSignIn && !session ? `/vendor/login?next=${encodeURIComponent(link.to)}` : link.to
+    link.requiresSignIn && !session ? `/login?as=vendor&next=${encodeURIComponent(link.to)}` : link.to
 
   const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, refreshProfile: loadProfile }
   const needsKyc = !!session && vendorProfile?.kycStatus !== 'approved'
@@ -139,7 +139,7 @@ export default function VendorLayout() {
       <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />
     </div>
   ) : (
-    <NavLink to="/vendor/login" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+    <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
       <LogIn size={16} aria-hidden="true" /> Sign in
     </NavLink>
   )

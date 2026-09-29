@@ -3,6 +3,19 @@ import { supabase } from '@/services/supabase'
 const PUBLIC_URL_MARKER = '/storage/v1/object/public/kyc_documents/'
 
 /**
+ * Uploads a KYC document (or the company logo) to the vendor's own folder in
+ * the `kyc_documents` bucket and returns the storage path to save on the
+ * profile. Each upload gets a unique name so re-uploading never collides.
+ */
+export async function uploadKycDocument(vendorId: string, key: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'bin'
+  const path = `${vendorId}/${key}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+  const { error } = await supabase.storage.from('kyc_documents').upload(path, file, { upsert: false })
+  if (error) throw new Error(error.message || 'Failed to upload document')
+  return path
+}
+
+/**
  * Normalizes a stored KYC document reference into a storage path.
  *
  * Accepts either a bare storage path (the current format) or a legacy
