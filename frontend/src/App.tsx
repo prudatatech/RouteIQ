@@ -198,6 +198,11 @@ export default function App() {
           <Route path="/vendor" element={<VendorLayout />}>
             <Route index element={<VendorPortalPage />} />
             <Route path="corridor" element={<VendorCorridorPage />} />
+            <Route path="onboarding" element={
+              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+                <VendorOnboardingPage />
+              </PrivateRoute>
+            } />
             <Route path="documents" element={
               <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
                 <VendorDocumentsPage />
@@ -220,11 +225,6 @@ export default function App() {
             } />
           </Route>
 
-          <Route path="/vendor/onboarding" element={
-            <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
-              <VendorOnboardingPage />
-            </PrivateRoute>
-          } />
           <Route path="/vendor/login" element={<VendorLoginRedirect />} />
 
           {/* 3PL Public/Partner Routes */}
