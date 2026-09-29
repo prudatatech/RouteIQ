@@ -50,14 +50,12 @@ The app shell (`AppLayout`, `VendorLayout`) already provides the page width and 
 
 ## Rules the linter enforces
 
-Files listed in the last block of `frontend/eslint.config.js` must pass the design rules:
+The design rules apply to every file under `frontend/src/**/*.{ts,tsx}` (see `frontend/eslint.config.js`):
 
 - **Colours:** theme colours only (`text`, `muted`, `brand`, `brand-fill`, `brand-soft`, `success`, `warning`, `danger`, `info`, `neutral`, `border`, `surface`, `surface-subtle`, `bg`). No palette colours (`slate-500`) and no hex values.
 - **Type:** `text-xs`, `sm`, `base`, `lg`, `2xl`, `3xl` (and `5xl` on the landing page only). Weights are `font-normal`, `font-medium` or `font-semibold`. No custom letter spacing.
 - **Shapes:** `rounded-control` (8px), `rounded-card` (16px) or `rounded-full`. Shadows are `shadow-raised` or `shadow-dialog` only. No blur and no gradients.
 - **Inline style:** no inline colour, font, radius or shadow. Runtime layout values such as a progress width are fine.
-
-When a page moves onto the shared components, add it to that list.
 
 ## Writing
 
