@@ -74,7 +74,7 @@ interface StatusStyle {
  * Vehicle status -> label and colour. This is the only place that decides
  * how a vehicle status looks on a map.
  */
-export const VEHICLE_STATUS: Record<string, StatusStyle> = {
+const VEHICLE_STATUS: Record<string, StatusStyle> = {
   on_route: { label: 'On route', tone: 'info' },
   in_transit: { label: 'In transit', tone: 'info' },
   active: { label: 'Active', tone: 'info' },
@@ -99,7 +99,7 @@ export function vehicleStatusStyle(status: string | null | undefined): StatusSty
 }
 
 /** Route stop status -> label and colour. */
-export const STOP_STATUS: Record<string, StatusStyle> = {
+const STOP_STATUS: Record<string, StatusStyle> = {
   pending: { label: 'Pending', tone: 'neutral' },
   arrived: { label: 'Arrived', tone: 'info' },
   completed: { label: 'Completed', tone: 'success' },
