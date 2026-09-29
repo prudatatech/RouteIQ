@@ -9,6 +9,7 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, useConfirm,
 } from '@/components/ui'
+import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
@@ -335,6 +336,10 @@ export default function TplPartnerDetailPage() {
           </div>
         </Card>
       </div>
+
+      {(partner.status === 'active' || partner.status === 'paused') && (
+        <TplPartnerPerformance partnerId={partner.id} slaCommitment={partner.sla_commitment} />
+      )}
 
       {partner.status === 'pending' && (
         <Card padded className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">

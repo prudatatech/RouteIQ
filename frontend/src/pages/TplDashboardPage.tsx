@@ -2,7 +2,7 @@ import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  FileText, IndianRupee, MapPin, Calendar, CheckCircle2,
+  FileText, MapPin, Calendar, CheckCircle2, Star,
   Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
 import {
@@ -11,7 +11,11 @@ import {
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
-import { tplAPI } from '@/services/api'
+import { useQuery } from '@tanstack/react-query'
+import { tplAPI, tplNetworkAPI } from '@/services/api'
+import { TplOrdersTab } from '@/components/tpl/TplOrdersTab'
+import { TplEarningsTab } from '@/components/tpl/TplEarningsTab'
+import { formatPercent, formatRating } from '@/components/tpl/stats'
 import { useAuthStore } from '@/store/authStore'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
@@ -19,7 +23,7 @@ import { CorridorEditor } from '@/components/tpl/CorridorEditor'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 import { emptyCorridorRow, type CorridorFormRow } from '@/components/tpl/constants'
 
-const TABS = ['overview', 'coverage', 'documents', 'shipments', 'earnings', 'settings'] as const
+const TABS = ['overview', 'coverage', 'documents', 'orders', 'earnings', 'settings'] as const
 type Tab = typeof TABS[number]
 
 interface Corridor {
@@ -72,6 +76,9 @@ export default function TplDashboardPage() {
   const [corridors, setCorridors] = useState<Corridor[]>([])
   const [documents, setDocuments] = useState<TplDocument[]>([])
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
+  const stats = useQuery({ queryKey: ['tpl-my-stats'], queryFn: tplNetworkAPI.myStats, retry: false })
+  const offersQuery = useQuery({ queryKey: ['tpl-my-offers'], queryFn: tplNetworkAPI.myOffers, retry: false })
+  const openOffers = (offersQuery.data ?? []).filter(o => o.status === 'offered').length
 
   const filteredCorridors = useMemo(() => {
     const q = corridorSearch.trim().toLowerCase()
@@ -306,7 +313,7 @@ export default function TplDashboardPage() {
                 { id: 'overview', label: 'Overview' },
                 { id: 'coverage', label: 'Corridors', count: corridors.length },
                 { id: 'documents', label: 'Documents', count: documents.length },
-                { id: 'shipments', label: 'Shipments' },
+                { id: 'orders', label: 'Orders', count: openOffers > 0 ? openOffers : undefined },
                 { id: 'earnings', label: 'Earnings' },
                 { id: 'settings', label: 'Settings' },
               ]}
@@ -316,10 +323,37 @@ export default function TplDashboardPage() {
           {tab === 'overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Stat label="Active shipments" value="—" icon={<Package size={16} />} hint="Not tracked yet" />
-                <Stat label="Approved corridors" value={corridors.length} icon={<MapPin size={16} />} hint="Active routes" />
-                <Stat label="SLA commitment" value={partner.sla_commitment || '—'} icon={<CheckCircle2 size={16} />} hint="Max response" />
-                <Stat label="SLA breaches" value="—" icon={<AlertTriangle size={16} />} hint="Not tracked yet" />
+                <Stat
+                  label="Active orders"
+                  value={stats.data ? stats.data.orders_active.toLocaleString('en-IN') : '—'}
+                  icon={<Package size={16} />}
+                  hint={stats.data ? `${stats.data.orders_completed.toLocaleString('en-IN')} delivered so far` : undefined}
+                  loading={stats.isLoading}
+                />
+                <Stat
+                  label="Acceptance rate"
+                  value={formatPercent(stats.data?.acceptance_rate)}
+                  icon={<CheckCircle2 size={16} />}
+                  hint={stats.data && stats.data.offers_accepted + stats.data.offers_declined > 0
+                    ? `${stats.data.offers_accepted.toLocaleString('en-IN')} accepted of ${(stats.data.offers_accepted + stats.data.offers_declined).toLocaleString('en-IN')} answered`
+                    : 'Shown after you answer an offer'}
+                  loading={stats.isLoading}
+                />
+                <Stat
+                  label="Late deliveries"
+                  value={stats.data ? stats.data.sla_breaches.toLocaleString('en-IN') : '—'}
+                  icon={<AlertTriangle size={16} />}
+                  tone={stats.data && stats.data.sla_breaches > 0 ? 'warning' : 'default'}
+                  hint={`Delivered after the due time. Your SLA commitment: ${partner.sla_commitment || 'not set'}`}
+                  loading={stats.isLoading}
+                />
+                <Stat
+                  label="Rating from dispatch"
+                  value={formatRating(stats.data?.rating_avg)}
+                  icon={<Star size={16} />}
+                  hint={stats.data && stats.data.rating_count > 0 ? `${stats.data.rating_count.toLocaleString('en-IN')} rated ${stats.data.rating_count === 1 ? 'order' : 'orders'}` : 'Shown after dispatch rates a delivery'}
+                  loading={stats.isLoading}
+                />
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card padded>
@@ -420,17 +454,9 @@ export default function TplDashboardPage() {
             </div>
           )}
 
-          {(tab === 'shipments' || tab === 'earnings') && (
-            <Card padded>
-              <EmptyState
-                icon={tab === 'shipments' ? <Truck size={22} /> : <IndianRupee size={22} />}
-                title={tab === 'shipments' ? 'Live shipment tracking' : 'Financial ledger'}
-                description={tab === 'shipments'
-                  ? 'Track your assigned loads in real time once you receive your first dispatch.'
-                  : 'Your settlement ledger and margin reports will appear here once available.'}
-              />
-            </Card>
-          )}
+          {tab === 'orders' && <TplOrdersTab canAccept={partner.status === 'active'} />}
+
+          {tab === 'earnings' && <TplEarningsTab />}
 
           {tab === 'settings' && settingsForm && (
             <Card padded>

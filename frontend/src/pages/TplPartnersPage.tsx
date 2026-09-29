@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Check, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { tplAPI } from '@/services/api'
+import { tplAPI, tplNetworkAPI } from '@/services/api'
+import { formatMinutes, formatPercent } from '@/components/tpl/stats'
 import {
   BulkActionBar, Button, DataTable, IconButton, Page, PageHeader, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
@@ -47,6 +48,9 @@ export default function TplPartnersPage() {
     queryFn: () => tplAPI.queue('all').then((d: unknown) => (Array.isArray(d) ? d : [])),
     refetchInterval: 15000,
   })
+
+  const stats = useQuery({ queryKey: ['tpl-partner-stats'], queryFn: tplNetworkAPI.allStats, refetchInterval: 30000 })
+  const statsFor = (p: TplPartner) => stats.data?.[p.id]
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
 
@@ -139,6 +143,34 @@ export default function TplPartnersPage() {
       ),
     },
     { key: 'gstin', header: 'GSTIN', hideBelow: 'lg', cell: p => <span className="font-mono text-sm">{p.gstin || '—'}</span> },
+    {
+      key: 'accept', header: 'Acceptance', align: 'right', hideBelow: 'lg',
+      cell: p => {
+        const st = statsFor(p)
+        return <span className="tabular" title={st ? `${st.offers_accepted} accepted, ${st.offers_declined} declined` : undefined}>{formatPercent(st?.acceptance_rate)}</span>
+      },
+      sortValue: p => statsFor(p)?.acceptance_rate ?? null,
+    },
+    {
+      key: 'response', header: 'Response time', align: 'right', hideBelow: 'xl',
+      cell: p => <span className="tabular">{formatMinutes(statsFor(p)?.avg_response_minutes)}</span>,
+      sortValue: p => statsFor(p)?.avg_response_minutes ?? null,
+    },
+    {
+      key: 'completed', header: 'Delivered', align: 'right', hideBelow: 'xl',
+      cell: p => <span className="tabular">{statsFor(p) ? statsFor(p)!.orders_completed.toLocaleString('en-IN') : '—'}</span>,
+      sortValue: p => statsFor(p)?.orders_completed ?? null,
+    },
+    {
+      key: 'breaches', header: 'SLA breaches', align: 'right', hideBelow: 'xl',
+      cell: p => <span className="tabular">{statsFor(p) ? statsFor(p)!.sla_breaches.toLocaleString('en-IN') : '—'}</span>,
+      sortValue: p => statsFor(p)?.sla_breaches ?? null,
+    },
+    {
+      key: 'rating', header: 'Rating', align: 'right', hideBelow: 'xl',
+      cell: p => <span className="tabular">{statsFor(p)?.rating_avg != null ? statsFor(p)!.rating_avg!.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</span>,
+      sortValue: p => statsFor(p)?.rating_avg ?? null,
+    },
     {
       key: 'created_at', header: 'Submitted', hideBelow: 'md', sortValue: p => p.created_at,
       cell: p => <span className="text-sm text-muted">{new Date(p.created_at).toLocaleDateString('en-IN')}</span>,

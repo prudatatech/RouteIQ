@@ -6,6 +6,7 @@ import { ExternalLink, FileText, MapPin, Pencil, Trash2, Truck } from 'lucide-re
 import {
   Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm,
 } from '@/components/ui'
+import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
@@ -172,6 +173,10 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
               : <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>Assign vehicle</Button>
           )}
         </Section>
+
+        {!manifestOnly && !s.vehicle_id && !isBiddingOpen(s) && (
+          <EscalationPanel key={s.id} source={{ shipment_id: s.id }} canEscalate={s.status === 'created'} />
+        )}
 
         {s.open_bidding && (
           <Section title="Vendor bidding">
