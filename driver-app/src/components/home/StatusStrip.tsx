@@ -16,6 +16,10 @@ interface StatusStripProps {
   /** Shortcut shown while tracking is on: pause tracking for a break. */
   onTakeBreak?: () => void;
   onRetrySync: () => void;
+  /** Actions kept on the phone until there is signal (stops, proof of delivery, SOS details). */
+  waitingToSend?: number;
+  sendingQueue?: boolean;
+  onSendQueue?: () => void;
   /** Repeated background GPS-send/geofence failures, or null when tracking is healthy. */
   backgroundError?: { at: number; message: string } | null;
   onRetryBackgroundTracking?: () => void;
@@ -34,6 +38,9 @@ export default function StatusStrip({
   onToggleTracking,
   onTakeBreak,
   onRetrySync,
+  waitingToSend = 0,
+  sendingQueue = false,
+  onSendQueue,
   backgroundError,
   onRetryBackgroundTracking,
 }: StatusStripProps) {
@@ -82,6 +89,16 @@ export default function StatusStrip({
           icon={icon('cafe-outline')}
           onPress={onTakeBreak}
           accessibilityHint={t('take_break_sub')}
+        />
+      ) : null}
+
+      {waitingToSend > 0 ? (
+        <StatusPill
+          tone="warning"
+          label={`${sendingQueue ? t('status_sending') : t('status_waiting_to_send')} (${waitingToSend})`}
+          icon={icon('cloud-upload-outline')}
+          onPress={sendingQueue ? undefined : onSendQueue}
+          accessibilityHint={t('hint_send_now')}
         />
       ) : null}
 

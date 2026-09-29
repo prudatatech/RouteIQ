@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../services/api';
+import { actionQueue } from '../services/actionQueue';
 import type { DriverRoute, LatLng, RouteStop } from '../types/route';
 import { errorMessage } from '../utils/errors';
 import { normalizeParcelCode, planScan, sameParcelCode } from '../utils/parcel';
@@ -23,7 +23,7 @@ interface Stored {
 }
 
 export type ScanOutcome =
-  | { kind: 'picked_up'; code: string; already: boolean }
+  | { kind: 'picked_up'; code: string; already: boolean; /** No signal: saved on the phone, sent later. */ queued?: boolean }
   | { kind: 'verified'; stop: RouteStop; isNext: boolean }
   | { kind: 'already_done'; stop: RouteStop }
   | { kind: 'not_on_route' }
@@ -93,9 +93,9 @@ export function useParcelScan({ route, currentLoc, refresh }: Options) {
   /** Records a delivery scan with the server. A failure here never blocks the driver. */
   const reportDelivery = useCallback(
     (stop: RouteStop, code: string, method: ScanMethod) => {
-      api.scanParcel({ code, purpose: 'delivery', stop_id: stop.id, method, ...position }).catch((e) => {
-        console.warn('[scan] delivery scan not recorded:', e);
-      });
+      actionQueue
+        .submit('scan', { code, purpose: 'delivery', stopId: stop.id, method, ...position })
+        .catch((e) => console.warn('[scan] delivery scan not recorded:', e));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentLoc],
@@ -112,16 +112,17 @@ export function useParcelScan({ route, currentLoc, refresh }: Options) {
           return { kind: 'already_done', stop: plan.stop };
         case 'pickup':
           try {
-            const res = await api.scanParcel({
+            const outcome = await actionQueue.submit('scan', {
               code,
               purpose: 'pickup',
-              ...(plan.stop ? { stop_id: plan.stop.id } : {}),
+              ...(plan.stop ? { stopId: plan.stop.id } : {}),
               method,
               ...position,
             });
             markPickedUp(plan.code);
+            if (outcome.status === 'queued') return { kind: 'picked_up', code: plan.code, already: false, queued: true };
             refresh();
-            return { kind: 'picked_up', code: res.tracking_id, already: res.already };
+            return { kind: 'picked_up', code: outcome.result.tracking_id, already: outcome.result.already };
           } catch (e) {
             return { kind: 'error', message: errorMessage(e, '') };
           }

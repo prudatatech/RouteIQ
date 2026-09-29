@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireRole } from '../core/auth';
 import { HttpError, sendError } from '../core/errors';
+import { idempotent } from '../core/idempotency';
 import { canAccessManifest, canAccessRouteStop } from '../core/ownership';
 import { consumeRateLimit } from '../core/rate-limit';
 import { scanParcel } from '../services/parcel.service';
@@ -14,7 +15,7 @@ const router = Router();
 
 // ── POST /driver/scan — verify a parcel at pickup or delivery ──
 // Body: { code, purpose: 'pickup' | 'delivery', stop_id?, method?, lat?, lng? }
-router.post('/scan', requireAuth, requireRole('driver'), async (req: Request, res: Response) => {
+router.post('/scan', requireAuth, requireRole('driver'), idempotent('scan'), async (req: Request, res: Response) => {
   try {
     res.json(await scanParcel(req.user!.user_id, req.body ?? {}));
   } catch (e) {

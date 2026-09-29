@@ -51,10 +51,21 @@ export async function uploadProofFile(stopId: string, kind: PodKind, uri: string
   return target.path;
 }
 
-/** Uploads whichever files are set, skipping the ones already uploaded. */
-export async function uploadProofFiles(stopId: string, pod: PodInput, done: PodPaths = {}): Promise<PodPaths> {
+/** Uploads whichever files are set, skipping the ones already uploaded. `onProgress` gets the paths after each upload. */
+export async function uploadProofFiles(
+  stopId: string,
+  pod: Pick<PodInput, 'photoUri' | 'signatureUri'>,
+  done: PodPaths = {},
+  onProgress?: (paths: PodPaths) => void,
+): Promise<PodPaths> {
   const paths: PodPaths = { ...done };
-  if (pod.photoUri && !paths.photo_url) paths.photo_url = await uploadProofFile(stopId, 'photo', pod.photoUri);
-  if (pod.signatureUri && !paths.signature_url) paths.signature_url = await uploadProofFile(stopId, 'signature', pod.signatureUri);
+  if (pod.photoUri && !paths.photo_url) {
+    paths.photo_url = await uploadProofFile(stopId, 'photo', pod.photoUri);
+    onProgress?.({ ...paths });
+  }
+  if (pod.signatureUri && !paths.signature_url) {
+    paths.signature_url = await uploadProofFile(stopId, 'signature', pod.signatureUri);
+    onProgress?.({ ...paths });
+  }
   return paths;
 }

@@ -502,5 +502,13 @@
     "body",
     "created_at",
     "read_at"
+  ],
+  "idempotency_keys": [
+    "user_id",
+    "key",
+    "action",
+    "status_code",
+    "response",
+    "created_at"
   ]
 }

@@ -25,6 +25,8 @@ import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
 import { useParcelScan } from '../hooks/useParcelScan';
+import { useActionQueue } from '../hooks/useActionQueue';
+import { withQueuedStops } from '../utils/queuedStops';
 import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
@@ -76,8 +78,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   const data = useDriverRoute();
   const { refresh } = data;
-  const route = data.routeData?.route;
-  const routeActive = !!data.routeData?.active && route?.status === 'active';
+  // Actions waiting to be sent (no signal) show on the route already: a stop done offline counts as done.
+  const queue = useActionQueue(refresh);
+  const routeData = useMemo(() => withQueuedStops(data.routeData, queue.items), [data.routeData, queue.items]);
+  const route = routeData?.route;
+  const routeActive = !!routeData?.active && route?.status === 'active';
 
   const assignmentKind = data.pendingConfirmation ? 'stop' : data.pendingRoute ? 'route' : null;
   const modal = useModalManager({ call: !!data.incomingCall, assignment: !!assignmentKind });
@@ -100,9 +105,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     onDeviceLocationRecheck: deviceLocation.recheck,
   });
   const { takeBreak } = tracking;
-  const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
+  const snapped = useSnappedRoute(routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
-  const messages = useDriverMessages({ routeId: data.routeData?.active ? route?.id ?? null : null, tabOpen: activeTab === 'messages' });
+  const messages = useDriverMessages({ routeId: routeData?.active ? route?.id ?? null : null, tabOpen: activeTab === 'messages' });
   const scans = useParcelScan({ route, currentLoc: tracking.currentLoc, refresh });
 
   // The looping siren is only for a new assignment or a dispatch call.
@@ -112,7 +117,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   });
 
   // Losing GPS on a route gets one short buzz, and a louder notification if it stays off for 2 minutes.
-  const gpsOffOnRoute = !!data.routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
+  const gpsOffOnRoute = !!routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
   useEffect(() => {
     if (gpsOffOnRoute) shortFeedback();
   }, [gpsOffOnRoute]);
@@ -143,7 +148,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     if (activeTab === 'route') refresh();
   }, [activeTab, refresh]);
 
-  const step = getNextStep(data.routeData, tracking.isTracking, tracking.currentLoc);
+  const step = getNextStep(routeData, tracking.isTracking, tracking.currentLoc);
   const finished = isRouteFinished(route);
   const nextPending = pendingStops(route)[0];
 
@@ -366,6 +371,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           isTracking={tracking.isTracking}
           isStartingTracking={tracking.isStarting}
           syncState={data.syncState}
+          waitingToSend={queue.waiting}
+          sendingQueue={queue.sending}
+          onSendQueue={queue.flush}
           onToggleTracking={tracking.toggle}
           onTakeBreak={takeBreak}
           onRetrySync={refresh}
@@ -385,7 +393,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           {syncBanner}
           {activeTab === 'route' && (
             <RouteTab
-              routeData={data.routeData}
+              routeData={routeData}
               step={step}
               noVehicle={data.noVehicle}
               currentLoc={tracking.currentLoc}
@@ -407,11 +415,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             />
           )}
           {activeTab === 'scan' && (
-            <ScanTab hasRoute={!!data.routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
+            <ScanTab hasRoute={!!routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
           )}
           {activeTab === 'messages' && (
             <MessagesTab
-              hasRoute={!!data.routeData?.active && !!route?.id}
+              hasRoute={!!routeData?.active && !!route?.id}
               messages={messages.messages}
               loading={messages.loading}
               failed={messages.failed}

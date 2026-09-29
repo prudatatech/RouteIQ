@@ -66,13 +66,16 @@ async function parseBody(response: Response): Promise<any> {
   }
 }
 
+/** Header the backend uses to apply a repeated action only once. */
+const idempotencyHeader = (key?: string): Record<string, string> | undefined => (key ? { 'Idempotency-Key': key } : undefined);
+
 class ApiClient {
   /** Drop tokens left behind by older builds; they are no longer used. */
   async init() {
     await AsyncStorage.multiRemove(LEGACY_TOKEN_KEYS).catch(() => {});
   }
 
-  private send(method: string, path: string, body: any, token: string | null) {
+  private send(method: string, path: string, body: any, token: string | null, extraHeaders?: Record<string, string>) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Bypass-Tunnel-Reminder': 'true',
@@ -83,6 +86,7 @@ class ApiClient {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    if (extraHeaders) Object.assign(headers, extraHeaders);
     return fetch(`${API_V1}${path}`, {
       method,
       headers,
@@ -94,9 +98,10 @@ class ApiClient {
     method: string,
     path: string,
     body?: any,
-    requireAuth = true
+    requireAuth = true,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
-    let response = await this.send(method, path, body, requireAuth ? await currentAccessToken() : null);
+    let response = await this.send(method, path, body, requireAuth ? await currentAccessToken() : null, extraHeaders);
 
     if (response.status === 401 && requireAuth) {
       // Refresh the Supabase session once and retry; if that fails the driver must log in again.
@@ -105,7 +110,7 @@ class ApiClient {
         await this.endSession();
         throw new SessionExpiredError();
       }
-      response = await this.send(method, path, body, data.session.access_token);
+      response = await this.send(method, path, body, data.session.access_token, extraHeaders);
       if (response.status === 401) {
         await this.endSession();
         throw new SessionExpiredError();
@@ -249,13 +254,18 @@ class ApiClient {
     lng: number | null,
     alert_type?: SosType,
     description?: string,
+    idempotencyKey?: string,
   ): Promise<{ status: string; id: string | null }> {
-    return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description });
+    return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description }, true, idempotencyHeader(idempotencyKey));
   }
 
   /** Adds what happened to the alert already raised (own, active alerts only). */
-  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string; severity?: SosSeverity }): Promise<any> {
-    return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
+  async updateSosDetails(
+    id: string,
+    details: { alert_type?: SosType; description?: string; severity?: SosSeverity },
+    idempotencyKey?: string,
+  ): Promise<any> {
+    return this.request('PATCH', `/telemetry/sos/${id}/details`, details, true, idempotencyHeader(idempotencyKey));
   }
 
   /** Tells dispatch the driver has not accepted a new route yet. */
@@ -293,8 +303,8 @@ class ApiClient {
     /** Why a stop failed (status 'failed'): stored in the shipment log. */
     reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
     note?: string;
-  }): Promise<any> {
-    return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
+  }, idempotencyKey?: string): Promise<any> {
+    return this.request('POST', '/telemetry/driver-ping/complete-stop', data, true, idempotencyHeader(idempotencyKey));
   }
 
 
@@ -319,8 +329,8 @@ class ApiClient {
     method?: 'camera' | 'manual';
     lat?: number;
     lng?: number;
-  }): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
-    return this.request('POST', '/driver/scan', data);
+  }, idempotencyKey?: string): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
+    return this.request('POST', '/driver/scan', data, true, idempotencyHeader(idempotencyKey));
   }
 
   // ── Messages with dispatch ─────────────────────────────────
@@ -343,8 +353,8 @@ class ApiClient {
   }
 
   // ── Capacity Bidding / Safety Valve ──────────────────────────────────
-  async declareCapacity(vehicle_id: string, declared_load_percentage: number): Promise<any> {
-    return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage });
+  async declareCapacity(vehicle_id: string, declared_load_percentage: number, idempotencyKey?: string): Promise<any> {
+    return this.request('PATCH', `/vehicles/${vehicle_id}`, { declared_load_percentage }, true, idempotencyHeader(idempotencyKey));
   }
 
   async getVehicleInfo(vehicle_id: string): Promise<any> {

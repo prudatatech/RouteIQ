@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { idempotent } from '../core/idempotency';
 import { InvoiceService } from '../services/invoice.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
@@ -116,7 +117,7 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTran
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.
 const SOS_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
-router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => {
+router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), async (req: Request, res: Response) => {
   try {
     const { lat, lng } = req.body;
     const userId = req.user?.user_id;
@@ -157,7 +158,7 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
 // The driver adds what happened to the alert they already raised, instead of
 // raising a second one. Only their own alert, and only while it is active.
 const SOS_SEVERITIES = ['serious', 'minor'];
-router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response) => {
+router.patch('/sos/:id/details', requireAuth, idempotent('sos-details'), async (req: Request, res: Response) => {
   try {
     const update: Record<string, string> = {};
     if (req.body.alert_type !== undefined) {
@@ -665,7 +666,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 
 // ── POST /driver-ping/complete-stop — Driver marks delivery complete ──
 const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
-router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res: Response) => {
+router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers can complete stops' });

@@ -86,7 +86,7 @@ function OutcomeCard({
   switch (outcome.kind) {
     case 'picked_up':
       title = outcome.already ? t('scan_already_picked_up') : t('scan_picked_up_title');
-      message = outcome.code;
+      message = outcome.queued ? `${outcome.code} · ${t('scan_queued')}` : outcome.code;
       break;
     case 'verified': {
       const name = outcome.stop.delivery_point?.name || `${t('stop')} ${outcome.stop.sequence}`;

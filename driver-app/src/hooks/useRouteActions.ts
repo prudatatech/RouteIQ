@@ -11,7 +11,8 @@ import { errorMessage } from '../utils/errors';
 import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
 import { ARRIVAL_RADIUS_M, distanceMeters, stopCoord } from '../utils/route';
 import type { FailureReason } from '../components/modals/IssueDialog';
-import { uploadProofFiles, type PodInput } from '../services/podUpload';
+import type { PodInput } from '../services/podUpload';
+import { actionQueue } from '../services/actionQueue';
 import { useTranslation } from './useTranslation';
 
 interface Options {
@@ -120,18 +121,23 @@ export function useRouteActions({
   /** Opens the reason form; submitIssue sends it. */
   const failStop = openIssue;
 
-  /** Marks the stop failed with the driver's reason; throws so the form can show the error. */
+  /**
+   * Marks the stop failed with the driver's reason. With no signal it is kept on
+   * the phone and sent later; throws so the form can show any other error.
+   */
   const submitIssue = useCallback(
     async (stop: RouteStop, reason: FailureReason, note: string) => {
-      await api.completeStop({
-        stop_id: stop.id,
-        status: 'failed',
+      const outcome = await actionQueue.submit('fail_stop', {
+        stopId: stop.id,
         reason,
         ...(note ? { note } : {}),
         ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
       });
-      Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
-      refresh();
+      if (outcome.status === 'queued') Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
+      else {
+        Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
+        refresh();
+      }
     },
     [currentLoc, refresh, t],
   );
@@ -153,21 +159,25 @@ export function useRouteActions({
 
   /**
    * Proof of delivery. Uploads the photo and signature, then sends the receiver's
-   * name, the file paths and the current position as one completion; throws so
-   * the form can show the error.
+   * name, the file paths and the current position as one completion. With no
+   * signal the whole thing, files included, is kept on the phone and sent later.
+   * Throws so the form can show any other error.
    */
   const completeStop = useCallback(
     async (stop: RouteStop, pod: PodInput) => {
-      const paths = await uploadProofFiles(stop.id, pod);
-      const res = await api.completeStop({
-        stop_id: stop.id,
-        status: 'completed',
-        received_by: pod.receiverName,
-        ...paths,
+      const outcome = await actionQueue.submit('complete_stop', {
+        stopId: stop.id,
+        receiverName: pod.receiverName,
+        photoUri: pod.photoUri,
+        signatureUri: pod.signatureUri,
         ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
       });
+      if (outcome.status === 'queued') {
+        Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
+        return;
+      }
       await refresh();
-      if (res?.route_completed) {
+      if (outcome.result?.route_completed) {
         Alert.alert(t('alert_route_completed_title'), t('alert_route_completed_desc'), [
           { text: t('no'), style: 'cancel' },
           { text: t('yes_find_cargo'), onPress: findReturnLoad },
@@ -182,8 +192,9 @@ export function useRouteActions({
   const declareCapacity = useCallback(
     async (percentage: number) => {
       if (!activeVehicleId) return;
-      await api.declareCapacity(activeVehicleId, percentage);
-      Alert.alert(t('load_declared_title'), `${t('load_declared_desc')} ${percentage}%`);
+      const outcome = await actionQueue.submit('declare_load', { vehicleId: activeVehicleId, percentage });
+      if (outcome.status === 'queued') Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
+      else Alert.alert(t('load_declared_title'), `${t('load_declared_desc')} ${percentage}%`);
     },
     [activeVehicleId, t],
   );
