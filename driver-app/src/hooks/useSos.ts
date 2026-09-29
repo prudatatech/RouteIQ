@@ -1,7 +1,7 @@
 /**
  * One-tap SOS. The alert is sent at once as a panic button with the best
  * position already known; the driver can then add what happened, which is
- * sent as a second, typed report.
+ * added to that same alert (never a second one).
  */
 import { useCallback, useRef, useState } from 'react';
 import { Vibration } from 'react-native';
@@ -48,18 +48,19 @@ function failureOf(error: unknown): SosFailure {
 export function useSos(currentLoc: LatLng | null) {
   const [state, setState] = useState<SosState>({ phase: 'sending' });
   const [details, setDetails] = useState<SosDetailsState>('idle');
-  const positionRef = useRef<LatLng | null>(null);
+  const alertIdRef = useRef<string | null>(null);
   const currentLocRef = useRef(currentLoc);
   currentLocRef.current = currentLoc;
 
   const trigger = useCallback(async () => {
     setState({ phase: 'sending' });
     setDetails('idle');
+    alertIdRef.current = null;
     Vibration.vibrate(100);
     const position = await bestKnownPosition(currentLocRef.current);
-    positionRef.current = position;
     try {
-      await api.triggerSos(position?.lat ?? null, position?.lng ?? null, 'panic_button');
+      const res = await api.triggerSos(position?.lat ?? null, position?.lng ?? null, 'panic_button');
+      alertIdRef.current = res?.id ?? null;
       setState({ phase: 'sent', withLocation: !!position });
     } catch (e) {
       console.warn('SOS failed', e);
@@ -68,10 +69,14 @@ export function useSos(currentLoc: LatLng | null) {
   }, []);
 
   const sendDetails = useCallback(async (type: SosType, description: string) => {
+    const id = alertIdRef.current;
+    if (!id) {
+      setDetails('failed');
+      return;
+    }
     setDetails('sending');
-    const position = currentLocRef.current ?? positionRef.current;
     try {
-      await api.triggerSos(position?.lat ?? null, position?.lng ?? null, type, description.trim() || undefined);
+      await api.updateSosDetails(id, { alert_type: type, description: description.trim() || undefined });
       setDetails('sent');
     } catch (e) {
       console.warn('SOS details failed', e);

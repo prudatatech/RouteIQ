@@ -226,8 +226,18 @@ class ApiClient {
    * known yet; the alert is never held back waiting for one. Answers 404 when
    * no vehicle is linked to the driver.
    */
-  async triggerSos(lat: number | null, lng: number | null, alert_type?: SosType, description?: string): Promise<any> {
+  async triggerSos(
+    lat: number | null,
+    lng: number | null,
+    alert_type?: SosType,
+    description?: string,
+  ): Promise<{ status: string; id: string | null }> {
     return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description });
+  }
+
+  /** Adds what happened to the alert already raised (own, active alerts only). */
+  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string }): Promise<any> {
+    return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
   }
 
   async getMyRoute(): Promise<any> {

@@ -132,7 +132,7 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
       return;
     }
 
-    const { error: sosErr } = await supabase.from('sos_alerts').insert({
+    const { data: created, error: sosErr } = await supabase.from('sos_alerts').insert({
       vehicle_id: vehicle.id,
       driver_id: userId,
       latitude: lat,
@@ -140,10 +140,54 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
       alert_type: alertType,
       description: note || 'Driver triggered SOS from mobile app',
       status: 'active'
-    });
+    }).select('id').single();
     if (sosErr) throw new Error(`Failed to record SOS: ${sosErr.message}`);
 
-    res.json({ status: 'success', message: 'SOS triggered successfully' });
+    res.json({ status: 'success', message: 'SOS triggered successfully', id: created?.id ?? null });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── PATCH /sos/:id/details ────────────────────────────────────
+// The driver adds what happened to the alert they already raised, instead of
+// raising a second one. Only their own alert, and only while it is active.
+router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const update: Record<string, string> = {};
+    if (req.body.alert_type !== undefined) {
+      if (!SOS_TYPES.includes(req.body.alert_type)) {
+        res.status(400).json({ detail: 'Unknown alert_type' });
+        return;
+      }
+      update.alert_type = req.body.alert_type;
+    }
+    if (req.body.description !== undefined) {
+      if (typeof req.body.description !== 'string') {
+        res.status(400).json({ detail: 'description must be text' });
+        return;
+      }
+      const note = req.body.description.trim().slice(0, 500);
+      if (note) update.description = note;
+    }
+    if (Object.keys(update).length === 0) {
+      res.status(400).json({ detail: 'Nothing to update' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('sos_alerts')
+      .update({ ...update, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('driver_id', req.user!.user_id)
+      .eq('status', 'active')
+      .select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      res.status(404).json({ detail: 'No active alert of yours with this id' });
+      return;
+    }
+    res.json({ success: true, id: req.params.id });
   } catch (e: any) {
     sendError(req, res, e);
   }
