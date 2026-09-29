@@ -26,7 +26,9 @@ const TRUCK_TIERS = [
 
 const MAX_WEIGHT_T = 25;
 const SNAP_RANGE_T = 2.0;
-const SLIDER_LABELS = ['0', '5 t', '10 t', '15 t', '25 t+'];
+const SLIDER_MARKS_T = [0, 5, 10, 15, 25];
+const sliderLabel = (tonnes: number, unit: 't' | 'kg') =>
+  unit === 't' ? (tonnes === 0 ? '0' : `${tonnes} t${tonnes === MAX_WEIGHT_T ? '+' : ''}`) : formatNumber(tonnes * 1000);
 
 const getTierForWeight = (weight: number) => {
   if (weight <= 1.0) return 'Light';
@@ -199,9 +201,9 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             <View {...panResponder.panHandlers} style={styles.sliderTouchArea} />
           </View>
           <View style={styles.sliderLabels} importantForAccessibility="no-hide-descendants">
-            {SLIDER_LABELS.map((label) => (
-              <Text key={label} variant="caption" color="textMuted">
-                {label}
+            {SLIDER_MARKS_T.map((mark) => (
+              <Text key={mark} variant="caption" color="textMuted">
+                {sliderLabel(mark, unit)}
               </Text>
             ))}
           </View>
@@ -248,7 +250,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             <Text variant="caption" color="textMuted">
               Suggested vehicle
             </Text>
-            <Text variant="bodyMedium">{suggestedTruck ?? 'Chosen after you confirm the weight'}</Text>
+            <Text variant="bodyMedium">{suggestedTruck ?? 'Our team will match a vehicle to this weight'}</Text>
             <Text variant="caption" color="textMuted">
               For loads up to {formatNumber(Math.round(selectedWeight * 1000))} kg
             </Text>

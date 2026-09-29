@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, BackHandler, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
@@ -77,6 +77,16 @@ export default function QuoteScreen({ navigation, route }: any) {
     }
   };
 
+  // Once the booking is sent, Back must not return to the form and send it twice.
+  useEffect(() => {
+    if (!bookedId) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      navigation.popToTop();
+      return true;
+    });
+    return () => sub.remove();
+  }, [bookedId, navigation]);
+
   const isRange = quote?.available && quote.low != null && quote.high != null && quote.low !== quote.high;
 
   if (bookedId) {
@@ -96,6 +106,7 @@ export default function QuoteScreen({ navigation, route }: any) {
               },
             }}
           />
+          <Button title="Back to home" variant="ghost" onPress={() => navigation.popToTop()} style={styles.doneHome} />
         </View>
       </SafeAreaView>
     );
@@ -196,6 +207,11 @@ export default function QuoteScreen({ navigation, route }: any) {
       </ScrollView>
 
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
+        {quote && !quote.available && !loading ? (
+          <Text variant="caption" color="textMuted" align="center">
+            No price yet. Book and our team will send you one.
+          </Text>
+        ) : null}
         {bookingError ? <ErrorBanner message={bookingError} /> : null}
         <Button
           title="Book this shipment"
@@ -278,7 +294,8 @@ function DateChip({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  doneWrap: { flex: 1, justifyContent: 'center' },
+  doneWrap: { flex: 1, justifyContent: 'center', padding: space[4] },
+  doneHome: { marginTop: space[2] },
   content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
   section: { gap: space[2] },
   routeCard: { gap: space[1] },

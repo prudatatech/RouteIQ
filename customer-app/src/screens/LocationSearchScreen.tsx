@@ -12,6 +12,7 @@ import {
   DeviceEventEmitter,
   Linking,
   AppState,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -72,6 +73,11 @@ export default function LocationSearchScreen({ navigation, route }: any) {
   const [confirmedAddress, setConfirmedAddress] = useState('');
   const [showMap, setShowMap] = useState(false);
   const isSelectingRef = useRef(false);
+  // Only the newest search or address lookup may update the screen, so a slow reply never overwrites a newer one.
+  const searchIdRef = useRef(0);
+  const addressIdRef = useRef(0);
+  // True while the address for the pin is being looked up; Confirm waits for it.
+  const [resolving, setResolving] = useState(false);
 
   // Load history on mount
   useEffect(() => {
@@ -103,6 +109,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
   };
 
   const fetchPlaces = useCallback(async (text: string) => {
+    const searchId = ++searchIdRef.current;
     setLoading(true);
     setProblem((current) => (current?.kind === 'search' ? null : current));
 
@@ -112,6 +119,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(text)}&countryCode=IND&maxSuggestions=6&f=json`;
       const response = await fetch(url);
       const data = await response.json();
+      if (searchId !== searchIdRef.current) return;
 
       if (data.suggestions && data.suggestions.length > 0) {
         const mappedResults = data.suggestions.map((item: any) => {
@@ -136,10 +144,11 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       }
       setSearchedQuery(text);
     } catch (error) {
+      if (searchId !== searchIdRef.current) return;
       console.error('Error fetching places:', error);
       setProblem({ kind: 'search' });
     } finally {
-      setLoading(false);
+      if (searchId === searchIdRef.current) setLoading(false);
     }
   }, []);
 
@@ -164,6 +173,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
 
   const handleSelectLocation = async (place: Prediction) => {
     isSelectingRef.current = true;
+    Keyboard.dismiss();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setQuery(place.description);
     setPredictions([]);
@@ -194,6 +204,8 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         setSelectedCoord(coord);
         setConfirmedAddress(place.description);
         setShowMap(true);
+        // If the map is already open, move it to the place that was chosen.
+        mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 600);
       } else {
         setProblem({ kind: 'place' });
       }
@@ -208,11 +220,14 @@ export default function LocationSearchScreen({ navigation, route }: any) {
     if (!details?.isGesture) return; // Only search if the user actually dragged the map manually
 
     setSelectedCoord({ latitude: region.latitude, longitude: region.longitude });
+    const addressId = ++addressIdRef.current;
+    setResolving(true);
 
     try {
       const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?location=${region.longitude},${region.latitude}&f=json`;
       const response = await fetch(url);
       const data = await response.json();
+      if (addressId !== addressIdRef.current) return;
 
       if (data.address) {
         const preciseAddress = data.address.LongLabel || data.address.Match_addr;
@@ -229,11 +244,14 @@ export default function LocationSearchScreen({ navigation, route }: any) {
         setProblem({ kind: 'no_address' });
       }
     } catch (error) {
+      if (addressId !== addressIdRef.current) return;
       console.log('Map drag reverse geocode error:', error);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setQuery('');
       setConfirmedAddress('');
       setProblem({ kind: 'no_address' });
+    } finally {
+      if (addressId === addressIdRef.current) setResolving(false);
     }
   };
 
@@ -256,6 +274,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
   };
 
   const handleCurrentLocation = useCallback(async () => {
+    Keyboard.dismiss();
     setGpsLoading(true);
     setProblem(null);
 
@@ -536,6 +555,9 @@ export default function LocationSearchScreen({ navigation, route }: any) {
             <SafeAreaView edges={['bottom']} style={styles.confirmContainer}>
               <Button
                 title="Confirm location"
+                loading={resolving}
+                disabled={!(confirmedAddress || query.trim())}
+                accessibilityHint={confirmedAddress || query.trim() ? undefined : 'Move the map until an address appears'}
                 onPress={confirmAndReturn}
                 icon={(color) => <Feather name="check" size={size.icon.md} color={color} />}
               />
