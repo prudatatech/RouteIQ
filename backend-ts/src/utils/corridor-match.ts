@@ -64,12 +64,54 @@ export function corridorMatches(corridorName: unknown, pickup: unknown, drop: un
   return placeMatchesSide(pickup, sides[0]) && placeMatchesSide(drop, sides[1]);
 }
 
-/** A rate typed as "41200", "₹41,200" or "41200 per trip" as a number; null when there is no number. */
-export function parseRate(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+export type RateUnit = 'per_trip' | 'per_km';
+export const RATE_UNITS: readonly RateUnit[] = ['per_trip', 'per_km'];
+
+/** A corridor rate: what the partner charges, and whether that is for the whole trip or for each km. */
+export interface CorridorRate {
+  amount: number;
+  unit: RateUnit;
+}
+
+/**
+ * Reads a rate typed as plain text ("41200", "₹41,200", "1500.50 per trip", "₹22 per km").
+ * Only text that is nothing but an amount (and optionally a unit) counts: a sentence such as
+ * "Base + 12%" or "on request" has no rate and returns null, so it is never used to price a load.
+ * With no unit written, the amount is per trip.
+ */
+export function parseLegacyRate(value: unknown): CorridorRate | null {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? { amount: value, unit: 'per_trip' } : null;
   if (typeof value !== 'string') return null;
-  const match = value.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
-  if (!match) return null;
-  const rate = Number(match[0]);
-  return rate > 0 ? rate : null;
+  const m = value.trim().match(/^(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:(?:per\s*|\/\s*)(trip|km))?$/i);
+  if (!m) return null;
+  const amount = Number(m[1].replace(/,/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return { amount, unit: m[2]?.toLowerCase() === 'km' ? 'per_km' : 'per_trip' };
+}
+
+/** The numeric rate of a corridor row: the structured columns, else a legacy text that is only a number. */
+export function corridorRate(row: { rate_amount?: unknown; rate_unit?: unknown; proposed_rate?: unknown }): CorridorRate | null {
+  const amount = Number(row.rate_amount);
+  if (row.rate_amount != null && Number.isFinite(amount) && amount > 0 && RATE_UNITS.includes(row.rate_unit as RateUnit)) {
+    return { amount, unit: row.rate_unit as RateUnit };
+  }
+  return parseLegacyRate(row.proposed_rate);
+}
+
+/** What a load costs at this rate: the amount per trip, or the amount x km (null when the distance is not known). */
+export function priceAtRate(rate: CorridorRate | null, distanceKm: number | null | undefined): number | null {
+  if (!rate) return null;
+  if (rate.unit === 'per_trip') return rate.amount;
+  return distanceKm != null && distanceKm > 0 ? Math.round(rate.amount * distanceKm * 100) / 100 : null;
+}
+
+/** A rate typed as "41200", "₹41,200" or "41200 per trip" as a per-trip amount; null when it is not just an amount. */
+export function parseRate(value: unknown): number | null {
+  const rate = parseLegacyRate(value);
+  return rate && rate.unit === 'per_trip' ? rate.amount : null;
+}
+
+/** A rate as it is shown: "₹41,200 per trip" or "₹22 per km". */
+export function formatRate(rate: CorridorRate): string {
+  return `₹${rate.amount.toLocaleString('en-IN')} ${rate.unit === 'per_km' ? 'per km' : 'per trip'}`;
 }

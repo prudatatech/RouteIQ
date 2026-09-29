@@ -3,6 +3,7 @@ import { HttpError } from '../core/errors';
 import { getDrivingDistance, DistanceSource } from './distance.service';
 import { getWeather, isConditions } from './weather.service';
 import { haversineKm, isValidPoint, LatLng, midpoint, ROAD_FACTOR } from './geo';
+import { DISPATCHABLE_STATUSES, isDispatchable } from '../utils/dispatchable';
 
 /** Straight-line radius around the pickup used to count open loads and free vehicles. */
 export const DEMAND_RADIUS_KM = 100;
@@ -131,13 +132,13 @@ async function countDemand(pickup: LatLng, vehicleType: string | null) {
   };
   const [{ data: loads, error: loadErr }, { data: vehicles, error: vehErr }] = await Promise.all([
     supabase.from('vendor_shipment_requests').select('id, pickup_lat, pickup_lng').in('status', ['pending', 'approved', 'escalated']).limit(1000),
-    supabase.from('vehicles').select('id, latitude, longitude, vehicle_type').in('status', ['available', 'idle']).limit(1000),
+    supabase.from('vehicles').select('id, latitude, longitude, vehicle_type, status, plate_number').in('status', [...DISPATCHABLE_STATUSES]).limit(1000),
   ]);
   if (loadErr) throw new Error(loadErr.message);
   if (vehErr) throw new Error(vehErr.message);
   return {
     open_loads: (loads ?? []).filter(l => near(l.pickup_lat, l.pickup_lng)).length,
-    available_vehicles: (vehicles ?? []).filter(v => near(v.latitude, v.longitude)
+    available_vehicles: (vehicles ?? []).filter(v => isDispatchable(v) && near(v.latitude, v.longitude)
       && (!vehicleType || norm(String(v.vehicle_type ?? '')) === vehicleType)).length,
   };
 }

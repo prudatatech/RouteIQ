@@ -2,7 +2,7 @@ import axios from 'axios';
 import { supabase } from '../core/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
-import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { isDispatchable } from '../utils/dispatchable';
 import { notificationService } from './notification.service';
 import { pricingService } from './pricing.service';
 import { haversineKm, isValidPoint, LatLng, ROAD_FACTOR } from './geo';
@@ -346,8 +346,8 @@ export const capacityService = {
       .from('vehicles').select('id, plate_number, status, capacity_kg, current_load_kg, available_capacity_kg').eq('id', vehicleId).maybeSingle();
     if (vehicleErr) throw new Error(`Failed to load vehicle: ${vehicleErr.message}`);
     if (!vehicle) throw new HttpError(404, 'Vehicle not found');
-    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
-      throw new HttpError(409, `This vehicle is in ${vehicle.status} and can't offer space.`);
+    if (!isDispatchable(vehicle)) {
+      throw new HttpError(409, `This vehicle is ${vehicle.status === 'maintenance' || vehicle.status === 'archived' ? `in ${vehicle.status}` : 'not ready for dispatch'} and can't offer space.`);
     }
     if (freeCapacityKg(vehicle) <= 0) throw new HttpError(400, 'This vehicle has no free capacity to offer');
 

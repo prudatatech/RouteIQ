@@ -7,6 +7,7 @@ import { HttpError } from '../core/errors';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { isDispatchable } from '../utils/dispatchable';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
@@ -576,11 +577,11 @@ export const vendorService = {
     const ratePerKm = costPerKm ?? undefined;
 
     const { data: assignee, error: assigneeErr } = await supabase
-      .from('vehicles').select('id, status, capacity_kg, current_load_kg, available_capacity_kg, driver_id').eq('id', vehicleId).maybeSingle();
+      .from('vehicles').select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id').eq('id', vehicleId).maybeSingle();
     if (assigneeErr) throw new Error(assigneeErr.message);
     if (!assignee) throw new HttpError(404, 'Vehicle not found');
-    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(assignee.status))) {
-      throw new HttpError(409, `This vehicle is in ${assignee.status} and can't take a load`);
+    if (!isDispatchable(assignee)) {
+      throw new HttpError(409, `This vehicle is ${assignee.status === 'maintenance' || assignee.status === 'archived' ? `in ${assignee.status}` : 'not ready for dispatch'} and can't take a load`);
     }
 
     const { data: before, error: beforeErr } = await supabase
