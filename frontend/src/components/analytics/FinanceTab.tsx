@@ -53,7 +53,7 @@ export default function FinanceTab() {
   const summary = useFinanceSummary(range)
   const s = summary.data
   const loading = summary.isLoading
-  const rangeLabel = `${range.from} to ${range.to}`
+  const rangeLabel = range.from === range.to ? formatDay(range.from) : `${formatDay(range.from)} to ${formatDay(range.to)}`
   const hasData = !!s && (s.revenue > 0 || s.costs.total > 0 || s.invoice_count > 0)
   const chartDays = s?.daily ?? []
   const categoryBars = (s?.costs.by_category ?? []).filter(c => c.amount > 0).map(c => ({ name: c.label, amount: c.amount }))

@@ -1,5 +1,6 @@
 import type { DraftShipmentData } from '@/store/draftStore'
 import { haversineKm } from '../format'
+import { todayIso } from './validation'
 
 export const CARGO_TYPES = [
   { id: 'standard', name: 'Standard parcel', description: 'Boxed goods with no special handling' },
@@ -93,7 +94,7 @@ export function buildShipmentPayload(data: DraftShipmentData) {
     freight_charge: data.freight_charge && Number(data.freight_charge) >= 0 ? Number(data.freight_charge) : null,
     asking_price: data.open_bidding ? (data.asking_price ? Number(data.asking_price) : null) : null,
     metadata: {
-      dispatch_date: data.plan_for_later && data.scheduled_date ? data.scheduled_date : new Date().toISOString().split('T')[0],
+      dispatch_date: data.plan_for_later && data.scheduled_date ? data.scheduled_date : todayIso(),
       productCategory: MANIFEST_CATEGORY[data.cargo_type] ?? 'General Cargo',
       noOfPackages: String(data.total_items),
       grossWeight: `${data.total_weight_kg} KG`,

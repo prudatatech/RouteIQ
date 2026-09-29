@@ -48,7 +48,7 @@ export default function OverviewTab() {
   const loading = overview.isLoading
   const days = activity.data ?? []
   const hasActivity = days.some(d => d.trips > 0 || d.deliveries > 0)
-  const rangeLabel = range.preset === 'today' ? 'today' : `${range.from} to ${range.to}`
+  const rangeLabel = range.preset === 'today' ? 'today' : range.from === range.to ? formatDay(range.from) : `${formatDay(range.from)} to ${formatDay(range.to)}`
 
   return (
     <div className="space-y-6">
@@ -57,7 +57,7 @@ export default function OverviewTab() {
       {overview.isError ? (
         <Alert
           tone="danger"
-          title="We could not load today's figures"
+          title="We could not load these figures"
           action={<Button variant="secondary" size="sm" onClick={() => overview.refetch()}>Try again</Button>}
         >
           Check your connection and try again.

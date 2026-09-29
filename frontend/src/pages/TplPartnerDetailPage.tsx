@@ -1,4 +1,4 @@
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
-  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, useConfirm,
+  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
 import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
@@ -123,9 +123,10 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Partner approved.')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: (err: unknown) => toast.error(errorMessage(err, 'Approval failed.')),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not approve this partner. Try again.')),
   })
 
   const reject = useMutation({
@@ -133,9 +134,10 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Application rejected.')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: (err: unknown) => toast.error(errorMessage(err, 'Rejection failed.')),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not reject this application. Try again.')),
   })
 
   const togglePause = useMutation({
@@ -143,9 +145,10 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success(partner?.status === 'active' ? 'Partner paused.' : 'Partner resumed.')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: () => toast.error('Failed to update status.'),
+    onError: err => toast.error(errorMessage(err, 'We could not update the partner. Try again.')),
   })
 
   const remove = useMutation({
@@ -153,9 +156,10 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Partner deleted.')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       navigate('/3pl-partners')
     },
-    onError: () => toast.error('Failed to delete partner.'),
+    onError: err => toast.error(errorMessage(err, 'We could not delete the partner. Try again.')),
   })
 
   const handleDelete = async () => {
@@ -194,9 +198,9 @@ export default function TplPartnerDetailPage() {
   const viewDocument = async (doc: TplDocument) => {
     try {
       const url = await getKycDocumentUrl(doc.file_url)
-      setPreview({ url, name: doc.doc_type })
+      setPreview({ url, name: humanize(doc.doc_type) })
     } catch (err) {
-      toast.error(errorMessage(err, 'Could not open document.'))
+      toast.error(errorMessage(err, 'We could not open this document. Try again.'))
     }
   }
 
@@ -211,7 +215,7 @@ export default function TplPartnerDetailPage() {
   if (error || !partner) {
     return (
       <Page>
-        <ErrorState title="Can't load this partner" description={error ? 'Something went wrong.' : 'This application could not be found.'} onRetry={() => refetch()} />
+        <ErrorState title="We could not load this partner" description={error ? 'Check your connection and try again.' : 'This application could not be found.'} onRetry={() => refetch()} />
       </Page>
     )
   }
@@ -222,7 +226,7 @@ export default function TplPartnerDetailPage() {
     <Page>
       <PageHeader
         title={partner.company_name}
-        description={`Submitted ${partner.created_at ? new Date(partner.created_at).toLocaleString('en-IN') : '—'}${partner.email ? ` by ${partner.email}` : ''}`}
+        description={`Submitted ${partner.created_at ? formatDateTime(partner.created_at) : '—'}${partner.email ? ` by ${partner.email}` : ''}`}
         back={{ to: '/3pl-partners', label: 'Back to 3PL partners' }}
         actions={<StatusPill status={partner.status} />}
       />
@@ -261,8 +265,8 @@ export default function TplPartnerDetailPage() {
             <DetailList
               columns={2}
               items={[
-                { label: 'Company PAN', value: <span className="font-mono">{partner.pan_number}</span> },
-                { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || partner.id.split('-')[0]}</span> },
+                { label: 'Company PAN', value: partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—' },
+                { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || 'Not assigned yet'}</span> },
                 { label: 'GSTIN', value: partner.gstin ? <div><span className="font-mono">{partner.gstin}</span><GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} /></div> : '—' },
                 { label: 'GTA tax treatment', value: partner.tax_treatment || '—' },
                 { label: 'MSME status', value: partner.msme_status || '—' },
@@ -285,7 +289,7 @@ export default function TplPartnerDetailPage() {
                     >
                       <FileText size={20} className="shrink-0 text-brand" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-text">{doc.doc_type}</span>
+                        <span className="block truncate text-sm font-medium text-text">{humanize(doc.doc_type)}</span>
                         <span className="block text-xs text-muted">View document</span>
                       </span>
                       <Download size={14} className="shrink-0 text-muted" />
@@ -319,7 +323,7 @@ export default function TplPartnerDetailPage() {
                           <p className="font-medium text-text">{c.corridor_name}</p>
                           <div className="mt-1 flex flex-wrap gap-1">
                             {(c.vehicle_types ?? []).map(v => (
-                              <span key={v} className="rounded-full bg-neutral-soft px-2 py-0.5 text-xs text-neutral">{v}</span>
+                              <span key={v} className="rounded-full bg-neutral-soft px-2 py-0.5 text-xs text-neutral">{humanize(v)}</span>
                             ))}
                           </div>
                         </div>
