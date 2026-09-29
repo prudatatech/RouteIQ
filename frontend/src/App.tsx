@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
@@ -24,11 +24,11 @@ import RouteDetailsPage from '@/pages/RouteDetailsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import DriverPage from '@/pages/DriverPage'
 import CustomerTrackingPage from '@/pages/CustomerTrackingPage'
-import TplNetworkPage from '@/pages/TplNetworkPage'
+import TplPartnersPage from '@/pages/TplPartnersPage'
+import TplPartnerDetailPage from '@/pages/TplPartnerDetailPage'
 import TplOnboardingPage from '@/pages/TplOnboardingPage'
 import TplTrackApplicationPage from '@/pages/TplTrackApplicationPage'
 import TplSetupCredentialsPage from '@/pages/TplSetupCredentialsPage'
-import TplVerificationPage from '@/pages/TplVerificationPage'
 import TplDashboardPage from '@/pages/TplDashboardPage'
 import LiveMapPage from '@/pages/LiveMapPage'
 import MobileTrackPage from '@/pages/MobileTrackPage'
@@ -123,6 +123,13 @@ function VendorLoginRedirect() {
 function TplActivateRedirect() {
   const { search } = useLocation()
   return <Navigate to={`/3pl/onboard/setup${search}`} replace />
+}
+
+// The verification page merged into the partner detail page at /3pl-partners/:id.
+function TplVerifyRedirect() {
+  const [searchParams] = useSearchParams()
+  const id = searchParams.get('id')
+  return <Navigate to={id ? `/3pl-partners/${id}` : '/3pl-partners'} replace />
 }
 
 export default function App() {
@@ -303,12 +310,13 @@ export default function App() {
             } />
             <Route path="3pl-partners" element={
               <PrivateRoute allowedRoles={['superadmin']}>
-                <TplNetworkPage />
+                <TplPartnersPage />
               </PrivateRoute>
             } />
-            <Route path="3pl-partners/verify" element={
+            <Route path="3pl-partners/verify" element={<TplVerifyRedirect />} />
+            <Route path="3pl-partners/:id" element={
               <PrivateRoute allowedRoles={['superadmin']}>
-                <TplVerificationPage />
+                <TplPartnerDetailPage />
               </PrivateRoute>
             } />
             <Route path="ai-hub" element={

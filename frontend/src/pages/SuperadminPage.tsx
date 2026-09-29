@@ -134,7 +134,7 @@ export default function SuperadminPage() {
 
       {/* 3PL Verification Widget */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div onClick={() => navigate('/3pl-network?tab=verification')} className="cursor-pointer group">
+        <div onClick={() => navigate('/3pl-partners?tab=pending')} className="cursor-pointer group">
           <Card className="p-6 border-border bg-surface hover:border-yellow-500/50 transition-all">
             <div className="text-[10px] font-black uppercase text-muted tracking-widest mb-2">3PL Verification</div>
             <div className="text-3xl font-black text-text">{tplQueue.length} Pending</div>

@@ -1,90 +1,43 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import {
-  Building2, CheckCircle2, ChevronRight, UploadCloud, Plus, AlertCircle, Trash2, ShieldCheck, ArrowLeft, Eye, X
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
 import { tplAPI } from '@/services/api'
-import { Card } from '@/components/ui'
-import clsx from 'clsx'
+import { Button, Card, Checkbox, Input, Select, Spinner } from '@/components/ui'
+import { CorridorEditor } from '@/components/tpl/CorridorEditor'
+import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
+import { emptyCorridorRow, TPL_DOCUMENT_TYPES, type CorridorFormRow } from '@/components/tpl/constants'
 import toast from 'react-hot-toast'
+import clsx from 'clsx'
 import { uploadTplDocument } from '@/services/tplDocuments'
+import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
-function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [filtered, setFiltered] = useState(options);
+const MSME_OPTIONS = ['Not Registered', 'Micro', 'Small', 'Medium']
 
-  return (
-    <div className="relative w-full">
-      {label && <label className={labelClass || "text-xs font-bold text-muted mb-1 block"}>{label}</label>}
-      <input 
-        type="text" 
-        value={value}
-        onChange={e => {
-          onChange(e.target.value);
-          const searchVal = isMulti ? e.target.value.split(',').pop()?.trim() || '' : e.target.value;
-          setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
-          setIsOpen(true);
-        }}
-        onFocus={() => {
-           const searchVal = isMulti ? (value || '').split(',').pop()?.trim() || '' : value;
-           setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
-           setIsOpen(true);
-        }}
-        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-        className={className}
-        placeholder={placeholder}
-      />
-      {isOpen && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-md shadow-xl max-h-48 overflow-y-auto animate-fade-in origin-top text-left">
-          {filtered.map((opt: string) => (
-            <div 
-              key={opt}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                if (isMulti) {
-                  const currentParts = (value || '').split(',').map((p: string) => p.trim()).filter(Boolean);
-                  // Check if the user was in the middle of typing a word by seeing if the input ends with a comma
-                  // Actually, a simpler approach: just check if the last part is a partial match to opt
-                  const lastPart = currentParts.length > 0 ? currentParts[currentParts.length - 1] : '';
-                  if (lastPart && opt.toLowerCase().includes(lastPart.toLowerCase()) && opt.toLowerCase() !== lastPart.toLowerCase()) {
-                     currentParts.pop(); // remove the partially typed part
-                  } else if (currentParts.includes(opt)) {
-                     // If it's already in the list exactly, don't add it again, or let them toggle it? 
-                     // For now, just remove the partially typed text if it was exactly what they clicked (edge case)
-                     if (lastPart.toLowerCase() === opt.toLowerCase()) {
-                        currentParts.pop();
-                     }
-                  }
-                  
-                  // If it's already there, maybe they want it anyway? No, filter duplicates
-                  const newArray = [...currentParts.filter((p: string) => p !== opt), opt];
-                  onChange(newArray.join(', ') + ', ');
-                } else {
-                  onChange(opt);
-                }
-                setIsOpen(false);
-              }}
-              className="px-4 py-2.5 text-sm text-text font-bold hover:bg-primary hover:text-bg cursor-pointer border-b border-border/50 last:border-0 transition-colors"
-            >
-              {opt}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
+const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
+const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/
+
+function slugify(name: string) {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 15)
+  return base
 }
+
+const steps = [
+  { id: 1, label: 'Company & KYC' },
+  { id: 2, label: 'Operational profile' },
+  { id: 3, label: 'Submitted' },
+] as const
 
 export default function TplOnboardingPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit')
   const editPan = searchParams.get('pan')
-  
+
   const [step, setStep] = useState(1)
-  const [_isLoadingExisting, setIsLoadingExisting] = useState(!!editId)
-  
-  // Step 1 State (KYC)
+  const [loadingExisting, setLoadingExisting] = useState(!!editId)
+
+  // Company & KYC
   const [companyName, setCompanyName] = useState('')
   const [customId, setCustomId] = useState('')
   const [customIdError, setCustomIdError] = useState('')
@@ -94,648 +47,347 @@ export default function TplOnboardingPage() {
   const [msmeStatus, setMsmeStatus] = useState('Not Registered')
   const [bankAccount, setBankAccount] = useState('')
   const [bankIfsc, setBankIfsc] = useState('')
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
-  const [previewFile, setPreviewFile] = useState<{file: File, url: string, name: string} | null>(null)
-  // Documents already on the application being edited, kept so saving edits that
-  // don't re-upload every file doesn't wipe out the ones left untouched.
-  const [existingDocs, setExistingDocs] = useState<{ type: string, url: string }[]>([])
-  
-  // ID Recommendation logic
-  const recommendIds = (name: string) => {
-    if (!name || name.length < 3) return [];
-    const base = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 15);
-    const cleanBase = base.endsWith('_') ? base.slice(0, -1) : base;
-    return [
-      cleanBase,
-      `${cleanBase}_3pl`,
-      `${cleanBase}${new Date().getFullYear()}`,
-      `${cleanBase}_${Math.floor(Math.random() * 1000)}`
-    ].filter(id => id.length >= 5 && id.length <= 20);
-  }
 
-  const handleCustomIdChange = (val: string) => {
-    const rawVal = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    setCustomId(rawVal);
-    
-    if (rawVal.length > 0 && (rawVal.length < 5 || rawVal.length > 20)) {
-      setCustomIdError('ID must be between 5 and 20 characters');
-    } else if (rawVal.length > 0 && !/^[a-z0-9_]+$/.test(rawVal)) {
-      setCustomIdError('Only lowercase letters, numbers, and underscores allowed');
-    } else {
-      setCustomIdError('');
-    }
-  }
-  
-  // Step 3 State (Success)
-  const [trackingId, setTrackingId] = useState<string>('')
-
-  // Step 2 State (Ops)
-  const [corridors, setCorridors] = useState([{ id: 1, name: '', vehicles: '', rate: '', priority: '1' }])
-  const [isDeclared, setIsDeclared] = useState(false)
+  // Operational profile
+  const [corridors, setCorridors] = useState<CorridorFormRow[]>([emptyCorridorRow()])
   const [slaCommitment, setSlaCommitment] = useState('2 Hours')
   const [taxTreatment, setTaxTreatment] = useState('12% GTA (With ITC) - Forward Charge')
+  const [isDeclared, setIsDeclared] = useState(false)
 
-  // Pre-defined recommendation lists
-  const COMPANY_RECOMMENDATIONS = [
-    // Logistics
-    "Safexpress Pvt Ltd", "Delhivery MSME", "Blue Dart Express", "VRL Logistics", "TCI Freight",
-    // Food & Beverage / Retail
-    "Cafe Coffee Day", "Haldiram's", "Bikano", "Reliance Retail", "Tata Starbucks", "D-Mart", "Shoppers Stop",
-    // Manufacturing / Auto
-    "Tata Motors", "Mahindra & Mahindra", "Bajaj Auto", "Maruti Suzuki", "Hero MotoCorp", "Asian Paints",
-    // FMCG
-    "Hindustan Unilever", "ITC Limited", "Britannia Industries", "Parle Products", "Patanjali Ayurved", "Dabur India",
-    // IT / Tech / Services
-    "Infosys", "Wipro", "TCS", "Tech Mahindra", "HCL Technologies", "Paytm", "Zomato",
-    // Pharma / Healthcare
-    "Sun Pharmaceutical", "Cipla", "Dr. Reddy's Laboratories", "Apollo Hospitals", "Lupin"
-  ];
+  // Documents (staged locally until submit)
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
+  const [existingDocs, setExistingDocs] = useState<{ type: string, url: string }[]>([])
+  const [previewFile, setPreviewFile] = useState<{ url: string, name: string } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const CORRIDOR_RECOMMENDATIONS = [
-    "DEL-BOM", "BOM-BLR", "DEL-CCU", "MAA-BLR", "DEL-HYD", "PNQ-BLR", "AMD-BOM", "DEL-MAA"
-  ]
+  const [trackingId, setTrackingId] = useState('')
 
-  const VEHICLE_RECOMMENDATIONS = [
-    "32ft SXL", "32ft MXL", "24ft SXL", "20ft", "14ft Eicher", 
-    "17ft Eicher", "19ft Eicher", "Tata Ace", "Ashok Leyland Dost",
-    "Bolero Pickup", "40ft Trailer", "40ft Flatbed", "Refrigerated Van"
-  ];
-
-  const handleNext = () => {
-    if (step === 1) {
-      if (!companyName || !pan || !gst || !email) {
-        toast.error('Please fill in required fields (Company, Email, PAN, GST).');
-        return;
-      }
-      
-      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-      if (!panRegex.test(pan)) {
-        toast.error('Invalid PAN Format. Example: ABCDE1234F');
-        return;
-      }
-
-      const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-      if (!gstRegex.test(gst)) {
-        toast.error('Invalid GSTIN Format. Example: 07ABCDE1234F1Z5');
-        return;
-      }
-
-      setStep(2);
+  const handleCustomIdChange = (val: string) => {
+    const rawVal = val.toLowerCase().replace(/[^a-z0-9_]/g, '')
+    setCustomId(rawVal)
+    if (rawVal.length > 0 && (rawVal.length < 5 || rawVal.length > 20)) {
+      setCustomIdError('ID must be between 5 and 20 characters')
+    } else if (rawVal.length > 0 && !CUSTOM_ID_PATTERN.test(rawVal)) {
+      setCustomIdError('Only lowercase letters, numbers and underscores are allowed')
+    } else {
+      setCustomIdError('')
     }
   }
 
-  const addCorridor = () => setCorridors([...corridors, { id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }])
-  
-  const removeCorridor = (id: number) => {
-    setCorridors(corridors.filter(c => c.id !== id))
-  }
-
-  // Pre-fill form if editing
+  // Pre-fill the form when editing a pending application
   useEffect(() => {
-    if (!editId || !editPan) return;
-    
+    if (!editId || !editPan) return
     tplAPI.getPartner(editId, editPan).then(data => {
-        if (data.pan_number === editPan.toUpperCase()) {
-          setCompanyName(data.company_name || '')
-          setPan(data.pan_number || '')
-          setGst(data.gstin || '')
-          setMsmeStatus(data.msme_status || '')
-          setBankAccount(data.bank_account_no || '')
-          setBankIfsc(data.bank_ifsc || '')
-          setSlaCommitment(data.sla_commitment || '2 Hours')
-          setTaxTreatment(data.tax_treatment || 'Standard')
-          
-          if (data.tpl_corridors && data.tpl_corridors.length > 0) {
-            setCorridors(data.tpl_corridors.map((c: any, i: number) => ({
-              id: i + 1,
-              name: c.corridor_name,
-              vehicles: (c.vehicle_types || []).join(', '),
-              rate: c.proposed_rate || '',
-              priority: c.priority || '1'
-            })))
-          }
-          if (data.tpl_documents && data.tpl_documents.length > 0) {
-            setExistingDocs(data.tpl_documents.map((d: any) => ({ type: d.doc_type, url: d.file_url })))
-          }
-        } else {
-          toast.error('Invalid credentials for editing this application.')
-          navigate('/3pl/onboard/track')
-        }
-      }).catch(_err => {
-        toast.error('Failed to load application data.')
-      }).finally(() => {
-        setIsLoadingExisting(false)
-      })
+      if (data.pan_number !== editPan.toUpperCase()) {
+        toast.error('Invalid credentials for editing this application.')
+        navigate('/3pl/onboard/track')
+        return
+      }
+      setCompanyName(data.company_name || '')
+      setCustomId(data.custom_id || '')
+      setPan(data.pan_number || '')
+      setGst(data.gstin || '')
+      setMsmeStatus(data.msme_status || 'Not Registered')
+      setBankAccount(data.bank_account_no || '')
+      setBankIfsc(data.bank_ifsc || '')
+      setSlaCommitment(data.sla_commitment || '2 Hours')
+      setTaxTreatment(data.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+      if (data.tpl_corridors?.length > 0) {
+        setCorridors(data.tpl_corridors.map((c: any, i: number) => ({
+          id: i + 1,
+          name: c.corridor_name,
+          vehicles: (c.vehicle_types || []).join(', '),
+          rate: c.proposed_rate || '',
+          priority: String(c.priority || '1'),
+        })))
+      }
+      if (data.tpl_documents?.length > 0) {
+        setExistingDocs(data.tpl_documents.map((d: any) => ({ type: d.doc_type, url: d.file_url })))
+      }
+    }).catch(() => {
+      toast.error('Failed to load application data.')
+    }).finally(() => setLoadingExisting(false))
   }, [editId, editPan, navigate])
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, docName: string) => {
-    const file = e.target.files?.[0];
-    if (file && file.size > 2 * 1024 * 1024) {
-      toast.error(`File ${file.name} exceeds 2MB limit`);
-      e.target.value = '';
-    } else if (file) {
-      setUploadedDocs(prev => ({ ...prev, [docName]: file }));
-      toast.success(`${file.name} attached successfully`);
+  const handleNext = () => {
+    if (!companyName || !pan || !gst || !email) {
+      toast.error('Fill in company name, email, PAN and GST first.')
+      return
     }
-  };
+    if (!PAN_PATTERN.test(pan)) {
+      toast.error('PAN format looks wrong. Example: ABCDE1234F')
+      return
+    }
+    if (!GST_PATTERN.test(gst)) {
+      toast.error('GSTIN format looks wrong. Example: 07ABCDE1234F1Z5')
+      return
+    }
+    if (!editId && (!customId || customIdError)) {
+      toast.error('Choose a valid 3PL ID before continuing.')
+      return
+    }
+    setStep(2)
+  }
+
+  const handleFileSelect = (docType: string, file: File | undefined) => {
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(`${file.name} is over the 2 MB limit.`)
+      return
+    }
+    setUploadedDocs(prev => ({ ...prev, [docType]: file }))
+  }
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    try {
+      const payload = {
+        custom_id: customId,
+        companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment,
+        corridors,
+        // Keep documents that aren't being replaced by a new upload in this save, so
+        // editing without re-uploading every file doesn't delete the untouched ones.
+        documents: existingDocs.filter(d => !(d.type in uploadedDocs)) as { type: string, url: string }[],
+        ...(editId && editPan ? { verify_pan: editPan } : {}),
+      }
+
+      await Promise.all(Object.keys(uploadedDocs).map(async docType => {
+        const file = uploadedDocs[docType]
+        const target = editId ? { applicationId: editId, verifyPan: editPan } : { customId }
+        const path = await uploadTplDocument(file, docType, target)
+          .catch((err: Error) => { throw new Error(`Failed to upload ${docType}: ${err.message}`) })
+        payload.documents.push({ type: docType, url: path })
+      }))
+
+      const promise = editId ? tplAPI.updateApplication(editId, payload) : tplAPI.onboard(payload)
+      const data = await toast.promise(promise, {
+        loading: editId ? 'Updating application…' : 'Submitting application…',
+        success: editId ? 'Application updated.' : 'Application submitted.',
+        error: editId ? 'Failed to update application.' : 'Failed to submit application.',
+      })
+      setTrackingId(customId || editId || data.id)
+      setStep(3)
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loadingExisting) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg">
+        <Spinner size={32} />
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-bg py-12 px-4 animate-fade-in">
-      <div className="max-w-4xl mx-auto space-y-8 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-        
-        {/* Top Navigation */}
-        <div className="absolute top-6 right-6">
-          <button 
-            onClick={() => navigate('/')} 
-            className="text-sm font-bold uppercase tracking-widest text-muted hover:text-primary transition-colors flex items-center gap-2"
-          >
-            Go to Main Page
-          </button>
-        </div>
-
-        {/* Header */}
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-            <Building2 size={32} />
+    <div className="min-h-screen bg-bg px-4 py-12">
+      <div className="mx-auto max-w-form space-y-8">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <Building2 size={28} />
           </div>
-          <h1 className="font-display text-4xl font-black tracking-tighter text-text uppercase leading-none">
-            MargixIndia <span className="text-primary">Partner Setup</span>
-          </h1>
-          <div className="text-muted font-bold tracking-tight mt-4 text-sm max-w-lg mx-auto">
-            You've been invited to join the MargixIndia Tier 2 Cascade Network. Please provide your business identity and operational terms below.
-          </div>
+          <h1 className="text-2xl font-semibold text-text sm:text-3xl">3PL partner setup</h1>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+            {editId ? 'Update your business identity and operational terms.' : 'Provide your business identity and operational terms to apply as a 3PL partner.'}
+          </p>
         </div>
 
-        {/* Progress */}
-        <div className="flex items-center gap-4 border-b border-border pb-6 max-w-2xl mx-auto">
-           <div className={clsx("flex items-center gap-2 text-sm font-black uppercase tracking-widest transition-colors", step === 1 ? 'text-primary' : 'text-green-500')}>
-             <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-bg", step === 1 ? 'bg-primary' : 'bg-green-500')}>
-               {step === 1 ? '1' : <CheckCircle2 size={14} />}
-             </div>
-             Identity & KYC
-           </div>
-           <div className="flex-1 h-px bg-border" />
-           <div className={clsx("flex items-center gap-2 text-sm font-black uppercase tracking-widest transition-colors", step === 2 ? 'text-primary' : 'text-muted')}>
-             <div className={clsx("w-6 h-6 rounded-full flex items-center justify-center text-bg border", step === 2 ? 'bg-primary border-primary' : 'bg-surface2 border-border text-muted')}>
-               2
-             </div>
-             Operational Profile
-           </div>
-        </div>
+        {/* Stepper */}
+        <ol className="flex items-center justify-center gap-3 text-sm">
+          {steps.slice(0, 2).map((s, i) => (
+            <li key={s.id} className="flex items-center gap-3">
+              <span className={clsx(
+                'flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium',
+                step > s.id ? 'bg-success text-white' : step === s.id ? 'bg-brand-fill text-text' : 'bg-neutral-soft text-muted',
+              )}>
+                {step > s.id ? <CheckCircle2 size={14} /> : s.id}
+              </span>
+              <span className={clsx(step === s.id ? 'font-medium text-text' : 'text-muted')}>{s.label}</span>
+              {i === 0 && <span className="h-px w-8 bg-border" aria-hidden="true" />}
+            </li>
+          ))}
+        </ol>
 
-        {/* STEP 1: KYC */}
         {step === 1 && (
-          <div className="space-y-6 animate-fade-in">
-             <Card className="p-8 border-border bg-surface shadow-2xl">
-                <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
-                  <ShieldCheck size={24} className="text-primary" />
-                  <h2 className="text-xl font-black text-text uppercase">Company Identity</h2>
+          <Card padded>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <Input label="Company legal name" required value={companyName} onChange={e => {
+                  setCompanyName(e.target.value)
+                  if (!editId && !customId) handleCustomIdChange(slugify(e.target.value))
+                }} placeholder="e.g. Acme Logistics Pvt Ltd" />
+                <Input
+                  label="3PL ID"
+                  required
+                  disabled={!!editId}
+                  hint={editId ? 'Cannot be changed once submitted.' : 'Lowercase letters, numbers and underscores, 5–20 characters.'}
+                  error={customIdError || undefined}
+                  value={customId}
+                  onChange={e => handleCustomIdChange(e.target.value)}
+                  placeholder="e.g. acme_3pl"
+                />
+                <Input label="Contact email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" />
+                <Input label="Company PAN" required value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" />
+                <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" className="font-mono" />
+                <Select label="MSME status" options={MSME_OPTIONS.map(o => ({ value: o, label: o }))} value={msmeStatus} onChange={e => setMsmeStatus(e.target.value)} />
+              </div>
+
+              <div className="border-t border-border pt-6">
+                <h3 className="mb-4 text-sm font-medium text-text">Bank details (for remittance)</h3>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  <Input label="Account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} />
+                  <Input label="IFSC code" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} className="font-mono" />
                 </div>
+              </div>
+            </div>
+          </Card>
+        )}
 
-                <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                       <AutocompleteInput
-                         label="Company Legal Name *"
-                         value={companyName}
-                         onChange={(val: string) => { setCompanyName(val); if (!customId) handleCustomIdChange(recommendIds(val)[0] || ''); }}
-                         options={COMPANY_RECOMMENDATIONS}
-                         placeholder="e.g. Safexpress Pvt Ltd"
-                         className="w-full bg-surface border border-border rounded text-text font-medium text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all"
-                       />
-                       <div>
-                         <label className="text-xs font-bold text-muted mb-1 flex items-center justify-between">
-                           <span>Create 3PL ID *</span>
-                           {customIdError && <span className="text-red-500">{customIdError}</span>}
-                         </label>
-                         <div className="relative">
-                           <input
-                             type="text"
-                             value={customId}
-                             onChange={e => handleCustomIdChange(e.target.value)}
-                             className={clsx(
-                               "w-full bg-surface border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all",
-                               customIdError ? "border-red-500 focus:border-red-500" : "border-border focus:border-primary"
-                             )}
-                             placeholder="e.g. safexpress_3pl"
-                             maxLength={20}
-                           />
-                           {!customIdError && customId.length >= 5 && (
-                             <CheckCircle2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500" />
-                           )}
-                         </div>
-                         {companyName && !customIdError && customId.length < 5 && (
-                           <div className="mt-2 flex flex-wrap gap-2">
-                             {recommendIds(companyName).map(rec => (
-                               <button 
-                                 key={rec} 
-                                 type="button"
-                                 onClick={() => handleCustomIdChange(rec)}
-                                 className="text-[10px] bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary hover:text-bg transition-colors font-mono"
-                               >
-                                 {rec}
-                               </button>
-                             ))}
-                           </div>
-                         )}
-                       </div>
-                       <div>
-                         <label className="text-xs font-bold text-muted mb-1 block">Contact Email *</label>
-                         <input
-                           type="email"
-                           value={email}
-                           onChange={e => setEmail(e.target.value)}
-                           className="w-full bg-surface border border-border rounded text-text font-medium text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all"
-                           placeholder="you@company.com"
-                         />
-                       </div>
-                       <div>
-                         <label className="text-xs font-bold text-muted mb-1 block">Company PAN *</label>
-                         <input
-                           type="text"
-                           value={pan}
-                           onChange={e => setPan(e.target.value.toUpperCase())}
-                           className="w-full bg-surface border border-border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all uppercase"
-                           placeholder="ABCDE1234F"
-                         />
-                       </div>
-                       <div>
-                         <label className="text-xs font-bold text-muted mb-1 block">GSTIN *</label>
-                         <input
-                           type="text"
-                           value={gst}
-                           onChange={e => setGst(e.target.value.toUpperCase())}
-                           className="w-full bg-surface border border-border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all uppercase"
-                           placeholder="07ABCDE1234F1Z5"
-                         />
-                       </div>
-                       <div>
-                         <label className="text-xs font-bold text-muted mb-1 block">MSME Status</label>
-                         <select 
-                           value={msmeStatus}
-                           onChange={e => setMsmeStatus(e.target.value)}
-                           className="w-full bg-surface border border-border rounded text-text font-medium text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all"
-                         >
-                           <option>Not Registered</option>
-                           <option>Micro</option>
-                           <option>Small</option>
-                           <option>Medium</option>
-                         </select>
-                       </div>
-                    </div>
-
-                    <div className="pt-6 border-t border-border mt-6">
-                      <h3 className="text-xs font-bold text-text mb-4">Bank Details (For Remittance)</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         <div>
-                           <label className="text-xs font-bold text-muted mb-1 block">Account No.</label>
-                           <input 
-                             type="text" 
-                             value={bankAccount}
-                             onChange={e => setBankAccount(e.target.value)}
-                             className="w-full bg-surface border border-border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all" 
-                           />
-                         </div>
-                         <div>
-                           <label className="text-xs font-bold text-muted mb-1 block">IFSC Code</label>
-                           <input 
-                             type="text" 
-                             value={bankIfsc}
-                             onChange={e => setBankIfsc(e.target.value.toUpperCase())}
-                             className="w-full bg-surface border border-border rounded text-text font-mono text-sm px-3 py-2 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm transition-all uppercase" 
-                           />
-                         </div>
-                      </div></div>
-                </div>
-             </Card>
-
-             <div className="flex justify-end pt-4">
-                <button 
-                  onClick={handleNext}
-                  className="px-8 py-3 bg-primary text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center gap-2 hover:bg-primary-dark"
-                >
-                   Next: Operational Profile <ChevronRight size={16} />
-                </button>
-             </div>
+        {step === 1 && (
+          <div className="flex justify-end">
+            <Button onClick={handleNext}>Next: Operational profile</Button>
           </div>
         )}
 
-        {/* STEP 2: Ops */}
         {step === 2 && (
-          <div className="space-y-6 animate-fade-in">
-             <Card className="p-8 border-border bg-surface shadow-2xl">
-                <div className="flex items-center gap-3 mb-6 border-b border-border pb-4">
-                  <CheckCircle2 size={24} className="text-primary" />
-                  <h2 className="text-xl font-black text-text uppercase">Operational Profile</h2>
+          <div className="space-y-6">
+            <Card padded>
+              <div className="space-y-8">
+                <OperationalTermsFields
+                  slaCommitment={slaCommitment}
+                  taxTreatment={taxTreatment}
+                  onSlaChange={setSlaCommitment}
+                  onTaxChange={setTaxTreatment}
+                />
+                <div className="border-t border-border pt-8">
+                  <CorridorEditor corridors={corridors} onChange={setCorridors} />
                 </div>
 
-                <div className="space-y-8">
-                   {/* SLA & Tax Options */}
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-border">
-                      <div>
-                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">Default SLA Commitment</label>
-                        <select 
-                          value={slaCommitment}
-                          onChange={e => setSlaCommitment(e.target.value)}
-                          className="w-full p-3 bg-bg border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
+                <div className="border-t border-border pt-8">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-sm font-medium text-text">KYC and commercial documents</h3>
+                    <span className="text-xs text-muted">Max file size: 2 MB</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {TPL_DOCUMENT_TYPES.map(docType => {
+                      const file = uploadedDocs[docType]
+                      const existing = existingDocs.find(d => d.type === docType)
+                      const hasSomething = !!file || !!existing
+                      return (
+                        <div
+                          key={docType}
+                          className={clsx(
+                            'flex h-28 flex-col items-center justify-center rounded-control border border-dashed p-3 text-center',
+                            hasSomething ? 'border-success bg-success-soft' : 'border-border-strong bg-surface',
+                          )}
                         >
-                          <option>2 Hours</option>
-                          <option>4 Hours</option>
-                          <option>6 Hours</option>
-                          <option>12 Hours</option>
-                        </select>
-                        <p className="text-[10px] text-muted font-bold mt-2">Max time to respond to a broadcast request.</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">GTA Tax Treatment</label>
-                        <select 
-                          value={taxTreatment}
-                          onChange={e => setTaxTreatment(e.target.value)}
-                          className="w-full p-3 bg-bg border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
-                        >
-                          <option>12% GTA (With ITC) - Forward Charge</option>
-                          <option>5% GTA (No ITC) - Reverse Charge</option>
-                        </select>
-                        <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
-                          <AlertCircle size={12}/> Determines reverse charge liability on your invoices.
-                        </p>
-                      </div>
-                   </div>
-
-                   {/* Corridor Configurations */}
-                   <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <label className="text-xs font-bold text-muted uppercase tracking-widest">Corridor & Rate Declarations</label>
-                        <button onClick={addCorridor} className="text-[10px] text-primary hover:underline font-black uppercase flex items-center gap-1">
-                          <Plus size={14} /> Add Corridor
-                        </button>
-                      </div>
-
-                      <div className="space-y-4">
-                        {corridors.map((c, idx) => (
-                          <div key={c.id} className="p-4 bg-bg border border-border rounded-xl relative group">
-                            {corridors.length > 1 && (
-                              <button onClick={() => removeCorridor(c.id)} className="absolute -right-2 -top-2 w-6 h-6 bg-red-500 text-bg rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                                <Trash2 size={12} />
-                              </button>
-                            )}
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                               <AutocompleteInput
-                                 label="Corridor (e.g. DEL-BOM)"
-                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
-                                 value={c.name}
-                                 onChange={(val: string) => {
-                                   const newC = [...corridors];
-                                   newC[idx].name = val.toUpperCase();
-                                   setCorridors(newC);
-                                 }}
-                                 options={CORRIDOR_RECOMMENDATIONS}
-                                 className="w-full p-2.5 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:border-primary font-bold uppercase"
-                               />
-                               <AutocompleteInput
-                                 label="Vehicle Types"
-                                 isMulti={true}
-                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
-                                 value={c.vehicles}
-                                 onChange={(val: string) => {
-                                   const newC = [...corridors];
-                                   newC[idx].vehicles = val;
-                                   setCorridors(newC);
-                                 }}
-                                 options={VEHICLE_RECOMMENDATIONS}
-                                 placeholder="e.g. 32ft SXL, 20ft"
-                                 className="w-full p-2.5 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:border-primary font-bold"
-                               />
-                               <div>
-                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Proposed Rate</label>
-                                 <input 
-                                   type="text" 
-                                   value={c.rate}
-                                   onChange={e => {
-                                     const newC = [...corridors];
-                                     newC[idx].rate = e.target.value;
-                                     setCorridors(newC);
-                                   }}
-                                   placeholder="e.g. Base + 12%" 
-                                   className="w-full p-2.5 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:border-primary font-mono" 
-                                 />
-                               </div>
-                               <div>
-                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Requested Priority</label>
-                                 <select 
-                                   value={c.priority}
-                                   onChange={e => {
-                                     const newC = [...corridors];
-                                     newC[idx].priority = e.target.value;
-                                     setCorridors(newC);
-                                   }}
-                                   className="w-full p-2.5 bg-surface border border-border rounded-lg text-sm focus:outline-none focus:border-primary font-bold"
-                                 >
-                                   <option>Priority 1 (First)</option>
-                                   <option>Priority 2</option>
-                                   <option>Priority 3 (Backup)</option>
-                                 </select>
-                               </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                   </div>
-
-                   {/* Document Upload */}
-                   <div className="pt-8 border-t border-border">
-                      <div className="flex items-center justify-between mb-4">
-                        <label className="block text-xs font-bold text-muted">KYC & Commercial Documents</label>
-                        <span className="text-[10px] text-muted font-mono">Max file size: 2MB</span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                         {['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'].map((docName, idx) => {
-                           const uploadedFile = uploadedDocs[docName];
-                           return (
-                             <label key={idx} className={clsx("border border-dashed rounded p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors shadow-sm h-28 overflow-hidden", uploadedFile ? "border-green-500 bg-green-500/5 hover:bg-green-500/10" : "border-border bg-surface hover:border-primary hover:bg-primary/5")}>
-                                {uploadedFile ? (
-                                  <div className="flex flex-col items-center justify-center w-full h-full relative group">
-                                    <CheckCircle2 size={24} className="text-green-500 mb-1" />
-                                    <div className="text-xs font-bold text-green-600 mb-1 truncate w-full px-2 text-center">{docName}</div>
-                                    <div className="text-[10px] text-muted truncate w-full px-2 text-center" title={uploadedFile.name}>{uploadedFile.name}</div>
-                                    
-                                     <div className="absolute inset-0 bg-green-500/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px] gap-2 rounded">
-                                        <button 
-                                          onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             setPreviewFile({
-                                               file: uploadedFile, 
-                                               url: URL.createObjectURL(uploadedFile),
-                                               name: docName
-                                             });
-                                          }}
-                                          className="p-1.5 bg-white border border-border/50 rounded shadow-sm text-primary hover:bg-primary hover:text-bg transition-colors"
-                                          title="View Document"
-                                        >
-                                          <Eye size={16} />
-                                        </button>
-                                        <button 
-                                          onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             const newDocs = {...uploadedDocs};
-                                             delete newDocs[docName];
-                                             setUploadedDocs(newDocs);
-                                          }}
-                                          className="p-1.5 bg-white border border-border/50 rounded shadow-sm text-red-500 hover:bg-red-500 hover:text-bg transition-colors"
-                                          title="Remove Document"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                     </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <UploadCloud size={24} className="text-muted mb-2" />
-                                    <div className="text-xs font-bold text-text">{docName}</div>
-                                  </>
+                          {hasSomething ? (
+                            <>
+                              <CheckCircle2 size={20} className="mb-1 text-success" />
+                              <div className="w-full truncate text-xs font-medium text-text" title={docType}>{docType}</div>
+                              <div className="mt-1 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => file
+                                    ? setPreviewFile({ url: URL.createObjectURL(file), name: docType })
+                                    : existing && setPreviewFile({ url: existing.url, name: docType })}
+                                  className="text-muted hover:text-text"
+                                  aria-label={`View ${docType}`}
+                                >
+                                  <Eye size={14} />
+                                </button>
+                                <label className="cursor-pointer text-muted hover:text-text">
+                                  <UploadCloud size={14} />
+                                  <span className="sr-only">Replace {docType}</span>
+                                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
+                                </label>
+                                {file && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUploadedDocs(prev => {
+                                      const next = { ...prev }
+                                      delete next[docType]
+                                      return next
+                                    })}
+                                    className="text-danger hover:text-danger"
+                                    aria-label={`Remove ${docType}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
                                 )}
-                                <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileUpload(e, docName)} />
-                             </label>
-                           );
-                         })}
-                      </div>
-                   </div>
-
-                   <div className="pt-6">
-                     <div className="flex items-start gap-3 p-4 bg-surface2 rounded-xl border border-border">
-                       <input 
-                         type="checkbox" 
-                         checked={isDeclared}
-                         onChange={e => setIsDeclared(e.target.checked)}
-                         className="mt-1 w-4 h-4 rounded border-border text-primary focus:ring-primary bg-bg cursor-pointer" 
-                         id="declare" 
-                       />
-                       <label htmlFor="declare" className="text-xs text-muted font-medium cursor-pointer">
-                         I hereby declare that the information provided is accurate and complete. I understand that this operational profile is subject to approval by the Super Admin before my account is activated for the Tier 2 cascade.
-                       </label>
-                     </div>
-                   </div>
-
+                              </div>
+                            </>
+                          ) : (
+                            <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2">
+                              <UploadCloud size={20} className="text-muted" />
+                              <span className="text-xs font-medium text-text">{docType}</span>
+                              <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
+                            </label>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-             </Card>
 
-             <div className="flex justify-between items-center pt-4">
-                <button onClick={() => setStep(1)} className="px-6 py-3 text-muted hover:text-text font-bold text-sm transition-colors flex items-center gap-2">
-                   <ArrowLeft size={16} /> Back
-                </button>
-                <button 
-                  disabled={!isDeclared}
-                  onClick={async () => {
-                    try {
-                      const payload = {
-                        custom_id: customId,
-                        companyName, email, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors,
-                        // Keep documents that aren't being replaced by a new upload in this
-                        // save, so editing without re-uploading every file doesn't delete them.
-                        documents: existingDocs.filter(d => !(d.type in uploadedDocs)) as { type: string, url: string }[],
-                        // Proves ownership of the application when editing without an account
-                        ...(editId && editPan ? { verify_pan: editPan } : {})
-                      };
+                <div className="border-t border-border pt-6">
+                  <Checkbox
+                    checked={isDeclared}
+                    onChange={e => setIsDeclared(e.target.checked)}
+                    label="I declare that the information provided is accurate and complete."
+                    description="This operational profile is subject to approval before your account is activated."
+                  />
+                </div>
+              </div>
+            </Card>
 
-                      // Actually upload the files to Supabase Storage
-                      const uploadPromises = Object.keys(uploadedDocs).map(async (docType) => {
-                        const file = uploadedDocs[docType]
-                        const fileName = await uploadTplDocument(file, docType, editId ? { applicationId: editId, verifyPan: editPan } : { customId })
-                          .catch((err: Error) => { throw new Error(`Failed to upload ${docType}: ${err.message}`) })
-
-                        payload.documents.push({ type: docType, url: fileName })
-                      });
-                      
-                      await Promise.all(uploadPromises);
-                      
-                      const promise = editId 
-                        ? tplAPI.updateApplication(editId, payload)
-                        : tplAPI.onboard(payload);
-
-                      const data = await toast.promise(promise, {
-                          loading: editId ? 'Updating application...' : 'Submitting application...',
-                          success: editId ? 'Application Updated!' : 'Application Submitted!',
-                          error: editId ? 'Failed to update application.' : 'Failed to submit application.'
-                      })
-                      setTrackingId(customId || editId || data.id)
-                      setStep(3)
-                     } catch (e) {
-                      console.error(e)
-                    }
-                  }}
-                  className={clsx("px-8 py-3 font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-lg flex items-center gap-2", 
-                    isDeclared 
-                      ? "bg-primary text-bg hover:bg-primary-dark shadow-primary/20" 
-                      : "bg-surface2 text-muted border border-border cursor-not-allowed opacity-70"
-                  )}
-                >
-                   Submit Application <CheckCircle2 size={16} />
-                </button>
-             </div>
+            <div className="flex items-center justify-between">
+              <Button variant="ghost" onClick={() => setStep(1)}>Back</Button>
+              <Button disabled={!isDeclared} loading={submitting} onClick={handleSubmit}>
+                {editId ? 'Save changes' : 'Submit application'}
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* STEP 3: Success Mock */}
         {step === 3 && (
-          <div className="py-24 flex flex-col items-center justify-center text-center animate-fade-in bg-surface border border-border rounded-3xl shadow-2xl">
-             <div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-8 border border-green-500/20">
-               <CheckCircle2 size={48} />
-             </div>
-             <h2 className="text-3xl font-black uppercase tracking-tight text-text">
-               {editId ? 'Application Updated' : 'Application Submitted'}
-             </h2>
-             <p className="text-sm text-muted font-medium mt-4 max-w-lg leading-relaxed">
-               {editId 
-                 ? 'Your updated identity and operational terms have been securely transmitted to the Super Admin.'
-                 : 'Your identity and operational terms have been securely transmitted to the Super Admin for review.'
-               }
-             </p>
-             <div className="mt-8 p-6 bg-surface2 border border-border rounded-xl max-w-md w-full">
-               <p className="text-xs text-muted font-bold text-center">
-                 <strong className="text-text uppercase tracking-widest text-[10px] block mb-2">Your 3PL Tracking ID</strong>
-                 <span className="text-sm font-mono font-black text-primary bg-primary/10 px-4 py-2 rounded-lg block my-3 tracking-widest select-all">
-                   {trackingId || 'APP-XXXX'}
-                 </span>
-                 Please save this tracking ID. You can use it to check your status or edit your application before it is approved.
-               </p>
-             </div>
-             
-             <button 
-               onClick={() => navigate('/3pl/onboard/track')}
-               className="mt-8 px-6 py-3 bg-surface border border-border hover:border-primary text-text font-bold uppercase tracking-widest text-sm rounded-xl transition-colors shadow-sm"
-             >
-               Track My Application
-             </button>
-          </div>
+          <Card padded className="py-16 text-center">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-success-soft text-success">
+              <CheckCircle2 size={32} />
+            </div>
+            <h2 className="text-lg font-semibold text-text">{editId ? 'Application updated' : 'Application submitted'}</h2>
+            <p className="mx-auto mt-3 max-w-md text-sm text-muted">
+              {editId
+                ? 'Your updated identity and operational terms have been sent for review.'
+                : 'Your identity and operational terms have been sent for review.'}
+            </p>
+            <div className="mx-auto mt-6 max-w-sm rounded-control border border-border bg-surface-subtle p-4">
+              <p className="text-xs text-muted">Your 3PL tracking ID</p>
+              <p className="mt-1 select-all font-mono text-sm font-semibold text-brand">{trackingId || '—'}</p>
+              <p className="mt-2 text-xs text-muted">Save this ID to check your status or edit your application before it's approved.</p>
+            </div>
+            <Button variant="secondary" className="mt-6" onClick={() => navigate('/3pl/onboard/track')}>
+              Track my application
+            </Button>
+          </Card>
         )}
+
+        <div className="text-center">
+          <Link to="/" className="text-sm text-muted hover:text-text">Go to main page</Link>
+        </div>
       </div>
 
-      {/* File Preview Modal */}
       {previewFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-surface w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in">
-            <div className="p-4 border-b border-border flex justify-between items-center bg-surface2">
-              <div>
-                <h3 className="font-black text-text">{previewFile.name}</h3>
-                <p className="text-xs font-mono text-muted">{previewFile.file.name}</p>
-              </div>
-              <button 
-                onClick={() => setPreviewFile(null)} 
-                className="p-2 hover:bg-black/5 rounded-full text-muted hover:text-text transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto bg-black/5 p-4 flex items-center justify-center">
-              {previewFile.file.type.startsWith('image/') ? (
-                <img src={previewFile.url} alt="Preview" className="max-w-full max-h-full object-contain shadow-lg rounded" />
-              ) : (
-                <iframe src={previewFile.url} className="w-full h-[70vh] rounded bg-white shadow-lg border-0" title="PDF Preview" />
-              )}
-            </div>
-          </div>
-        </div>
+        <DocumentViewerModal
+          isOpen={!!previewFile}
+          onClose={() => setPreviewFile(null)}
+          fileUrl={previewFile.url}
+          fileName={previewFile.name}
+        />
       )}
     </div>
   )

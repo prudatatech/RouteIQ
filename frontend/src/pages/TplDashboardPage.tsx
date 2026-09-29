@@ -1,105 +1,52 @@
-import React, { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-   FileText, IndianRupee, ShieldCheck, MapPin, Calendar, CheckCircle2,
-  Loader2, Package, Activity, AlertTriangle, TrendingUp, Truck, ShieldAlert,
-  LogOut, Building2, Bell, Settings, Hash, CreditCard, BarChart3, Eye, UploadCloud, Plus, Trash2
+  FileText, IndianRupee, MapPin, Calendar, CheckCircle2,
+  Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
 } from 'lucide-react'
-import { Card } from '@/components/ui'
-import clsx from 'clsx'
+import {
+  Button, Card, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
+} from '@/components/ui'
+import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import { tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
+import { CorridorEditor } from '@/components/tpl/CorridorEditor'
+import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
+import { emptyCorridorRow, type CorridorFormRow } from '@/components/tpl/constants'
 
-function AutocompleteInput({ label, value, onChange, options, placeholder, className, labelClass, isMulti = false }: any) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [filtered, setFiltered] = useState(options);
+const TABS = ['overview', 'coverage', 'documents', 'shipments', 'earnings', 'settings'] as const
+type Tab = typeof TABS[number]
 
-  return (
-    <div className="relative w-full">
-      {label && <label className={labelClass || "text-xs font-bold text-muted mb-1 block"}>{label}</label>}
-      <input 
-        type="text" 
-        value={value}
-        onChange={e => {
-          onChange(e.target.value);
-          const searchVal = isMulti ? e.target.value.split(',').pop()?.trim() || '' : e.target.value;
-          setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
-          setIsOpen(true);
-        }}
-        onFocus={() => {
-           const searchVal = isMulti ? (value || '').split(',').pop()?.trim() || '' : value;
-           setFiltered(options.filter((o: string) => o.toLowerCase().includes(searchVal.toLowerCase())));
-           setIsOpen(true);
-        }}
-        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-        className={className}
-        placeholder={placeholder}
-      />
-      {isOpen && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-md shadow-xl max-h-48 overflow-y-auto animate-fade-in origin-top text-left">
-          {filtered.map((opt: string) => (
-            <div 
-              key={opt}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                if (isMulti) {
-                  const currentParts = (value || '').split(',').map((p: string) => p.trim()).filter(Boolean);
-                  // Check if the user was in the middle of typing a word by seeing if the input ends with a comma
-                  // Actually, a simpler approach: just check if the last part is a partial match to opt
-                  const lastPart = currentParts.length > 0 ? currentParts[currentParts.length - 1] : '';
-                  if (lastPart && opt.toLowerCase().includes(lastPart.toLowerCase()) && opt.toLowerCase() !== lastPart.toLowerCase()) {
-                     currentParts.pop(); // remove the partially typed part
-                  } else if (currentParts.includes(opt)) {
-                     // If it's already in the list exactly, don't add it again, or let them toggle it? 
-                     // For now, just remove the partially typed text if it was exactly what they clicked (edge case)
-                     if (lastPart.toLowerCase() === opt.toLowerCase()) {
-                        currentParts.pop();
-                     }
-                  }
-                  
-                  // If it's already there, maybe they want it anyway? No, filter duplicates
-                  const newArray = [...currentParts.filter((p: string) => p !== opt), opt];
-                  onChange(newArray.join(', ') + ', ');
-                } else {
-                  onChange(opt);
-                }
-                setIsOpen(false);
-              }}
-              className="px-4 py-2 text-sm hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
-            >
-              {opt}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+interface Corridor {
+  id: string
+  corridor_name: string
+  vehicle_types: string[] | string | null
+  proposed_rate: string | null
+  priority: number | string | null
 }
 
-const CORRIDOR_RECOMMENDATIONS = [
-  "DEL-BOM", "BOM-BLR", "DEL-CCU", "MAA-BLR", "DEL-HYD", "PNQ-BLR", "AMD-BOM", "DEL-MAA"
-]
-
-const VEHICLE_RECOMMENDATIONS = [
-  "32ft SXL", "32ft MXL", "24ft SXL", "20ft", "14ft Eicher", 
-  "17ft Eicher", "19ft Eicher", "Tata Ace", "Ashok Leyland Dost",
-  "Bolero Pickup", "40ft Trailer", "40ft Flatbed", "Refrigerated Van"
-];
+interface TplDocument {
+  id: string
+  doc_type: string
+  file_url: string
+  uploaded_at: string
+}
 
 export default function TplDashboardPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'coverage' | 'documents' | 'shipments' | 'earnings' | 'settings'>('overview')
-  
+  const { confirm } = useConfirm()
+  const [tab, setTab] = useTabParam<Tab>(TABS, 'overview')
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [partner, setPartner] = useState<any>(null)
-  const [corridors, setCorridors] = useState<any[]>([])
-  const [documents, setDocuments] = useState<any[]>([])
+  const [corridors, setCorridors] = useState<Corridor[]>([])
+  const [documents, setDocuments] = useState<TplDocument[]>([])
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
 
   const handleLogout = async () => {
@@ -114,21 +61,18 @@ export default function TplDashboardPage() {
       setError(null)
       try {
         if (!id) throw new Error('No partner ID provided')
-
-        // Validate that the ID is a proper UUID before querying
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
         if (!uuidRegex.test(id)) throw new Error('Invalid partner ID format')
 
-        // Use backend API to bypass RLS for corridors and documents
-        const partnerData = await tplAPI.getPartner(id);
-        if (!partnerData) throw new Error('Partner not found');
+        const partnerData = await tplAPI.getPartner(id)
+        if (!partnerData) throw new Error('Partner not found')
 
-        setPartner(partnerData);
-        setCorridors(partnerData.tpl_corridors || []);
-        setDocuments(partnerData.tpl_documents || []);
-      } catch (err: any) {
+        setPartner(partnerData)
+        setCorridors(partnerData.tpl_corridors || [])
+        setDocuments(partnerData.tpl_documents || [])
+      } catch (err) {
         console.error('Dashboard fetch error:', err)
-        setError(err.message || 'Failed to load dashboard')
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard')
       } finally {
         setLoading(false)
       }
@@ -136,372 +80,234 @@ export default function TplDashboardPage() {
 
     fetchDashboardData()
 
-    // Realtime subscription for approval updates
     const channel = supabase.channel(`public:tpl_partners:id=eq.${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, (payload) => {
-        // If status changed or pending_updates was cleared (approved)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, payload => {
         if (payload.new) {
           setPartner(payload.new)
-          // Refetch corridors in case they were updated
           supabase.from('tpl_corridors').select('*').eq('partner_id', id).then(({ data }) => {
             if (data) setCorridors(data)
           })
           if (payload.new.status === 'active' && !payload.new.pending_updates) {
-             toast.success('Your pending updates have been approved by the Superadmin!')
+            toast.success('Your pending updates have been approved.')
           }
         }
       })
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [id])
 
-  const handleUpdateDocument = async (docId: string, docType: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleReplaceDocument = async (doc: TplDocument, file: File | undefined) => {
     if (!file) return
-
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('File must be less than 2MB')
+      toast.error('File must be under 2 MB.')
       return
     }
+    const ok = await confirm({
+      title: 'Replace this document?',
+      message: `Uploading a new ${doc.doc_type} will send your profile back for approval and pause any active operations until it's reviewed again.`,
+      confirmLabel: 'Replace and resubmit',
+      tone: 'danger',
+    })
+    if (!ok) return
 
     try {
-      setUploadingDoc(docId)
-      
-      // Backend-issued signed upload (checks type, format and size; picks the path)
-      const fileName = await uploadTplDocument(file, docType, { applicationId: id! })
+      setUploadingDoc(doc.id)
+      const fileName = await uploadTplDocument(file, doc.doc_type, { applicationId: id! })
         .catch((err: Error) => { throw new Error(`Upload failed: ${err.message}`) })
 
-      // Update document record
-      const { error: docError } = await supabase
-        .from('tpl_documents')
+      const { error: docError } = await supabase.from('tpl_documents')
         .update({ file_url: fileName, uploaded_at: new Date().toISOString() })
-        .eq('id', docId)
+        .eq('id', doc.id)
+      if (docError) throw new Error('Failed to update the document record.')
 
-      if (docError) throw new Error('Failed to update document record')
+      const { error: partnerError } = await supabase.from('tpl_partners').update({ status: 'pending' }).eq('id', id)
+      if (partnerError) throw new Error('Failed to update partner status.')
 
-      // Set partner status back to pending
-      const { error: partnerError } = await supabase
-        .from('tpl_partners')
-        .update({ status: 'pending' })
-        .eq('id', id)
-
-      if (partnerError) throw new Error('Failed to update partner status')
-
-      // Update local state
-      setPartner({ ...partner, status: 'pending' })
-      setDocuments(docs => docs.map(d => d.id === docId ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d))
-      
-      toast.success(`${docType} updated successfully. Status changed to pending approval.`)
-    } catch (err: any) {
+      setPartner((p: any) => ({ ...p, status: 'pending' }))
+      setDocuments(docs => docs.map(d => (d.id === doc.id ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d)))
+      toast.success(`${doc.doc_type} updated. Status changed to pending approval.`)
+    } catch (err) {
       console.error('Document update error:', err)
-      toast.error(err.message || 'Failed to update document')
+      toast.error(err instanceof Error ? err.message : 'Failed to update document.')
     } finally {
       setUploadingDoc(null)
-      e.target.value = ''
     }
   }
 
-  // ─── Settings Submission ───────────────────────────────
-  const [settingsForm, setSettingsForm] = useState<any>(null)
+  // ─── Settings form ───────────────────────────────
+  const [settingsForm, setSettingsForm] = useState<{ slaCommitment: string, taxTreatment: string, corridors: CorridorFormRow[] } | null>(null)
   const [isSubmittingSettings, setIsSubmittingSettings] = useState(false)
 
-  // Initialize settings form once data loads
   useEffect(() => {
-    if (partner && corridors) {
-      if (!settingsForm) {
-        if (partner.pending_updates && partner.pending_updates.corridors) {
-          setSettingsForm({
-            slaCommitment: partner.pending_updates.sla_commitment || partner.sla_commitment || '2 Hours',
-            taxTreatment: partner.pending_updates.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
-            corridors: partner.pending_updates.corridors
-          })
-        } else {
-          setSettingsForm({
-            slaCommitment: partner.pending_updates?.sla_commitment || partner.sla_commitment || '2 Hours',
-            taxTreatment: partner.pending_updates?.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
-            corridors: corridors.length > 0 
-              ? corridors.map(c => ({
-                  id: c.id,
-                  name: c.corridor_name,
-                  vehicles: Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || ''),
-                  rate: c.proposed_rate || '',
-                  priority: c.priority || '1'
-                }))
-              : [{ id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }]
-          })
-        }
-      }
-    }
-  }, [partner, corridors])
-
-  const addCorridor = () => setSettingsForm({ ...settingsForm, corridors: [...settingsForm.corridors, { id: Date.now(), name: '', vehicles: '', rate: '', priority: '1' }] })
-  
-  const removeCorridor = (id: number) => {
-    setSettingsForm({ ...settingsForm, corridors: settingsForm.corridors.filter((c: any) => c.id !== id) })
-  }
+    if (!partner || settingsForm) return
+    const pending = partner.pending_updates
+    setSettingsForm({
+      slaCommitment: pending?.sla_commitment || partner.sla_commitment || '2 Hours',
+      taxTreatment: pending?.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
+      corridors: pending?.corridors && pending.corridors.length > 0
+        ? pending.corridors
+        : corridors.length > 0
+          ? corridors.map((c, i) => ({
+              id: i,
+              name: c.corridor_name,
+              vehicles: Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || ''),
+              rate: c.proposed_rate || '',
+              priority: String(c.priority || '1'),
+            }))
+          : [emptyCorridorRow()],
+    })
+  }, [partner, corridors, settingsForm])
 
   const handleSaveSettings = async () => {
+    if (!settingsForm) return
     setIsSubmittingSettings(true)
     try {
       const updates = {
         sla_commitment: settingsForm.slaCommitment,
         tax_treatment: settingsForm.taxTreatment,
         corridors: settingsForm.corridors,
-        requested_at: new Date().toISOString()
+        requested_at: new Date().toISOString(),
       }
-      
-      const { error: updateError } = await supabase
-        .from('tpl_partners')
-        .update({ 
-          pending_updates: updates,
-          status: 'pending' 
-        })
+      const { error: updateError } = await supabase.from('tpl_partners')
+        .update({ pending_updates: updates, status: 'pending' })
         .eq('id', id)
-
       if (updateError) throw updateError
-      
-      setPartner({ ...partner, pending_updates: updates, status: 'pending' })
-      toast.success('Settings update requested. Awaiting Superadmin approval.')
-      setSettingsForm({ fleet: '', routes: '', percentage: '' })
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to submit settings update')
+
+      setPartner((p: any) => ({ ...p, pending_updates: updates, status: 'pending' }))
+      toast.success('Settings update requested. Awaiting approval.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to submit the settings update.')
     } finally {
       setIsSubmittingSettings(false)
     }
   }
 
-  // ─── Loading State ─────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
-        <div className="relative flex flex-col items-center gap-6">
-          <div className="absolute w-80 h-80 bg-primary/10 blur-[120px] rounded-full pointer-events-none" />
-          <div className="relative z-10 flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center">
-              <Loader2 size={28} className="animate-spin text-primary" />
-            </div>
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-primary animate-pulse">Loading Dashboard...</div>
-            <div className="text-xs text-muted">Fetching your partner profile</div>
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-bg">
+        <Spinner size={32} />
       </div>
     )
   }
 
-  // ─── Error State ───────────────────────────────────────
   if (error || !partner) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center p-6">
-        <div className="relative max-w-md w-full">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-red-500/10 blur-[120px] rounded-full pointer-events-none" />
-          <div className="relative z-10 text-center space-y-6">
-            <div className="w-20 h-20 mx-auto rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-              <ShieldAlert size={36} className="text-red-500" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-widest text-red-500 mb-2">Access Denied</h2>
-              <p className="text-sm text-muted max-w-xs mx-auto leading-relaxed">
-                {error || 'This partner profile either does not exist or you do not have authorization to view it.'}
-              </p>
-            </div>
-            <button 
-              onClick={handleLogout}
-              className="px-6 py-3 rounded-xl bg-surface border border-border/50 text-text text-xs font-black uppercase tracking-widest hover:bg-surface2 transition-colors inline-flex items-center gap-2"
-            >
-              <LogOut size={14} /> Sign Out & Retry
-            </button>
+      <div className="flex min-h-screen items-center justify-center bg-bg p-6">
+        <div className="w-full max-w-md">
+          <ErrorState
+            title="Can't open this dashboard"
+            description={error || 'This partner profile either does not exist or you do not have access to it.'}
+          />
+          <div className="mt-4 flex justify-center">
+            <Button variant="secondary" icon={<LogOut size={16} />} onClick={handleLogout}>Sign out and retry</Button>
           </div>
         </div>
       </div>
     )
   }
 
-  // ─── Main Dashboard ────────────────────────────────────
-  const tabs = [
-    { id: 'overview', icon: BarChart3, label: 'Overview' },
-    { id: 'coverage', icon: MapPin, label: 'Corridors', count: corridors.length },
-    { id: 'documents', icon: FileText, label: 'Documents', count: documents.length },
-    { id: 'shipments', icon: Truck, label: 'Shipments' },
-    { id: 'earnings', icon: IndianRupee, label: 'Earnings' },
-    { id: 'settings', icon: Settings, label: 'Settings' }
+  const corridorColumns: Column<Corridor>[] = [
+    { key: 'name', header: 'Route', cell: c => <span className="font-medium">{c.corridor_name}</span> },
+    {
+      key: 'vehicles', header: 'Vehicle types', cell: c => (
+        <div className="flex flex-wrap gap-1">
+          {(Array.isArray(c.vehicle_types) ? c.vehicle_types : []).map(v => (
+            <span key={v} className="rounded-full bg-neutral-soft px-2 py-0.5 text-xs text-neutral">{v}</span>
+          ))}
+        </div>
+      ),
+    },
+    { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span> },
+    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span className="tabular">₹{c.proposed_rate || '—'}</span> },
   ]
 
   return (
     <div className="min-h-screen bg-bg">
-      {/* ── Top Navigation Bar ──────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-bg/80 backdrop-blur-2xl border-b border-border/50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
-              <Truck size={18} className="text-white" />
+      <header className="sticky top-0 z-10 border-b border-border bg-surface">
+        <div className="mx-auto flex h-16 max-w-content items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-control bg-brand-fill text-text">
+              <Truck size={18} />
             </div>
             <div>
-              <h1 className="text-sm font-black uppercase tracking-widest text-text leading-none">Margix 3PL</h1>
-              <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-0.5">Partner Portal</p>
+              <p className="text-sm font-semibold text-text leading-none">MargixIndia 3PL</p>
+              <p className="mt-0.5 text-xs text-muted leading-none">Partner portal</p>
             </div>
           </div>
-          
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border border-border/50 text-xs text-muted">
-              <Building2 size={12} />
-              <span className="font-bold">{partner.company_name}</span>
-            </div>
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-500">
-              <Activity size={12} className="animate-pulse" />
-              <span className="font-bold uppercase">{partner.status}</span>
-            </div>
-            <button className="w-9 h-9 rounded-lg bg-surface border border-border/50 flex items-center justify-center text-muted hover:text-text hover:bg-surface2 transition-colors">
-              <Bell size={16} />
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="h-9 px-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-colors flex items-center gap-2 text-xs font-bold"
-            >
-              <LogOut size={14} />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <span className="hidden items-center gap-2 rounded-control border border-border px-3 py-1.5 text-xs text-muted sm:flex">
+              <Building2 size={12} /> {partner.company_name}
+            </span>
+            <StatusPill status={partner.status} className="hidden sm:inline-flex" />
+            <Button variant="ghost" size="sm" icon={<LogOut size={14} />} onClick={handleLogout}>Sign out</Button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* ── Hero Card ─────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-surface/80 to-surface2/30 backdrop-blur-2xl p-8 md:p-10 shadow-xl">
-          <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-to-br from-primary/15 to-transparent blur-[100px] -translate-y-1/2 translate-x-1/4 rounded-full pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-[200px] h-[200px] bg-gradient-to-tr from-blue-500/10 to-transparent blur-[80px] translate-y-1/2 -translate-x-1/4 rounded-full pointer-events-none" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-[0.2em]">
-                <ShieldCheck size={12} />
-                Verified 3PL Partner
-              </div>
-              <h2 className="text-3xl md:text-4xl font-black tracking-tight text-text leading-none">
-                {partner.company_name}
-              </h2>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
-                <span className="flex items-center gap-1.5 font-bold">
-                  <Hash size={12} className="text-primary/60" />
-                  {partner.custom_id || partner.id.split('-')[0]}
-                </span>
-                <span className="flex items-center gap-1.5 font-bold">
-                  <CreditCard size={12} className="text-primary/60" />
-                  GST: {partner.gstin}
-                </span>
-                <span className="flex items-center gap-1.5 font-bold">
-                  <Calendar size={12} className="text-primary/60" />
-                  Since {new Date(partner.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
-                </span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="px-5 py-2.5 rounded-xl bg-surface border border-border/50 text-xs font-bold text-text flex items-center gap-2">
-                <IndianRupee size={14} className="text-primary/60" />
-                {partner.tax_treatment || 'Standard'}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6">
+        <Page>
+          <PageHeader
+            title={partner.company_name}
+            description={
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="flex items-center gap-1.5"><Hash size={12} /> {partner.custom_id || partner.id.split('-')[0]}</span>
+                <span className="flex items-center gap-1.5"><CreditCard size={12} /> GST: {partner.gstin}</span>
+                <span className="flex items-center gap-1.5"><Calendar size={12} /> Since {new Date(partner.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</span>
+              </span>
+            }
+            actions={<StatusPill status={partner.status} />}
+          >
+            <Tabs
+              label="Dashboard sections"
+              value={tab}
+              onChange={setTab}
+              tabs={[
+                { id: 'overview', label: 'Overview' },
+                { id: 'coverage', label: 'Corridors', count: corridors.length },
+                { id: 'documents', label: 'Documents', count: documents.length },
+                { id: 'shipments', label: 'Shipments' },
+                { id: 'earnings', label: 'Earnings' },
+                { id: 'settings', label: 'Settings' },
+              ]}
+            />
+          </PageHeader>
 
-        {/* ── Tab Navigation ────────────────────────────── */}
-        <div className="bg-surface/40 backdrop-blur-xl border border-border/50 p-1.5 rounded-xl flex gap-1 overflow-x-auto custom-scrollbar">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={clsx(
-                'flex items-center gap-2 px-5 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all whitespace-nowrap',
-                activeTab === tab.id 
-                  ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                  : 'text-muted hover:text-text hover:bg-surface/80'
-              )}
-            >
-              <tab.icon size={14} />
-              {tab.label}
-              {tab.count !== undefined && (
-                <span className={clsx(
-                  "ml-1 px-2 py-0.5 rounded text-[10px] font-black", 
-                  activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-surface2 text-muted'
-                )}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Tab Content ───────────────────────────────── */}
-        <div className="animate-fade-in">
-          
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
+          {tab === 'overview' && (
             <div className="space-y-6">
-              {/* KPI Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                {[
-                  { label: 'Active Shipments', value: '0', icon: Package, color: 'blue', sub: 'Live now' },
-                  { label: 'Approved Corridors', value: String(corridors.length), icon: MapPin, color: 'purple', sub: 'Active routes' },
-                  { label: 'SLA Commitment', value: partner.sla_commitment || 'N/A', icon: CheckCircle2, color: 'green', sub: 'Max response' },
-                  { label: 'SLA Breaches', value: '0', icon: AlertTriangle, color: 'emerald', sub: 'Excellent standing' },
-                ].map((kpi, i) => (
-                  <Card key={i} className="p-5 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-all group">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-black text-muted uppercase tracking-widest">{kpi.label}</span>
-                      <div className={`w-8 h-8 rounded-lg bg-${kpi.color}-500/10 text-${kpi.color}-500 flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                        <kpi.icon size={16} />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-black text-text">{kpi.value}</div>
-                    <div className="text-[10px] text-muted font-bold mt-1 flex items-center gap-1">
-                      <TrendingUp size={10} className="text-green-500" /> {kpi.sub}
-                    </div>
-                  </Card>
-                ))}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat label="Active shipments" value="—" icon={<Package size={16} />} hint="Not tracked yet" />
+                <Stat label="Approved corridors" value={corridors.length} icon={<MapPin size={16} />} hint="Active routes" />
+                <Stat label="SLA commitment" value={partner.sla_commitment || '—'} icon={<CheckCircle2 size={16} />} hint="Max response" />
+                <Stat label="SLA breaches" value="—" icon={<AlertTriangle size={16} />} hint="Not tracked yet" />
               </div>
-
-              {/* Quick Info Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
-                    <Building2 size={14} className="text-primary" /> Company Details
-                  </h3>
-                  <div className="space-y-3">
-                    {[
-                      ['PAN', partner.pan_number],
-                      ['GSTIN', partner.gstin],
-                      ['MSME Status', partner.msme_status],
-                      ['Bank A/C', partner.bank_account_no ? `****${partner.bank_account_no.slice(-4)}` : 'N/A'],
-                      ['IFSC', partner.bank_ifsc],
-                    ].map(([label, val]) => (
-                      <div key={label as string} className="flex items-center justify-between text-sm">
-                        <span className="text-muted font-medium">{label}</span>
-                        <span className="font-bold text-text font-mono">{val || 'N/A'}</span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Card padded>
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><Building2 size={16} className="text-brand" /> Company details</h3>
+                  <dl className="space-y-3 text-sm">
+                    {[['PAN', partner.pan_number], ['GSTIN', partner.gstin], ['MSME status', partner.msme_status],
+                      ['Bank A/C', partner.bank_account_no ? `****${String(partner.bank_account_no).slice(-4)}` : '—'],
+                      ['IFSC', partner.bank_ifsc]].map(([label, val]) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <dt className="text-muted">{label}</dt>
+                        <dd className="font-mono text-text">{val || '—'}</dd>
                       </div>
                     ))}
-                  </div>
+                  </dl>
                 </Card>
-                
-                <Card className="p-6 border-border/50 bg-surface/30 backdrop-blur-md">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
-                    <MapPin size={14} className="text-primary" /> Active Corridors
-                  </h3>
+                <Card padded>
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><MapPin size={16} className="text-brand" /> Active corridors</h3>
                   {corridors.length === 0 ? (
-                    <div className="text-sm text-muted py-4 text-center">No corridors configured</div>
+                    <EmptyState compact title="No corridors configured" />
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {corridors.map(c => (
-                        <div key={c.id} className="flex items-center justify-between p-3 rounded-lg bg-surface2/30 border border-border/30">
+                        <div key={c.id} className="flex items-center justify-between rounded-control border border-border bg-surface-subtle px-3 py-2 text-sm">
                           <div>
-                            <div className="text-sm font-bold text-text">{c.corridor_name}</div>
-                            <div className="text-[10px] text-muted font-bold mt-0.5">
-                              {Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || '')}
-                            </div>
+                            <p className="font-medium text-text">{c.corridor_name}</p>
+                            <p className="text-xs text-muted">{Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : c.vehicle_types}</p>
                           </div>
-                          <div className="text-xs font-mono font-bold text-primary">₹{c.proposed_rate || '—'}</div>
+                          <span className="font-mono text-brand">₹{c.proposed_rate || '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -511,326 +317,107 @@ export default function TplDashboardPage() {
             </div>
           )}
 
-          {/* Corridors Tab */}
-          {activeTab === 'coverage' && (
-            <Card className="border-border/50 bg-surface/30 backdrop-blur-md overflow-hidden shadow-xl">
-              <div className="p-6 border-b border-border/50 bg-gradient-to-r from-surface2/40 to-transparent flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-black text-text tracking-tight flex items-center gap-2">
-                    <MapPin size={18} className="text-primary" /> Approved Corridors
-                  </h3>
-                  <p className="text-[10px] text-muted font-bold mt-1 uppercase tracking-widest">Your rates and vehicle commitments. Contact admin for modifications.</p>
-                </div>
-                <div className="px-4 py-2 rounded-lg bg-surface2/50 border border-border/50 text-xs font-bold text-text flex items-center gap-2">
-                  <IndianRupee size={12} className="text-muted" /> Tax: {partner.tax_treatment || 'Not Specified'}
-                </div>
-              </div>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-surface2/20">
-                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Route</th>
-                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Vehicle Types</th>
-                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted">Priority</th>
-                      <th className="p-5 text-[10px] font-black uppercase tracking-widest text-muted text-right">Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {corridors.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-12 text-center">
-                          <MapPin size={28} className="mx-auto mb-3 text-muted/40" />
-                          <span className="text-sm font-bold text-muted">No corridors configured</span>
-                        </td>
-                      </tr>
-                    ) : (
-                      corridors.map(c => (
-                        <tr key={c.id} className="border-b border-border/20 hover:bg-surface2/30 transition-colors">
-                          <td className="p-5">
-                            <div className="font-bold text-sm text-text flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full bg-primary" />
-                              {c.corridor_name}
-                            </div>
-                          </td>
-                          <td className="p-5">
-                            <div className="flex flex-wrap gap-1.5">
-                              {(c.vehicle_types || []).map((vt: string, idx: number) => (
-                                <span key={idx} className="px-2 py-0.5 bg-surface2 border border-border/50 text-text text-[10px] rounded font-bold uppercase tracking-wider">
-                                  {vt}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="p-5">
-                            <span className="px-2.5 py-1 bg-primary/10 text-primary text-[10px] rounded font-black uppercase">
-                              P{c.priority || '—'}
-                            </span>
-                          </td>
-                          <td className="p-5 text-right font-mono text-sm font-bold text-text">
-                            ₹{c.proposed_rate || '—'}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+          {tab === 'coverage' && (
+            <DataTable
+              caption="Approved corridors"
+              columns={corridorColumns}
+              rows={corridors}
+              rowKey={c => c.id}
+              empty={{ title: 'No corridors configured', description: 'Contact an admin to modify your operational corridors.' }}
+            />
           )}
 
-          {/* Documents Tab */}
-          {activeTab === 'documents' && (
+          {tab === 'documents' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-black text-text flex items-center gap-2">
-                  <FileText size={18} className="text-primary" /> KYC Documents
-                </h3>
-                <span className="text-xs text-muted font-bold">{documents.length} file{documents.length !== 1 ? 's' : ''} uploaded</span>
-              </div>
-              
-              {documents.length === 0 ? (
-                <Card className="p-12 border-border/50 bg-surface/30 backdrop-blur-md text-center">
-                  <FileText size={40} className="mx-auto mb-4 text-muted/40" />
-                  <div className="text-sm font-bold text-muted">No documents uploaded</div>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {documents.map(doc => (
-                    <Card key={doc.id} className="p-5 border-border/50 bg-surface/30 backdrop-blur-md hover:bg-surface/50 transition-all hover:-translate-y-0.5 hover:shadow-lg group">
-                      <div className="flex items-start gap-4">
-                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 text-primary flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                          <FileText size={18} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-sm text-text truncate">{doc.doc_type}</h4>
-                          <div className="text-[10px] text-muted font-bold uppercase tracking-widest mt-1">
-                            {new Date(doc.uploaded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </div>
-                          <div className="text-[10px] text-muted truncate mt-0.5">{doc.file_url}</div>
-                        </div>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-border/30 grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await openKycDocument(doc.file_url)
-                            } catch (err: any) {
-                              console.error(err)
-                              toast.error(err.message || 'Failed to open document')
-                            }
-                          }}
-                          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-surface2 hover:bg-surface border border-border text-text text-[10px] font-black uppercase tracking-widest transition-colors"
-                        >
-                          <Eye size={12} className="text-muted" /> View
-                        </button>
-                        <label className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest transition-colors cursor-pointer">
-                          {uploadingDoc === doc.id ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <>
-                              <UploadCloud size={12} /> Update
-                            </>
-                          )}
-                          <input 
-                            type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg" 
-                            className="hidden" 
-                            disabled={uploadingDoc === doc.id}
-                            onChange={(e) => handleUpdateDocument(doc.id, doc.doc_type, e)} 
-                          />
-                        </label>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Shipments & Earnings Empty States */}
-          {(activeTab === 'shipments' || activeTab === 'earnings') && (
-            <Card className="p-16 border-border/50 bg-surface/30 backdrop-blur-md text-center">
-              <div className="max-w-sm mx-auto space-y-5">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-surface2/50 border border-border/50 flex items-center justify-center">
-                  {activeTab === 'shipments' && <Truck size={28} className="text-muted/50" />}
-                  {activeTab === 'earnings' && <IndianRupee size={28} className="text-muted/50" />}
-                </div>
-                <div>
-                  <h3 className="text-xl font-black uppercase tracking-wide text-text mb-2">
-                    {activeTab === 'shipments' ? 'Live Shipment Tracking' : 'Financial Ledger'}
-                  </h3>
-                  <p className="text-sm text-muted leading-relaxed">
-                    {activeTab === 'shipments' 
-                      ? 'Track your assigned loads in real-time with GPS integration and digital POD uploads. This feature activates when you receive your first dispatch.'
-                      : 'Your automated settlement ledger and margin reports will appear here. Statements are generated bi-weekly based on delivered shipments.'
-                    }
-                  </p>
-                </div>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface2/50 border border-border/50 text-[10px] font-black uppercase tracking-widest text-muted">
-                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" /> Coming Soon
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Settings Tab */}
-          {activeTab === 'settings' && (
-            <div className="space-y-6">
-              <Card className="p-8 border-border/50 bg-surface/30 backdrop-blur-md">
-                <div className="flex items-center gap-3 mb-6 border-b border-border/50 pb-4">
-                  <Settings size={24} className="text-primary" />
-                  <h3 className="text-xl font-black text-text uppercase tracking-tight">Operational Settings</h3>
-                </div>
-
-                {partner.pending_updates && (
-                  <div className="mb-6 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-start gap-3 animate-fade-in">
-                    <AlertTriangle size={20} className="text-yellow-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-sm font-black text-yellow-500 uppercase tracking-widest">Update Pending Approval</h4>
-                      <p className="text-xs text-yellow-500/80 mt-1 font-bold">
-                        You have submitted changes that are currently being reviewed by the Superadmin. New requests will overwrite the pending ones.
-                      </p>
-                    </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {documents.length === 0 && (
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <EmptyState title="No documents uploaded" />
                   </div>
                 )}
-
-                <div className="space-y-8">
-                   {/* SLA & Tax Options */}
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8 border-b border-border/50">
-                      <div>
-                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">Default SLA Commitment</label>
-                        <select 
-                          value={settingsForm?.slaCommitment || ''}
-                          onChange={e => setSettingsForm({ ...settingsForm, slaCommitment: e.target.value })}
-                          className="w-full p-3 bg-surface2/50 border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
-                        >
-                          <option>2 Hours</option>
-                          <option>4 Hours</option>
-                          <option>6 Hours</option>
-                          <option>12 Hours</option>
-                        </select>
-                        <p className="text-[10px] text-muted font-bold mt-2">Max time to respond to a broadcast request.</p>
+                {documents.map(doc => (
+                  <Card key={doc.id} padded>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand">
+                        <FileText size={18} />
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-muted uppercase tracking-widest mb-2">GTA Tax Treatment</label>
-                        <select 
-                          value={settingsForm?.taxTreatment || ''}
-                          onChange={e => setSettingsForm({ ...settingsForm, taxTreatment: e.target.value })}
-                          className="w-full p-3 bg-surface2/50 border border-border rounded-xl text-sm focus:outline-none focus:border-primary text-text font-bold"
-                        >
-                          <option>12% GTA (With ITC) - Forward Charge</option>
-                          <option>5% GTA (No ITC) - Reverse Charge</option>
-                        </select>
-                        <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
-                          <AlertTriangle size={12}/> Determines reverse charge liability on your invoices.
-                        </p>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-sm font-medium text-text">{doc.doc_type}</h4>
+                        <p className="mt-0.5 text-xs text-muted">{new Date(doc.uploaded_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                       </div>
-                   </div>
-
-                   {/* Corridor Configurations */}
-                   <div>
-                      <div className="flex justify-between items-center mb-4">
-                        <label className="text-xs font-bold text-muted uppercase tracking-widest">Corridor & Rate Declarations</label>
-                        <button onClick={addCorridor} className="text-[10px] text-primary hover:underline font-black uppercase flex items-center gap-1">
-                          <Plus size={14} /> Add Corridor
-                        </button>
-                      </div>
-
-                      <div className="space-y-4">
-                        {settingsForm?.corridors?.map((c: any, idx: number) => (
-                          <div key={c.id} className="p-4 bg-surface2/30 border border-border/50 rounded-xl relative group">
-                            {settingsForm.corridors.length > 1 && (
-                              <button onClick={() => removeCorridor(c.id)} className="absolute -right-2 -top-2 w-6 h-6 bg-red-500 text-bg rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                                <Trash2 size={12} />
-                              </button>
-                            )}
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                               <AutocompleteInput
-                                 label="Corridor (e.g. DEL-BOM)"
-                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
-                                 value={c.name}
-                                 onChange={(val: string) => {
-                                   const newC = [...settingsForm.corridors];
-                                   newC[idx].name = val.toUpperCase();
-                                   setSettingsForm({ ...settingsForm, corridors: newC });
-                                 }}
-                                 options={CORRIDOR_RECOMMENDATIONS}
-                                 className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold uppercase text-text"
-                               />
-                               <AutocompleteInput
-                                 label="Vehicle Types"
-                                 isMulti={true}
-                                 labelClass="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1"
-                                 value={c.vehicles}
-                                 onChange={(val: string) => {
-                                   const newC = [...settingsForm.corridors];
-                                   newC[idx].vehicles = val;
-                                   setSettingsForm({ ...settingsForm, corridors: newC });
-                                 }}
-                                 options={VEHICLE_RECOMMENDATIONS}
-                                 placeholder="e.g. 32ft SXL, 20ft"
-                                 className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold text-text"
-                               />
-                               <div>
-                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Proposed Rate</label>
-                                 <input 
-                                   type="text" 
-                                   value={c.rate}
-                                   onChange={e => {
-                                     const newC = [...settingsForm.corridors];
-                                     newC[idx].rate = e.target.value;
-                                     setSettingsForm({ ...settingsForm, corridors: newC });
-                                   }}
-                                   placeholder="e.g. Base + 12%" 
-                                   className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-mono text-text" 
-                                 />
-                               </div>
-                               <div>
-                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Requested Priority</label>
-                                 <select 
-                                   value={c.priority}
-                                   onChange={e => {
-                                     const newC = [...settingsForm.corridors];
-                                     newC[idx].priority = e.target.value;
-                                     setSettingsForm({ ...settingsForm, corridors: newC });
-                                   }}
-                                   className="w-full p-2.5 bg-surface border border-border/50 rounded-lg text-sm focus:outline-none focus:border-primary font-bold text-text"
-                                 >
-                                   <option value="1">Priority 1 (Primary)</option>
-                                   <option value="2">Priority 2 (Secondary)</option>
-                                   <option value="3">Priority 3 (Backup)</option>
-                                 </select>
-                               </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                   </div>
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-border/50 flex justify-end">
-                  <button 
-                    disabled={isSubmittingSettings || !settingsForm}
-                    onClick={handleSaveSettings}
-                    className="px-6 py-3 bg-primary hover:bg-primary-dark text-bg text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isSubmittingSettings ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                    Submit for Approval
-                  </button>
-                </div>
-              </Card>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Eye size={14} />}
+                        onClick={async () => {
+                          try { await openKycDocument(doc.file_url) } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Could not open document.')
+                          }
+                        }}
+                      >
+                        View
+                      </Button>
+                      <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-subtle">
+                        {uploadingDoc === doc.id ? <Spinner size={14} /> : <UploadCloud size={14} />}
+                        Update
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          className="hidden"
+                          disabled={uploadingDoc === doc.id}
+                          onChange={e => { handleReplaceDocument(doc, e.target.files?.[0]); e.target.value = '' }}
+                        />
+                      </label>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* ── Footer ────────────────────────────────────── */}
-        <footer className="pt-8 pb-6 border-t border-border/30 text-center">
-          <p className="text-[10px] text-muted font-bold uppercase tracking-widest">
-            Margix 3PL Partner Portal • Partner ID: {partner.custom_id || partner.id.split('-')[0]} • © {new Date().getFullYear()}
-          </p>
-        </footer>
+          {(tab === 'shipments' || tab === 'earnings') && (
+            <Card padded>
+              <EmptyState
+                icon={tab === 'shipments' ? <Truck size={22} /> : <IndianRupee size={22} />}
+                title={tab === 'shipments' ? 'Live shipment tracking' : 'Financial ledger'}
+                description={tab === 'shipments'
+                  ? 'Track your assigned loads in real time once you receive your first dispatch.'
+                  : 'Your settlement ledger and margin reports will appear here once available.'}
+              />
+            </Card>
+          )}
+
+          {tab === 'settings' && settingsForm && (
+            <Card padded>
+              <CardHeader title="Operational settings" />
+              <div className="space-y-8 pt-6">
+                {partner.pending_updates && (
+                  <div className="rounded-control border border-warning/30 bg-warning-soft p-4 text-sm">
+                    <p className="font-medium text-warning">Update pending approval</p>
+                    <p className="mt-1 text-text">You have changes awaiting review. A new request replaces the pending one.</p>
+                  </div>
+                )}
+                <OperationalTermsFields
+                  slaCommitment={settingsForm.slaCommitment}
+                  taxTreatment={settingsForm.taxTreatment}
+                  onSlaChange={v => setSettingsForm(f => f && { ...f, slaCommitment: v })}
+                  onTaxChange={v => setSettingsForm(f => f && { ...f, taxTreatment: v })}
+                />
+                <div className="border-t border-border pt-8">
+                  <CorridorEditor
+                    corridors={settingsForm.corridors}
+                    onChange={rows => setSettingsForm(f => f && { ...f, corridors: rows })}
+                  />
+                </div>
+                <div className="flex justify-end border-t border-border pt-6">
+                  <Button loading={isSubmittingSettings} onClick={handleSaveSettings}>Submit for approval</Button>
+                </div>
+              </div>
+            </Card>
+          )}
+        </Page>
       </div>
     </div>
   )
