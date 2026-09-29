@@ -9,7 +9,7 @@ import { formatEta, formatTimeAgo } from '@/utils/timeFormat'
 interface Vehicle {
   id: string
   plate_number?: string | null
-  model?: string | null
+  vehicle_model?: string | null
   latitude?: number | null
   longitude?: number | null
 }
@@ -73,7 +73,7 @@ export default function RoutesPage() {
         return (
           <div>
             <div className="font-medium text-text">{vehicle?.plate_number || (r.vehicle_id ? r.vehicle_id.slice(0, 8) : 'Unassigned')}</div>
-            {vehicle?.model && <div className="text-xs text-muted">{vehicle.model}</div>}
+            {vehicle?.vehicle_model && <div className="text-xs text-muted">{vehicle.vehicle_model}</div>}
           </div>
         )
       },

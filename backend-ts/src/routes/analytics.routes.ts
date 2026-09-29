@@ -112,13 +112,15 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
 
     if (error) throw error;
 
+    // ai_agent_logs has agent_name/action/input_data/output_data/status/created_at —
+    // the previous mapping read task_description/action_taken/result, none of which
+    // exist on the table, so every row showed "—" regardless of what happened.
     res.json(
       (logs || []).map((log: any) => ({
         id: log.id,
         agent: log.agent_name,
-        task: log.task_description,
-        action: log.action_taken,
-        result: log.result,
+        action: log.action,
+        result: typeof log.output_data === 'string' ? log.output_data : (log.output_data ? JSON.stringify(log.output_data) : null),
         status: log.status,
         timestamp: log.created_at,
       }))

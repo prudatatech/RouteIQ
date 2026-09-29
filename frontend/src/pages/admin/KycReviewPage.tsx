@@ -131,7 +131,7 @@ export default function KycReviewPage() {
       // edits their details mid-review (or a second reviewer) is not overwritten.
       const { data, error } = await supabase
         .from('vendor_profiles')
-        .update({ kyc_status: status })
+        .update({ kyc_status: status, kyc_reviewed_at: new Date().toISOString() })
         .eq('id', id)
         .eq('kyc_status', 'submitted')
         .select('id')
