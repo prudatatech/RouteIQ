@@ -48,6 +48,7 @@ export default tseslint.config(
       'src/config/**/*.{ts,tsx}',
       'src/pages/VendorRequestsPage.tsx',
       'src/pages/LoginPage.tsx',
+      'src/pages/LandingPage.tsx',
       'src/services/account.ts',
       'src/utils/safeNext.ts',
     ],
