@@ -7,8 +7,15 @@
  * Upstash (the cache falls back to memory), Twilio (OTPs are logged), Resend
  * or a real Supabase project, whatever the developer's shell or .env holds.
  */
+import http from 'node:http';
 import { afterAll, vi } from 'vitest';
 import { supabaseMock } from './mock-supabase';
+
+// Tests make many short requests to local servers. Reused keep-alive sockets
+// raced with the servers closing them ("socket hang up" / ECONNRESET in random
+// tests), so node's http clients (supertest, JWKS fetches) open a fresh
+// connection per request.
+http.globalAgent = new http.Agent({ keepAlive: false });
 
 // Never load a developer's backend-ts/.env into tests
 vi.mock('dotenv', () => {
