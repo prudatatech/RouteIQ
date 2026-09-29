@@ -34,12 +34,7 @@ export interface IncomingCall {
   caller: string;
 }
 
-interface Options {
-  /** Called when a realtime driver_confirmations row arrives. */
-  onNewConfirmation?: () => void;
-}
-
-export function useDriverRoute({ onNewConfirmation }: Options = {}) {
+export function useDriverRoute() {
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [activeVehicleId, setActiveVehicleId] = useState<string | null>(null);
   const [activeVehicle, setActiveVehicle] = useState<any>(null);
@@ -49,8 +44,6 @@ export function useDriverRoute({ onNewConfirmation }: Options = {}) {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [noVehicle, setNoVehicle] = useState(false);
   const pendingRouteRef = useRef<PendingRoute | null>(null);
-  const onNewConfirmationRef = useRef(onNewConfirmation);
-  onNewConfirmationRef.current = onNewConfirmation;
 
   const setPendingRoute = (route: PendingRoute | null) => {
     pendingRouteRef.current = route;
@@ -195,8 +188,8 @@ export function useDriverRoute({ onNewConfirmation }: Options = {}) {
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'driver_confirmations', filter: `vehicle_id=eq.${vId}` },
             async (payload) => {
+              // The assignment dialog shows it; no separate alert.
               setPendingConfirmation(payload.new);
-              onNewConfirmationRef.current?.();
               try {
                 await api.ackStop(payload.new.id);
               } catch (e) {

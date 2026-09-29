@@ -239,14 +239,16 @@ class LocationService {
         const now = Date.now();
         if (now - this.lastGpsOffNotificationTime > 60000) {
           this.lastGpsOffNotificationTime = now;
+          // A normal, single notification: the looping siren is kept for new
+          // assignments and dispatch calls only.
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: "GPS is Off!",
-              body: "Please turn on your location to continue your active delivery.",
-              sound: 'uber_driver_sound.mp3',
+              title: 'Location is off',
+              body: 'Turn on location so dispatch can follow your delivery.',
+              sound: 'default',
               autoDismiss: false,
             },
-            trigger: { seconds: 1, channelId: 'alarms' } as any,
+            trigger: { seconds: 1, channelId: 'default' } as any,
           });
         }
 

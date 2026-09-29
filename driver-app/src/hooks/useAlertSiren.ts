@@ -2,6 +2,9 @@
  * Loud, repeating attention signal: looping sound, looping vibration and a
  * pulse animation while `ringing` is true, plus a repeating local
  * notification while an assignment waits so it is noticed in the background.
+ *
+ * Reserved for new route assignments, inserted stops and dispatch calls.
+ * Everything else uses a single short buzz (utils/feedback.ts).
  */
 import { useEffect, useRef } from 'react';
 import { Animated, Vibration } from 'react-native';

@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { locationService } from '../services/location';
 import type { LatLng } from '../types/route';
 import { useTranslation } from './useTranslation';
+import { shortFeedback } from '../utils/feedback';
 
 const TRACKING_KEY = 'tracking_active';
 
@@ -85,9 +86,12 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
         return false;
       }
       await stop();
+      shortFeedback();
       return true;
     }
-    return start();
+    const started = await start();
+    if (started) shortFeedback();
+    return started;
   }, [start, stop, t]);
 
   const takeBreak = useCallback(() => {

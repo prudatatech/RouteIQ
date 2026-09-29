@@ -14,6 +14,17 @@ const STORAGE_KEYS = {
 // Tokens stored in AsyncStorage by builds before the Supabase-session release.
 const LEGACY_TOKEN_KEYS = ['margixindia_access_token', 'margixindia_refresh_token'];
 
+/** A request the server answered with an error status. */
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/** Emergency types accepted by POST /telemetry/sos/trigger. */
+export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
+
 export class SessionExpiredError extends Error {
   constructor() {
     super('Your session has expired. Please log in again.');
@@ -84,7 +95,7 @@ class ApiClient {
 
     const data = await parseBody(response);
     if (!response.ok) {
-      throw new Error(data.detail || data.error || `Request failed: ${response.status}`);
+      throw new ApiError(data.detail || data.error || `Request failed: ${response.status}`, response.status);
     }
     return data;
   }
@@ -192,8 +203,13 @@ class ApiClient {
 
   // ── Route ──────────────────────────────────────────────────
 
-  async triggerSos(lat: number, lng: number): Promise<any> {
-    return this.request('POST', '/telemetry/sos/trigger', { lat, lng });
+  /**
+   * Raises an SOS for the driver's vehicle. Position may be null when none is
+   * known yet; the alert is never held back waiting for one. Answers 404 when
+   * no vehicle is linked to the driver.
+   */
+  async triggerSos(lat: number | null, lng: number | null, alert_type?: SosType, description?: string): Promise<any> {
+    return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description });
   }
 
   async getMyRoute(): Promise<any> {
@@ -225,9 +241,6 @@ class ApiClient {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
   }
 
-  async reportSOS(vehicle_id: string, alert_type: string, description: string, latitude: number, longitude: number): Promise<any> {
-    return this.request('POST', `/vehicles/${vehicle_id}/sos`, { alert_type, description, latitude, longitude });
-  }
 
   // ── Capacity Bidding / Safety Valve ──────────────────────────────────
   async declareCapacity(vehicle_id: string, declared_load_percentage: number): Promise<any> {

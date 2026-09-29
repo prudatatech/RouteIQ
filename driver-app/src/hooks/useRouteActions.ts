@@ -5,7 +5,6 @@
  */
 import { useCallback } from 'react';
 import { Alert, Linking } from 'react-native';
-import * as Location from 'expo-location';
 import { api } from '../services/api';
 import type { DriverRoute, LatLng, RouteStop } from '../types/route';
 import { errorMessage } from '../utils/errors';
@@ -184,38 +183,6 @@ export function useRouteActions({
     [activeVehicleId, t],
   );
 
-  /** Emergency report with the best available position. */
-  const sendSos = useCallback(
-    async (type: string, description: string) => {
-      if (!activeVehicleId) {
-        Alert.alert(t('sos_failed'), t('sos_no_vehicle'));
-        return false;
-      }
-      let lat = 0;
-      let lng = 0;
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = loc.coords.latitude;
-        lng = loc.coords.longitude;
-      } catch (e) {
-        if (currentLoc) {
-          lat = currentLoc.lat;
-          lng = currentLoc.lng;
-        }
-        console.warn('Could not get exact location for SOS', e);
-      }
-      try {
-        await api.reportSOS(activeVehicleId, type, description || `Driver triggered ${type} emergency`, lat, lng);
-        Alert.alert(t('sos_sent_title'), t('sos_sent_desc'));
-        return true;
-      } catch (e) {
-        Alert.alert(t('sos_failed'), errorMessage(e, t('action_failed')));
-        return false;
-      }
-    },
-    [activeVehicleId, currentLoc, t],
-  );
-
   return {
     startRoute,
     navigateTo,
@@ -225,6 +192,5 @@ export function useRouteActions({
     findReturnLoad,
     completeStop,
     declareCapacity,
-    sendSos,
   };
 }
