@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle, MapPinned, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
+import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
 import toast from 'react-hot-toast'
@@ -124,8 +124,11 @@ export default function EmergencyPage() {
   }
 
   const activeAlerts = alerts.filter(a => a.status !== 'resolved')
-  const points: MapPoint[] = activeAlerts.flatMap(a => {
+  // Open alerts are always pinned. A resolved alert gets a muted pin only while it is selected.
+  const pinned = alerts.filter(a => a.status !== 'resolved' || a.id === selectedId)
+  const points: MapPoint[] = pinned.flatMap(a => {
     const isSelected = a.id === selectedId
+    const isResolved = a.status === 'resolved'
     const lat = isSelected && livePosition ? livePosition.lat : a.latitude
     const lng = isSelected && livePosition ? livePosition.lng : a.longitude
     if (lat == null || lng == null) return []
@@ -134,7 +137,8 @@ export default function EmergencyPage() {
       kind: 'incident' as const,
       position: { lat, lng },
       label: `${sosTypeLabel(a.alert_type)}: ${a.vehicle?.plate_number ?? 'Unknown vehicle'}`,
-      active: true,
+      active: !isResolved,
+      muted: isResolved,
     }]
   })
 
@@ -203,6 +207,17 @@ export default function EmergencyPage() {
                         >
                           <MapPinned size={14} aria-hidden="true" /> Open on live map
                         </Link>
+                      )}
+                      {alert.latitude != null && alert.longitude != null && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${alert.latitude},${alert.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                        >
+                          <ExternalLink size={14} aria-hidden="true" /> Open in Google Maps
+                        </a>
                       )}
                       {isActive && alert.status === 'active' && (
                         <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>

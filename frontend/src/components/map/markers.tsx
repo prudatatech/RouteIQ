@@ -122,7 +122,7 @@ interface PointMarkerProps {
 
 export const PointMarker = memo(function PointMarker({ point, selected, onSelect, onMove }: PointMarkerProps) {
   const kind = POINT_KINDS[point.kind]
-  const tone = MAP_TONES[POINT_TONES[point.kind]]
+  const tone = MAP_TONES[point.muted ? 'muted' : POINT_TONES[point.kind]]
   const Icon = kind.icon
   const pulsing = point.kind === 'incident' && point.active
 
