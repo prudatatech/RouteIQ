@@ -5,7 +5,8 @@ import toast from 'react-hot-toast';
 import { X, Truck, User, FileText, ArrowRight, ArrowLeft, Save, Minus, ChevronDown, Check } from 'lucide-react';
 import { Card } from '@/components/ui';
 
-const VEHICLE_TYPES = ['truck', 'trailer', 'container', 'heavy_machinery'];
+// Must match backend-ts VehicleCreateSchema.vehicle_type; the server rejects anything else
+const VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'];
 const _FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng'];
 
 export const INDIAN_TRUCK_PRESETS: Record<string, { capacity_kg: number; container_length_ft: number; container_width_ft: number; container_height_ft: number; fuel_type: string; fuel_capacity_liters: number; fuel_efficiency_kmpl: number }> = {
@@ -124,9 +125,6 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     const updates: any = { vehicle_type: type };
     if (!formData.vehicle_model || formData.vehicle_model === 'Custom') {
       if (type === 'truck') { updates.capacity_kg = 9000; updates.container_length_ft = 19; updates.container_width_ft = 7; updates.container_height_ft = 7; }
-      else if (type === 'trailer') { updates.capacity_kg = 25000; updates.container_length_ft = 32; updates.container_width_ft = 8; updates.container_height_ft = 8; }
-      else if (type === 'container') { updates.capacity_kg = 20000; updates.container_length_ft = 20; updates.container_width_ft = 8; updates.container_height_ft = 8.5; }
-      else if (type === 'heavy_machinery') { updates.capacity_kg = 40000; updates.container_length_ft = 40; updates.container_width_ft = 9; updates.container_height_ft = 10; }
     }
     setFormData(prev => ({ ...prev, ...updates }));
   };
