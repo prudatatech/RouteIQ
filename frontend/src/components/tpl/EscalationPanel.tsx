@@ -1,11 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Network } from 'lucide-react'
-import { Alert, Button, EmptyState, ErrorState, Skeleton, StatusPill, useConfirm } from '@/components/ui'
+import { Alert, Button, EmptyState, ErrorState, Input, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import { tplNetworkAPI, type TplOffer, type TplSource } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatRelative, formatRupees } from '@/utils/display'
+import { rateText } from './constants'
 
 const sourceId = (s: TplSource) => ('request_id' in s ? s.request_id : s.shipment_id)
 
@@ -22,13 +23,19 @@ function offerDetail(o: TplOffer): string {
 /**
  * Sends a load to the 3PL partners whose corridors match, shows how each answered, and lets staff
  * withdraw open offers. Used in the vendor request drawer and the shipment drawer.
- * `canEscalate` says whether the load is in a state that can still be sent out.
+ * `canEscalate` says whether the load is in a state that can still be sent out. For a vendor request,
+ * `vendorPrice` is what the vendor pays for it (null when staff have not set one): the vendor's invoice is made
+ * from it when the partner delivers, so it can be set here before or after the load is sent.
  */
-export function EscalationPanel({ source, canEscalate }: { source: TplSource; canEscalate: boolean }) {
+export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: TplSource; canEscalate: boolean; vendorPrice?: number | null }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const id = sourceId(source)
   const listKey = ['tpl-escalation', id]
+  const isRequest = 'request_id' in source
+  const [priceInput, setPriceInput] = useState(vendorPrice ? String(vendorPrice) : '')
+  const priceNumber = Number(priceInput)
+  const priceError = priceInput !== '' && (!Number.isFinite(priceNumber) || priceNumber <= 0) ? 'Enter an amount above 0' : undefined
 
   const escalation = useQuery({ queryKey: listKey, queryFn: () => tplNetworkAPI.escalations(source) })
   useRealtimeRefresh(`tpl_escalation_${id}`, ['tpl_offers', 'tpl_orders'], [listKey])
@@ -54,9 +61,15 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
   }
 
   const send = useMutation({
-    mutationFn: () => tplNetworkAPI.escalate(source),
+    mutationFn: () => tplNetworkAPI.escalate(source, isRequest && priceInput !== '' && !priceError ? priceNumber : undefined),
     onSuccess: r => toast.success(`Sent to ${r.created} 3PL ${r.created === 1 ? 'partner' : 'partners'}. The first to accept gets the load.`),
     onError: err => toast.error(errorMessage(err, 'We could not send this load to partners. Try again.')),
+    onSettled: refresh,
+  })
+  const savePrice = useMutation({
+    mutationFn: () => tplNetworkAPI.setVendorPrice(id, priceNumber),
+    onSuccess: r => toast.success(r.invoice === 'created' ? 'Price saved. The vendor was invoiced.' : 'Price saved.'),
+    onError: err => toast.error(errorMessage(err, 'We could not save the price. Try again.')),
     onSettled: refresh,
   })
   const withdrawOne = useMutation({
@@ -73,13 +86,19 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
   })
 
   const askSend = async () => {
-    const names = newPartners.map(p => p.company_name).join(', ')
+    const names = newPartners.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')
     const ok = await confirm({
       title: `Send to ${newPartners.length} 3PL ${newPartners.length === 1 ? 'partner' : 'partners'}?`,
-      message: `${names}. Each one is offered this load at their corridor rate, and the first to accept gets it.`,
+      message: `${names}. Each one is offered this load at their corridor rate (a partner without a usable rate quotes an amount when accepting), and the first to accept gets it.`,
       confirmLabel: 'Send offers',
     })
     if (ok) send.mutate()
+  }
+
+  const partnerRate = (p: { price: number | null; rate: { amount: number; unit: 'per_trip' | 'per_km' } | null }) => {
+    if (!p.rate) return 'quotes per load'
+    const text = rateText(p.rate.amount, p.rate.unit)
+    return p.rate.unit === 'per_km' ? (p.price != null ? `${text}, about ${formatRupees(p.price)}` : `${text}, distance unknown`) : text
   }
 
   const askWithdrawOne = async (offerId: string, partnerName: string | null | undefined) => {
@@ -112,6 +131,32 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
         </p>
       </div>
 
+      {isRequest && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Input
+            label="Price for the vendor (₹)"
+            type="number"
+            min={0}
+            className="w-56"
+            hint={vendorPrice ? 'What the vendor pays. Their invoice is made from this.' : 'What the vendor pays. Without it the vendor cannot be invoiced.'}
+            value={priceInput}
+            onChange={e => setPriceInput(e.target.value)}
+            error={priceError}
+          />
+          {(order || !canEscalate) && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={priceInput === '' || !!priceError || Number(priceInput) === vendorPrice}
+              loading={savePrice.isPending}
+              onClick={() => savePrice.mutate()}
+            >
+              Save price
+            </Button>
+          )}
+        </div>
+      )}
+
       {escalation.isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : escalation.error ? (
@@ -121,7 +166,7 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
           {order && (
             <Alert tone="success" title={`Assigned to ${order.partner_name ?? 'a 3PL partner'}`}>
               <span className="flex flex-wrap items-center gap-2">
-                Agreed amount {formatRupees(order.agreed_amount)}
+                Partner charges {formatRupees(order.agreed_amount)}
                 <StatusPill status={order.status} />
                 {order.due_by && <span>Due by {formatDateTime(order.due_by)}</span>}
               </span>
@@ -182,7 +227,7 @@ export function EscalationPanel({ source, canEscalate }: { source: TplSource; ca
               <div className="space-y-2">
                 <p className="text-sm text-text">
                   {newPartners.length.toLocaleString('en-IN')} active {newPartners.length === 1 ? 'partner covers' : 'partners cover'} this route:{' '}
-                  {newPartners.map(p => p.company_name).join(', ')}.
+                  {newPartners.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')}.
                 </p>
                 <Button icon={<Network size={16} />} loading={send.isPending} onClick={askSend}>
                   {offers.length > 0 ? 'Send to more partners' : 'Escalate to 3PL partners'}

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import { supabase, openChannel } from '@/services/supabase'
-import { capacityAPI } from '@/services/api'
+import { capacityAPI, vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
-  Button, DataTable, statusToLabel, Page, PageHeader, SearchInput, StatusPill, Tabs, useTabParam, type Column, type TabItem,
+  Button, DataTable, statusToLabel, Page, PageHeader, SearchInput, StatusPill, Tabs, useConfirm, useTabParam, type Column, type TabItem,
 } from '@/components/ui'
+import { errorMessage } from '@/utils/display'
 
 interface VendorBid {
   id: string
@@ -28,8 +30,13 @@ interface VendorRequest {
   status: string
   created_at: string
   rejection_reason: string | null
+  /** The price agreed for the load, once dispatch has assigned it. */
+  cost: number | null
   cargo_manifest?: { id: string }[]
 }
+
+/** A posted load can still be withdrawn until a vehicle is assigned. */
+const isCancellable = (r: VendorRequest) => r.status === 'pending' || r.status === 'approved'
 
 export default function VendorShipmentsPage() {
   const [bids, setBids] = useState<VendorBid[]>([])
@@ -40,6 +47,10 @@ export default function VendorShipmentsPage() {
   const [error, setError] = useState<string | null>(null)
   const userId = useAuthStore(s => s.userId)
   const navigate = useNavigate()
+  const { confirm } = useConfirm()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [focus, setFocus] = useState<{ kind: 'bid' | 'request'; id: string } | null>(null)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   const fetchData = async () => {
     if (!userId) return
@@ -67,6 +78,45 @@ export default function VendorShipmentsPage() {
     return () => { supabase.removeChannel(subB); supabase.removeChannel(subR) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
+
+  // Opened from a notification: ?open=<bid or posted load id> highlights that row and scrolls to its table
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || loading) return
+    const kind = requests.some(r => r.id === openId) ? 'request' : bids.some(b => b.id === openId) ? 'bid' : null
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      if (kind) { next.delete('bidStatus'); next.delete('loadStatus') }
+      return next
+    }, { replace: true })
+    if (!kind) return
+    setFocus({ kind, id: openId })
+    setBidSearch('')
+    setRequestSearch('')
+    setTimeout(() => document.getElementById(kind === 'bid' ? 'vendor-bids' : 'vendor-loads')?.scrollIntoView({ block: 'start' }), 0)
+  }, [searchParams, setSearchParams, loading, requests, bids])
+
+  const cancelRequest = async (r: VendorRequest) => {
+    const ok = await confirm({
+      title: 'Cancel this load?',
+      message: `The load from ${r.pickup_location ?? 'the pickup'} to ${r.drop_location ?? 'the drop-off'} is withdrawn and dispatch is told. You can post it again later.`,
+      confirmLabel: 'Cancel load',
+      cancelLabel: 'Keep it',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setCancellingId(r.id)
+    try {
+      await vendorAPI.cancelRequest(r.id)
+      toast.success('Load cancelled. Dispatch has been told.')
+      await fetchData()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not cancel this load. Try again.'))
+    } finally {
+      setCancellingId(null)
+    }
+  }
 
   // Status tabs are built from whatever statuses actually appear, plus "All" —
   // never a hardcoded/invented status list.
@@ -120,6 +170,11 @@ export default function VendorShipmentsPage() {
     { key: 'route', header: 'Route', cell: r => <span className="break-words">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span>, sortValue: r => r.pickup_location },
     { key: 'weight', header: 'Weight', cell: r => formatKg(r.required_capacity_kg), hideOnMobile: true, sortValue: r => r.required_capacity_kg },
     {
+      key: 'price', header: 'Agreed price', align: 'right',
+      cell: r => (r.cost ? <span className="tabular">{formatRupees(r.cost)}</span> : <span className="text-muted">Not set yet</span>),
+      sortValue: r => r.cost,
+    },
+    {
       key: 'status', header: 'Status', sortValue: r => r.status,
       cell: r => (
         <span className="block">
@@ -131,6 +186,13 @@ export default function VendorShipmentsPage() {
     {
       key: 'track', header: '', align: 'right',
       cell: r => {
+        if (isCancellable(r)) {
+          return (
+            <Button size="sm" variant="secondary" loading={cancellingId === r.id} disabled={cancellingId !== null} onClick={() => cancelRequest(r)}>
+              Cancel
+            </Button>
+          )
+        }
         const manifestId = r.cargo_manifest?.[0]?.id
         if (!manifestId) return null
         const trackingId = `CM-${manifestId.slice(0, 8).toUpperCase()}`
@@ -145,11 +207,11 @@ export default function VendorShipmentsPage() {
     <Page>
       <PageHeader
         title="My shipments"
-        description="Your bids and the loads you have posted."
+        description="Your bids on capacity and the loads you have posted, with the price agreed for each."
         actions={<Button icon={<Plus size={16} />} onClick={() => navigate('/vendor/request')}>Post a load</Button>}
       />
 
-      <section className="space-y-3">
+      <section id="vendor-bids" className="scroll-mt-20 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-text">Bids</h2>
           <SearchInput value={bidSearch} onChange={setBidSearch} placeholder="Search by vehicle, status or e-way bill" className="max-w-xs" />
@@ -160,6 +222,7 @@ export default function VendorShipmentsPage() {
           columns={bidColumns}
           rows={filteredBids}
           rowKey={b => b.id}
+          selectedKey={focus?.kind === 'bid' ? focus.id : null}
           loading={loading}
           error={error ?? undefined}
           onRetry={fetchData}
@@ -169,7 +232,7 @@ export default function VendorShipmentsPage() {
         />
       </section>
 
-      <section className="space-y-3">
+      <section id="vendor-loads" className="scroll-mt-20 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-text">Posted loads</h2>
           <SearchInput value={requestSearch} onChange={setRequestSearch} placeholder="Search by pickup, drop or status" className="max-w-xs" />
@@ -180,6 +243,7 @@ export default function VendorShipmentsPage() {
           columns={requestColumns}
           rows={filteredRequests}
           rowKey={r => r.id}
+          selectedKey={focus?.kind === 'request' ? focus.id : null}
           loading={loading}
           error={error ?? undefined}
           onRetry={fetchData}

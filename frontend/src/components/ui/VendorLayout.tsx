@@ -11,6 +11,7 @@ import { buttonClasses } from './buttonStyles'
 import { Button, IconButton } from './Button'
 import { StatusPill } from './StatusPill'
 import { LoadingState } from './Spinner'
+import { NotificationsBell } from './NotificationsBell'
 
 const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'approved', 'rejected']
 
@@ -176,14 +177,19 @@ export default function VendorLayout() {
             </NavLink>
             <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
           </div>
-          <div className="hidden lg:block">{account(false)}</div>
-          <IconButton
-            className="lg:hidden"
-            label={menuOpen ? 'Close menu' : 'Open menu'}
-            icon={menuOpen ? <X size={20} /> : <Menu size={20} />}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(o => !o)}
-          />
+          <div className="hidden items-center gap-3 lg:flex">
+            {isVendor && <NotificationsBell placement="right" />}
+            {account(false)}
+          </div>
+          <div className="flex items-center gap-1 lg:hidden">
+            {isVendor && <NotificationsBell placement="right" />}
+            <IconButton
+              label={menuOpen ? 'Close menu' : 'Open menu'}
+              icon={menuOpen ? <X size={20} /> : <Menu size={20} />}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(o => !o)}
+            />
+          </div>
         </div>
         {menuOpen && (
           <div className="border-t border-border bg-surface px-4 py-3 lg:hidden">

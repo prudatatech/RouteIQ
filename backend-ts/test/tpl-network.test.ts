@@ -4,6 +4,7 @@ import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { computeStats, groupEarnings, slaHours } from '../src/services/tpl-network.service';
 import { matchingService } from '../src/services/matching.service';
+import { InvoiceService } from '../src/services/invoice.service';
 
 const app = testApp();
 
@@ -329,17 +330,17 @@ describe('orders, earnings and ratings', () => {
     expect(res.status).toBe(404);
   });
 
-  it('groups earnings by month and shows paid and unpaid', async () => {
+  it('groups earnings by month and shows paid, payable and in progress', async () => {
     await setStatus('delivered', 'Received at gate');
     const before = await request(app).get('/api/v1/tpl-network/my/earnings').set(asPartner('u1'));
     expect(before.status).toBe(200);
-    expect(before.body.totals).toEqual({ total: 41200, paid: 0, unpaid: 41200 });
+    expect(before.body.totals).toEqual({ total: 41200, paid: 0, payable: 41200, in_progress: 0, unpaid: 41200 });
     expect(before.body.months).toHaveLength(1);
 
     const paid = await request(app).post(`/api/v1/tpl-network/orders/${orderId}/paid`).set(staff()).send({ paid: true, reference: 'UTR123' });
     expect(paid.status).toBe(200);
     const after = await request(app).get('/api/v1/tpl-network/my/earnings').set(asPartner('u1'));
-    expect(after.body.totals).toEqual({ total: 41200, paid: 41200, unpaid: 0 });
+    expect(after.body.totals).toEqual({ total: 41200, paid: 41200, payable: 0, in_progress: 0, unpaid: 0 });
   });
 
   it('marks paid and rates only after delivery', async () => {
@@ -412,8 +413,169 @@ describe('statistics', () => {
     ]);
     // 20:00 UTC on 30 Sept is already 1 October in India
     expect(g.months.map(m => m.month)).toEqual(['2026-10', '2026-09']);
-    expect(g.months[0]).toMatchObject({ total: 1500.5, unpaid: 1500.5, paid: 0 });
-    expect(g.months[1]).toMatchObject({ total: 2000, paid: 2000, unpaid: 0 });
-    expect(g.totals).toEqual({ total: 3500.5, paid: 2000, unpaid: 1500.5 });
+    // Delivered and unpaid is payable; not yet delivered is still in progress
+    expect(g.months[0]).toMatchObject({ total: 1500.5, payable: 1000.5, in_progress: 500, unpaid: 1500.5, paid: 0 });
+    expect(g.months[1]).toMatchObject({ total: 2000, paid: 2000, payable: 0, in_progress: 0, unpaid: 0 });
+    expect(g.totals).toEqual({ total: 3500.5, paid: 2000, payable: 1000.5, in_progress: 500, unpaid: 1500.5 });
+  });
+});
+
+describe('corridor rates', () => {
+  const rate = (over: Record<string, unknown>) => ({ id: 'k1', partner_id: P1, corridor_name: 'DEL-BOM', priority: 1, ...over });
+
+  it('prices a per-trip rate as it is and a per-km rate from the road distance', async () => {
+    supabaseMock.reset(fixtures({
+      tpl_corridors: [
+        rate({ rate_amount: 45000, rate_unit: 'per_trip', proposed_rate: '₹45,000 per trip' }),
+        rate({ id: 'k2', partner_id: P2, corridor_name: 'Delhi to Maharashtra', rate_amount: 20, rate_unit: 'per_km', proposed_rate: '₹20 per km' }),
+      ],
+    }));
+    const res = await escalate();
+    expect(res.status).toBe(201);
+    const offers = supabaseMock.rows('tpl_offers');
+    expect(offers.find(o => o.partner_id === P1)!.proposed_price).toBe(45000);
+    // Delhi to Mumbai is well over 1,000 km by road: the price is the rate times that distance
+    const perKm = offers.find(o => o.partner_id === P2)!.proposed_price;
+    expect(perKm).toBeGreaterThan(20 * 1000);
+    expect(perKm).toBeLessThan(20 * 2000);
+  });
+
+  it('does not price a per-km rate when the distance is unknown', async () => {
+    supabaseMock.reset(fixtures({
+      tpl_corridors: [rate({ rate_amount: 20, rate_unit: 'per_km', proposed_rate: '₹20 per km' })],
+    }));
+    supabaseMock.rows('vendor_shipment_requests')[0].drop_lat = null;
+    await escalate();
+    expect(supabaseMock.rows('tpl_offers')[0].proposed_price).toBeNull();
+  });
+
+  it('never prices a load from text that is not just an amount', async () => {
+    supabaseMock.reset(fixtures({
+      tpl_corridors: [rate({ proposed_rate: 'Base + 12%' }), rate({ id: 'k2', partner_id: P2, corridor_name: 'Delhi to Maharashtra', proposed_rate: '12% over base' })],
+    }));
+    await escalate();
+    expect(supabaseMock.rows('tpl_offers').map(o => o.proposed_price)).toEqual([null, null]);
+  });
+
+  it('still reads an older rate that is only an amount, per trip or per km', async () => {
+    supabaseMock.reset(fixtures({
+      tpl_corridors: [rate({ proposed_rate: '₹41,200' }), rate({ id: 'k2', partner_id: P2, corridor_name: 'Delhi to Maharashtra', proposed_rate: '₹20 per km' })],
+    }));
+    await escalate();
+    const offers = supabaseMock.rows('tpl_offers');
+    expect(offers.find(o => o.partner_id === P1)!.proposed_price).toBe(41200);
+    expect(offers.find(o => o.partner_id === P2)!.proposed_price).toBeGreaterThan(20000);
+  });
+
+  it('the amount a partner enters on accepting wins over the corridor price', async () => {
+    supabaseMock.reset(fixtures());
+    await escalate();
+    const offer = supabaseMock.rows('tpl_offers').find(o => o.partner_id === P1)!;
+    expect(offer.proposed_price).toBe(41200);
+    const res = await request(app).post(`/api/v1/tpl-network/my/offers/${offer.id}/accept`).set(asPartner('u1')).send({ agreed_amount: 43500 });
+    expect(res.status).toBe(201);
+    expect(res.body.agreed_amount).toBe(43500);
+    expect(supabaseMock.rows('tpl_orders')[0].agreed_amount).toBe(43500);
+  });
+
+  it('refuses an amount that is not a positive number', async () => {
+    supabaseMock.reset(fixtures());
+    await escalate();
+    const offer = supabaseMock.rows('tpl_offers').find(o => o.partner_id === P1)!;
+    for (const bad of [-5, 0, 'lots', 999_999_999]) {
+      const res = await request(app).post(`/api/v1/tpl-network/my/offers/${offer.id}/accept`).set(asPartner('u1')).send({ agreed_amount: bad });
+      expect(res.status).toBe(400);
+    }
+    expect(supabaseMock.rows('tpl_orders')).toEqual([]);
+  });
+});
+
+describe('a shipment another route already holds', () => {
+  beforeEach(() => {
+    supabaseMock.reset(fixtures({
+      shipments: [{ id: SHIP, tracking_id: 'RTX-1', status: 'created', origin_name: 'Okhla Hub', origin_address: 'Okhla, New Delhi', total_weight_kg: 500, bid_id: null }],
+      delivery_points: [{ id: 'dp-1', shipment_id: SHIP, name: 'Andheri', address: 'Andheri, Mumbai', latitude: 19.1, longitude: 72.8 }],
+    }));
+  });
+
+  it('cannot be escalated while a bidding window is open for it', async () => {
+    supabaseMock.rows('capacity_windows').push({ id: 'w1', fallback_shipment_id: SHIP, status: 'open', winning_bid_id: null });
+    const res = await escalate({ shipment_id: SHIP });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/bidding window/);
+    expect(supabaseMock.rows('tpl_offers')).toEqual([]);
+  });
+
+  it('can be escalated once the window is closed', async () => {
+    supabaseMock.rows('capacity_windows').push({ id: 'w1', fallback_shipment_id: SHIP, status: 'closed', winning_bid_id: null });
+    expect((await escalate({ shipment_id: SHIP })).status).toBe(201);
+  });
+});
+
+describe('when a partner delivers a vendor load', () => {
+  let orderId: string;
+  const setStatus = (status: string, note?: string) =>
+    request(app).post(`/api/v1/tpl-network/my/orders/${orderId}/status`).set(asPartner('u1')).send({ status, note });
+
+  beforeEach(async () => {
+    supabaseMock.reset(fixtures({ invoices: [], vendor_profiles: [{ id: 'vendor-1', company_name: 'Acme' }] }));
+    await escalate();
+    const offer = supabaseMock.rows('tpl_offers').find(o => o.partner_id === P1)!;
+    const res = await request(app).post(`/api/v1/tpl-network/my/offers/${offer.id}/accept`).set(asPartner('u1')).send({});
+    orderId = res.body.id;
+    supabaseMock.rows('notifications').length = 0;
+  });
+
+  it('tells the vendor at pickup, on the way and on delivery', async () => {
+    await setStatus('picked_up');
+    await setStatus('in_transit');
+    await setStatus('delivered', 'Received at gate');
+    const types = supabaseMock.rows('notifications').filter(n => n.user_id === 'vendor-1').map(n => n.type);
+    expect(types).toEqual(['load_picked_up', 'load_in_transit', 'request_completed']);
+  });
+
+  it('invoices the vendor at the price staff set, not at what the partner charges', async () => {
+    supabaseMock.rows('vendor_shipment_requests')[0].cost = 52000;
+    await setStatus('delivered', 'Received at gate');
+    const invoices = supabaseMock.rows('invoices');
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({ vendor_request_id: REQ, vendor_id: 'vendor-1', amount: 52000, price_source: 'vendor_request', status: 'issued' });
+    // Delivering again does not invoice again
+    expect((await InvoiceService.createForRequest(REQ)).status).toBe('exists');
+  });
+
+  it('writes no invoice without a price, and staff can set it afterwards', async () => {
+    await setStatus('delivered', 'Received at gate');
+    expect(supabaseMock.rows('invoices')).toEqual([]);
+
+    const bad = await request(app).put(`/api/v1/tpl-network/requests/${REQ}/price`).set(staff()).send({ cost: -1 });
+    expect(bad.status).toBe(400);
+    const res = await request(app).put(`/api/v1/tpl-network/requests/${REQ}/price`).set(staff()).send({ cost: 48000 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ cost: 48000, invoice: 'created' });
+    expect(supabaseMock.rows('invoices')[0]).toMatchObject({ vendor_request_id: REQ, amount: 48000 });
+  });
+
+  it('lets staff set the vendor price when they escalate', async () => {
+    supabaseMock.reset(fixtures());
+    const res = await escalate({ request_id: REQ, vendor_price: 50000 });
+    expect(res.status).toBe(201);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0].cost).toBe(50000);
+  });
+});
+
+describe('the automatic escalation switch', () => {
+  const read = () => request(app).get('/api/v1/tpl-network/settings').set(staff());
+
+  it.each([
+    [true, true],
+    [{ enabled: true }, true],
+    ['true', true],
+    [false, false],
+    [{ enabled: false }, false],
+    [{}, false],
+  ])('reads %j as %j', async (value, expected) => {
+    supabaseMock.reset({ users: [{ id: 'admin-1', role: 'admin', is_active: true }], system_settings: [{ key: 'auto_escalate_3pl', value }] });
+    expect((await read()).body).toEqual({ auto_escalate: expected });
   });
 });

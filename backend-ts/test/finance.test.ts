@@ -352,3 +352,21 @@ describe('profit and loss summary', () => {
     expect(byId.m1.can_invoice).toBe(false);
   });
 });
+
+describe('3PL partner cost in the summary', () => {
+  it('counts what partners charged for the loads they delivered in the range', async () => {
+    supabaseMock.reset(baseFixtures({
+      invoices: [{ id: 'i1', shipment_id: null, manifest_id: null, vendor_id: 'vendor-1', amount: 60000, gst_amount: 0, total: 60000, status: 'issued', issued_at: NOW }],
+      tpl_orders: [
+        { id: 'o1', status: 'delivered', agreed_amount: 41200, delivered_at: NOW },
+        { id: 'o2', status: 'in_transit', agreed_amount: 9999, delivered_at: null },
+        { id: 'o3', status: 'delivered', agreed_amount: 5000, delivered_at: '2020-01-01T00:00:00Z' },
+      ],
+    }));
+    const res = await request(app).get('/api/v1/finance/summary').set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body.costs.by_category.find((c: any) => c.category === 'tpl_partner')).toMatchObject({ label: '3PL partners', amount: 41200 });
+    expect(res.body.costs.recorded).toBe(41200);
+    expect(res.body.net_profit).toBe(60000 - 41200);
+  });
+});

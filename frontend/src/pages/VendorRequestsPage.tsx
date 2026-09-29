@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ArrowRight, Check, Download, Truck, X } from 'lucide-react'
@@ -25,8 +26,24 @@ import type { QuoteRequest } from '@/services/pricing'
 const ASSIGN_RADIUS_KM = 50
 /** How many recent requests the page loads. */
 const REQUEST_LIMIT = 500
-/** Vehicle statuses that can take a new load. */
+/** Vehicle statuses that can take a new load (the same rule the server applies). */
 const ASSIGNABLE_VEHICLE_STATUSES = ['available', 'on_route', 'idle', 'offline']
+/** A vehicle added as a draft or with a temporary number is not ready for dispatch. */
+const isPlaceholderPlate = (plate: string | null | undefined) => /^(TEMP|DRFT)-/i.test((plate ?? '').trim())
+/** The server prices a rate per km on road distance, about this much longer than the straight line. */
+const ROAD_FACTOR = 1.3
+
+/** Whether a load has usable pickup and drop-off coordinates (needed to price a rate per km). */
+const hasRouteCoordinates = (r: { pickup_lat: number | null; pickup_lng: number | null; drop_lat: number | null; drop_lng: number | null }) =>
+  [r.pickup_lat, r.pickup_lng, r.drop_lat, r.drop_lng].every(v => v != null && Number.isFinite(Number(v)))
+  && !(Number(r.pickup_lat) === 0 && Number(r.pickup_lng) === 0) && !(Number(r.drop_lat) === 0 && Number(r.drop_lng) === 0)
+
+/** Road distance between a load's pickup and drop-off, estimated from the straight line; null without coordinates. */
+function estimatedRoadKm(r: { pickup_lat: number | null; pickup_lng: number | null; drop_lat: number | null; drop_lng: number | null }): number | null {
+  if (!hasRouteCoordinates(r)) return null
+  const km = turf.distance(turf.point([Number(r.pickup_lng), Number(r.pickup_lat)]), turf.point([Number(r.drop_lng), Number(r.drop_lat)]), { units: 'kilometers' })
+  return Math.round(km * ROAD_FACTOR)
+}
 
 interface CargoDetails {
   category?: string
@@ -52,6 +69,9 @@ interface VendorRequest {
   created_at: string
   updated_at: string | null
   assigned_vehicle_id: string | null
+  /** The agreed price for the load, once staff set it (assigning a vehicle or pricing a 3PL load). */
+  cost: number | null
+  cost_per_km: number | null
   rejection_reason: string | null
   metadata: {
     consignee?: { name?: string; contact?: string; email?: string }
@@ -82,11 +102,16 @@ const tabStatuses: Record<Exclude<TabId, 'all'>, string[]> = {
   rejected: ['rejected', 'cancelled'],
 }
 
+/** The tab a request in this status is listed under. */
+const tabOfStatus = (status: string): Exclude<TabId, 'all'> | null =>
+  (Object.keys(tabStatuses) as Exclude<TabId, 'all'>[]).find(k => tabStatuses[k].includes(status)) ?? null
+
 const statusLabels: Record<string, string> = {
   pending: 'New',
   approved: 'Approved',
   assigned: 'Vehicle assigned',
   escalated: 'With 3PL partners',
+  cancelled: 'Cancelled by vendor',
   assigned_to_partner: 'Assigned to partner',
   fulfilled: 'Completed',
 }
@@ -128,7 +153,8 @@ function eligibleVehicles(request: VendorRequest, vehicles: Vehicle[]) {
     ? turf.point([request.pickup_lng, request.pickup_lat])
     : null
   const withSpace = vehicles.filter(v =>
-    ASSIGNABLE_VEHICLE_STATUSES.includes(v.status) && Number(v.available_capacity_kg ?? 0) >= Number(request.required_capacity_kg))
+    ASSIGNABLE_VEHICLE_STATUSES.includes(v.status) && !isPlaceholderPlate(v.plate_number)
+    && Number(v.available_capacity_kg ?? 0) >= Number(request.required_capacity_kg))
   const eligible = pickup
     ? withSpace
       .filter(v => v.latitude != null && v.longitude != null)
@@ -162,6 +188,7 @@ export default function VendorRequestsPage() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkVehicleId, setBulkVehicleId] = useState('')
 
+  const [searchParams, setSearchParams] = useSearchParams()
   const requests = useQuery({ queryKey: ['vendor-requests'], queryFn: loadRequests })
   useRealtimeRefresh('vendor_requests_page', ['vendor_shipment_requests'], [['vendor-requests']])
 
@@ -202,6 +229,22 @@ export default function VendorRequestsPage() {
 
   const selected = all.find(r => r.id === selectedId) ?? null
 
+  // Opened from a link (a notification, global search): ?open=<id> shows the tab the request is under and
+  // opens its drawer, then the param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || requests.isLoading) return
+    const match = all.find(r => r.id === openId)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      const t = match ? tabOfStatus(match.status) : null
+      if (t) { if (t === 'open') next.delete('tab'); else next.set('tab', t) }
+      return next
+    }, { replace: true })
+    if (match) setSelectedId(match.id)
+  }, [searchParams, setSearchParams, all, requests.isLoading])
+
   const selection = useRowSelection(rows, r => r.id)
   const vehiclesForBulk = useQuery({
     queryKey: ['assignable-vehicles'],
@@ -213,7 +256,7 @@ export default function VendorRequestsPage() {
     if (!vehiclesForBulk.data || bulkAssignTargets.length === 0) return []
     const combinedKg = bulkAssignTargets.reduce((sum, r) => sum + Number(r.required_capacity_kg || 0), 0)
     return vehiclesForBulk.data.filter(v => {
-      if (!ASSIGNABLE_VEHICLE_STATUSES.includes(v.status)) return false
+      if (!ASSIGNABLE_VEHICLE_STATUSES.includes(v.status) || isPlaceholderPlate(v.plate_number)) return false
       if (Number(v.available_capacity_kg ?? 0) < combinedKg) return false
       if (v.latitude == null || v.longitude == null) return false
       const vehiclePoint = turf.point([v.longitude, v.latitude])
@@ -228,7 +271,9 @@ export default function VendorRequestsPage() {
   const [bulkPerKm, setBulkPerKm] = useState('')
   const bulkFlatParsed = parsePrice(bulkFlat)
   const bulkPerKmParsed = parsePrice(bulkPerKm)
-  const bulkPriceInvalid = !!bulkFlatParsed.error || !!bulkPerKmParsed.error
+  // A rate per km alone needs each load's distance; without it the server asks for a flat price
+  const bulkPerKmNeedsFlat = bulkPerKmParsed.value !== undefined && bulkFlatParsed.value === undefined && bulkAssignTargets.some(r => !hasRouteCoordinates(r))
+  const bulkPriceInvalid = !!bulkFlatParsed.error || !!bulkPerKmParsed.error || bulkPerKmNeedsFlat
 
   useEffect(() => { setBulkVehicleId('') }, [bulkAssignTargets.length])
 
@@ -360,7 +405,7 @@ export default function VendorRequestsPage() {
     { id: 'open' as const, label: 'Needs a vehicle', count: counts.open },
     { id: 'assigned' as const, label: 'Assigned', count: counts.assigned },
     { id: 'completed' as const, label: 'Completed', count: counts.completed },
-    { id: 'rejected' as const, label: 'Rejected', count: counts.rejected },
+    { id: 'rejected' as const, label: 'Rejected or cancelled', count: counts.rejected },
     { id: 'all' as const, label: 'All', count: counts.all },
   ]
 
@@ -368,7 +413,7 @@ export default function VendorRequestsPage() {
     open: 'No requests waiting',
     assigned: 'No requests with a vehicle',
     completed: 'No completed requests',
-    rejected: 'No rejected requests',
+    rejected: 'No rejected or cancelled requests',
     all: 'No vendor requests yet',
   }
 
@@ -466,7 +511,7 @@ export default function VendorRequestsPage() {
                     className="w-32"
                     value={bulkPerKm}
                     onChange={e => setBulkPerKm(e.target.value)}
-                    error={bulkPerKmParsed.error}
+                    error={bulkPerKmParsed.error ?? (bulkPerKmNeedsFlat ? 'A selected load has no coordinates: enter a flat price' : undefined)}
                   />
                   <Button size="sm" disabled={!bulkVehicleId || bulkBusy || bulkPriceInvalid} loading={bulkBusy} onClick={bulkAssign}>Assign vehicle</Button>
                 </>
@@ -505,6 +550,9 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
   const [ratePerKm, setRatePerKm] = useState('')
   const flat = parsePrice(flatPrice)
   const perKm = parsePrice(ratePerKm)
+  // A rate per km alone becomes an amount on the road distance, so the load needs coordinates for that
+  const roadKm = request ? estimatedRoadKm(request) : null
+  const perKmNeedsFlat = perKm.value !== undefined && flat.value === undefined && roadKm === null
   const canAssign = !!request && (request.status === 'pending' || request.status === 'approved')
   const showPartners = !!request && ['pending', 'approved', 'escalated', 'assigned_to_partner', 'completed'].includes(request.status)
 
@@ -577,7 +625,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
           )}
           <Button
             icon={<Truck size={16} />}
-            disabled={!vehicleId || busy || !!flat.error || !!perKm.error}
+            disabled={!vehicleId || busy || !!flat.error || !!perKm.error || perKmNeedsFlat}
             loading={assign.isPending}
             onClick={() => assign.mutate({ id: request.id, vehicle: vehicleId })}
           >
@@ -612,11 +660,12 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
               ...(cargo?.remarks ? [{ label: 'Notes', value: cargo.remarks }] : []),
               { label: 'Posted', value: formatDateTime(request.created_at) },
               ...(request.assigned_vehicle_id ? [{ label: 'Vehicle', value: <span className="font-mono">{assignedPlate ?? 'Assigned'}</span> }] : []),
+              ...(request.cost ? [{ label: 'Agreed price', value: <span className="tabular">{formatRupees(request.cost)}{request.cost_per_km ? ` (${formatRupees(request.cost_per_km)} per km)` : ''}</span> }] : []),
             ]}
           />
 
           {showPartners && request && (
-            <EscalationPanel key={request.id} source={{ request_id: request.id }} canEscalate={canAssign || request.status === 'escalated'} />
+            <EscalationPanel key={request.id} source={{ request_id: request.id }} canEscalate={canAssign || request.status === 'escalated'} vendorPrice={request.cost} />
           )}
 
           {canAssign && (
@@ -700,10 +749,14 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                     label="Rate per km (₹)"
                     type="number"
                     min={0}
-                    hint="Optional. Charged per km of the trip."
+                    hint={
+                      perKm.value !== undefined && flat.value === undefined && roadKm !== null
+                        ? `Optional. With no flat price, the amount is this rate x about ${roadKm.toLocaleString('en-IN')} km by road: ${formatRupees(Math.round(perKm.value * roadKm))}.`
+                        : 'Optional. With no flat price, the amount is this rate x the road distance.'
+                    }
                     value={ratePerKm}
                     onChange={e => setRatePerKm(e.target.value)}
-                    error={perKm.error}
+                    error={perKm.error ?? (perKmNeedsFlat ? 'This load has no coordinates to measure a distance. Enter a flat price.' : undefined)}
                   />
                 </div>
               )}

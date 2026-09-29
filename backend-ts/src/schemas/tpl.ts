@@ -3,6 +3,7 @@
  * partner's settings). Messages are written for the person filling the form.
  */
 import { HttpError } from '../core/errors';
+import { RATE_UNITS } from '../utils/corridor-match';
 
 export const TPL_SLA_OPTIONS = ['2 Hours', '4 Hours', '6 Hours', '12 Hours'] as const;
 export const TPL_TAX_OPTIONS = ['12% GTA (With ITC) - Forward Charge', '5% GTA (No ITC) - Reverse Charge'] as const;
@@ -27,7 +28,9 @@ function oneOf(value: unknown, options: readonly string[], label: string): void 
 
 /**
  * Corridor rows as the forms send them: { name, vehicles (comma separated),
- * rate, priority }. Returns the rows unchanged once they are known to be sane.
+ * rate (a number), rate_unit ('per_trip' or 'per_km'), priority, legacy_rate (an
+ * older free-text rate kept as it was written) }. A rate needs its unit; no rate
+ * means the partner quotes each load.
  */
 export function assertCorridors(corridors: unknown): void {
   if (blank(corridors)) return;
@@ -45,6 +48,12 @@ export function assertCorridors(corridors: unknown): void {
       if (!Number.isFinite(rate) || rate <= 0 || rate > MAX_RATE) {
         throw new HttpError(400, `A corridor rate must be a number above 0 and up to ${MAX_RATE.toLocaleString('en-IN')}`);
       }
+      if (!(RATE_UNITS as readonly unknown[]).includes(row.rate_unit)) {
+        throw new HttpError(400, 'Choose whether a corridor rate is per trip or per km');
+      }
+    }
+    if (!blank(row.legacy_rate) && (typeof row.legacy_rate !== 'string' || row.legacy_rate.length > 100)) {
+      throw new HttpError(400, 'The earlier rate text of a corridor is too long');
     }
     if (!blank(row.priority) && !['1', '2', '3'].includes(String(row.priority))) {
       throw new HttpError(400, 'Corridor priority must be 1, 2 or 3');

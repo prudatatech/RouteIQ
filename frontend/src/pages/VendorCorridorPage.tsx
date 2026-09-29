@@ -23,7 +23,8 @@ interface OpenWindow {
 
 interface PassingRoute {
   id: string
-  eta_minutes: number
+  /** Minutes for the truck to reach you from where it is now; null when it could not be worked out. */
+  eta_minutes: number | null
   available_capacity_kg: number
   city: string | null
   routes?: {
@@ -91,12 +92,13 @@ export default function VendorCorridorPage() {
       const [w, p, b] = await Promise.all([
         session ? capacityAPI.openWindows() : Promise.resolve([]),
         session ? vendorAPI.passingRoutes().catch(() => []) : Promise.resolve([]),
-        userId ? supabase.from('capacity_bids').select('window_id').eq('vendor_id', userId) : Promise.resolve({ data: [] as { window_id: string }[] }),
+        userId ? supabase.from('capacity_bids').select('window_id, status').eq('vendor_id', userId) : Promise.resolve({ data: [] as { window_id: string; status: string }[] }),
       ])
       setWindows(w as OpenWindow[])
       setPassingRoutes(p as PassingRoute[])
-      const bidRows = (b as { data: { window_id: string }[] | null }).data ?? []
-      setMyBidWindowIds(new Set(bidRows.map(r => r.window_id)))
+      const bidRows = (b as { data: { window_id: string; status: string }[] | null }).data ?? []
+      // Only a bid still being considered (or won) blocks another; after a rejected, lost or expired bid the vendor can bid again
+      setMyBidWindowIds(new Set(bidRows.filter(r => r.status === 'pending' || r.status === 'won').map(r => r.window_id)))
       setError(null)
     } catch {
       setError('We could not load corridors. Check your connection and try again.')
@@ -206,7 +208,7 @@ export default function VendorCorridorPage() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand">
                     <Zap size={11} /> Route match
                   </span>
-                  <span className="text-xs text-muted">{formatEta(pr.eta_minutes)} away</span>
+                  <span className="text-xs text-muted">{pr.eta_minutes != null ? `${formatEta(pr.eta_minutes)} away` : 'Nearby'}</span>
                 </div>
                 <div className="text-xs text-muted">{pr.routes?.vehicles?.vehicle_type || 'Truck'}</div>
                 <p className="text-2xl font-semibold text-text">
@@ -236,7 +238,7 @@ export default function VendorCorridorPage() {
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
           </div>
         ) : windows.length === 0 ? (
-          <EmptyState compact title="No open windows right now" description="New capacity windows will appear here as vehicles report free space." />
+          <EmptyState compact title="No open windows near you right now" description="Trucks with free space near your pickup location appear here as soon as a window opens. Keep your company address up to date under Company &amp; KYC." />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {windows.map(w => {
@@ -260,8 +262,8 @@ export default function VendorCorridorPage() {
 
                   <div className="mt-auto flex items-center justify-between border-t border-border pt-3">
                     <div>
-                      <p className="text-xs text-muted">Floor price</p>
-                      <p className="text-sm font-medium text-text">{formatRupees(w.floor_price ?? 0)}</p>
+                      <p className="text-xs text-muted">Minimum bid</p>
+                      <p className="text-sm font-medium text-text">{w.floor_price != null ? formatRupees(w.floor_price) : 'Set for your load'}</p>
                     </div>
                     {alreadyBid ? (
                       <span className="inline-flex items-center gap-1.5 rounded-control bg-brand-soft px-3 py-2 text-sm font-medium text-brand">

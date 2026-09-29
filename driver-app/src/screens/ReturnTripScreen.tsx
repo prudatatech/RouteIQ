@@ -22,9 +22,9 @@ export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: Re
   const [biddingOpen, setBiddingOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const loadVehicleInfo = useCallback(async () => {
+  const loadVehicleInfo = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setLoadFailed(false);
       const vehicle = await api.getVehicleInfo(vehicleId);
       if (vehicle) {
@@ -33,7 +33,7 @@ export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: Re
       }
     } catch (error) {
       console.error('Failed to load vehicle info', error);
-      setLoadFailed(true);
+      if (!silent) setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -41,6 +41,10 @@ export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: Re
 
   useEffect(() => {
     loadVehicleInfo();
+    // The bidding window ends by itself (time runs out, dispatch closes it, a bid wins), which turns
+    // the vehicle's flag off: keep the switch in step with it.
+    const timer = setInterval(() => loadVehicleInfo(true), 30_000);
+    return () => clearInterval(timer);
   }, [loadVehicleInfo]);
 
   const toggleMatching = async (val: boolean) => {
@@ -76,7 +80,7 @@ export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: Re
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           {loadFailed ? (
-            <ErrorBanner message={t('vehicle_load_failed')} action={{ label: t('retry'), onPress: loadVehicleInfo }} />
+            <ErrorBanner message={t('vehicle_load_failed')} action={{ label: t('retry'), onPress: () => loadVehicleInfo() }} />
           ) : null}
 
           <Card style={styles.card}>

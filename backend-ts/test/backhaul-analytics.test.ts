@@ -113,3 +113,24 @@ describe('analytics', () => {
     }
   });
 });
+
+describe('loads someone else already holds', () => {
+  const held = (id: string) => ({ ...OPEN, id, tracking_id: `RTX-${id}`, delivery_points: [{ id: `dp-${id}`, name: 'Mumbai DC', address: 'Mumbai', latitude: 19.07, longitude: 72.87 }] });
+
+  it('stay out of open loads: a live 3PL order, an open offer, an open bidding window', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+      shipments: [OPEN, held('with-partner'), held('being-offered'), held('in-window'), held('old-order')],
+      route_stops: [],
+      tpl_orders: [
+        { id: 'o1', shipment_id: 'with-partner', status: 'accepted' },
+        { id: 'o2', shipment_id: 'old-order', status: 'cancelled' },
+      ],
+      tpl_offers: [{ id: 'f1', shipment_id: 'being-offered', status: 'offered' }],
+      capacity_windows: [{ id: 'w1', fallback_shipment_id: 'in-window', status: 'open', winning_bid_id: null }],
+    });
+    const res = await request(app).get('/api/v1/cargo/open-loads').set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body.map((l: any) => l.id).sort()).toEqual(['old-order', 'ship-open']);
+  });
+});

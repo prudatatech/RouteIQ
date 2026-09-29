@@ -17,11 +17,12 @@ import { TplOrdersTab } from '@/components/tpl/TplOrdersTab'
 import { TplEarningsTab } from '@/components/tpl/TplEarningsTab'
 import { formatPercent, formatRating } from '@/components/tpl/stats'
 import { useAuthStore } from '@/store/authStore'
+import { NotificationsBell } from '@/components/ui/NotificationsBell'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
-import { emptyCorridorRow, type CorridorFormRow } from '@/components/tpl/constants'
+import { corridorRateText, corridorToFormRow, emptyCorridorRow, type CorridorFormRow, type RateUnit } from '@/components/tpl/constants'
 
 const TABS = ['overview', 'coverage', 'documents', 'orders', 'earnings', 'settings'] as const
 type Tab = typeof TABS[number]
@@ -31,6 +32,8 @@ interface Corridor {
   corridor_name: string
   vehicle_types: string[] | string | null
   proposed_rate: string | null
+  rate_amount?: number | null
+  rate_unit?: RateUnit | null
   priority: number | string | null
 }
 
@@ -195,13 +198,7 @@ export default function TplDashboardPage() {
       corridors: pending?.corridors && pending.corridors.length > 0
         ? pending.corridors
         : corridors.length > 0
-          ? corridors.map((c, i) => ({
-              id: i,
-              name: c.corridor_name,
-              vehicles: Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : (c.vehicle_types || ''),
-              rate: c.proposed_rate || '',
-              priority: String(c.priority || '1'),
-            }))
+          ? corridors.map((c, i) => corridorToFormRow(c, i))
           : [emptyCorridorRow()],
     })
   }, [partner, corridors, settingsForm])
@@ -278,7 +275,7 @@ export default function TplDashboardPage() {
       ),
     },
     { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span>, sortValue: c => c.priority ?? null },
-    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span>{c.proposed_rate || '—'}</span>, sortValue: c => c.proposed_rate ?? null },
+    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span>{corridorRateText(c)}</span>, sortValue: c => (c.rate_amount != null ? Number(c.rate_amount) : null) },
   ]
 
   return (
@@ -299,6 +296,7 @@ export default function TplDashboardPage() {
               <Building2 size={12} /> {partner.company_name}
             </span>
             <StatusPill status={partner.status} className="hidden sm:inline-flex" />
+            <NotificationsBell placement="right" />
             <Button variant="ghost" size="sm" icon={<LogOut size={14} />} onClick={handleLogout}>Sign out</Button>
           </div>
         </div>
@@ -334,12 +332,19 @@ export default function TplDashboardPage() {
 
           {partner.status !== 'active' && (
             <Alert
-              tone={partner.status === 'rejected' || partner.status === 'suspended' ? 'danger' : 'warning'}
-              title={partner.status === 'pending' ? 'Your profile is in review' : 'Your account is not active'}
+              tone={partner.status === 'rejected' ? 'danger' : 'warning'}
+              title={
+                partner.status === 'pending' ? 'Your profile is in review'
+                  : partner.status === 'paused' ? 'Your account is paused'
+                    : partner.status === 'rejected' ? 'Your application was not approved'
+                      : 'Your account is not active'
+              }
             >
               {partner.status === 'pending'
                 ? 'You cannot accept new loads until we approve it. Your existing orders stay open. We will notify you.'
-                : 'You cannot accept new loads. Contact MargixIndia dispatch to have your account reviewed.'}
+                : partner.status === 'paused'
+                  ? 'MargixIndia dispatch paused your account, so you cannot accept new loads. Your existing orders stay open. Contact dispatch to resume.'
+                  : 'You cannot accept new loads. Contact MargixIndia dispatch to have your account reviewed.'}
             </Alert>
           )}
 
@@ -404,7 +409,7 @@ export default function TplDashboardPage() {
                             <p className="font-medium text-text">{c.corridor_name}</p>
                             <p className="text-xs text-muted">{vehicleList(c.vehicle_types).join(', ') || 'No vehicle types'}</p>
                           </div>
-                          <span className="text-right text-brand">{c.proposed_rate || '—'}</span>
+                          <span className="text-right text-brand">{corridorRateText(c)}</span>
                         </div>
                       ))}
                     </div>

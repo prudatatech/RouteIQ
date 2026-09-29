@@ -6,6 +6,9 @@ import { auditService, type AuditActor } from './audit.service';
 import { HttpError } from '../core/errors';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
+import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { isDispatchable } from '../utils/dispatchable';
+import { roadKm, toPoint, travelMinutes } from '../utils/eta';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
 function cleanVendorGstin(raw: unknown): string {
@@ -26,6 +29,26 @@ const KYC_UPLOAD_CONTENT_TYPES: Record<string, string> = {
 
 /** Request states an admin can still act on (approve, reject or assign a vehicle). */
 const OPEN_REQUEST_STATUSES = ['pending', 'approved'];
+
+/** Steps of a vendor's load the vendor is told about. */
+export type LoadEvent = 'picked_up' | 'in_transit' | 'delivered';
+const LOAD_EVENT_TYPES: Record<LoadEvent, string> = {
+  picked_up: 'load_picked_up',
+  in_transit: 'load_in_transit',
+  delivered: 'request_completed',
+};
+const LOAD_EVENT_LABELS: Record<LoadEvent, { title: string; body: string }> = {
+  picked_up: { title: 'Your load was picked up', body: 'was picked up' },
+  in_transit: { title: 'Your load is on its way', body: 'is on its way' },
+  delivered: { title: 'Your load was delivered', body: 'was delivered' },
+};
+const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || 'pickup';
+
+/** How long a passing truck stays on offer to a vendor. */
+const PASSING_ROUTE_TTL_HOURS = 6;
+
+/** Requests still waiting for a vehicle: the open ones plus those out with 3PL partners. */
+export const NEEDS_VEHICLE_STATUSES = ['pending', 'approved', 'escalated'];
 
 /**
  * Moves a request to `status` only if it is currently in one of `from`. The
@@ -87,11 +110,11 @@ export const vendorService = {
 
     if (error) throw new Error(error.message);
 
-    // Notify staff whenever this save is what sent the profile to KYC review (D2).
+    // Tell superadmins (the only role with the KYC page) whenever this save is what sent the profile to KYC review (D2).
     // A notification failure must not undo the profile save.
     if (data?.kyc_status === 'submitted' && existing?.kyc_status !== 'submitted') {
       try {
-        await notificationService.notifyStaff(
+        await notificationService.notifySuperAdmins(
           'KYC submitted',
           `${companyName} submitted KYC details for review.`,
           'kyc_submitted',
@@ -108,8 +131,8 @@ export const vendorService = {
   /**
    * Submit (or resubmit) the vendor's full KYC wizard: company, contact,
    * bank and document details, plus the wizard's own draft blob (`kycData`).
-   * Always moves the profile to `kyc_status: 'submitted'` and notifies staff
-   * (D2) so this is the one path that should be used for a KYC submission —
+   * Always moves the profile to `kyc_status: 'submitted'` and notifies superadmins
+   * (the KYC page is superadmin-only) so this is the one path that should be used for a KYC submission —
    * never a direct Supabase write from the client, which would skip the
    * notification.
    */
@@ -151,7 +174,7 @@ export const vendorService = {
     // A notification failure must not undo the profile save.
     if (existing?.kyc_status !== 'submitted') {
       try {
-        await notificationService.notifyStaff(
+        await notificationService.notifySuperAdmins(
           'KYC submitted',
           `${payload.companyName} submitted KYC details for review.`,
           'kyc_submitted',
@@ -192,9 +215,7 @@ export const vendorService = {
     }
 
     // 1. Calculate ETA and Distance
-    const distanceKm = Math.sqrt(
-      Math.pow(pickup.lat - drop.lat, 2) + Math.pow(pickup.lng - drop.lng, 2)
-    ) * 111; // Approx km
+    const distanceKm = roadKm(pickup, drop) ?? 0;
 
     // Assume average speed of 40km/h for trucks
     const drivingHours = distanceKm / 40;
@@ -251,10 +272,12 @@ export const vendorService = {
   },
 
   /**
-   * Super admin fetches all pending requests
+   * Requests that still need a decision or a vehicle: the same set as the
+   * "Needs a vehicle" tab (pending, approved and escalated), so the badge and
+   * the dashboard count match the list.
    */
   async getPendingRequests() {
-    const { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', ['pending', 'approved']).order('created_at', { ascending: false });
+    const { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', NEEDS_VEHICLE_STATUSES).order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
     
     if (!requests || requests.length === 0) return [];
@@ -312,6 +335,80 @@ export const vendorService = {
     );
 
     return data;
+  },
+
+  /**
+   * A vendor withdraws a load they posted, while no vehicle has been assigned
+   * yet (pending or approved). Only the vendor's own request can be cancelled;
+   * staff are told so nobody keeps looking for a vehicle for it.
+   */
+  async cancelRequest(vendorId: string, requestId: string) {
+    const { data: existing, error: loadErr } = await supabase
+      .from('vendor_shipment_requests').select('id, vendor_id, status, pickup_location, drop_location').eq('id', requestId).maybeSingle();
+    if (loadErr) throw new Error(loadErr.message);
+    // Someone else's request looks the same as a missing one
+    if (!existing || existing.vendor_id !== vendorId) throw new HttpError(404, 'Request not found');
+    if (!OPEN_REQUEST_STATUSES.includes(String(existing.status))) {
+      const why = existing.status === 'escalated'
+        ? 'It is with 3PL partners right now. Contact support to cancel it.'
+        : `It is already ${String(existing.status).replace(/_/g, ' ')}.`;
+      throw new HttpError(409, `This load can no longer be cancelled. ${why}`);
+    }
+    const data = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, { status: 'cancelled' });
+    try {
+      await notificationService.notifyStaff(
+        'Vendor cancelled a load',
+        `The vendor cancelled the request from ${data.pickup_location} to ${data.drop_location}.`,
+        'vendor_request_cancelled',
+        { request_id: data.id },
+      );
+    } catch (e) {
+      console.error('[vendor] Cancellation notification failed:', e);
+    }
+    return data;
+  },
+
+  /**
+   * Tells the vendor about a step of their load: `picked_up`, `in_transit` or `delivered`.
+   * Takes the cargo manifest of an assigned load; a manifest that came from a
+   * won capacity bid (no vendor request) tells the bidder instead. Never throws:
+   * a missed notification must not fail the driver's action. Safe to call twice
+   * for the same step (the second call sends nothing).
+   */
+  async notifyVendorLoadEvent(manifestId: string, event: LoadEvent): Promise<void> {
+    try {
+      const { data: manifest } = await supabase
+        .from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location').eq('id', manifestId).maybeSingle();
+      if (!manifest?.vendor_request_id) return;
+      await this.notifyVendorRequestEvent(manifest.vendor_request_id, event, manifest.pickup_location, manifest.drop_location);
+    } catch (e) {
+      console.error(`[vendor] Load event ${event} for manifest ${manifestId} failed:`, e);
+    }
+  },
+
+  /** Same as notifyVendorLoadEvent, for a request id (used for loads a 3PL partner carries). */
+  async notifyVendorRequestEvent(requestId: string, event: LoadEvent, pickup?: string | null, drop?: string | null, by?: string): Promise<void> {
+    try {
+      const { data: request } = await supabase
+        .from('vendor_shipment_requests').select('id, vendor_id, pickup_location, drop_location').eq('id', requestId).maybeSingle();
+      if (!request?.vendor_id) return;
+      const type = LOAD_EVENT_TYPES[event];
+      const { data: already } = await supabase
+        .from('notifications').select('id, data').eq('user_id', request.vendor_id).eq('type', type).limit(50);
+      const sent = (already ?? []).some((n: any) => n.data?.request_id === requestId);
+      if (sent) return;
+      const route = `${shortPlace(pickup ?? request.pickup_location)} to ${shortPlace(drop ?? request.drop_location)}`;
+      const label = LOAD_EVENT_LABELS[event];
+      await notificationService.sendNotification(
+        request.vendor_id,
+        label.title,
+        `Your load from ${route} ${label.body}${by ? ` (${by})` : ''}.`,
+        type,
+        { request_id: requestId },
+      );
+    } catch (e) {
+      console.error(`[vendor] Load event ${event} for request ${requestId} failed:`, e);
+    }
   },
 
   /**
@@ -452,7 +549,7 @@ export const vendorService = {
 
     if (backToReview) {
       try {
-        await notificationService.notifyStaff(
+        await notificationService.notifySuperAdmins(
           'KYC submitted',
           `${profile.company_name} changed its KYC documents and needs a new review.`,
           'kyc_submitted',
@@ -466,38 +563,65 @@ export const vendorService = {
   },
 
   /**
-   * Admin assigns a vehicle to a vendor request and creates a cargo manifest entry
+   * Admin assigns a vehicle to a vendor request and creates a cargo manifest entry.
+   * The vehicle must be in an operating status and have the free capacity the load needs.
+   * A price per km alone becomes a total (rate x road distance) when the distance is known.
    */
-  async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number, costPerKm?: number) {
+  async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number | null, costPerKm?: number | null) {
     for (const [label, amount] of [['Cost', cost], ['Cost per km', costPerKm]] as const) {
       if (amount !== undefined && amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) {
         throw new HttpError(400, `${label} must be a number between 0 and 10,000,000`);
       }
     }
+    const flatPrice = cost ?? undefined;
+    const ratePerKm = costPerKm ?? undefined;
+
     const { data: assignee, error: assigneeErr } = await supabase
-      .from('vehicles').select('id, status').eq('id', vehicleId).maybeSingle();
+      .from('vehicles').select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id').eq('id', vehicleId).maybeSingle();
     if (assigneeErr) throw new Error(assigneeErr.message);
     if (!assignee) throw new HttpError(404, 'Vehicle not found');
-    if (['maintenance', 'archived'].includes(String(assignee.status))) {
-      throw new HttpError(409, `This vehicle is in ${assignee.status} and can't take a load`);
+    if (!isDispatchable(assignee)) {
+      throw new HttpError(409, `This vehicle is ${assignee.status === 'maintenance' || assignee.status === 'archived' ? `in ${assignee.status}` : 'not ready for dispatch'} and can't take a load`);
     }
 
     const { data: before, error: beforeErr } = await supabase
-      .from('vendor_shipment_requests').select('status').eq('id', requestId).maybeSingle();
+      .from('vendor_shipment_requests')
+      .select('status, required_capacity_kg, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .eq('id', requestId).maybeSingle();
     if (beforeErr) throw new Error(beforeErr.message);
     if (!before) throw new HttpError(404, 'Request not found');
+
+    // Free capacity: what the vehicle reports, else its rated capacity less what it already carries
+    const required = Number(before.required_capacity_kg) || 0;
+    const rated = Number(assignee.capacity_kg);
+    const free = assignee.available_capacity_kg != null
+      ? Number(assignee.available_capacity_kg)
+      : Number.isFinite(rated) && rated > 0 ? rated - (Number(assignee.current_load_kg) || 0) : null;
+    if (free !== null && required > free) {
+      throw new HttpError(409, `This vehicle has ${Math.max(0, Math.round(free)).toLocaleString('en-IN')} kg free and the load needs ${required.toLocaleString('en-IN')} kg`);
+    }
+
+    // The agreed amount: a flat price wins; a rate per km needs the distance to become an amount
+    const km = roadKm(
+      toPoint(before.pickup_lat, before.pickup_lng),
+      toPoint(before.drop_lat, before.drop_lng),
+    );
+    let agreed = flatPrice;
+    if (agreed === undefined && ratePerKm !== undefined && ratePerKm > 0) {
+      if (km === null || km <= 0) throw new HttpError(400, "This load has no usable pickup and drop-off coordinates, so a rate per km can't be turned into an amount. Enter a flat price.");
+      agreed = Math.round(ratePerKm * km * 100) / 100;
+    }
 
     // Claim the request for this vehicle; fails if it was already assigned or closed
     const req = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, {
       status: 'assigned',
       assigned_vehicle_id: vehicleId,
-      ...(cost !== undefined ? { cost } : {}),
-      ...(costPerKm !== undefined ? { cost_per_km: costPerKm } : {})
+      ...(agreed !== undefined ? { cost: agreed } : {}),
+      ...(ratePerKm !== undefined ? { cost_per_km: ratePerKm } : {})
     });
 
     // Tell the pricing engine which price was agreed, so later quotes can learn from it
     const quoteId = (req.metadata as Record<string, unknown> | null)?.quote_id;
-    const agreed = cost;
     if (typeof quoteId === 'string' && typeof agreed === 'number' && agreed > 0) {
       await pricingService.recordOutcome(quoteId, { accepted_amount: agreed, request_id: requestId });
     }
@@ -527,24 +651,20 @@ export const vendorService = {
       throw new Error(`Failed to create manifest: ${manifestErr.message}`);
     }
 
-    // Get vehicle to update load and notify driver
-    const { data: vehicle } = await supabase.from('vehicles').select('driver_id, capacity_kg, current_load_kg, available_capacity_kg').eq('id', vehicleId).single();
+    // The load now sits on the vehicle. It goes on the road only from an operating status
+    // (checked above), so a vehicle that went into maintenance meanwhile is left alone.
+    const newLoad = (Number(assignee.current_load_kg) || 0) + required;
+    const newAvail = Math.max(0, (free ?? 0) - required);
+    await supabase.from('vehicles').update({
+      current_load_kg: newLoad,
+      available_capacity_kg: newAvail,
+      status: 'on_route',
+    }).eq('id', vehicleId).in('status', [...OPERATING_VEHICLE_STATUSES]);
 
-    if (vehicle) {
-      const newLoad = (vehicle.current_load_kg || 0) + req.required_capacity_kg;
-      const newAvail = Math.max(0, (vehicle.available_capacity_kg ?? vehicle.capacity_kg) - req.required_capacity_kg);
-      
-      await supabase.from('vehicles').update({
-        current_load_kg: newLoad,
-        available_capacity_kg: newAvail,
-        status: 'on_route'
-      }).eq('id', vehicleId);
-    }
-
-    if (vehicle?.driver_id) {
+    if (assignee.driver_id) {
       // Notify the driver instantly so the listener triggers
       await notificationService.sendNotification(
-        vehicle.driver_id,
+        assignee.driver_id,
         'New Cargo Assigned',
         `A new pickup has been scheduled at ${req.pickup_location}.`,
         'cargo_assigned',
@@ -552,29 +672,32 @@ export const vendorService = {
       );
     }
 
-    // Notify the vendor
+    // Notify the vendor, with the price that was agreed
     await notificationService.sendNotification(
       req.vendor_id,
       'Vehicle Assigned!',
-      `A vehicle has been assigned to your shipment request from ${req.pickup_location}.`,
+      `A vehicle has been assigned to your shipment request from ${req.pickup_location}.${agreed !== undefined && agreed > 0 ? ` Agreed price: ₹${agreed.toLocaleString('en-IN')}.` : ''}`,
       'vehicle_assigned',
-      { request_id: requestId, vehicle_id: vehicleId }
+      { request_id: requestId, vehicle_id: vehicleId, ...(agreed !== undefined ? { cost: agreed } : {}) }
     );
-    
-    return { success: true };
+
+    return { success: true, cost: agreed ?? null };
   },
 
   /**
    * Match a newly created route to nearby vendors
    */
-  async matchRouteToVendors(routeId: string, vehicleId: string, originLat: number, originLng: number, destLat: number, destLng: number) {
+  async matchRouteToVendors(routeId: string, vehicleId: string, originLat: number, originLng: number, destLat: number | null, destLng: number | null) {
     try {
-      const { mapsService } = await import('./maps.service');
-      const polylineEncoded = await mapsService.getRoutePolyline(originLat, originLng, destLat, destLng);
-      if (!polylineEncoded) return;
-      
-      const sampledPoints = mapsService.samplePolylinePoints(polylineEncoded, 15);
-      
+      // With no known destination the truck is matched on where it is now
+      let sampledPoints: { lat: number; lng: number }[] = [{ lat: originLat, lng: originLng }];
+      if (destLat != null && destLng != null) {
+        const { mapsService } = await import('./maps.service');
+        const polylineEncoded = await mapsService.getRoutePolyline(originLat, originLng, destLat, destLng);
+        if (!polylineEncoded) return;
+        sampledPoints = mapsService.samplePolylinePoints(polylineEncoded, 15);
+      }
+
       const { data, error } = await supabase.rpc('match_vendors_to_route', {
         route_points: sampledPoints,
         radius_km: 50.0
@@ -585,17 +708,26 @@ export const vendorService = {
       const { data: vehicleData } = await supabase.from('vehicles').select('vehicle_type, capacity_kg, available_capacity_kg').eq('id', vehicleId).single();
       // Vendors are not told which vehicle it is (plate) until they win capacity on it
       const vehicleDesc = vehicleData?.vehicle_type ? `A ${vehicleData.vehicle_type}` : 'A truck';
-      
+
+      // Time for the truck to reach each vendor, from its position now
+      const { data: vendorPlaces } = await supabase
+        .from('vendor_profiles').select('id, latitude, longitude').in('id', data.map((m: any) => m.vendor_id));
+      const placeOf = new Map((vendorPlaces ?? []).map((v: any) => [v.id, v]));
+      const truck = { lat: originLat, lng: originLng };
+
       // Notify matched vendors
       for (const match of data) {
+        const place: any = placeOf.get(match.vendor_id);
+        const eta = travelMinutes(truck, toPoint(place?.latitude, place?.longitude));
         // Insert opportunity
         await supabase.from('vendor_route_opportunities').upsert({
           route_id: routeId,
           vendor_id: match.vendor_id,
-          eta_minutes: Math.round(match.min_distance_km), // Rough ETA approximation
+          eta_minutes: eta,
+          status: 'notified',
           available_capacity_kg: vehicleData?.available_capacity_kg ?? vehicleData?.capacity_kg ?? 0
         }, { onConflict: 'route_id, vendor_id' });
-        
+
         await notificationService.sendNotification(
           match.vendor_id,
           'Passing Capacity Available!',
@@ -613,11 +745,11 @@ export const vendorService = {
    * Get current market rates — aggregated from recent shipments
    */
   async getMarketRates() {
-    // Try to compute average from recent assigned shipments
+    // Average over recent priced loads: assigned ones and delivered ones (a delivery writes `completed`)
     const { data: recent } = await supabase
       .from('vendor_shipment_requests')
       .select('cost, cost_per_km, required_capacity_kg')
-      .in('status', ['assigned', 'fulfilled'])
+      .in('status', ['assigned', 'assigned_to_partner', 'completed', 'fulfilled'])
       .order('updated_at', { ascending: false })
       .limit(20);
 
@@ -654,17 +786,28 @@ export const vendorService = {
   },
 
   /**
-   * Fetch passing route opportunities for a vendor
+   * Fetch passing route opportunities for a vendor. An opportunity is only
+   * good for a few hours: older ones are marked `ignored` and not shown.
    */
   async getPassingRoutes(vendorId: string) {
+    const cutoff = new Date(Date.now() - PASSING_ROUTE_TTL_HOURS * 3600_000).toISOString();
+    const { error: expireErr } = await supabase
+      .from('vendor_route_opportunities')
+      .update({ status: 'ignored', updated_at: new Date().toISOString() })
+      .eq('vendor_id', vendorId)
+      .eq('status', 'notified')
+      .lt('created_at', cutoff);
+    if (expireErr) console.error('[vendor] Could not expire old passing routes:', expireErr.message);
+
     const { data, error } = await supabase
       .from('vendor_route_opportunities')
       // Only what the card shows: never the full route or vehicle (plate, driver phone, live position)
       .select('*, routes(id, vehicles(vehicle_type))')
       .eq('vendor_id', vendorId)
       .eq('status', 'notified')
+      .gte('created_at', cutoff)
       .order('created_at', { ascending: false });
-      
+
     if (error) throw new Error(error.message);
     return data;
   }

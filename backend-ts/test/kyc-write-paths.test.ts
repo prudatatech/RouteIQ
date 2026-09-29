@@ -11,6 +11,7 @@ function reset(kycStatus = 'submitted') {
   supabaseMock.reset({
     users: [
       { id: 'admin-1', role: 'admin', is_active: true },
+      { id: 'super-1', role: 'superadmin', is_active: true },
       { id: 'manager-1', role: 'manager', is_active: true },
       { id: 'driver-1', role: 'driver', is_active: true },
       { id: VENDOR, role: 'vendor', is_active: true },
@@ -115,13 +116,13 @@ describe('PUT /vendor/kyc/documents', () => {
     expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
   });
 
-  it('sends an approved profile back to review and tells staff', async () => {
+  it('sends an approved profile back to review and tells the superadmins (the KYC page is theirs)', async () => {
     reset('approved');
     const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_1.pdf` } });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ kyc_status: 'submitted', kyc_reviewed_by: null });
     const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
-    expect(recipients).toEqual(['admin-1']);
+    expect(recipients).toEqual(['super-1']);
   });
 
   it.each([

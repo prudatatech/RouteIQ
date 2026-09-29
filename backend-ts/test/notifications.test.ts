@@ -84,7 +84,7 @@ describe('staff notifications (D2)', () => {
       });
     });
 
-    it('notifies staff when an approved profile is resubmitted for review', async () => {
+    it('notifies superadmins, who own the KYC page, when an approved profile is resubmitted for review', async () => {
       const res = await request(app)
         .post('/api/v1/vendor/profile')
         .set(bearer(VENDOR))
@@ -99,7 +99,7 @@ describe('staff notifications (D2)', () => {
       expect(res.status).toBe(200);
 
       const ids = notifiedUserIds();
-      expect(ids.sort()).toEqual(['active-admin', 'active-superadmin'].sort());
+      expect(ids).toEqual(['active-superadmin']);
       const [write] = supabaseMock.writes('notifications', 'POST');
       expect(write.body.type).toBe('kyc_submitted');
     });
@@ -172,16 +172,17 @@ describe('staff notifications (D2)', () => {
       const MINUTE = 60_000;
       supabaseMock.reset({
         users: [...STAFF_USERS, { id: 'vendor-1', role: 'vendor', is_active: true }],
-        vendor_profiles: [{ id: 'vendor-1', kyc_status: 'approved', company_name: 'Acme', latitude: null, longitude: null, city: 'Pune' }],
+        vendor_profiles: [{ id: 'vendor-1', kyc_status: 'approved', company_name: 'Acme', latitude: 18.52, longitude: 73.85, city: 'Pune' }],
         capacity_windows: [{
           id: 'w1',
           vehicle_id: 'vehicle-1',
           opens_at: new Date(Date.now() - MINUTE).toISOString(),
           closes_at: new Date(Date.now() + 5 * MINUTE).toISOString(),
           floor_price: 1000,
+          status: 'open',
           winning_bid_id: null,
           fallback_shipment_id: null,
-          vehicles: { plate_number: 'MH12AB1234', latitude: null, longitude: null, city: 'Pune', available_capacity_kg: 800 },
+          vehicles: { plate_number: 'MH12AB1234', latitude: null, longitude: null, current_location_name: 'Pune', available_capacity_kg: 800 },
         }],
         capacity_bids: [],
         delivery_points: [],

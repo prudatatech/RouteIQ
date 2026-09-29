@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { cargoAPI } from '@/services/api'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import LoadActions from './LoadActions'
 import {
   Alert, Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Select, Skeleton,
 } from '@/components/ui'
@@ -45,6 +47,19 @@ export default function MatchReturnLoadTab({ manifest, onDismissManifest }: {
   const match = useMutation<MatchResult, unknown, void>({
     mutationFn: () => cargoAPI.backhaulMatch(load!.id, Number(capacity)),
   })
+
+  // A price for the load that fits, to offer as the minimum bid if staff open a window instead of assigning it
+  const fits = match.data?.status === 'accepted'
+  const quote = usePriceQuote(fits && load && load.origin_lat != null && load.origin_lng != null && load.dest_lat != null && load.dest_lng != null && load.weight_kg
+    ? {
+        pickup: { lat: load.origin_lat, lng: load.origin_lng, label: load.origin },
+        drop: { lat: load.dest_lat, lng: load.dest_lng, label: load.destination },
+        weight_kg: load.weight_kg,
+        vehicle_type: vehicle?.vehicle_type ?? null,
+        source: 'backhaul',
+      }
+    : null)
+  const suggested = quote.data?.status === 'ok' ? quote.data.suggested : null
 
   const chooseVehicle = (id: string) => {
     match.reset()
@@ -183,6 +198,14 @@ export default function MatchReturnLoadTab({ manifest, onDismissManifest }: {
                     </li>
                   ))}
                 </ol>
+                {load && (
+                  <LoadActions
+                    loads={[load]}
+                    vehicle={vehicle}
+                    suggestedPrice={suggested}
+                    onAssigned={() => { match.reset(); setSelectedShipment(null) }}
+                  />
+                )}
               </CardBody>
             </Card>
           )}

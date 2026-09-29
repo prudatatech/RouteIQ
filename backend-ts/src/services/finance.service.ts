@@ -3,7 +3,8 @@
  *
  * Profit and loss from three real sources, and nothing else:
  *   - revenue: invoices (amount before GST), by the day they were issued
- *   - costs: the expense log, by expense date
+ *   - costs: the expense log, by expense date, and what 3PL partners charged for the loads they
+ *     delivered (their agreed amount, by delivery date)
  *   - fuel estimate: litres x the fuel price setting, for completed routes that
  *     have no fuel expense recorded against them or their vehicle in the range
  * Anything that cannot be worked out (no fuel price set, no distance) is
@@ -101,7 +102,7 @@ export async function getFinanceSummary(range: FinanceRange) {
   const toKey = indianDateKey(new Date(range.end.getTime() - 1));
   const inRange = (iso: string | null | undefined) => !!iso && iso >= startISO && iso < endISO;
 
-  const [settings, invoiceRes, expenseRes, routeRes] = await Promise.all([
+  const [settings, invoiceRes, expenseRes, routeRes, tplRes] = await Promise.all([
     getFinanceSettings(),
     supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
       .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
@@ -109,7 +110,10 @@ export async function getFinanceSummary(range: FinanceRange) {
       .gte('expense_date', fromKey).lte('expense_date', toKey),
     supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at')
       .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO),
+    supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
+      .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO),
   ]);
+  if (tplRes.error) throw new Error(`Failed to read 3PL orders: ${tplRes.error.message}`);
   if (invoiceRes.error) throw new Error(`Failed to read invoices: ${invoiceRes.error.message}`);
   if (expenseRes.error) throw new Error(`Failed to read expenses: ${expenseRes.error.message}`);
   if (routeRes.error) throw new Error(`Failed to read routes: ${routeRes.error.message}`);
@@ -117,6 +121,7 @@ export async function getFinanceSummary(range: FinanceRange) {
   const invoices = (invoiceRes.data ?? []).filter((i: any) => inRange(i.issued_at));
   const expenses = (expenseRes.data ?? []).filter((e: any) => e.expense_date >= fromKey && e.expense_date <= toKey);
   const routes = ((routeRes.data ?? []) as RouteRow[]).filter(r => inRange(r.completed_at));
+  const tplOrders = (tplRes.data ?? []).filter((o: any) => inRange(o.delivered_at));
 
   // Where each invoice was earned: shipment -> delivery point -> route stop -> route -> vehicle
   const shipmentIds = invoices.map((i: any) => i.shipment_id).filter(Boolean);
@@ -168,7 +173,9 @@ export async function getFinanceSummary(range: FinanceRange) {
   const outstanding = round2(invoices.filter((i: any) => i.status === 'issued').reduce((s: number, i: any) => s + num(i.total ?? i.amount), 0));
   const byCategory = new Map<ExpenseCategory, number>(EXPENSE_CATEGORIES.map(c => [c, 0]));
   for (const e of expenses) byCategory.set(e.category, (byCategory.get(e.category as ExpenseCategory) ?? 0) + num(e.amount));
-  const recordedCosts = round2([...byCategory.values()].reduce((s, v) => s + v, 0));
+  // What partners charged for delivered loads is a cost of those loads
+  const tplCosts = round2(tplOrders.reduce((s: number, o: any) => s + num(o.agreed_amount), 0));
+  const recordedCosts = round2([...byCategory.values()].reduce((s, v) => s + v, 0) + tplCosts);
   const totalCosts = round2(recordedCosts + fuelEstimated);
   const netProfit = round2(revenue - totalCosts);
   const distanceKm = round2(routes.reduce((s, r) => s + num(r.total_distance_km), 0));
@@ -257,6 +264,10 @@ export async function getFinanceSummary(range: FinanceRange) {
     const d = daily.get(e.expense_date);
     if (d) d.costs += num(e.amount);
   }
+  for (const o of tplOrders as any[]) {
+    const d = daily.get(indianDateKey(new Date(o.delivered_at)));
+    if (d) d.costs += num(o.agreed_amount);
+  }
   for (const r of routes) {
     const amount = fuelEstimateByRoute.get(r.id);
     const d = amount && r.completed_at ? daily.get(indianDateKey(new Date(r.completed_at))) : undefined;
@@ -276,6 +287,7 @@ export async function getFinanceSummary(range: FinanceRange) {
       fuel_estimated: fuelEstimated,
       by_category: [
         ...EXPENSE_CATEGORIES.map(c => ({ category: c, label: CATEGORY_LABEL[c], amount: round2(byCategory.get(c) ?? 0), estimated: false })),
+        { category: 'tpl_partner', label: '3PL partners', amount: tplCosts, estimated: false },
         { category: 'fuel_estimated', label: 'Fuel (estimated)', amount: fuelEstimated, estimated: true },
       ],
     },

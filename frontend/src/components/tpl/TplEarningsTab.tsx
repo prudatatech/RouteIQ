@@ -26,12 +26,17 @@ const columns: Column<TplOrder>[] = [
     key: 'paid', header: 'Payment',
     cell: o => (o.paid_at
       ? <StatusPill tone="success">Paid {formatDate(o.paid_at)}</StatusPill>
-      : <StatusPill tone="warning">Unpaid</StatusPill>),
-    sortValue: o => (o.paid_at ? 1 : 0),
+      : o.status === 'delivered'
+        ? <StatusPill tone="warning">Payable</StatusPill>
+        : <StatusPill tone="neutral">In progress</StatusPill>),
+    sortValue: o => (o.paid_at ? 2 : o.status === 'delivered' ? 1 : 0),
   },
 ]
 
-/** The partner's "Earnings" tab: the amounts agreed on accepted orders, by month, paid and unpaid. */
+/**
+ * The partner's "Earnings" tab: the amounts agreed on accepted orders, by month. An order is in progress until it
+ * is delivered, payable once delivered, and paid when dispatch marks it so; only a delivered order can be paid.
+ */
 export function TplEarningsTab() {
   const earnings = useQuery({ queryKey: ['tpl-my-earnings'], queryFn: tplNetworkAPI.myEarnings })
   useRealtimeRefresh('tpl_partner_earnings', ['tpl_orders'], [['tpl-my-earnings']])
@@ -46,7 +51,7 @@ export function TplEarningsTab() {
         <EmptyState
           icon={<IndianRupee size={22} />}
           title="No earnings yet"
-          description="Once you accept a load, its agreed amount is listed here, with whether dispatch has paid it."
+          description="Once you accept a load, its agreed amount is listed here: in progress until it is delivered, then payable until dispatch pays it."
         />
       </Card>
     )
@@ -54,16 +59,17 @@ export function TplEarningsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Agreed in total" value={formatRupees(data?.totals.total)} hint="All accepted orders" loading={earnings.isLoading} />
+        <Stat label="In progress" value={formatRupees(data?.totals.in_progress)} hint="Accepted, not delivered yet" loading={earnings.isLoading} />
+        <Stat label="Payable" value={formatRupees(data?.totals.payable)} tone={data && data.totals.payable > 0 ? 'warning' : 'default'} hint="Delivered, waiting for dispatch to pay" loading={earnings.isLoading} />
         <Stat label="Paid" value={formatRupees(data?.totals.paid)} tone="success" loading={earnings.isLoading} />
-        <Stat label="Waiting for payment" value={formatRupees(data?.totals.unpaid)} tone={data && data.totals.unpaid > 0 ? 'warning' : 'default'} hint="Dispatch marks an order paid after delivery" loading={earnings.isLoading} />
       </div>
       {(data?.months ?? []).map(m => (
         <section key={m.month} className="space-y-3">
           <SectionHeader
             title={monthLabel(m.month)}
-            description={`${formatRupees(m.total)} agreed · ${formatRupees(m.paid)} paid · ${formatRupees(m.unpaid)} unpaid`}
+            description={`${formatRupees(m.total)} agreed · ${formatRupees(m.in_progress)} in progress · ${formatRupees(m.payable)} payable · ${formatRupees(m.paid)} paid`}
           />
           <DataTable caption={`Orders in ${monthLabel(m.month)}`} columns={columns} rows={m.orders} rowKey={o => o.id} />
         </section>

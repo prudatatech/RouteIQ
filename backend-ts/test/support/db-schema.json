@@ -159,7 +159,8 @@
     "gst_amount",
     "total",
     "price_source",
-    "voided_at"
+    "voided_at",
+    "vendor_request_id"
   ],
   "kyc_profiles": [
     "id",
@@ -369,7 +370,9 @@
     "vehicle_types",
     "proposed_rate",
     "priority",
-    "created_at"
+    "created_at",
+    "rate_amount",
+    "rate_unit"
   ],
   "tpl_documents": [
     "id",

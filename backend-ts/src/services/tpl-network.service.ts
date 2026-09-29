@@ -10,10 +10,13 @@
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
-import { corridorMatches, parseRate } from '../utils/corridor-match';
+import { corridorMatches, corridorRate, priceAtRate, type CorridorRate } from '../utils/corridor-match';
+import { roadKm, toPoint } from '../utils/eta';
 import { notificationService } from './notification.service';
 import { emailService, escapeHtml } from './email.service';
 import { ShipmentService } from './shipment.service';
+import { vendorService, type LoadEvent } from './vendor.service';
+import { InvoiceService } from './invoice.service';
 
 export type SourceType = 'request' | 'shipment';
 
@@ -21,6 +24,8 @@ export type SourceType = 'request' | 'shipment';
 const ESCALATABLE_REQUEST_STATUSES = ['pending', 'approved', 'escalated'];
 /** Where a request goes back to when every offer has been withdrawn or declined. */
 const DEFAULT_RETURN_STATUS = 'approved';
+
+const MAX_AMOUNT = 10_000_000;
 
 export const ORDER_STATUS_FLOW = ['accepted', 'picked_up', 'in_transit', 'delivered'] as const;
 type OrderStatus = (typeof ORDER_STATUS_FLOW)[number];
@@ -37,11 +42,16 @@ export interface Load {
   /** Status before escalation, for request loads. */
   requestStatus: string | null;
   metadata: Record<string, unknown> | null;
+  /** Road distance between pickup and drop when both have coordinates; needed to price a per-km rate. */
+  distanceKm: number | null;
 }
 
 export interface PartnerMatch {
   partner: { id: string; company_name: string; user_id: string | null; email: string | null };
   corridor: { id: string; corridor_name: string };
+  /** The corridor's numeric rate, if it has one. */
+  rate: CorridorRate | null;
+  /** The price for this load at that rate: per trip as is, per km x the distance. Null when the rate is missing or the distance is unknown. */
   price: number | null;
 }
 
@@ -73,7 +83,7 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
   if (sourceType === 'request') {
     const { data: r, error } = await supabase
       .from('vendor_shipment_requests')
-      .select('id, vendor_id, pickup_location, drop_location, required_capacity_kg, status, metadata')
+      .select('id, vendor_id, pickup_location, drop_location, pickup_lat, pickup_lng, drop_lat, drop_lng, required_capacity_kg, status, metadata')
       .eq('id', id)
       .maybeSingle();
     if (error) dbError('Failed to load request', error);
@@ -86,12 +96,13 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
       pickup: r.pickup_location ?? '', drop: r.drop_location ?? '',
       weightKg: r.required_capacity_kg != null ? Number(r.required_capacity_kg) : null,
       vendorId: r.vendor_id ?? null, requestStatus: r.status, metadata: r.metadata ?? null,
+      distanceKm: roadKm(toPoint(r.pickup_lat, r.pickup_lng), toPoint(r.drop_lat, r.drop_lng)),
     };
   }
 
   const { data: s, error } = await supabase
     .from('shipments')
-    .select('id, tracking_id, status, origin_name, origin_address, total_weight_kg, bid_id')
+    .select('id, tracking_id, status, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, bid_id')
     .eq('id', id)
     .maybeSingle();
   if (error) dbError('Failed to load shipment', error);
@@ -101,7 +112,7 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
 
   const { data: points, error: pErr } = await supabase
     .from('delivery_points')
-    .select('id, name, address')
+    .select('id, name, address, latitude, longitude')
     .eq('shipment_id', id);
   if (pErr) dbError('Failed to load delivery points', pErr);
   const stops = points ?? [];
@@ -117,6 +128,10 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
     .from('tpl_orders').select('id').eq('shipment_id', id).neq('status', 'cancelled');
   if (lErr) dbError('Failed to check partner orders', lErr);
   if ((live ?? []).length > 0) throw new HttpError(409, 'A 3PL partner already has this shipment');
+  const { data: bidding, error: bErr } = await supabase
+    .from('capacity_windows').select('id').eq('fallback_shipment_id', id).eq('status', 'open').is('winning_bid_id', null);
+  if (bErr) dbError('Failed to check bidding windows', bErr);
+  if ((bidding ?? []).length > 0) throw new HttpError(409, 'A bidding window is open for this shipment. Close it first');
 
   // The server stores extra stops first and the destination last
   const last = stops[stops.length - 1];
@@ -127,13 +142,14 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
     sourceType, id: s.id, label: s.tracking_id, pickup, drop,
     weightKg: s.total_weight_kg != null ? Number(s.total_weight_kg) : null,
     vendorId: null, requestStatus: null, metadata: null,
+    distanceKm: roadKm(toPoint(s.origin_lat, s.origin_lng), toPoint(last?.latitude, last?.longitude)),
   };
 }
 
 // ── Matching ─────────────────────────────────────────────────────────
 
 /** Active partners with a corridor that runs from `pickup` to `drop`, each with the best matching corridor. */
-export async function findMatchingPartners(pickup: string, drop: string): Promise<PartnerMatch[]> {
+export async function findMatchingPartners(pickup: string, drop: string, distanceKm: number | null = null): Promise<PartnerMatch[]> {
   if (!pickup.trim() || !drop.trim()) return [];
   const { data: partners, error } = await supabase
     .from('tpl_partners')
@@ -144,7 +160,7 @@ export async function findMatchingPartners(pickup: string, drop: string): Promis
 
   const { data: corridors, error: cErr } = await supabase
     .from('tpl_corridors')
-    .select('id, partner_id, corridor_name, proposed_rate, priority')
+    .select('id, partner_id, corridor_name, proposed_rate, rate_amount, rate_unit, priority')
     .in('partner_id', partners.map(p => p.id));
   if (cErr) dbError('Failed to load corridors', cErr);
 
@@ -158,10 +174,13 @@ export async function findMatchingPartners(pickup: string, drop: string): Promis
       .filter(c => c.partner_id === partner.id && corridorMatches(c.corridor_name, pickup, drop))
       .sort((a, b) => priorityOf(a) - priorityOf(b))[0];
     if (best) {
+      // A rate the partner did not enter as a number and a unit is never turned into a price
+      const rate = corridorRate(best);
       matches.push({
         partner,
         corridor: { id: best.id, corridor_name: best.corridor_name },
-        price: parseRate(best.proposed_rate),
+        rate,
+        price: priceAtRate(rate, distanceKm),
       });
     }
   }
@@ -215,10 +234,11 @@ export const tplNetworkService = {
   /** Partners that would receive an offer, without sending anything. */
   async preview(sourceType: SourceType, id: string) {
     const load = await loadSource(sourceType, id);
-    const matches = await findMatchingPartners(load.pickup, load.drop);
+    const matches = await findMatchingPartners(load.pickup, load.drop, load.distanceKm);
     return {
       pickup: load.pickup, drop: load.drop,
-      partners: matches.map(m => ({ partner_id: m.partner.id, company_name: m.partner.company_name, corridor_name: m.corridor.corridor_name, price: m.price })),
+      distance_km: load.distanceKm,
+      partners: matches.map(m => ({ partner_id: m.partner.id, company_name: m.partner.company_name, corridor_name: m.corridor.corridor_name, price: m.price, rate: m.rate })),
     };
   },
 
@@ -226,9 +246,13 @@ export const tplNetworkService = {
    * Sends the load to every active partner whose corridor matches. Partners with an open or accepted
    * offer for it are skipped, so escalating twice is safe.
    */
-  async escalate(sourceType: SourceType, id: string, createdBy: string | null): Promise<EscalationResult> {
+  async escalate(sourceType: SourceType, id: string, createdBy: string | null, options: { vendorPrice?: unknown } = {}): Promise<EscalationResult> {
     const load = await loadSource(sourceType, id);
-    const matches = await findMatchingPartners(load.pickup, load.drop);
+    // The price the vendor pays is staff's to set, here or later; it is what the vendor's invoice is made from
+    if (sourceType === 'request' && options.vendorPrice !== undefined && options.vendorPrice !== null && options.vendorPrice !== '') {
+      await this.setVendorPrice(id, options.vendorPrice);
+    }
+    const matches = await findMatchingPartners(load.pickup, load.drop, load.distanceKm);
     if (matches.length === 0) {
       throw new HttpError(409, 'No active 3PL partner has a corridor from this pickup to this drop-off');
     }
@@ -312,6 +336,34 @@ export const tplNetworkService = {
     return { created: (offers ?? []).length, already_offered: matches.length - fresh.length, matched: matches.length, offers: offers ?? [] };
   },
 
+  /**
+   * Staff set what the vendor pays for a load a 3PL partner carries (not what the partner charges).
+   * When the partner has already delivered it, the vendor's invoice is made right away.
+   */
+  async setVendorPrice(requestId: string, costInput: unknown) {
+    const cost = Number(costInput);
+    if (!Number.isFinite(cost) || cost <= 0 || cost > MAX_AMOUNT) {
+      throw new HttpError(400, `The price must be more than 0 and at most ₹${MAX_AMOUNT.toLocaleString('en-IN')}`);
+    }
+    const { data: request, error } = await supabase
+      .from('vendor_shipment_requests').select('id, status').eq('id', requestId).maybeSingle();
+    if (error) dbError('Failed to load request', error);
+    if (!request) throw new HttpError(404, 'Request not found');
+    if (['rejected', 'cancelled'].includes(request.status)) {
+      throw new HttpError(409, `This request is ${request.status}, so it has no price to set`);
+    }
+    const { error: uErr } = await supabase
+      .from('vendor_shipment_requests').update({ cost, updated_at: new Date().toISOString() }).eq('id', requestId);
+    if (uErr) dbError('Failed to save the price', uErr);
+    let invoice: string | null = null;
+    if (request.status === 'completed') {
+      const { data: delivered } = await supabase
+        .from('tpl_orders').select('id').eq('request_id', requestId).eq('status', 'delivered');
+      if ((delivered ?? []).length > 0) invoice = (await InvoiceService.createForRequest(requestId)).status;
+    }
+    return { request_id: requestId, cost, invoice };
+  },
+
   /** Offers for one load (with partner names) and the order, if a partner accepted. */
   async listForSource(sourceType: SourceType, id: string) {
     const col = sourceColumn(sourceType);
@@ -353,7 +405,7 @@ export const tplNetworkService = {
     for (const p of partners ?? []) {
       if (!p.user_id) continue;
       try {
-        await notificationService.sendNotification(p.user_id, 'Load offer withdrawn', 'A load offered to you is no longer available.', 'tpl_offer_withdrawn', {});
+        await notificationService.sendNotification(p.user_id, 'Load offer withdrawn', 'A load offered to you is no longer available.', 'tpl_offer_withdrawn', { partner_id: p.id });
       } catch (e) {
         console.error('[tpl-network] Withdraw notification failed:', e);
       }
@@ -404,11 +456,14 @@ export const tplNetworkService = {
     const pickupEta = parseDate(input.pickup_eta, 'Pickup time');
     const deliveryEta = parseDate(input.delivery_eta, 'Delivery time');
     if (pickupEta && deliveryEta && deliveryEta <= pickupEta) throw new HttpError(400, 'Delivery time must be after the pickup time');
-    let amount: number | null = offer.proposed_price != null ? Number(offer.proposed_price) : null;
-    if (amount == null) {
-      amount = Number(input.agreed_amount);
-      if (!Number.isFinite(amount) || amount <= 0) throw new HttpError(400, 'Enter the amount you will charge for this load');
+    // The amount the partner types is what they will charge and wins over the price worked out from
+    // their corridor rate; without one, the offer's price is used, and with neither there is no deal.
+    const entered = input.agreed_amount === undefined || input.agreed_amount === null || input.agreed_amount === '' ? null : Number(input.agreed_amount);
+    if (entered !== null && (!Number.isFinite(entered) || entered <= 0 || entered > MAX_AMOUNT)) {
+      throw new HttpError(400, `The amount must be more than 0 and at most ₹${MAX_AMOUNT.toLocaleString('en-IN')}`);
     }
+    let amount: number | null = entered ?? (offer.proposed_price != null ? Number(offer.proposed_price) : null);
+    if (amount == null) throw new HttpError(400, 'Enter the amount you will charge for this load');
 
     const sourceType: SourceType = offer.source_type;
     const sourceId: string = sourceType === 'request' ? offer.request_id : offer.shipment_id;
@@ -482,7 +537,7 @@ export const tplNetworkService = {
       for (const p of others ?? []) {
         if (!p.user_id) continue;
         try {
-          await notificationService.sendNotification(p.user_id, 'Load taken', 'Another partner accepted a load that was offered to you.', 'tpl_offer_taken', {});
+          await notificationService.sendNotification(p.user_id, 'Load taken', 'Another partner accepted a load that was offered to you.', 'tpl_offer_taken', { partner_id: p.id });
         } catch (e) {
           console.error('[tpl-network] Taken notification failed:', e);
         }
@@ -492,7 +547,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner accepted a load',
         `${partner.company_name} accepted ${shortPlace(offer.pickup_location)} to ${shortPlace(offer.drop_location)} at ${inr(amount)}.`,
-        'tpl_order_accepted', { order_id: order.id, [col]: sourceId });
+        'tpl_order_accepted', { order_id: order.id, partner_id: partner.id, [col]: sourceId });
       if (sourceType === 'request') {
         const { data: r } = await supabase.from('vendor_shipment_requests').select('vendor_id').eq('id', sourceId).maybeSingle();
         if (r?.vendor_id) {
@@ -527,7 +582,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner declined a load',
         `${partner.company_name} declined ${shortPlace(declined.pickup_location)} to ${shortPlace(declined.drop_location)}: ${reason}`,
-        'tpl_offer_declined', { offer_id: offerId });
+        'tpl_offer_declined', { offer_id: offerId, partner_id: partner.id });
     } catch (e) {
       console.error('[tpl-network] Decline notification failed:', e);
     }
@@ -573,20 +628,19 @@ export const tplNetworkService = {
         await ShipmentService.updateShipmentStatus(order.shipment_id, next, null, null, next === 'delivered' ? note : null, null,
           { id: partner.id, role: 'vendor' }, { tpl_order_id: orderId, tpl_partner: partner.company_name });
       }
-      if (order.source_type === 'request' && order.request_id && next === 'delivered') {
-        await supabase.from('vendor_shipment_requests')
-          .update({ status: 'completed', updated_at: now }).eq('id', order.request_id).eq('status', 'assigned_to_partner');
-        const { data: r } = await supabase.from('vendor_shipment_requests').select('vendor_id').eq('id', order.request_id).maybeSingle();
-        if (r?.vendor_id) {
-          await notificationService.sendNotification(r.vendor_id, 'Your load was delivered',
-            `${partner.company_name} delivered your load from ${shortPlace(order.pickup_location)} to ${shortPlace(order.drop_location)}.`,
-            'request_completed', { request_id: order.request_id });
+      if (order.source_type === 'request' && order.request_id) {
+        if (next === 'delivered') {
+          await supabase.from('vendor_shipment_requests')
+            .update({ status: 'completed', updated_at: now }).eq('id', order.request_id).eq('status', 'assigned_to_partner');
         }
+        // The vendor hears about every step, like a load on our own trucks
+        await vendorService.notifyVendorRequestEvent(order.request_id, next as LoadEvent, order.pickup_location, order.drop_location, partner.company_name);
+        if (next === 'delivered') await InvoiceService.onRequestDelivered(order.request_id);
       }
       const label = next === 'picked_up' ? 'picked up' : next === 'in_transit' ? 'in transit' : 'delivered';
       await notificationService.notifyStaff(`3PL order ${label}`,
         `${partner.company_name}: ${shortPlace(order.pickup_location)} to ${shortPlace(order.drop_location)} is ${label}.`,
-        'tpl_order_status', { order_id: orderId });
+        'tpl_order_status', { order_id: orderId, partner_id: partner.id });
     } catch (e) {
       console.error('[tpl-network] Order follow-up failed:', e);
     }
@@ -653,7 +707,7 @@ export const tplNetworkService = {
         if (partner?.user_id) {
           await notificationService.sendNotification(partner.user_id, 'Payment marked as paid',
             `${inr(Number(data.agreed_amount))} for ${shortPlace(data.pickup_location)} to ${shortPlace(data.drop_location)} was marked paid.`,
-            'tpl_order_paid', { order_id: orderId });
+            'tpl_order_paid', { order_id: orderId, partner_id: data.partner_id });
         }
       } catch (e) {
         console.error('[tpl-network] Paid notification failed:', e);
@@ -748,23 +802,39 @@ export function computeStats(offers: OfferLike[], orders: OrderLike[], now: Date
 
 interface EarningsOrder {
   id: string; agreed_amount: number | string; paid_at?: string | null; accepted_at: string; delivered_at?: string | null;
+  status?: string;
   [key: string]: unknown;
 }
 
+/**
+ * Earnings by Indian calendar month. An amount is:
+ *   - paid: delivered and marked paid by dispatch
+ *   - payable: delivered, not yet paid (only a delivered order can be paid)
+ *   - in progress: accepted, picked up or in transit: not payable yet
+ * `unpaid` is payable plus in progress.
+ */
+export interface EarningsMonth { month: string; total: number; paid: number; payable: number; in_progress: number; unpaid: number; orders: EarningsOrder[] }
+
 export function groupEarnings(orders: EarningsOrder[]) {
-  const months = new Map<string, { month: string; total: number; paid: number; unpaid: number; orders: EarningsOrder[] }>();
+  const months = new Map<string, EarningsMonth>();
   for (const o of orders) {
     const month = indianDateKey(new Date(o.delivered_at ?? o.accepted_at)).slice(0, 7);
-    const m = months.get(month) ?? { month, total: 0, paid: 0, unpaid: 0, orders: [] };
+    const m: EarningsMonth = months.get(month) ?? { month, total: 0, paid: 0, payable: 0, in_progress: 0, unpaid: 0, orders: [] };
     const amount = Number(o.agreed_amount) || 0;
+    const delivered = o.status ? o.status === 'delivered' : !!o.delivered_at;
     m.total += amount;
-    if (o.paid_at) m.paid += amount; else m.unpaid += amount;
+    if (o.paid_at) m.paid += amount;
+    else if (delivered) m.payable += amount;
+    else m.in_progress += amount;
     m.orders.push(o);
     months.set(month, m);
   }
   const list = [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
   const round = (n: number) => Math.round(n * 100) / 100;
-  for (const m of list) { m.total = round(m.total); m.paid = round(m.paid); m.unpaid = round(m.unpaid); }
-  const sum = (key: 'total' | 'paid' | 'unpaid') => round(list.reduce((acc, m) => acc + m[key], 0));
-  return { totals: { total: sum('total'), paid: sum('paid'), unpaid: sum('unpaid') }, months: list };
+  for (const m of list) {
+    m.total = round(m.total); m.paid = round(m.paid); m.payable = round(m.payable); m.in_progress = round(m.in_progress);
+    m.unpaid = round(m.payable + m.in_progress);
+  }
+  const sum = (key: 'total' | 'paid' | 'payable' | 'in_progress' | 'unpaid') => round(list.reduce((acc, m) => acc + m[key], 0));
+  return { totals: { total: sum('total'), paid: sum('paid'), payable: sum('payable'), in_progress: sum('in_progress'), unpaid: sum('unpaid') }, months: list };
 }

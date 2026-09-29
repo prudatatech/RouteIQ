@@ -40,16 +40,16 @@ describe('POST /vendor/kyc/submit', () => {
       kyc_status: 'submitted',
     });
 
-    // Both active staff accounts get a notification (notifyStaff).
+    // Only the superadmin gets it: the KYC page is superadmin-only.
     const notified = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
-    expect(notified.sort()).toEqual(['admin-1', 'super-1']);
+    expect(notified).toEqual(['super-1']);
   });
 
   it('resubmits a rejected profile and notifies staff again', async () => {
     supabaseMock.reset({
       users: [
         { id: VENDOR, role: 'vendor', is_active: true },
-        { id: 'admin-1', role: 'admin', is_active: true },
+        { id: 'super-1', role: 'superadmin', is_active: true },
       ],
       vendor_profiles: [{ id: VENDOR, company_name: 'Acme Logistics', kyc_status: 'rejected', kyc_rejection_reason: 'bad scan' }],
       notifications: [],

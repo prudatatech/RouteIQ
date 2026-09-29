@@ -2,8 +2,8 @@ import { Trash2, Plus } from 'lucide-react'
 import { Input, Select } from '@/components/ui'
 import { Button, IconButton } from '@/components/ui'
 import {
-  CORRIDOR_PRIORITY_OPTIONS, CORRIDOR_SUGGESTIONS, VEHICLE_TYPE_SUGGESTIONS, emptyCorridorRow, parseVehicleTypes,
-  type CorridorFormRow,
+  CORRIDOR_PRIORITY_OPTIONS, CORRIDOR_SUGGESTIONS, RATE_UNIT_OPTIONS, VEHICLE_TYPE_SUGGESTIONS, emptyCorridorRow, parseVehicleTypes,
+  type CorridorFormRow, type RateUnit,
 } from './constants'
 
 const LANE_LIST_ID = 'tpl-corridor-lanes'
@@ -51,7 +51,7 @@ export function CorridorEditor({ corridors, onChange }: {
                 onClick={() => remove(c.id)}
               />
             )}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <Input
                 label="Corridor"
                 placeholder="e.g. DEL-BOM"
@@ -67,10 +67,20 @@ export function CorridorEditor({ corridors, onChange }: {
                 onChange={e => update(c.id, { vehicles: e.target.value })}
               />
               <Input
-                label="Proposed rate"
-                placeholder="e.g. Base + 12%"
+                label="Rate (₹)"
+                type="number"
+                min={0}
+                inputMode="decimal"
+                placeholder="e.g. 45000"
+                hint={c.legacy_rate && !c.rate ? `Earlier rate: ${c.legacy_rate}. Enter a number so it can be used.` : 'Leave empty to quote each load'}
                 value={c.rate}
                 onChange={e => update(c.id, { rate: e.target.value })}
+              />
+              <Select
+                label="Rate is"
+                options={RATE_UNIT_OPTIONS}
+                value={c.rate_unit}
+                onChange={e => update(c.id, { rate_unit: e.target.value as RateUnit })}
               />
               <Select
                 label="Priority"

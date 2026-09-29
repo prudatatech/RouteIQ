@@ -7,6 +7,7 @@ import { notificationService } from './notification.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
 import { assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
+import { formatRate, type RateUnit } from '../utils/corridor-match';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -62,6 +63,28 @@ function parseMobile(value: unknown): string | null {
   return digits;
 }
 
+/**
+ * Database rows for a partner's corridors as the forms send them. A rate is stored as a number and
+ * a unit; `proposed_rate` keeps the readable text ("₹41,200 per trip"). With no number, an earlier
+ * free-text rate the form passes back (`legacy_rate`) is kept as it was, and never used to price a load.
+ */
+function corridorRows(partnerId: string, corridors: any[]) {
+  return corridors.map((c: any) => {
+    const hasRate = c.rate !== undefined && c.rate !== null && c.rate !== '';
+    const amount = hasRate ? Number(c.rate) : null;
+    const unit: RateUnit | null = hasRate ? (c.rate_unit as RateUnit) : null;
+    return {
+      partner_id: partnerId,
+      corridor_name: c.name,
+      vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
+      rate_amount: amount,
+      rate_unit: unit,
+      proposed_rate: amount !== null && unit ? formatRate({ amount, unit }) : (typeof c.legacy_rate === 'string' && c.legacy_rate.trim() ? c.legacy_rate.trim() : null),
+      priority: c.priority,
+    };
+  });
+}
+
 export const tplService = {
   /**
    * Submit a new 3PL onboarding application
@@ -115,14 +138,8 @@ export const tplService = {
 
     // 2. Insert Corridors
     if (corridors && corridors.length > 0) {
-      const corridorsData = corridors.map((c: any) => ({
-        partner_id: partnerId,
-        corridor_name: c.name,
-        vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
-        proposed_rate: c.rate,
-        priority: c.priority
-      }));
-      
+      const corridorsData = corridorRows(partnerId, corridors);
+
       const { error: corrErr } = await supabase.from('tpl_corridors').insert(corridorsData);
       if (corrErr) console.error("Failed to insert corridors", corrErr);
     }
@@ -281,13 +298,7 @@ export const tplService = {
     if (corridors) {
       await supabase.from('tpl_corridors').delete().eq('partner_id', id);
       if (corridors.length > 0) {
-        const corridorsData = corridors.map((c: any) => ({
-          partner_id: id,
-          corridor_name: c.name,
-          vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()) : [],
-          proposed_rate: c.rate,
-          priority: c.priority
-        }));
+        const corridorsData = corridorRows(id, corridors);
         await supabase.from('tpl_corridors').insert(corridorsData);
       }
     }
@@ -375,13 +386,7 @@ export const tplService = {
 
     if (updates?.corridors && Array.isArray(updates.corridors)) {
       await supabase.from('tpl_corridors').delete().eq('partner_id', id);
-      const corridorPayloads = updates.corridors.map((c: any) => ({
-        partner_id: id,
-        corridor_name: c.name,
-        vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
-        proposed_rate: c.rate,
-        priority: c.priority
-      }));
+      const corridorPayloads = corridorRows(id, updates.corridors);
       if (corridorPayloads.length > 0) {
         await supabase.from('tpl_corridors').insert(corridorPayloads);
       }

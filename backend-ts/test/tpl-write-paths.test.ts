@@ -97,7 +97,7 @@ describe('partner settings request', () => {
   const GOOD = {
     sla_commitment: '4 Hours',
     tax_treatment: '5% GTA (No ITC) - Reverse Charge',
-    corridors: [{ id: 1, name: 'DEL-BOM', vehicles: '32ft SXL', rate: '45000', priority: '1' }],
+    corridors: [{ id: 1, name: 'DEL-BOM', vehicles: '32ft SXL', rate: '45000', rate_unit: 'per_trip', priority: '1' }],
   };
   const send = (body: Record<string, unknown>, token = bearer('partner-user')) =>
     request(app).post(`/api/v1/tpl/${PID}/settings`).set(token).send(body);
@@ -116,9 +116,11 @@ describe('partner settings request', () => {
   it.each([
     ['an unknown SLA', { sla_commitment: '1 Minute' }],
     ['an unknown tax treatment', { tax_treatment: '0% for me' }],
-    ['a negative rate', { corridors: [{ name: 'DEL-BOM', rate: '-5' }] }],
-    ['a rate that is not a number', { corridors: [{ name: 'DEL-BOM', rate: 'cheap' }] }],
-    ['a huge rate', { corridors: [{ name: 'DEL-BOM', rate: '999999999' }] }],
+    ['a negative rate', { corridors: [{ name: 'DEL-BOM', rate: '-5', rate_unit: 'per_trip' }] }],
+    ['a rate without a unit', { corridors: [{ name: 'DEL-BOM', rate: '45000' }] }],
+    ['a rate with an unknown unit', { corridors: [{ name: 'DEL-BOM', rate: '45000', rate_unit: 'per_mile' }] }],
+    ['a rate that is not a number', { corridors: [{ name: 'DEL-BOM', rate: 'cheap', rate_unit: 'per_trip' }] }],
+    ['a huge rate', { corridors: [{ name: 'DEL-BOM', rate: '999999999', rate_unit: 'per_trip' }] }],
     ['a corridor without a name', { corridors: [{ name: '', rate: '10' }] }],
     ['too many corridors', { corridors: Array.from({ length: 31 }, (_, i) => ({ name: `L${i}`, rate: '10' })) }],
     ['a bad priority', { corridors: [{ name: 'DEL-BOM', rate: '10', priority: '9' }] }],
@@ -159,10 +161,13 @@ describe('staff decisions on partners', () => {
   });
 
   it('applies requested corridors on approval and keeps live ones until then', async () => {
-    reset('pending', { pending_updates: { sla_commitment: '6 Hours', corridors: [{ name: 'DEL-BOM', vehicles: '20ft', rate: '100', priority: '1' }] } });
+    reset('pending', { pending_updates: { sla_commitment: '6 Hours', corridors: [{ name: 'DEL-BOM', vehicles: '20ft', rate: '100', rate_unit: 'per_km', priority: '1' }, { name: 'BLR-MAA', rate: '', legacy_rate: 'Base + 12%' }] } });
     expect((await act(`approve/${PID}`)).status).toBe(200);
     expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({ status: 'active', sla_commitment: '6 Hours', pending_updates: null });
-    expect(supabaseMock.rows('tpl_corridors')).toHaveLength(1);
+    expect(supabaseMock.rows('tpl_corridors')).toHaveLength(2);
+    // A number and a unit are stored as such; older free text is kept as written, without a numeric rate
+    expect(supabaseMock.rows('tpl_corridors')[0]).toMatchObject({ corridor_name: 'DEL-BOM', rate_amount: 100, rate_unit: 'per_km', proposed_rate: '₹100 per km' });
+    expect(supabaseMock.rows('tpl_corridors')[1]).toMatchObject({ corridor_name: 'BLR-MAA', rate_amount: null, rate_unit: null, proposed_rate: 'Base + 12%' });
   });
 
   it.each(['active', 'paused', 'rejected'])('will not approve a partner that is %s', async status => {

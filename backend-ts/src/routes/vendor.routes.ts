@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
+import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { rateLimitByUser } from '../core/rate-limit';
@@ -84,7 +85,7 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
   try {
     const { data, error } = await supabase
       .from('invoices')
-      .select('id, invoice_number, shipment_id, manifest_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
+      .select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
       .eq('vendor_id', req.user.user_id)
       .neq('status', 'void')
       .order('issued_at', { ascending: false });
@@ -97,7 +98,11 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
     const tracking = new Map((shipments ?? []).map((s: any) => [s.id, s.tracking_id]));
     res.json(rows.map((r: any) => ({
       ...r,
-      reference: r.shipment_id ? (tracking.get(r.shipment_id) ?? null) : `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`,
+      reference: r.shipment_id
+        ? (tracking.get(r.shipment_id) ?? null)
+        : r.manifest_id
+          ? `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`
+          : `REQ-${String(r.vendor_request_id).slice(0, 8).toUpperCase()}`,
     })));
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -115,11 +120,20 @@ router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req:
   }
 });
 
-// Get pending shipment requests (Super Admin)
-router.get('/shipment-request/pending', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Requests that still need a decision or a vehicle (staff, managers included): the "Needs a vehicle" set
+router.get('/shipment-request/pending', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const requests = await vendorService.getPendingRequests();
     res.json(requests);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Withdraw a load the vendor posted, while it has no vehicle yet
+router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await vendorService.cancelRequest(req.user.user_id, req.params.id));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

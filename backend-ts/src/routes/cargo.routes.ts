@@ -82,7 +82,26 @@ async function loadOpenLoads(ids?: string[]): Promise<OpenLoad[]> {
     (stops || []).forEach((s: any) => routed.add(s.delivery_point_id));
   }
 
+  // Drop shipments someone else already holds: a 3PL partner has (or is being offered) the
+  // load, or a bidding window on a vehicle is open for it.
+  const held = new Set<string>();
+  const rowIds = rows.map((s: any) => s.id);
+  if (rowIds.length > 0) {
+    const [orders, offers, windows] = await Promise.all([
+      supabase.from('tpl_orders').select('shipment_id').in('shipment_id', rowIds).neq('status', 'cancelled'),
+      supabase.from('tpl_offers').select('shipment_id').in('shipment_id', rowIds).eq('status', 'offered'),
+      supabase.from('capacity_windows').select('fallback_shipment_id').in('fallback_shipment_id', rowIds).eq('status', 'open').is('winning_bid_id', null),
+    ]);
+    if (orders.error) throw orders.error;
+    if (offers.error) throw offers.error;
+    if (windows.error) throw windows.error;
+    (orders.data || []).forEach((o: any) => held.add(o.shipment_id));
+    (offers.data || []).forEach((o: any) => held.add(o.shipment_id));
+    (windows.data || []).forEach((w: any) => held.add(w.fallback_shipment_id));
+  }
+
   return rows
+    .filter((s: any) => !held.has(s.id))
     .filter((s: any) => !(s.delivery_points || []).some((dp: any) => routed.has(dp.id)))
     .map((s: any) => {
       const points: any[] = s.delivery_points || [];
