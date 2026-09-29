@@ -5,6 +5,7 @@ import {
   Alert, Button, Card, CardBody, CardHeader, Checkbox, EmptyState, ErrorState, Select, Skeleton, Stat,
 } from '@/components/ui'
 import { useCargoStore } from '@/store/cargoStore'
+import LoadActions from './LoadActions'
 import { apiErrorMessage, formatKg, formatKm, useBackhaulVehicles, useOpenLoads, vehicleLabel, type OpenLoad } from './data'
 
 interface PoolPlan {
@@ -166,6 +167,11 @@ export default function PoolLoadsTab() {
                   ))}
                 </ol>
               </div>
+              <LoadActions
+                loads={chosen}
+                vehicle={vehicle}
+                onAssigned={() => { plan.reset(); setPicked(new Set()) }}
+              />
             </CardBody>
           </Card>
         )}

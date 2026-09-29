@@ -21,19 +21,26 @@ const DURATIONS = [
 /** Shipments that are already finished cannot be offered as the reason for a window. */
 const FINISHED = new Set(['delivered', 'cancelled', 'failed'])
 
-interface FormState { vehicle_id: string; floor_price: string; duration: string; shipment_id: string }
+export interface FormState { vehicle_id: string; floor_price: string; duration: string; shipment_id: string }
 const blank = (): FormState => ({ vehicle_id: '', floor_price: '', duration: '60', shipment_id: '' })
 
-/** Staff open a bidding window: which vehicle, the lowest price, how long, and an optional shipment it is linked to. */
-export default function OpenWindowModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** Staff open a capacity bidding window: which vehicle, the minimum bid, how long, and an optional shipment it is linked to. */
+export default function OpenWindowModal({ open, onClose, initial }: {
+  open: boolean
+  onClose: () => void
+  /** Values to start the form with (a vehicle, a price, a linked shipment) when it is opened from a load. */
+  initial?: Partial<FormState>
+}) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(blank)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
 
   useEffect(() => {
     if (!open) return
-    setForm(blank())
+    setForm({ ...blank(), ...initial })
     setErrors({})
+    // Only when the modal opens: later edits to `initial` must not overwrite what staff typed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const vehicles = useQuery<VehicleOption[]>({
@@ -73,7 +80,7 @@ export default function OpenWindowModal({ open, onClose }: { open: boolean; onCl
     const next: typeof errors = {}
     if (!form.vehicle_id) next.vehicle_id = 'Choose a vehicle'
     const price = Number(form.floor_price)
-    if (form.floor_price === '' || !Number.isFinite(price) || price < 0) next.floor_price = 'Enter the lowest price you will accept'
+    if (form.floor_price === '' || !Number.isFinite(price) || price < 0) next.floor_price = 'Enter the minimum bid you will accept'
     setErrors(next)
     if (Object.keys(next).length === 0) save.mutate()
   }
@@ -82,8 +89,8 @@ export default function OpenWindowModal({ open, onClose }: { open: boolean; onCl
     <Modal
       open={open}
       onClose={onClose}
-      title="Open a bidding window"
-      description="Vendors can bid for the vehicle's free space until the window ends. You choose the winning bid."
+      title="Open a capacity bidding window"
+      description="Vendors near the vehicle can bid for its free space until the window ends. You choose the winning bid."
       closeOnBackdrop={false}
       footer={
         <>
@@ -107,13 +114,14 @@ export default function OpenWindowModal({ open, onClose }: { open: boolean; onCl
           ]}
         />
         <Input
-          label="Lowest price"
+          label="Minimum bid"
           required
           type="number"
           inputMode="decimal"
           min="0"
           step="0.01"
           leading="₹"
+          hint="The lowest price for the whole load. Vendors cannot bid below it."
           value={form.floor_price}
           onChange={e => set('floor_price', e.target.value)}
           error={errors.floor_price}
