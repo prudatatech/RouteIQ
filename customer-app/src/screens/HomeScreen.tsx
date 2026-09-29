@@ -175,7 +175,7 @@ export default function HomeScreen({ navigation }: any) {
                   <Text variant="caption" color="textMuted">
                     {t('pickup')}
                   </Text>
-                  <Text variant="bodyMedium" color={pickupLocation ? 'text' : 'textDisabled'} numberOfLines={1}>
+                  <Text variant="bodyMedium" color={pickupLocation ? 'text' : 'textMuted'} numberOfLines={1}>
                     {pickupLocation || t('home_search_pickup')}
                   </Text>
                 </View>
@@ -195,7 +195,7 @@ export default function HomeScreen({ navigation }: any) {
                   <Text variant="caption" color="textMuted">
                     {t('dropoff')}
                   </Text>
-                  <Text variant="bodyMedium" color={dropoffLocation ? 'text' : 'textDisabled'} numberOfLines={1}>
+                  <Text variant="bodyMedium" color={dropoffLocation ? 'text' : 'textMuted'} numberOfLines={1}>
                     {dropoffLocation || t('home_where_to')}
                   </Text>
                 </View>
