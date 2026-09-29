@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { API_V1 } from '../config';
 import { secureStorage } from './secureStorage';
 
@@ -11,6 +12,24 @@ const STORAGE_KEYS = {
   REFRESH_TOKEN: 'margixindia_customer_refresh_token',
   CUSTOMER_INFO: 'margixindia_customer_info',
 };
+
+/** Emitted when the saved sign-in no longer works, so the app can return to the sign-in screen. */
+export const SESSION_EXPIRED_EVENT = 'customer:session-expired';
+
+/** A request gives up after this long, so a weak signal never leaves a spinner running for ever. */
+const REQUEST_TIMEOUT_MS = 20_000;
+
+const NETWORK_MESSAGE = 'No signal. Check your internet connection and try again.';
+const SERVER_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
+const SESSION_MESSAGE = 'Your session has ended. Please sign in again.';
+
+/** The server's own text when it sent one, otherwise a plain sentence. */
+function apiMessage(data: any, status: number): string {
+  const detail = data?.detail ?? data?.error;
+  // Validation errors arrive as a list of { msg } objects.
+  const text = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d?.msg).filter(Boolean).join('. ') : '';
+  return status >= 500 || !text ? SERVER_MESSAGE : text;
+}
 
 class ApiClient {
   private accessToken: string | null = null;
@@ -105,24 +124,35 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(`${API_V1}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(`${API_V1}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } catch {
+      throw new Error(NETWORK_MESSAGE);
+    } finally {
+      clearTimeout(timer);
+    }
 
-    if (response.status === 401 && requireAuth && !isRetry) {
-      const refreshed = await this.refreshAccessToken();
-      if (refreshed) {
+    if (response.status === 401 && requireAuth) {
+      if (!isRetry && (await this.refreshAccessToken())) {
         return this.request<T>(method, path, body, requireAuth, true);
       }
       await this.clearTokens();
+      DeviceEventEmitter.emit(SESSION_EXPIRED_EVENT);
+      throw new Error(SESSION_MESSAGE);
     }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data.detail || `Request failed: ${response.status}`);
+      throw new Error(apiMessage(data, response.status));
     }
 
     return data;

@@ -48,7 +48,7 @@ export default function SplashScreen({ navigation }: any) {
     // 3. Loading bar fills while the session is restored
     Animated.timing(barWidth, {
       toValue: 1,
-      duration: 2000,
+      duration: 1000,
       delay: 500,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: false,
@@ -58,7 +58,7 @@ export default function SplashScreen({ navigation }: any) {
       // Show the splash for a minimum time while initialising the API client
       // (migrates legacy tokens and loads the session) in parallel.
       const [, hasSession] = await Promise.all([
-        new Promise(resolve => setTimeout(resolve, 2800)),
+        new Promise(resolve => setTimeout(resolve, 1600)),
         api.hasSession(),
       ]);
 

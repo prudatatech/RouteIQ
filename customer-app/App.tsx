@@ -1,6 +1,6 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { DefaultTheme, NavigationContainer, type Theme } from '@react-navigation/native';
+import React, { useEffect } from 'react';
+import { DeviceEventEmitter, StyleSheet, View } from 'react-native';
+import { DefaultTheme, NavigationContainer, createNavigationContainerRef, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -13,10 +13,12 @@ import LocationSearchScreen from './src/screens/LocationSearchScreen';
 import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import QuoteScreen from './src/screens/QuoteScreen';
 import BookingDetailScreen from './src/screens/BookingDetailScreen';
+import { SESSION_EXPIRED_EVENT } from './src/services/api';
 import { themeFonts } from './src/theme/fonts';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
 
 const navigationTheme: Theme = {
   ...DefaultTheme,
@@ -36,13 +38,21 @@ export default function App() {
   // fail to load the app still starts with the system font.
   const [fontsLoaded, fontError] = useFonts(themeFonts);
 
+  // A sign-in that no longer works (expired or revoked) sends the customer back to the sign-in screen.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(SESSION_EXPIRED_EVENT, () => {
+      if (navigationRef.isReady()) navigationRef.reset({ index: 0, routes: [{ name: 'Login' }] });
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return <View style={styles.fontGate} />;
   }
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={navigationTheme}>
+      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
         <StatusBar style="dark" />
         <Stack.Navigator
           initialRouteName="Splash"
