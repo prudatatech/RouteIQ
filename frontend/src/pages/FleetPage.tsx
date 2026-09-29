@@ -1,29 +1,51 @@
-import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  Plus, Search, Truck, X, Fuel, Info, MapPin,
-  BarChart2, Settings, Pencil, Trash2, ExternalLink, Copy, CheckCircle2, Navigation
-} from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin, Navigation } from 'lucide-react'
 import { vehiclesAPI, telemetryWS } from '@/services/api'
 import { formatTimeAgo } from '@/utils/timeFormat'
-import { Card, StatusDot, Button, Spinner } from '@/components/ui'
+import {
+  Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput, Drawer, DetailList,
+  useConfirm, type Column,
+} from '@/components/ui'
+import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
-import clsx from 'clsx'
+import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 
-const STATUS_OPTIONS = ['all', 'on_route', 'available', 'idle', 'maintenance', 'offline', 'archived']
-const _VEHICLE_TYPES = ['truck', 'van', 'bike', 'car']
-const _FUEL_TYPES = ['diesel', 'petrol', 'electric', 'cng']
-const _STATUS_OPTS = ['available', 'on_route', 'idle', 'maintenance', 'offline']
+interface Vehicle {
+  id: string
+  plate_number: string
+  vehicle_type: string
+  vehicle_model?: string | null
+  status: string
+  capacity_kg?: number | null
+  current_load_kg?: number | null
+  available_capacity_kg?: number | null
+  current_fuel_liters?: number | null
+  fuel_capacity_liters?: number | null
+  latitude?: number | null
+  longitude?: number | null
+  last_sync?: string | null
+  last_heartbeat?: string | null
+  driver_name?: string | null
+  spark_id?: string | null
+  speed_kmh?: number | null
+}
 
-// A vehicle counts as live when its last position report is at most this old
+// The backend's /vehicles/summary groups "idle" and "available" into one count, so
+// they share a single filter tab here rather than showing a fabricated split.
+const STATUS_FILTERS = ['all', 'on_route', 'idle', 'maintenance', 'offline', 'archived'] as const
+const STATUS_FILTER_LABELS: Record<(typeof STATUS_FILTERS)[number], string> = {
+  all: 'All', on_route: 'On route', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived',
+}
+
+// A vehicle counts as live when its last position report is at most this old.
 const LIVE_GPS_THRESHOLD_MS = 5 * 60 * 1000
 
-// Latest position report: telemetry/driver pings set last_heartbeat, the GPS provider sync sets last_sync
-function lastPingAt(v: { last_heartbeat?: string | null; last_sync?: string | null }): Date | null {
+// Latest position report: telemetry/driver pings set last_heartbeat, the GPS provider sync sets last_sync.
+function lastPingAt(v: Vehicle): Date | null {
   const times = [v.last_heartbeat, v.last_sync]
     .filter((t): t is string => !!t)
     .map(t => new Date(t).getTime())
@@ -31,338 +53,59 @@ function lastPingAt(v: { last_heartbeat?: string | null; last_sync?: string | nu
   return times.length > 0 ? new Date(Math.max(...times)) : null
 }
 
-// ─── Location Modal ───────────────────────────────────────────────────────────
-function LocationModal({ vehicle, onClose }: { vehicle: any; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-  const hasLocation = vehicle.latitude && vehicle.longitude
-
-  const coordsText = hasLocation
-    ? `${vehicle.latitude.toFixed(6)}, ${vehicle.longitude.toFixed(6)}`
-    : null
-
-  const googleMapsUrl = hasLocation
-    ? `https://www.google.com/maps?q=${vehicle.latitude},${vehicle.longitude}`
-    : null
-
-  const handleCopy = () => {
-    if (!coordsText) return
-    navigator.clipboard.writeText(coordsText)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface2/80 backdrop-blur-sm" onClick={onClose} />
-      <Card className="w-full max-w-md animate-fade-up relative z-10 shadow-xl overflow-hidden border-slate-200 bg-white" glass={false}>
-        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-900">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-yellow-400/20 rounded-lg flex items-center justify-center border border-yellow-400/30">
-              <Navigation size={15} className="text-yellow-400" />
-            </div>
-            <div>
-              <h2 className="font-heading font-bold text-base text-white">Live Location</h2>
-              <p className="text-[11px] text-slate-400 font-mono">{vehicle.plate_number}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {hasLocation ? (
-            <>
-              {/* Map Preview */}
-              <div className="relative w-full h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                <iframe
-                  title="vehicle-location"
-                  src={`https://maps.google.com/maps?q=${vehicle.latitude},${vehicle.longitude}&z=15&output=embed`}
-                  className="w-full h-full border-0"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-              </div>
-
-              {/* Coordinates */}
-              <div className="bg-slate-50 rounded-xl border border-slate-200 p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-muted mb-1">GPS Coordinates</p>
-                    <p className="font-mono text-sm font-bold text-slate-900">{coordsText}</p>
-                  </div>
-                  <button
-                    onClick={handleCopy}
-                    className="p-2 hover:bg-slate-200 rounded-lg transition-colors text-muted hover:text-slate-900"
-                  >
-                    {copied ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Sync time */}
-              {vehicle.last_sync && (
-                <div className="flex items-center gap-2 text-[11px] text-muted">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Last synced: {new Date(vehicle.last_sync).toLocaleTimeString()}
-                </div>
-              )}
-
-              {/* Open in Maps */}
-              <a
-                href={googleMapsUrl!}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-colors"
-              >
-                <ExternalLink size={14} />
-                Open in Google Maps
-              </a>
-            </>
-          ) : (
-            <div className="py-10 flex flex-col items-center gap-3 text-center">
-              <div className="w-14 h-14 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
-                <MapPin size={24} className="text-red-400" />
-              </div>
-              <div>
-                <p className="font-bold text-slate-900">No Signal</p>
-                <p className="text-sm text-muted mt-1">
-                  GPS data unavailable for <span className="font-mono font-bold">{vehicle.plate_number}</span>.<br />
-                  Ensure the vehicle has an active GPS device linked.
-                </p>
-              </div>
-              {vehicle.spark_id ? (
-                <div className="text-xs bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-yellow-800">
-                  Spark ID: <span className="font-mono font-bold">{vehicle.spark_id}</span>
-                </div>
-              ) : (
-                <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-600">
-                  No Spark GPS device linked to this vehicle
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </Card>
-    </div>
-  )
-}
-
-// ─── Settings Dropdown ────────────────────────────────────────────────────────
-function SettingsDropdown({
-  vehicle,
-  onEdit,
-  onDelete,
-}: {
-  vehicle: any
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const queryClient = useQueryClient()
-
-  // Close on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-        setConfirmDelete(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const deleteMutation = useMutation({
-    mutationFn: () => vehiclesAPI.delete(vehicle.id),
-    onSuccess: () => {
-      // Optimistically remove from all cached lists to bypass backend Redis cache delays
-      queryClient.setQueriesData({ queryKey: ['vehicles'] }, (oldData: any) => {
-        if (!Array.isArray(oldData)) return oldData;
-        return oldData.filter((v: any) => v.id !== vehicle.id);
-      });
-      
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] });
-      toast.success(`${vehicle.plate_number} deleted`);
-      setOpen(false);
-      setConfirmDelete(false);
-      if (onDelete) onDelete();
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || 'Failed to delete vehicle');
-    }
-  })
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        id={`settings-btn-${vehicle.id}`}
-        onClick={() => { setOpen(!open); setConfirmDelete(false) }}
-        className={clsx(
-          "p-2 rounded-lg transition-colors",
-          open
-            ? "bg-slate-900 text-white"
-            : "hover:bg-slate-100 text-muted hover:text-slate-900"
-        )}
-        title="Asset Settings"
-      >
-        <Settings size={16} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-up">
-          {!confirmDelete ? (
-            <>
-              <div className="px-3 py-2 border-b border-slate-100">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted">Asset Actions</p>
-                <p className="text-[11px] font-mono font-bold text-slate-900">{vehicle.plate_number}</p>
-              </div>
-              <div className="p-1">
-                <button
-                  id={`edit-vehicle-${vehicle.id}`}
-                  onClick={() => { setOpen(false); onEdit() }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-amber-50 text-left transition-colors group"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-amber-50 group-hover:bg-amber-100 border border-amber-200 flex items-center justify-center transition-colors">
-                    <Pencil size={13} className="text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">Edit Details</p>
-                    <p className="text-[10px] text-muted">Update vehicle info</p>
-                  </div>
-                </button>
-                <button
-                  id={`delete-vehicle-${vehicle.id}`}
-                  onClick={() => setConfirmDelete(true)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-50 text-left transition-colors group"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-red-50 group-hover:bg-red-100 border border-red-200 flex items-center justify-center transition-colors">
-                    <Trash2 size={13} className="text-red-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">Delete Vehicle</p>
-                    <p className="text-[10px] text-muted">Remove from fleet</p>
-                  </div>
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center">
-                  <Trash2 size={13} className="text-red-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Confirm Delete</p>
-                  <p className="text-[10px] text-muted font-mono">{vehicle.plate_number}</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-600 mb-3">
-                This will permanently remove this vehicle from your fleet. This action cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="flex-1 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  id={`confirm-delete-${vehicle.id}`}
-                  onClick={() => deleteMutation.mutate()}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center justify-center"
-                >
-                  {deleteMutation.isPending ? <Spinner size={12} /> : 'Delete'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Main Fleet Page ──────────────────────────────────────────────────────────
 export default function FleetPage() {
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
-  const [filter, setFilter] = useState('all')
-  const [search, setSearch] = useState('')
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [editingVehicle, setEditingVehicle] = useState<any>(null)
-  const [trackingVehicle, setTrackingVehicle] = useState<any>(null)
-  const [mounted, setMounted] = useState(false)
+  const { confirm } = useConfirm()
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 100)
-    return () => clearTimeout(timer)
-  }, [])
+  const [filter, setFilter] = useState<(typeof STATUS_FILTERS)[number]>('all')
+  const [search, setSearch] = useState('')
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
+  const [detailVehicle, setDetailVehicle] = useState<Vehicle | null>(null)
 
-  // Keep "last seen" labels and the live threshold current
+  // Keep "last seen" labels and the live threshold current.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(tick)
   }, [])
 
-  // Real-time updates for Fleet table
+  // Realtime updates for the fleet table.
   useEffect(() => {
     const invalidate = () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
     }
-
     const channel = supabase
       .channel('fleet_page_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidate)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, invalidate)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, invalidate)
       .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [queryClient])
 
-  // Live GPS telemetry subscription
+  // Live GPS telemetry over the backend WebSocket (the server broadcasts type: 'TELEMETRY_UPDATE').
   useEffect(() => {
-    const ws = telemetryWS.connect((data) => {
-      if (data.type === 'gps_update') {
-        queryClient.setQueryData(['vehicles', filter], (oldData: any[]) => {
-          if (!oldData) return oldData;
-          return oldData.map(v => {
-            if (v.id === data.vehicle_id) {
-              return {
-                ...v,
-                latitude: data.lat,
-                longitude: data.lng,
-                last_sync: new Date().toISOString(),
-                speed_kmh: data.speed,
-                status: (v.status === 'offline') 
-                  ? ((v.current_load_kg || 0) > 0 ? 'on_route' : 'available') 
-                  : v.status
-              };
-            }
-            return v;
-          });
-        });
-      }
-    });
+    const ws = telemetryWS.connect((message: { type?: string; data?: { vehicle_id: string; lat: number; lng: number; speed?: number } }) => {
+      if (message.type !== 'TELEMETRY_UPDATE' || !message.data) return
+      const { vehicle_id, lat, lng, speed } = message.data
+      queryClient.setQueriesData({ queryKey: ['vehicles'] }, (old: Vehicle[] | undefined) => {
+        if (!old) return old
+        return old.map(v => v.id === vehicle_id
+          ? { ...v, latitude: lat, longitude: lng, last_heartbeat: new Date().toISOString(), speed_kmh: speed }
+          : v)
+      })
+    })
+    return () => ws.close()
+  }, [queryClient])
 
-    return () => {
-      ws.close();
-    }
-  }, [queryClient, filter]);
-
-  const { data: vehicles = [], isLoading } = useQuery({
+  // "idle" covers both idle and available statuses (see STATUS_FILTER_LABELS), so it
+  // is filtered on the client rather than passed as a single status to the backend.
+  const { data: vehicles = [], isLoading, error, refetch } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', filter],
-    queryFn: () => vehiclesAPI.list({ status: filter === 'all' ? undefined : filter, limit: 100 }),
+    queryFn: () => vehiclesAPI.list({ status: filter === 'all' || filter === 'idle' ? undefined : filter, limit: 200 }),
+    select: rows => filter === 'idle' ? rows.filter(v => v.status === 'idle' || v.status === 'available') : rows,
     refetchInterval: 15_000,
   })
 
@@ -371,332 +114,209 @@ export default function FleetPage() {
     queryFn: vehiclesAPI.summary,
   })
 
-  // Fallback for archived count if backend summary hasn't updated yet
-  const { data: archivedCount } = useQuery({
-    queryKey: ['archived-vehicles-count'],
-    queryFn: async () => {
-      const { data } = await supabase.from('vehicles').select('id').eq('status', 'archived');
-      return data?.length || 0;
-    },
-    refetchInterval: 15_000,
-  })
+  const counts: Record<string, number> = {
+    all: summary?.total ?? 0,
+    on_route: summary?.active ?? 0,
+    idle: summary?.idle ?? 0,
+    maintenance: summary?.maintenance ?? 0,
+    offline: summary?.offline ?? 0,
+    archived: summary?.archived ?? 0,
+  }
 
-  const filtered = vehicles.filter((v: any) =>
-    v.plate_number.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () => vehicles.filter(v => v.plate_number.toLowerCase().includes(search.toLowerCase())),
+    [vehicles, search],
   )
 
-  return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-end">
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => vehiclesAPI.delete(id),
+    onSuccess: (_data, id) => {
+      queryClient.setQueriesData({ queryKey: ['vehicles'] }, (old: Vehicle[] | undefined) => old?.filter(v => v.id !== id))
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      toast.success('Vehicle deleted')
+    },
+    onError: (err: { response?: { data?: { detail?: string } } }) => toast.error(err.response?.data?.detail || 'Failed to delete vehicle'),
+  })
+
+  const handleDelete = async (v: Vehicle) => {
+    const ok = await confirm({
+      title: `Delete ${v.plate_number}?`,
+      message: 'This removes the vehicle from the fleet. This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (ok) deleteMutation.mutate(v.id)
+  }
+
+  const columns: Column<Vehicle>[] = [
+    {
+      key: 'vehicle',
+      header: 'Vehicle',
+      sortValue: v => v.plate_number,
+      cell: v => (
         <div>
-          <h1 className="font-display text-5xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-            Fleet <span className="text-yellow-500">Intelligence</span>
-          </h1>
-          <p className="text-muted font-bold tracking-tight mt-3 flex items-center gap-2">
-            <Info size={14} className="text-yellow-600" />
-            Monitoring <span className="text-slate-900">{summary?.total ?? '—'}</span> high-performance assets in real-time
-          </p>
+          <p className="font-medium text-text">{v.plate_number}</p>
+          <p className="text-xs text-muted">{v.vehicle_model || v.vehicle_type}</p>
         </div>
-        {role !== 'driver' && (
-          <Button variant="accent" size="md" className="shadow-yellow-400/20" onClick={() => setIsAddModalOpen(true)}>
-            <Plus size={18} strokeWidth={3} /> Add New Asset
-          </Button>
+      ),
+    },
+    { key: 'type', header: 'Type', hideBelow: 'md', cell: v => <span className="capitalize">{v.vehicle_type}</span> },
+    { key: 'status', header: 'Status', cell: v => <StatusPill status={v.status} /> },
+    {
+      key: 'fuel',
+      header: 'Fuel',
+      hideBelow: 'lg',
+      cell: v => {
+        const capacity = v.fuel_capacity_liters || 0
+        const current = v.current_fuel_liters || 0
+        const pct = capacity > 0 ? Math.round((current / capacity) * 100) : null
+        return (
+          <span className="inline-flex items-center gap-1.5 text-sm text-text">
+            <Fuel size={14} className="text-muted" aria-hidden="true" />
+            {current.toLocaleString('en-IN')} / {capacity.toLocaleString('en-IN')} L
+            {pct !== null && <span className="text-xs text-muted">({pct}%)</span>}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'lastSeen',
+      header: 'Last seen',
+      sortValue: v => lastPingAt(v)?.getTime() ?? 0,
+      cell: v => {
+        const pingAt = lastPingAt(v)
+        const isLive = !!pingAt && now - pingAt.getTime() <= LIVE_GPS_THRESHOLD_MS
+        if (isLive) return <StatusPill tone="success">Live</StatusPill>
+        return <span className="text-sm text-muted">{pingAt ? formatTimeAgo(pingAt, now) : 'No GPS data'}</span>
+      },
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: v => (
+        <div className="flex items-center justify-end gap-1">
+          <IconButton label={`Show ${v.plate_number} on the map`} icon={<MapPin size={16} />} size="sm" onClick={() => setDetailVehicle(v)} />
+          <IconButton label={`Analytics for ${v.plate_number}`} icon={<BarChart2 size={16} />} size="sm" onClick={() => navigate('/analytics?vehicle=' + v.id)} />
+          {role !== 'driver' && (
+            <>
+              <IconButton label={`Edit ${v.plate_number}`} icon={<Pencil size={16} />} size="sm" onClick={() => setEditingVehicle(v)} />
+              <IconButton label={`Delete ${v.plate_number}`} icon={<Trash2 size={16} />} size="sm" onClick={() => handleDelete(v)} />
+            </>
+          )}
+        </div>
+      ),
+    },
+  ]
+
+  const detailPing = detailVehicle ? lastPingAt(detailVehicle) : null
+  const detailIsLive = !!detailPing && now - detailPing.getTime() <= LIVE_GPS_THRESHOLD_MS
+
+  return (
+    <Page>
+      <PageHeader
+        title="Fleet"
+        description={`${counts.all.toLocaleString('en-IN')} vehicles.`}
+        actions={role !== 'driver' && (
+          <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button>
         )}
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {[
-          { label: 'Total Fleet', value: summary?.total ?? 0, colorClass: 'text-slate-900' },
-          { label: 'Live Delivery', value: summary?.active ?? 0, colorClass: 'text-yellow-600' },
-          { label: 'Idle Ready', value: summary?.idle ?? 0, colorClass: 'text-muted' },
-          { label: 'Scheduled Maint.', value: summary?.maintenance ?? 0, colorClass: 'text-orange-500' },
-          { label: 'Disconnected', value: summary?.offline ?? 0, colorClass: 'text-red-500' },
-        ].map(({ label, value, colorClass }) => (
-          <div key={label} className="glass-card p-6 relative group overflow-hidden border-slate-200 bg-white shadow-sm">
-            <div className={clsx("font-display text-4xl font-black mb-1 leading-none tracking-tighter", colorClass)}>{value}</div>
-            <div className={clsx("text-[10px] font-black uppercase tracking-[0.2em] mt-1", colorClass)}>{label}</div>
-            <div className="absolute -right-4 -bottom-4 opacity-[0.03] rotate-12 group-hover:rotate-0 transition-all duration-500 grayscale">
-              <Truck size={80} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters + Search */}
-      <div className="flex flex-wrap gap-4 items-center justify-between">
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 w-full max-w-sm focus-within:border-yellow-400/50 transition-colors shadow-sm">
-          <Search size={16} className="text-muted" />
-          <input
-            placeholder="Search assets by plate..."
-            className="bg-transparent border-none outline-none text-sm text-slate-900 w-full placeholder:text-muted"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-          {STATUS_OPTIONS.map(s => {
-            const isArchived = s === 'archived';
-            const badgeValue = summary?.archived ?? archivedCount ?? 0;
-            return (
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" className="max-w-xs" />
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_FILTERS.map(s => (
               <button
                 key={s}
+                type="button"
                 onClick={() => setFilter(s)}
-                className={clsx(
-                  "px-4 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all flex items-center gap-2",
-                  filter === s ? "bg-white text-slate-900 shadow-sm border border-slate-200" : "text-muted hover:text-slate-700"
-                )}
+                className={
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors ' +
+                  (filter === s ? 'bg-brand-soft text-brand' : 'bg-neutral-soft text-muted hover:text-text')
+                }
               >
-                {s.replace('_', ' ')}
-                {isArchived && badgeValue > 0 && (
-                  <span className="bg-slate-900 text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold">
-                    {badgeValue}
-                  </span>
-                )}
+                {STATUS_FILTER_LABELS[s]} · {counts[s] ?? 0}
               </button>
-            )
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      </PageHeader>
 
-      {/* Table Section */}
-      <Card className="border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto pb-24">
-          <table className="w-full min-w-[1000px]">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
-                {['Asset Details', 'Type', 'Status', 'Fuel Status', 'Intelligence', 'Location', 'Actions'].map(h => (
-                  <th key={h} className="px-6 py-5 text-left text-[10px] font-black text-muted uppercase tracking-[0.2em]">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="py-20">
-                    <div className="flex flex-col items-center justify-center gap-3">
-                      <Spinner size={32} />
-                      <span className="text-muted text-xs font-heading">Synchronizing Fleet Vector...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-20">
-                    <div className="flex flex-col items-center justify-center text-muted gap-3">
-                      <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
-                        <Truck size={28} className="text-slate-300" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-slate-900">No assets found</p>
-                        <p className="text-xs text-muted mt-1">
-                          {search ? 'No vehicles match your search.' : 'Add your first vehicle to get started.'}
-                        </p>
-                      </div>
-                      {!search && role !== 'driver' && (
-                        <Button variant="accent" size="sm" onClick={() => setIsAddModalOpen(true)}>
-                          <Plus size={14} strokeWidth={3} /> Add Vehicle
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+      <DataTable
+        caption="Fleet vehicles"
+        columns={columns}
+        rows={filtered}
+        rowKey={v => v.id}
+        loading={isLoading}
+        error={error ? 'We could not load the fleet.' : undefined}
+        onRetry={() => refetch()}
+        onRowClick={setDetailVehicle}
+        empty={{
+          icon: <Truck size={22} />,
+          title: search ? 'No vehicles match your search' : 'No vehicles yet',
+          description: search ? undefined : 'Add your first vehicle to get started.',
+          action: !search && role !== 'driver' ? <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button> : undefined,
+        }}
+        pageSize={20}
+      />
+
+      <VehicleWizardModal
+        isOpen={isAddOpen || !!editingVehicle}
+        onClose={() => { setIsAddOpen(false); setEditingVehicle(null) }}
+        initialData={editingVehicle}
+      />
+
+      <Drawer
+        open={!!detailVehicle}
+        onClose={() => setDetailVehicle(null)}
+        title={detailVehicle?.plate_number ?? ''}
+        description={detailVehicle?.vehicle_model || detailVehicle?.vehicle_type}
+      >
+        {detailVehicle && (
+          <div className="space-y-4">
+            <div className="h-64 overflow-hidden rounded-card border border-border">
+              {detailVehicle.latitude != null && detailVehicle.longitude != null ? (
+                <MapView
+                  mode="tracking"
+                  vehicles={[{
+                    id: detailVehicle.id,
+                    position: { lat: detailVehicle.latitude, lng: detailVehicle.longitude },
+                    status: detailVehicle.status,
+                    label: detailVehicle.plate_number,
+                  }]}
+                  selectedId={detailVehicle.id}
+                  interactive={false}
+                  ariaLabel={`Map showing ${detailVehicle.plate_number}`}
+                />
               ) : (
-                filtered.map((v: any, idx: number) => {
-                  const currentLoad = v.current_load_kg || (v.capacity_kg - (v.available_capacity_kg ?? v.capacity_kg))
-                  const lastPing = lastPingAt(v)
-                  const isLive = !!lastPing && now - lastPing.getTime() <= LIVE_GPS_THRESHOLD_MS
-
-                  return (
-                  <tr
-                    key={v.id}
-                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors group"
-                    style={{ animationDelay: (idx * 50) + 'ms' }}
-                  >
-                    {/* Asset Details */}
-                    <td className="px-6 py-5">
-                      <div className="font-display font-black text-slate-900 text-base group-hover:text-yellow-600 transition-all uppercase tracking-tight">
-                        {v.plate_number}
-                      </div>
-                      <div className="text-[10px] text-muted mt-0.5 font-mono">
-                        {v.vehicle_model || v.vehicle_type} · {v.capacity_kg?.toLocaleString()} kg
-                      </div>
-                      {(v.container_length_ft > 0) && (
-                        <div className="text-[9px] text-blue-600 font-bold mt-0.5">
-                          📦 {v.container_length_ft}×{v.container_width_ft}×{v.container_height_ft} ft
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Type */}
-                    <td className="px-6 py-5 text-left">
-                      <div className="flex flex-col gap-1">
-                        <div className="text-[10px] font-black uppercase bg-slate-100 border border-slate-200 px-2 py-1 rounded w-fit text-muted tracking-widest">
-                          {v.vehicle_type}
-                        </div>
-                        {v.spark_id && (
-                          <div className="text-[9px] font-bold text-yellow-600 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
-                            GPS: {v.spark_id}
-                          </div>
-                        )}
-                        {/* Load Bar */}
-                        <div className="mt-1">
-                          <div className="flex items-center justify-between text-[8px] font-bold text-muted mb-0.5">
-                            <span>LOAD</span>
-                            <span>
-                              {currentLoad.toLocaleString()} / {(v.capacity_kg || 0).toLocaleString()} kg
-                            </span>
-                          </div>
-                          <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-1000 ease-out ${currentLoad > 0 ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] relative overflow-hidden' : 'bg-emerald-500'}`}
-                              style={{ width: mounted ? `${(currentLoad / (v.capacity_kg || 1)) * 100}%` : '0%' }}
-                            >
-                              {currentLoad > 0 && (
-                                <div className="absolute inset-0 bg-white/20 -translate-x-full animate-shimmer" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 w-fit">
-                        <StatusDot status={v.status} />
-                        <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                          {v.status.replace('_', ' ')}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Fuel Status */}
-                    <td className="px-6 py-5">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <Fuel size={12} className="text-yellow-500" />
-                          <span className="font-display font-black text-xs text-slate-900">
-                            {v.current_fuel_liters?.toFixed(1) || '0.0'}
-                          </span>
-                          <span className="text-[10px] font-black text-muted">/ {v.fuel_capacity_liters || 60}L</span>
-                        </div>
-                        <div className="w-20 bg-slate-200 h-1 rounded-full overflow-hidden">
-                          <div
-                            className="bg-yellow-500 h-full"
-                            style={{ width: `${((v.current_fuel_liters || 0) / (v.fuel_capacity_liters || 60)) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Intelligence */}
-                    <td className="px-6 py-5">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-3">
-                          {lastPing && isLive ? (
-                            <div className="flex items-center gap-1 text-emerald-600">
-                              <Navigation size={14} />
-                              <span className="text-[10px] font-black uppercase tracking-tighter">Live GPS</span>
-                            </div>
-                          ) : null}
-                          <span className="text-[10px] font-black text-muted uppercase tracking-widest">
-                            {lastPing ? `Last seen ${formatTimeAgo(lastPing, now)}` : 'No GPS data'}
-                          </span>
-                        </div>
-                        {/* Capacity Status Badge */}
-                        <div className="mt-1 flex flex-col gap-1">
-                          {v.status === 'on_route' ? (
-                            <span className="text-[9px] font-bold text-orange-600 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
-                              Fully Loaded (On Route)
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
-                              Free: {v.available_capacity_kg ?? v.capacity_kg} / {v.capacity_kg} kg
-                            </span>
-                          )}
-                          {v.bidding_window_open && (
-                            <span className="text-[9px] font-bold text-blue-600 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded w-fit uppercase tracking-tighter">
-                              Matching Enabled
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Location */}
-                    <td className="px-6 py-5">
-                      <div className="font-mono text-[10px] text-muted leading-tight">
-                        {v.latitude ? (
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-emerald-500 animate-pulse">●</span>
-                              <span className="text-slate-700 font-bold">
-                                {v.latitude.toFixed(4)}, {v.longitude.toFixed(4)}
-                              </span>
-                            </div>
-                            {v.last_sync && (
-                              <div className="text-[9px] text-muted ml-4 font-bold uppercase tracking-tighter">
-                                {new Date(v.last_sync).toLocaleTimeString()}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                            <span className="text-red-500 font-black">NO SIGNAL</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-1 transition-opacity">
-                        {/* Location/Tracking */}
-                        <button
-                          id={`track-btn-${v.id}`}
-                          onClick={() => setTrackingVehicle(v)}
-                          className="p-2 hover:bg-slate-100 rounded-lg text-muted hover:text-yellow-600 transition-colors"
-                          title="Live Location"
-                        >
-                          <MapPin size={16} />
-                        </button>
-
-                        {/* Analytics */}
-                        <button
-                          id={`analytics-btn-${v.id}`}
-                          onClick={() => navigate('/analytics?vehicle=' + v.id)}
-                          className="p-2 hover:bg-slate-100 rounded-lg text-muted hover:text-slate-900 transition-colors"
-                          title="Analytics"
-                        >
-                          <BarChart2 size={16} />
-                        </button>
-
-                        {/* Settings Dropdown with Edit + Delete */}
-                        {role !== 'driver' && (
-                          <SettingsDropdown
-                            vehicle={v}
-                            onEdit={() => setEditingVehicle(v)}
-                            onDelete={() => {}}
-                          />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  )
-                })
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted">
+                  <Navigation size={22} aria-hidden="true" />
+                  No GPS signal for this vehicle.
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Modals */}
-      <VehicleWizardModal isOpen={isAddModalOpen || !!editingVehicle} onClose={() => { setIsAddModalOpen(false); setEditingVehicle(null); }} initialData={editingVehicle} />
-      {trackingVehicle && (
-        <LocationModal vehicle={trackingVehicle} onClose={() => setTrackingVehicle(null)} />
-      )}
-    </div>
+            </div>
+            <DetailList
+              columns={2}
+              items={[
+                { label: 'Status', value: <StatusPill status={detailVehicle.status} /> },
+                { label: 'Last seen', value: detailIsLive ? 'Live' : (detailPing ? formatTimeAgo(detailPing, now) : 'No GPS data') },
+                { label: 'Driver', value: detailVehicle.driver_name || 'Unassigned' },
+                { label: 'GPS device', value: detailVehicle.spark_id || 'Not linked' },
+                {
+                  label: 'Coordinates',
+                  value: detailVehicle.latitude != null
+                    ? <span className="font-mono text-xs">{detailVehicle.latitude.toFixed(5)}, {detailVehicle.longitude!.toFixed(5)}</span>
+                    : 'Unknown',
+                },
+                {
+                  label: 'Fuel',
+                  value: `${(detailVehicle.current_fuel_liters ?? 0).toLocaleString('en-IN')} / ${(detailVehicle.fuel_capacity_liters ?? 0).toLocaleString('en-IN')} L`,
+                },
+              ]}
+            />
+          </div>
+        )}
+      </Drawer>
+    </Page>
   )
 }

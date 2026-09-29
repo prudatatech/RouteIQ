@@ -45,6 +45,7 @@ export default tseslint.config(
     files: [
       'src/components/ui/**/*.{ts,tsx}',
       'src/components/vendor/vendorContext.ts',
+      'src/components/fleet/VehicleWizardModal.tsx',
       'src/config/**/*.{ts,tsx}',
       'src/pages/VendorRequestsPage.tsx',
       'src/pages/LoginPage.tsx',
@@ -55,6 +56,10 @@ export default tseslint.config(
       'src/pages/admin/**/*.{ts,tsx}',
       'src/hooks/useRealtimeRefresh.ts',
       'src/utils/display.ts',
+      'src/pages/DashboardPage.tsx',
+      'src/pages/LiveMapPage.tsx',
+      'src/pages/FleetPage.tsx',
+      'src/pages/EmergencyPage.tsx',
     ],
     plugins: { design },
     rules: {
