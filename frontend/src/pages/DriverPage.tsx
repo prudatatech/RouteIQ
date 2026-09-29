@@ -185,7 +185,7 @@ const SignaturePad = forwardRef<SignaturePadHandle, { onStrokesChange?: (hasStro
     <div className="space-y-3">
       <div className="relative h-40 touch-none overflow-hidden rounded-control border border-border bg-surface-subtle">
         {strokes.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-disabled">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted">
             Sign here
           </div>
         )}
@@ -539,7 +539,7 @@ export default function DriverPage() {
                 type="text"
                 value={recipientName}
                 onChange={e => setRecipientName(e.target.value)}
-                className="h-control w-full rounded-control border border-border-strong bg-surface px-3 text-base text-text placeholder:text-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
+                className="h-control w-full rounded-control border border-border-strong bg-surface px-3 text-base text-text placeholder:text-placeholder focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
                 placeholder="Who received this delivery?"
               />
             </label>

@@ -176,7 +176,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                   <TextInput
                     style={styles.phoneInput}
                     placeholder={t('login_phone_placeholder')}
-                    placeholderTextColor={colors.textDisabled}
+                    placeholderTextColor={colors.textPlaceholder}
                     value={phone}
                     onChangeText={(v) => {
                       setPhone(v.replace(/\D/g, ''));

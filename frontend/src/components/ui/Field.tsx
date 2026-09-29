@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { ChevronDown, Search, X } from 'lucide-react'
 
 export const controlClasses =
-  'block w-full rounded-control border bg-surface px-3 text-base sm:text-sm text-text placeholder:text-disabled ' +
+  'block w-full rounded-control border bg-surface px-3 text-base sm:text-sm text-text placeholder:text-placeholder ' +
   'transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand ' +
   'disabled:bg-surface-subtle disabled:text-muted disabled:cursor-not-allowed'
 

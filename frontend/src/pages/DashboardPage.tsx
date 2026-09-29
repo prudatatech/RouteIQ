@@ -283,7 +283,7 @@ export default function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-text">{item.title}</p>
                     <p className="mt-0.5 text-xs text-muted">{item.subtitle}</p>
-                    {item.time && <p className="mt-0.5 text-xs text-disabled">{item.time}</p>}
+                    {item.time && <p className="mt-0.5 text-xs text-muted">{item.time}</p>}
                   </div>
                   <div className="flex shrink-0 flex-col items-end">
                     {item.actions.map(a => (

@@ -438,7 +438,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
             onChangeText={setQuery}
             autoFocus
             returnKeyType="search"
-            placeholderTextColor={colors.textDisabled}
+            placeholderTextColor={colors.textPlaceholder}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery('')} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('loc_clear')}>
