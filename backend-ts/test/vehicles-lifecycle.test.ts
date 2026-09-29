@@ -157,6 +157,14 @@ describe('POST /vehicles driver handling', () => {
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);
   });
 
+  it('saving a draft links no driver and leaves the placeholder alone', async () => {
+    reset([veh({ id: 'temp-1', plate_number: 'TEMP-ABC123', driver_id: 'driver-1' })]);
+    const res = await request(app).post('/api/v1/vehicles').set(staff()).send({ ...body, status: 'archived' });
+    expect(res.status).toBe(201);
+    expect(supabaseMock.rows('vehicles')).toHaveLength(2);
+    expect(supabaseMock.rows('vehicles').find(v => v.id === 'temp-1')!.plate_number).toBe('TEMP-ABC123');
+  });
+
   it('creates normally for a driver with no vehicle', async () => {
     reset([]);
     expect((await create()).status).toBe(201);

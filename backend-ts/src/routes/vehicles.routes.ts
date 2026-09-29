@@ -160,7 +160,9 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     const insertData: any = { ...parsed.data };
 
     // If driver details are provided, link (or create) the driver user.
-    if (insertData.driver_phone && insertData.driver_name) {
+    // A saved draft (archived) is not assigned to anyone yet, so it links no driver.
+    const isDraft = insertData.status === 'archived';
+    if (!isDraft && insertData.driver_phone && insertData.driver_name) {
       const driverId = await resolveDriverUser(insertData.driver_name, insertData.driver_phone);
       if (driverId) insertData.driver_id = driverId;
     }
@@ -168,7 +170,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     // A driver who signed in before any vehicle was registered has a TEMP-…
     // placeholder. The vehicle registered here replaces it rather than
     // becoming the driver's second vehicle.
-    if (insertData.driver_id) {
+    if (!isDraft && insertData.driver_id) {
       const placeholderId = await findDriverPlaceholder(insertData.driver_id, null);
       if (placeholderId) {
         const { id: _ignored, ...fields } = insertData;
@@ -317,7 +319,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     }
 
     // Editing the driver's name or phone links the driver account the same way creating does.
-    if (!isDriver && updateData.status !== 'archived') {
+    if (!isDriver && (updateData.status ?? current.status) !== 'archived') {
       const phone = updateData.driver_phone !== undefined ? updateData.driver_phone : current.driver_phone;
       const name = updateData.driver_name !== undefined ? updateData.driver_name : current.driver_name;
       const phoneChanged = updateData.driver_phone !== undefined && updateData.driver_phone !== current.driver_phone;
