@@ -152,6 +152,40 @@ class ApiClient {
   async logout(): Promise<void> {
     await this.clearTokens();
   }
+
+  // ── Notifications ──────────────────────────────────────────
+
+  async getNotifications(params: { limit?: number; offset?: number } = {}): Promise<{
+    notifications: NotificationItem[];
+    total: number;
+    unread_count: number;
+    limit: number;
+    offset: number;
+  }> {
+    const query = new URLSearchParams();
+    if (params.limit != null) query.set('limit', String(params.limit));
+    if (params.offset != null) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return this.request('GET', `/notifications${qs ? `?${qs}` : ''}`);
+  }
+
+  async markNotificationRead(id: string): Promise<NotificationItem> {
+    return this.request('POST', `/notifications/${id}/read`);
+  }
+
+  async markAllNotificationsRead(): Promise<{ success: boolean }> {
+    return this.request('POST', '/notifications/read-all');
+  }
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  is_read: boolean;
+  data: Record<string, any> | null;
+  created_at: string;
 }
 
 export const api = new ApiClient();
