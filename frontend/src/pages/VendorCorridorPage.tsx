@@ -23,7 +23,14 @@ interface PassingRoute {
   eta_minutes: number
   available_capacity_kg: number
   city: string | null
-  routes?: { vehicles?: { vehicle_type?: string } }
+  routes?: {
+    vehicles?: {
+      vehicle_type?: string
+      latitude?: number | null
+      longitude?: number | null
+      current_location_name?: string | null
+    }
+  }
 }
 
 function TriggerBadge({ trigger }: { trigger: string | null }) {
@@ -103,6 +110,17 @@ export default function VendorCorridorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, session])
 
+  /** Send the vendor to post-a-load with the passing truck's current position pre-set as the drop point. */
+  const claimCapacity = (pr: PassingRoute) => {
+    const vehicle = pr.routes?.vehicles
+    if (vehicle?.latitude != null && vehicle?.longitude != null) {
+      const name = vehicle.current_location_name || pr.city || 'Passing truck location'
+      navigate(`/vendor/request?query=${encodeURIComponent(name)}&lat=${vehicle.latitude}&lng=${vehicle.longitude}`)
+    } else {
+      navigate(`/vendor/request?query=${encodeURIComponent(pr.city || '')}`)
+    }
+  }
+
   const handlePlaceBid = (w: OpenWindow) => {
     if (!session) {
       navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/corridor')}`)
@@ -149,7 +167,7 @@ export default function VendorCorridorPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate(`/vendor/request?query=${encodeURIComponent(pr.city || '')}`)}
+                  onClick={() => claimCapacity(pr)}
                   className="mt-auto rounded-control border border-border py-2 text-sm font-medium text-text hover:bg-surface-subtle"
                 >
                   Claim capacity
