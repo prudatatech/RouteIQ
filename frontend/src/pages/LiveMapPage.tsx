@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Truck } from 'lucide-react'
 import { vehiclesAPI } from '@/services/api'
@@ -20,7 +21,9 @@ interface VehicleRow {
  * vehicle without hunting for it on the map.
  */
 export default function LiveMapPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const requestedVehicleId = searchParams.get('vehicle')
+  const [selectedId, setSelectedId] = useState<string | null>(requestedVehicleId)
   const [zoomEvent, setZoomEvent] = useState(0)
   const [search, setSearch] = useState('')
 
@@ -38,6 +41,15 @@ export default function LiveMapPage() {
     setSelectedId(id)
     setZoomEvent(Date.now())
   }
+
+  // Deep link from other pages (e.g. Emergencies' "Open on live map"): zoom to
+  // the requested vehicle once its position is loaded.
+  useEffect(() => {
+    if (!requestedVehicleId) return
+    const match = withPosition.find(v => v.id === requestedVehicleId)
+    if (match) setZoomEvent(Date.now())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedVehicleId, withPosition.length])
 
   return (
     <div className="flex h-full w-full flex-col md:flex-row">
