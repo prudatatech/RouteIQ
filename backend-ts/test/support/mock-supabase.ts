@@ -75,7 +75,12 @@ class MockSupabase {
   private readonly keys = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
 
   async start(): Promise<string> {
-    this.server = http.createServer((req, res) => this.handle(req, res));
+    // One connection per request: reusing idle keep-alive sockets raced with the server
+    // closing them and failed random tests with ECONNRESET.
+    this.server = http.createServer((req, res) => {
+      res.shouldKeepAlive = false;
+      this.handle(req, res);
+    });
     await new Promise<void>(resolve => this.server!.listen(0, '127.0.0.1', resolve));
     this.url = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
     return this.url;
