@@ -33,6 +33,7 @@ import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
 import { shortFeedback } from '../utils/feedback';
+import { formatTime } from '../utils/format';
 import { getNextStep, isRouteFinished, pendingStops } from '../utils/route';
 import BackhaulPopup from '../components/BackhaulPopup';
 import SosButton from '../components/SosButton';
@@ -69,11 +70,6 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
 
 /** Dialogs where the driver types or captures something: only Cancel or Back closes them, never a stray touch outside. */
 const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos'];
-
-const formatTime = (ms: number) =>
-  new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(
-    new Date(ms),
-  );
 
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();

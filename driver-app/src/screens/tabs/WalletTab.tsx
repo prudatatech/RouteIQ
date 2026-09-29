@@ -29,7 +29,7 @@ function filterRange(filter: HistoryFilter): { from?: string; to?: string } {
 }
 
 function monthLabel(dateStr: string): string {
-  return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(dateStr));
+  return formatDate(dateStr, { day: undefined, month: 'long' });
 }
 
 /** Earnings total, completed trips and a filterable, infinite-scroll trip history. */

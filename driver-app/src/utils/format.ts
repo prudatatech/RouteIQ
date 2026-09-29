@@ -7,13 +7,14 @@
 const LOCALE = 'en-IN';
 const TIME_ZONE = 'Asia/Kolkata';
 
-/** ₹ amount, e.g. formatINR(125000) -> "₹1,25,000.00". */
+/** ₹ amount in whole rupees, paise only when non-zero: 125000 -> "₹1,25,000", 99.5 -> "₹99.50". */
 export function formatINR(amount: number, options: Intl.NumberFormatOptions = {}): string {
+  const hasPaise = Math.round(amount * 100) % 100 !== 0;
   return new Intl.NumberFormat(LOCALE, {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: hasPaise ? 2 : 0,
     ...options,
   }).format(amount);
 }
@@ -42,6 +43,18 @@ export function formatDateTime(value: Date | string | number, options: Intl.Date
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: TIME_ZONE,
+    ...options,
+  }).format(date);
+}
+
+/** Time only, in Asia/Kolkata, e.g. "6:30 pm". */
+export function formatTime(value: Date | string | number, options: Intl.DateTimeFormatOptions = {}): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat(LOCALE, {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
