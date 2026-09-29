@@ -159,3 +159,21 @@ describe('the optimizer', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('idle insights', () => {
+  it('skip placeholder vehicles', async () => {
+    const old = new Date(Date.now() - 4 * 86_400_000).toISOString();
+    supabaseMock.reset({
+      vehicles: [
+        { id: 'v1', plate_number: 'MH12AB1234', status: 'idle', updated_at: old },
+        { id: 'v2', plate_number: 'TEMP-ABC123', status: 'idle', updated_at: old },
+        { id: 'v3', plate_number: 'DRFT-ABC123', status: 'idle', updated_at: old },
+      ],
+      routes: [], route_stops: [], shipments: [],
+    });
+    const ids = (await AnalyticsService.getLiveInsights()).map(i => i.id);
+    expect(ids).toContain('idle_v1');
+    expect(ids).not.toContain('idle_v2');
+    expect(ids).not.toContain('idle_v3');
+  });
+});
