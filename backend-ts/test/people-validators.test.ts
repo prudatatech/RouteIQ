@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isAadhaarFormat, isAccountNumber, isCalendarDate, isIfscFormat, isPanFormat, isPincode, isUpiId,
-  maskAadhaar, maskAccountNumber, normalizeAadhaar,
+  ageOn, isAadhaarFormat, isAccountNumber, isCalendarDate, isIfscFormat, isPanFormat, isPassportNumber, isPincode, isUpiId,
+  isVoterId, maskAadhaar, maskAccountNumber, normalizeAadhaar, sameName, verhoeffCheckDigit, verhoeffValid,
 } from '../src/utils/people-validators';
 import { normalizePhone } from '../src/utils/phone';
 
@@ -27,8 +27,13 @@ describe('IFSC', () => {
 
 describe('Aadhaar, account, UPI, PIN, date', () => {
   it('checks formats', () => {
-    expect(isAadhaarFormat('2345 6789 0123')).toBe(true);
-    expect(isAadhaarFormat('1234 5678 9012')).toBe(false);
+    const body = '23456789012';
+    const valid = `${body}${verhoeffCheckDigit(body)}`;
+    expect(verhoeffValid(valid)).toBe(true);
+    expect(isAadhaarFormat(valid)).toBe(true);
+    expect(isAadhaarFormat(`${valid.slice(0, 4)} ${valid.slice(4, 8)} ${valid.slice(8)}`)).toBe(true);
+    expect(isAadhaarFormat(`${body}${(verhoeffCheckDigit(body) + 1) % 10}`)).toBe(false); // wrong check digit
+    expect(isAadhaarFormat('123456789012')).toBe(false);
     expect(isAadhaarFormat('2345678901')).toBe(false);
     expect(normalizeAadhaar('2345-6789-0123')).toBe('234567890123');
     expect(isAccountNumber('123456789012')).toBe(true);
@@ -42,6 +47,20 @@ describe('Aadhaar, account, UPI, PIN, date', () => {
     expect(isCalendarDate('2026-02-28')).toBe(true);
     expect(isCalendarDate('2026-02-30')).toBe(false);
     expect(isCalendarDate('28-02-2026')).toBe(false);
+  });
+});
+
+describe('voter ID, passport, names and age', () => {
+  it('checks formats and compares names', () => {
+    expect(isVoterId('ABC1234567')).toBe(true);
+    expect(isVoterId('AB12345678')).toBe(false);
+    expect(isPassportNumber('P1234567')).toBe(true);
+    expect(isPassportNumber('12345678')).toBe(false);
+    expect(sameName('Ravi  Kumar', 'ravi kumar')).toBe(true);
+    expect(sameName('Kumar, Ravi', 'Ravi Kumar')).toBe(true);
+    expect(sameName('Ravi Kumar', 'Suresh Rao')).toBe(false);
+    expect(ageOn('2000-06-15', '2026-06-14')).toBe(25);
+    expect(ageOn('2000-06-15', '2026-06-15')).toBe(26);
   });
 });
 

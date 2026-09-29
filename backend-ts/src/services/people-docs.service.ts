@@ -278,3 +278,60 @@ export async function assertDriverDispatchable(vehicleId: string): Promise<void>
     throw new HttpError(409, `${name} ${ISSUE_TEXT[issues[0]]}, so this vehicle can't take work. Fix it on their profile or change the document setting.`, { dispatch_issues: issues });
   }
 }
+
+// ── Dashboard: what needs attention ────────────────────────
+
+export interface PeopleAttention {
+  expired_licences: Array<{ user_id: string; full_name: string | null; expires_on: string; days_overdue: number }>;
+  expiring_licences: Array<{ user_id: string; full_name: string | null; expires_on: string; days_left: number }>;
+  missing_required: Array<{ user_id: string; full_name: string | null; role: string; missing: DocType[] }>;
+  counts: { expired_licences: number; expiring_licences: number; missing_required: number };
+}
+
+/** Group key to the document type shown for it (identity proof is asked for as Aadhaar first). */
+const GROUP_DOC_TYPE: Record<DocGroupKey, DocType> = { driving_licence: 'driving_licence', identity: 'aadhaar', tax: 'pan', photo: 'photo' };
+
+/**
+ * Expired and expiring driving licences, and people missing required documents,
+ * among people who can currently work (not suspended or gone). Top `limit` of each, counts for all.
+ */
+export async function getPeopleAttention(limit = 10): Promise<PeopleAttention> {
+  const { data: users, error } = await supabase.from('users').select('id, full_name, role, status')
+    .in('role', ['superadmin', 'admin', 'manager', 'driver']).in('status', ['onboarding', 'active', 'on_leave']);
+  if (error) throw new Error(`Failed to read people: ${error.message}`);
+  const people = users ?? [];
+  const ids = people.map(p => p.id as string);
+  const [docs, profiles] = await Promise.all([
+    liveDocumentsByUser(ids),
+    selectIn<{ user_id: string; no_pan_reason: string | null }>('user_profiles', 'user_id', ids, 'user_id, no_pan_reason'),
+  ]);
+  const noPan = new Set(profiles.filter(p => p.no_pan_reason).map(p => p.user_id));
+  const settings = await getPeopleSettings();
+  const today = todayKey();
+
+  const expired: PeopleAttention['expired_licences'] = [];
+  const expiring: PeopleAttention['expiring_licences'] = [];
+  const missing: PeopleAttention['missing_required'] = [];
+  for (const person of people) {
+    const live = docs.get(person.id) ?? [];
+    if (person.role === 'driver') {
+      const licence = live.find(d => d.doc_type === 'driving_licence');
+      if (licence?.expires_on) {
+        const info = licenceInfo(live, today, settings.licence_grace_days);
+        if (info.status === 'expired') expired.push({ user_id: person.id, full_name: person.full_name, expires_on: licence.expires_on, days_overdue: daysBetween(licence.expires_on, today) });
+        else if (info.status === 'expiring') expiring.push({ user_id: person.id, full_name: person.full_name, expires_on: licence.expires_on, days_left: daysBetween(today, licence.expires_on) });
+      }
+    }
+    const gaps = missingGroups(person.role, live, today, { noPan: noPan.has(person.id) });
+    if (gaps.length > 0) missing.push({ user_id: person.id, full_name: person.full_name, role: person.role, missing: gaps.map(g => GROUP_DOC_TYPE[g.key]) });
+  }
+  expired.sort((a, b) => a.expires_on.localeCompare(b.expires_on));
+  expiring.sort((a, b) => a.expires_on.localeCompare(b.expires_on));
+  missing.sort((a, b) => b.missing.length - a.missing.length || String(a.full_name).localeCompare(String(b.full_name)));
+  return {
+    expired_licences: expired.slice(0, limit),
+    expiring_licences: expiring.slice(0, limit),
+    missing_required: missing.slice(0, limit),
+    counts: { expired_licences: expired.length, expiring_licences: expiring.length, missing_required: missing.length },
+  };
+}

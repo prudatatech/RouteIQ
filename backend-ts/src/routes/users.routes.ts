@@ -133,7 +133,7 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
     }
 
     // Check if user exists in public.users
-    const { data: existingUser } = await supabase.from('users').select('id, role').eq('id', user_id).maybeSingle();
+    const { data: existingUser } = await supabase.from('users').select('id, role, status').eq('id', user_id).maybeSingle();
 
     // Only a superadmin may grant privileged roles or modify privileged accounts
     const privileged = ['admin', 'superadmin'];
@@ -141,6 +141,20 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
       && ((payload.role && privileged.includes(payload.role)) || (existingUser && privileged.includes(existingUser.role)))) {
       res.status(403).json({ detail: 'Only a superadmin can change admin accounts or grant admin roles' });
       return;
+    }
+
+    // Only a superadmin changes roles, and never between driver and staff on the same record
+    if (existingUser && payload.role !== undefined && payload.role !== existingUser.role) {
+      if (req.user!.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can change a role');
+      if ((payload.role === 'driver') !== (existingUser.role === 'driver')) {
+        throw new HttpError(409, "A driver can't be turned into staff, or the reverse, on the same record. Create a new person instead");
+      }
+    }
+    // users.status follows is_active (people profiles): off means suspended, on means active again
+    if (existingUser && payload.is_active !== undefined) {
+      const signsIn = ['onboarding', 'active', 'on_leave'].includes(String(existingUser.status));
+      if (payload.is_active && !signsIn) updateData.status = 'active';
+      if (!payload.is_active && signsIn) updateData.status = 'suspended';
     }
 
     let updateError;

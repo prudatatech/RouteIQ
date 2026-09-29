@@ -39,6 +39,7 @@ import bookingsRoutes from './bookings.routes';
 import publicRoutes from './public.routes';
 import driverRoutes from './driver.routes';
 import messagesRoutes from './messages.routes';
+import peopleRoutes from './people.routes';
 
 const apiRouter = Router();
 
@@ -76,5 +77,6 @@ apiRouter.use('/bookings', bookingsRoutes);
 apiRouter.use('/public', publicRoutes);
 apiRouter.use('/driver', driverRoutes);
 apiRouter.use('/messages', messagesRoutes);
+apiRouter.use('/people', peopleRoutes);
 
 export default apiRouter;

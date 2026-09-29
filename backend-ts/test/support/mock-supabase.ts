@@ -232,6 +232,11 @@ class MockSupabase {
   signedUploads: string[] = [];
   /** `<bucket>/<path>` of every signed download URL issued. */
   signedReads: string[] = [];
+  /**
+   * Whether the Auth admin API answers. Off by default (calls get a 404, as before it was
+   * mocked, which some tests rely on); a test that creates people turns it on.
+   */
+  authAdmin = false;
   /** Supabase Auth users (id, email, app_metadata, user_metadata). */
   authUsers: Row[] = [];
   /** Every Supabase Auth admin call: `{ op, body }`. */
@@ -274,6 +279,7 @@ class MockSupabase {
     this.signedReads = [];
     this.authUsers = [];
     this.authCalls = [];
+    this.authAdmin = false;
     this.failures.clear();
   }
 
@@ -316,6 +322,9 @@ class MockSupabase {
 
     if (url.pathname === '/auth/v1/invite' && method === 'POST') {
       this.authCalls.push({ op: 'invite', body });
+      // Inviting someone who has not accepted yet sends the invitation again
+      const pending = this.authUsers.find(u => u.email === body.email && !u.confirmed);
+      if (pending) return send(200, pending);
       if (exists(body.email)) return taken();
       const user = { id: crypto.randomUUID(), aud: 'authenticated', email: body.email, app_metadata: {}, user_metadata: body.data ?? {}, created_at: now };
       this.authUsers.push(user);
@@ -324,7 +333,7 @@ class MockSupabase {
     if (!id && method === 'POST') {
       this.authCalls.push({ op: 'create', body });
       if (exists(body.email)) return taken();
-      const user = { id: crypto.randomUUID(), aud: 'authenticated', email: body.email, app_metadata: body.app_metadata ?? {}, user_metadata: body.user_metadata ?? {}, created_at: now };
+      const user = { id: body.id ?? crypto.randomUUID(), aud: 'authenticated', email: body.email, app_metadata: body.app_metadata ?? {}, user_metadata: body.user_metadata ?? {}, created_at: now, confirmed: !!body.email_confirm };
       this.authUsers.push(user);
       return send(200, user);
     }
@@ -362,7 +371,7 @@ class MockSupabase {
         return send(200, { keys: [jwk] });
       }
       if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
-      if (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite') {
+      if (this.authAdmin && (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite')) {
         return this.handleAuthAdmin(req.method ?? 'GET', url, raw, send);
       }
       // Storage: signed upload URLs (records the requested object path)

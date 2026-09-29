@@ -421,13 +421,23 @@ export async function updateDocument(actor: Actor, subject: PersonRow, docId: st
 
 // ── Files and archive ──────────────────────────────────────
 
-export async function getDocumentFile(actor: Actor, subject: PersonRow, docId: string) {
+/**
+ * A 10-minute signed link. Without `index` it is the main file; `index` n picks
+ * extra page n (the back of a card), counting from 0.
+ */
+export async function getDocumentFile(actor: Actor, subject: PersonRow, docId: string, index?: number) {
   const doc = await loadLiveDocument(subject.id, docId);
-  if (!doc.file_path) throw new HttpError(404, 'This document has no file');
-  const [url, ...extra] = await Promise.all([signedUrl(doc.file_path), ...((doc.extra_file_paths ?? []) as string[]).map(p => signedUrl(p))]);
+  const extra = ((doc.extra_file_paths ?? []) as string[]);
+  let path: string | null = doc.file_path;
+  if (index !== undefined) {
+    if (!Number.isInteger(index) || index < 0 || index >= extra.length) throw new HttpError(404, 'This document has no such page');
+    path = extra[index];
+  }
+  if (!path) throw new HttpError(404, 'This document has no file');
+  const url = await signedUrl(path);
   if (!url) throw new HttpError(502, 'Could not open the file. Try again');
-  if (actor.user_id !== subject.id) await logActivity(subject.id, actor.user_id, 'document_viewed', { doc_id: doc.id, doc_type: doc.doc_type });
-  return { url, extra_urls: extra.filter((u): u is string => !!u) };
+  if (actor.user_id !== subject.id) await logActivity(subject.id, actor.user_id, 'document_viewed', { doc_id: doc.id, doc_type: doc.doc_type, page: index ?? 'main' });
+  return { url, extra_pages: extra.length };
 }
 
 export async function archiveDocument(actor: Actor, subject: PersonRow, docId: string): Promise<void> {

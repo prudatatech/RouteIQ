@@ -9,6 +9,7 @@ import { STAFF_ROLES } from '../core/ownership';
 import { sendError } from '../core/errors';
 import { FUEL_PRICE_PER_LITER } from '../services/analytics.service';
 import { startOfIndianDay } from '../core/istDate';
+import { getPeopleAttention } from '../services/people-docs.service';
 
 const router = Router();
 
@@ -72,6 +73,17 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
       fuel_cost_today: parseFloat(fuelToday.toFixed(2)),
       total_deliveries_today: totalDeliveries,
     });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /people-attention ──────────────────────────────────
+// Expired and expiring driver licences, and people missing required documents
+router.get('/people-attention', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
+    res.json(await getPeopleAttention(limit));
   } catch (e: any) {
     sendError(req, res, e);
   }
