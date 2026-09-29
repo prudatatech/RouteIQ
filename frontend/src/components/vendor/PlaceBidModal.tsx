@@ -118,12 +118,13 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
     <Modal
       open
       onClose={onClose}
+      onSubmit={submit}
       title="Place a bid"
       description={`${w.vehicles?.vehicle_type ?? 'Vehicle'} · ${capacityKg != null ? `${capacityKg.toLocaleString('en-IN')} kg free` : 'capacity unknown'}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} loading={submitting} disabled={closed}>Submit bid</Button>
+          <Button type="submit" loading={submitting} disabled={closed}>Submit bid</Button>
         </>
       }
     >

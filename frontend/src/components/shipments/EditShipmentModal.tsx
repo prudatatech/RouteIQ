@@ -55,10 +55,11 @@ export default function EditShipmentModal({ shipment, onClose }: { shipment: Shi
       title="Edit shipment"
       description={shipment?.tracking_id}
       size="sm"
+      onSubmit={save}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={save} loading={mutation.isPending}>Save changes</Button>
+          <Button type="submit" loading={mutation.isPending}>Save changes</Button>
         </>
       }
     >

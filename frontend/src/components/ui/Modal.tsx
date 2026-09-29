@@ -1,4 +1,4 @@
-import { useId, useRef, type ReactNode, type RefObject } from 'react'
+import { useId, useRef, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
@@ -25,17 +25,32 @@ export interface ModalProps {
   closeOnBackdrop?: boolean
   initialFocus?: RefObject<HTMLElement>
   className?: string
+  /** Makes the body and footer one form, so Enter in a field submits it. Put a `type="submit"`
+   * Button in the footer; Cancel stays a normal button. The form skips browser validation:
+   * check the values in the handler and show errors on the fields. */
+  onSubmit?: () => void
 }
 
 /** Centered dialog. On phones it becomes a sheet anchored to the bottom. */
 export function Modal({
-  open, onClose, title, description, children, footer, size = 'md', closeOnBackdrop = true, initialFocus, className,
+  open, onClose, title, description, children, footer, size = 'md', closeOnBackdrop = true, initialFocus, className, onSubmit,
 }: ModalProps) {
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const descId = useId()
   useDialog(open, onClose, panel, initialFocus)
   if (!open) return null
+
+  const submitForm = (e: FormEvent) => {
+    e.preventDefault()
+    onSubmit?.()
+  }
+  const body = <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">{children}</div>
+  const footerRow = footer && (
+    <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+      {footer}
+    </div>
+  )
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
@@ -61,11 +76,16 @@ export function Modal({
           </div>
           <IconButton label="Close" icon={<X size={18} />} size="sm" onClick={onClose} className="-mr-2" />
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">{children}</div>
-        {footer && (
-          <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
-            {footer}
-          </div>
+        {onSubmit ? (
+          <form noValidate onSubmit={submitForm} className="flex min-h-0 flex-1 flex-col">
+            {body}
+            {footerRow}
+          </form>
+        ) : (
+          <>
+            {body}
+            {footerRow}
+          </>
         )}
       </div>
     </div>,
@@ -79,7 +99,7 @@ const drawerSizes = {
   xl: 'sm:max-w-3xl',
 }
 
-export interface DrawerProps extends Omit<ModalProps, 'size'> {
+export interface DrawerProps extends Omit<ModalProps, 'size' | 'onSubmit'> {
   size?: keyof typeof drawerSizes
 }
 
