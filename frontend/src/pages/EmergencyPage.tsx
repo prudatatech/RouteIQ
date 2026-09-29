@@ -8,6 +8,7 @@ import {
   Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
+import { sosTypeLabel } from '@/utils/sos'
 
 interface SosAlert {
   id: string
@@ -21,15 +22,6 @@ interface SosAlert {
   created_at: string
   driver?: { full_name: string; phone: string } | null
   vehicle?: { plate_number: string } | null
-}
-
-const ALERT_TYPE_LABEL: Record<string, string> = {
-  panic_button: 'Panic button',
-  accident: 'Accident',
-  breakdown: 'Breakdown',
-  medical: 'Medical',
-  theft: 'Theft',
-  other: 'Other',
 }
 
 async function attachDetails(alert: SosAlert): Promise<SosAlert> {
@@ -115,7 +107,7 @@ export default function EmergencyPage() {
   const resolve = async (alert: SosAlert) => {
     const ok = await confirm({
       title: 'Resolve this alert?',
-      message: `Mark the ${ALERT_TYPE_LABEL[alert.alert_type] ?? alert.alert_type} alert for ${alert.vehicle?.plate_number ?? 'this vehicle'} as resolved.`,
+      message: `Mark the ${sosTypeLabel(alert.alert_type)} alert for ${alert.vehicle?.plate_number ?? 'this vehicle'} as resolved.`,
       confirmLabel: 'Resolve',
     })
     if (!ok) return
@@ -140,7 +132,7 @@ export default function EmergencyPage() {
       id: a.id,
       kind: 'incident' as const,
       position: { lat, lng },
-      label: `${ALERT_TYPE_LABEL[a.alert_type] ?? a.alert_type}: ${a.vehicle?.plate_number ?? 'Unknown vehicle'}`,
+      label: `${sosTypeLabel(a.alert_type)}: ${a.vehicle?.plate_number ?? 'Unknown vehicle'}`,
       active: true,
     }]
   })
@@ -181,7 +173,7 @@ export default function EmergencyPage() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-text">
                           {isActive ? <AlertTriangle size={14} className="text-danger" aria-hidden="true" /> : <CheckCircle size={14} className="text-success" aria-hidden="true" />}
-                          {ALERT_TYPE_LABEL[alert.alert_type] ?? alert.alert_type}
+                          {sosTypeLabel(alert.alert_type)}
                         </span>
                         <StatusPill status={alert.status} />
                       </div>
@@ -217,7 +209,7 @@ export default function EmergencyPage() {
           >
             {selected && (
               <div className="absolute left-3 top-3 z-10 max-w-xs rounded-control border border-border bg-surface p-3 shadow-raised">
-                <p className="text-sm font-medium text-text">{ALERT_TYPE_LABEL[selected.alert_type] ?? selected.alert_type}</p>
+                <p className="text-sm font-medium text-text">{sosTypeLabel(selected.alert_type)}</p>
                 <p className="mt-0.5 text-xs text-muted">{new Date(selected.created_at).toLocaleString('en-IN')}</p>
                 <div className="mt-2 space-y-1 text-sm text-text">
                   <p className="inline-flex items-center gap-1.5"><User size={13} className="text-muted" aria-hidden="true" />{selected.driver?.full_name || 'Unknown'}</p>

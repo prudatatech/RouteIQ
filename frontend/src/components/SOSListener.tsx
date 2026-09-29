@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, MapPin } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { Button, Modal, humanize } from '@/components/ui'
+import { Button, Modal } from '@/components/ui'
+import { sosTypeLabel } from '@/utils/sos'
 
 interface SosAlert {
   id: string
@@ -14,18 +15,6 @@ interface SosAlert {
   longitude: number | null
   created_at: string
   plate?: string | null
-}
-
-const ALERT_TITLES: Record<string, string> = {
-  panic_button: 'SOS from a driver',
-  accident: 'Accident reported',
-  accident_serious: 'Serious accident reported',
-  accident_non_serious: 'Accident reported',
-  breakdown: 'Vehicle breakdown',
-  vehicle_damage: 'Vehicle damage reported',
-  medical: 'Medical emergency',
-  theft: 'Theft reported',
-  other: 'Emergency reported',
 }
 
 const DEFAULT_DESCRIPTIONS = new Set(['Driver triggered SOS from mobile app', 'Driver triggered SOS emergency alert'])
@@ -109,8 +98,7 @@ export default function SOSListener() {
     setAlerts([])
     navigate('/emergency')
   }
-  const type = current.alert_type ?? 'panic_button'
-  const title = ALERT_TITLES[type] ?? humanize(type)
+  const title = !current.alert_type || current.alert_type === 'panic_button' ? 'SOS from a driver' : sosTypeLabel(current.alert_type)
   const note = current.description && !DEFAULT_DESCRIPTIONS.has(current.description) ? current.description : null
 
   return (
