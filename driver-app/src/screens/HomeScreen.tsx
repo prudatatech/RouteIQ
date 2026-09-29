@@ -339,6 +339,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           syncState={data.syncState}
           onToggleTracking={tracking.toggle}
           onRetrySync={refresh}
+          backgroundError={tracking.backgroundError}
+          onRetryBackgroundTracking={tracking.retryBackgroundTracking}
         />
       </SafeAreaView>
 

@@ -34,6 +34,15 @@ interface LocationPing {
   timestamp: string;
 }
 
+export interface BackgroundError {
+  /** epoch ms */
+  at: number;
+  message: string;
+}
+
+/** Repeated failures before a background error is surfaced to the UI. */
+const BACKGROUND_ERROR_THRESHOLD = 3;
+
 class LocationService {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private watchSubscription: Location.LocationSubscription | null = null;
@@ -44,10 +53,51 @@ class LocationService {
   public onGeofenceAlert: ((alert: any) => void) | null = null;
   public onPendingCommand: ((commands: any[]) => void) | null = null;
   public onLocationUpdate: ((loc: LocationPing) => void) | null = null;
+  /** Fired when a background error is recorded or cleared (null = cleared). */
+  public onBackgroundError: ((err: BackgroundError | null) => void) | null = null;
   private lastLat: number = 0;
   private lastLng: number = 0;
   private consecutiveErrors: number = 0;
   private lastGpsOffNotificationTime = 0;
+  private consecutiveSendFailures = 0;
+  private consecutiveGeofenceFailures = 0;
+  private lastBackgroundError: BackgroundError | null = null;
+
+  /**
+   * Non-blocking: records a background failure (queue replay/send or
+   * geofence check) without ever throwing or interrupting tracking. Only
+   * surfaces to the UI once the same kind of failure repeats
+   * BACKGROUND_ERROR_THRESHOLD times in a row, so a single blip stays quiet.
+   */
+  private recordBackgroundFailure(kind: 'send' | 'geofence', message: string) {
+    const count =
+      kind === 'send' ? ++this.consecutiveSendFailures : ++this.consecutiveGeofenceFailures;
+    if (count < BACKGROUND_ERROR_THRESHOLD) return;
+    this.lastBackgroundError = { at: Date.now(), message };
+    this.onBackgroundError?.(this.lastBackgroundError);
+  }
+
+  private clearBackgroundFailure(kind: 'send' | 'geofence') {
+    if (kind === 'send') this.consecutiveSendFailures = 0;
+    else this.consecutiveGeofenceFailures = 0;
+    if (this.lastBackgroundError) {
+      this.lastBackgroundError = null;
+      this.onBackgroundError?.(null);
+    }
+  }
+
+  /** Last recorded background error, if any (also available via onBackgroundError). */
+  getLastBackgroundError(): BackgroundError | null {
+    return this.lastBackgroundError;
+  }
+
+  /** Dismiss the current background error so the UI can retry quietly. */
+  clearLastBackgroundError() {
+    this.consecutiveSendFailures = 0;
+    this.consecutiveGeofenceFailures = 0;
+    this.lastBackgroundError = null;
+    this.onBackgroundError?.(null);
+  }
 
   /**
    * Set the vehicle and driver IDs for this tracking session.
@@ -98,6 +148,7 @@ class LocationService {
     onGeofence?: (alert: any) => void,
     onCommand?: (commands: any[]) => void,
     onLocationUpdate?: (loc: LocationPing) => void,
+    onBackgroundError?: (err: BackgroundError | null) => void,
   ): Promise<{ success: boolean; error?: string }> {
     if (this.isRunning) return { success: true };
 
@@ -124,8 +175,12 @@ class LocationService {
     this.onGeofenceAlert = onGeofence || null;
     this.onPendingCommand = onCommand || null;
     this.onLocationUpdate = onLocationUpdate || null;
+    this.onBackgroundError = onBackgroundError || null;
     this.isRunning = true;
     this.consecutiveErrors = 0;
+    this.consecutiveSendFailures = 0;
+    this.consecutiveGeofenceFailures = 0;
+    this.lastBackgroundError = null;
 
     // Initial precise ping
     await this.collectAndSend();
@@ -359,11 +414,14 @@ class LocationService {
       await this.checkGeofence(ping);
 
       console.log(`📍 GPS → Supabase: ${ping.lat.toFixed(6)}, ${ping.lng.toFixed(6)} | ${speedKmph.toFixed(0)} km/h | acc: ${ping.accuracy.toFixed(0)}m`);
+      this.clearBackgroundFailure('send');
 
     } catch (networkError: any) {
-      // Network failure → queue for offline replay
+      // Network failure → queue for offline replay. Never blocks tracking;
+      // only surfaced to the UI once it repeats (see recordBackgroundFailure).
       console.warn('Supabase unreachable, queuing ping:', networkError.message);
       await this.enqueue(ping);
+      this.recordBackgroundFailure('send', networkError?.message || 'Could not reach the server');
     }
   }
 
@@ -374,11 +432,15 @@ class LocationService {
     if (!this.vehicleId || !this.onGeofenceAlert) return;
 
     try {
-      const { data: activeRoutes } = await supabase
+      const { data: activeRoutes, error: routesError } = await supabase
         .from('routes')
         .select('id, route_stops(id, delivery_point_id, sequence, status, delivery_points(id, name, latitude, longitude))')
         .eq('vehicle_id', this.vehicleId)
         .eq('status', 'active');
+
+      if (routesError) throw routesError;
+      // Reached the server successfully — clear any earlier repeated-failure state.
+      this.clearBackgroundFailure('geofence');
 
       if (!activeRoutes || activeRoutes.length === 0) return;
 
@@ -414,9 +476,11 @@ class LocationService {
           }
         }
       }
-    } catch (e) {
-      // Non-fatal
+    } catch (e: any) {
+      // Non-fatal — never blocks tracking; only surfaced to the UI once it
+      // repeats (see recordBackgroundFailure).
       console.warn('Geofence check failed:', e);
+      this.recordBackgroundFailure('geofence', e?.message || 'Geofence check failed');
     }
   }
 

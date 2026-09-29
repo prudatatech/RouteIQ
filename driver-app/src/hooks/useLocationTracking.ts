@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { api } from '../services/api';
-import { locationService } from '../services/location';
+import { locationService, type BackgroundError } from '../services/location';
 import type { LatLng } from '../types/route';
 import { useTranslation } from './useTranslation';
 import { shortFeedback } from '../utils/feedback';
@@ -36,6 +36,7 @@ export function useLocationTracking({
   const [isTracking, setIsTracking] = useState(locationService.isTracking);
   const [currentLoc, setCurrentLoc] = useState<LatLng | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [backgroundError, setBackgroundError] = useState<BackgroundError | null>(locationService.getLastBackgroundError());
 
   // locationService keeps the callbacks it was started with, so they read
   // the latest handlers through refs.
@@ -60,6 +61,7 @@ export function useLocationTracking({
           }
         },
         (loc) => setCurrentLoc({ lat: loc.lat, lng: loc.lng }),
+        (err) => setBackgroundError(err),
       );
       if (!result.success) {
         Alert.alert(t('tracking_failed_title'), result.error || t('tracking_failed_desc'));
@@ -83,6 +85,12 @@ export function useLocationTracking({
     try {
       deactivateKeepAwake();
     } catch {}
+  }, []);
+
+  /** Dismisses the background-error pill; the next ping/geofence check reports fresh. */
+  const retryBackgroundTracking = useCallback(() => {
+    locationService.clearLastBackgroundError();
+    setBackgroundError(null);
   }, []);
 
   /** Turns tracking on or off; returns true when the state changed. */
@@ -152,5 +160,5 @@ export function useLocationTracking({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { isTracking, isStarting, currentLoc, start, toggle, takeBreak };
+  return { isTracking, isStarting, currentLoc, start, toggle, takeBreak, backgroundError, retryBackgroundTracking };
 }
