@@ -340,6 +340,11 @@ class ApiClient {
     return this.request('POST', '/telemetry/sos/trigger', { lat, lng, alert_type, description }, true, idempotencyHeader(idempotencyKey));
   }
 
+  /** Withdraws the driver's own SOS (a mistake, or the trouble passed). Dispatch is told; the web console closes the alert at once. */
+  async cancelSos(id: string, idempotencyKey?: string): Promise<{ success: boolean; status: string; changed: boolean }> {
+    return this.request('POST', `/telemetry/sos/${id}/cancel`, {}, true, idempotencyHeader(idempotencyKey));
+  }
+
   /** Adds what happened to the alert already raised (own, active alerts only). */
   async updateSosDetails(
     id: string,

@@ -17,10 +17,14 @@ export type SosFailure = 'offline' | 'no_vehicle' | 'error';
 export type SosState =
   | { phase: 'sending' }
   | { phase: 'sent'; withLocation: boolean }
+  | { phase: 'cancelled' }
   | { phase: 'failed'; reason: SosFailure };
 
 /** 'queued': no signal, kept on the phone and sent when it is back. */
 export type SosDetailsState = 'idle' | 'sending' | 'sent' | 'queued' | 'failed';
+
+/** Cancelling the alert just sent. */
+export type SosCancelState = 'idle' | 'sending' | 'failed';
 
 /** Longest wait for a fresh fix, and only when no position is known at all. */
 const FIX_TIMEOUT_MS = 3000;
@@ -51,6 +55,8 @@ function failureOf(error: unknown): SosFailure {
 export function useSos(currentLoc: LatLng | null) {
   const [state, setState] = useState<SosState>({ phase: 'sending' });
   const [details, setDetails] = useState<SosDetailsState>('idle');
+  const [cancelState, setCancelState] = useState<SosCancelState>('idle');
+  const cancelKeyRef = useRef<string | null>(null);
   const alertIdRef = useRef<string | null>(null);
   /** Kept between retries of one SOS, so a lost reply never raises a second alert. */
   const triggerKeyRef = useRef<string | null>(null);
@@ -60,6 +66,7 @@ export function useSos(currentLoc: LatLng | null) {
   const trigger = useCallback(async () => {
     setState({ phase: 'sending' });
     setDetails('idle');
+    setCancelState('idle');
     alertIdRef.current = null;
     Vibration.vibrate(100);
     const position = await bestKnownPosition(currentLocRef.current);
@@ -94,5 +101,26 @@ export function useSos(currentLoc: LatLng | null) {
     }
   }, []);
 
-  return { state, details, trigger, sendDetails };
+  /** Withdraws the alert just sent. Online only: a cancel that cannot reach dispatch must say so. */
+  const cancel = useCallback(async () => {
+    const id = alertIdRef.current;
+    if (!id) {
+      setCancelState('failed');
+      return;
+    }
+    setCancelState('sending');
+    if (!cancelKeyRef.current) cancelKeyRef.current = Crypto.randomUUID();
+    try {
+      await api.cancelSos(id, cancelKeyRef.current);
+      cancelKeyRef.current = null;
+      alertIdRef.current = null;
+      setCancelState('idle');
+      setState({ phase: 'cancelled' });
+    } catch (e) {
+      console.warn('SOS cancel failed', e);
+      setCancelState('failed');
+    }
+  }, []);
+
+  return { state, details, cancelState, trigger, sendDetails, cancel };
 }
