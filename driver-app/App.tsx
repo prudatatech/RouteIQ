@@ -9,6 +9,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import VehicleGate from './src/screens/VehicleGate';
 import { NotificationListener } from './src/components/NotificationListener';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, STORAGE_KEYS } from './src/services/api';
@@ -106,7 +107,9 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <TranslationProvider>
           <NotificationListener />
-          <HomeScreen onLogout={() => setIsLoggedIn(false)} />
+          <VehicleGate onLogout={() => setIsLoggedIn(false)}>
+            <HomeScreen onLogout={() => setIsLoggedIn(false)} />
+          </VehicleGate>
           <StatusBar style="dark" />
         </TranslationProvider>
       </QueryClientProvider>

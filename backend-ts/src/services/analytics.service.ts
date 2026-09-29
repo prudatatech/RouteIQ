@@ -64,7 +64,7 @@ export class AnalyticsService {
     const endISO = end.toISOString();
 
     // The fleet is counted the way Fleet's own summary counts it: placeholder vehicles (TEMP-…,
-    // DRFT-…) and archived ones are not fleet assets, and "idle" includes "available".
+    // DRFT-…), archived and not-yet-approved ones are not fleet assets, and "idle" includes "available".
     const [
       { data: vehicleRows },
       { count: tripsToday },
@@ -74,7 +74,7 @@ export class AnalyticsService {
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
       AnalyticsService.deliveryTimes(startISO, endISO),
     ]);
-    const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived');
+    const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived' && v.status !== 'pending_approval');
     const totalVehicles = fleet.length;
     const runningVehicles = fleet.filter((v: any) => v.status === 'on_route').length;
     const idleVehicles = fleet.filter((v: any) => v.status === 'idle' || v.status === 'available').length;

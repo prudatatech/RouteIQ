@@ -7,7 +7,7 @@ import { vehiclesAPI } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import {
-  Button, Card, CardBody, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, TabPanel, Tabs,
+  Alert, Button, Card, CardBody, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, TabPanel, Tabs,
   buttonClasses, humanize, useConfirm, useTabParam, type TabItem,
 } from '@/components/ui'
 import { formatDateTime, formatKg, formatRelative } from '@/utils/display'
@@ -15,6 +15,7 @@ import { expiryStatus } from '@/utils/documentExpiry'
 import { canReturnToService, isDraftVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import RaiseSosModal from '@/components/fleet/RaiseSosModal'
+import { VehiclePhotoCard } from '@/components/fleet/photos/VehiclePhotoCard'
 import { MoveToMaintenanceModal } from '@/components/fleet/maintenance/MoveToMaintenanceModal'
 import { ReturnToServiceModal } from '@/components/fleet/maintenance/ReturnToServiceModal'
 import LoadBar from '@/components/fleet/LoadBar'
@@ -98,7 +99,7 @@ export default function VehicleDetailPage() {
   const handleUnarchive = async (v: Vehicle) => {
     const ok = await confirm({
       title: `Restore ${v.plate_number}?`,
-      message: 'The vehicle returns to the fleet as idle.',
+      message: v.review_decision === 'rejected' ? 'The vehicle is approved and returns to the fleet as available.' : 'The vehicle returns to the fleet as idle.',
       confirmLabel: 'Restore vehicle',
     })
     if (ok) statusMutation.mutate({ status: 'idle' })
@@ -196,6 +197,9 @@ export default function VehicleDetailPage() {
       <TabPanel id={tab}>
         {tab === 'overview' && (
           <div className="grid gap-4 lg:grid-cols-3">
+            {vehicle.status === 'archived' && vehicle.rejection_reason && (
+              <Alert tone="danger" title="Rejected" className="lg:col-span-3">{vehicle.rejection_reason}</Alert>
+            )}
             <Card className="lg:col-span-2">
               <CardHeader title="Load" description="What the vehicle carries against its capacity" />
               <CardBody className="space-y-4">
@@ -278,14 +282,15 @@ export default function VehicleDetailPage() {
                 )}
               </CardBody>
             </Card>
+            <div className="lg:col-span-3"><VehiclePhotoCard key={`photos-${vehicle.id}`} vehicleId={vehicle.id} /></div>
           </div>
         )}
 
-        {/* SLOT: Location. See ./tabSlots.tsx to wire VehicleLocationPanel in. */}
+        {/* SLOT: Location (./tabSlots.tsx) */}
         {tab === 'location' && <LocationTabSlot vehicle={vehicle} isLive={isLive} now={now} />}
-        {/* SLOT: Maintenance. See ./tabSlots.tsx to wire VehicleMaintenanceTab and VehicleConditionCard in. */}
+        {/* SLOT: Maintenance (./tabSlots.tsx) */}
         {tab === 'maintenance' && <MaintenanceTabSlot vehicle={vehicle} isLive={isLive} now={now} />}
-        {/* SLOT: Fuel. See ./tabSlots.tsx to wire VehicleFuelTab in. */}
+        {/* SLOT: Fuel (./tabSlots.tsx) */}
         {tab === 'fuel' && <FuelTabSlot vehicle={vehicle} isLive={isLive} now={now} />}
 
         {tab === 'documents' && <VehicleDocumentsTab vehicle={vehicle} />}

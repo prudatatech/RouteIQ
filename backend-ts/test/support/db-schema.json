@@ -586,7 +586,13 @@
     "fuel_level_pct",
     "fuel_reported_at",
     "odometer_synced_at",
-    "odometer_source"
+    "odometer_source",
+    "submitted_at",
+    "submitted_by",
+    "reviewed_at",
+    "reviewed_by",
+    "review_decision",
+    "rejection_reason"
   ],
   "vendor_profiles": [
     "id",
@@ -927,6 +933,15 @@
     "interval_days",
     "sort_order",
     "is_active",
+    "updated_at"
+  ],
+  "vehicle_photos": [
+    "id",
+    "vehicle_id",
+    "slot",
+    "file_path",
+    "uploaded_by",
+    "created_at",
     "updated_at"
   ]
 }

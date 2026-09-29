@@ -1,12 +1,12 @@
 import {
-  BarChart3, Banknote, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned,
+  BarChart3, Banknote, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned,
   Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin' | 'manager'
 
 /** Counters shown next to a navigation item. Loaded by the app shell. */
-export type NavBadge = 'vendorRequests' | 'pendingPartners' | 'pendingKyc'
+export type NavBadge = 'vendorRequests' | 'pendingPartners' | 'pendingKyc' | 'vehicleRequests'
 
 export interface NavItem {
   to: string
@@ -34,6 +34,7 @@ export const navSections: NavSection[] = [
       { to: '/live-map', label: 'Live map', icon: MapPinned, roles: staff },
       { to: '/shipments', label: 'Shipments', icon: Package, roles: staff },
       { to: '/fleet', label: 'Fleet', icon: Truck, roles: staff },
+      { to: '/vehicle-requests', label: 'Vehicle requests', icon: ClipboardCheck, roles: staffAndManagers, badge: 'vehicleRequests' },
       { to: '/emergency', label: 'Emergencies', icon: ShieldAlert, roles: staffAndManagers },
     ],
   },

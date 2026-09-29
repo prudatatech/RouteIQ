@@ -36,7 +36,7 @@ async function count(table: string, apply: (q: any) => any): Promise<number> {
 
 export async function computePublicStats(): Promise<PublicStats> {
   const [vehicles, shipmentsDelivered, manifestsDelivered, partners] = await Promise.all([
-    count('vehicles', q => q.neq('status', 'archived')),
+    count('vehicles', q => q.neq('status', 'archived').neq('status', 'pending_approval')),
     count('shipments', q => q.eq('status', 'delivered')),
     count('cargo_manifest', q => q.eq('status', 'delivered')),
     count('tpl_partners', q => q.eq('status', 'active')),

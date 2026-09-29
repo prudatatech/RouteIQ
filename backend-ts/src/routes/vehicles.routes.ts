@@ -6,15 +6,15 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet, cacheDeletePattern } from '../core/redis';
-import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core/ownership';
-import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
+import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles, requireVehicleAccess } from '../core/ownership';
+import { DriverVehicleRegisterSchema, VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
 import { idempotent } from '../core/idempotency';
 import { notificationService } from '../services/notification.service';
 import { parseCoordinate, parseDateTime, parseNumberInRange, parseOptionalText } from '../core/validate';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
-import { assertVehicleStatusChange, changeVehicleStatus, isPlaceholderPlate, isTempPlate } from '../core/vehicles';
+import { assertVehicleStatusChange, changeVehicleStatus, findDriverPlaceholder, isPlaceholderPlate, isRejected, isTempPlate } from '../core/vehicles';
 import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
 import { capacityService } from '../services/capacity.service';
@@ -22,6 +22,8 @@ import { emptySosCounts, loadSosCounts } from '../services/sos.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
+import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
+import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
 
 const router = Router();
 
@@ -77,25 +79,6 @@ async function resolveDriverUser(name: string, rawPhone: string): Promise<string
     full_name: name,
   }, { onConflict: 'id' });
   return authUser.user.id;
-}
-
-/**
- * A driver drives one vehicle. Before giving `driverId` the vehicle `vehicleId`
- * (null for one not created yet) look at what they already have: a real vehicle
- * is a 409; a TEMP-… placeholder from their first login is returned so the
- * caller can adopt it (create) or archive it (edit of a different vehicle).
- */
-async function findDriverPlaceholder(driverId: string, vehicleId: string | null): Promise<string | null> {
-  const { data: owned, error } = await supabase
-    .from('vehicles')
-    .select('id, plate_number, status')
-    .eq('driver_id', driverId)
-    .neq('status', 'archived');
-  if (error) throw error;
-  const others = (owned ?? []).filter(v => v.id !== vehicleId);
-  const real = others.find(v => !isTempPlate(v.plate_number));
-  if (real) throw new HttpError(409, `This driver is already assigned to ${real.plate_number}. Reassign or archive that vehicle first.`);
-  return others[0]?.id ?? null;
 }
 
 const isUniqueViolation = (e: { code?: string } | null | undefined) => e?.code === '23505';
@@ -169,6 +152,12 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     // If driver details are provided, link (or create) the driver user.
     // A saved draft (archived) is not assigned to anyone yet, so it links no driver.
     const isDraft = insertData.status === 'archived';
+    // Staff create vehicles already approved: the review data says who
+    if (!isDraft) {
+      insertData.review_decision = 'approved';
+      insertData.reviewed_by = req.user!.user_id;
+      insertData.reviewed_at = new Date().toISOString();
+    }
     if (!isDraft && insertData.driver_phone && insertData.driver_name) {
       const driverId = await resolveDriverUser(insertData.driver_name, insertData.driver_phone);
       if (driverId) insertData.driver_id = driverId;
@@ -206,6 +195,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       .single();
 
     if (isUniqueViolation(error) && insertData.driver_id) throw new HttpError(409, DRIVER_TAKEN);
+    if (isUniqueViolation(error)) throw new HttpError(409, 'A vehicle with this number plate already exists.');
     if (error) throw error;
 
     await invalidateVehicleCaches();
@@ -241,7 +231,8 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
     }
 
     const archived = counts['archived'] || 0;
-    const total = Object.values(counts).reduce((a, b) => a + b, 0) - archived;
+    // A vehicle waiting for approval is not in the fleet yet
+    const total = Object.values(counts).reduce((a, b) => a + b, 0) - archived - (counts['pending_approval'] || 0);
     res.json({
       total,
       active: counts['on_route'] || 0,
@@ -250,6 +241,7 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
       offline: counts['offline'] || 0,
       archived,
       drafts,
+      pending_approval: counts['pending_approval'] || 0,
     });
   } catch (e: any) {
     sendError(req, res, e);
@@ -262,6 +254,26 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
 router.get('/sos-counts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     res.json(await loadSosCounts());
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Vehicle approval ───────────────────────────────────────
+// A driver registers a vehicle from the app; it waits for staff to approve or
+// reject it (services/vehicle-approval.service.ts). Declared before /:vehicle_id.
+
+// POST /register — the driver registers (or corrects and resubmits) their vehicle
+router.post('/register', requireAuth, requireRole('driver'), rateLimitByUser('vehicle-register', 20, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    const parsed = DriverVehicleRegisterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ detail: parsed.error.issues[0].message });
+      return;
+    }
+    const result = await registerDriverVehicle(req.user!.user_id, parsed.data);
+    await invalidateVehicleCaches();
+    res.status(result.created ? 201 : 200).json({ ...result.vehicle, resubmitted: result.resubmitted });
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -281,6 +293,95 @@ router.get('/:vehicle_id/sos', requireAuth, requireRole(...STAFF_ROLES), async (
     if (error) throw error;
     const counts = (await loadSosCounts(req.params.vehicle_id))[req.params.vehicle_id] ?? emptySosCounts();
     res.json({ counts, alerts: data ?? [] });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /my-registration — where the driver's vehicle stands (none, pending, approved, rejected)
+router.get('/my-registration', requireAuth, requireRole('driver'), async (req: Request, res: Response) => {
+  try {
+    res.json(await getMyRegistration(req.user!.user_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /requests — vehicles waiting for a decision, with driver and photos
+router.get('/requests', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
+    const [requests, pending] = await Promise.all([listVehicleRequests(limit), countVehicleRequests()]);
+    res.json({ pending, requests });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /requests/count — the number for the sidebar badge
+router.get('/requests/count', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    res.json({ pending: await countVehicleRequests() });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /:vehicle_id/approve
+router.post('/:vehicle_id/approve', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const vehicle = await approveVehicle(req.params.vehicle_id, req.user!);
+    await invalidateVehicleCaches();
+    res.json(vehicle);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /:vehicle_id/reject — { reason } is required; the vehicle is archived with it
+router.post('/:vehicle_id/reject', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const vehicle = await rejectVehicle(req.params.vehicle_id, req.user!, req.body?.reason);
+    await invalidateVehicleCaches();
+    res.json(vehicle);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Vehicle photos (staff, or the vehicle's own driver) ─────
+const requirePhotoAccess = requireVehicleAccess(req => req.params.vehicle_id);
+
+router.get('/:vehicle_id/photos', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requirePhotoAccess, async (req: Request, res: Response) => {
+  try {
+    res.json(await listVehiclePhotos(req.params.vehicle_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /:vehicle_id/photos/upload-url — { slot, content_type, size } -> a signed upload URL for one file
+router.post('/:vehicle_id/photos/upload-url', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requirePhotoAccess, rateLimitByUser('vehicle-photo-upload', 60, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    res.json(await createVehiclePhotoUploadUrl(req.params.vehicle_id, req.body ?? {}));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// PUT /:vehicle_id/photos/:slot — { file_path } records an uploaded file as the photo, replacing the old one
+router.put('/:vehicle_id/photos/:slot', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requirePhotoAccess, async (req: Request, res: Response) => {
+  try {
+    res.json(await saveVehiclePhoto(req.params.vehicle_id, req.params.slot, req.body?.file_path, req.user!.user_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+router.delete('/:vehicle_id/photos/:slot', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requirePhotoAccess, async (req: Request, res: Response) => {
+  try {
+    await deleteVehiclePhoto(req.params.vehicle_id, req.params.slot);
+    res.status(204).send();
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -437,6 +538,14 @@ router.post('/:vehicle_id/status', requireAuth, requireRole('admin', 'manager'),
     if (typeof next !== 'string' || !(STAFF_SETTABLE_STATUSES as readonly string[]).includes(next)) {
       throw new HttpError(400, `status must be one of: ${STAFF_SETTABLE_STATUSES.join(', ')}`);
     }
+    // A rejected vehicle comes back through approval, so the decision and who made it are on record
+    const { data: existing } = await supabase.from('vehicles').select('status, review_decision').eq('id', req.params.vehicle_id).maybeSingle();
+    if (existing && isRejected(existing) && (next === 'idle' || next === 'available')) {
+      const approved = await approveVehicle(req.params.vehicle_id, req.user!);
+      await invalidateVehicleCaches();
+      res.json({ id: approved.id, from: 'archived', status: approved.status, changed: true, vehicle: approved });
+      return;
+    }
     const change = await changeVehicleStatus(req.params.vehicle_id, next);
     // Leaving maintenance this way closes its open maintenance job (Return to service on the job writes the record)
     if (change.changed && change.from === 'maintenance' && next !== 'maintenance') {
@@ -454,9 +563,16 @@ router.post('/:vehicle_id/status', requireAuth, requireRole('admin', 'manager'),
 for (const [action, target] of [['archive', 'archived'], ['unarchive', 'idle']] as const) {
   router.post(`/:vehicle_id/${action}`, requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
     try {
-      const { data: existing } = await supabase.from('vehicles').select('status').eq('id', req.params.vehicle_id).maybeSingle();
+      const { data: existing } = await supabase.from('vehicles').select('status, review_decision').eq('id', req.params.vehicle_id).maybeSingle();
       if (action === 'unarchive' && existing && existing.status !== 'archived') {
         throw new HttpError(409, 'This vehicle is not archived.');
+      }
+      // A rejected vehicle comes back through approval, so the decision and who made it are on record
+      if (action === 'unarchive' && existing && isRejected(existing)) {
+        const vehicle = await approveVehicle(req.params.vehicle_id, req.user!);
+        await invalidateVehicleCaches();
+        res.json({ id: vehicle.id, from: 'archived', status: vehicle.status, changed: true });
+        return;
       }
       const change = await changeVehicleStatus(req.params.vehicle_id, target);
       await invalidateVehicleCaches();
@@ -649,7 +765,8 @@ router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), asyn
     await supabase.from('vehicle_stoppages').delete().eq('vehicle_id', vehicleId);
     await supabase.from('gps_points').delete().eq('vehicle_id', vehicleId);
 
-    // 3. Delete vehicle
+    // 3. Delete vehicle (its photo rows go with it; the files are removed here)
+    await removeVehiclePhotoFiles(vehicleId);
     await supabase.from('vehicles').delete().eq('id', vehicleId);
 
     await invalidateVehicleCaches();

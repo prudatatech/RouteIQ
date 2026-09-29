@@ -44,6 +44,8 @@ const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
 }
 
 function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
+  // Waiting for approval: reviewed on the Vehicle requests page, not part of the fleet yet
+  if (v.status === 'pending_approval') return false
   if (filter === 'drafts') return isDraftVehicle(v)
   if (isDraftVehicle(v)) return false
   if (filter === 'all') return v.status !== 'archived'
@@ -204,6 +206,7 @@ export default function FleetPage() {
         <div>
           <p className="font-medium text-text">{v.plate_number}</p>
           <p className="text-xs text-muted">{v.vehicle_model || humanize(v.vehicle_type)}</p>
+          {v.status === 'archived' && v.rejection_reason && <p className="text-xs text-danger">Rejected: {v.rejection_reason}</p>}
         </div>
       ),
     },

@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
-import { FileText, Save, Truck, User } from 'lucide-react'
+import { Camera, FileText, Save, Truck, User } from 'lucide-react'
 import { Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
 import { indianMobileError, rcNumberError } from '@/utils/validators'
 import { expiryStatus } from '@/utils/documentExpiry'
+import StagedPhotos, { type StagedPhotoFiles } from '@/components/fleet/photos/StagedPhotos'
+import { VehiclePhotoCard } from '@/components/fleet/photos/VehiclePhotoCard'
+import { uploadStagedPhotos } from '@/components/fleet/photos/photos'
 
 // Must match backend-ts VehicleCreateSchema.vehicle_type; the server rejects anything else.
 const VEHICLE_TYPES: SelectOption[] = [
@@ -82,6 +85,7 @@ const STEPS = [
   { num: 1, label: 'Vehicle details', description: 'Model and capacity', icon: Truck },
   { num: 2, label: 'Driver and GPS', description: 'Tracking setup', icon: User },
   { num: 3, label: 'Documents', description: 'RC, insurance and more', icon: FileText },
+  { num: 4, label: 'Photos', description: 'Optional, add them any time', icon: Camera },
 ] as const
 
 export default function VehicleWizardModal({ isOpen, onClose, initialData = null }: {
@@ -93,6 +97,8 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<VehicleFormData>(DEFAULT_FORM_DATA)
   const [attempted, setAttempted] = useState<Set<number>>(new Set())
+  // Photos picked for a vehicle that is not saved yet; they upload once it is (an existing vehicle uploads at once)
+  const [staged, setStaged] = useState<StagedPhotoFiles>({})
   const { confirm } = useConfirm()
   // The form as it was when the window opened, to tell whether anything changed.
   const baseline = useRef('')
@@ -109,6 +115,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       baseline.current = JSON.stringify(next)
       setFormData(next)
       setAttempted(new Set())
+      setStaged({})
       setStep(1)
     }
   }, [isOpen, initialData])
@@ -129,12 +136,20 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     return payload
   }
 
+  /** Uploads the photos picked in the form for the vehicle that was just saved, and says so when some fail. */
+  const saveStagedPhotos = async (vehicleId: string | undefined) => {
+    if (!vehicleId || Object.keys(staged).length === 0) return
+    const failed = await uploadStagedPhotos(vehicleId, staged)
+    queryClient.invalidateQueries({ queryKey: ['vehicle-photos', vehicleId] })
+    if (failed.length > 0) toast.error(`${failed.length === 1 ? 'A photo' : `${failed.length} photos`} could not be uploaded. Add ${failed.length === 1 ? 'it' : 'them'} from the vehicle's details.`)
+  }
+
   const saveDraft = async () => {
     try {
       const payload = withNullableDocs({ ...formData, status: 'archived' })
       if (!payload.plate_number) payload.plate_number = `DRFT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`
-      if (isEditing) await vehiclesAPI.update(initialData.id, payload)
-      else await vehiclesAPI.create(payload)
+      const saved = isEditing ? await vehiclesAPI.update(initialData.id, payload) : await vehiclesAPI.create(payload)
+      await saveStagedPhotos(saved?.id)
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       toast.success('Draft saved. Finish it later from the Drafts filter.')
@@ -145,7 +160,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   }
 
   const requestClose = async () => {
-    if (JSON.stringify(formData) === baseline.current || mutation.isPending) { onClose(); return }
+    if ((JSON.stringify(formData) === baseline.current && Object.keys(staged).length === 0) || mutation.isPending) { onClose(); return }
     const discard = await confirm({
       title: 'Discard your changes?',
       message: canSaveDraft ? 'Use Save draft to keep what you entered.' : 'The vehicle keeps its current details.',
@@ -206,6 +221,14 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       setAttempted(prev => new Set(prev).add(step))
       return
     }
+    if (step === 3) {
+      const missing = DOCS.filter(doc => !formData[docNumberKey(doc)]?.trim() || !formData[docExpiryKey(doc)]?.trim())
+      if (missing.length > 0 || rcNumberError(formData.rc_number)) {
+        setAttempted(prev => new Set(prev).add(3))
+        toast.error(missing.length > 0 ? `Add the number and expiry date for: ${missing.map(d => d.toUpperCase()).join(', ')}. Or save a draft.` : 'Check the RC number.')
+        return
+      }
+    }
     setStep(s => s + 1)
   }
 
@@ -219,7 +242,8 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       else delete payload.status
       return isEditing ? vehiclesAPI.update(initialData.id, payload) : vehiclesAPI.create(payload)
     },
-    onSuccess: () => {
+    onSuccess: async (saved: { id?: string } | undefined) => {
+      await saveStagedPhotos(saved?.id)
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       toast.success(isEditing ? 'Vehicle updated' : 'Vehicle added')
@@ -228,15 +252,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     onError: (err: { response?: { data?: { detail?: string } } }) => toast.error(err.response?.data?.detail || 'Failed to save the vehicle'),
   })
 
-  const handleFinish = () => {
-    const missing = DOCS.filter(doc => !formData[docNumberKey(doc)]?.trim() || !formData[docExpiryKey(doc)]?.trim())
-    if (missing.length > 0 || rcNumberError(formData.rc_number)) {
-      setAttempted(prev => new Set(prev).add(3))
-      toast.error(missing.length > 0 ? `Add the number and expiry date for: ${missing.map(d => d.toUpperCase()).join(', ')}. Or save a draft.` : 'Check the RC number.')
-      return
-    }
-    mutation.mutate(formData)
-  }
+  const handleFinish = () => mutation.mutate(formData)
 
   const presetOptions: SelectOption[] = [
     { value: '', label: 'Custom build' },
@@ -258,7 +274,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
             : <Button variant="ghost" onClick={requestClose}>Cancel</Button>}
           <div className="flex-1" />
           <Button variant="secondary" onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>Back</Button>
-          {step < 3 ? (
+          {step < STEPS.length ? (
             <Button onClick={handleNext}>Next</Button>
           ) : (
             <Button onClick={handleFinish} loading={mutation.isPending}>{isEditing ? 'Update vehicle' : 'Add vehicle'}</Button>
@@ -338,6 +354,17 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
               error={attempted.has(2) ? stepErrors(2).phone : indianMobileError(formData.driver_phone)}
             />
           </div>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="space-y-4">
+          <p className="rounded-control border border-info/30 bg-info-soft px-4 py-3 text-sm text-text">
+            Photos are optional. Add front, side and back views (and the inside or the cargo area if you like). You can add or replace them any time from the vehicle's details.
+          </p>
+          {isEditing
+            ? <VehiclePhotoCard vehicleId={initialData.id} />
+            : <StagedPhotos files={staged} onChange={setStaged} />}
         </div>
       )}
 

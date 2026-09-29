@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase, openChannel } from '@/services/supabase'
-import { vendorAPI } from '@/services/api'
+import { vehicleRequestsAPI, vendorAPI } from '@/services/api'
 import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavItem } from '@/config/navigation'
 import { routePrefetch } from '@/config/lazyPages'
 import { useDraftStore } from '@/store/draftStore'
@@ -53,13 +53,22 @@ function prefetchRoute(to: string) {
 }
 
 /** Counts for the navigation badges; each refreshes when its table changes. */
-function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
-  const [counts, setCounts] = useState<Record<NavBadge, number>>({ vendorRequests: 0, pendingPartners: 0, pendingKyc: 0 })
+function useNavBadges(enabled: boolean, isSuperadmin: boolean, reviewsVehicles: boolean) {
+  const [counts, setCounts] = useState<Record<NavBadge, number>>({ vendorRequests: 0, pendingPartners: 0, pendingKyc: 0, vehicleRequests: 0 })
 
   const loadVendorRequests = useCallback(async () => {
     try {
       const data = await vendorAPI.pendingRequests()
       setCounts(c => ({ ...c, vendorRequests: Array.isArray(data) ? data.length : 0 }))
+    } catch {
+      // Keep the previous count; the page itself reports load errors.
+    }
+  }, [])
+
+  const loadVehicleRequests = useCallback(async () => {
+    try {
+      const { pending } = await vehicleRequestsAPI.count()
+      setCounts(c => ({ ...c, vehicleRequests: pending }))
     } catch {
       // Keep the previous count; the page itself reports load errors.
     }
@@ -76,11 +85,18 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
   }, [])
 
   useEffect(() => {
-    if (!enabled) return
-    loadVendorRequests()
+    if (!enabled && !reviewsVehicles) return
     const channel = openChannel('nav_badges')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, loadVendorRequests)
-    if (isSuperadmin) {
+    // Managers approve vehicles too, so they get that badge without the admin-only ones
+    if (reviewsVehicles) {
+      loadVehicleRequests()
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, loadVehicleRequests)
+    }
+    if (enabled) {
+      loadVendorRequests()
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, loadVendorRequests)
+    }
+    if (enabled && isSuperadmin) {
       loadPartners()
       loadKyc()
       channel
@@ -89,7 +105,7 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
     }
     channel.subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [enabled, isSuperadmin, loadVendorRequests, loadPartners, loadKyc])
+  }, [enabled, reviewsVehicles, isSuperadmin, loadVendorRequests, loadVehicleRequests, loadPartners, loadKyc])
 
   return counts
 }
@@ -234,7 +250,7 @@ export default function AppLayout() {
   const isShipmentModalOpen = useDraftStore(s => s.isModalOpen)
 
   const isStaff = role === 'admin' || role === 'superadmin'
-  const badges = useNavBadges(isStaff, role === 'superadmin')
+  const badges = useNavBadges(isStaff, role === 'superadmin', isStaff || role === 'manager')
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
   const sections = navSections
     .map(s => ({ ...s, items: s.items.filter(i => role && (i.roles as string[]).includes(role)) }))
@@ -261,6 +277,7 @@ export default function AppLayout() {
     const invalidateFleet = () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-requests'] })
     }
     const channel = openChannel('global_fleet_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidateFleet)

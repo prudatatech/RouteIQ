@@ -63,6 +63,7 @@ describe('staff notifications', () => {
     ['stop_failed', { manifest_id: 'm1' }, '/shipments?open=m1'],
     ['route_postponed', { route_id: 'r1' }, '/routes/r1'],
     ['fleet_alert', { alert_id: 'a1' }, '/fleet?tab=alerts&open=a1'],
+    ['vehicle_request', { vehicle_id: 'v1' }, '/vehicle-requests?open=v1'],
     ['document_expiring', { user_id: 'u1' }, '/admin/users/u1?tab=documents'],
     ['document_expiring', {}, '/admin/users?tab=attention'],
   ])('%s goes to %s', (type, data, path) => {

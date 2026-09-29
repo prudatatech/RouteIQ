@@ -11,6 +11,7 @@ describe('vehicle rules', () => {
     expect(isDraftVehicle({ plate_number: 'MH01AB1234', status: 'archived' })).toBe(false)
     expect(isFleetVehicle({ plate_number: 'MH01AB1234', status: 'idle' })).toBe(true)
     expect(isFleetVehicle({ plate_number: 'MH01AB1234', status: 'archived' })).toBe(false)
+    expect(isFleetVehicle({ plate_number: 'MH01AB1234', status: 'pending_approval' })).toBe(false)
     expect(isFleetVehicle({ plate_number: 'TEMP-AB12CD', status: 'idle' })).toBe(false)
   })
 

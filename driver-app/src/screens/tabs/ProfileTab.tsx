@@ -10,6 +10,7 @@ import LanguagePicker from '../../components/LanguagePicker';
 import DocumentsSection from '../../components/profile/DocumentsSection';
 import EmergencyContactsSection from '../../components/profile/EmergencyContactsSection';
 import { useMyPeople } from '../../hooks/useMyPeople';
+import { useVehicleGate } from '../VehicleGate';
 import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
 import { colors, radius, size, space } from '../../theme';
 import { formatNumber } from '../../utils/format';
@@ -28,6 +29,7 @@ const AVATAR = 96;
 const NAME_PATTERN = /^[\p{L}\s.-]+$/u;
 
 export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, onAvatarChange, onLogout }: ProfileTabProps) {
+  const vehicleGate = useVehicleGate();
   const { t } = useTranslation();
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
@@ -184,6 +186,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
       <Text variant="title" accessibilityRole="header">
         {t('my_vehicle')}
       </Text>
+      {vehicleGate.state === 'none' ? <Button title={t('vehicle_register_button')} onPress={vehicleGate.registerVehicle} /> : null}
       <Card padded={false} accessibilityRole="radiogroup">
         {INDIAN_VEHICLES.map((v, idx) => {
           const selected = driverInfo?.vehicle_type === v.id;

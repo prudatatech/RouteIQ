@@ -45,6 +45,9 @@ export interface Vehicle {
   puc_expiry?: string | null
   puc_document_url?: string | null
   odometer_km?: number | null
+  /** Set when staff rejected the vehicle a driver registered (it is archived, with the reason). */
+  rejection_reason?: string | null
+  review_decision?: string | null
 }
 
 export const hasContainer = (v: Vehicle) => (v.container_length_ft ?? 0) > 0
