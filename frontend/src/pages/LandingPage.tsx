@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3, Building2, Gavel, LayoutDashboard, MapPin, MapPinned, Package, Route, ShieldAlert, Truck, Waypoints,
   type LucideIcon,
 } from 'lucide-react'
 import { buttonClasses } from '@/components/ui'
+import { publicAPI, type PublicStats } from '@/services/api'
 
 interface Audience {
   icon: LucideIcon
@@ -54,6 +56,32 @@ const features: { icon: LucideIcon; title: string; description: string }[] = [
   { icon: BarChart3, title: 'Analytics', description: 'See how your fleet, drivers and vendors are performing.' },
 ]
 
+const statLabels: { key: keyof PublicStats; label: string }[] = [
+  { key: 'vehicles', label: 'Vehicles on the platform' },
+  { key: 'deliveries_completed', label: 'Deliveries completed' },
+  { key: 'active_partners', label: 'Active partners' },
+  { key: 'cities_served', label: 'Cities served' },
+]
+
+/** Live counts from the platform. Only figures above zero are shown; with none, or if they cannot be loaded, the section is left out. */
+function LiveNumbers() {
+  const { data } = useQuery({ queryKey: ['public-stats'], queryFn: publicAPI.stats, staleTime: 10 * 60_000, retry: false })
+  const shown = data ? statLabels.filter(s => data[s.key] > 0) : []
+  if (shown.length === 0) return null
+  return (
+    <section aria-label="Platform in numbers" className="mx-auto max-w-content px-4 pb-12 sm:px-6 sm:pb-16">
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {shown.map(({ key, label }) => (
+          <div key={key} className="rounded-card border border-border bg-surface p-5">
+            <dd className="text-3xl font-semibold tabular text-text">{data![key].toLocaleString('en-IN')}</dd>
+            <dt className="mt-1 text-sm text-muted">{label}</dt>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 export default function LandingPage() {
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -87,6 +115,8 @@ export default function LandingPage() {
             </p>
           </div>
         </section>
+
+        <LiveNumbers />
 
         <section aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-12 sm:px-6 sm:pb-16">
           <h2 id="audiences-title" className="sr-only">Get started</h2>

@@ -154,6 +154,18 @@ export const cargoAPI = {
     api.post('/cargo/verify-pod', data).then(r => r.data),
 }
 
+export interface PublicStats {
+  vehicles: number
+  deliveries_completed: number
+  active_partners: number
+  cities_served: number
+}
+
+export const publicAPI = {
+  /** Aggregate counts for the landing page. No sign-in needed. */
+  stats: () => api.get('/public/stats').then(r => r.data as PublicStats),
+}
+
 export const capacityAPI = {
   getNearbyVendors: (params: { lat: number, lng: number, radius?: number }) =>
     api.get('/capacity/nearby-vendors', { params }).then(r => r.data),
