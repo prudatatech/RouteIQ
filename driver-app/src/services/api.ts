@@ -186,7 +186,7 @@ class ApiClient {
     }
     if (data.driver?.id && sessionData.session.user.id !== data.driver.id) {
       await this.endSession();
-      throw new Error('Login could not be completed (account mismatch). Please contact your fleet manager.');
+      throw new Error('Login could not be completed (account mismatch). Please contact dispatch.');
     }
 
     // Non-sensitive profile only; credentials live in the secure store via Supabase Auth.
