@@ -33,7 +33,8 @@ export default function AddShipmentModal() {
 
   const goTo = (id: StepId) => {
     setStepIndex(STEPS.findIndex(s => s.id === id))
-    body.current?.scrollIntoView({ block: 'start' })
+    // The dialog body scrolls; start each step at its top.
+    body.current?.parentElement?.scrollTo({ top: 0 })
   }
 
   const mutation = useMutation({

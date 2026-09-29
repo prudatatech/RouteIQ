@@ -8,7 +8,7 @@ import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
 import ShipmentDetailsDrawer from '@/components/shipments/ShipmentDetailsDrawer'
 import {
-  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, plateOf, priorityTone,
+  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, formatDate, formatKg, plateOf,
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
@@ -21,7 +21,7 @@ type TabId = (typeof TAB_IDS)[number]
 function PlaceCell({ name, address }: { name?: string | null; address?: string | null }) {
   if (!name && !address) return <span className="text-muted">—</span>
   return (
-    <div className="min-w-0 max-w-xs">
+    <div className="min-w-0 max-w-44 2xl:max-w-64">
       <div className="truncate">{name || address}</div>
       {name && address && address !== name && <div className="truncate text-xs text-muted">{address}</div>}
     </div>
@@ -82,12 +82,30 @@ export default function ShipmentsPage() {
 
   const columns: Column<ShipmentRow>[] = [
     {
-      key: 'tracking',
-      header: 'Tracking ID',
-      sortValue: s => s.tracking_id,
-      cell: s => <span className="font-mono font-medium">{s.tracking_id}</span>,
+      key: 'shipment',
+      header: 'Shipment',
+      sortValue: s => (s.created_at ? new Date(s.created_at).getTime() : null),
+      cell: s => (
+        <div className="whitespace-nowrap">
+          <div className="font-mono font-medium">{s.tracking_id}</div>
+          {s.created_at && <div className="text-xs font-normal text-muted">{formatDate(s.created_at)}</div>}
+        </div>
+      ),
     },
-    { key: 'status', header: 'Status', sortValue: s => statusToLabel(s.status), cell: s => <StatusPill status={s.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      sortValue: s => statusToLabel(s.status),
+      cell: s => {
+        const urgent = s.priority === 'high' || s.priority === 'critical'
+        return (
+          <div className="flex flex-col items-end gap-1 md:items-start">
+            <StatusPill status={s.status} />
+            {urgent && <span className={s.priority === 'critical' ? 'text-xs font-medium text-danger' : 'text-xs font-medium text-warning'}>{humanize(s.priority!)} priority</span>}
+          </div>
+        )
+      },
+    },
     {
       key: 'pickup',
       header: 'Pickup',
@@ -112,15 +130,15 @@ export default function ShipmentsPage() {
     {
       key: 'vehicle',
       header: 'Vehicle',
-      hideBelow: 'lg',
+      hideBelow: 'xl',
       sortValue: s => plateOf(s) ?? s.driver_name,
       cell: s => {
         const plate = plateOf(s)
-        if (!plate && !s.driver_name) return <span className="text-muted">Not assigned</span>
+        if (!plate && !s.driver_name) return <span className="whitespace-nowrap text-muted">Not assigned</span>
         return (
-          <div className="min-w-0">
+          <div className="min-w-0 whitespace-nowrap">
             {plate && <div className="font-mono">{plate}</div>}
-            {s.driver_name && <div className="truncate text-xs text-muted">{s.driver_name}</div>}
+            {s.driver_name && <div className="max-w-40 truncate text-xs text-muted">{s.driver_name}</div>}
           </div>
         )
       },
@@ -133,29 +151,11 @@ export default function ShipmentsPage() {
       hideOnMobile: true,
       sortValue: s => s.total_weight_kg,
       cell: s => (
-        <div className="tabular">
+        <div className="whitespace-nowrap tabular">
           <div>{formatKg(s.total_weight_kg) ?? '—'}</div>
           {s.total_items != null && <div className="text-xs text-muted">{s.total_items.toLocaleString('en-IN')} {s.total_items === 1 ? 'item' : 'items'}</div>}
         </div>
       ),
-    },
-    {
-      key: 'priority',
-      header: 'Priority',
-      hideBelow: 'xl',
-      hideOnMobile: true,
-      sortValue: s => ['low', 'medium', 'high', 'critical'].indexOf(s.priority ?? ''),
-      cell: s => s.priority
-        ? <StatusPill tone={priorityTone[s.priority] ?? 'neutral'} dot={false}>{humanize(s.priority)}</StatusPill>
-        : <span className="text-muted">—</span>,
-    },
-    {
-      key: 'created',
-      header: 'Created',
-      hideBelow: 'md',
-      hideOnMobile: true,
-      sortValue: s => (s.created_at ? new Date(s.created_at).getTime() : null),
-      cell: s => <span className="whitespace-nowrap text-muted">{formatDate(s.created_at) ?? '—'}</span>,
     },
   ]
 
@@ -194,7 +194,7 @@ export default function ShipmentsPage() {
         onRetry={() => refetch()}
         onRowClick={s => setSelectedId(s.id)}
         selectedKey={selectedId}
-        initialSort={{ key: 'created', direction: 'desc' }}
+        initialSort={{ key: 'shipment', direction: 'desc' }}
         empty={filtering
           ? {
             title: 'No shipments match',
