@@ -29,6 +29,21 @@ export type SosSeverity = 'serious' | 'minor';
 
 export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
 
+/** A text message between the driver and dispatch. */
+export interface ChatMessage {
+  id: string;
+  route_id: string | null;
+  shipment_id: string | null;
+  shipment_tracking_id?: string | null;
+  sender_id: string | null;
+  /** 'driver', or the staff member's role. */
+  sender_role: string;
+  sender_name: string | null;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
 export class SessionExpiredError extends Error {
   constructor() {
     super('Your session has expired. Please log in again.');
@@ -294,6 +309,25 @@ class ApiClient {
     lng?: number;
   }): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
     return this.request('POST', '/driver/scan', data);
+  }
+
+  // ── Messages with dispatch ─────────────────────────────────
+
+  async getMessages(route_id: string): Promise<ChatMessage[]> {
+    const res = await this.request<{ messages: ChatMessage[] }>('GET', `/messages?route_id=${encodeURIComponent(route_id)}`);
+    return res.messages ?? [];
+  }
+
+  async sendMessage(route_id: string, body: string): Promise<ChatMessage> {
+    return this.request('POST', '/messages', { route_id, body });
+  }
+
+  async markMessagesRead(route_id: string): Promise<{ updated: number }> {
+    return this.request('POST', '/messages/read', { route_id });
+  }
+
+  async getUnreadMessages(): Promise<{ total: number }> {
+    return this.request('GET', '/messages/unread');
   }
 
   // ── Capacity Bidding / Safety Valve ──────────────────────────────────

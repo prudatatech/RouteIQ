@@ -25,6 +25,7 @@ import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
 import { useParcelScan } from '../hooks/useParcelScan';
+import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
 import { shortFeedback } from '../utils/feedback';
@@ -47,6 +48,7 @@ import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../
 import ReturnTripScreen from './ReturnTripScreen';
 import RouteTab from './tabs/RouteTab';
 import ScanTab from './tabs/ScanTab';
+import MessagesTab from './tabs/MessagesTab';
 import WalletTab from './tabs/WalletTab';
 import ProfileTab, { AVATAR_KEY } from './tabs/ProfileTab';
 import { colors, space } from '../theme';
@@ -100,6 +102,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { takeBreak } = tracking;
   const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
+  const messages = useDriverMessages({ routeId: data.routeData?.active ? route?.id ?? null : null, tabOpen: activeTab === 'messages' });
   const scans = useParcelScan({ route, currentLoc: tracking.currentLoc, refresh });
 
   // The looping siren is only for a new assignment or a dispatch call.
@@ -406,6 +409,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           {activeTab === 'scan' && (
             <ScanTab hasRoute={!!data.routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
           )}
+          {activeTab === 'messages' && (
+            <MessagesTab
+              hasRoute={!!data.routeData?.active && !!route?.id}
+              messages={messages.messages}
+              loading={messages.loading}
+              failed={messages.failed}
+              sending={messages.sending}
+              onRetry={messages.retry}
+              onSend={messages.sendMessage}
+            />
+          )}
           {activeTab === 'wallet' && <WalletTab onOpenInvoice={(invoice) => openModal({ kind: 'invoice', invoice })} />}
           {activeTab === 'profile' && (
             <ProfileTab
@@ -423,7 +437,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         )}
       </View>
 
-      <DriverTabBar active={activeTab} onChange={setActiveTab} />
+      <DriverTabBar active={activeTab} onChange={setActiveTab} messagesUnread={messages.unreadCount} />
 
       {/* The only dialog host: useModalManager decides what, if anything, is shown. */}
       <DialogFrame

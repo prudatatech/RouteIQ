@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bell } from 'lucide-react'
+import { Bell, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
+import { messagesAPI, type UnreadThread } from '@/services/api'
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { formatTimeAgo } from '@/utils/timeFormat'
 import { IconButton } from './Button'
 import { Spinner } from './Spinner'
@@ -35,6 +38,10 @@ function pathFor(n: NotificationRow): string | null {
 }
 
 const LIST_LIMIT = 20
+const MESSAGE_THREADS_SHOWN = 5
+
+/** Where an unread thread takes staff: the route page, or the shipment's drawer. */
+const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : `/shipments?open=${t.shipment_id}`)
 
 /** Bell with an unread count, a realtime feed of the signed-in staff member's own notifications
  * (SOS, vendor requests, bids, KYC submissions, 3PL applications — see docs/ux-plan-2.md, D2). */
@@ -43,10 +50,22 @@ export function NotificationsBell() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationRow[]>([])
-  const [unread, setUnread] = useState(0)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [loading, setLoading] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+
+  // Unread messages from drivers count towards the badge too
+  const messagesUnread = useQuery({
+    queryKey: ['messages-unread'],
+    queryFn: () => messagesAPI.unread(),
+    enabled: !!userId,
+    refetchInterval: 60_000,
+  })
+  useRealtimeRefresh('messages-unread-bell', ['messages'], [['messages-unread']])
+  const unreadThreads = messagesUnread.data?.threads ?? []
+  const unreadMessages = messagesUnread.data?.total ?? 0
+  const unread = unreadNotifications + unreadMessages
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -56,7 +75,7 @@ export function NotificationsBell() {
         supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_read', false),
       ])
       setItems((data as NotificationRow[] | null) ?? [])
-      setUnread(count ?? 0)
+      setUnreadNotifications(count ?? 0)
     } finally {
       setLoading(false)
     }
@@ -91,7 +110,7 @@ export function NotificationsBell() {
   const openNotification = async (n: NotificationRow) => {
     if (!n.is_read) {
       setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
-      setUnread(c => Math.max(0, c - 1))
+      setUnreadNotifications(c => Math.max(0, c - 1))
       await supabase.from('notifications').update({ is_read: true }).eq('id', n.id)
     }
     setOpen(false)
@@ -100,9 +119,9 @@ export function NotificationsBell() {
   }
 
   const markAllRead = async () => {
-    if (!userId || unread === 0) return
+    if (!userId || unreadNotifications === 0) return
     setItems(prev => prev.map(i => ({ ...i, is_read: true })))
-    setUnread(0)
+    setUnreadNotifications(0)
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false)
   }
 
@@ -129,7 +148,7 @@ export function NotificationsBell() {
       />
       {/* Announces unread-count changes without duplicating the visible badge for sighted users. */}
       <span className="sr-only" role="status" aria-live="polite">
-        {unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'}` : ''}
+        {unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'} or message${unread === 1 ? '' : 's'}` : ''}
       </span>
 
       {open && (
@@ -141,17 +160,45 @@ export function NotificationsBell() {
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-text">Notifications</p>
-            {unread > 0 && (
+            {unreadNotifications > 0 && (
               <button type="button" onClick={markAllRead} className="text-xs font-medium text-brand hover:underline">
                 Mark all as read
               </button>
             )}
           </div>
           <div className="max-h-96 overflow-y-auto">
+            {unreadThreads.length > 0 && (
+              <div className="border-b border-border">
+                <p className="px-4 pt-3 text-xs font-medium uppercase tracking-wide text-muted">
+                  Messages from drivers ({unreadMessages})
+                </p>
+                <ul>
+                  {unreadThreads.slice(0, MESSAGE_THREADS_SHOWN).map(t => (
+                    <li key={`${t.route_id ?? ''}${t.shipment_id ?? ''}`}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { setOpen(false); navigate(threadPath(t)) }}
+                        className="flex w-full flex-col items-start gap-0.5 px-4 py-3 text-left hover:bg-surface-subtle"
+                      >
+                        <span className="flex w-full items-center gap-2">
+                          <MessageSquare size={14} aria-hidden="true" className="shrink-0 text-brand" />
+                          <span className="truncate text-sm font-medium text-text">
+                            {t.sender_name || 'Driver'}{t.count > 1 ? ` (${t.count} new)` : ''}
+                          </span>
+                        </span>
+                        <span className="w-full truncate text-xs text-muted">{t.last_body}</span>
+                        <span className="text-xs text-muted">{formatTimeAgo(new Date(t.last_at))}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {loading && items.length === 0 && (
               <div className="flex justify-center py-6"><Spinner size={20} label="Loading notifications" /></div>
             )}
-            {!loading && items.length === 0 && (
+            {!loading && items.length === 0 && unreadThreads.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted">
                 No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.
               </p>

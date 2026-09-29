@@ -484,5 +484,16 @@
     "latitude",
     "longitude",
     "created_at"
+  ],
+  "messages": [
+    "id",
+    "route_id",
+    "shipment_id",
+    "sender_id",
+    "sender_role",
+    "sender_name",
+    "body",
+    "created_at",
+    "read_at"
   ]
 }

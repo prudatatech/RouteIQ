@@ -28,6 +28,7 @@ import searchRoutes from './search.routes';
 import notificationsRoutes from './notifications.routes';
 import financeRoutes from './finance.routes';
 import driverRoutes from './driver.routes';
+import messagesRoutes from './messages.routes';
 
 const apiRouter = Router();
 
@@ -54,5 +55,6 @@ apiRouter.use('/search', searchRoutes);
 apiRouter.use('/notifications', notificationsRoutes);
 apiRouter.use('/finance', financeRoutes);
 apiRouter.use('/driver', driverRoutes);
+apiRouter.use('/messages', messagesRoutes);
 
 export default apiRouter;

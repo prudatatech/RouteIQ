@@ -13,6 +13,7 @@ import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
 } from './format'
 import ParcelLabel from './ParcelLabel'
+import MessagesPanel from '@/components/messages/MessagesPanel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
@@ -282,6 +283,13 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             <ParcelLabel trackingId={s.tracking_id} size={112} />
           </Section>
         )}
+
+        <Section title="Messages">
+          <MessagesPanel
+            target={{ shipment_id: s.id }}
+            unavailable={s.vehicle_id || manifestOnly ? undefined : 'Assign a vehicle to message its driver about this shipment.'}
+          />
+        </Section>
 
         {!manifestOnly && (
           <Section title="Live location">

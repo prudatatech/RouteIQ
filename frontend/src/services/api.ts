@@ -291,6 +291,40 @@ export const financeAPI = {
     api.put('/finance/settings', { fuel_price_per_litre }).then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
 }
 
+export interface ChatMessage {
+  id: string
+  route_id: string | null
+  shipment_id: string | null
+  shipment_tracking_id?: string | null
+  sender_id: string | null
+  /** 'driver', or the staff member's role. */
+  sender_role: string
+  sender_name: string | null
+  body: string
+  created_at: string
+  read_at: string | null
+}
+
+export interface UnreadThread {
+  route_id: string | null
+  shipment_id: string | null
+  count: number
+  last_body: string
+  last_at: string
+  sender_name: string | null
+}
+
+/** Text messages between staff and the driver, per route or shipment. */
+export const messagesAPI = {
+  thread: (target: { route_id?: string; shipment_id?: string }) =>
+    api.get('/messages', { params: target }).then(r => r.data.messages as ChatMessage[]),
+  send: (target: { route_id?: string; shipment_id?: string }, body: string) =>
+    api.post('/messages', { ...target, body }).then(r => r.data as ChatMessage),
+  markRead: (target: { route_id?: string; shipment_id?: string }) =>
+    api.post('/messages/read', target).then(r => r.data as { updated: number }),
+  unread: () => api.get('/messages/unread').then(r => r.data as { total: number; threads: UnreadThread[] }),
+}
+
 export const tplAPI = {
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
