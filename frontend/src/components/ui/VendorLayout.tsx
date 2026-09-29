@@ -8,7 +8,7 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
 import { routePrefetch } from '@/config/lazyPages'
 import { buttonClasses } from './buttonStyles'
-import { IconButton } from './Button'
+import { Button, IconButton } from './Button'
 import { StatusPill } from './StatusPill'
 import { LoadingState } from './Spinner'
 
@@ -96,6 +96,12 @@ export default function VendorLayout() {
   }, [vendorProfile?.company_logo])
 
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   const signOut = async () => {
     try {
@@ -129,17 +135,18 @@ export default function VendorLayout() {
     >
       {link.label}
       {link.to === '/vendor/documents' && needsKyc && (
-        <span className="ml-2 h-2 w-2 rounded-full bg-warning" aria-label="Action needed" />
+        <span role="img" className="ml-2 h-2 w-2 rounded-full bg-warning" aria-label="Action needed" />
       )}
     </NavLink>
   ))
 
-  const account = session ? (
-    <div className="flex items-center gap-3">
+  // In the top bar the company name only shows on wide screens, so the nav links keep their room.
+  const account = (inMenu: boolean) => session ? (
+    <div className={clsx('flex items-center gap-3', inMenu && 'justify-between')}>
       {vendorProfile && (
-        <div className="hidden min-w-0 items-center gap-2 md:flex">
-          {logoUrl && <img src={logoUrl} alt="" className="h-8 w-8 rounded-full border border-border object-cover" />}
-          <div className="min-w-0 text-right">
+        <div className={clsx('min-w-0 items-center gap-2', inMenu ? 'flex' : 'hidden xl:flex')}>
+          {logoUrl && <img src={logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full border border-border object-cover" />}
+          <div className={clsx('min-w-0', !inMenu && 'text-right')}>
             <p className="truncate text-sm font-medium text-text">{vendorProfile.company_name || 'Your company'}</p>
             <StatusPill status={vendorProfile.kycStatus} className="mt-0.5">
               {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
@@ -147,7 +154,9 @@ export default function VendorLayout() {
           </div>
         </div>
       )}
-      <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />
+      {inMenu
+        ? <Button variant="secondary" icon={<LogOut size={16} />} onClick={signOut}>Sign out</Button>
+        : <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />}
     </div>
   ) : (
     <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
@@ -167,7 +176,7 @@ export default function VendorLayout() {
             </NavLink>
             <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
           </div>
-          <div className="hidden lg:block">{account}</div>
+          <div className="hidden lg:block">{account(false)}</div>
           <IconButton
             className="lg:hidden"
             label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -179,7 +188,7 @@ export default function VendorLayout() {
         {menuOpen && (
           <div className="border-t border-border bg-surface px-4 py-3 lg:hidden">
             <nav aria-label="Vendor" className="flex flex-col gap-1">{navLinks(true)}</nav>
-            <div className="mt-3 border-t border-border pt-3">{account}</div>
+            <div className="mt-3 border-t border-border pt-3">{account(true)}</div>
           </div>
         )}
       </header>

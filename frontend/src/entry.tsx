@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -35,7 +34,7 @@ const queryClient = new QueryClient({
 
         // Network errors (backend down) — show a cleaner message
         if (!err?.response && err?.code === 'ERR_NETWORK') {
-          toast.error('Backend unavailable. Please check your connection.', { id: 'network-error' })
+          toast.error('We could not reach the server. Check your connection and try again.', { id: 'network-error' })
           return
         }
 
@@ -58,22 +57,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
         <App />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1A1A2E',
-              color: '#F4F4F5',
-              border: '1px solid #3F3F46',
-              borderRadius: '10px',
-              fontFamily: 'Inter, sans-serif',
-              fontSize: '13px',
-              fontWeight: '600',
-            },
-            success: { iconTheme: { primary: '#10B981', secondary: '#1A1A2E' } },
-            error: { iconTheme: { primary: '#EF4444', secondary: '#1A1A2E' } },
-          }}
-        />
     </QueryClientProvider>
   </React.StrictMode>
 )

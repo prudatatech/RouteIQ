@@ -84,6 +84,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   useEffect(() => { setActiveIndex(0) }, [flat.length, trimmed])
 
+  // Keep the highlighted result visible while moving with the arrow keys.
+  useEffect(() => {
+    const item = flat[activeIndex]
+    if (item) document.getElementById(`search-result-${item.id}`)?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex, flat])
+
   const runRecent = (term: string) => {
     setQuery(term)
     setDebounced(term)
@@ -116,7 +122,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   let runningIndex = -1
 
   return (
-    <Modal open={open} onClose={onClose} title="Search" size="lg" initialFocus={inputRef} className="max-h-[70vh]">
+    <Modal open={open} onClose={onClose} title="Search" size="lg" initialFocus={inputRef} className="max-h-[70dvh]">
       <div className="relative">
         <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
         <input
@@ -133,7 +139,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         />
       </div>
 
-      <div className="mt-3 -mx-2 max-h-[50vh] overflow-y-auto" role="listbox" aria-label="Search results">
+      <div className="mt-3 -mx-2 max-h-[50dvh] overflow-y-auto" {...(flat.length > 0 && !showRecent ? { role: 'listbox', 'aria-label': 'Search results' } : {})}>
         {showRecent && (
           recent.length > 0 ? (
             <div>
