@@ -42,7 +42,39 @@ function reset(status: string, extra: Record<string, unknown> = {}) {
   });
 }
 
+const del = (id: string) => request(app).delete(`/api/v1/shipments/${id}`).set('Authorization', `Bearer ${adminToken()}`);
 const getHistory = (id: string) => request(app).get(`/api/v1/shipments/${id}/history`).set('Authorization', `Bearer ${adminToken()}`);
+
+describe('DELETE /shipments/:id — safe delete', () => {
+  beforeEach(() => reset('created'));
+
+  it('deletes a shipment that has not moved yet', async () => {
+    const res = await del('ship-1');
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('shipments')).toHaveLength(0);
+  });
+
+  it.each(['picked_up', 'in_transit', 'delivered'])('refuses to delete a %s shipment with 409', async status => {
+    reset(status);
+    const res = await del('ship-1');
+    expect(res.status).toBe(409);
+    expect(res.body.detail).toMatch(/can't be deleted/);
+    expect(supabaseMock.rows('shipments')).toHaveLength(1);
+  });
+
+  it('still allows deleting a cancelled shipment', async () => {
+    reset('cancelled');
+    const res = await del('ship-1');
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('shipments')).toHaveLength(0);
+  });
+
+  it('returns 404 for an unknown shipment', async () => {
+    reset('created');
+    const res = await del('does-not-exist');
+    expect(res.status).toBe(404);
+  });
+});
 
 describe('GET /shipments/:id/history', () => {
   it('returns the hash-chained log events in order, with actor and note', async () => {

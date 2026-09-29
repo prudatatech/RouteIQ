@@ -900,18 +900,32 @@ export class ShipmentService {
     return ShipmentService.getShipment(shipmentId);
   }
 
+  /** Statuses past which a shipment has already moved and can no longer be deleted. */
+  private static readonly UNDELETABLE_STATUSES = ['picked_up', 'in_transit', 'delivered'];
+
   /**
    * Delete a shipment and all related data.
+   *
+   * Refuses once the shipment has been picked up, is in transit or has been
+   * delivered — deleting real movement history is how it goes missing from
+   * the record. Cancel it instead (before pickup) so the trail stays intact.
    */
   static async deleteShipment(shipmentId: string): Promise<boolean> {
     // Check existence
     const { data: existing } = await supabase
       .from('shipments')
-      .select('id')
+      .select('id, status')
       .eq('id', shipmentId)
       .single();
 
     if (!existing) return false;
+
+    if (ShipmentService.UNDELETABLE_STATUSES.includes(existing.status)) {
+      throw new HttpError(
+        409,
+        `This shipment is ${existing.status.replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`
+      );
+    }
 
     // 1. Get delivery point
     const { data: dps } = await supabase

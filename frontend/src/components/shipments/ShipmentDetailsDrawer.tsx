@@ -20,6 +20,10 @@ const statusAction: Record<(typeof FORWARD_STATUSES)[number], string> = {
   delivered: 'Mark delivered',
 }
 
+/** Mirrors the backend rule in ShipmentService.deleteShipment: once a shipment
+ * has moved, deleting it would erase real history. Cancel it instead. */
+const UNDELETABLE_STATUSES = new Set(['picked_up', 'in_transit', 'delivered'])
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
@@ -71,6 +75,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const stops = deliveryPointsOf(s).length
   const plate = plateOf(s)
   const closed = s.status === 'delivered' || s.status === 'cancelled'
+  const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
 
@@ -114,9 +119,11 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       }
       footer={manifestOnly ? manifestLink : (
         <>
-          <Button variant="danger" icon={<Trash2 size={16} />} onClick={remove} loading={deleteMutation.isPending} className="sm:mr-auto">
-            Delete
-          </Button>
+          {canDelete && (
+            <Button variant="danger" icon={<Trash2 size={16} />} onClick={remove} loading={deleteMutation.isPending} className="sm:mr-auto">
+              Delete
+            </Button>
+          )}
           <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => onEdit(s)}>Edit</Button>
           {manifestLink}
         </>
