@@ -1,13 +1,13 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Banner, Card, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
+import { Banner, Button, Card, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { TrackingMap } from '../components/TrackingMap';
 import { colors, fontFamily, radius, size, space } from '../theme';
 import { api, type BookingDetail } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
-import { BOOKING_STATUS, BOOKING_STEPS, formatMinutes } from '../utils/bookingStatus';
+import { BOOKING_STATUS, BOOKING_STEPS, canCancel, formatMinutes } from '../utils/bookingStatus';
 import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
 
 /** How often live tracking refreshes while the shipment is moving. */
@@ -58,6 +58,33 @@ function Details({ detail, error, reload }: { detail: BookingDetail; error?: str
   const cancelled = booking.status === 'cancelled';
   const reached = BOOKING_STEPS.findIndex((s) => s.status === booking.status);
   const vehicle = tracking?.vehicle;
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const cancel = async () => {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await api.cancelBooking(booking.id);
+      reload();
+    } catch (e: any) {
+      setCancelError(e?.message || 'Could not cancel this booking. Check your internet connection and try again.');
+      // The booking may have been picked up in the meantime, so show its current state.
+      reload();
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const askCancel = () =>
+    Alert.alert(
+      'Cancel this booking?',
+      'Our team will be told and no truck will be sent. You can book again any time.',
+      [
+        { text: 'Keep booking', style: 'cancel' },
+        { text: 'Cancel booking', style: 'destructive', onPress: cancel },
+      ],
+    );
   const vehiclePoint = vehicle?.lat != null && vehicle?.lng != null ? { latitude: vehicle.lat, longitude: vehicle.lng } : null;
 
   return (
@@ -146,6 +173,22 @@ function Details({ detail, error, reload }: { detail: BookingDetail; error?: str
               A vehicle has not been assigned yet. Its position will show here once it is.
             </Text>
           )}
+        </View>
+      ) : null}
+
+      {canCancel(booking.status) ? (
+        <View style={styles.live}>
+          {cancelError ? <ErrorBanner message={cancelError} /> : null}
+          <Button
+            title="Cancel booking"
+            variant="danger"
+            loading={cancelling}
+            accessibilityHint="Asks you to confirm before cancelling"
+            onPress={askCancel}
+          />
+          <Text variant="caption" color="textMuted" align="center">
+            You can cancel until your load is picked up.
+          </Text>
         </View>
       ) : null}
     </ScrollView>
