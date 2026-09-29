@@ -60,9 +60,9 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
   return counts
 }
 
-function Brand({ collapsed }: { collapsed: boolean }) {
+function Brand({ collapsed, bordered = true }: { collapsed: boolean; bordered?: boolean }) {
   return (
-    <div className={clsx('flex h-16 shrink-0 items-center gap-2.5 border-b border-border', collapsed ? 'justify-center px-2' : 'px-5')}>
+    <div className={clsx('flex h-16 shrink-0 items-center gap-2.5', bordered && 'border-b border-border', collapsed ? 'justify-center px-2' : 'px-5')}>
       <img src="/margix-logo.png" alt="" className="h-8 w-8 shrink-0 object-contain" />
       {!collapsed && <span className="text-lg font-semibold text-text">MargixIndia</span>}
     </div>
@@ -238,7 +238,7 @@ export default function AppLayout() {
           <div className="absolute inset-0 bg-overlay animate-fade-in" onClick={() => setMobileOpen(false)} aria-hidden="true" />
           <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-dialog animate-slide-in-left">
             <div className="flex items-center justify-between border-b border-border pr-2">
-              <Brand collapsed={false} />
+              <Brand collapsed={false} bordered={false} />
               <IconButton label="Close menu" icon={<X size={20} />} onClick={() => setMobileOpen(false)} />
             </div>
             <NavList items={sections} collapsed={false} badges={badges} onNavigate={() => setMobileOpen(false)} />
