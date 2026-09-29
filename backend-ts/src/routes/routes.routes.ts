@@ -10,6 +10,7 @@ import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds } from '../core/owners
 import { RouteUpdateSchema } from '../schemas';
 import { notificationService } from '../services/notification.service';
 import { sendError } from '../core/errors';
+import { stampPlannedArrivals } from '../services/driver-performance.service';
 
 const router = Router();
 
@@ -216,6 +217,8 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
     if (newStatus) {
       await supabase.from('routes').update({ status: newStatus }).eq('id', route.id);
 
+      if (['in_progress', 'active'].includes(newStatus)) await stampPlannedArrivals(route.id);
+
       // Side effects on vehicle
       let vehicleStatus = route.vehicles?.status;
       if (['in_progress', 'active'].includes(newStatus)) {
@@ -334,6 +337,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       // Vehicle status side effect
       if (['active', 'in_progress'].includes(parsed.data.status)) {
         await supabase.from('vehicles').update({ status: 'on_route' }).eq('id', route.vehicle_id);
+        await stampPlannedArrivals(route.id);
       } else if (['completed', 'cancelled'].includes(parsed.data.status)) {
         await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);
       }

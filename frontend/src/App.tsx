@@ -13,7 +13,7 @@ import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  dashboard, fleet, routes, routeDetails, analytics, optimize, shipments, shipmentManifest, emergency, bids,
+  dashboard, fleet, routes, routeDetails, analytics, insights, optimize, shipments, shipmentManifest, emergency, bids,
   backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
@@ -24,6 +24,7 @@ const FleetPage = fleet.Component
 const RoutesPage = routes.Component
 const RouteDetailsPage = routeDetails.Component
 const AnalyticsPage = analytics.Component
+const InsightsPage = insights.Component
 const OptimizePage = optimize.Component
 const UsersPage = adminUsers.Component
 const KycReviewPage = adminKyc.Component
@@ -376,8 +377,13 @@ export default function App() {
                 <TplPartnerDetailPage />
               </PrivateRoute>
             } />
-            {/* AI Hub is retired; its reroute suggestions moved to Route optimization. */}
-            <Route path="ai-hub" element={<MovedTo to="/optimize" />} />
+            <Route path="insights" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <InsightsPage />
+              </PrivateRoute>
+            } />
+            {/* AI Hub came back as Insights */}
+            <Route path="ai-hub" element={<MovedTo to="/insights" />} />
             <Route path="backhaul" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <BackhaulPage />

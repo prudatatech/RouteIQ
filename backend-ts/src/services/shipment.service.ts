@@ -236,6 +236,7 @@ export class ShipmentService {
         origin_lng: shipmentIn.origin_lng,
         total_items: shipmentIn.total_items,
         total_weight_kg: shipmentIn.total_weight_kg,
+        freight_charge: shipmentIn.freight_charge ?? null,
         metadata: shipmentIn.metadata ?? {},
       })
       .select()
@@ -911,6 +912,12 @@ export class ShipmentService {
    * Update specific shipment fields.
    */
   static async updateShipment(shipmentId: string, updateData: Record<string, any>): Promise<Shipment | null> {
+    if (updateData.freight_charge !== undefined && updateData.freight_charge !== null) {
+      const charge = Number(updateData.freight_charge);
+      if (!Number.isFinite(charge) || charge < 0 || charge > 99_999_999.99) throw new HttpError(400, 'freight_charge must be zero or more');
+      updateData = { ...updateData, freight_charge: Math.round(charge * 100) / 100 };
+    }
+
     // Filter out null/undefined values
     const filtered: Record<string, any> = {};
     for (const [key, value] of Object.entries(updateData)) {

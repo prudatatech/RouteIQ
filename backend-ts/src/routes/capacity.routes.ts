@@ -313,4 +313,52 @@ router.post('/bids/:id/reject', requireAuth, requireRole('superadmin', 'admin'),
   }
 });
 
+const WINDOW_STAFF = ['superadmin', 'admin', 'manager'] as const;
+
+// GET /api/v1/capacity/windows  (console list: recent windows with bid counts)
+router.get('/windows', requireAuth, requireRole(...WINDOW_STAFF), async (req, res) => {
+  try {
+    res.json(await capacityService.listWindowsForStaff());
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/capacity/windows  (staff open a window on a vehicle)
+router.post('/windows', requireAuth, requireRole(...WINDOW_STAFF), async (req, res) => {
+  try {
+    const { vehicle_id, floor_price, duration_minutes, shipment_id } = req.body ?? {};
+    if (!vehicle_id || typeof vehicle_id !== 'string') return res.status(400).json({ error: 'vehicle_id is required' });
+    const window = await capacityService.openWindowForStaff({
+      vehicleId: vehicle_id,
+      floorPrice: Number(floor_price),
+      durationMinutes: Number(duration_minutes),
+      shipmentId: shipment_id || null,
+      createdBy: req.user!.user_id,
+    });
+    res.status(201).json(window);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/capacity/windows/:id/close  (stop new bids; pending bids stay for a decision)
+// POST /api/v1/capacity/windows/:id/cancel (stop new bids and turn pending bids down)
+for (const [action, mode] of [['close', 'closed'], ['cancel', 'cancelled']] as const) {
+  router.post(`/windows/:id/${action}`, requireAuth, requireRole(...WINDOW_STAFF), async (req, res) => {
+    try {
+      const ended = await capacityService.endWindow(req.params.id, mode);
+      if (!ended) {
+        const { supabase } = await import('../core/supabase');
+        const { data: existing } = await supabase.from('capacity_windows').select('status').eq('id', req.params.id).maybeSingle();
+        if (!existing) return res.status(404).json({ error: 'Window not found' });
+        return res.status(409).json({ error: `This window is already ${existing.status}` });
+      }
+      res.json({ id: ended.id, status: mode });
+    } catch (error: any) {
+      sendError(req, res, error, 'error');
+    }
+  });
+}
+
 export default router;

@@ -5,6 +5,7 @@
 import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
 import { indianDateKey, startOfIndianDay } from '../core/istDate';
+import { getVehicleDriverStats } from './driver-performance.service';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
 
@@ -361,9 +362,10 @@ export class AnalyticsService {
       (usersData || []).forEach(u => { usersMap[u.id] = u; });
     }
 
-    // Only counts that exist in the data. The old "rating" (from a default
-    // optimisation score of 80) and "on-time %" (100% for vehicles with no
-    // routes) were invented and are gone.
+    // Only figures that exist in the data: on-time % from planned vs actual stop
+    // arrival, rating from staff ratings. Both are null until there is data.
+    const stats = await getVehicleDriverStats(vehicleIds);
+
     return vehicles.map((v: any) => {
       const vRoutes = routesByVehicle[v.id] || [];
       const finished = vRoutes.filter((r: any) => ['completed', 'cancelled'].includes(r.status));
@@ -382,6 +384,7 @@ export class AnalyticsService {
         // Share of finished routes that were completed rather than cancelled.
         completion_pct: finished.length > 0 ? Math.round((completed.length / finished.length) * 1000) / 10 : null,
         total_distance_km: Math.round(distance),
+        ...stats.get(v.id)!,
       };
     }).sort((a, b) => b.completed_routes - a.completed_routes);
   }

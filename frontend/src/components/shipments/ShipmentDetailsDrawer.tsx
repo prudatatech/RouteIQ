@@ -13,6 +13,7 @@ import { shipmentsAPI } from '@/services/api'
 import {
   apiErrorMessage, deliveryPointsOf, destinationOf, formatDateTime, formatKg, formatRupees, isBiddingOpen, isCargoManifest, plateOf, priorityTone,
 } from './format'
+import DriverRating from './DriverRating'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
@@ -162,6 +163,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             items={[
               { label: 'Items', value: s.total_items != null ? s.total_items.toLocaleString('en-IN') : null },
               { label: 'Weight', value: formatKg(s.total_weight_kg) },
+              ...(s.freight_charge != null ? [{ label: 'Price', value: formatRupees(s.freight_charge) }] : []),
               { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
               { label: 'Driver', value: s.driver_name },
               { label: 'Created', value: formatDateTime(s.created_at) },
@@ -241,6 +243,14 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                 Cancel shipment
               </Button>
             </div>
+          </Section>
+        )}
+
+        {!manifestOnly && s.status === 'delivered' && (
+          <Section title="Rate the driver">
+            {s.vehicle_id
+              ? <DriverRating shipmentId={s.id} rating={s.driver_rating} note={s.driver_rating_note} />
+              : <p className="text-sm text-muted">This delivery has no vehicle on record, so there is no driver to rate.</p>}
           </Section>
         )}
 

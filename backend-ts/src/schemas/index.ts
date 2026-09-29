@@ -172,6 +172,8 @@ export const ShipmentCreateSchema = z.object({
   bidding_opens_at: z.string().optional().nullable(),
   bidding_closes_at: z.string().optional().nullable(),
   asking_price: z.number().optional().nullable(),
+  /** What the customer is charged, in rupees before GST. Used for the invoice when no bid was won. */
+  freight_charge: z.number().min(0).max(99_999_999.99).optional().nullable(),
 });
 export type ShipmentCreate = z.infer<typeof ShipmentCreateSchema>;
 

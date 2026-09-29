@@ -3,7 +3,8 @@
  *
  * One invoice is written when a shipment or a cargo manifest is delivered,
  * using a price that already exists in the data:
- *   - shipment: the accepted bid on it (shipments.bid_id -> capacity_bids.bid_amount)
+ *   - shipment: the accepted bid on it (shipments.bid_id -> capacity_bids.bid_amount),
+ *     or, when there is no winning bid, the freight charge staff entered on it
  *   - cargo manifest: the agreed cost of the vendor request it carries out
  *     (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost)
  * With no price no invoice is written; the delivery shows up under "unpriced
@@ -13,6 +14,7 @@ import { supabase } from '../core/supabase';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRICE_SOURCE_BID = 'bid';
+const PRICE_SOURCE_FREIGHT = 'freight_charge';
 const PRICE_SOURCE_REQUEST = 'vendor_request';
 
 export interface InvoiceResult {
@@ -89,26 +91,39 @@ export const InvoiceService = {
     const { data: existing } = await supabase.from('invoices').select('id').eq('shipment_id', shipmentId).neq('status', 'void').maybeSingle();
     if (existing) return { status: 'exists', invoiceId: existing.id };
 
-    const { data: shipment, error } = await supabase.from('shipments').select('id, bid_id').eq('id', shipmentId).maybeSingle();
+    const { data: shipment, error } = await supabase.from('shipments').select('id, bid_id, freight_charge').eq('id', shipmentId).maybeSingle();
     if (error) throw new Error(`Failed to read shipment: ${error.message}`);
     if (!shipment) return { status: 'skipped' };
-    if (!shipment.bid_id) return { status: 'unpriced' };
 
-    const { data: bid, error: bidErr } = await supabase
-      .from('capacity_bids')
-      .select('id, vendor_id, bid_amount, status')
-      .eq('id', shipment.bid_id)
-      .maybeSingle();
-    if (bidErr) throw new Error(`Failed to read bid: ${bidErr.message}`);
-    const amount = Number(bid?.bid_amount);
-    if (!bid || bid.status !== 'won' || !Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
+    // A won bid sets the price; without one, the freight charge entered on the shipment does
+    let vendorId: string | null = null;
+    let amount = NaN;
+    let priceSource = PRICE_SOURCE_BID;
+    if (shipment.bid_id) {
+      const { data: bid, error: bidErr } = await supabase
+        .from('capacity_bids')
+        .select('id, vendor_id, bid_amount, status')
+        .eq('id', shipment.bid_id)
+        .maybeSingle();
+      if (bidErr) throw new Error(`Failed to read bid: ${bidErr.message}`);
+      if (bid && bid.status === 'won') {
+        amount = Number(bid.bid_amount);
+        vendorId = bid.vendor_id ?? null;
+      }
+    }
+    if (!(amount > 0)) {
+      amount = Number(shipment.freight_charge);
+      vendorId = null;
+      priceSource = PRICE_SOURCE_FREIGHT;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
 
     const invoiceId = await insertInvoice({
       shipment_id: shipmentId,
-      vendor_id: bid.vendor_id ?? null,
+      vendor_id: vendorId,
       amount,
       gst_rate: await shipmentGstRate(shipmentId),
-      price_source: PRICE_SOURCE_BID,
+      price_source: priceSource,
     });
     return { status: 'created', invoiceId };
   },

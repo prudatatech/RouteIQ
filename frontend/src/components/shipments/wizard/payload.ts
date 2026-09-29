@@ -90,6 +90,7 @@ export function buildShipmentPayload(data: DraftShipmentData) {
     open_bidding: data.open_bidding,
     bidding_opens_at: data.open_bidding ? new Date().toISOString() : null,
     bidding_closes_at: data.open_bidding ? new Date(Date.now() + (data.bidding_duration_mins || 5) * 60000).toISOString() : null,
+    freight_charge: data.freight_charge && Number(data.freight_charge) >= 0 ? Number(data.freight_charge) : null,
     asking_price: data.open_bidding ? (data.asking_price ? Number(data.asking_price) : null) : null,
     metadata: {
       dispatch_date: data.plan_for_later && data.scheduled_date ? data.scheduled_date : new Date().toISOString().split('T')[0],

@@ -6,6 +6,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { AnalyticsService } from '../services/analytics.service';
+import { getDemandOverview } from '../services/demand.service';
 import { settings } from '../core/config';
 import { sendError } from '../core/errors';
 import { indianDayEnd, indianDayStart, resolveIndianDateRange } from '../core/istDate';
@@ -21,6 +22,20 @@ router.get('/insights', requireAuth, async (req: Request, res: Response) => {
     }
     const insights = await AnalyticsService.getLiveInsights();
     res.json(insights);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /demand ────────────────────────────────────────────
+// Open loads vs available vehicles per origin city, and a 7-day load forecast per corridor.
+router.get('/demand', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+      res.status(403).json({ detail: 'Not authorized to view demand' });
+      return;
+    }
+    res.json(await getDemandOverview());
   } catch (e: any) {
     sendError(req, res, e);
   }

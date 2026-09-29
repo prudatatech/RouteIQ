@@ -3,11 +3,23 @@ import { Input, Select } from '@/components/ui'
 import { PRIORITIES, formatKg } from '../format'
 import { CARGO_TYPES, chargeableKg, volumetricKg } from './payload'
 import type { StepProps } from './stepProps'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
 
 const priorityOptions = PRIORITIES.map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))
 const toNumber = (value: string) => (value === '' ? 0 : Number(value))
 
 export default function CargoStep({ data, update, errors }: StepProps) {
+  const weight = chargeableKg(data)
+  const quote = usePriceQuote(data.origin_lat && data.origin_lng && data.dest_lat && data.dest_lng && weight > 0
+    ? {
+      pickup: { lat: data.origin_lat, lng: data.origin_lng, label: data.origin_name || null },
+      drop: { lat: data.dest_lat, lng: data.dest_lng, label: data.delivery_point_name || null },
+      weight_kg: weight,
+      source: 'api',
+    }
+    : null)
+
   const numberField = (key: 'length_cm' | 'width_cm' | 'height_cm', label: string) => (
     <Input
       label={label}
@@ -89,6 +101,26 @@ export default function CargoStep({ data, update, errors }: StepProps) {
           {numberField('height_cm', 'Height')}
         </div>
       </fieldset>
+
+      <Input
+        className="sm:max-w-xs"
+        label="Price (₹)"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.01"
+        leading="₹"
+        value={data.freight_charge ?? ''}
+        error={errors.freight_charge}
+        hint="Optional. What the customer is charged, before GST. It is used for the invoice when no vendor bid is accepted."
+        onChange={e => update({ freight_charge: e.target.value })}
+      />
+      <PriceSuggestion
+        query={quote}
+        idle="Choose the pickup, destination and weight to see a suggested price."
+        useLabel="Use suggested price"
+        onUse={q => update({ freight_charge: String(Math.round(q.suggested)) })}
+      />
 
       <div className="rounded-control border border-border bg-surface-subtle px-4 py-3 text-sm">
         <div className="flex items-center justify-between gap-4">

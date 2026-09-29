@@ -172,6 +172,18 @@ export const fleetAPI = {
     api.post('/telematics/test-alarm', { vehicle_id: vehicleId, event }).then(r => r.data),
 }
 
+export interface PublicStats {
+  vehicles: number
+  deliveries_completed: number
+  active_partners: number
+  cities_served: number
+}
+
+export const publicAPI = {
+  /** Aggregate counts for the landing page. No sign-in needed. */
+  stats: () => api.get('/public/stats').then(r => r.data as PublicStats),
+}
+
 export const capacityAPI = {
   getNearbyVendors: (params: { lat: number, lng: number, radius?: number }) =>
     api.get('/capacity/nearby-vendors', { params }).then(r => r.data),
@@ -189,6 +201,13 @@ export const capacityAPI = {
   // Vendor views: no plate, driver or live position (plate only on a won bid)
   openWindows: () => api.get('/capacity/windows/open').then(r => ensureArray(r.data)),
   myBids: () => api.get('/capacity/bids/mine').then(r => ensureArray(r.data)),
+  /** Staff: open a bidding window on a vehicle (the vehicle's free space is offered). */
+  openWindow: (data: { vehicle_id: string; floor_price: number; duration_minutes: number; shipment_id?: string | null }) =>
+    api.post('/capacity/windows', data).then(r => r.data),
+  /** Staff: stop new bids; pending bids stay for a decision. */
+  closeWindow: (id: string) => api.post(`/capacity/windows/${id}/close`).then(r => r.data),
+  /** Staff: stop new bids and turn pending bids down. */
+  cancelWindow: (id: string) => api.post(`/capacity/windows/${id}/cancel`).then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
   rejectBid: (id: string, reason: string) => api.post(`/capacity/bids/${id}/reject`, { reason }).then(r => r.data),
 }
@@ -229,6 +248,9 @@ export const shipmentsAPI = {
   assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
   /** Ordered status timeline (staff only) — see ShipmentService.getShipmentHistory. */
   history: (id: string) => api.get(`/shipments/${id}/history`).then(r => r.data),
+  /** Staff rate the driver of a delivered shipment, 1 to 5. */
+  rateDriver: (id: string, rating: number, note?: string | null) =>
+    api.post(`/shipments/${id}/rating`, { rating, note: note ?? undefined }).then(r => r.data),
 }
 
 export const routesAPI = {
@@ -261,6 +283,8 @@ export const telemetryAPI = {
 
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
+  /** Open loads vs available vehicles per pickup city, and a 7-day load forecast per corridor. */
+  demand: () => api.get('/analytics/demand').then(r => r.data),
   /** Pulls the latest positions from the SparkGPS provider. Staff only. */
   syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data as { status: string; message?: string }),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),

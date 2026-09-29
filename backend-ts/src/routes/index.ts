@@ -36,6 +36,7 @@ import trafficRoutes from './traffic.routes';
 import weatherRoutes from './weather.routes';
 import customerRoutes from './customer.routes';
 import bookingsRoutes from './bookings.routes';
+import publicRoutes from './public.routes';
 
 const apiRouter = Router();
 
@@ -70,5 +71,6 @@ apiRouter.use('/traffic', trafficRoutes);
 apiRouter.use('/weather', weatherRoutes);
 apiRouter.use('/customer', customerRoutes);
 apiRouter.use('/bookings', bookingsRoutes);
+apiRouter.use('/public', publicRoutes);
 
 export default apiRouter;

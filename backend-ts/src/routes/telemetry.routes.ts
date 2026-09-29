@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { stampPlannedArrivals } from '../services/driver-performance.service';
 import { InvoiceService } from '../services/invoice.service';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
@@ -652,6 +653,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
     } else {
       // Update route to active
       await supabase.from('routes').update({ status: 'active' }).eq('id', route_id);
+      await stampPlannedArrivals(route_id);
     }
 
     // Also update vehicle to on_route
@@ -764,7 +766,7 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     // Update route stop status
     const { data: stop, error: stopErr } = await supabase
       .from('route_stops')
-      .update({ status }) // 'completed' or 'failed'
+      .update(status === 'completed' ? { status, actual_arrival_at: new Date().toISOString() } : { status }) // 'completed' or 'failed'
       .eq('id', stop_id)
       .select('route_id, delivery_point_id')
       .single();
