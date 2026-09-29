@@ -1,0 +1,38 @@
+/* Generated from design/tokens.json by design/generate-tokens.mjs. Do not edit. */
+:root {
+  --color-bg: #F4F4F5;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #FAFAFA;
+  --color-border: #E4E4E7;
+  --color-border-strong: #D4D4D8;
+  --color-text: #18181B;
+  --color-text-muted: #5B5B63;
+  --color-text-disabled: #A1A1AA;
+  --color-accent: #8C6600;
+  --color-accent-hover: #734F00;
+  --color-accent-fill: #FFC107;
+  --color-accent-fill-hover: #F5B400;
+  --color-accent-soft: #FFF4D1;
+  --color-on-accent-fill: #18181B;
+  --color-success: #15803D;
+  --color-success-soft: #DCFCE7;
+  --color-warning: #B45309;
+  --color-warning-soft: #FEF3C7;
+  --color-danger: #B91C1C;
+  --color-danger-hover: #991B1B;
+  --color-danger-soft: #FEE2E2;
+  --color-info: #1D4ED8;
+  --color-info-soft: #DBEAFE;
+  --color-neutral: #52525B;
+  --color-neutral-soft: #F4F4F5;
+  --color-overlay: rgba(24, 24, 27, 0.5);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-control: 8px;
+  --radius-card: 16px;
+  --radius-full: 9999px;
+  --size-control-web: 40px;
+  --size-control-mobile: 48px;
+  --size-content-max: 1280px;
+  --size-form-max: 720px;
+}

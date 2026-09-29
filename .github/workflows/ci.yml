@@ -42,6 +42,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Theme files match design/tokens.json
+        run: node ../design/generate-tokens.mjs --check
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run build
