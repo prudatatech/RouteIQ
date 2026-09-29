@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, BackHandler, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, BackHandler, DeviceEventEmitter, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
-import { api, type Quote } from '../services/api';
+import { api, BOOKING_CREATED_EVENT, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
 
@@ -70,6 +70,7 @@ export default function QuoteScreen({ navigation, route }: any) {
         drop_address: dropoffLocation,
       });
       setBookedId(created.id);
+      DeviceEventEmitter.emit(BOOKING_CREATED_EVENT);
     } catch (e: any) {
       setBookingError(e?.message || 'Could not send your booking. Check your internet connection and try again.');
     } finally {

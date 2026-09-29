@@ -136,6 +136,11 @@ export default function LoginScreen({ navigation }: any) {
                     textContentType="telephoneNumber"
                     autoComplete="tel"
                     maxLength={10}
+                    autoFocus
+                    returnKeyType="go"
+                    onSubmitEditing={() => {
+                      if (phone.length >= 10 && !isLoading) handleSendOtp();
+                    }}
                     value={phone}
                     accessibilityLabel="Mobile number"
                     onChangeText={(text) => {

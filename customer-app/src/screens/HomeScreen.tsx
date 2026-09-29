@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
-import { STORAGE_KEYS } from '../services/api';
+import { BOOKING_CREATED_EVENT, STORAGE_KEYS } from '../services/api';
 import { Button, Card, IconButton, Text } from '../components/ui';
 import { colors, elevation, radius, size, space } from '../theme';
 
@@ -72,6 +72,18 @@ export default function HomeScreen({ navigation }: any) {
       }
     });
 
+    return () => subscription.remove();
+  }, []);
+
+  // Once a booking is sent, start the next one from a clean form.
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(BOOKING_CREATED_EVENT, () => {
+      setPickupLocation(null);
+      setDropoffLocation(null);
+      setPickupCoord(null);
+      setDropoffCoord(null);
+      setLoadType('full');
+    });
     return () => subscription.remove();
   }, []);
 

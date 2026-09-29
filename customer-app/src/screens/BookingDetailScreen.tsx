@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Banner, Button, Card, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
@@ -45,13 +45,13 @@ export default function BookingDetailScreen({ navigation, route }: any) {
           {loading ? <ActivityIndicator color={colors.accent} /> : <ErrorBanner message={error ?? 'Could not load this booking.'} action={{ label: 'Try again', onPress: reload }} />}
         </View>
       ) : (
-        <Details detail={data} error={error} reload={reload} />
+        <Details detail={data} error={error} reload={reload} loading={loading} />
       )}
     </SafeAreaView>
   );
 }
 
-function Details({ detail, error, reload }: { detail: BookingDetail; error?: string; reload: () => void }) {
+function Details({ detail, error, reload, loading }: { detail: BookingDetail; error?: string; reload: () => void; loading: boolean }) {
   const { booking, tracking } = detail;
   const status = BOOKING_STATUS[booking.status];
   const times = stepTimes(detail);
@@ -60,6 +60,15 @@ function Details({ detail, error, reload }: { detail: BookingDetail; error?: str
   const vehicle = tracking?.vehicle;
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Only a pull down shows the spinner, not the quiet refresh that runs while a shipment is moving.
+  const [pulling, setPulling] = useState(false);
+  const pull = () => {
+    setPulling(true);
+    reload();
+  };
+  useEffect(() => {
+    if (!loading) setPulling(false);
+  }, [loading]);
 
   const cancel = async () => {
     setCancelling(true);
@@ -88,7 +97,11 @@ function Details({ detail, error, reload }: { detail: BookingDetail; error?: str
   const vehiclePoint = vehicle?.lat != null && vehicle?.lng != null ? { latitude: vehicle.lat, longitude: vehicle.lng } : null;
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={pulling} onRefresh={pull} tintColor={colors.accent} />}
+    >
       {error ? <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} /> : null}
 
       <Card style={styles.card}>

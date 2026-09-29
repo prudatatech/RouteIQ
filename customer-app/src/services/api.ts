@@ -16,6 +16,12 @@ const STORAGE_KEYS = {
 /** Emitted when the saved sign-in no longer works, so the app can return to the sign-in screen. */
 export const SESSION_EXPIRED_EVENT = 'customer:session-expired';
 
+/** Emitted once a booking is sent, so the planner can clear the trip that was just booked. */
+export const BOOKING_CREATED_EVENT = 'customer:booking-created';
+
+/** Emitted after notifications are read, so the tab badge can update. */
+export const NOTIFICATIONS_CHANGED_EVENT = 'customer:notifications-changed';
+
 /** A request gives up after this long, so a weak signal never leaves a spinner running for ever. */
 const REQUEST_TIMEOUT_MS = 20_000;
 

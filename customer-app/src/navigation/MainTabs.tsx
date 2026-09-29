@@ -1,11 +1,16 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
 import BookingsScreen from '../screens/BookingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
+import { api, NOTIFICATIONS_CHANGED_EVENT } from '../services/api';
 import { colors, size, type } from '../theme';
+
+/** How often the unread count is checked while the app is open. */
+const BADGE_REFRESH_MS = 60_000;
 
 const Tab = createBottomTabNavigator();
 
@@ -17,6 +22,26 @@ function icon(name: keyof typeof Feather.glyphMap) {
 
 /** The signed-in destinations. Safe-area insets are applied by the tab bar. */
 export default function MainTabs() {
+  const [unread, setUnread] = useState(0);
+  const refreshUnread = useCallback(() => {
+    api
+      .getNotifications({ limit: 1 })
+      .then((res) => setUnread(res.unread_count))
+      .catch(() => {
+        // The badge is a convenience: keep the last count when there is no signal.
+      });
+  }, []);
+
+  useEffect(() => {
+    refreshUnread();
+    const timer = setInterval(refreshUnread, BADGE_REFRESH_MS);
+    const sub = DeviceEventEmitter.addListener(NOTIFICATIONS_CHANGED_EVENT, refreshUnread);
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [refreshUnread]);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -32,7 +57,13 @@ export default function MainTabs() {
       <Tab.Screen
         name="Notifications"
         component={NotificationsScreen}
-        options={{ title: 'Notifications', tabBarIcon: icon('bell') }}
+        options={{
+          title: 'Notifications',
+          tabBarIcon: icon('bell'),
+          tabBarBadge: unread > 0 ? (unread > 9 ? '9+' : unread) : undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.danger, color: colors.onSolid },
+          tabBarAccessibilityLabel: unread > 0 ? `Notifications, ${unread} unread` : 'Notifications',
+        }}
       />
       <Tab.Screen name="Account" component={AccountScreen} options={{ title: 'Account', tabBarIcon: icon('user') }} />
     </Tab.Navigator>
