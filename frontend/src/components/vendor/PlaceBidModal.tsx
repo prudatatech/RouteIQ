@@ -1,4 +1,4 @@
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatRupees } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useQuery } from '@tanstack/react-query'
@@ -50,6 +50,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   const [ewayBill, setEwayBill] = useState('')
   const [loadConfiguration, setLoadConfiguration] = useState(LOAD_CONFIGURATIONS[0].value)
   const [submitting, setSubmitting] = useState(false)
+  const [attempted, setAttempted] = useState(false)
 
   // Suggested price: the truck collects from the vendor's own address (from the company profile)
   const profile = useQuery({
@@ -79,7 +80,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   const weight = Number(weightKg)
   const ewayClean = ewayBill.replace(/\s+/g, '')
   const errors = {
-    amount: !bidAmount ? 'Enter your bid' : amount <= 0 ? 'Bid must be positive' : amount < floorPrice ? `Minimum bid is ₹${floorPrice.toLocaleString('en-IN')}` : null,
+    amount: !bidAmount ? 'Enter your bid' : amount <= 0 ? 'Bid must be positive' : amount < floorPrice ? `Minimum bid is ${formatRupees(floorPrice)}` : null,
     weight: !weightKg ? 'Enter the load weight' : weight <= 0 ? 'Weight must be positive' : capacityKg != null && weight > capacityKg ? `Only ${capacityKg.toLocaleString('en-IN')} kg available` : null,
     dropoff: dropoff ? null : 'Choose a drop-off location from the list',
     eway: ewayClean && !/^\d{12}$/.test(ewayClean) ? 'E-way bill number is 12 digits' : null,
@@ -88,6 +89,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
 
   const submit = async () => {
     setDropoffTouched(true)
+    setAttempted(true)
     if (!valid || !dropoff) return
     setSubmitting(true)
     try {
@@ -121,13 +123,13 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} loading={submitting} disabled={!valid && !submitting}>Submit bid</Button>
+          <Button onClick={submit} loading={submitting} disabled={closed}>Submit bid</Button>
         </>
       }
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted">Floor price <span className="font-medium text-text">₹{floorPrice.toLocaleString('en-IN')}</span></span>
+          <span className="text-muted">Floor price <span className="font-medium text-text">{formatRupees(floorPrice)}</span></span>
           <span className={closed ? 'font-medium text-danger' : 'text-muted'}>
             {closed ? 'Bidding closed' : <>Closes in <span className="tabular font-medium text-text">{minutes}:{String(seconds).padStart(2, '0')}</span></>}
           </span>
@@ -138,13 +140,13 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Your bid (₹)" type="number" min={floorPrice} step="1" required
-            value={bidAmount} onChange={e => setBidAmount(e.target.value)}
-            error={bidAmount ? errors.amount : undefined}
+            inputMode="decimal" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
+            error={bidAmount || attempted ? errors.amount ?? undefined : undefined}
           />
           <Input
             label="Load weight (kg)" type="number" min={1} max={capacityKg ?? undefined} step="1" required
-            value={weightKg} onChange={e => setWeightKg(e.target.value)}
-            error={weightKg ? errors.weight : undefined}
+            inputMode="decimal" value={weightKg} onChange={e => setWeightKg(e.target.value)}
+            error={weightKg || attempted ? errors.weight ?? undefined : undefined}
           />
         </div>
 
@@ -152,7 +154,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
           label="Drop-off location" required placeholder="Search the delivery address"
           value={dropoff}
           onChange={place => { setDropoff(place); setDropoffTouched(true) }}
-          error={dropoffTouched ? errors.dropoff : undefined}
+          error={dropoffTouched || attempted ? errors.dropoff ?? undefined : undefined}
           showMap
           mapHeight={170}
         />
@@ -174,7 +176,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="E-way bill number" hint="Optional — 12 digits" inputMode="numeric" maxLength={14}
-            value={ewayBill} onChange={e => setEwayBill(e.target.value)}
+            value={ewayBill} onChange={e => setEwayBill(e.target.value.replace(/[^\d\s]/g, ''))}
             error={errors.eway ?? undefined}
           />
           <Select label="Load type" options={LOAD_CONFIGURATIONS} value={loadConfiguration} onChange={e => setLoadConfiguration(e.target.value)} />
