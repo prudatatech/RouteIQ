@@ -22,6 +22,7 @@ interface NotificationRow {
 const NOTIFICATION_TARGETS: Record<string, { base: string; dataKey: string }> = {
   sos: { base: '/emergency', dataKey: 'alert_id' },
   vendor_request: { base: '/vendor-requests', dataKey: 'request_id' },
+  customer_booking: { base: '/bookings', dataKey: 'booking_id' },
   capacity_bid: { base: '/bids', dataKey: 'bid_id' },
   kyc_submitted: { base: '/admin/kyc', dataKey: 'profile_id' },
   tpl_application: { base: '/3pl-partners', dataKey: 'partner_id' },

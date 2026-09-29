@@ -34,6 +34,8 @@ import fleetRoutes from './fleet.routes';
 import pricingRoutes from './pricing.routes';
 import trafficRoutes from './traffic.routes';
 import weatherRoutes from './weather.routes';
+import customerRoutes from './customer.routes';
+import bookingsRoutes from './bookings.routes';
 
 const apiRouter = Router();
 
@@ -66,5 +68,7 @@ apiRouter.use('/fleet', fleetRoutes);
 apiRouter.use('/pricing', pricingRoutes);
 apiRouter.use('/traffic', trafficRoutes);
 apiRouter.use('/weather', weatherRoutes);
+apiRouter.use('/customer', customerRoutes);
+apiRouter.use('/bookings', bookingsRoutes);
 
 export default apiRouter;

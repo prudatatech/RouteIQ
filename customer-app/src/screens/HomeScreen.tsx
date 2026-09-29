@@ -90,7 +90,7 @@ export default function HomeScreen({ navigation }: any) {
     [pickupCoord, dropoffCoord],
   );
 
-  const canContinue = !!pickupLocation && !!dropoffLocation;
+  const canContinue = !!pickupLocation && !!dropoffLocation && !!pickupCoord && !!dropoffCoord;
   const greeting = getGreeting();
 
   return (
@@ -202,7 +202,7 @@ export default function HomeScreen({ navigation }: any) {
             title="Find a truck"
             disabled={!canContinue}
             accessibilityHint={canContinue ? undefined : 'Choose pickup and drop-off first'}
-            onPress={() => navigation.navigate('CargoConfig', { pickupLocation, dropoffLocation, loadType })}
+            onPress={() => navigation.navigate('CargoConfig', { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType })}
             icon={(color) => <Feather name="arrow-right" size={size.icon.md} color={color} />}
           />
         </Card>

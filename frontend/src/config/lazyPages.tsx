@@ -26,6 +26,7 @@ export const shipmentManifest = page(() => import('@/pages/ShipmentManifestPage'
 export const emergency = page(() => import('@/pages/EmergencyPage'))
 export const bids = page(() => import('@/pages/BidsPage'))
 export const backhaul = page(() => import('@/pages/BackhaulPage'))
+export const bookings = page(() => import('@/pages/BookingsPage'))
 export const vendorRequests = page(() => import('@/pages/VendorRequestsPage'))
 export const liveMap = page(() => import('@/pages/LiveMapPage'))
 export const tplPartners = page(() => import('@/pages/TplPartnersPage'))

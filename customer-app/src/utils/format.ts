@@ -49,3 +49,14 @@ export function formatDateTime(value: Date | string | number, options: Intl.Date
     ...options,
   }).format(date);
 }
+
+/** The India calendar day `daysFromToday` days from now, as YYYY-MM-DD (the format the API uses). */
+export function dayKey(daysFromToday = 0): string {
+  const date = new Date(Date.now() + daysFromToday * 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: TIME_ZONE }).format(date);
+}
+
+/** A YYYY-MM-DD day for people, e.g. "Wed, 30 Sep 2026". */
+export function formatDay(day: string): string {
+  return formatDate(`${day}T12:00:00+05:30`, { weekday: 'short' });
+}

@@ -68,6 +68,12 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').r
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
+  // Settings are JSON: the live rate card is stored as {"rate": 45} (the driver app reads
+  // value.rate); newer settings may be a bare number or {"value": n}.
+  if (typeof v === 'object') {
+    const o = v as { rate?: unknown; value?: unknown };
+    return num(o.rate ?? o.value);
+  }
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/^"|"$/g, ''));
   return Number.isFinite(n) ? n : null;
 }

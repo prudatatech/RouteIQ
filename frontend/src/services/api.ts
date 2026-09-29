@@ -309,6 +309,37 @@ export const financeAPI = {
     api.put('/finance/settings', { fuel_price_per_litre }).then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
 }
 
+export interface CustomerBooking {
+  id: string
+  customer_id: string
+  pickup_name: string
+  pickup_address: string
+  drop_name: string
+  drop_address: string
+  weight_kg: number
+  load_type: 'full' | 'part'
+  vehicle_type: string | null
+  pickup_date: string
+  quoted_price: number | null
+  status: 'requested' | 'confirmed' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled'
+  shipment_id: string | null
+  tracking_id: string | null
+  vehicle_id: string | null
+  cancelled_by: 'customer' | 'staff' | null
+  cancel_reason: string | null
+  created_at: string
+  customer: { name: string | null; phone: string | null; company: string | null } | null
+}
+
+/** Bookings made by customers in the mobile app. */
+export const bookingsAPI = {
+  list: () => api.get('/bookings').then(r => ensureArray(r.data) as CustomerBooking[]),
+  /** Creates the shipment, so the booking can be dispatched like any other load. */
+  confirm: (id: string) => api.post(`/bookings/${id}/confirm`).then(r => r.data),
+  assign: (id: string, vehicle_id: string) => api.post(`/bookings/${id}/assign`, { vehicle_id }).then(r => r.data),
+  cancel: (id: string, reason: string) => api.post(`/bookings/${id}/cancel`, { reason }).then(r => r.data),
+}
+
 export const tplAPI = {
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),

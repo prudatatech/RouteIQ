@@ -7,7 +7,7 @@ import { colors, radius, size, space } from '../theme';
 import { api, type NotificationItem } from '../services/api';
 import { formatDateTime } from '../utils/format';
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen({ navigation }: any) {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,11 +28,27 @@ export default function NotificationsScreen() {
     }
   }, []);
 
+  // First load. `loading` starts true, so nothing is set before the request settles.
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    api
+      .getNotifications({ limit: 50 })
+      .then((res) => {
+        if (!cancelled) setItems(res.notifications);
+      })
+      .catch((e: any) => {
+        if (!cancelled) setError(e?.message || 'Could not load notifications.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openNotification = useCallback(async (item: NotificationItem) => {
+    if (item.type === 'booking' && typeof item.data?.booking_id === 'string') navigation.navigate('BookingDetail', { id: item.data.booking_id });
     if (item.is_read) return;
     // Optimistic: flip it read locally, then persist.
     setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
@@ -42,7 +58,7 @@ export default function NotificationsScreen() {
       // Not worth surfacing a banner for a background mark-as-read failure;
       // it will show unread again next refresh if it truly failed.
     }
-  }, []);
+  }, [navigation]);
 
   const body = () => {
     if (loading) {

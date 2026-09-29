@@ -1,6 +1,6 @@
 import {
   BarChart3, Banknote, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
-  Package, Route, Settings, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
+  Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin'
@@ -48,6 +48,7 @@ export const navSections: NavSection[] = [
     title: 'Marketplace',
     items: [
       { to: '/bids', label: 'Bids', icon: Briefcase, roles: staff },
+      { to: '/bookings', label: 'Customer bookings', icon: Smartphone, roles: staff },
       { to: '/vendor-requests', label: 'Vendor requests', icon: Inbox, roles: staff, badge: 'vendorRequests' },
       { to: '/3pl-partners', label: '3PL partners', icon: Building2, roles: superadmin, badge: 'pendingPartners' },
     ],

@@ -39,7 +39,7 @@ const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
   unit === 't' ? tonnes.toFixed(1) : formatNumber(Math.round(tonnes * 1000));
 
 export default function CargoConfigScreen({ navigation, route }: any) {
-  const { pickupLocation, dropoffLocation, loadType } = route.params || {};
+  const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType } = route.params || {};
 
   const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
   const [unit, setUnit] = useState<'t' | 'kg'>('t');
@@ -256,22 +256,24 @@ export default function CargoConfigScreen({ navigation, route }: any) {
         </Card>
       </ScrollView>
 
-      {/* COMING SOON */}
+      {/* NEXT */}
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
-        <Card style={styles.comingSoonCard}>
-          <View style={styles.comingSoonHeader}>
-            <View style={styles.comingSoonIconBox}>
-              <Feather name="clock" size={size.icon.md} color={colors.accent} />
-            </View>
-            <View style={styles.flex}>
-              <Text variant="bodyMedium">Online booking is coming soon</Text>
-              <Text variant="bodySmall" color="textMuted">
-                You can't book a shipment in the app yet. In the meantime, go back to Home to see what you can do today.
-              </Text>
-            </View>
-          </View>
-          <Button title="Back to Home" variant="secondary" onPress={() => navigation.goBack()} />
-        </Card>
+        <Button
+          title="See price"
+          accessibilityHint="Shows the price and lets you choose a pickup date"
+          onPress={() =>
+            navigation.navigate('Quote', {
+              pickupLocation,
+              dropoffLocation,
+              pickupCoord,
+              dropoffCoord,
+              loadType: loadType ?? 'full',
+              weightKg: Math.round(selectedWeight * 1000),
+              vehicleType: suggestedTruck ?? null,
+            })
+          }
+          icon={(color) => <Feather name="arrow-right" size={size.icon.md} color={color} />}
+        />
       </SafeAreaView>
     </SafeAreaView>
   );
@@ -387,15 +389,5 @@ const styles = StyleSheet.create({
     gap: space[2],
     borderTopWidth: size.border,
     borderTopColor: colors.border,
-  },
-  comingSoonCard: { gap: space[3], backgroundColor: colors.surfaceSubtle },
-  comingSoonHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: space[3] },
-  comingSoonIconBox: {
-    width: size.control - space[2],
-    height: size.control - space[2],
-    borderRadius: radius.control,
-    backgroundColor: colors.accentSoft,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

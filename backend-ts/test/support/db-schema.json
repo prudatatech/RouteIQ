@@ -613,5 +613,31 @@
     "created_by",
     "created_at",
     "updated_at"
+  ],
+  "customer_bookings": [
+    "id",
+    "customer_id",
+    "pickup_name",
+    "pickup_address",
+    "pickup_lat",
+    "pickup_lng",
+    "drop_name",
+    "drop_address",
+    "drop_lat",
+    "drop_lng",
+    "weight_kg",
+    "load_type",
+    "vehicle_type",
+    "pickup_date",
+    "quoted_price",
+    "quote_details",
+    "status",
+    "shipment_id",
+    "tracking_id",
+    "vehicle_id",
+    "cancelled_by",
+    "cancel_reason",
+    "created_at",
+    "updated_at"
   ]
 }
