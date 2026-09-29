@@ -7,9 +7,14 @@ if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
   baseURL = baseURL.replace(/\/$/, '') + '/api/v1';
 }
 
+/** Most calls answer in a second or two; 30 seconds is enough before we tell the person it failed. */
+const DEFAULT_TIMEOUT_MS = 30_000
+/** The route optimizer can run for minutes on a large fleet, so those calls pass this instead. */
+const OPTIMIZER_TIMEOUT_MS = 360_000
+
 export const api = axios.create({
   baseURL,
-  timeout: 360_000,
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -104,9 +109,9 @@ export const vehiclesAPI = {
 }
 
 export const optimizationAPI = {
-  optimize: (data: Record<string, unknown>) => api.post('/optimize', data).then(r => r.data),
-  incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`).then(r => r.data),
-  reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`).then(r => r.data),
+  optimize: (data: Record<string, unknown>) => api.post('/optimize', data, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
+  incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`, undefined, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
+  reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`, undefined, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
 }
 
 export const dashboardAPI = {
@@ -144,7 +149,7 @@ export const cargoAPI = {
   /** Created shipments that are not on a route yet. */
   openLoads: () => api.get('/cargo/open-loads').then(r => ensureArray(r.data)),
   optimizePooling: (shipmentIds: string[], vehicleId: string) =>
-    api.post('/cargo/optimize-pooling', { shipment_ids: shipmentIds, vehicle_id: vehicleId }).then(r => r.data),
+    api.post('/cargo/optimize-pooling', { shipment_ids: shipmentIds, vehicle_id: vehicleId }, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
   backhaulMatch: (opportunityId: string, availableCapacityKg: number) =>
     api.post('/cargo/backhaul-match', { opportunity_id: opportunityId, available_capacity_kg: availableCapacityKg }).then(r => r.data),
   verifyPod: (data: { tracking_id: string, recipient_name: string }) =>
