@@ -5,15 +5,15 @@
  * request. The vehicle goes to dispatch for approval; until then it takes no
  * work. Photos are optional and can be added or changed any time.
  */
-import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, type RegisteredVehicle, type VehicleKind, type VehiclePhotoInfo, type VehiclePhotoSlot } from '../services/api';
 import { chooseVehiclePhoto, uploadStagedPhotos } from '../services/vehiclePhotos';
 import { useTranslation } from '../hooks/useTranslation';
 import PhotoSlots from '../components/vehicle/PhotoSlots';
-import { Button, Card, ErrorBanner, Text, TextField } from '../components/ui';
-import { colors, radius, size, space } from '../theme';
+import { Button, Card, Chip, ErrorBanner, ScreenHeader, Text, TextField } from '../components/ui';
+import { colors, space } from '../theme';
 
 const KINDS: { id: VehicleKind; labelKey: string }[] = [
   { id: 'truck', labelKey: 'vehicle_kind_truck' },
@@ -51,6 +51,11 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
   const [errors, setErrors] = useState<{ plate?: string; capacity?: string }>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const capacityRef = useRef<TextInput>(null);
+  const modelRef = useRef<TextInput>(null);
+  const rcRef = useRef<TextInput>(null);
+  const insuranceRef = useRef<TextInput>(null);
 
   const existing: Partial<Record<VehiclePhotoSlot, string | null>> = {};
   for (const p of photos) existing[p.slot] = p.url;
@@ -67,7 +72,11 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
     const capacityValue = Number(capacity);
     if (!Number.isFinite(capacityValue) || capacityValue <= 0 || capacityValue > 50000) nextErrors.capacity = t('vehicle_capacity_invalid');
     setErrors(nextErrors);
-    if (nextErrors.plate || nextErrors.capacity) return;
+    if (nextErrors.plate || nextErrors.capacity) {
+      // The fields are at the top: bring the inline message into view
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
 
     setBusy(true);
     setError('');
@@ -96,38 +105,20 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.heading}>
-            <Text variant="heading" accessibilityRole="header">
-              {title}
-            </Text>
-            <Text variant="bodySmall" color="textMuted">
-              {t(mode === 'new' ? 'vehicle_reg_intro' : 'vehicle_reg_intro_fix')}
-            </Text>
-          </View>
+      <ScreenHeader title={title} onBack={mode !== 'new' ? onCancel : undefined} backLabel={t('cancel')} />
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <Text variant="bodySmall" color="textMuted">
+            {t(mode === 'new' ? 'vehicle_reg_intro' : 'vehicle_reg_intro_fix')}
+          </Text>
 
           <Card style={styles.card}>
             <View style={styles.field}>
               <Text variant="bodySmallMedium">{t('vehicle_type')}</Text>
               <View style={styles.kinds} accessibilityRole="radiogroup">
-                {KINDS.map((k) => {
-                  const selected = kind === k.id;
-                  return (
-                    <Pressable
-                      key={k.id}
-                      onPress={() => setKind(k.id)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={t(k.labelKey)}
-                      style={[styles.kind, selected ? styles.kindSelected : null]}
-                    >
-                      <Text variant="bodySmallMedium" color={selected ? 'accent' : 'text'}>
-                        {t(k.labelKey)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                {KINDS.map((k) => (
+                  <Chip key={k.id} label={t(k.labelKey)} selected={kind === k.id} onPress={() => setKind(k.id)} disabled={busy} />
+                ))}
               </View>
             </View>
 
@@ -143,8 +134,13 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={24}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => capacityRef.current?.focus()}
             />
             <TextField
+              ref={capacityRef}
               label={t('vehicle_capacity')}
               value={capacity}
               onChangeText={(v) => {
@@ -154,10 +150,39 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               error={errors.capacity}
               keyboardType="number-pad"
               maxLength={5}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => modelRef.current?.focus()}
             />
-            <TextField label={t('vehicle_model_label')} hint={t('vehicle_optional')} value={model} onChangeText={setModel} maxLength={100} />
-            <TextField label={t('vehicle_rc_number')} hint={t('vehicle_optional')} value={rc} onChangeText={(v) => setRc(v.toUpperCase())} autoCapitalize="characters" autoCorrect={false} maxLength={50} />
             <TextField
+              ref={modelRef}
+              label={t('vehicle_model_label')}
+              hint={t('vehicle_optional')}
+              value={model}
+              onChangeText={setModel}
+              maxLength={100}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => rcRef.current?.focus()}
+            />
+            <TextField
+              ref={rcRef}
+              label={t('vehicle_rc_number')}
+              hint={t('vehicle_optional')}
+              value={rc}
+              onChangeText={(v) => setRc(v.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => insuranceRef.current?.focus()}
+            />
+            <TextField
+              ref={insuranceRef}
               label={t('vehicle_insurance_number')}
               hint={t('vehicle_optional')}
               value={insurance}
@@ -165,6 +190,9 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={50}
+              editable={!busy}
+              returnKeyType="done"
+              onSubmitEditing={submit}
             />
           </Card>
 
@@ -197,21 +225,9 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  scroll: { padding: space[4], gap: space[4] },
-  heading: { gap: space[1], paddingTop: space[2] },
+  scroll: { padding: space[4], paddingBottom: space[8], gap: space[4] },
   card: { gap: space[4] },
   field: { gap: space[1] },
   kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  kind: {
-    minHeight: size.control,
-    paddingHorizontal: space[4],
-    borderRadius: radius.control,
-    borderWidth: size.border,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  kindSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   actions: { gap: space[2] },
 });

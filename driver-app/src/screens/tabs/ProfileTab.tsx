@@ -186,7 +186,18 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
       <Text variant="title" accessibilityRole="header">
         {t('my_vehicle')}
       </Text>
-      {vehicleGate.state === 'none' ? <Button title={t('vehicle_register_button')} onPress={vehicleGate.registerVehicle} /> : null}
+      {vehicleGate.state === 'none' ? (
+        <Card style={styles.register}>
+          <Text variant="bodySmall" color="textMuted">
+            {t('vehicle_reg_intro')}
+          </Text>
+          <Button
+            title={t('vehicle_register_button')}
+            onPress={vehicleGate.registerVehicle}
+            icon={(color) => <Ionicons name="add-circle-outline" size={size.icon.md} color={color} />}
+          />
+        </Card>
+      ) : null}
       <Card padded={false} accessibilityRole="radiogroup">
         {INDIAN_VEHICLES.map((v, idx) => {
           const selected = driverInfo?.vehicle_type === v.id;
@@ -247,6 +258,7 @@ const styles = StyleSheet.create({
   container: { gap: space[4] },
   flex: { flex: 1 },
   row: { flexDirection: 'row', gap: space[3] },
+  register: { gap: space[3] },
   identity: { alignItems: 'center', gap: space[2] },
   avatarWrap: { position: 'relative' },
   avatar: {

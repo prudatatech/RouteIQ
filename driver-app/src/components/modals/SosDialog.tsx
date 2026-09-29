@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { SosCancelState, SosDetailsState, SosState } from '../../hooks/useSos';
 import type { SosSeverity, SosType } from '../../services/api';
-import { Banner, Button, Text, TextField } from '../ui';
-import { colors, radius, size, space } from '../../theme';
+import { Banner, Button, Chip, Text, TextField } from '../ui';
+import { colors, size, space } from '../../theme';
 
 interface SosDialogProps {
   state: SosState;
@@ -102,24 +102,16 @@ export default function SosDialog({ state, details, cancelState, onRetry, onSend
         <>
           <Text variant="bodyMedium">{t('sos_what_happened')}</Text>
           <View style={styles.types} accessibilityRole="radiogroup">
-            {DETAIL_TYPES.map((item) => {
-              const selected = type === item.type;
-              return (
-                <Pressable
-                  key={item.type}
-                  onPress={() => setType(item.type)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={t(item.label)}
-                  style={[styles.type, selected && styles.typeSelected]}
-                >
-                  <Ionicons name={item.icon} size={size.icon.sm} color={selected ? colors.danger : colors.text} />
-                  <Text variant="bodySmallMedium" color={selected ? 'danger' : 'text'}>
-                    {t(item.label)}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            {DETAIL_TYPES.map((item) => (
+              <Chip
+                key={item.type}
+                tone="danger"
+                label={t(item.label)}
+                selected={type === item.type}
+                onPress={() => setType(item.type)}
+                icon={(color) => <Ionicons name={item.icon} size={size.icon.sm} color={color} />}
+              />
+            ))}
           </View>
           {type === 'accident' ? (
             <View style={styles.injured}>
@@ -128,23 +120,9 @@ export default function SosDialog({ state, details, cancelState, onRetry, onSend
                 {[
                   { value: true, label: t('yes') },
                   { value: false, label: t('no') },
-                ].map((option) => {
-                  const selected = injured === option.value;
-                  return (
-                    <Pressable
-                      key={String(option.value)}
-                      onPress={() => setInjured(option.value)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={option.label}
-                      style={[styles.type, selected && styles.typeSelected]}
-                    >
-                      <Text variant="bodySmallMedium" color={selected ? 'danger' : 'text'}>
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                ].map((option) => (
+                  <Chip key={String(option.value)} tone="danger" label={option.label} selected={injured === option.value} onPress={() => setInjured(option.value)} />
+                ))}
               </View>
             </View>
           ) : null}
@@ -187,18 +165,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: space[3], paddingVertical: space[4] },
   header: { gap: space[2] },
   injured: { gap: space[2] },
-  cancel: { gap: space[2] },
+  // Set apart from the details form above, so cancelling an SOS is never a stray tap on "send details"
+  cancel: { gap: space[2], paddingTop: space[4], borderTopWidth: size.border, borderTopColor: colors.border },
   types: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  type: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    minHeight: size.control,
-    paddingHorizontal: space[3],
-    borderRadius: radius.full,
-    borderWidth: size.border,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-  },
-  typeSelected: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
 });
