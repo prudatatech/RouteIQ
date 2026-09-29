@@ -37,7 +37,7 @@ export default function ConfirmDeliveryTab() {
     const ok = await confirm({
       title: `Mark ${payload.tracking_id} delivered?`,
       message: `This records ${payload.recipient_name} as the recipient and closes the shipment. It cannot be undone here.`,
-      confirmLabel: 'Confirm delivery',
+      confirmLabel: 'Mark delivered',
     })
     if (ok) deliver.mutate(payload)
   }

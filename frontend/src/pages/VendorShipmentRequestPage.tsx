@@ -254,7 +254,7 @@ export default function VendorShipmentRequestPage() {
 
     if (!token) {
       sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload))
-      toast('Sign in to post this load — we will bring you right back.', { icon: '🔒' })
+      toast('Sign in to post this load — we will bring you right back', { icon: '🔒' })
       navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request')}`)
       return
     }

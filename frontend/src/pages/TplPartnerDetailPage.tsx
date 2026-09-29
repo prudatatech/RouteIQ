@@ -122,7 +122,7 @@ export default function TplPartnerDetailPage() {
   const approve = useMutation({
     mutationFn: () => tplAPI.approve(id!),
     onSuccess: () => {
-      toast.success('Partner approved.')
+      toast.success('Partner approved')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
@@ -133,7 +133,7 @@ export default function TplPartnerDetailPage() {
   const reject = useMutation({
     mutationFn: (reason: string) => tplAPI.reject(id!, reason),
     onSuccess: () => {
-      toast.success('Application rejected.')
+      toast.success('Application rejected')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
@@ -155,7 +155,7 @@ export default function TplPartnerDetailPage() {
   const remove = useMutation({
     mutationFn: () => tplAPI.delete(id!),
     onSuccess: () => {
-      toast.success('Partner deleted.')
+      toast.success('Partner deleted')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
       navigate('/3pl-partners')
@@ -167,7 +167,7 @@ export default function TplPartnerDetailPage() {
     const ok = await confirm({
       title: 'Delete this partner?',
       message: 'This permanently removes the partner and cannot be undone.',
-      confirmLabel: 'Delete',
+      confirmLabel: 'Delete partner',
       tone: 'danger',
     })
     if (ok) remove.mutate()
@@ -179,7 +179,7 @@ export default function TplPartnerDetailPage() {
       message: partner?.pending_updates
         ? 'This merges the requested changes and clears them from the queue.'
         : 'This activates the partner and lets them set up their account.',
-      confirmLabel: 'Approve',
+      confirmLabel: partner?.pending_updates ? 'Approve updates' : 'Approve partner',
     })
     if (ok) approve.mutate()
   }
@@ -189,7 +189,7 @@ export default function TplPartnerDetailPage() {
       title: 'Reject this application',
       inputLabel: 'Reason for rejection',
       placeholder: 'What needs to change before this can be approved?',
-      confirmLabel: 'Reject',
+      confirmLabel: 'Reject application',
       tone: 'danger',
       required: true,
     })

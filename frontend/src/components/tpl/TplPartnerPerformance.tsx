@@ -20,7 +20,7 @@ function RateModal({ order, onClose }: { order: TplOrder | null; onClose: () => 
   const save = useMutation({
     mutationFn: () => tplNetworkAPI.rateOrder(order!.id, Number(rating), note.trim() || undefined),
     onSuccess: () => {
-      toast.success('Rating saved.')
+      toast.success('Rating saved')
       queryClient.invalidateQueries({ queryKey: ['tpl-partner-orders'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner-stats'] })
       onClose()

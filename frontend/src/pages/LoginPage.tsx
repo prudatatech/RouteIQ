@@ -284,7 +284,7 @@ export default function LoginPage() {
       setFormError(describeAuthError(error, 'reset'))
       return
     }
-    toast.success('Your password has been changed.')
+    toast.success('Your password has been changed')
     const session = (await supabase.auth.getSession()).data.session
     if (!session || !data.user) {
       switchMode('sign-in')

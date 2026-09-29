@@ -30,7 +30,7 @@ export default function TplSetupCredentialsPage() {
     setLoading(true)
     try {
       await tplAPI.sendSetupOtp(email.trim())
-      toast.success('If this email belongs to an approved partner, a code is on its way.')
+      toast.success('If this email belongs to an approved partner, a code is on its way')
       setStep(2)
     } catch (err) {
       console.error(err)

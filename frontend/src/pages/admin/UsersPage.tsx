@@ -118,7 +118,7 @@ export default function UsersPage() {
       message: deactivate
         ? 'They will no longer be able to use MargixIndia. You can reactivate them later.'
         : 'They will be able to sign in and use MargixIndia again.',
-      confirmLabel: deactivate ? 'Deactivate' : 'Reactivate',
+      confirmLabel: deactivate ? 'Deactivate user' : 'Reactivate user',
       tone: deactivate ? 'danger' : 'primary',
     })
     if (ok) update.mutate({ id: u.id, data: { is_active: !u.is_active } })

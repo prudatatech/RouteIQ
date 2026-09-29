@@ -186,7 +186,7 @@ export default function VendorDocumentsPage() {
       if (draft.form) setForm(prev => ({ ...prev, ...draft.form }))
       if (draft.otherDocs) setOtherDocs(draft.otherDocs)
       if (typeof draft.step === 'number') setStep(draft.step)
-      toast('We restored the details you had typed.')
+      toast('We restored the details you had typed')
     } catch (e) {
       console.error('Failed to restore draft', e)
     }
@@ -345,7 +345,7 @@ export default function VendorDocumentsPage() {
     const firstInvalid = [0, 1, 2, 3].find(i => !stepValid(i))
     if (firstInvalid !== undefined) {
       if (firstInvalid !== step) {
-        toast.error(`Some details in "${STEPS[firstInvalid]}" need fixing.`)
+        toast.error(`Some details in "${STEPS[firstInvalid]}" need fixing`)
         setStep(firstInvalid)
         window.scrollTo(0, 0)
       }

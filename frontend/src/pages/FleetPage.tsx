@@ -241,7 +241,7 @@ export default function FleetPage() {
     const ok = await confirm({
       title: `Delete ${v.plate_number}?`,
       message: 'A vehicle with no trips on record is removed for good. One that has completed trips is archived instead, so its history is kept.',
-      confirmLabel: 'Delete',
+      confirmLabel: 'Delete vehicle',
       tone: 'danger',
     })
     if (ok) deleteMutation.mutate(v.id)
@@ -288,7 +288,7 @@ export default function FleetPage() {
     const ok = await confirm({
       title: `Restore ${v.plate_number}?`,
       message: 'The vehicle returns to the fleet as idle.',
-      confirmLabel: 'Restore',
+      confirmLabel: 'Restore vehicle',
     })
     if (ok) statusMutation.mutate({ id: v.id, status: 'idle' })
   }

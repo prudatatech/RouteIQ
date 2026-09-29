@@ -127,7 +127,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
 
   const decline = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => tplNetworkAPI.decline(id, reason),
-    onSuccess: () => toast.success('Load declined.'),
+    onSuccess: () => toast.success('Load declined'),
     onError: err => toast.error(errorMessage(err, 'We could not decline this load. Try again.')),
     onSettled: refresh,
   })

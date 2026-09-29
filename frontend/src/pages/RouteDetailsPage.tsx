@@ -175,7 +175,7 @@ export default function RouteDetailsPage() {
     const ok = await confirm({
       title: 'Delete this route?',
       message: 'This cannot be undone.',
-      confirmLabel: 'Delete',
+      confirmLabel: 'Delete route',
       tone: 'danger',
     })
     if (ok) deleteMutation.mutate()

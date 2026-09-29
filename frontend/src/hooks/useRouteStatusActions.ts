@@ -41,7 +41,7 @@ export function useRouteStatusActions() {
     const ok = await confirm({
       title: 'Dispatch this route?',
       message: 'The route becomes active, the vehicle is marked on route and its driver is notified.',
-      confirmLabel: 'Dispatch',
+      confirmLabel: 'Dispatch route',
     })
     if (ok) await mutation.mutateAsync({ id: route.id, status: 'active' }).then(() => toast.success('Route dispatched')).catch(() => undefined)
   }
