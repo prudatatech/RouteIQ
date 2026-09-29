@@ -384,6 +384,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           isTracking={tracking.isTracking}
           isStartingTracking={tracking.isStarting}
           syncState={data.syncState}
+          speedKmph={routeActive ? tracking.speedKmph : null}
           waitingToSend={queue.waiting}
           sendingQueue={queue.sending}
           onSendQueue={queue.flush}

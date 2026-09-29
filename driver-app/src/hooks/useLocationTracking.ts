@@ -14,6 +14,8 @@ import { useTranslation } from './useTranslation';
 import { shortFeedback } from '../utils/feedback';
 
 const TRACKING_KEY = 'tracking_active';
+/** How long a speed reading is shown after it was taken. */
+const SPEED_STALE_MS = 15000;
 
 interface Options {
   /** Tracking cannot be paused while a route is active. */
@@ -36,6 +38,8 @@ export function useLocationTracking({
   const [isTracking, setIsTracking] = useState(locationService.isTracking);
   const [currentLoc, setCurrentLoc] = useState<LatLng | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [speedReading, setSpeedReading] = useState<{ kmph: number; at: number } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [backgroundError, setBackgroundError] = useState<BackgroundError | null>(locationService.getLastBackgroundError());
 
   // locationService keeps the callbacks it was started with, so they read
@@ -60,7 +64,10 @@ export function useLocationTracking({
             }
           }
         },
-        (loc) => setCurrentLoc({ lat: loc.lat, lng: loc.lng }),
+        (loc, speedMps) => {
+          setCurrentLoc({ lat: loc.lat, lng: loc.lng });
+          setSpeedReading(speedMps === null ? null : { kmph: speedMps * 3.6, at: Date.now() });
+        },
         (err) => setBackgroundError(err),
       );
       if (!result.success) {
@@ -81,6 +88,7 @@ export function useLocationTracking({
   const stop = useCallback(async () => {
     locationService.stop();
     setIsTracking(false);
+    setSpeedReading(null);
     await AsyncStorage.setItem(TRACKING_KEY, 'false');
     try {
       deactivateKeepAwake();
@@ -160,5 +168,13 @@ export function useLocationTracking({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { isTracking, isStarting, currentLoc, start, toggle, takeBreak, backgroundError, retryBackgroundTracking };
+  // A reading older than this is stale (signal lost, or the phone stopped reporting), so the speed is hidden
+  useEffect(() => {
+    if (!speedReading) return;
+    const id = setInterval(() => setNow(Date.now()), SPEED_STALE_MS / 3);
+    return () => clearInterval(id);
+  }, [speedReading]);
+  const speedKmph = isTracking && speedReading && now - speedReading.at < SPEED_STALE_MS ? Math.round(speedReading.kmph) : null;
+
+  return { isTracking, isStarting, currentLoc, speedKmph, start, toggle, takeBreak, backgroundError, retryBackgroundTracking };
 }

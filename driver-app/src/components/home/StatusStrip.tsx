@@ -17,6 +17,8 @@ interface StatusStripProps {
   onTakeBreak?: () => void;
   onRetrySync: () => void;
   /** Actions kept on the phone until there is signal (stops, proof of delivery, SOS details). */
+  /** Current speed in km/h from the device's GPS, or null when unknown (nothing is shown). */
+  speedKmph?: number | null;
   waitingToSend?: number;
   sendingQueue?: boolean;
   onSendQueue?: () => void;
@@ -38,6 +40,7 @@ export default function StatusStrip({
   onToggleTracking,
   onTakeBreak,
   onRetrySync,
+  speedKmph = null,
   waitingToSend = 0,
   sendingQueue = false,
   onSendQueue,
@@ -90,6 +93,10 @@ export default function StatusStrip({
           onPress={onTakeBreak}
           accessibilityHint={t('take_break_sub')}
         />
+      ) : null}
+
+      {speedKmph !== null ? (
+        <StatusPill tone="neutral" label={`${speedKmph} ${t('unit_kmph')}`} icon={icon('speedometer-outline')} />
       ) : null}
 
       {waitingToSend > 0 ? (
