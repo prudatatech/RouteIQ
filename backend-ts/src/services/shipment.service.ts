@@ -196,8 +196,7 @@ export class ShipmentService {
         origin_lng: shipmentIn.origin_lng,
         total_items: shipmentIn.total_items,
         total_weight_kg: shipmentIn.total_weight_kg,
-        // declared_load_kg: shipmentIn.declared_load_kg,
-        // load_type: shipmentIn.load_type,
+        metadata: shipmentIn.metadata ?? {},
       })
       .select()
       .single();

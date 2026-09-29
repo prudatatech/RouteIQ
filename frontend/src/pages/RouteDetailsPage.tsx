@@ -145,18 +145,9 @@ export default function RouteDetailsPage() {
     if (ok) deleteMutation.mutate()
   }
 
-  const handleEdit = () => {
-    if (route.is_manifest) navigate(`/shipments/${route.id}/manifest`)
-    else toast('Editing a standard route is not available yet.')
-  }
-
-  const handleDuplicate = () => {
-    if (!route.is_manifest) {
-      toast('Duplicating a standard route is not available yet.')
-      return
-    }
-    navigate('/backhaul', { state: { duplicateManifest: route } })
-  }
+  // Edit and duplicate exist only for cargo manifests; standard routes don't offer them.
+  const handleEdit = () => navigate(`/shipments/${route.id}/manifest`)
+  const handleDuplicate = () => navigate('/backhaul', { state: { duplicateManifest: route } })
 
   return (
     <Page>
@@ -217,8 +208,12 @@ export default function RouteDetailsPage() {
           <Card padded className="space-y-4">
             <h2 className="text-lg font-semibold text-text">Actions</h2>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" icon={<Edit2 size={16} />} onClick={handleEdit}>Edit</Button>
-              <Button variant="secondary" icon={<Copy size={16} />} onClick={handleDuplicate}>Duplicate to backhaul</Button>
+              {route.is_manifest && (
+                <>
+                  <Button variant="secondary" icon={<Edit2 size={16} />} onClick={handleEdit}>Edit</Button>
+                  <Button variant="secondary" icon={<Copy size={16} />} onClick={handleDuplicate}>Duplicate to backhaul</Button>
+                </>
+              )}
               <Button
                 variant="danger"
                 icon={<XCircle size={16} />}
