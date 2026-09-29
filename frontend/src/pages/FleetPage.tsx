@@ -388,6 +388,7 @@ export default function FleetPage() {
                     position: { lat: detailVehicle.latitude, lng: detailVehicle.longitude },
                     status: detailVehicle.status,
                     label: detailVehicle.plate_number,
+                    vehicle_type: detailVehicle.vehicle_type,
                   }]}
                   selectedId={detailVehicle.id}
                   interactive={false}

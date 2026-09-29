@@ -16,6 +16,8 @@ export interface MapVehicle {
   heading?: number | null
   /** Plate number or other short name. Used for the visible label and the screen-reader label. */
   label: string
+  /** truck, van, bike or car. Chooses the marker icon; anything else (or unset) draws a truck. */
+  vehicle_type?: string | null
 }
 
 /** A stop on a route. */
