@@ -8,6 +8,7 @@ import { api, BOOKING_CREATED_EVENT, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
+import { hasTranslation } from '../locales';
 
 /** How far ahead a pickup can be planned from the date list. */
 const DAYS_AHEAD = 60;
@@ -196,14 +197,18 @@ export default function QuoteScreen({ navigation, route }: any) {
               <Text variant="bodyMedium" accessibilityRole="header">
                 {t('quote_how')}
               </Text>
-              {quote.factors.map((factor) => (
-                <View key={factor.label} style={styles.factor}>
-                  <Text variant="captionMedium" color="textMuted">
-                    {factor.label}
-                  </Text>
-                  <Text variant="bodySmall">{factor.detail}</Text>
-                </View>
-              ))}
+              {quote.factors.map((factor) => {
+                const known = factor.code ? `factor_${factor.code}` : null;
+                const detailKey = factor.code ? `factor_${factor.code}_detail` : null;
+                return (
+                  <View key={factor.code ?? factor.label} style={styles.factor}>
+                    <Text variant="captionMedium" color="textMuted">
+                      {known && hasTranslation(known) ? t(known) : factor.label}
+                    </Text>
+                    <Text variant="bodySmall">{detailKey && hasTranslation(detailKey) ? t(detailKey) : factor.detail}</Text>
+                  </View>
+                );
+              })}
             </Card>
           ) : null}
         </View>

@@ -30,6 +30,8 @@ export interface QuoteInput {
 
 export interface QuoteFactor {
   key: string;
+  /** Stable machine code (rate_card, weight, load_type, demand, history, weather, min_charge, fuel) so apps can show their own translated label; `label` stays English for web and staff. */
+  code: string;
   label: string;
   detail: string;
   /** Change to the price in rupees (negative lowers it); 0 when the factor is informational. */
@@ -241,7 +243,7 @@ export const pricingService = {
     if (cardRate !== null) {
       cardPrice = km * cardRate;
       const which = vehicleType && cfg[`rate_per_km_${vehicleType}`] ? `the ${input.vehicle_type} rate` : 'the standard rate';
-      factors.push({ key: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(cardRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
+      factors.push({ key: 'rate_card', code: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(cardRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
     } else {
       notes.push('No rate card is set, so the price comes from past accepted prices only.');
     }
@@ -251,7 +253,7 @@ export const pricingService = {
     if (cardRate !== null && cfg.per_kg_surcharge) {
       const add = input.weight_kg * cfg.per_kg_surcharge;
       subtotal += add;
-      factors.push({ key: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
+      factors.push({ key: 'weight', code: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
     }
 
     // 3. Load type
@@ -259,7 +261,7 @@ export const pricingService = {
     if (cardRate !== null && loadMult && loadMult !== 1) {
       const add = subtotal * (loadMult - 1);
       subtotal += add;
-      factors.push({ key: 'load_type', label: 'Load type', detail: `${input.load_type} loads are priced at ${loadMult} times the base ${signed(add)}.`, amount_inr: Math.round(add) });
+      factors.push({ key: 'load_type', code: 'load_type', label: 'Load type', detail: `${input.load_type} loads are priced at ${loadMult} times the base ${signed(add)}.`, amount_inr: Math.round(add) });
     }
 
     // 4. Demand near the pickup
@@ -268,13 +270,13 @@ export const pricingService = {
     let price = subtotal;
     if (cardRate !== null) {
       if (open_loads + available_vehicles === 0) {
-        factors.push({ key: 'demand', label: 'Demand near pickup', detail: `No open loads or free vehicles within ${DEMAND_RADIUS_KM} km of pickup, so no adjustment.`, amount_inr: 0 });
+        factors.push({ key: 'demand', code: 'demand', label: 'Demand near pickup', detail: `No open loads or free vehicles within ${DEMAND_RADIUS_KM} km of pickup, so no adjustment.`, amount_inr: 0 });
       } else {
         const balance = (open_loads - available_vehicles) / (open_loads + available_vehicles);
         const add = subtotal * balance * maxAdj;
         price += add;
         const mood = open_loads > available_vehicles ? 'More loads than free vehicles' : open_loads < available_vehicles ? 'More free vehicles than loads' : 'Loads and free vehicles are balanced';
-        factors.push({ key: 'demand', label: 'Demand near pickup', detail: `${mood} within ${DEMAND_RADIUS_KM} km of pickup (${open_loads} open loads, ${available_vehicles} free vehicles) ${add === 0 ? 'so no adjustment' : signed(add)}.`, amount_inr: Math.round(add) });
+        factors.push({ key: 'demand', code: 'demand', label: 'Demand near pickup', detail: `${mood} within ${DEMAND_RADIUS_KM} km of pickup (${open_loads} open loads, ${available_vehicles} free vehicles) ${add === 0 ? 'so no adjustment' : signed(add)}.`, amount_inr: Math.round(add) });
       }
     }
 
@@ -286,6 +288,7 @@ export const pricingService = {
       price = blended;
       factors.push({
         key: 'history',
+        code: 'history',
         label: 'Past accepted prices',
         detail: `${sorted.length} accepted prices on trips of ${Math.round(km - band)} to ${Math.round(km + band)} km averaged ${inr(historyMedian)} per km${cardRate !== null ? `; the price is halfway between that and the rate card` : ''}${cardRate !== null ? ` (${signed(add)})` : ''}.`,
         amount_inr: cardRate !== null ? Math.round(add) : Math.round(blended),
@@ -308,7 +311,7 @@ export const pricingService = {
           const pct = (cfg.weather_surcharge_pct ?? DEFAULT_WEATHER_SURCHARGE_PCT) / 100;
           const add = price * pct;
           price += add;
-          factors.push({ key: 'weather', label: 'Severe weather', detail: `${w.description} reported along the route ${signed(add)}.`, amount_inr: Math.round(add) });
+          factors.push({ key: 'weather', code: 'weather', label: 'Severe weather', detail: `${w.description} reported along the route ${signed(add)}.`, amount_inr: Math.round(add) });
         }
       }
     }
@@ -317,7 +320,7 @@ export const pricingService = {
     if (cfg.min_charge && price < cfg.min_charge) {
       const add = cfg.min_charge - price;
       price = cfg.min_charge;
-      factors.push({ key: 'min_charge', label: 'Minimum charge', detail: `The price was below the minimum charge of ${inr(cfg.min_charge)} ${signed(add)}.`, amount_inr: Math.round(add) });
+      factors.push({ key: 'min_charge', code: 'min_charge', label: 'Minimum charge', detail: `The price was below the minimum charge of ${inr(cfg.min_charge)} ${signed(add)}.`, amount_inr: Math.round(add) });
     }
 
     // Range: spread of past prices when there is enough history, otherwise a set percentage
@@ -335,7 +338,7 @@ export const pricingService = {
       const fuel = (km / kmpl) * cfg.fuel_price_per_litre;
       const floored = low < fuel;
       if (floored) low = fuel;
-      factors.push({ key: 'fuel', label: 'Fuel cost', detail: `About ${inr(fuel)} of fuel for ${km.toLocaleString('en-IN')} km (${kmpl.toFixed(1)} km per litre at ${inr(cfg.fuel_price_per_litre)} per litre)${floored ? '; the low end was raised to cover it' : ''}.`, amount_inr: 0 });
+      factors.push({ key: 'fuel', code: 'fuel', label: 'Fuel cost', detail: `About ${inr(fuel)} of fuel for ${km.toLocaleString('en-IN')} km (${kmpl.toFixed(1)} km per litre at ${inr(cfg.fuel_price_per_litre)} per litre)${floored ? '; the low end was raised to cover it' : ''}.`, amount_inr: 0 });
       if (price < fuel) price = fuel;
     } else if (!cfg.fuel_price_per_litre) {
       notes.push('Fuel cost was not checked because no fuel price is set.');
