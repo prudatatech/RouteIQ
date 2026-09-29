@@ -30,7 +30,7 @@ import TplVerificationPage from '@/pages/TplVerificationPage'
 import TplDashboardPage from '@/pages/TplDashboardPage'
 import LiveMapPage from '@/pages/LiveMapPage'
 import MobileTrackPage from '@/pages/MobileTrackPage'
-import CapacityBiddingPage from '@/pages/CapacityBiddingPage'
+import BidsPage from '@/pages/BidsPage'
 import VendorPortalPage from '@/pages/VendorPortalPage'
 import VendorTrackingPage from '@/pages/VendorTrackingPage'
 import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
@@ -268,7 +268,7 @@ export default function App() {
             } />
             <Route path="bids" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <CapacityBiddingPage />
+                <BidsPage />
               </PrivateRoute>
             } />
             <Route path="analytics" element={

@@ -165,6 +165,7 @@ export const capacityAPI = {
   }) => api.post('/capacity/bids', data).then(r => r.data),
   pendingBids: () => api.get('/capacity/bids/pending').then(r => r.data),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
+  rejectBid: (id: string) => api.post(`/capacity/bids/${id}/reject`).then(r => r.data),
 }
 
 export const vendorAPI = {
