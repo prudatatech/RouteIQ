@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight } from 'lucide-react'
-import { dashboardAPI, vehiclesAPI, shipmentsAPI } from '@/services/api'
+import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon } from 'lucide-react'
+import { dashboardAPI, vehiclesAPI, shipmentsAPI, analyticsAPI, vendorAPI } from '@/services/api'
 import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
@@ -28,14 +28,22 @@ interface SosAlertRow {
   created_at: string
 }
 
+/** One entry of GET /analytics/insights; only the fields the dashboard reads. */
+interface Insight {
+  id: string
+  type: string
+  title: string
+  insight: string
+  vehicle_id?: string | null
+}
+
 interface AttentionItem {
   id: string
-  kind: 'incident' | 'offline'
+  kind: 'incident' | 'offline' | 'delay' | 'idle'
   title: string
   subtitle: string
   time: string
-  actionLabel: string
-  onAction: () => void
+  actions: { label: string; onClick: () => void }[]
 }
 
 function timeAgo(dateStr: string): string {
@@ -57,7 +65,7 @@ export default function DashboardPage() {
     if (!token) navigate('/login')
   }, [token, navigate])
 
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const selectedVehicleId = searchParams.get('vehicle')
 
   const { data: kpis, isLoading: kpisLoading } = useQuery({
@@ -93,6 +101,22 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   })
 
+  const { data: insights = [] } = useQuery<Insight[]>({
+    queryKey: ['insights'],
+    queryFn: () => analyticsAPI.insights() as Promise<Insight[]>,
+    refetchInterval: 60_000,
+  })
+
+  // Same source as the sidebar badge.
+  const { data: pendingVendorRequests, isLoading: vendorRequestsLoading } = useQuery<unknown[]>({
+    queryKey: ['vendor-requests', 'pending-count'],
+    queryFn: async () => {
+      const data = await vendorAPI.pendingRequests()
+      return Array.isArray(data) ? data : []
+    },
+    refetchInterval: 60_000,
+  })
+
   const activeVehicles = vehicles.filter(v => !isDraftVehicle(v))
   const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
   const activeShipments = shipments.filter(s => isActiveShipmentStatus(s.status))
@@ -100,6 +124,10 @@ export default function DashboardPage() {
   // No fabricated fallback: on_time_rate_pct is null when there is no route data for today.
   const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
   const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
+
+  const delayInsights = insights.filter(i => i.type === 'delay_risk')
+  const idleInsights = insights.filter(i => i.type === 'idle_vehicle')
+  const rerouteCount = insights.filter(i => i.type === 'reroute_suggestion').length
 
   // Needs attention: the same list backs both the count badge and the rows below.
   const attentionItems: AttentionItem[] = [
@@ -111,8 +139,7 @@ export default function DashboardPage() {
         title: alert.alert_type === 'accident' ? 'Serious accident' : 'Emergency alert',
         subtitle: `${v?.plate_number || 'Unknown vehicle'} · ${alert.description || 'Reported'}`,
         time: timeAgo(alert.created_at),
-        actionLabel: 'Review incident',
-        onAction: () => navigate('/emergency'),
+        actions: [{ label: 'Review incident', onClick: () => navigate('/emergency') }],
       }
     }),
     ...offlineVehicles.map(v => ({
@@ -121,8 +148,30 @@ export default function DashboardPage() {
       title: 'Vehicle offline',
       subtitle: v.plate_number,
       time: v.last_sync ? timeAgo(v.last_sync) : '',
-      actionLabel: 'View vehicle',
-      onAction: () => { setSearchParams({ vehicle: v.id }); navigate('/fleet') },
+      actions: [
+        { label: 'View vehicle', onClick: () => navigate(`/fleet?open=${v.id}`) },
+        { label: 'Show on map', onClick: () => navigate(`/live-map?vehicle=${v.id}`) },
+      ],
+    })),
+    ...delayInsights.map(i => ({
+      id: `insight-${i.id}`,
+      kind: 'delay' as const,
+      title: i.title,
+      subtitle: i.insight,
+      time: '',
+      actions: i.vehicle_id
+        ? [{ label: 'Show on map', onClick: () => navigate(`/live-map?vehicle=${i.vehicle_id}`) }]
+        : [],
+    })),
+    ...idleInsights.map(i => ({
+      id: `insight-${i.id}`,
+      kind: 'idle' as const,
+      title: i.title,
+      subtitle: i.insight,
+      time: '',
+      actions: i.vehicle_id
+        ? [{ label: 'View vehicle', onClick: () => navigate(`/fleet?open=${i.vehicle_id}`) }]
+        : [],
     })),
   ]
 
@@ -180,6 +229,19 @@ export default function DashboardPage() {
         />
       </div>
 
+      <Card padded className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><Inbox size={18} /></span>
+          <div>
+            <p className="text-sm font-medium text-text">
+              Pending vendor requests{vendorRequestsLoading ? '' : ` (${(pendingVendorRequests?.length ?? 0).toLocaleString('en-IN')})`}
+            </p>
+            <p className="text-xs text-muted">Loads vendors want you to approve and assign a vehicle to.</p>
+          </div>
+        </div>
+        <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vendor-requests')}>Open vendor requests</Button>
+      </Card>
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
         <Card className="flex flex-col overflow-hidden">
           <CardHeader title="Live fleet" description="Vehicles reporting position now." />
@@ -201,19 +263,33 @@ export default function DashboardPage() {
             ) : (
               attentionItems.map(item => (
                 <div key={item.id} className="flex items-start gap-3 px-4 py-3">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger" aria-hidden="true">
-                    {item.kind === 'incident' ? <AlertCircle size={16} /> : <WifiOff size={16} />}
+                  <span
+                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.kind === 'delay' || item.kind === 'idle' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger'}`}
+                    aria-hidden="true"
+                  >
+                    {item.kind === 'incident' ? <AlertCircle size={16} /> : item.kind === 'offline' ? <WifiOff size={16} /> : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-text">{item.title}</p>
-                    <p className="mt-0.5 truncate text-xs text-muted">{item.subtitle}</p>
+                    <p className="mt-0.5 text-xs text-muted">{item.subtitle}</p>
                     {item.time && <p className="mt-0.5 text-xs text-disabled">{item.time}</p>}
                   </div>
-                  <Button variant="ghost" size="sm" onClick={item.onAction} className="shrink-0">{item.actionLabel}</Button>
+                  <div className="flex shrink-0 flex-col items-end">
+                    {item.actions.map(a => (
+                      <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>{a.label}</Button>
+                    ))}
+                  </div>
                 </div>
               ))
             )}
           </div>
+          {rerouteCount > 0 && (
+            <div className="border-t border-border px-4 py-3">
+              <Button variant="ghost" size="sm" icon={<RouteIcon size={16} />} onClick={() => navigate('/optimize')}>
+                {rerouteCount.toLocaleString('en-IN')} reroute {rerouteCount === 1 ? 'suggestion' : 'suggestions'}: open route optimization
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
 
