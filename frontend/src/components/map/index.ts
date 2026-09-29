@@ -1,4 +1,6 @@
 export { default as MapView } from './MapView'
+export { default as AddressPicker } from './AddressPicker'
+export type { AddressPickerProps } from './AddressPicker'
 export { default as LiveMap } from './LiveMap'
 export { default as DriverMap } from './DriverMap'
 export { default as InlineTrackingMap } from './InlineTrackingMap'
