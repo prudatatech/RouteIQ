@@ -888,7 +888,7 @@ export class ShipmentService {
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
+      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
       .order('created_at', { ascending: false })
       .range(skip, skip + limit - 1);
 
@@ -945,7 +945,7 @@ export class ShipmentService {
     // Fetch Cargo Manifests to show them in the unified list
     const { data: manifests } = await supabase
       .from('cargo_manifest')
-      .select('*, vehicles(plate_number, users(full_name))')
+      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
       .order('created_at', { ascending: false })
       .limit(limit);
 
