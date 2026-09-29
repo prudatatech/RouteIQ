@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { useTranslation } from '../hooks/useTranslation';
+import LanguagePicker from '../components/LanguagePicker';
 import { Button, Card, Text } from '../components/ui';
 import { colors, radius, size, space, type } from '../theme';
 
@@ -153,6 +154,9 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             MargixIndia
           </Text>
 
+          {/* Before signing in, the driver can already read the screen in their own language. */}
+          <LanguagePicker />
+
           <Card style={styles.card}>
             {step === 'phone' ? (
               <>
@@ -183,6 +187,10 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                     autoComplete="tel"
                     maxLength={10}
                     autoFocus
+                    returnKeyType="go"
+                    onSubmitEditing={() => {
+                      if (phone.length >= 10 && !loading) handleSendOTP();
+                    }}
                     accessibilityLabel={t('phone_number')}
                   />
                 </View>

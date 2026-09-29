@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
 import { Button, Text } from '../ui';
 import { colors, size, space } from '../../theme';
-import { formatINR } from '../../utils/format';
+import { formatDate, formatINR, formatNumber } from '../../utils/format';
 
 export interface Invoice {
   id: string;
@@ -44,9 +44,11 @@ export default function InvoiceDialog({ invoice, onClose }: { invoice: Invoice; 
         <Text variant="heading" accessibilityRole="header">
           {t('invoice_title')}
         </Text>
-        <Text variant="mono" color="textMuted" numberOfLines={1}>
-          {invoice.id}
-        </Text>
+        {invoice.date ? (
+          <Text variant="bodySmall" color="textMuted">
+            {formatDate(invoice.date)}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -57,9 +59,9 @@ export default function InvoiceDialog({ invoice, onClose }: { invoice: Invoice; 
         <Row label={t('drop_label')} value={invoice.drop || '—'} />
         <Row
           label={t('cargo_label')}
-          value={`${invoice.cargo_type || '—'}${typeof invoice.weight_tons === 'number' ? ` (${invoice.weight_tons} t)` : ''}`}
+          value={`${invoice.cargo_type || '—'}${typeof invoice.weight_tons === 'number' ? ` (${formatNumber(invoice.weight_tons, { maximumFractionDigits: 1 })} t)` : ''}`}
         />
-        <Row label={t('distance_label')} value={typeof invoice.distance_km === 'number' ? `${invoice.distance_km} km` : '—'} />
+        <Row label={t('distance_label')} value={typeof invoice.distance_km === 'number' ? `${formatNumber(invoice.distance_km, { maximumFractionDigits: 1 })} km` : '—'} />
       </View>
 
       <View style={styles.divider} />

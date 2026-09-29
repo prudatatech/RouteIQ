@@ -67,12 +67,6 @@ export default function AssignmentDialog({
             </Text>
             <Text variant="bodySmallMedium">{routeType}</Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text variant="bodySmall" color="textMuted">
-              {t('route_id')}
-            </Text>
-            <Text variant="monoMedium">{pendingRoute.id?.slice(0, 8)}</Text>
-          </View>
           {stopCount > 0 ? (
             <View style={styles.detailRow}>
               <Text variant="bodySmall" color="textMuted">
