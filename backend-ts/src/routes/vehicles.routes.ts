@@ -17,6 +17,7 @@ import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { assertVehicleStatusChange, changeVehicleStatus, isPlaceholderPlate, isTempPlate } from '../core/vehicles';
 import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
+import { capacityService } from '../services/capacity.service';
 
 const router = Router();
 
@@ -506,27 +507,20 @@ router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admi
     if (length <= 0) throw new HttpError(400, 'The window must close after it opens');
     if (length > 24 * 60 * 60 * 1000) throw new HttpError(400, 'A bidding window can stay open for at most 24 hours');
     if (new Date(closesAt).getTime() <= Date.now()) throw new HttpError(400, 'The window must close in the future');
+    // No price given: each bid is checked against the pricing engine for its own weight
     const floorPrice = body.floor_price === undefined || body.floor_price === null
-      ? 100
+      ? null
       : parseNumberInRange(body.floor_price, 'floor_price', 1, 1_000_000);
 
-    const { data: target } = await supabase.from('vehicles').select('status').eq('id', req.params.vehicle_id).maybeSingle();
-    if (!target) throw new HttpError(404, 'Vehicle not found');
-    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(target.status))) {
-      throw new HttpError(409, `This vehicle is in ${target.status} and can't offer space.`);
-    }
-
-    const { data: window, error } = await supabase.from('capacity_windows').insert({
-      vehicle_id: req.params.vehicle_id,
-      opens_at: opensAt,
-      closes_at: closesAt,
-      floor_price: floorPrice,
-    }).select().single();
-
-    if (error) throw error;
-
-    // Also update vehicle bidding_window_open flag
-    await supabase.from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: window.closes_at }).eq('id', req.params.vehicle_id);
+    // One way to open a window: checks the vehicle, free space and an already-open window
+    const window = await capacityService.openWindow({
+      vehicleId: req.params.vehicle_id,
+      triggerType: 'return_trip',
+      floorPrice,
+      opensAt,
+      closesAt,
+      createdBy: req.user!.user_id,
+    });
 
     res.status(201).json(window);
   } catch (e: any) {

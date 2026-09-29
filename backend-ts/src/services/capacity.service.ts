@@ -2,7 +2,7 @@ import axios from 'axios';
 import { supabase } from '../core/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
-import { isDispatchable } from '../utils/dispatchable';
+import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
 import { pricingService } from './pricing.service';
 import { haversineKm, isValidPoint, LatLng, ROAD_FACTOR } from './geo';

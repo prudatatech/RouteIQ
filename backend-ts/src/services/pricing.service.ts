@@ -3,7 +3,7 @@ import { HttpError } from '../core/errors';
 import { getDrivingDistance, DistanceSource } from './distance.service';
 import { getWeather, isConditions } from './weather.service';
 import { haversineKm, isValidPoint, LatLng, midpoint, ROAD_FACTOR } from './geo';
-import { DISPATCHABLE_STATUSES, isDispatchable } from '../utils/dispatchable';
+import { DISPATCHABLE_STATUSES, isDispatchable } from '../core/vehicles';
 
 /** Straight-line radius around the pickup used to count open loads and free vehicles. */
 export const DEMAND_RADIUS_KM = 100;

@@ -67,6 +67,19 @@ describe('vendor loads on the driver route', () => {
     expect(res.body.route.remaining_stops).toBe(3);
   });
 
+  it('tells the vendor once when their load is picked up and once when it is delivered', async () => {
+    reset({
+      users: [{ id: 'driver-1', role: 'driver', is_active: true }, { id: 'vendor-9', role: 'vendor', is_active: true }],
+      cargo_manifest: [manifest('m1')],
+      vendor_shipment_requests: [{ id: 'req-m1', vendor_id: 'vendor-9', status: 'assigned', pickup_location: 'Pune', drop_location: 'Mumbai', cost: 5000 }],
+    });
+    expect((await complete('m1_pickup')).status).toBe(200);
+    await complete('m1_pickup');
+    expect((await complete('m1_drop')).status).toBe(200);
+    const types = supabaseMock.rows('notifications').filter(n => n.user_id === 'vendor-9').map(n => n.type);
+    expect(types.length).toBe(2);
+  });
+
   it('keeps the pickup pending after Start Journey, and moves the load in transit at the pickup', async () => {
     reset({ cargo_manifest: [manifest('m1')] });
     expect((await myRoute()).body.route.status).toBe('pending');

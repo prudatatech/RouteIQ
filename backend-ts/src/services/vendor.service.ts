@@ -7,7 +7,7 @@ import { HttpError } from '../core/errors';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
-import { isDispatchable } from '../utils/dispatchable';
+import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */

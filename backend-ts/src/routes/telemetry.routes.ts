@@ -28,6 +28,7 @@ import { idempotent } from '../core/idempotency';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
 import { manifestParcelCode } from '../core/parcelCode';
+import { vendorService } from '../services/vendor.service';
 
 const router = Router();
 
@@ -857,6 +858,8 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
           await setOperatingVehicleStatus(manifest.vehicle_id, 'available');
         }
       }
+      // The vendor hears about their own load once per step (never throws)
+      if (firstTime) await vendorService.notifyVendorLoadEvent(manifestId, isPickup ? 'picked_up' : 'delivered');
 
       if (firstTime) {
         // Broadcast completion
