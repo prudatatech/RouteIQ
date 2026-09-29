@@ -1,12 +1,41 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import VendorTrackerCard from '@/components/vendor/VendorTrackerCard'
+import { shipmentsAPI } from '@/services/api'
+import { ShipmentTracker, type ShipmentTrackingData } from '@/components/tracking/ShipmentTracker'
 import { EmptyState, Page, PageHeader, SearchInput, Skeleton } from '@/components/ui'
 
 interface TrackableRequest {
   id: string
   tracking_id: string
+}
+
+interface CargoManifestRow {
+  id: string
+  cargo_manifest: { id: string }[] | null
+}
+
+/** One shipment's live status, fetched by tracking ID and rendered with the shared tracker. */
+function VendorTrackerCard({ trackingId }: { trackingId: string }) {
+  const { data: shipment, isLoading, isError, refetch } = useQuery<ShipmentTrackingData>({
+    queryKey: ['vendorTrack', trackingId],
+    queryFn: () => shipmentsAPI.trackPublicly(trackingId) as Promise<ShipmentTrackingData>,
+    enabled: !!trackingId,
+    refetchInterval: query => {
+      const status = query.state.data?.status
+      return status && ['delivered', 'cancelled'].includes(status) ? false : 5000
+    },
+  })
+
+  return (
+    <ShipmentTracker
+      shipment={shipment}
+      isLoading={isLoading}
+      error={isError ? `We could not find a shipment with tracking ID ${trackingId}.` : null}
+      onRetry={refetch}
+    />
+  )
 }
 
 export default function VendorTrackingPage() {
@@ -25,9 +54,9 @@ export default function VendorTrackingPage() {
         .eq('vendor_id', userId)
         .order('created_at', { ascending: false })
       setActive(
-        (data ?? [])
-          .filter((r: any) => r.cargo_manifest && r.cargo_manifest.length > 0)
-          .map((r: any) => ({ id: r.id, tracking_id: `CM-${r.cargo_manifest[0].id.slice(0, 8).toUpperCase()}` })),
+        ((data ?? []) as CargoManifestRow[])
+          .filter(r => r.cargo_manifest && r.cargo_manifest.length > 0)
+          .map(r => ({ id: r.id, tracking_id: `CM-${r.cargo_manifest![0].id.slice(0, 8).toUpperCase()}` })),
       )
       setLoading(false)
     }
