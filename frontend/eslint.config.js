@@ -47,6 +47,9 @@ export default tseslint.config(
       'src/components/vendor/vendorContext.ts',
       'src/config/**/*.{ts,tsx}',
       'src/pages/VendorRequestsPage.tsx',
+      'src/pages/LoginPage.tsx',
+      'src/services/account.ts',
+      'src/utils/safeNext.ts',
     ],
     plugins: { design },
     rules: {
