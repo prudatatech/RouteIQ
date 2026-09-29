@@ -12,7 +12,6 @@ const AUDIT_LIMIT = 100
 interface AuditEntry {
   id: string
   agent: string | null
-  task: string | null
   action: string | null
   result: string | null
   status: string | null
@@ -43,7 +42,7 @@ export default function AuditLogPage() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     return all.filter(l => (!status || l.status === status) && (!agent || l.agent === agent)
-      && (!q || [l.task, l.action, l.result, l.agent].some(v => (v ?? '').toLowerCase().includes(q))))
+      && (!q || [l.action, l.result, l.agent].some(v => (v ?? '').toLowerCase().includes(q))))
   }, [all, search, status, agent])
 
   const filtered = !!(search || status || agent)
@@ -61,8 +60,8 @@ export default function AuditLogPage() {
       cell: l => (l.agent ? humanize(l.agent) : '—'),
     },
     {
-      key: 'task', header: 'What happened',
-      cell: l => <span className="line-clamp-2">{l.task || l.action || '—'}</span>,
+      key: 'action', header: 'What happened',
+      cell: l => <span className="line-clamp-2">{l.action || '—'}</span>,
     },
     {
       key: 'status', header: 'Result',
@@ -125,7 +124,6 @@ export default function AuditLogPage() {
             items={[
               { label: 'Result', value: <StatusPill status={selected.status} /> },
               { label: 'Source', value: selected.agent ? humanize(selected.agent) : '—' },
-              { label: 'Task', value: selected.task || '—' },
               { label: 'Action taken', value: selected.action || '—' },
               { label: 'Outcome', value: <span className="whitespace-pre-wrap">{selected.result || '—'}</span> },
             ]}

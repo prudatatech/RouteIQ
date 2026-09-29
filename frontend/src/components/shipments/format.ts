@@ -15,6 +15,16 @@ export const priorityTone: Record<string, Tone> = {
 export const SHIPMENT_STATUSES = ['created', 'picked_up', 'in_transit', 'delivered', 'cancelled'] as const
 
 /**
+ * Statuses that mean the shipment is still on its way rather than finished.
+ * The single source of truth for "active" so the Dashboard and Shipments tabs agree.
+ */
+export const ACTIVE_SHIPMENT_STATUSES = ['created', 'picked_up', 'in_transit'] as const
+
+export function isActiveShipmentStatus(status?: string | null): boolean {
+  return !!status && (ACTIVE_SHIPMENT_STATUSES as readonly string[]).includes(status)
+}
+
+/**
  * Cargo manifests from vendor bids are merged into the shipments list with a CM- ID.
  * They live in another table, so shipment actions (status, edit, assign, delete) do not apply.
  */
