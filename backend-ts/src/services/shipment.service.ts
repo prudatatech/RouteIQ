@@ -713,13 +713,17 @@ export class ShipmentService {
       tracking_id: 'CM-' + m.id.substring(0, 8).toUpperCase(),
       status: m.status === 'scheduled' ? 'created' : m.status, // maps scheduled to created
       priority: 'high',
+      // cargo_manifest only stores lat/lng plus one address string per point, so the
+      // pickup and drop address are used as both the name and address the UI reads.
+      origin_name: m.pickup_location || null,
+      origin_address: m.pickup_location || null,
       origin_lat: m.pickup_lat,
       origin_lng: m.pickup_lng,
       total_weight_kg: m.capacity_kg,
       delivery_point: {
         id: m.id + '_dp',
-        name: 'Drop: ' + (m.drop_location || '').substring(0, 20),
-        address: m.drop_location,
+        name: m.drop_location || null,
+        address: m.drop_location || null,
         latitude: m.drop_lat,
         longitude: m.drop_lng,
         demand_kg: m.capacity_kg
