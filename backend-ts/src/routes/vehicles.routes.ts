@@ -19,6 +19,7 @@ import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
 import { capacityService } from '../services/capacity.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
+import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 
 const router = Router();
 
@@ -356,6 +357,11 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       }
     }
 
+    // A driver reporting a position is a heartbeat: the vehicle is live from that moment
+    const reportedAt = new Date().toISOString();
+    const movesVehicle = isRealPosition(updateData.latitude, updateData.longitude);
+    if (movesVehicle && isDriver) updateData.last_heartbeat = reportedAt;
+
     const { data: vehicle, error } = await supabase
       .from('vehicles')
       .update(updateData)
@@ -371,6 +377,10 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     if (!vehicle) {
       res.status(404).json({ detail: 'Vehicle not found' });
       return;
+    }
+    // Track history: a new position also goes to gps_points (throttled)
+    if (movesVehicle) {
+      await recordGpsPoints(vehicle.id, [{ latitude: updateData.latitude, longitude: updateData.longitude, recorded_at: reportedAt }], 'vehicle_update');
     }
     // A renamed driver keeps one name across the vehicle and their account
     const linkedDriver = vehicle.driver_id;

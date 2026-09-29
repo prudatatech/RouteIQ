@@ -70,6 +70,7 @@ export class SparkGPSService {
             longitude: parseFloat(item.lng || '0'),
             speed_kmph: parseFloat(item.speed || '0'),
             heading: parseFloat(item.heading || '0'),
+            source: 'spark_sync' as const,
             fuel_level_pct: item.fuel != null && item.fuel !== '' && Number.isFinite(parseFloat(item.fuel)) ? parseFloat(item.fuel) : undefined,
           };
 

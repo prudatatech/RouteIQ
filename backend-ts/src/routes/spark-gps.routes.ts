@@ -11,6 +11,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { sendError } from '../core/errors';
+import { TelemetryService } from '../services/telemetry.service';
+import { fixTime } from '../services/gps-history.service';
 
 const router = Router();
 
@@ -69,21 +71,21 @@ router.post('/', requirePushSecret, async (req: Request, res: Response) => {
       return;
     }
 
-    const { data: point, error } = await supabase
-      .from('gps_points')
-      .insert({
-        vehicle_id: vehicle.id,
-        latitude: lat,
-        longitude: lng,
-        accuracy: null,
-        recorded_at: req.body.timestamp || new Date().toISOString(),
-      })
-      .select('id')
-      .single();
+    // Telemetry row, the vehicle's current position and the GPS history point (throttled)
+    const speed = Number(req.body.speed);
+    const heading = Number(req.body.heading);
+    await TelemetryService.ingestTelemetry({
+      vehicle_id: vehicle.id,
+      latitude: lat,
+      longitude: lng,
+      speed_kmph: Number.isFinite(speed) && speed >= 0 ? speed : 0,
+      heading: Number.isFinite(heading) ? heading : 0,
+      timestamp: fixTime(req.body.timestamp),
+      source: 'spark_push',
+    });
+    await supabase.from('vehicles').update({ last_sync: new Date().toISOString() }).eq('id', vehicle.id);
 
-    if (error) throw error;
-
-    res.status(201).json({ status: 'success', gps_point_id: point?.id });
+    res.status(201).json({ status: 'success', vehicle_id: vehicle.id });
   } catch (e: any) {
     sendError(req, res, e);
   }
