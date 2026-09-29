@@ -217,6 +217,7 @@ class ApiClient {
     status?: 'completed' | 'failed';
     lat?: number;
     lng?: number;
+    /** Name of the person who received the goods (proof of delivery). */
     received_by?: string;
     photo_url?: string;
     signature_data?: string;

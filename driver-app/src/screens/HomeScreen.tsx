@@ -77,7 +77,7 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
   // New Premium Features State
   const [showPodModal, setShowPodModal] = useState(false);
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
-  const [signatureData, setSignatureData] = useState('');
+  const [receiverName, setReceiverName] = useState('');
 
   // Cargo Manifest Declaration
   const [showCapacityModal, setShowCapacityModal] = useState(false);
@@ -676,22 +676,25 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
 
   const openPodModal = (stopId: string) => {
     setActiveStopId(stopId);
-    setSignatureData('');
+    setReceiverName('');
     setShowPodModal(true);
   };
 
   const submitCompleteStop = async () => {
     if (!activeStopId) return;
     try {
-      // The receiver's typed name is sent as signature_data (API field unchanged)
-      if (signatureData.trim().length < 3) {
+      // Proof of delivery is the name of the person who received the goods.
+      // No signature is captured, so none is sent.
+      const receivedBy = receiverName.trim();
+      if (receivedBy.length < 3) {
         Alert.alert(t('required'), t('alert_valid_receiver'));
         return;
       }
       const res = await api.completeStop({
         stop_id: activeStopId,
         status: 'completed',
-        signature_data: signatureData
+        received_by: receivedBy,
+        ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
       });
       setShowPodModal(false);
       setActiveStopId(null);
@@ -1667,13 +1670,14 @@ export default function HomeScreen({ onLogout, onNavigateToMap }: HomeScreenProp
             <Text style={styles.modalTitle}>{t('pod_title')}</Text>
             <Text style={styles.modalSubtitle}>{t('pod_receiver_desc')}</Text>
             <Text style={styles.receiverLabel}>{t('pod_receiver_label')}</Text>
-            <View style={styles.signatureBox}>
+            <View style={styles.receiverBox}>
               <TextInput
-                style={styles.signatureInput}
+                style={styles.receiverInput}
                 placeholder={t('pod_receiver_placeholder')}
                 placeholderTextColor="#666666"
-                value={signatureData}
-                onChangeText={setSignatureData}
+                value={receiverName}
+                onChangeText={setReceiverName}
+                maxLength={100}
                 autoCapitalize="words"
                 autoCorrect={false}
                 accessibilityLabel={t('pod_receiver_label')}
@@ -1930,8 +1934,8 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#111827', fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 8 },
   modalSubtitle: { color: '#6B7280', fontSize: 14, marginBottom: 24 },
   receiverLabel: { color: '#374151', fontSize: 14, fontWeight: '700', marginBottom: 8, alignSelf: 'flex-start' },
-  signatureBox: { height: 120, backgroundColor: '#FAF8FF', borderRadius: 12, borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 24 },
-  signatureInput: { flex: 1, color: '#111827', fontSize: 24, fontWeight: '600', textAlign: 'center' },
+  receiverBox: { height: 120, backgroundColor: '#FAF8FF', borderRadius: 12, borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 24 },
+  receiverInput: { flex: 1, color: '#111827', fontSize: 24, fontWeight: '600', textAlign: 'center' },
   sosInput: { height: 100, backgroundColor: '#FAF8FF', borderRadius: 12, borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 24, padding: 16, color: '#111827', fontSize: 15, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', gap: 12 },
   modalCancelBtn: { flex: 1, backgroundColor: '#F8F9FA', paddingVertical: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E0E0E0' },
