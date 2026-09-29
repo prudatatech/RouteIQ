@@ -318,7 +318,10 @@ class MockSupabase {
           this.mutations.push({ method: 'POST', table, body, query: Object.fromEntries(url.searchParams) });
           const upsert = String(req.headers['prefer'] ?? '').includes('merge-duplicates');
           result = (Array.isArray(body) ? body : [body]).map((input: Row) => {
-            const existing = upsert && input.id != null ? rows.find(r => r.id === input.id) : undefined;
+            const conflictColumns = (url.searchParams.get('on_conflict') ?? '').split(',').filter(Boolean);
+            const existing = !upsert ? undefined
+              : conflictColumns.length > 0 ? rows.find(r => conflictColumns.every(c => r[c] === input[c]))
+              : input.id != null ? rows.find(r => r.id === input.id) : undefined;
             if (existing) return Object.assign(existing, input);
             const row = { id: crypto.randomUUID(), ...input };
             rows.push(row);
