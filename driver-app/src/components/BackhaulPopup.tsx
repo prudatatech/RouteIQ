@@ -1,6 +1,7 @@
 import { useTranslation } from '../hooks/useTranslation';
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
 import { Text } from './ui';
@@ -117,11 +118,18 @@ export default function BackhaulPopup({ vehicleId, onDismiss, bottomOffset = spa
     popupState === 'matched' ? colors.success : popupState === 'no_match' ? colors.border : colors.accentFill;
 
   return (
-    <View
-      style={[styles.container, { borderColor, bottom: bottomOffset }]}
-      accessibilityLiveRegion="polite"
-      accessibilityRole="summary"
-    >
+    <View style={[styles.container, { borderColor, bottom: bottomOffset }]}>
+      {/* The search can run for a long time, so the driver can always put this away. */}
+      <Pressable
+        onPress={onDismiss}
+        accessibilityRole="button"
+        accessibilityLabel={t('close')}
+        hitSlop={8}
+        style={styles.close}
+      >
+        <Ionicons name="close" size={size.icon.md} color={colors.textMuted} />
+      </Pressable>
+      <View accessibilityLiveRegion="polite" accessibilityRole="summary" style={styles.messages}>
       {popupState === 'opening' && <Text variant="bodySmall">{t('backhaul_opening')}</Text>}
 
       {popupState === 'bidding' && (
@@ -154,6 +162,7 @@ export default function BackhaulPopup({ vehicleId, onDismiss, bottomOffset = spa
           </Text>
         </View>
       )}
+      </View>
     </View>
   );
 }
@@ -170,4 +179,15 @@ const styles = StyleSheet.create({
     ...elevation.sm,
   },
   body: { gap: space[1] },
+  messages: { paddingRight: size.control },
+  close: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: size.control,
+    height: size.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
 });

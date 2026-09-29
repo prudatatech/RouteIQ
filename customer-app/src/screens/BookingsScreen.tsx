@@ -9,12 +9,15 @@ import { api, type Booking } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { BOOKING_STATUS } from '../utils/bookingStatus';
 import { formatDay, formatINR } from '../utils/format';
+import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
 
 const placeName = (address: string) => address.split(',')[0].trim() || address;
 
+
 /** The customer's bookings, newest first. */
 export default function BookingsScreen({ navigation }: any) {
-  const { data, loading, error, reload } = useRemote(() => api.listBookings(), 'bookings', 'Could not load your bookings. Check your internet connection and try again.');
+  const { t } = useTranslation();
+  const { data, loading, error, reload } = useRemote(() => api.listBookings(), 'bookings', t('bookings_load_failed'));
 
   // Statuses change while the customer is away, so refresh whenever this tab is shown.
   useFocusEffect(
@@ -34,7 +37,7 @@ export default function BookingsScreen({ navigation }: any) {
     if (error && !data) {
       return (
         <View style={styles.errorWrap}>
-          <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} />
+          <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} />
         </View>
       );
     }
@@ -43,9 +46,9 @@ export default function BookingsScreen({ navigation }: any) {
         <View style={styles.center}>
           <EmptyState
             icon={<Feather name="package" size={size.icon.xl} color={colors.accent} />}
-            title="No bookings yet"
-            message="When you book a shipment, you can follow it here."
-            action={{ label: 'Plan a shipment', onPress: () => navigation.navigate('Home') }}
+            title={t('bookings_empty_title')}
+            message={t('bookings_empty_msg')}
+            action={{ label: t('plan_shipment'), onPress: () => navigation.navigate('Home') }}
           />
         </View>
       );
@@ -56,41 +59,42 @@ export default function BookingsScreen({ navigation }: any) {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} tintColor={colors.accent} />}
-        ListHeaderComponent={error ? <ErrorBanner message={error} action={{ label: 'Try again', onPress: reload }} /> : null}
-        renderItem={({ item }) => <BookingRow booking={item} onPress={() => navigation.navigate('BookingDetail', { id: item.id })} />}
+        ListHeaderComponent={error ? <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} /> : null}
+        renderItem={({ item }) => <BookingRow t={t} booking={item} onPress={() => navigation.navigate('BookingDetail', { id: item.id })} />}
       />
     );
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScreenHeader title="My bookings" />
+      <ScreenHeader title={t('my_bookings')} />
       {body()}
     </SafeAreaView>
   );
 }
 
-function BookingRow({ booking, onPress }: { booking: Booking; onPress: () => void }) {
+function BookingRow({ booking, onPress, t }: { booking: Booking; onPress: () => void; t: TranslateFn }) {
   const status = BOOKING_STATUS[booking.status];
-  const route = `${placeName(booking.pickup_name)} to ${placeName(booking.drop_name)}`;
+  const statusLabel = t(status.label);
+  const route = t('route_a_to_b', { from: placeName(booking.pickup_name), to: placeName(booking.drop_name) });
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${route}, ${status.label}, pickup ${formatDay(booking.pickup_date)}`}
+      accessibilityLabel={`${route}, ${statusLabel}, ${t('pickup_on', { date: formatDay(booking.pickup_date) })}`}
       onPress={onPress}
       style={({ pressed }) => (pressed ? styles.pressed : null)}
     >
       <Card style={styles.card}>
-        <StatusPill label={status.label} tone={status.tone} />
+        <StatusPill label={statusLabel} tone={status.tone} />
         <Text variant="bodyMedium" numberOfLines={2}>
           {route}
         </Text>
         <Text variant="bodySmall" color="textMuted">
-          Pickup {formatDay(booking.pickup_date)}
+          {t('pickup_on', { date: formatDay(booking.pickup_date) })}
         </Text>
         <View style={styles.meta}>
           <Text variant="bodySmall" color="textMuted">
-            {booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : 'Price to be confirmed'}
+            {booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : t('price_tbc')}
           </Text>
           {booking.tracking_id ? (
             <Text variant="caption" color="textMuted" style={styles.mono}>

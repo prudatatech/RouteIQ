@@ -31,7 +31,7 @@ const formatTime = (iso: string) =>
     timeZone: 'Asia/Kolkata',
   }).format(new Date(iso));
 
-/** Text conversation with dispatch for the current route. */
+/** Text conversation with dispatch for the current route. The box to type in is on top and the newest message first, so nothing needs scrolling. */
 export default function MessagesTab({ hasRoute, messages, loading, failed, sending, onRetry, onSend, onCallDispatch }: MessagesTabProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
@@ -83,23 +83,6 @@ export default function MessagesTab({ hasRoute, messages, loading, failed, sendi
 
       {failed ? <ErrorBanner message={t('messages_load_failed')} action={{ label: t('retry'), onPress: onRetry }} /> : null}
 
-      <Card style={styles.thread}>
-        <Text variant="title" accessibilityRole="header">
-          {t('messages_title')}
-        </Text>
-        {loading && messages.length === 0 ? (
-          <Text variant="bodySmall" color="textMuted">
-            {t('loading')}
-          </Text>
-        ) : messages.length === 0 ? (
-          <Text variant="bodySmall" color="textMuted">
-            {t('messages_empty')}
-          </Text>
-        ) : (
-          messages.map((m) => <Bubble key={m.id} message={m} />)
-        )}
-      </Card>
-
       <Card style={styles.composer}>
         <TextField
           label={t('messages_input_label')}
@@ -120,6 +103,23 @@ export default function MessagesTab({ hasRoute, messages, loading, failed, sendi
           disabled={!draft.trim()}
           icon={(color) => <Ionicons name="send" size={size.icon.md} color={color} />}
         />
+      </Card>
+
+      <Card style={styles.thread}>
+        <Text variant="title" accessibilityRole="header">
+          {t('messages_title')}
+        </Text>
+        {loading && messages.length === 0 ? (
+          <Text variant="bodySmall" color="textMuted">
+            {t('loading')}
+          </Text>
+        ) : messages.length === 0 ? (
+          <Text variant="bodySmall" color="textMuted">
+            {t('messages_empty')}
+          </Text>
+        ) : (
+          [...messages].reverse().map((m) => <Bubble key={m.id} message={m} />)
+        )}
       </Card>
     </View>
   );

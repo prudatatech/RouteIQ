@@ -10,7 +10,8 @@
  * a time).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, BackHandler, DeviceEventEmitter, KeyboardAvoidingView, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
@@ -55,6 +56,7 @@ import MessagesTab from './tabs/MessagesTab';
 import WalletTab from './tabs/WalletTab';
 import ProfileTab, { AVATAR_KEY } from './tabs/ProfileTab';
 import { colors, space } from '../theme';
+import { OPEN_TAB_EVENT } from '../components/NotificationListener';
 
 interface HomeScreenProps {
   onLogout: () => void;
@@ -64,6 +66,9 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   moreActions: 'sheet',
   returnTrip: 'full',
 };
+
+/** Dialogs where the driver types or captures something: only Cancel or Back closes them, never a stray touch outside. */
+const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos'];
 
 const formatTime = (ms: number) =>
   new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(
@@ -76,6 +81,24 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [showBackhaulPopup, setShowBackhaulPopup] = useState(false);
+
+  const queryClient = useQueryClient();
+
+  // Android Back on another tab goes to Home first; it only leaves the app from Home.
+  useEffect(() => {
+    if (activeTab === 'route') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setActiveTab('route');
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeTab]);
+
+  // Tapping a push notification opens the tab it is about.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(OPEN_TAB_EVENT, (tab: DriverTab) => setActiveTab(tab));
+    return () => sub.remove();
+  }, []);
 
   const data = useDriverRoute();
   const { refresh } = data;
@@ -161,8 +184,12 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   const onPullRefresh = async () => {
     setPullRefreshing(true);
-    await refresh();
-    setPullRefreshing(false);
+    try {
+      // Pulling down refreshes whatever tab is open: the route, and also messages and earnings.
+      await Promise.all([refresh(), queryClient.invalidateQueries()]);
+    } finally {
+      setPullRefreshing(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -396,9 +423,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         />
       </SafeAreaView>
 
-      <View style={styles.flex}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView
           style={styles.flex}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.content}
           refreshControl={
             <RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} tintColor={colors.accent} colors={[colors.accent]} />
@@ -458,7 +486,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         {showBackhaulPopup && data.activeVehicleId && (
           <BackhaulPopup vehicleId={data.activeVehicleId} onDismiss={hideBackhaul} bottomOffset={space[4]} />
         )}
-      </View>
+      </KeyboardAvoidingView>
 
       <DriverTabBar active={activeTab} onChange={setActiveTab} messagesUnread={messages.unreadCount} />
 
@@ -467,6 +495,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         visible={!!active}
         variant={shown ? DIALOG_VARIANT[shown.kind] ?? 'center' : 'center'}
         onRequestClose={closable ? closeModal : undefined}
+        dismissOnBackdrop={!shown || !FORM_DIALOGS.includes(shown.kind)}
       >
         {shown ? renderDialog(shown) : null}
       </DialogFrame>

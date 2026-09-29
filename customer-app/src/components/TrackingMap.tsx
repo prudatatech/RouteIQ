@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
 import { colors, radius, size } from '../theme';
+import { useTranslation } from '../hooks/useTranslation';
 
 type Point = { latitude: number; longitude: number };
 
@@ -15,6 +16,7 @@ interface TrackingMapProps {
 
 /** Pickup, drop-off and (when known) the vehicle, framed together. */
 export function TrackingMap({ pickup, drop, vehicle, vehicleLabel }: TrackingMapProps) {
+  const { t } = useTranslation();
   const mapRef = useRef<MapView>(null);
   const vehicleLat = vehicle?.latitude;
   const vehicleLng = vehicle?.longitude;
@@ -51,13 +53,13 @@ export function TrackingMap({ pickup, drop, vehicle, vehicleLabel }: TrackingMap
         {Platform.OS === 'android' && (
           <UrlTile urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&hl=en" maximumZ={19} tileSize={256} flipY={false} />
         )}
-        <Marker coordinate={pickup} pinColor={colors.accent} title="Pickup" />
-        <Marker coordinate={drop} pinColor={colors.info} title="Drop-off" />
+        <Marker coordinate={pickup} pinColor={colors.accent} title={t('pickup')} />
+        <Marker coordinate={drop} pinColor={colors.info} title={t('dropoff')} />
         {vehicleLat != null && vehicleLng != null ? (
           <Marker
             coordinate={{ latitude: vehicleLat, longitude: vehicleLng }}
             pinColor={colors.warning}
-            title={vehicleLabel ? `Vehicle ${vehicleLabel}` : 'Your vehicle'}
+            title={vehicleLabel ? `${t('vehicle')} ${vehicleLabel}` : t('your_vehicle')}
           />
         ) : null}
       </MapView>

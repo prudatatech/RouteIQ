@@ -16,6 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
 import { Button, Text } from '../components/ui';
+import LanguagePicker from '../components/LanguagePicker';
+import { useTranslation } from '../hooks/useTranslation';
 import { colors, radius, size, space, type } from '../theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -26,6 +28,7 @@ const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
 
 export default function LoginScreen({ navigation }: any) {
+  const { t } = useTranslation();
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
@@ -47,7 +50,7 @@ export default function LoginScreen({ navigation }: any) {
 
   const handleSendOtp = async () => {
     if (!phone || phone.length < 10) {
-      setError('Please enter a valid 10-digit phone number.');
+      setError(t('login_phone_invalid'));
       return;
     }
 
@@ -60,7 +63,7 @@ export default function LoginScreen({ navigation }: any) {
       setStep('otp');
       setTimer(RESEND_SECONDS);
     } catch (err: any) {
-      setError(err.message || 'Could not send the OTP. Please try again.');
+      setError(err.message || t('login_send_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -68,7 +71,7 @@ export default function LoginScreen({ navigation }: any) {
 
   const handleVerifyOtp = async () => {
     if (!otp || otp.length < OTP_LENGTH) {
-      setError('Please enter the 6-digit OTP.');
+      setError(t('login_otp_invalid'));
       return;
     }
 
@@ -79,7 +82,7 @@ export default function LoginScreen({ navigation }: any) {
       navigation.replace('Main');
     } catch (err: any) {
       Vibration.vibrate(400); // Vibrate on wrong OTP
-      setError(err.message || 'That OTP is not correct. Please try again.');
+      setError(err.message || t('login_otp_wrong'));
     } finally {
       setIsLoading(false);
     }
@@ -114,12 +117,14 @@ export default function LoginScreen({ navigation }: any) {
               accessibilityLabel="MargixIndia"
             />
 
+            <LanguagePicker />
+
             <View style={styles.heading}>
               <Text variant="heading" align="center" accessibilityRole="header">
-                Welcome to MargixIndia
+                {t('login_welcome')}
               </Text>
               <Text variant="bodySmall" color="textMuted" align="center">
-                {step === 'phone' ? 'Sign in with your mobile number.' : `We sent a 6-digit code to +91 ${phone}`}
+                {step === 'phone' ? t('login_subtitle') : t('login_code_sent', { phone })}
               </Text>
             </View>
 
@@ -130,14 +135,19 @@ export default function LoginScreen({ navigation }: any) {
                   <View style={styles.divider} />
                   <TextInput
                     style={styles.input}
-                    placeholder="10-digit mobile number"
+                    placeholder={t('login_phone_placeholder')}
                     placeholderTextColor={colors.textDisabled}
                     keyboardType="phone-pad"
                     textContentType="telephoneNumber"
                     autoComplete="tel"
                     maxLength={10}
+                    autoFocus
+                    returnKeyType="go"
+                    onSubmitEditing={() => {
+                      if (phone.length >= 10 && !isLoading) handleSendOtp();
+                    }}
                     value={phone}
-                    accessibilityLabel="Mobile number"
+                    accessibilityLabel={t('login_phone_label')}
                     onChangeText={(text) => {
                       const cleaned = text.replace(/[^0-9]/g, '');
                       setPhone(cleaned);
@@ -153,7 +163,7 @@ export default function LoginScreen({ navigation }: any) {
                   </Text>
                 ) : null}
 
-                <Button title="Get OTP" onPress={handleSendOtp} loading={isLoading} disabled={phone.length < 10} />
+                <Button title={t('login_get_otp')} onPress={handleSendOtp} loading={isLoading} disabled={phone.length < 10} />
               </View>
             ) : (
               <View style={styles.form}>
@@ -183,7 +193,7 @@ export default function LoginScreen({ navigation }: any) {
                   autoComplete="one-time-code"
                   maxLength={OTP_LENGTH}
                   value={otp}
-                  accessibilityLabel="6-digit OTP"
+                  accessibilityLabel={t('login_otp_label')}
                   onFocus={() => setOtpFocused(true)}
                   onBlur={() => setOtpFocused(false)}
                   onChangeText={(text) => {
@@ -201,23 +211,23 @@ export default function LoginScreen({ navigation }: any) {
                   </Text>
                 ) : null}
 
-                <Button title="Verify and continue" onPress={handleVerifyOtp} loading={isLoading} disabled={otp.length < OTP_LENGTH} />
+                <Button title={t('login_verify')} onPress={handleVerifyOtp} loading={isLoading} disabled={otp.length < OTP_LENGTH} />
 
                 <View style={styles.secondaryActions}>
                   <Button
-                    title={timer > 0 ? `Resend OTP in 0:${timer.toString().padStart(2, '0')}` : 'Resend OTP'}
+                    title={timer > 0 ? t('login_resend_in', { sec: timer.toString().padStart(2, '0') }) : t('login_resend')}
                     variant="ghost"
                     block={false}
                     onPress={handleSendOtp}
                     disabled={timer > 0 || isLoading}
                   />
-                  <Button title="Change number" variant="ghost" block={false} onPress={changePhone} />
+                  <Button title={t('login_change_number')} variant="ghost" block={false} onPress={changePhone} />
                 </View>
               </View>
             )}
 
             <Text variant="caption" color="textMuted" align="center" style={styles.terms}>
-              By continuing, you agree to the MargixIndia terms and conditions and privacy policy.
+              {t('login_terms')}
             </Text>
           </View>
         </ScrollView>

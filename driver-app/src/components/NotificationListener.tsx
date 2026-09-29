@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ToastAndroid, Platform } from 'react-native';
+import { DeviceEventEmitter, ToastAndroid, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
@@ -16,6 +16,16 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+/** Emitted with the DriverTab to show when the driver taps a push notification. */
+export const OPEN_TAB_EVENT = 'driver:open-tab';
+
+/** Chat messages open the Messages tab; everything else (assignments, route changes) opens Home. */
+function openTabFor(response: Notifications.NotificationResponse) {
+  const content = response.notification.request.content;
+  const type = String((content.data as { type?: unknown } | undefined)?.type ?? '');
+  DeviceEventEmitter.emit(OPEN_TAB_EVENT, /message|chat/i.test(type) ? 'messages' : 'route');
+}
 
 export const NotificationListener = () => {
   const [userId, setUserId] = React.useState<string | null>(null);
@@ -43,9 +53,14 @@ export const NotificationListener = () => {
       console.log('Push notification received!', notification);
     });
 
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('User interacted with push notification:', response);
-    });
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTabFor);
+
+    // The app was closed and a notification tap started it.
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) setTimeout(() => openTabFor(response), 500);
+      })
+      .catch(() => {});
 
     return () => {
       subscription.remove();

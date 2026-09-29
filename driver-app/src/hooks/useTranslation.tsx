@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { translations, Language } from '../locales';
+import { translations, Language, setCurrentLanguage } from '../locales';
 import { api } from '../services/api';
 import { getCurrentSession } from '../services/supabase';
 
@@ -23,6 +23,7 @@ export const TranslationProvider = ({ children }: { children: ReactNode }) => {
     AsyncStorage.getItem('language_preference').then((saved) => {
       if (saved && saved in translations) {
         setLangState(saved as Language);
+        setCurrentLanguage(saved as Language);
       }
       setIsLoaded(true);
     });
@@ -30,6 +31,7 @@ export const TranslationProvider = ({ children }: { children: ReactNode }) => {
 
   const setLanguage = async (newLang: Language) => {
     setLangState(newLang);
+    setCurrentLanguage(newLang);
     await AsyncStorage.setItem('language_preference', newLang);
     try {
       // If logged in, update the backend profile

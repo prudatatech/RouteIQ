@@ -5,8 +5,8 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { Language } from '../../locales';
-import { INDIAN_VEHICLES, LANGUAGES } from '../../constants/profile';
+import { INDIAN_VEHICLES } from '../../constants/profile';
+import LanguagePicker from '../../components/LanguagePicker';
 import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
 import { colors, radius, size, space } from '../../theme';
 import { formatNumber } from '../../utils/format';
@@ -25,7 +25,7 @@ const AVATAR = 96;
 const NAME_PATTERN = /^[\p{L}\s.-]+$/u;
 
 export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, onAvatarChange, onLogout }: ProfileTabProps) {
-  const { t, lang, setLanguage } = useTranslation();
+  const { t } = useTranslation();
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
   const [nameError, setNameError] = useState('');
@@ -174,25 +174,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
       <Text variant="title" accessibilityRole="header">
         {t('change_language')}
       </Text>
-      <View style={styles.chips} accessibilityRole="radiogroup">
-        {LANGUAGES.map((l) => {
-          const selected = lang === l.code;
-          return (
-            <Pressable
-              key={l.code}
-              onPress={() => setLanguage(l.code as Language)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-              accessibilityLabel={l.label}
-              style={[styles.chip, selected && styles.chipSelected]}
-            >
-              <Text variant="bodySmallMedium" color={selected ? 'accent' : 'text'}>
-                {l.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <LanguagePicker />
 
       <Text variant="title" accessibilityRole="header">
         {t('my_vehicle')}
@@ -269,18 +251,6 @@ const styles = StyleSheet.create({
   nameEdit: { alignSelf: 'stretch', gap: space[3] },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   nameText: { alignItems: 'center' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  chip: {
-    minHeight: size.control,
-    paddingHorizontal: space[4],
-    borderRadius: radius.full,
-    borderWidth: size.border,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   vehicle: {
     flexDirection: 'row',
     alignItems: 'center',
