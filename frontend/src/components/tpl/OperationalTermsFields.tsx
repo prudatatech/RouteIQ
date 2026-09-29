@@ -12,7 +12,7 @@ export function OperationalTermsFields({ slaCommitment, taxTreatment, onSlaChang
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
       <Select
         label="Default SLA commitment"
-        hint="Maximum time to respond to a broadcast request."
+        hint="How long you take to deliver a load you accept. You can give a delivery time for each load when you accept it."
         options={SLA_COMMITMENT_OPTIONS.map(o => ({ value: o, label: o }))}
         value={slaCommitment}
         onChange={e => onSlaChange(e.target.value)}

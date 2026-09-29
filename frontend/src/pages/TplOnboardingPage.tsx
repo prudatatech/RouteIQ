@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
 import { tplAPI } from '@/services/api'
 import { Button, Card, Checkbox, Input, Select, Spinner } from '@/components/ui'
+import { GstinStatus } from '@/components/tpl/GstinStatus'
+import { gstinError } from '@/utils/gstin'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 import { emptyCorridorRow, TPL_DOCUMENT_TYPES, type CorridorFormRow } from '@/components/tpl/constants'
@@ -15,7 +17,6 @@ import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 const MSME_OPTIONS = ['Not Registered', 'Micro', 'Small', 'Medium']
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
-const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/
 const MOBILE_PATTERN = /^[6-9]\d{9}$/
 const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
@@ -91,7 +92,10 @@ export default function TplOnboardingPage() {
     if (!pan.trim()) errors[1].pan = 'Enter the company PAN'
     else if (!PAN_PATTERN.test(pan.trim())) errors[1].pan = 'PAN format looks wrong (e.g. ABCDE1234F)'
     if (!gst.trim()) errors[1].gst = 'Enter the GSTIN'
-    else if (!GST_PATTERN.test(gst.trim())) errors[1].gst = 'GSTIN format looks wrong (e.g. 07ABCDE1234F1Z5)'
+    else {
+      const gstProblem = gstinError(gst, pan)
+      if (gstProblem) errors[1].gst = gstProblem
+    }
     if (!bankAccount.trim()) errors[1].bankAccount = 'Enter the bank account number'
     else if (!ACCOUNT_PATTERN.test(bankAccount.trim())) errors[1].bankAccount = 'Account number must be 9–18 digits'
     if (!bankIfsc.trim()) errors[1].bankIfsc = 'Enter the IFSC code'
@@ -335,7 +339,10 @@ export default function TplOnboardingPage() {
                   placeholder="9876543210" error={err(1, 'phone')}
                 />
                 <Input label="Company PAN" required value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" error={err(1, 'pan')} />
-                <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" className="font-mono" error={err(1, 'gst')} />
+                <div>
+                  <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="15-character GSTIN" hint="Its last character is a check digit, so a typing mistake is caught." className="font-mono" error={err(1, 'gst')} />
+                  <GstinStatus gstin={gst} pan={pan} />
+                </div>
                 <Select label="MSME status" options={MSME_OPTIONS.map(o => ({ value: o, label: o }))} value={msmeStatus} onChange={e => setMsmeStatus(e.target.value)} />
               </div>
 
