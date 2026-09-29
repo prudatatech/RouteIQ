@@ -19,17 +19,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { variant = 'primary', size = 'md', loading = false, icon, fullWidth, className, children, disabled, type = 'button', ...props },
   ref,
 ) {
+  // Without an icon to swap, the spinner floats over the label so the button keeps its width.
+  const overlay = loading && !icon
   return (
     <button
       ref={ref}
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={clsx(buttonClasses({ variant, size, fullWidth }), className)}
+      className={clsx(buttonClasses({ variant, size, fullWidth }), overlay && 'relative', className)}
       {...props}
     >
-      {loading ? <Spinner size={size === 'lg' ? 18 : 16} tone={variant === 'danger' ? 'inverse' : 'current'} /> : icon}
-      {children}
+      {loading && (
+        <Spinner
+          size={size === 'lg' ? 18 : 16}
+          tone={variant === 'danger' ? 'inverse' : 'current'}
+          className={overlay ? 'absolute' : undefined}
+        />
+      )}
+      {!loading && icon}
+      {overlay ? <span className="invisible">{children}</span> : children}
     </button>
   )
 })
