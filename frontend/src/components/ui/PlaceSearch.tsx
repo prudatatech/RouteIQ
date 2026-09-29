@@ -39,6 +39,8 @@ export function PlaceSearch({
   const [active, setActive] = useState(-1)
   const [open, setOpen] = useState(false)
   const [resolving, setResolving] = useState(false)
+  /** Result of the last address search: still running, nothing matched, or the lookup failed. */
+  const [searchState, setSearchState] = useState<'idle' | 'searching' | 'none' | 'failed'>('idle')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [recentPlaces, setRecentPlaces] = useState<ResolvedPlace[]>(() => recentPlacesKey ? getRecentPlaces(recentPlacesKey) : [])
   const listId = useId()
@@ -58,10 +60,23 @@ export function PlaceSearch({
   useEffect(() => {
     if (value && text === value.address) return
     const controller = new AbortController()
+    if (text.trim().length < 3) {
+      setSuggestions([])
+      setSearchState('idle')
+    }
     const timer = setTimeout(() => {
+      // Recent addresses only open while the field is in use, not when the form first appears.
+      if (text.trim().length < 3) { setOpen(showRecent && !!wrapper.current?.contains(document.activeElement)); return }
+      setSearchState('searching')
       suggestPlaces(text, controller.signal)
-        .then(list => { setSuggestions(list); setActive(-1); setOpen(list.length > 0 || showRecent) })
-        .catch(() => setSuggestions([]))
+        .then(list => {
+          setSuggestions(list); setActive(-1); setOpen(true)
+          setSearchState(list.length > 0 ? 'idle' : 'none')
+        })
+        .catch(err => {
+          if (controller.signal.aborted || err?.name === 'AbortError') return
+          setSuggestions([]); setOpen(true); setSearchState('failed')
+        })
     }, 300)
     return () => { clearTimeout(timer); controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,12 +121,22 @@ export function PlaceSearch({
     remember(place)
   }
 
+  const showingRecent = open && suggestions.length === 0 && showRecent
+  const optionCount = showingRecent ? recentPlaces.length : suggestions.length
+  const activeId = active >= 0 && active < optionCount ? `${listId}-${showingRecent ? 'recent-' : ''}${active}` : undefined
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!open || suggestions.length === 0) return
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => (i + 1) % suggestions.length) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => (i <= 0 ? suggestions.length - 1 : i - 1)) }
-    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(suggestions[active]) }
-    else if (e.key === 'Escape') setOpen(false)
+    if (!open) return
+    // Close the list without also closing a dialog the field sits in.
+    if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); return }
+    if (optionCount === 0) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => (i + 1) % optionCount) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => (i <= 0 ? optionCount - 1 : i - 1)) }
+    else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault()
+      if (showingRecent) chooseRecent(recentPlaces[active])
+      else choose(suggestions[active])
+    }
   }
 
   return (
@@ -126,32 +151,42 @@ export function PlaceSearch({
             aria-expanded={open}
             aria-controls={listId}
             aria-autocomplete="list"
-            aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+            aria-activedescendant={activeId}
             autoComplete="off"
             disabled={disabled}
             placeholder={placeholder}
             value={text}
             onChange={e => { setText(e.target.value); setLookupError(null); if (value) onChange(null) }}
-            onFocus={() => setOpen(suggestions.length > 0 || showRecent)}
+            onFocus={() => { setActive(-1); setOpen(suggestions.length > 0 || showRecent) }}
             onKeyDown={onKeyDown}
             className={clsx(controlClasses, (lookupError ?? error) ? 'border-danger' : 'border-border-strong', 'h-control pl-9 pr-9')}
           />
-          {resolving && <Spinner size={16} className="absolute right-3 top-1/2 -translate-y-1/2" />}
-          {open && suggestions.length === 0 && showRecent && (
+          {(resolving || searchState === 'searching') && (
+            <Spinner size={16} label={resolving ? 'Finding the address' : 'Searching addresses'} className="absolute right-3 top-1/2 -translate-y-1/2" />
+          )}
+          {open && suggestions.length === 0 && !showRecent && (searchState === 'none' || searchState === 'failed') && (
+            <p role="status" className="absolute z-30 mt-1 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-muted shadow-raised">
+              {searchState === 'none'
+                ? 'No matching address. Try the area or PIN code, or drop a pin on the map.'
+                : 'We could not search addresses. Check your connection and try again.'}
+            </p>
+          )}
+          {showingRecent && (
             <ul
               id={listId}
               role="listbox"
               aria-label="Recent addresses"
-              className="absolute z-30 mt-1 w-full overflow-hidden rounded-control border border-border bg-surface shadow-raised"
+              className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-control border border-border bg-surface shadow-raised"
             >
               {recentPlaces.map((p, i) => (
                 <li
                   key={p.address}
                   id={`${listId}-recent-${i}`}
                   role="option"
-                  aria-selected={false}
+                  aria-selected={i === active}
                   onMouseDown={e => { e.preventDefault(); chooseRecent(p) }}
-                  className="flex cursor-pointer items-start gap-2 px-3 py-2 hover:bg-surface-subtle"
+                  onMouseEnter={() => setActive(i)}
+                  className={clsx('flex cursor-pointer items-start gap-2 px-3 py-2', i === active && 'bg-surface-subtle')}
                 >
                   <Clock size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-muted" />
                   <div className="min-w-0">
@@ -166,7 +201,7 @@ export function PlaceSearch({
             <ul
               id={listId}
               role="listbox"
-              className="absolute z-30 mt-1 w-full overflow-hidden rounded-control border border-border bg-surface shadow-raised"
+              className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-control border border-border bg-surface shadow-raised"
             >
               {suggestions.map((s, i) => (
                 <li

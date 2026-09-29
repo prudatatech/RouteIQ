@@ -52,7 +52,7 @@ export default function DocumentViewerModal({ isOpen, onClose, fileUrl, fileName
         </>
       }
     >
-      <div className="flex h-[65vh] items-center justify-center overflow-auto rounded-control bg-surface-subtle">
+      <div className="flex h-[65dvh] items-center justify-center overflow-auto rounded-control bg-surface-subtle">
         {isPdf ? (
           <iframe src={`${fileUrl}#toolbar=0`} className="h-full w-full rounded-control border border-border" title={fileName || 'Document'} />
         ) : (

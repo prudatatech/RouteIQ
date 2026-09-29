@@ -47,7 +47,7 @@ export function DateRangeControl({ value, onChange, className }: {
       </div>
 
       {value.preset === 'custom' && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             type="date"
             label="From date"
