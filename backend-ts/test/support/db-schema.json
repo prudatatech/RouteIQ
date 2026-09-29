@@ -102,6 +102,20 @@
     "responded_at",
     "action"
   ],
+  "expenses": [
+    "id",
+    "vehicle_id",
+    "route_id",
+    "category",
+    "amount",
+    "expense_date",
+    "litres",
+    "note",
+    "receipt_path",
+    "created_by",
+    "created_at",
+    "updated_at"
+  ],
   "gps_points": [
     "id",
     "vehicle_id",
@@ -158,7 +172,16 @@
     "is_resolved",
     "resolved_at",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "status",
+    "source",
+    "is_test",
+    "details",
+    "occurrences",
+    "last_seen_at",
+    "acknowledged_at",
+    "acknowledged_by",
+    "resolved_by"
   ],
   "notifications": [
     "id",
@@ -343,6 +366,29 @@
     "vehicle_type",
     "push_token"
   ],
+  "vehicle_service_log": [
+    "id",
+    "vehicle_id",
+    "item",
+    "done_at",
+    "odometer_km",
+    "cost",
+    "note",
+    "expense_id",
+    "created_by",
+    "created_at"
+  ],
+  "vehicle_service_plans": [
+    "id",
+    "vehicle_id",
+    "item",
+    "interval_km",
+    "interval_days",
+    "last_done_km",
+    "last_done_at",
+    "created_at",
+    "updated_at"
+  ],
   "vehicle_stoppages": [
     "id",
     "vehicle_id",
@@ -409,7 +455,11 @@
     "current_location_name",
     "puc_number",
     "puc_expiry",
-    "puc_document_url"
+    "puc_document_url",
+    "odometer_km",
+    "odometer_updated_at",
+    "fuel_level_pct",
+    "fuel_reported_at"
   ],
   "vendor_profiles": [
     "id",

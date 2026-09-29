@@ -63,22 +63,21 @@ export class SparkGPSService {
           vehicle = plateMap.get(plate);
         }
 
-        if (vehicle) {
+        if (vehicle && item.lat && item.lng) {
           const telemetryData = {
             vehicle_id: vehicle.id,
             latitude: parseFloat(item.lat || '0'),
             longitude: parseFloat(item.lng || '0'),
             speed_kmph: parseFloat(item.speed || '0'),
             heading: parseFloat(item.heading || '0'),
-            fuel_level_pct: parseFloat(item.fuel || '100'),
+            fuel_level_pct: item.fuel != null && item.fuel !== '' && Number.isFinite(parseFloat(item.fuel)) ? parseFloat(item.fuel) : undefined,
           };
 
-          // Update vehicle state directly
+          // Update vehicle state. The position is written by ingestTelemetry below, which needs
+          // the previous position to work out the distance driven.
           await supabase
             .from('vehicles')
             .update({
-              latitude: telemetryData.latitude,
-              longitude: telemetryData.longitude,
               last_sync: new Date().toISOString(),
               status: 'on_route',
             })

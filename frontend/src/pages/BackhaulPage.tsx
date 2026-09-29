@@ -4,11 +4,10 @@ import { Page, PageHeader, TabPanel, Tabs, useTabParam, type TabItem } from '@/c
 import OpenLoadsTab from '@/components/backhaul/OpenLoadsTab'
 import PoolLoadsTab from '@/components/backhaul/PoolLoadsTab'
 import MatchReturnLoadTab from '@/components/backhaul/MatchReturnLoadTab'
-import CargoAlertsTab from '@/components/backhaul/CargoAlertsTab'
 import ConfirmDeliveryTab from '@/components/backhaul/ConfirmDeliveryTab'
-import { useCargoAlerts, useOpenLoads, type DuplicatedManifest } from '@/components/backhaul/data'
+import { useOpenLoads, type DuplicatedManifest } from '@/components/backhaul/data'
 
-const TAB_IDS = ['loads', 'pool', 'match', 'alerts', 'delivery'] as const
+const TAB_IDS = ['loads', 'pool', 'match', 'delivery'] as const
 type TabId = typeof TAB_IDS[number]
 
 export default function BackhaulPage() {
@@ -19,7 +18,6 @@ export default function BackhaulPage() {
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, manifest ? 'match' : 'loads')
 
   const loads = useOpenLoads()
-  const alerts = useCargoAlerts()
 
   const dismissManifest = useCallback(() => {
     navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null })
@@ -29,7 +27,6 @@ export default function BackhaulPage() {
     { id: 'loads', label: 'Open loads', count: loads.data?.length },
     { id: 'pool', label: 'Pool loads' },
     { id: 'match', label: 'Match a return load' },
-    { id: 'alerts', label: 'Cargo alerts', count: alerts.data?.length },
     { id: 'delivery', label: 'Confirm delivery' },
   ]
 
@@ -45,7 +42,6 @@ export default function BackhaulPage() {
         {tab === 'loads' && <OpenLoadsTab />}
         {tab === 'pool' && <PoolLoadsTab />}
         {tab === 'match' && <MatchReturnLoadTab manifest={manifest} onDismissManifest={dismissManifest} />}
-        {tab === 'alerts' && <CargoAlertsTab />}
         {tab === 'delivery' && <ConfirmDeliveryTab />}
       </TabPanel>
     </Page>

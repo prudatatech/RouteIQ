@@ -95,7 +95,11 @@ export function createApp(): express.Express {
   }));
 
   // 5. Body parsers
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({
+    limit: '10mb',
+    // Kept for webhooks that sign the raw body (see routes/telematics.routes.ts)
+    verify: (req, _res, buf) => { (req as express.Request & { rawBody?: Buffer }).rawBody = buf; },
+  }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // ── API Routes ─────────────────────────────────────────────

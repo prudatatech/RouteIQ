@@ -4,10 +4,13 @@ import toast from 'react-hot-toast'
 import { financeAPI } from '@/services/api'
 import { Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Page, PageHeader, Skeleton } from '@/components/ui'
 import { errorMessage, formatRupees } from '@/utils/display'
+import { useAuthStore } from '@/store/authStore'
+import { AlarmSettingsSection } from '@/components/fleet/AlarmSettings'
 
-/** Numbers the fleet's costs are worked out from. */
+/** Numbers costs and pricing are worked out from, and (for superadmins) fleet alarm rules. */
 export default function SettingsPage() {
   const queryClient = useQueryClient()
+  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
   const settings = useQuery({ queryKey: ['finance', 'settings'], queryFn: () => financeAPI.settings() })
   const [price, setPrice] = useState('')
   const [error, setError] = useState<string | undefined>()
@@ -42,7 +45,7 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Values that profit and loss and pricing are worked out from." />
+      <PageHeader title="Settings" description="Values that costs, pricing and fleet alarms are worked out from." />
 
       {settings.isError ? (
         <ErrorState title="We could not load settings" description="Check your connection and try again." onRetry={() => settings.refetch()} />
@@ -84,6 +87,13 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
         </div>
+      )}
+
+      {isSuperadmin && (
+        <section aria-labelledby="alarm-settings" className="space-y-4">
+          <h2 id="alarm-settings" className="text-lg font-semibold text-text">Fleet alarms</h2>
+          <AlarmSettingsSection />
+        </section>
       )}
     </Page>
   )

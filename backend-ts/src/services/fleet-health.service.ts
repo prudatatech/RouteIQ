@@ -4,11 +4,13 @@
  */
 import { supabase } from '../core/supabase';
 import { wsManager } from '../core/websocket';
+import { runAlertSweep } from './alerts.service';
 
 export class FleetHealthMonitor {
   private timeoutSeconds: number;
   private running: boolean = false;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(timeoutSeconds: number = 120) {
     this.timeoutSeconds = timeoutSeconds;
@@ -18,11 +20,16 @@ export class FleetHealthMonitor {
     this.running = true;
     console.log(`Fleet Health Monitor started (Timeout: ${this.timeoutSeconds}s)`);
     this.timer = setInterval(() => this.checkFleetHealth(), 25_000); // 25s
+    // GPS lost and long idle on active routes, against the limits in system_settings
+    this.sweepTimer = setInterval(() => {
+      runAlertSweep().catch(e => console.error(`Alarm sweep failed: ${e.message}`));
+    }, 60_000);
   }
 
   stop(): void {
     this.running = false;
     if (this.timer) clearInterval(this.timer);
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
     console.log('Fleet Health Monitor stopped.');
   }
 

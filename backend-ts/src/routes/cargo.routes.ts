@@ -14,6 +14,7 @@ import { sendError, HttpError } from '../core/errors';
 import { ShipmentService } from '../services/shipment.service';
 import { settings } from '../core/config';
 import { MapplsService } from '../services/mappls.service';
+import { resolveAlert } from '../services/alerts.service';
 
 const router = Router();
 
@@ -162,29 +163,17 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
 });
 
 // ── POST /resolve-alert/:alert_id ──────────────────────────
-router.post('/resolve-alert/:alert_id', requireAuth, requireRole('admin', 'superadmin', 'manager'), async (req: Request, res: Response) => {
+// Kept for older clients; the console resolves alarms with POST /fleet/alerts/:id/resolve.
+router.post('/resolve-alert/:alert_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data: existing } = await supabase
-      .from('maintenance_alerts')
-      .select('id')
-      .eq('id', req.params.alert_id)
-      .single();
-
-    if (!existing) {
+    const result = await resolveAlert(req.params.alert_id, req.user!.user_id);
+    if (result === 'not_found') {
       res.status(404).json({ detail: 'Alert not found' });
       return;
     }
-
-    const resolvedAt = new Date().toISOString();
-    const { error } = await supabase
-      .from('maintenance_alerts')
-      .update({ is_resolved: true, resolved_at: resolvedAt })
-      .eq('id', req.params.alert_id);
-    if (error) throw error;
-
     res.json({
       status: 'success',
-      alert: { id: req.params.alert_id, status: 'resolved', resolved_at: resolvedAt },
+      alert: { id: result.id, status: 'resolved', resolved_at: result.resolved_at },
     });
   } catch (e: any) {
     sendError(req, res, e);

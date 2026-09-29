@@ -1,6 +1,6 @@
 import {
-  BarChart3, Banknote, Settings, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
-  Package, Route, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
+  BarChart3, Banknote, Briefcase, Building2, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Map, MapPinned,
+  Package, Route, Settings, ShieldAlert, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin'
