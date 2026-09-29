@@ -19,9 +19,9 @@ Each workflow was traced in the code of both versions, including whether the old
   - **Fake or invented data:** the "neural pipeline" animation, the reinforcement learning optimizer, fake GST verification, the 3PL "provisioning" and activation pages, Scan and Messages tabs with no code behind them, "Call connected" and "Dispatcher notified" messages with no call or message sent, invented revenue, health, pricing and driver-rating figures, and hardcoded 3PL stats.
   - **Dead or broken:** a live map that never drew a vehicle, an audit log that showed blank rows, a delivery signature pad in the wrong colour, and navigation that always sent drivers to the depot.
 - Installed mobile apps are safe. Every call the older driver and customer apps make still works against the new backend. The seven removed endpoints were used only by the old web console, and each served invented data.
-- Real regressions were found and are being restored. They are listed below with their status.
+- Real regressions were found. All 26 below were restored on `ui/redesign` on 2026-09-29 (checks: 223 backend tests, query check, lint with zero warnings, both mobile apps type-checked).
 
-## Regressions and their fixes
+## Regressions and their fixes (all restored)
 
 | # | Area | What was lost or broken | Old behaviour | Fix |
 |---|------|--------------------------|---------------|-----|
