@@ -240,6 +240,7 @@ export const tplAPI = {
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
+  reject: (id: string, reason: string) => api.post(`/tpl/reject/${id}`, { reason }).then(r => r.data),
   updateApplication: (id: string, data: any) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   /** Signed upload URL for one application document; use uploadTplDocument() from services/tplDocuments. */
   documentUploadUrl: (data: {

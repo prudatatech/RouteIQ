@@ -1,37 +1,36 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Mail, Key, ShieldCheck, Loader2, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { tplAPI } from '@/services/api'
+import { Button, Card, Input } from '@/components/ui'
 import toast from 'react-hot-toast'
 
 export default function TplSetupCredentialsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  
+
   const [email, setEmail] = useState(searchParams.get('email') || '')
   const [otp, setOtp] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  
+
   const [step, setStep] = useState<1 | 2>(1)
   const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) {
-      toast.error('Please enter your email')
+      toast.error('Enter your email.')
       return
     }
-
     setLoading(true)
     try {
       await tplAPI.sendSetupOtp(email)
-      toast.success('If this email belongs to an approved partner, a code is on its way')
+      toast.success('If this email belongs to an approved partner, a code is on its way.')
       setStep(2)
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      toast.error(err.response?.data?.error || err.message || 'Failed to send verification code')
+      toast.error(err instanceof Error ? err.message : 'Failed to send the verification code.')
     } finally {
       setLoading(false)
     }
@@ -40,150 +39,70 @@ export default function TplSetupCredentialsPage() {
   const handleSetupPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match')
+      toast.error('Passwords do not match.')
       return
     }
     if (password.length < 10) {
-      toast.error('Password must be at least 10 characters long')
+      toast.error('Password must be at least 10 characters.')
       return
     }
     if (!otp || otp.length !== 6) {
-      toast.error('Please enter the 6-digit code')
+      toast.error('Enter the 6-digit code.')
       return
     }
-
     setLoading(true)
     try {
       await tplAPI.setupPassword(email, otp, password)
-      toast.success('Password setup successfully! You can now log in.')
-      navigate(`/login?email=${encodeURIComponent(email)}`)
-    } catch (err: any) {
+      toast.success('Password set. You can now sign in.')
+      navigate(`/login?as=vendor&email=${encodeURIComponent(email)}`)
+    } catch (err) {
       console.error(err)
-      toast.error(err.response?.data?.error || err.message || 'Failed to verify OTP and set password')
+      toast.error(err instanceof Error ? err.message : 'Failed to verify the code and set the password.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-bg flex flex-col items-center justify-center p-6 relative overflow-hidden animate-fade-in">
-      {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[120px] rounded-full pointer-events-none" />
-
-      <div className="w-full max-w-[420px] space-y-8 relative z-10">
-        {/* Branding */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex w-20 h-20 bg-primary/10 border border-primary/20 rounded-3xl items-center justify-center shadow-[0_8px_32px_rgba(79,172,254,0.1)]">
-            <ShieldCheck size={44} className="text-primary" strokeWidth={2} />
+    <div className="flex min-h-screen items-center justify-center bg-bg p-6">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-brand-soft text-brand">
+            <ShieldCheck size={28} />
           </div>
-          <h1 className="text-3xl font-black uppercase tracking-tight text-text">Setup Credentials</h1>
-          <p className="text-sm text-muted">Secure your 3PL Partner account</p>
+          <h1 className="text-2xl font-semibold text-text">Setup credentials</h1>
+          <p className="mt-1 text-sm text-muted">Secure your 3PL partner account.</p>
         </div>
 
-        {/* Form Card */}
-        <div className="bg-surface border border-border p-8 rounded-3xl shadow-2xl backdrop-blur-xl">
+        <Card padded>
           {step === 1 ? (
-            <form onSubmit={handleSendOtp} className="space-y-6">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted">Registered Email</label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your registered email"
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-4 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 bg-primary text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-[0_0_20px_rgba(79,172,254,0.3)] hover:shadow-[0_0_30px_rgba(79,172,254,0.5)] hover:scale-[1.02] flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-              >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Send Verification Code'}
-              </button>
+            <form onSubmit={handleSendOtp} className="space-y-5">
+              <Input label="Registered email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" />
+              <Button type="submit" fullWidth loading={loading}>Send verification code</Button>
             </form>
           ) : (
-            <form onSubmit={handleSetupPassword} className="space-y-6 animate-fade-in">
-              <div className="text-center mb-6">
-                <div className="text-xs text-muted mb-1">Code sent to</div>
-                <div className="text-sm font-bold text-text bg-bg py-2 rounded-lg border border-border">{email}</div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted">4-Digit Verification Code</label>
-                  <button 
-                    type="button" 
-                    onClick={handleSendOtp} 
-                    disabled={loading}
-                    className="text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Resend
-                  </button>
-                </div>
-                <input
-                  type="text"
+            <form onSubmit={handleSetupPassword} className="space-y-5">
+              <p className="text-center text-sm text-muted">
+                Code sent to <span className="font-medium text-text">{email}</span>
+              </p>
+              <div className="flex items-end justify-between gap-2">
+                <Input
+                  className="flex-1 text-center font-mono"
+                  label="6-digit verification code"
                   required
                   maxLength={6}
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
-                  className="w-full bg-bg border border-border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                 />
+                <Button type="button" variant="ghost" size="sm" loading={loading} onClick={handleSendOtp}>Resend</Button>
               </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted">Set New Password</label>
-                <div className="relative">
-                  <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-12 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted">Confirm Password</label>
-                <div className="relative">
-                  <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" size={18} />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                    className="w-full bg-bg border border-border rounded-xl pl-12 pr-12 py-3 text-sm text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 bg-primary text-bg font-black uppercase tracking-widest text-sm rounded-xl transition-all shadow-[0_0_20px_rgba(79,172,254,0.3)] hover:shadow-[0_0_30px_rgba(79,172,254,0.5)] hover:scale-[1.02] flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-              >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Set Password & Continue'}
-              </button>
+              <Input label="New password" type="password" required value={password} onChange={e => setPassword(e.target.value)} hint="At least 10 characters." />
+              <Input label="Confirm password" type="password" required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+              <Button type="submit" fullWidth loading={loading}>Set password and continue</Button>
             </form>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   )

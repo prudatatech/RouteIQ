@@ -35,7 +35,9 @@ beforeEach(() => {
     ],
     vendor_profiles: [],
     tpl_partners: [PARTNER],
-    tpl_documents: [],
+    // Kept in sync with PARTNER.tpl_documents: the mock doesn't perform real joins, so
+    // the embedded relation and the underlying table are two separate fixtures.
+    tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
     tpl_corridors: [],
   });
 });
@@ -144,6 +146,47 @@ describe('attaching uploaded documents', () => {
     });
     expect(res.status).toBe(400);
     expect(supabaseMock.writes('tpl_partners', 'PATCH')).toEqual([]);
+  });
+
+  it('keeps existing documents when an edit is saved without re-uploading any files', async () => {
+    // Regression test: the onboarding/edit form used to always send `documents: []`
+    // unless the applicant re-uploaded a file, which wiped out every stored document.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      companyName: 'Acme',
+      documents: [{ type: 'PAN Card', url: 'acme_3pl/pan_card_old.pdf' }],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_documents').filter(d => d.partner_id === PARTNER.id)).toHaveLength(1);
+    // The untouched document was left alone rather than deleted and reinserted.
+    expect(supabaseMock.writes('tpl_documents', 'DELETE')).toEqual([]);
+    expect(supabaseMock.writes('tpl_documents', 'POST')).toEqual([]);
+  });
+
+  it('adds a newly uploaded document while keeping the ones not re-uploaded', async () => {
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      companyName: 'Acme',
+      documents: [
+        { type: 'PAN Card', url: 'acme_3pl/pan_card_old.pdf' },
+        { type: 'GST Certificate', url: `${PARTNER.id}/gst_certificate_new.pdf` },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const stored = supabaseMock.rows('tpl_documents').filter(d => d.partner_id === PARTNER.id);
+    expect(stored.map(d => d.file_url).sort()).toEqual(
+      ['acme_3pl/pan_card_old.pdf', `${PARTNER.id}/gst_certificate_new.pdf`].sort(),
+    );
+  });
+
+  it('removes a document that is explicitly dropped from the list', async () => {
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      companyName: 'Acme',
+      documents: [],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_documents').filter(d => d.partner_id === PARTNER.id)).toHaveLength(0);
   });
 });
 

@@ -235,7 +235,7 @@ export default function KycReviewPage() {
             <Alert
               tone="info"
               title={`${pendingPartners.toLocaleString('en-IN')} 3PL partner ${pendingPartners === 1 ? 'application is' : 'applications are'} waiting`}
-              action={<Link to="/3pl-partners?tab=verification" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Review 3PL partners</Link>}
+              action={<Link to="/3pl-partners?tab=pending" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Review 3PL partners</Link>}
             >
               3PL partners are verified with their lanes and rates, on the 3PL partners page.
             </Alert>
