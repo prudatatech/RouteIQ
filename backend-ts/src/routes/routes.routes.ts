@@ -295,6 +295,10 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
       await setOperatingVehicleStatus(route.vehicle_id, 'available');
     }
 
+    // Put its shipments back in the queue before the stops go
+    const { releaseShipmentsFromRoute } = await import('../services/shipment.service');
+    await releaseShipmentsFromRoute(route.id, { id: req.user!.user_id, role: req.user!.role });
+
     // Delete stops then route
     await supabase.from('route_stops').delete().eq('route_id', route.id);
     await supabase.from('routes').delete().eq('id', route.id);

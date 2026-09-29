@@ -312,6 +312,24 @@ export const routeService = {
       // Planned arrivals are written once; a repeat leaves the plan alone. Never throws.
       await stampPlannedArrivals(route.id);
     } else if (next === 'completed' || next === 'cancelled') {
+      if (next === 'cancelled') {
+        // Shipments not yet picked up go back to the queue so they can be planned again
+        const { releaseShipmentsFromRoute } = await import('./shipment.service');
+        await releaseShipmentsFromRoute(route.id);
+        if (vehicle?.driver_id && route.status === 'active') {
+          try {
+            await notificationService.sendNotification(
+              vehicle.driver_id,
+              'Route cancelled',
+              'Dispatch cancelled your current route. Open the app to see what is next.',
+              'route_cancelled',
+              { route_id: route.id },
+            );
+          } catch (e) {
+            console.error('[routes] Could not tell the driver about the cancelled route:', e);
+          }
+        }
+      }
       // Free the vehicle only when this was its last running route or load
       if (!(await vehicleHasOpenWork(route.vehicle_id, { routeId: route.id }))) {
         await setOperatingVehicleStatus(route.vehicle_id, 'available');
