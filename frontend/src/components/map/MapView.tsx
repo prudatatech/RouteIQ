@@ -9,10 +9,11 @@ import Map, {
   type MapRef,
 } from 'react-map-gl/maplibre'
 import clsx from 'clsx'
-import { MAP_DEFAULTS, MAP_STYLE_URL } from '@/config/mapConfig'
+import { BASE_STYLES, MAP_DEFAULTS } from '@/config/mapConfig'
 import {
   GEOFENCE_SOURCE_ID,
   ROUTE_SOURCE_ID,
+  TRAIL_SOURCE_ID,
   contentBounds,
   geofenceFeatures,
   geofenceFillLayer,
@@ -20,6 +21,9 @@ import {
   routeCasingLayer,
   routeFeature,
   routeLineLayer,
+  trailCasingLayer,
+  trailFeatures,
+  trailLineLayer,
   withValidPosition,
 } from './layers'
 import { clusterVehicles, type VehicleCluster } from './cluster'
@@ -89,6 +93,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const {
     mode = 'fleet',
     route = null,
+    trails,
+    baseStyle = 'streets',
+    clusters: clusteringOn = true,
     selectedId = null,
     onSelect,
     fitPadding = 48,
@@ -149,16 +156,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   }, [])
 
   // Latest content, read by camera helpers without re-subscribing effects.
-  const content = useRef({ vehicles, points, route, stops })
-  content.current = { vehicles, points, route, stops }
+  const content = useRef({ vehicles, points, route, stops, trails })
+  content.current = { vehicles, points, route, stops, trails }
   const padding = useRef(fitPadding)
   padding.current = fitPadding
 
   const fitToContent = useCallback((animate: boolean) => {
     const map = mapRef.current
     if (!map) return
-    const { vehicles: v, points: p, route: r, stops: s } = content.current
-    const bounds = contentBounds(v, p, r ? { ...r, stops: s } : null)
+    const { vehicles: v, points: p, route: r, stops: s, trails: t } = content.current
+    const bounds = contentBounds(v, p, r ? { ...r, stops: s } : null, t)
     const duration = animate ? 800 : 0
     if (!bounds) {
       map.easeTo({ center: MAP_DEFAULTS.CENTER, zoom: MAP_DEFAULTS.ZOOM, duration })
@@ -175,8 +182,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   // Zoom level, so large fleets can be grouped while zoomed out.
   const [zoom, setZoom] = useState<number>(initialZoom ?? MAP_DEFAULTS.ZOOM)
   const { singles, clusters } = useMemo(
-    () => clusterVehicles(vehicles, zoom, selectedId),
-    [vehicles, zoom, selectedId],
+    () => (clusteringOn ? clusterVehicles(vehicles, zoom, selectedId) : { singles: vehicles, clusters: [] }),
+    [vehicles, zoom, selectedId, clusteringOn],
   )
   const openCluster = useCallback((cluster: VehicleCluster) => {
     const map = mapRef.current
@@ -189,8 +196,17 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     }
   }, [])
 
+  // A fly-to asked for before the style has loaded is kept and run once the map is ready,
+  // so "open this vehicle" links still end up zoomed on it.
+  const pendingFly = useRef<{ position: LatLng; zoom: number } | null>(null)
+  const readyRef = useRef(false)
+  readyRef.current = ready
   const flyTo = useCallback((position: LatLng, zoom = FOCUS_ZOOM) => {
-    mapRef.current?.flyTo({ center: [position.lng, position.lat], zoom, duration: 1200 })
+    if (!readyRef.current || !mapRef.current) {
+      pendingFly.current = { position, zoom }
+      return
+    }
+    mapRef.current.flyTo({ center: [position.lng, position.lat], zoom, duration: 1200 })
   }, [])
 
   // ── Fit to content ────────────────────────────────────────────────────
@@ -202,18 +218,27 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     // Length and end only: a line that starts at a moving vehicle must not refit on every ping.
     route?.coordinates.length ?? 0,
     route?.coordinates[route.coordinates.length - 1]?.join(',') ?? '',
-  ].join('|'), [vehicles, points, stops, route?.coordinates])
+    (trails ?? []).map((t) => `${t.id}:${t.coordinates.length}`).join(','),
+  ].join('|'), [vehicles, points, stops, route?.coordinates, trails])
 
   const hasFitted = useRef(false)
   useEffect(() => { hasFitted.current = false }, [attempt])
   useEffect(() => {
     if (!ready || fitTo === 'none') return
     if (fitTo === 'initial' && hasFitted.current) return
-    const { vehicles: v, points: p, route: r, stops: s } = content.current
-    if (!contentBounds(v, p, r ? { ...r, stops: s } : null)) return
+    const { vehicles: v, points: p, route: r, stops: s, trails: t } = content.current
+    if (!contentBounds(v, p, r ? { ...r, stops: s } : null, t)) return
     fitToContent(hasFitted.current)
     hasFitted.current = true
   }, [ready, signature, fitTo, fitToContent])
+
+  // Run a fly-to that was asked for while the map was still loading (after the first fit, so it wins).
+  useEffect(() => {
+    if (!ready || !pendingFly.current) return
+    const { position, zoom: z } = pendingFly.current
+    pendingFly.current = null
+    mapRef.current?.flyTo({ center: [position.lng, position.lat], zoom: z, duration: 1200 })
+  }, [ready])
 
   // ── Follow a vehicle ──────────────────────────────────────────────────
   const followId =
@@ -254,12 +279,14 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   }, [followed, flyTo, fitToContent])
 
   // ── Fly to the selection ──────────────────────────────────────────────
+  // Also runs when the selected thing first appears on the map (a ?vehicle= link opens before positions load).
+  const hasSelectedTarget = Boolean(selectedId && (vehicles.some((x) => x.id === selectedId) || points.some((x) => x.id === selectedId)))
   useEffect(() => {
-    if (!ready || !flyToSelected || !selectedId) return
+    if (!ready || !flyToSelected || !selectedId || !hasSelectedTarget) return
     const { vehicles: v, points: p } = content.current
     const target = v.find((x) => x.id === selectedId)?.position ?? p.find((x) => x.id === selectedId)?.position
     if (target) flyTo(target, Math.max(mapRef.current?.getZoom() ?? 0, FOCUS_ZOOM))
-  }, [ready, flyToSelected, selectedId, flyTo])
+  }, [ready, flyToSelected, selectedId, hasSelectedTarget, flyTo])
 
   useImperativeHandle(ref, () => ({ flyTo, fitToContent: () => fitToContent(true) }), [flyTo, fitToContent])
 
@@ -275,6 +302,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   // A line built from stops alone is a straight-line estimate, so draw it dashed.
   const planned = Boolean(route?.planned) || (route?.coordinates.length ?? 0) < 2
   const geofences = useMemo(() => geofenceFeatures(points), [points])
+  const trailData = useMemo(() => trailFeatures(trails ?? []), [trails])
   const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
   const center = initialCenter ?? { lng: MAP_DEFAULTS.CENTER[0], lat: MAP_DEFAULTS.CENTER[1] }
 
@@ -289,7 +317,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
         <Map
           key={attempt}
           ref={mapRef}
-          mapStyle={MAP_STYLE_URL}
+          mapStyle={BASE_STYLES[baseStyle].style}
           initialViewState={{ longitude: center.lng, latitude: center.lat, zoom: initialZoom ?? MAP_DEFAULTS.ZOOM, pitch }}
           minZoom={MAP_DEFAULTS.MIN_ZOOM}
           maxZoom={MAP_DEFAULTS.MAX_ZOOM}
@@ -313,6 +341,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             <Source id={GEOFENCE_SOURCE_ID} type="geojson" data={geofences}>
               <Layer {...geofenceFillLayer} />
               <Layer {...geofenceLineLayer} />
+            </Source>
+          )}
+
+          {trailData.features.length > 0 && (
+            <Source id={TRAIL_SOURCE_ID} type="geojson" data={trailData}>
+              <Layer {...trailCasingLayer} />
+              <Layer {...trailLineLayer} />
             </Source>
           )}
 

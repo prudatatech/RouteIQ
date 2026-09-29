@@ -20,6 +20,10 @@ import {
 } from '../services/alert-settings.service';
 import { loadFleetHealth } from '../services/vehicle-health.service';
 import { loadPlans, serviceStatus } from '../services/service-plans.service';
+import { getVehicleActivity } from '../services/vehicle-activity.service';
+import {
+  SHARE_DEFAULT_HOURS, SHARE_MAX_HOURS, createShareLink, getVehicleLocation, listShareLinks, revokeShareLink,
+} from '../services/vehicle-location.service';
 
 const router = Router();
 const staff = [requireAuth, requireRole(...STAFF_ROLES)] as const;
@@ -59,6 +63,60 @@ router.get('/vehicles/:id/health', ...staff, async (req: Request, res: Response)
     const [health] = await loadFleetHealth(req.params.id);
     if (!health) throw new HttpError(404, 'Vehicle not found');
     res.json(health);
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Location, activity and live-location links ───────────
+
+// GET /fleet/vehicles/:id/location — current position with speed, heading, accuracy and last seen
+router.get('/vehicles/:id/location', ...staff, async (req: Request, res: Response) => {
+  try {
+    res.json(await getVehicleLocation(req.params.id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /fleet/vehicles/:id/activity — carrying (which load, from where to where, % full), idle (since when) or offline
+router.get('/vehicles/:id/activity', ...staff, async (req: Request, res: Response) => {
+  try {
+    res.json(await getVehicleActivity(req.params.id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /fleet/vehicles/:id/share-links — a public, read-only live-location link that expires
+router.post('/vehicles/:id/share-links', ...staff, async (req: Request, res: Response) => {
+  try {
+    const parsed = z.object({
+      hours: z.number({ invalid_type_error: 'Hours must be a number' }).int('Hours must be a whole number')
+        .min(1, 'Share for at least 1 hour').max(SHARE_MAX_HOURS, `Share for at most ${SHARE_MAX_HOURS} hours`).optional(),
+    }).safeParse(req.body ?? {});
+    if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
+    const link = await createShareLink(req.params.id, req.user!.user_id, parsed.data.hours ?? SHARE_DEFAULT_HOURS);
+    res.status(201).json({ ...link, path: `/share/${link.token}` });
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /fleet/vehicles/:id/share-links — links that still work
+router.get('/vehicles/:id/share-links', ...staff, async (req: Request, res: Response) => {
+  try {
+    res.json(await listShareLinks(req.params.id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// DELETE /fleet/share-links/:linkId — stop sharing
+router.delete('/share-links/:linkId', ...staff, async (req: Request, res: Response) => {
+  try {
+    if (!(await revokeShareLink(req.params.linkId))) throw new HttpError(404, 'This link is already closed or does not exist');
+    res.json({ success: true });
   } catch (e) {
     sendError(req, res, e);
   }

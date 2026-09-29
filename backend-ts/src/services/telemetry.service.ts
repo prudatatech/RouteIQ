@@ -10,13 +10,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
 import { segmentKm } from './odometer';
 import { evaluatePing } from './alerts.service';
+import { recordGpsPoints, type GpsSource } from './gps-history.service';
 
 export class TelemetryService {
   /**
    * Ingests a telemetry data point:
    * 1. Verify vehicle exists
    * 2. Insert telemetry record
-   * 3. Update vehicle live position
+   * 3. Update vehicle live position and record it in the GPS history
    * 4. Cache in Redis
    * 5. Broadcast via WebSocket
    * 6. Trigger alerts
@@ -29,6 +30,10 @@ export class TelemetryService {
     heading?: number;
     fuel_level_pct?: number;
     timestamp?: string;
+    /** GPS accuracy in metres, when the device reports it. */
+    accuracy?: number | null;
+    /** Where the position came from, kept on the gps_points row. */
+    source?: GpsSource;
   }): Promise<Telemetry> {
     const vehicleId = data.vehicle_id;
 
@@ -94,6 +99,16 @@ export class TelemetryService {
     }
 
     await supabase.from('vehicles').update(vehicleUpdate).eq('id', vehicleId);
+
+    // Track history: every accepted position also goes to gps_points (throttled)
+    await recordGpsPoints(vehicleId, [{
+      latitude: data.latitude,
+      longitude: data.longitude,
+      recorded_at: timestamp,
+      accuracy: data.accuracy ?? null,
+      speed_kmph: data.speed_kmph ?? null,
+      heading: data.heading ?? null,
+    }], data.source ?? 'telemetry');
 
     // 4. Cache latest position in Redis
     const liveData = {

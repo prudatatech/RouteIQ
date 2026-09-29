@@ -17,6 +17,7 @@ export type {
   MapPointKind,
   MapRoute,
   MapRouteStop,
+  MapTrail,
   MapVehicle,
   MapViewHandle,
   MapViewProps,

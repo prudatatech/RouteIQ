@@ -12,6 +12,7 @@ import { rateLimitByIp } from '../core/rate-limit';
 import { sendError } from '../core/errors';
 import { cityFromAddress } from '../services/demand.service';
 import { selectIn } from '../services/finance.service';
+import { getPublicShare } from '../services/vehicle-location.service';
 
 const router = Router();
 
@@ -69,6 +70,22 @@ router.get('/stats', rateLimitByIp('public-stats', 60, 60), async (req: Request,
     }
     res.set('Cache-Control', `public, max-age=${PUBLIC_STATS_TTL_SECONDS}`);
     res.json(stats);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /public/vehicle-share/:token — the live-location page staff share. Read-only, expires,
+// shows the position and the last hours of the path, nothing about the load, driver or customers.
+router.get('/vehicle-share/:token', rateLimitByIp('vehicle-share', 120, 60), async (req: Request, res: Response) => {
+  try {
+    const share = await getPublicShare(req.params.token);
+    if (!share) {
+      res.status(404).json({ detail: 'This link has expired or was closed. Ask the sender for a new one.' });
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json(share);
   } catch (e: any) {
     sendError(req, res, e);
   }

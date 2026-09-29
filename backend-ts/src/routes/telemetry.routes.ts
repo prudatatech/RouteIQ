@@ -24,6 +24,7 @@ import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransitio
 import { parseCoordinate } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
+import { recordGpsPoints, type GpsFix } from '../services/gps-history.service';
 import { idempotent } from '../core/idempotency';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
@@ -386,6 +387,8 @@ router.post('/mobile-push/:session_token', rateLimitByIp('mobile-push', 300, 60)
       longitude: lng,
       speed_kmph: speed ? parseFloat((speed * 3.6).toFixed(1)) : 0, // m/s → km/h
       heading,
+      accuracy: Number(req.body.accuracy) || null,
+      source: 'phone_link' as const,
     };
 
     await TelemetryService.ingestTelemetry(telemetryData);
@@ -466,6 +469,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     let latestFuelPct: number | null = null;
     let geofenceAlert: any = null;
     const drivenPoints: PingPoint[] = [];
+    const fixes: GpsFix[] = [];
 
     for (const ping of pings) {
       const lat = Number(ping?.lat ?? ping?.latitude);
@@ -495,15 +499,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
         timestamp,
       });
 
-      // Also insert GPS point for history
-      await supabase.from('gps_points').insert({
-        id: uuidv4(),
-        vehicle_id: vehicle.id,
-        latitude: lat,
-        longitude: lng,
-        accuracy,
-        recorded_at: timestamp,
-      });
+      fixes.push({ latitude: lat, longitude: lng, recorded_at: timestamp, accuracy, speed_kmph: parseFloat(speedKmph.toFixed(1)), heading });
 
       latestLat = lat;
       latestLng = lng;
@@ -514,6 +510,9 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     }
 
     if (processedCount > 0) {
+      // Track history: every ping of the batch goes to gps_points (throttled)
+      await recordGpsPoints(vehicle.id, fixes, 'driver_app');
+
       // Odometer: real distance from the last known position through every ping in this batch
       const start = vehicle.latitude != null && vehicle.longitude != null
         ? { lat: vehicle.latitude, lng: vehicle.longitude, at: vehicle.last_heartbeat }

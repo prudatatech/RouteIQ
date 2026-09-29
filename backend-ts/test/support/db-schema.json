@@ -128,7 +128,10 @@
     "latitude",
     "longitude",
     "accuracy",
-    "recorded_at"
+    "recorded_at",
+    "speed_kmph",
+    "heading",
+    "source"
   ],
   "hsn_codes": [
     "id",
@@ -815,5 +818,16 @@
     "assigned_at",
     "unassigned_at",
     "assigned_by"
+  ],
+  "vehicle_share_links": [
+    "id",
+    "vehicle_id",
+    "token_hash",
+    "created_by",
+    "created_at",
+    "expires_at",
+    "revoked_at",
+    "last_viewed_at",
+    "view_count"
   ]
 }
