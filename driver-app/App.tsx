@@ -4,7 +4,6 @@
  */
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Linking, Alert } from 'react-native';
 import * as Updates from 'expo-updates';
 import { useFonts } from 'expo-font';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -107,27 +106,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <TranslationProvider>
           <NotificationListener />
-          <HomeScreen
-            onLogout={() => setIsLoggedIn(false)}
-            onNavigateToMap={async (lat?: number, lng?: number) => {
-              if (lat && lng) {
-                const url = `google.navigation:q=${lat},${lng}`;
-                try {
-                  const supported = await Linking.canOpenURL(url);
-                  if (supported) {
-                    await Linking.openURL(url);
-                  } else {
-                    // Fallback to browser maps if app isn't installed
-                    await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
-                  }
-                } catch (err) {
-                  Alert.alert('Error', 'Could not open map navigation');
-                }
-              } else {
-                Alert.alert('No Destination', 'Could not find next stop coordinates');
-              }
-            }}
-          />
+          <HomeScreen onLogout={() => setIsLoggedIn(false)} />
           <StatusBar style="dark" />
         </TranslationProvider>
       </QueryClientProvider>

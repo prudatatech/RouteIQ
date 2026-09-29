@@ -1,0 +1,230 @@
+/**
+ * Everything the driver can do to the current route. Each action calls the
+ * same API as before and reports failures to the driver instead of dropping
+ * them.
+ */
+import { useCallback } from 'react';
+import { Alert, Linking } from 'react-native';
+import * as Location from 'expo-location';
+import { api } from '../services/api';
+import type { DriverRoute, LatLng, RouteStop } from '../types/route';
+import { errorMessage } from '../utils/errors';
+import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
+import { ARRIVAL_RADIUS_M, distanceMeters, stopCoord } from '../utils/route';
+import { useTranslation } from './useTranslation';
+
+interface Options {
+  route: DriverRoute | undefined;
+  activeVehicleId: string | null;
+  activeVehicle: { capacity_kg?: number | null } | null;
+  currentLoc: LatLng | null;
+  isTracking: boolean;
+  refresh: () => Promise<unknown>;
+  startTracking: () => Promise<boolean>;
+  /** Open the proof-of-delivery form for a stop. */
+  openPod: (stop: RouteStop) => void;
+  /** Show the live backhaul offers popup. */
+  showBackhaulPopup: () => void;
+}
+
+export function useRouteActions({
+  route,
+  activeVehicleId,
+  activeVehicle,
+  currentLoc,
+  isTracking,
+  refresh,
+  startTracking,
+  openPod,
+  showBackhaulPopup,
+}: Options) {
+  const { t } = useTranslation();
+
+  const startRoute = useCallback(async (): Promise<boolean> => {
+    if (!route) return false;
+    try {
+      await api.startRoute(route.id);
+      await refresh();
+      return true;
+    } catch (e) {
+      Alert.alert(t('error'), errorMessage(e, t('start_route_failed')));
+      return false;
+    }
+  }, [route, refresh, t]);
+
+  const navigateTo = useCallback(
+    async (stop: RouteStop) => {
+      const target = stopCoord(stop);
+      if (!target) {
+        Alert.alert(t('no_destination_title'), t('no_destination_desc'));
+        return;
+      }
+      if (!(await openTurnByTurn(target))) {
+        Alert.alert(t('error'), t('open_maps_failed'));
+      }
+    },
+    [t],
+  );
+
+  /** Google Maps through every remaining stop; starts live tracking first. */
+  const openFullRoute = useCallback(async () => {
+    if (!route) return;
+    if (route.status === 'pending') {
+      Alert.alert(t('journey_not_started_title'), t('journey_not_started_desc'));
+      return;
+    }
+    if (!isTracking) await startTracking();
+    const url = fullRouteUrl(route);
+    if (!url) {
+      Alert.alert(t('no_destination_title'), t('no_stops_with_location'));
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(t('error'), t('open_maps_failed'));
+    }
+  }, [route, isTracking, startTracking, t]);
+
+  /** Runs `action` at the stop, or after the driver confirms when they are not near it. */
+  const atStop = useCallback(
+    (stop: RouteStop, action: () => void) => {
+      const target = stopCoord(stop);
+      if (!target) {
+        action();
+        return;
+      }
+      if (!currentLoc) {
+        Alert.alert(t('alert_gps_req_title'), t('alert_gps_req_desc'));
+        return;
+      }
+      const dist = distanceMeters(currentLoc, target);
+      if (dist > ARRIVAL_RADIUS_M) {
+        Alert.alert(t('alert_geofence_title'), `${t('alert_geofence_desc')} (${Math.round(dist)} m)`, [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('yes'), onPress: action },
+        ]);
+      } else {
+        action();
+      }
+    },
+    [currentLoc, t],
+  );
+
+  const confirmAtStop = useCallback((stop: RouteStop) => atStop(stop, () => openPod(stop)), [atStop, openPod]);
+
+  const failStop = useCallback(
+    (stop: RouteStop) => {
+      Alert.alert(t('alert_report_issue_title'), t('alert_report_issue_desc'), [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('mark_failed'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.completeStop({ stop_id: stop.id, status: 'failed' });
+              Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
+              refresh();
+            } catch (err) {
+              Alert.alert(t('error'), errorMessage(err, t('action_failed')));
+            }
+          },
+        },
+      ]);
+    },
+    [refresh, t],
+  );
+
+  const findReturnLoad = useCallback(async () => {
+    if (!activeVehicleId) return;
+    const capacity = activeVehicle?.capacity_kg;
+    if (!capacity) {
+      Alert.alert(t('error'), t('capacity_unknown'));
+      return;
+    }
+    try {
+      await api.openBackhaulWindow(activeVehicleId, capacity, 'return_trip');
+      showBackhaulPopup();
+    } catch (e) {
+      Alert.alert(t('error'), errorMessage(e, t('return_load_failed')));
+    }
+  }, [activeVehicleId, activeVehicle, showBackhaulPopup, t]);
+
+  /**
+   * Proof of delivery. Sends the receiver's name as `received_by` and the
+   * current position; throws so the form can show the error.
+   */
+  const completeStop = useCallback(
+    async (stop: RouteStop, receiverName: string) => {
+      const res = await api.completeStop({
+        stop_id: stop.id,
+        status: 'completed',
+        received_by: receiverName,
+        ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
+      });
+      await refresh();
+      if (res?.route_completed) {
+        Alert.alert(t('alert_route_completed_title'), t('alert_route_completed_desc'), [
+          { text: t('no'), style: 'cancel' },
+          { text: t('yes_find_cargo'), onPress: findReturnLoad },
+        ]);
+      } else {
+        Alert.alert(t('stop_completed_title'), t('stop_completed_desc'));
+      }
+    },
+    [currentLoc, refresh, findReturnLoad, t],
+  );
+
+  const declareCapacity = useCallback(
+    async (percentage: number) => {
+      if (!activeVehicleId) return;
+      await api.declareCapacity(activeVehicleId, percentage);
+      Alert.alert(t('load_declared_title'), `${t('load_declared_desc')} ${percentage}%`);
+    },
+    [activeVehicleId, t],
+  );
+
+  /** Emergency report with the best available position. */
+  const sendSos = useCallback(
+    async (type: string, description: string) => {
+      if (!activeVehicleId) {
+        Alert.alert(t('sos_failed'), t('sos_no_vehicle'));
+        return false;
+      }
+      let lat = 0;
+      let lng = 0;
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = loc.coords.latitude;
+        lng = loc.coords.longitude;
+      } catch (e) {
+        if (currentLoc) {
+          lat = currentLoc.lat;
+          lng = currentLoc.lng;
+        }
+        console.warn('Could not get exact location for SOS', e);
+      }
+      try {
+        await api.reportSOS(activeVehicleId, type, description || `Driver triggered ${type} emergency`, lat, lng);
+        Alert.alert(t('sos_sent_title'), t('sos_sent_desc'));
+        return true;
+      } catch (e) {
+        Alert.alert(t('sos_failed'), errorMessage(e, t('action_failed')));
+        return false;
+      }
+    },
+    [activeVehicleId, currentLoc, t],
+  );
+
+  return {
+    startRoute,
+    navigateTo,
+    openFullRoute,
+    confirmAtStop,
+    failStop,
+    findReturnLoad,
+    completeStop,
+    declareCapacity,
+    sendSos,
+  };
+}
