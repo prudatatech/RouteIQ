@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, elevation, radius, space } from '../../theme';
 
@@ -10,6 +10,8 @@ export interface DialogFrameProps {
   variant?: DialogVariant;
   /** Android back button and backdrop tap. Omit to make the dialog blocking. */
   onRequestClose?: () => void;
+  /** Tapping outside closes the dialog (default true). Turn off for forms, so a stray touch never loses what was typed. */
+  dismissOnBackdrop?: boolean;
   children: ReactNode;
 }
 
@@ -17,7 +19,7 @@ export interface DialogFrameProps {
  * The single modal container used by the app: a centred dialog, a bottom
  * sheet, or a full-screen page. Handles the backdrop, keyboard and safe areas.
  */
-export function DialogFrame({ visible, variant = 'center', onRequestClose, children }: DialogFrameProps) {
+export function DialogFrame({ visible, variant = 'center', onRequestClose, dismissOnBackdrop = true, children }: DialogFrameProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -32,12 +34,12 @@ export function DialogFrame({ visible, variant = 'center', onRequestClose, child
         // Full-screen content handles its own safe areas (SafeAreaView).
         <View style={styles.full}>{children}</View>
       ) : (
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior="padding">
           <View style={[styles.overlay, variant === 'sheet' ? styles.overlaySheet : styles.overlayCenter]}>
             <Pressable
               style={StyleSheet.absoluteFill}
               onPress={onRequestClose}
-              disabled={!onRequestClose}
+              disabled={!onRequestClose || !dismissOnBackdrop}
               accessible={false}
               importantForAccessibility="no"
             />
