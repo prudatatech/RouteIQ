@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../core/supabase';
 import { SecurityService } from './security.service';
 import { InvoiceService } from './invoice.service';
+import { SHIPMENT_TRANSITIONS, assertTransition } from '../core/transitions';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 
@@ -427,6 +428,14 @@ export class ShipmentService {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new HttpError(404, 'Shipment not found');
     if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new HttpError(400, 'Shipment has no delivery points');
+    if (['picked_up', 'in_transit', 'delivered', 'cancelled'].includes(String(shipment.status))) {
+      throw new HttpError(409, `This shipment is ${String(shipment.status).replace('_', ' ')} and can't be assigned to a vehicle.`);
+    }
+    const { data: assignee } = await supabase.from('vehicles').select('id, status').eq('id', vehicleId).maybeSingle();
+    if (!assignee) throw new HttpError(404, 'Vehicle not found');
+    if (['maintenance', 'archived'].includes(String(assignee.status))) {
+      throw new HttpError(409, `That vehicle is in ${assignee.status} and can't take a shipment.`);
+    }
 
     // Clean up any existing route stops for these delivery points
     const dpIds = shipment.delivery_points.map(dp => dp.id);
@@ -843,16 +852,33 @@ export class ShipmentService {
     actor?: LogActor | null,
     extraMetadata?: Record<string, any>
   ): Promise<Shipment | null> {
+    const { data: current, error: currentErr } = await supabase
+      .from('shipments')
+      .select('status')
+      .eq('id', shipmentId)
+      .maybeSingle();
+    if (currentErr || !current) return null;
+
+    // Asking for the status it already has succeeds without logging or billing twice;
+    // anything else must follow the allowed transitions (delivered and cancelled are final).
+    if (current.status === status) return ShipmentService.getShipment(shipmentId);
+    assertTransition(SHIPMENT_TRANSITIONS, 'shipment', String(current.status), status);
+
     const updateData: Record<string, any> = { status };
     if (receivedBy) updateData.received_by = receivedBy;
     if (signatureData) updateData.signature_data = signatureData;
 
-    const { error } = await supabase
+    // Applies only while the shipment is still in the status we just read
+    const { data: moved, error } = await supabase
       .from('shipments')
       .update(updateData)
-      .eq('id', shipmentId);
+      .eq('id', shipmentId)
+      .eq('status', current.status)
+      .select('id')
+      .maybeSingle();
 
     if (error) return null;
+    if (!moved) throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
 
     // Record tamper-evident log
     const metadata: Record<string, any> = { ...(extraMetadata || {}) };
@@ -903,16 +929,23 @@ export class ShipmentService {
    * Update specific shipment fields.
    */
   static async updateShipment(shipmentId: string, updateData: Record<string, any>): Promise<Shipment | null> {
-    // Filter out null/undefined values
+    // Only the details a dispatcher edits; status, tracking id, proof of delivery and the
+    // like change through their own rules (updateShipmentStatus, assignDriver).
     const filtered: Record<string, any> = {};
     for (const [key, value] of Object.entries(updateData)) {
-      if (value !== null && value !== undefined) {
+      if (value !== null && value !== undefined && ShipmentService.EDITABLE_FIELDS.includes(key)) {
         filtered[key] = value;
       }
     }
 
     if (Object.keys(filtered).length === 0) {
       return ShipmentService.getShipment(shipmentId);
+    }
+
+    const { data: existing } = await supabase.from('shipments').select('status').eq('id', shipmentId).maybeSingle();
+    if (!existing) return null;
+    if (['delivered', 'cancelled'].includes(String(existing.status))) {
+      throw new HttpError(409, `This shipment is ${existing.status} and can't be edited.`);
     }
 
     const { error } = await supabase
@@ -923,6 +956,9 @@ export class ShipmentService {
     if (error) return null;
     return ShipmentService.getShipment(shipmentId);
   }
+
+  /** Columns the edit endpoint may change. */
+  static readonly EDITABLE_FIELDS = ['priority', 'total_items', 'total_weight_kg'];
 
   /** Statuses past which a shipment has already moved and can no longer be deleted. */
   private static readonly UNDELETABLE_STATUSES = ['picked_up', 'in_transit', 'delivered'];

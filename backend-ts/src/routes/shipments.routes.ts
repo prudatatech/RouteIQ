@@ -5,8 +5,11 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
-import { STAFF_ROLES, canAccessShipment } from '../core/ownership';
-import { ShipmentCreateSchema } from '../schemas';
+import { STAFF_ROLES, canAccessShipment, isStaff } from '../core/ownership';
+import { ShipmentCreateSchema, ShipmentEditSchema } from '../schemas';
+import { DRIVER_SHIPMENT_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
+import { parseCoordinate, parseNumberInRange, parseOptionalText } from '../core/validate';
+import { rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
 import { sendError } from '../core/errors';
@@ -43,7 +46,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, r
 // ── GET /track/:tracking_id (PUBLIC — the tracking id is the secret, like a courier's) ──
 // Anyone with the id can track it (the public /track page and mobile links rely on
 // this), so the response carries no vendor, driver or contact details.
-router.get('/track/:tracking_id', async (req: Request, res: Response) => {
+router.get('/track/:tracking_id', rateLimitByIp('shipment-track', 60, 60), async (req: Request, res: Response) => {
   try {
     const info = await ShipmentService.getPublicTracking(req.params.tracking_id);
     if (!info) {
@@ -58,17 +61,17 @@ router.get('/track/:tracking_id', async (req: Request, res: Response) => {
 });
 
 // ── GET /track/:tracking_id/route (PUBLIC — Google Maps Directions Proxy) ──
-router.get('/track/:tracking_id/route', requireAuth, async (req: Request, res: Response) => {
+router.get('/track/:tracking_id/route', requireAuth, rateLimitByUser('directions-proxy', 60, 60), async (req: Request, res: Response) => {
   try {
-    const lat = req.query.lat as string;
-    const lng = req.query.lng as string;
-    const dLat = req.query.dLat as string;
-    const dLng = req.query.dLng as string;
-
-    if (!lat || !lng || !dLat || !dLng) {
+    if (!req.query.lat || !req.query.lng || !req.query.dLat || !req.query.dLng) {
       res.status(400).json({ detail: 'Missing coordinates' });
       return;
     }
+    // Only numbers reach the Directions API: this endpoint spends our quota
+    const lat = parseNumberInRange(req.query.lat, 'lat', -90, 90);
+    const lng = parseNumberInRange(req.query.lng, 'lng', -180, 180);
+    const dLat = parseNumberInRange(req.query.dLat, 'dLat', -90, 90);
+    const dLng = parseNumberInRange(req.query.dLng, 'dLng', -180, 180);
 
     // Fetch directly from Google Maps API to get both polyline and duration
     const { settings } = await import('../core/config');
@@ -127,8 +130,12 @@ router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => 
 router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
   try {
     const metadata = req.body;
-    if (!metadata) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
       res.status(400).json({ detail: 'Metadata body is required' });
+      return;
+    }
+    if (Buffer.byteLength(JSON.stringify(metadata), 'utf8') > 50 * 1024) {
+      res.status(400).json({ detail: 'The load details are too large' });
       return;
     }
 
@@ -155,13 +162,30 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
     // The web client sends these as query params; accept either location
     const input = { ...req.query, ...(req.body || {}) } as Record<string, unknown>;
     const status = input.status as string;
-    const lat = input.lat ? parseFloat(input.lat as string) : undefined;
-    const lng = input.lng ? parseFloat(input.lng as string) : undefined;
-    const receivedBy = input.received_by as string | undefined;
-    const signatureData = input.signature_data as string | undefined;
+    const lat = parseCoordinate(input.lat, 'lat', 90) ?? undefined;
+    const lng = parseCoordinate(input.lng, 'lng', 180) ?? undefined;
+    const receivedBy = parseOptionalText(input.received_by, 'received_by', 200);
+    const signatureData = typeof input.signature_data === 'string' && input.signature_data.length <= 400_000 ? input.signature_data : undefined;
+    if (input.signature_data !== undefined && signatureData === undefined) {
+      res.status(400).json({ detail: 'The signature is too large' });
+      return;
+    }
 
-    if (!status || !['created', 'picked_up', 'in_transit', 'delivered', 'cancelled'].includes(status)) {
+    if (!status || !(SHIPMENT_PATCH_STATUSES as readonly string[]).includes(status)) {
       res.status(400).json({ detail: 'Invalid status value' });
+      return;
+    }
+    // Vendors follow their shipments but never move them; drivers move them forward, staff also cancel
+    if (!isStaff(req.user) && req.user!.role !== 'driver') {
+      res.status(403).json({ detail: 'Only drivers and dispatch can change a shipment\'s status' });
+      return;
+    }
+    if (req.user!.role === 'driver' && !(DRIVER_SHIPMENT_STATUSES as readonly string[]).includes(status)) {
+      res.status(403).json({ detail: 'Drivers can mark a shipment picked up, in transit or delivered' });
+      return;
+    }
+    if (status === 'delivered' && req.user!.role === 'driver' && !receivedBy) {
+      res.status(400).json({ detail: 'Enter who received the delivery' });
       return;
     }
 
@@ -237,7 +261,12 @@ router.delete('/:shipment_id', requireAuth, requireRole('superadmin', 'admin', '
 // ── PATCH /:shipment_id/edit ───────────────────────────────
 router.patch('/:shipment_id/edit', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
-    const shipment = await ShipmentService.updateShipment(req.params.shipment_id, req.body);
+    const parsed = ShipmentEditSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ detail: parsed.error.issues[0].message });
+      return;
+    }
+    const shipment = await ShipmentService.updateShipment(req.params.shipment_id, parsed.data);
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });
       return;

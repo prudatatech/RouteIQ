@@ -66,8 +66,8 @@ router.post('/bid', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { shipment_id } = req.body;
-    if (!shipment_id) return res.status(400).json({ detail: 'shipment_id is required' });
+    const { shipment_id } = req.body ?? {};
+    if (typeof shipment_id !== 'string' || !shipment_id) return res.status(400).json({ detail: 'shipment_id is required' });
 
     // 1. Get driver's vehicle and active route
     const { data: vehicle } = await supabase
@@ -112,8 +112,16 @@ router.post('/bid', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ detail: `Not enough capacity. Need ${loadWeight}kg but only have ${remainingSpace}kg space left.` });
     }
 
-    // 3. Update Shipment Status
-    await supabase.from('shipments').update({ status: 'picked_up' }).eq('id', shipment_id);
+    // 3. Claim the load: only one driver can take it, however many tap at once
+    const { data: claimed, error: claimErr } = await supabase
+      .from('shipments')
+      .update({ status: 'picked_up' })
+      .eq('id', shipment_id)
+      .eq('status', 'created')
+      .select('id')
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) return res.status(409).json({ detail: 'Another driver just took this load' });
 
     // 4. Create Pickup Delivery Point
     const { data: pickupDp, error: pickupErr } = await supabase.from('delivery_points').insert({

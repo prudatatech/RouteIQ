@@ -82,6 +82,11 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const stops = deliveryPointsOf(s).length
   const plate = plateOf(s)
   const closed = s.status === 'delivered' || s.status === 'cancelled'
+  // Mirrors the backend rule (SHIPMENT_TRANSITIONS): a shipment only moves forward, and can be
+  // cancelled only before it is picked up.
+  const currentStep = FORWARD_STATUSES.indexOf(s.status as (typeof FORWARD_STATUSES)[number])
+  const nextStatuses = FORWARD_STATUSES.filter((_, i) => i > currentStep)
+  const canCancel = currentStep < 0
   const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
@@ -220,7 +225,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
         {!manifestOnly && !closed && (
           <Section title="Update status">
             <div className="flex flex-wrap gap-2">
-              {FORWARD_STATUSES.filter(st => st !== s.status).map(st => (
+              {nextStatuses.map(st => (
                 <Button
                   key={st}
                   variant="secondary"
@@ -232,9 +237,11 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                   {statusAction[st]}
                 </Button>
               ))}
-              <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={cancelShipment}>
-                Cancel shipment
-              </Button>
+              {canCancel && (
+                <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={cancelShipment}>
+                  Cancel shipment
+                </Button>
+              )}
             </div>
           </Section>
         )}

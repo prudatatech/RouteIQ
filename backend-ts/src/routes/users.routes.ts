@@ -6,7 +6,8 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { invalidateRoleCache, requireAuth, requireRole } from '../core/auth';
 import { UserUpdateSchema } from '../schemas';
-import { sendError } from '../core/errors';
+import { HttpError, sendError } from '../core/errors';
+import { auditService } from '../services/audit.service';
 
 const router = Router();
 
@@ -126,6 +127,11 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
       return;
     }
 
+    // Nobody changes their own role or switches themselves off: that is how the last admin locks everyone out
+    if (user_id === req.user!.user_id && (payload.role !== undefined || payload.is_active !== undefined)) {
+      throw new HttpError(409, "You can't change your own role or deactivate your own account. Ask another admin.");
+    }
+
     // Check if user exists in public.users
     const { data: existingUser } = await supabase.from('users').select('id, role').eq('id', user_id).maybeSingle();
 
@@ -161,6 +167,7 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
       if (authErr) console.error(`[users] Failed to sync app_metadata role for ${user_id}: ${authErr.message}`);
     }
     invalidateRoleCache(user_id);
+    await auditService.record('staff-console', req.user!, 'user_updated', { user_id, changes: updateData, previous_role: existingUser?.role ?? null });
 
     let finalUser;
     if (!existingUser) {

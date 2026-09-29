@@ -519,10 +519,13 @@ export const capacityService = {
    * Inner timer start (client acks delivery of prompt)
    */
   async ackStopDelivery(confirmationId: string) {
+    // Only the first acknowledgement counts, and not once the driver has answered
     const { error } = await supabase
       .from('driver_confirmations')
       .update({ delivered_at: new Date().toISOString() })
-      .eq('id', confirmationId);
+      .eq('id', confirmationId)
+      .is('delivered_at', null)
+      .is('action', null);
     
     if (error) throw new Error(error.message);
   },
@@ -559,15 +562,29 @@ export const capacityService = {
    * Driver explicitly flags/rejects
    */
   async flagStop(confirmationId: string) {
-    const { error } = await supabase
+    await this.answerConfirmation(confirmationId, 'flagged');
+  },
+
+  /**
+   * The driver answers a stop prompt: 'confirmed' (accepts the new stop) or
+   * 'flagged' (sends it back to dispatch). Only a prompt still waiting for an
+   * answer can be answered, so a driver cannot undo an answer, and one the
+   * timeout already accepted stays accepted.
+   */
+  async answerConfirmation(confirmationId: string, action: 'confirmed' | 'flagged') {
+    const { data, error } = await supabase
       .from('driver_confirmations')
-      .update({ 
-        responded_at: new Date().toISOString(),
-        action: 'flagged' 
-      })
-      .eq('id', confirmationId);
-    
+      .update({ responded_at: new Date().toISOString(), action })
+      .eq('id', confirmationId)
+      .is('action', null)
+      .select('id')
+      .maybeSingle();
     if (error) throw new Error(error.message);
+    if (!data) {
+      const { data: existing } = await supabase.from('driver_confirmations').select('action').eq('id', confirmationId).maybeSingle();
+      if (!existing) throw new HttpError(404, 'This prompt no longer exists');
+      throw new HttpError(409, 'This prompt was already answered');
+    }
   },
 
   /**

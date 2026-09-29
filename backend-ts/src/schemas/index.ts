@@ -141,6 +141,14 @@ export const ParcelCreateSchema = z.object({
 });
 export type ParcelCreate = z.infer<typeof ParcelCreateSchema>;
 
+/** What dispatch can edit on an existing shipment; everything else has its own action. */
+export const ShipmentEditSchema = z.object({
+  priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  total_items: z.number().int('Items must be a whole number').min(0, 'Items cannot be negative').max(100000, 'Too many items').optional(),
+  total_weight_kg: z.number().positive('Weight must be more than 0 kg').max(50000, 'Weight can be at most 50,000 kg').optional(),
+});
+export type ShipmentEditInput = z.infer<typeof ShipmentEditSchema>;
+
 export const ShipmentCreateSchema = z.object({
   tracking_id: z.string().regex(/^RTX-[A-Z0-9]{6,16}$/, 'tracking_id must look like RTX-XXXXXXXX').optional().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
