@@ -129,7 +129,7 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
           <Fact label={t('fact_load')} value={booking.load_type === 'part' ? t('load_part') : t('load_full')} />
           <Fact
             label={t('fact_price')}
-            value={booking.quoted_price != null ? formatINR(booking.quoted_price, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) : t('fact_price_tbc')}
+            value={booking.quoted_price != null ? formatINR(booking.quoted_price) : t('fact_price_tbc')}
           />
           {booking.tracking_id ? <Fact label={t('fact_tracking')} value={booking.tracking_id} mono /> : null}
         </View>

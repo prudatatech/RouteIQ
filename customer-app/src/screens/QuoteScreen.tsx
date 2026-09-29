@@ -182,11 +182,11 @@ export default function QuoteScreen({ navigation, route }: any) {
                 {isRange ? t('quote_range') : t('quote_estimated')}
               </Text>
               <Text variant="display" accessibilityLabel={priceLabel(quote, t)}>
-                {isRange ? t('price_to', { low: formatINR(quote.low!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }), high: formatINR(quote.high!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) }) : formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 })}
+                {isRange ? t('price_to', { low: formatINR(quote.low!), high: formatINR(quote.high!) }) : formatINR(quote.suggested!)}
               </Text>
               {isRange ? (
                 <Text variant="bodySmall" color="textMuted">
-                  {t('quote_suggested', { price: formatINR(quote.suggested!, { maximumFractionDigits: 0, minimumFractionDigits: 0 }) })}
+                  {t('quote_suggested', { price: formatINR(quote.suggested!) })}
                 </Text>
               ) : null}
             </Card>
