@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { analyticsAPI } from '@/services/api'
 import {
-  Button, DataTable, DetailList, Drawer, Page, PageHeader, SearchInput, Select, StatusPill, humanize, type Column,
+  Button, DataTable, DateRangeControl, DetailList, Drawer, Page, PageHeader, presetRange, SearchInput, Select,
+  StatusPill, humanize, type Column, type DateRangeValue,
 } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
 
-/** The backend returns the most recent entries only. */
-const AUDIT_LIMIT = 100
+/** Entries fetched per page from the server. */
+const PAGE_SIZE = 100
 
 interface AuditEntry {
   id: string
@@ -29,13 +30,19 @@ export default function AuditLogPage() {
   const [status, setStatus] = useState(ALL)
   const [agent, setAgent] = useState(ALL)
   const [selected, setSelected] = useState<AuditEntry | null>(null)
+  const [range, setRange] = useState<DateRangeValue>({ preset: '30d', ...presetRange('30d') })
+  const [loadedPages, setLoadedPages] = useState(1)
 
-  const logs = useQuery<AuditEntry[]>({
-    queryKey: ['audit-logs'],
-    queryFn: async () => { const d = await analyticsAPI.auditLogs(); return Array.isArray(d) ? d : [] },
+  const limit = PAGE_SIZE * loadedPages
+
+  const logs = useQuery({
+    queryKey: ['audit-logs', range.from, range.to, limit],
+    queryFn: () => analyticsAPI.auditLogs({ limit, offset: 0, from: range.from, to: range.to }) as Promise<{ items: AuditEntry[]; hasMore: boolean }>,
   })
 
-  const all = useMemo(() => logs.data ?? [], [logs.data])
+  const changeRange = (next: DateRangeValue) => { setRange(next); setLoadedPages(1) }
+
+  const all = useMemo(() => logs.data?.items ?? [], [logs.data])
   const statusOptions = useMemo(() => optionsFor(all.map(l => l.status)), [all])
   const agentOptions = useMemo(() => optionsFor(all.map(l => l.agent)), [all])
 
@@ -74,29 +81,32 @@ export default function AuditLogPage() {
     <Page>
       <PageHeader
         title="Audit log"
-        description={`Actions the system has taken automatically, newest first. Shows the latest ${AUDIT_LIMIT} entries.`}
+        description="Actions the system has taken automatically, newest first."
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <SearchInput value={search} onChange={setSearch} label="Search the audit log" placeholder="Search entries" className="sm:w-72" />
-          <Select
-            label="Result"
-            hideLabel
-            className="sm:w-48"
-            value={status}
-            onChange={e => setStatus(e.target.value)}
-            options={[{ value: ALL, label: 'All results' }, ...statusOptions]}
-            disabled={statusOptions.length === 0}
-          />
-          <Select
-            label="Source"
-            hideLabel
-            className="sm:w-56"
-            value={agent}
-            onChange={e => setAgent(e.target.value)}
-            options={[{ value: ALL, label: 'All sources' }, ...agentOptions]}
-            disabled={agentOptions.length === 0}
-          />
-          {filtered && <Button variant="ghost" onClick={clear}>Clear filters</Button>}
+        <div className="flex flex-col gap-3">
+          <DateRangeControl value={range} onChange={changeRange} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <SearchInput value={search} onChange={setSearch} label="Search the audit log" placeholder="Search entries" className="sm:w-72" />
+            <Select
+              label="Result"
+              hideLabel
+              className="sm:w-48"
+              value={status}
+              onChange={e => setStatus(e.target.value)}
+              options={[{ value: ALL, label: 'All results' }, ...statusOptions]}
+              disabled={statusOptions.length === 0}
+            />
+            <Select
+              label="Source"
+              hideLabel
+              className="sm:w-56"
+              value={agent}
+              onChange={e => setAgent(e.target.value)}
+              options={[{ value: ALL, label: 'All sources' }, ...agentOptions]}
+              disabled={agentOptions.length === 0}
+            />
+            {filtered && <Button variant="ghost" onClick={clear}>Clear filters</Button>}
+          </div>
         </div>
       </PageHeader>
 
@@ -114,8 +124,14 @@ export default function AuditLogPage() {
         pageSize={25}
         empty={filtered
           ? { title: 'No entries match these filters', action: <Button variant="secondary" onClick={clear}>Clear filters</Button> }
-          : { title: 'No audit entries yet', description: 'Automated actions are recorded here as they happen.' }}
+          : { title: 'No audit entries in this range', description: 'Automated actions are recorded here as they happen.' }}
       />
+
+      {logs.data?.hasMore && (
+        <div className="flex justify-center">
+          <Button variant="secondary" loading={logs.isFetching} onClick={() => setLoadedPages(n => n + 1)}>Load more</Button>
+        </div>
+      )}
 
       <Drawer open={!!selected} onClose={() => setSelected(null)} title="Audit entry" description={selected ? formatDateTime(selected.timestamp) : undefined}>
         {selected && (

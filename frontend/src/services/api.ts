@@ -238,7 +238,9 @@ export const telemetryAPI = {
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
-  auditLogs: () => api.get('/analytics/audit-logs').then(r => r.data),
+  /** Newest-first, paged. `from`/`to` are YYYY-MM-DD IST calendar days. */
+  auditLogs: (params: { limit?: number; offset?: number; from?: string; to?: string } = {}) =>
+    api.get('/analytics/audit-logs', { params }).then(r => r.data as { items: unknown[]; limit: number; offset: number; hasMore: boolean }),
   driverPerformance: () => api.get('/analytics/driver-performance').then(r => ensureArray(r.data)),
   vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => ensureArray(r.data)),
   fleetOverview: () => api.get('/analytics/fleet-overview').then(r => r.data),

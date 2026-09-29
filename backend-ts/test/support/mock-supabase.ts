@@ -160,8 +160,21 @@ function matches(row: Row, params: URLSearchParams): boolean {
         if (actual == null || !list.includes(String(actual))) return false;
         break;
       }
+      case 'gte':
+      case 'gt':
+      case 'lte':
+      case 'lt': {
+        if (actual == null) return false;
+        const actualComparable = actual instanceof Date ? actual.getTime() : (Number.isNaN(Number(actual)) ? actual : Number(actual));
+        const valueComparable = Number.isNaN(Number(value)) ? value : Number(value);
+        if (op === 'gte' && !(actualComparable >= valueComparable)) return false;
+        if (op === 'gt' && !(actualComparable > valueComparable)) return false;
+        if (op === 'lte' && !(actualComparable <= valueComparable)) return false;
+        if (op === 'lt' && !(actualComparable < valueComparable)) return false;
+        break;
+      }
       default:
-        // Operators the app does not rely on in tests (gte, ilike, ...) do not filter
+        // Operators the app does not rely on in tests (ilike, ...) do not filter
         break;
     }
   }

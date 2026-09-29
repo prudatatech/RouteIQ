@@ -4,22 +4,9 @@
  */
 import { supabase } from '../core/supabase';
 import { cacheGet } from '../core/redis';
+import { indianDateKey, resolveIndianDateRange, startOfIndianDay } from '../core/istDate';
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
-
-const IST_OFFSET_MS = 330 * 60 * 1000;
-
-/** Midnight in India `daysAgo` days before today, as an absolute instant. */
-function startOfIndianDay(daysAgo: number): Date {
-  const ist = new Date(Date.now() + IST_OFFSET_MS);
-  const midnightUtc = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() - daysAgo);
-  return new Date(midnightUtc - IST_OFFSET_MS);
-}
-
-/** YYYY-MM-DD of the Indian calendar day that contains `date`. */
-function indianDateKey(date: Date): string {
-  return new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
-}
 
 export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
