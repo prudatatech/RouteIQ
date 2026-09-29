@@ -5,7 +5,9 @@ import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
-import { ConfirmProvider, Spinner } from '@/components/ui'
+import { Button, ConfirmProvider, EmptyState, Spinner } from '@/components/ui'
+import { Lock } from 'lucide-react'
+import { loadAccount } from '@/services/account'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
 import FleetPage from '@/pages/FleetPage'
@@ -47,6 +49,32 @@ function MovedTo({ to }: { to: string }) {
   return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} state={location.state} replace />
 }
 
+/** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
+function homeForRole(role: string | null): string | null {
+  if (role === 'admin' || role === 'superadmin') return '/dashboard'
+  if (role === 'driver') return '/driver'
+  if (role === 'vendor') return '/vendor'
+  return null
+}
+
+function NoAccess() {
+  const clearAuth = useAuthStore(s => s.clearAuth)
+  const signOut = async () => {
+    try { await supabase.auth.signOut() } catch (err) { console.error('Sign-out failed', err) }
+    clearAuth()
+  }
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+      <EmptyState
+        icon={<Lock size={22} />}
+        title="This account can't use the web app"
+        description="Ask your MargixIndia administrator to give your account access, or sign in with a different account."
+        action={<Button variant="secondary" onClick={signOut}>Sign out</Button>}
+      />
+    </div>
+  )
+}
+
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const location = useLocation()
   const token = useAuthStore(s => s.token)
@@ -71,12 +99,12 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   }
 
   // If this route is restricted to certain roles
-  if (allowedRoles) {
-    if (!role || !allowedRoles.includes(role)) {
-      if (role === 'driver') return <Navigate to="/driver" replace />
-      if (role === 'vendor') return <Navigate to="/vendor" replace />
-      return <Navigate to="/dashboard" replace />
-    }
+  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+    const home = homeForRole(role)
+    // Accounts with no area in the web app (no role, managers, customers) would
+    // otherwise bounce between redirects forever.
+    if (!home || home === location.pathname) return <NoAccess />
+    return <Navigate to={home} replace />
   }
 
   return <>{children}</>
@@ -101,55 +129,34 @@ export default function App() {
   const store = useAuthStore()
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).maybeSingle()
-        const { data: vProfile } = await supabase.from('vendor_profiles').select('id').eq('id', session.user.id).maybeSingle()
-        const fallbackRole = session.user.user_metadata?.role;
-        let role = user?.role || fallbackRole;
-        if (role !== 'admin' && role !== 'superadmin' && vProfile) {
-          role = 'vendor';
-        }
-        store.setSession(session, role)
-      } else {
+    // Roles come from the database (users, vendor_profiles, tpl_partners), never from
+    // user_metadata, which users can edit themselves.
+    const restore = async (session: Session | null) => {
+      if (!session) {
         store.setSession(null)
+        return
       }
-    }).catch((err) => {
-      console.error('Failed to restore session', err)
-      store.setSession(null)
-    }).finally(() => {
+      try {
+        const account = await loadAccount(session.user.id)
+        store.setSession(session, account.role)
+      } catch (err) {
+        console.error('Failed to load the account role', err)
+        store.setSession(session, null)
+      }
+    }
+
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => restore(session))
+      .catch(err => {
+        console.error('Failed to restore session', err)
+        store.setSession(null)
+      })
       // Always release the gate, or protected routes would spin forever
-      useAuthStore.getState().setAuthInitialized(true)
-    })
+      .finally(() => useAuthStore.getState().setAuthInitialized(true))
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
-      if (event === 'SIGNED_OUT') {
-        store.setSession(null)
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (session) {
-          const { data: user } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', session.user.id)
-            .maybeSingle()
-
-          const { data: vProfile } = await supabase
-            .from('vendor_profiles')
-            .select('id')
-            .eq('id', session.user.id)
-            .maybeSingle()
-
-          const fallbackRole = session.user.user_metadata?.role;
-          let role = user?.role || fallbackRole;
-
-          // If user is not admin/superadmin, but has a vendor profile, treat as vendor
-          if (role !== 'admin' && role !== 'superadmin' && vProfile) {
-            role = 'vendor';
-          }
-
-          store.setSession(session, role)
-        }
-      }
+    const { data: listener } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+      if (event === 'SIGNED_OUT') store.setSession(null)
+      else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') restore(session)
     })
 
     return () => {

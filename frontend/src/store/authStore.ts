@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { supabase } from '@/services/supabase'
 import type { Session } from '@supabase/supabase-js'
 
 // Supabase's own client already persists the token/refreshToken/session in localStorage
@@ -8,7 +7,7 @@ import type { Session } from '@supabase/supabase-js'
 // in 'margixindia-auth-store' via zustand's persist — two copies of the same secrets in
 // localStorage. Supabase is now the only token store: token/refreshToken/session live only
 // in memory here (still readable via useAuthStore for the lifetime of the tab, refreshed by
-// setSession/clearAuth/initAuth), and only the non-sensitive role/userId are persisted so
+// setSession/clearAuth), and only the non-sensitive role/userId are persisted so
 // role-gated UI has something to paint with before the Supabase session round-trips.
 interface AuthState {
   token: string | null
@@ -16,13 +15,12 @@ interface AuthState {
   role: string | null
   userId: string | null
   session: Session | null
-  /** True once the initial supabase.auth.getSession() restore (App's effect / initAuth) has resolved. */
+  /** True once the initial supabase.auth.getSession() restore (App's effect) has resolved. */
   authInitialized: boolean
   setAuth: (token: string, refreshToken: string, role: string, userId: string) => void
-  setSession: (session: Session | null, role?: string) => void
+  setSession: (session: Session | null, role?: string | null) => void
   setAuthInitialized: (initialized: boolean) => void
   clearAuth: () => void
-  initAuth: () => Promise<void>
 }
 
 const LEGACY_PERSISTED_KEY = 'margixindia-auth-store'
@@ -42,13 +40,15 @@ export const useAuthStore = create<AuthState>()(
         set({ token, refreshToken, role, userId }),
 
       // New Supabase session setter
-      setSession: (session: Session | null, role?: string) => {
+      // `role` must come from the database (services/account.ts). There is deliberately no
+      // fallback to user_metadata or to a default role.
+      setSession: (session: Session | null, role?: string | null) => {
         if (session) {
           set({
             token: session.access_token,
             refreshToken: session.refresh_token,
             userId: session.user.id,
-            role: role || session.user.user_metadata?.role || get().role || 'driver',
+            role: role ?? null,
             session,
           })
         } else {
@@ -60,22 +60,6 @@ export const useAuthStore = create<AuthState>()(
 
       clearAuth: () =>
         set({ token: null, refreshToken: null, role: null, userId: null, session: null }),
-
-      // Initialize: check for existing Supabase session on app start
-      initAuth: async () => {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
-          // Fetch role from public.users since Supabase JWT role is always 'authenticated'
-          const { data: user } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', session.user.id)
-            .maybeSingle()
-
-          get().setSession(session, user?.role)
-        }
-        set({ authInitialized: true })
-      },
     }),
     {
       name: LEGACY_PERSISTED_KEY,
