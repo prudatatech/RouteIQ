@@ -245,7 +245,10 @@ export const authAPI = {
 export const shipmentsAPI = {
   list: (params?: Record<string, unknown>) => api.get('/shipments/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
-  trackPublicly: (trackingId: string) => api.get(`/shipments/track/${trackingId}`).then(r => r.data),
+  // Public page: no sign-in header (so it never waits on the auth session) and a short timeout, so it always ends in a result or an error.
+  trackPublicly: (trackingId: string) => axios
+    .get(`${baseURL}/shipments/track/${encodeURIComponent(trackingId)}`, { timeout: 20_000 })
+    .then(r => r.data),
   create: (data: object) => api.post('/shipments/', data).then(r => r.data),
   updateStatus: (id: string, status: string, fields?: Record<string, unknown>) => api.patch(`/shipments/${id}`, { status, ...fields }).then(r => r.data),
   edit: (id: string, data: Record<string, unknown>) => api.patch(`/shipments/${id}/edit`, data).then(r => r.data),

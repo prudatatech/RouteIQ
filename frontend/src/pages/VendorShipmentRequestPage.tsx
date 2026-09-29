@@ -1,17 +1,19 @@
 import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Sparkles, Warehouse } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { useVendorContext } from '@/components/vendor/vendorContext'
 import { vendorAPI } from '@/services/api'
 import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase'
 import { MapView, type MapPoint, type MapRoute } from '@/components/map'
 import AddressPicker from '@/components/map/AddressPicker'
 import {
-  Button, Card, Checkbox, Input, Page, PageHeader, Select, Textarea,
+  Alert, Button, buttonClasses, Card, Checkbox, Input, Page, PageHeader, Select, Textarea,
 } from '@/components/ui'
-import type { ResolvedPlace } from '@/services/geocoding'
+import { reversePlace, type ResolvedPlace } from '@/services/geocoding'
+import { formatKg, formatRupees } from '@/utils/display'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
 import type { QuoteRequest } from '@/services/pricing'
@@ -41,6 +43,8 @@ export default function VendorShipmentRequestPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const token = useAuthStore(s => s.token)
+  const { vendorProfile: kycProfile, profileLoading, isVendor } = useVendorContext()
+  const kycBlocked = isVendor && !profileLoading && kycProfile?.kycStatus !== 'approved'
 
   const [step, setStep] = useState(0)
   const [attempted, setAttempted] = useState<Record<number, boolean>>({})
@@ -98,8 +102,10 @@ export default function VendorShipmentRequestPage() {
       const query = params.get('query')
       const lat = params.get('lat')
       const lng = params.get('lng')
-      if (query && lat && lng) {
-        setDrop({ address: query, lat: parseFloat(lat), lng: parseFloat(lng) })
+      const dropLat = parseFloat(lat ?? '')
+      const dropLng = parseFloat(lng ?? '')
+      if (query && Number.isFinite(dropLat) && Number.isFinite(dropLng)) {
+        setDrop({ address: query, lat: dropLat, lng: dropLng })
       }
     }
     if (token) {
@@ -143,10 +149,13 @@ export default function VendorShipmentRequestPage() {
     }
   }
 
-  const onPointMove = (id: string, pos: { lat: number; lng: number }) => {
-    const address = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`
-    if (id === 'pickup') setPickup({ address, ...pos })
-    else if (id === 'drop') setDrop({ address, ...pos })
+  // A dragged pin is named by reverse geocoding; until then it shows as a pinned location.
+  const onPointMove = async (id: string, pos: { lat: number; lng: number }) => {
+    const set = id === 'pickup' ? setPickup : id === 'drop' ? setDrop : null
+    if (!set) return
+    set({ address: `Pinned location (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`, ...pos })
+    const named = await reversePlace(pos.lat, pos.lng).catch(() => null)
+    if (named) set({ ...named, lat: pos.lat, lng: pos.lng })
   }
 
   const mapPoints: MapPoint[] = [
@@ -208,7 +217,11 @@ export default function VendorShipmentRequestPage() {
 
   const submit = async () => {
     setAttempted({ 0: true, 1: true, 2: true })
-    if (!stepValid(0) || !stepValid(1) || !pickup || !drop || myPriceError) return
+    if (!stepValid(0) || !stepValid(1) || !pickup || !drop || myPriceError) {
+      if (!stepValid(0)) setStep(0)
+      else if (!stepValid(1)) setStep(1)
+      return
+    }
 
     const payload = {
       pickup,
@@ -249,11 +262,11 @@ export default function VendorShipmentRequestPage() {
     setIsSubmitting(true)
     try {
       await vendorAPI.createShipmentRequest(payload)
-      toast.success('Shipment request created')
+      toast.success('Load posted. Dispatch will assign a vehicle.')
       navigate('/vendor/shipments')
     } catch (err) {
       const message = errorMessage(err, 'Please try again.')
-      toast.error(`Failed to submit request: ${message}`)
+      toast.error(`We could not post your load. ${message}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -267,27 +280,40 @@ export default function VendorShipmentRequestPage() {
         back={{ to: '/vendor', label: 'Back to find capacity' }}
       />
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      {kycBlocked && (
+        <Alert
+          tone={kycProfile?.kycStatus === 'submitted' ? 'info' : 'warning'}
+          title={kycProfile?.kycStatus === 'submitted' ? 'Your KYC is in review' : 'Finish your KYC to post a load'}
+          action={kycProfile?.kycStatus === 'submitted' ? undefined : (
+            <Link to={kycProfile ? '/vendor/documents' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+              {kycProfile ? 'Open company & KYC' : 'Set up company'}
+            </Link>
+          )}
+        >
+          You can fill in this form now. You can submit it once your company KYC is approved.
+        </Alert>
+      )}
+
+      <ol aria-label="Steps" className="flex flex-wrap items-center gap-2 text-sm">
         {STEPS.map((label, i) => (
-          <span key={label} className="flex items-center gap-2">
+          <li key={label} aria-current={i === step ? 'step' : undefined} className="flex items-center gap-2">
             <span className={i === step ? 'font-medium text-text' : i < step ? 'text-brand' : 'text-muted'}>
               {i + 1}. {label}
             </span>
-            {i < STEPS.length - 1 && <span className="text-border">/</span>}
-          </span>
+            {i < STEPS.length - 1 && <span aria-hidden="true" className="text-border">/</span>}
+          </li>
         ))}
-      </div>
+      </ol>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <Card padded className={step === 0 ? 'space-y-6 lg:col-span-5' : 'space-y-6 lg:col-span-3'}>
           {step === 0 && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-text">Pickup location <span className="text-danger">*</span></p>
-                <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Warehouse</Button>
+              <div className="flex justify-end">
+                <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Use my warehouse as pickup</Button>
               </div>
               <AddressPicker
-                label="" value={pickup} onChange={setPickup} placeholder="Search pickup address"
+                label="Pickup location" required value={pickup} onChange={setPickup} placeholder="Search pickup address"
                 error={err(0, 'pickup')} showMap={false} kind="pickup"
               />
 
@@ -361,7 +387,7 @@ export default function VendorShipmentRequestPage() {
                     )}
                   </div>
                   <Input label="Description" value={hsnDescription} onChange={e => setHsnDescription(e.target.value)} />
-                  <Input label="GST rate (%)" value={gstRate} onChange={e => setGstRate(e.target.value.replace('%', ''))} />
+                  <Input label="GST rate (%)" inputMode="decimal" value={gstRate} onChange={e => setGstRate(e.target.value.replace('%', ''))} />
                 </div>
               </div>
 
@@ -369,11 +395,11 @@ export default function VendorShipmentRequestPage() {
                 <p className="mb-3 text-sm font-medium text-text">Packaging & quantity</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <Select label="Packaging" options={PACKAGING_TYPES} placeholder="Select type" value={packagingType} onChange={e => setPackagingType(e.target.value)} />
-                  <Input label="No. of packages" type="number" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} />
-                  <Input label="Quantity" type="number" value={quantity} onChange={e => setQuantity(e.target.value)} />
+                  <Input label="No. of packages" type="number" min={0} inputMode="numeric" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} />
+                  <Input label="Quantity" type="number" min={0} inputMode="decimal" value={quantity} onChange={e => setQuantity(e.target.value)} />
                   <Select label="Unit" options={UNITS} placeholder="Select unit" value={unit} onChange={e => setUnit(e.target.value)} />
-                  <Input label="Gross weight (kg)" type="number" required value={capacity} onChange={e => setCapacity(e.target.value)} error={err(1, 'capacity')} />
-                  <Input label="Declared value (₹)" type="number" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
+                  <Input label="Gross weight (kg)" type="number" min={1} inputMode="decimal" required value={capacity} onChange={e => setCapacity(e.target.value)} error={err(1, 'capacity')} />
+                  <Input label="Declared value (₹)" type="number" min={0} inputMode="decimal" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
                 </div>
               </div>
 
@@ -405,8 +431,10 @@ export default function VendorShipmentRequestPage() {
                 ['Category', productCategory || '—'],
                 ['Product', [productName, brand].filter(Boolean).join(' · ') || '—'],
                 ['HSN code', hsnCode || '—'],
-                ['Gross weight', capacity ? `${Number(capacity).toLocaleString('en-IN')} kg` : '—'],
-                ['Declared value', declaredValue ? `₹${Number(declaredValue).toLocaleString('en-IN')}` : '—'],
+                ['Packaging', [packagingType, noOfPackages ? `${Number(noOfPackages).toLocaleString('en-IN')} packages` : ''].filter(Boolean).join(' · ') || '—'],
+                ['Gross weight', capacity ? formatKg(capacity) : '—'],
+                ['Declared value', declaredValue ? formatRupees(declaredValue) : '—'],
+                ['Special handling', SPECIAL_HANDLING.filter(o => specialHandling[o.id]).map(o => o.label).join(', ') || 'None'],
               ]} />
               <ReviewSection title="Consignee" rows={[
                 ['Name', consigneeName || '—'],
@@ -444,7 +472,7 @@ export default function VendorShipmentRequestPage() {
               {step < STEPS.length - 1 ? (
                 <Button type="button" onClick={goNext}>Continue</Button>
               ) : (
-                <Button type="button" onClick={submit} loading={isSubmitting}>Submit request</Button>
+                <Button type="button" onClick={submit} loading={isSubmitting} disabled={kycBlocked}>Post load</Button>
               )}
             </div>
           </div>
