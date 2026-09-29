@@ -33,11 +33,6 @@ export default {
         info: { DEFAULT: c.info, soft: c.infoSoft },
         neutral: { DEFAULT: c.neutral, soft: c.neutralSoft },
         overlay: c.overlay,
-        // Legacy names kept while pages migrate to the names above.
-        primary: { DEFAULT: c.accent, dark: c.accentHover },
-        surface2: c.surfaceSubtle,
-        accent: c.accentFill,
-        error: c.danger,
       },
       fontFamily: {
         sans: [tokens.font.sans, 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
