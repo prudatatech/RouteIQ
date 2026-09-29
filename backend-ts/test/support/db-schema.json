@@ -447,7 +447,11 @@
     "email",
     "pending_updates",
     "rejection_reason",
-    "phone"
+    "phone",
+    "bank_name",
+    "bank_branch",
+    "bank_ifsc_details",
+    "bank_ifsc_verified_at"
   ],
   "traffic_incidents": [
     "id",
@@ -764,7 +768,14 @@
     "created_at",
     "updated_at",
     "effective_from",
-    "proof_document_id"
+    "proof_document_id",
+    "branch_name",
+    "bank_address",
+    "bank_city",
+    "bank_state",
+    "micr",
+    "ifsc_details",
+    "ifsc_verified_at"
   ],
   "user_status_history": [
     "id",

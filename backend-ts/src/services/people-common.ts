@@ -139,6 +139,8 @@ export const WARNING_TEXT: Record<string, string> = {
   licence_number_format: "This licence number doesn't look like the usual state code plus digits. It was saved. Check it against the card.",
   name_mismatch: "The name on the document doesn't match the profile name. It was saved. Add a note when you verify it.",
   account_holder_mismatch: "The account holder name doesn't match the person. It was saved. Add a note when you verify it.",
+  ifsc_unverified: "The IFSC could not be checked against bank records right now. It was saved. Check it yourself.",
+  ifsc_no_neft_imps: "Payouts may fail: this branch doesn't support NEFT or IMPS.",
 };
 
 /** `warnings` (codes) plus `warning_messages` (text) for an endpoint response. */

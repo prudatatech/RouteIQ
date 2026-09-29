@@ -56,6 +56,9 @@ Object.assign(process.env, {
   SECRET_KEY: '',
   PEOPLE_HASH_SALT: 'test-people-hash-salt',
 
+  // A test that forgets to mock the IFSC lookup fails fast instead of reaching Razorpay
+  IFSC_LOOKUP_BASE_URL: 'http://127.0.0.1:9',
+
   UPSTASH_REDIS_REST_URL: '',
   UPSTASH_REDIS_REST_TOKEN: '',
   REDIS_URL: '',

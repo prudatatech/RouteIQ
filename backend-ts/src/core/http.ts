@@ -8,7 +8,7 @@
 export const externalHttp = {
   async getJson<T = any>(url: string, timeoutMs = 8000): Promise<T> {
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+    if (!res.ok) throw Object.assign(new Error(`Request failed with status ${res.status}`), { status: res.status });
     return (await res.json()) as T;
   },
 

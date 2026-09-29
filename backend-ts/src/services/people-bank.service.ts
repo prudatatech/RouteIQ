@@ -8,6 +8,7 @@
  * period (bank_change_cooldown_hours). Drivers employed by a partner have no
  * bank details here: the partner pays them.
  */
+import { checkIfscForSave, type IfscCheck } from './ifsc.service';
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { normalizePhone } from '../utils/phone';
@@ -260,6 +261,16 @@ function bankFields(body: Record<string, any>, partial: boolean): Record<string,
   return out;
 }
 
+/** Columns filled from a branch lookup; all null when the lookup was down. */
+function ifscColumns(check: IfscCheck): Record<string, any> {
+  const d = check.details;
+  return {
+    bank_name: d?.bank ?? undefined,
+    branch_name: d?.branch ?? null, bank_address: d?.address ?? null, bank_city: d?.city ?? null,
+    bank_state: d?.state ?? null, micr: d?.micr ?? null, ifsc_details: d ?? null, ifsc_verified_at: check.verifiedAt,
+  };
+}
+
 async function clearOtherBankPrimaries(userId: string, exceptId: string): Promise<void> {
   await supabase.from('user_bank_accounts').update({ is_primary: false, updated_at: nowIso() }).eq('user_id', userId).eq('is_primary', true).neq('id', exceptId);
 }
@@ -267,6 +278,8 @@ async function clearOtherBankPrimaries(userId: string, exceptId: string): Promis
 export async function createBankAccount(actor: Actor, subject: PersonRow, body: Record<string, any>) {
   await assertBankAccess(actor, subject);
   const fields = bankFields(body, false);
+  const ifscCheck = await checkIfscForSave(fields.ifsc);
+  Object.assign(fields, dropUndefined(ifscColumns(ifscCheck)));
   const proof = await checkProof(subject.id, body.proof_document_id);
   const { data: existing } = await supabase.from('user_bank_accounts').select('id').eq('user_id', subject.id);
   const first = (existing ?? []).length === 0;
@@ -281,7 +294,7 @@ export async function createBankAccount(actor: Actor, subject: PersonRow, body: 
   await logActivity(subject.id, actor.user_id, 'bank_added', { account_id: data.id, account_last4: last4(data.account_number), effective_from: effectiveFrom });
   await announceBankChange(actor, subject, 'added', effectiveFrom);
   const out = serializeBank(data, subject.full_name);
-  return withWarnings(out, out.name_mismatch ? ['account_holder_mismatch'] : []);
+  return withWarnings(out, [...(out.name_mismatch ? ['account_holder_mismatch'] : []), ...ifscCheck.warnings]);
 }
 
 async function loadBank(userId: string, accountId: string) {
@@ -298,6 +311,11 @@ export async function updateBankAccount(actor: Actor, subject: PersonRow, accoun
   assertFresh(account.updated_at, body.updated_at);
   const fields = bankFields(body, true);
   const patch: Record<string, any> = { ...fields };
+  let ifscCheck: IfscCheck | null = null;
+  if ('ifsc' in fields && (fields.ifsc !== account.ifsc || !account.ifsc_verified_at)) {
+    ifscCheck = await checkIfscForSave(fields.ifsc);
+    Object.assign(patch, dropUndefined(ifscColumns(ifscCheck)));
+  }
   const detailsChanged = ['account_holder', 'account_number', 'ifsc', 'upi_id'].some(k => k in fields && fields[k] !== account[k]);
 
   if (Object.prototype.hasOwnProperty.call(body, 'proof_document_id')) patch.proof_document_id = await checkProof(subject.id, body.proof_document_id);
@@ -333,7 +351,7 @@ export async function updateBankAccount(actor: Actor, subject: PersonRow, accoun
   });
   if (detailsChanged) await announceBankChange(actor, subject, 'changed', patch.effective_from);
   const out = serializeBank(data, subject.full_name);
-  return withWarnings(out, out.name_mismatch ? ['account_holder_mismatch'] : []);
+  return withWarnings(out, [...(out.name_mismatch ? ['account_holder_mismatch'] : []), ...(ifscCheck?.warnings ?? [])]);
 }
 
 export async function deleteBankAccount(actor: Actor, subject: PersonRow, accountId: string): Promise<void> {
@@ -357,3 +375,5 @@ export async function revealBankAccount(actor: Actor, subject: PersonRow, accoun
   await logActivity(subject.id, actor.user_id, 'bank_reveal', { account_id: account.id, account_last4: last4(account.account_number) });
   return { id: account.id, account_number: account.account_number as string };
 }
+
+const dropUndefined = (o: Record<string, any>): Record<string, any> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
