@@ -47,6 +47,7 @@ interface VendorRequest {
   created_at: string
   updated_at: string | null
   assigned_vehicle_id: string | null
+  rejection_reason: string | null
   metadata: {
     consignee?: { name?: string; contact?: string; email?: string }
     cargo?: CargoDetails
@@ -131,7 +132,7 @@ function eligibleVehicles(request: VendorRequest, vehicles: Vehicle[]) {
 
 export default function VendorRequestsPage() {
   const queryClient = useQueryClient()
-  const { confirm } = useConfirm()
+  const { prompt } = useConfirm()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -149,7 +150,7 @@ export default function VendorRequestsPage() {
   })
 
   const reject = useMutation({
-    mutationFn: (id: string) => vendorAPI.rejectRequest(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => vendorAPI.rejectRequest(id, reason),
     onSuccess: () => { toast.success('Request rejected. The vendor has been told.'); setSelectedId(null) },
     onError: err => toast.error(errorMessage(err, 'We could not reject this request. Try again.')),
     onSettled: refresh,
@@ -177,13 +178,16 @@ export default function VendorRequestsPage() {
   const selected = all.find(r => r.id === selectedId) ?? null
 
   const askReject = async (r: VendorRequest) => {
-    const ok = await confirm({
+    const reason = await prompt({
       title: 'Reject this request?',
       message: `${vendorName(r)}’s request from ${shortPlace(r.pickup_location)} to ${shortPlace(r.drop_location)} will be rejected and the vendor notified.`,
+      inputLabel: 'Reason',
+      placeholder: 'Why is this request being rejected?',
       confirmLabel: 'Reject request',
       tone: 'danger',
+      required: true,
     })
-    if (ok) reject.mutate(r.id)
+    if (reason) reject.mutate({ id: r.id, reason })
   }
 
   const columns: Column<VendorRequest>[] = [
@@ -268,7 +272,7 @@ export default function VendorRequestsPage() {
         request={selected}
         onClose={() => setSelectedId(null)}
         approving={approve.isPending && approve.variables === selected?.id}
-        rejecting={reject.isPending && reject.variables === selected?.id}
+        rejecting={reject.isPending && reject.variables?.id === selected?.id}
         onApprove={r => approve.mutate(r.id)}
         onReject={askReject}
         onAssigned={() => { setSelectedId(null); refresh() }}
@@ -347,6 +351,10 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
             <StatusPill status={request.status}>{statusLabels[request.status]}</StatusPill>
             <span className="text-sm text-muted">Posted {formatRelative(request.created_at)}</span>
           </div>
+
+          {request.status === 'rejected' && request.rejection_reason && (
+            <Alert tone="danger" title="Rejected">{request.rejection_reason}</Alert>
+          )}
 
           <DetailList
             items={[

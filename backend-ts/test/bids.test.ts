@@ -152,3 +152,41 @@ describe('POST /capacity/bids/:id/approve', () => {
     expect(downstreamInserts()).toEqual([]);
   });
 });
+
+describe('POST /capacity/bids/:id/reject', () => {
+  const pendingBid = { id: 'bid-1', window_id: 'w1', vendor_id: VENDOR, status: 'pending', weight_kg: 500, bid_amount: 1500, dropoff_point_id: null };
+  const reject = (bidId: string, body?: Record<string, unknown>) =>
+    request(app).post(`/api/v1/capacity/bids/${bidId}/reject`).set('Authorization', `Bearer ${adminToken()}`).send(body ?? { reason: 'Rate too high for this lane' });
+
+  beforeEach(() => {
+    supabaseMock.rows('capacity_bids').push({ ...pendingBid });
+  });
+
+  it('rejects a pending bid and stores the reason', async () => {
+    const res = await reject('bid-1');
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('capacity_bids')[0]).toMatchObject({ status: 'rejected', rejection_reason: 'Rate too high for this lane' });
+  });
+
+  it.each([
+    ['missing', {}],
+    ['too short', { reason: 'no' }],
+    ['too long', { reason: 'x'.repeat(501) }],
+    ['blank', { reason: '   ' }],
+  ])('requires a reason (%s)', async (_name, body) => {
+    const res = await reject('bid-1', body);
+    expect(res.status).toBe(400);
+    expect(supabaseMock.rows('capacity_bids')[0].status).toBe('pending');
+  });
+
+  it('refuses to reject a bid that is already decided', async () => {
+    supabaseMock.rows('capacity_bids')[0].status = 'won';
+    const res = await reject('bid-1');
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 404 for an unknown bid', async () => {
+    const res = await reject('missing-bid');
+    expect(res.status).toBe(404);
+  });
+});

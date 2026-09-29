@@ -187,16 +187,43 @@ export const vendorService = {
   /**
    * Super admin rejects a vendor shipment request
    */
-  async rejectRequest(requestId: string) {
-    const data = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, { status: 'rejected' });
+  async rejectRequest(requestId: string, reason: string) {
+    const data = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, { status: 'rejected', rejection_reason: reason });
 
     // Notify the vendor
     await notificationService.sendNotification(
       data.vendor_id,
       'Request Rejected',
-      `Your shipment request from ${data.pickup_location} has been rejected by admins.`,
+      `Your shipment request from ${data.pickup_location} has been rejected by admins. Reason: ${reason}`,
       'request_rejected',
       { request_id: data.id }
+    );
+
+    return data;
+  },
+
+  /**
+   * Staff rejects a vendor's KYC, storing why. Only a submission still
+   * waiting for review can be decided, so a vendor who edits mid-review (or
+   * a second reviewer) is not overwritten.
+   */
+  async rejectKyc(vendorId: string, reason: string) {
+    const { data, error } = await supabase
+      .from('vendor_profiles')
+      .update({ kyc_status: 'rejected', kyc_rejection_reason: reason, kyc_reviewed_at: new Date().toISOString() })
+      .eq('id', vendorId)
+      .eq('kyc_status', 'submitted')
+      .select('id, company_name')
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new HttpError(409, 'This KYC is no longer waiting for review');
+
+    await notificationService.sendNotification(
+      vendorId,
+      'KYC Rejected',
+      `Your KYC was not approved. Reason: ${reason}`,
+      'kyc_rejected',
+      { vendor_id: vendorId }
     );
 
     return data;

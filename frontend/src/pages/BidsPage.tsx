@@ -46,6 +46,7 @@ interface Bid {
   eway_bill_ref: string | null
   weight_kg: number | null
   load_configuration: string | null
+  rejection_reason: string | null
   delivery_points: { name: string | null; address: string | null } | null
   vendor: { company_name: string | null; city: string | null } | null
 }
@@ -129,7 +130,7 @@ async function loadBoard() {
 
   const { data: bids, error: bErr } = await supabase
     .from('capacity_bids')
-    .select('id, window_id, vendor_id, bid_amount, submitted_at, status, eway_bill_ref, weight_kg, load_configuration, delivery_points(name, address)')
+    .select('id, window_id, vendor_id, bid_amount, submitted_at, status, eway_bill_ref, weight_kg, load_configuration, rejection_reason, delivery_points(name, address)')
     .in('window_id', windowList.map(w => w.id))
     .order('bid_amount', { ascending: false })
   if (bErr) throw bErr
@@ -163,7 +164,7 @@ const vendorName = (b: Bid) => b.vendor?.company_name || 'Unnamed vendor'
 
 export default function BidsPage() {
   const queryClient = useQueryClient()
-  const { confirm } = useConfirm()
+  const { confirm, prompt } = useConfirm()
   const now = useNow(15_000)
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'open')
   const [shown, setShown] = useState(WINDOWS_PER_PAGE)
@@ -228,14 +229,14 @@ export default function BidsPage() {
   })
 
   const reject = useMutation({
-    mutationFn: (bidId: string) => capacityAPI.rejectBid(bidId),
+    mutationFn: ({ bidId, reason }: { bidId: string; reason: string }) => capacityAPI.rejectBid(bidId, reason),
     onSuccess: () => { toast.success('Bid rejected. The vendor has been told.'); setSelected(null) },
     onError: err => toast.error(errorMessage(err, 'We could not reject this bid. Try again.')),
     onSettled: refresh,
   })
 
   const approvingId = approve.isPending ? approve.variables ?? null : null
-  const rejectingId = reject.isPending ? reject.variables ?? null : null
+  const rejectingId = reject.isPending ? reject.variables?.bidId ?? null : null
   const busy = { approvingId, rejectingId, any: approvingId !== null || rejectingId !== null }
 
   const askApprove = async (bid: Bid, window: CapacityWindow) => {
@@ -259,13 +260,16 @@ export default function BidsPage() {
   }
 
   const askReject = async (bid: Bid) => {
-    const ok = await confirm({
+    const reason = await prompt({
       title: 'Reject this bid?',
       message: `${vendorName(bid)}’s bid of ${formatRupees(bid.bid_amount)} will be rejected and the vendor notified. This cannot be undone.`,
+      inputLabel: 'Reason',
+      placeholder: 'Why is this bid being rejected?',
       confirmLabel: 'Reject bid',
       tone: 'danger',
+      required: true,
     })
-    if (ok) reject.mutate(bid.id)
+    if (reason) reject.mutate({ bidId: bid.id, reason })
   }
 
   const tabs = [
@@ -491,6 +495,10 @@ function BidDrawer({ selection, state, busy, onClose, onApprove, onReject }: {
             <Alert tone="warning" title="Heavier than the free space">
               This load is {formatKg(bid.weight_kg)} but the vehicle has {formatKg(free)} free right now.
             </Alert>
+          )}
+
+          {bid.status === 'rejected' && bid.rejection_reason && (
+            <Alert tone="danger" title="Rejected">{bid.rejection_reason}</Alert>
           )}
 
           <DetailList

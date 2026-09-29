@@ -151,7 +151,7 @@ export const capacityAPI = {
   openWindows: () => api.get('/capacity/windows/open').then(r => ensureArray(r.data)),
   myBids: () => api.get('/capacity/bids/mine').then(r => ensureArray(r.data)),
   approveBid: (id: string) => api.post(`/capacity/bids/${id}/approve`).then(r => r.data),
-  rejectBid: (id: string) => api.post(`/capacity/bids/${id}/reject`).then(r => r.data),
+  rejectBid: (id: string, reason: string) => api.post(`/capacity/bids/${id}/reject`, { reason }).then(r => r.data),
 }
 
 export const vendorAPI = {
@@ -160,7 +160,8 @@ export const vendorAPI = {
   createShipmentRequest: (data: Record<string, unknown>) => api.post('/vendor/shipment-request', data).then(r => r.data),
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
   approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
-  rejectRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/reject`).then(r => r.data),
+  rejectRequest: (id: string, reason: string) => api.put(`/vendor/shipment-request/${id}/reject`, { reason }).then(r => r.data),
+  rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }

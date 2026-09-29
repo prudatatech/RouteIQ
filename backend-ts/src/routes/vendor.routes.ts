@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { supabase } from '../core/supabase';
-import { sendError } from '../core/errors';
+import { parseRejectionReason, sendError } from '../core/errors';
 
 const router = Router();
 
@@ -73,8 +73,20 @@ router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin
 // Reject shipment request (Admin/Super Admin)
 router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
   try {
-    const request = await vendorService.rejectRequest(req.params.id);
+    const reason = parseRejectionReason(req.body?.reason);
+    const request = await vendorService.rejectRequest(req.params.id, reason);
     res.json(request);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Reject a vendor's KYC, storing why (Admin/Super Admin)
+router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+  try {
+    const reason = parseRejectionReason(req.body?.reason);
+    const data = await vendorService.rejectKyc(req.params.id, reason);
+    res.json({ success: true, data });
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
