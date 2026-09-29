@@ -7,7 +7,7 @@ import { Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '.
 import { colors, fontFamily, size, space } from '../theme';
 import { api, type Booking } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
-import { BOOKING_STATUS } from '../utils/bookingStatus';
+import { bookingStatusInfo } from '../utils/bookingStatus';
 import { formatDay, formatINR } from '../utils/format';
 import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
 
@@ -74,7 +74,7 @@ export default function BookingsScreen({ navigation }: any) {
 }
 
 function BookingRow({ booking, onPress, t }: { booking: Booking; onPress: () => void; t: TranslateFn }) {
-  const status = BOOKING_STATUS[booking.status];
+  const status = bookingStatusInfo(booking);
   const statusLabel = t(status.label);
   const route = t('route_a_to_b', { from: placeName(booking.pickup_name), to: placeName(booking.drop_name) });
   return (

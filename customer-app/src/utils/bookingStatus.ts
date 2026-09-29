@@ -1,4 +1,4 @@
-import type { BookingStatus } from '../services/api';
+import type { Booking, BookingStatus } from '../services/api';
 import type { Tone } from '../components/ui';
 import type { TranslateFn } from '../hooks/useTranslation';
 
@@ -11,6 +11,14 @@ export const BOOKING_STATUS: Record<BookingStatus, { label: string; tone: Tone }
   delivered: { label: 'status_delivered', tone: 'success' },
   cancelled: { label: 'status_cancelled', tone: 'neutral' },
 };
+
+/** A load whose delivery attempt failed and is waiting for another. The booking keeps its own status, so this reads the shipment's. */
+export const deliveryFailed = (booking: Pick<Booking, 'status' | 'shipment_status'>) =>
+  booking.shipment_status === 'exception' && booking.status !== 'delivered' && booking.status !== 'cancelled';
+
+/** The pill for a booking: its status, or "Delivery attempt failed" after a failed attempt. */
+export const bookingStatusInfo = (booking: Pick<Booking, 'status' | 'shipment_status'>): { label: string; tone: Tone } =>
+  deliveryFailed(booking) ? { label: 'status_delivery_failed', tone: 'danger' } : BOOKING_STATUS[booking.status];
 
 /** Steps a booking goes through, in order. */
 export const BOOKING_STEPS: { status: BookingStatus; label: string }[] = [
