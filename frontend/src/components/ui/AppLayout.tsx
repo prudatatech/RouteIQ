@@ -12,6 +12,7 @@ import { useDraftStore } from '@/store/draftStore'
 import SOSListener from '@/components/SOSListener'
 import { CommandPalette } from './CommandPalette'
 import { GlobalDeliveryCelebration } from './GlobalDeliveryCelebration'
+import { NotificationsBell } from './NotificationsBell'
 import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
 
@@ -99,8 +100,8 @@ function SearchButton({ collapsed, onClick }: { collapsed: boolean; onClick: () 
       onClick={onClick}
       title={collapsed ? 'Search' : undefined}
       className={clsx(
-        'flex h-10 items-center rounded-control text-sm text-muted transition-colors hover:bg-surface-subtle hover:text-text',
-        collapsed ? 'mx-2 justify-center' : 'mx-3 gap-3 px-3',
+        'flex h-10 min-w-0 flex-1 items-center rounded-control text-sm text-muted transition-colors hover:bg-surface-subtle hover:text-text',
+        collapsed ? 'justify-center' : 'gap-3 px-3',
       )}
     >
       <Search size={18} aria-hidden="true" className="shrink-0" />
@@ -291,8 +292,9 @@ export default function AppLayout() {
       >
         <Brand collapsed={collapsed} />
         {isStaff && (
-          <div className="shrink-0 border-b border-border py-2">
+          <div className={clsx('flex shrink-0 items-center gap-1 border-b border-border py-2', collapsed ? 'flex-col px-2' : 'pl-3 pr-2')}>
             <SearchButton collapsed={collapsed} onClick={() => setSearchOpen(true)} />
+            <NotificationsBell />
           </div>
         )}
         <NavList items={sections} collapsed={collapsed} badges={badges} />
@@ -304,7 +306,12 @@ export default function AppLayout() {
         <IconButton label="Open menu" icon={<Menu size={20} />} onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} />
         <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
         <span className="flex-1 text-base font-semibold">MargixIndia</span>
-        {isStaff && <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />}
+        {isStaff && (
+          <>
+            <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />
+            <NotificationsBell />
+          </>
+        )}
       </header>
 
       {/* Phone and tablet menu */}

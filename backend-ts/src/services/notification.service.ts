@@ -31,11 +31,32 @@ export const notificationService = {
   async notifySuperAdmins(title: string, body: string, type: string, data: any = {}) {
     // Find all super admins
     const { data: admins, error } = await supabase.from('users').select('id').eq('role', 'superadmin');
-    
+
     if (error || !admins) return;
 
     for (const admin of admins) {
       await this.sendNotification(admin.id, title, body, type, data);
+    }
+  },
+
+  /**
+   * Notify every active staff member (admin and superadmin) — e.g. a new SOS,
+   * a new vendor shipment request, a bid waiting for a decision, KYC
+   * submitted, or a 3PL application submitted (see docs/ux-plan-2.md, D2).
+   * Unlike `notifySuperAdmins`, this also reaches plain `admin` accounts and
+   * excludes any account that has been deactivated.
+   */
+  async notifyStaff(title: string, body: string, type: string, data: any = {}) {
+    const { data: staff, error } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', ['admin', 'superadmin'])
+      .eq('is_active', true);
+
+    if (error || !staff) return;
+
+    for (const member of staff) {
+      await this.sendNotification(member.id, title, body, type, data);
     }
   }
 };
