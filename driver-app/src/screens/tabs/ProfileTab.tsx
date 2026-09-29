@@ -7,6 +7,8 @@ import { api } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
 import { INDIAN_VEHICLES } from '../../constants/profile';
 import LanguagePicker from '../../components/LanguagePicker';
+import DocumentsSection from '../../components/profile/DocumentsSection';
+import { useMyPeople } from '../../hooks/useMyPeople';
 import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
 import { colors, radius, size, space } from '../../theme';
 import { formatNumber } from '../../utils/format';
@@ -32,7 +34,9 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
   const [savingName, setSavingName] = useState(false);
   const [savingVehicle, setSavingVehicle] = useState<string | null>(null);
 
-  const shortId = driverInfo?.id ? String(driverInfo.id).slice(0, 6).toUpperCase() : null;
+  const people = useMyPeople();
+
+  const shortId =driverInfo?.id ? String(driverInfo.id).slice(0, 6).toUpperCase() : null;
 
   const pickImage = async () => {
     try {
@@ -206,6 +210,14 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
           );
         })}
       </Card>
+
+      <DocumentsSection
+        documents={people.data?.documents ?? null}
+        loading={people.loading}
+        error={people.error}
+        onRetry={people.reload}
+        onChanged={people.reload}
+      />
 
       <Button
         title={t('logout')}
