@@ -55,7 +55,10 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   returnTrip: 'full',
 };
 
-const formatTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const formatTime = (ms: number) =>
+  new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(
+    new Date(ms),
+  );
 
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();
@@ -77,6 +80,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
   const arrivedStops = useRef(new Set<string>());
+  const deviceLocation = useDeviceLocationStatus();
   const tracking = useLocationTracking({
     isRouteActive: routeActive,
     onGeofenceArrival: (alert) => {
@@ -85,9 +89,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       shortFeedback();
     },
     onRouteSyncRequested: refresh,
+    onDeviceLocationRecheck: deviceLocation.recheck,
   });
   const { takeBreak } = tracking;
-  const deviceLocation = useDeviceLocationStatus();
   const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
 
@@ -335,6 +339,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           syncState={data.syncState}
           onToggleTracking={tracking.toggle}
           onRetrySync={refresh}
+          backgroundError={tracking.backgroundError}
+          onRetryBackgroundTracking={tracking.retryBackgroundTracking}
         />
       </SafeAreaView>
 

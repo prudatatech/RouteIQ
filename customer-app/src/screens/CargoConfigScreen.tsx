@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
+import { formatNumber } from '../utils/format';
 
 /** Weight presets with the vehicle class usually used for them in India. */
 const TRUCK_TIERS = [
@@ -35,7 +36,7 @@ const getTierForWeight = (weight: number) => {
 };
 
 const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
-  unit === 't' ? tonnes.toFixed(1) : Math.round(tonnes * 1000).toLocaleString();
+  unit === 't' ? tonnes.toFixed(1) : formatNumber(Math.round(tonnes * 1000));
 
 export default function CargoConfigScreen({ navigation, route }: any) {
   const { pickupLocation, dropoffLocation, loadType } = route.params || {};
@@ -249,18 +250,28 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </Text>
             <Text variant="bodyMedium">{suggestedTruck ?? 'Chosen after you confirm the weight'}</Text>
             <Text variant="caption" color="textMuted">
-              For loads up to {Math.round(selectedWeight * 1000).toLocaleString()} kg
+              For loads up to {formatNumber(Math.round(selectedWeight * 1000))} kg
             </Text>
           </View>
         </Card>
       </ScrollView>
 
-      {/* CONTINUE */}
+      {/* COMING SOON */}
       <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
-        <Button title="Continue to pricing" disabled />
-        <Text variant="caption" color="textMuted" align="center">
-          Booking is coming soon.
-        </Text>
+        <Card style={styles.comingSoonCard}>
+          <View style={styles.comingSoonHeader}>
+            <View style={styles.comingSoonIconBox}>
+              <Feather name="clock" size={size.icon.md} color={colors.accent} />
+            </View>
+            <View style={styles.flex}>
+              <Text variant="bodyMedium">Online booking is coming soon</Text>
+              <Text variant="bodySmall" color="textMuted">
+                You can't book a shipment in the app yet. In the meantime, go back to Home to see what you can do today.
+              </Text>
+            </View>
+          </View>
+          <Button title="Back to Home" variant="secondary" onPress={() => navigation.goBack()} />
+        </Card>
       </SafeAreaView>
     </SafeAreaView>
   );
@@ -299,7 +310,7 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   unitBtn: {
-    minHeight: 36,
+    minHeight: size.control,
     minWidth: size.control,
     paddingHorizontal: space[3],
     borderRadius: radius.control - 2,
@@ -376,5 +387,15 @@ const styles = StyleSheet.create({
     gap: space[2],
     borderTopWidth: size.border,
     borderTopColor: colors.border,
+  },
+  comingSoonCard: { gap: space[3], backgroundColor: colors.surfaceSubtle },
+  comingSoonHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: space[3] },
+  comingSoonIconBox: {
+    width: size.control - space[2],
+    height: size.control - space[2],
+    borderRadius: radius.control,
+    backgroundColor: colors.accentSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

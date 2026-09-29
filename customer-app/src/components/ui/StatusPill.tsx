@@ -1,6 +1,6 @@
 import React, { type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, radius, space } from '../../theme';
+import { colors, radius, size, space } from '../../theme';
 import { Text } from './Text';
 
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent';
@@ -41,8 +41,8 @@ export function StatusPill({ label, tone = 'neutral', icon, onPress, accessibili
         accessibilityLabel={label}
         accessibilityHint={accessibilityHint}
         onPress={onPress}
-        hitSlop={8}
-        style={({ pressed }) => [styles.pill, { backgroundColor: t.bg }, pressed ? styles.pressed : null]}
+        hitSlop={12}
+        style={({ pressed }) => [styles.pill, styles.pillPressable, { backgroundColor: t.bg }, pressed ? styles.pressed : null]}
       >
         {content}
       </Pressable>
@@ -65,5 +65,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     alignSelf: 'flex-start',
   },
+  pillPressable: { minHeight: size.control, justifyContent: 'center' },
   pressed: { opacity: 0.7 },
 });

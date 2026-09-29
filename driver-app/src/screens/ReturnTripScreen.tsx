@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
 import { Button, Card, ErrorBanner, ScreenHeader, Text } from '../components/ui';
 import { colors, space } from '../theme';
+import { formatNumber } from '../utils/format';
 
 interface ReturnTripScreenProps {
   vehicleId: string;
@@ -82,7 +83,7 @@ export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: Re
             <Text variant="bodySmallMedium" color="textMuted">
               {t('return_avail_cap')}
             </Text>
-            <Text variant="heading">{capacity !== null ? `${capacity.toLocaleString()} kg` : '—'}</Text>
+            <Text variant="heading">{capacity !== null ? `${formatNumber(capacity)} kg` : '—'}</Text>
             <Text variant="bodySmall" color="textMuted">
               {t('return_cap_desc')}
             </Text>

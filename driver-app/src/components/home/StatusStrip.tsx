@@ -14,6 +14,9 @@ interface StatusStripProps {
   syncState: SyncState;
   onToggleTracking: () => void;
   onRetrySync: () => void;
+  /** Repeated background GPS-send/geofence failures, or null when tracking is healthy. */
+  backgroundError?: { at: number; message: string } | null;
+  onRetryBackgroundTracking?: () => void;
 }
 
 const icon = (name: keyof typeof Ionicons.glyphMap) => (color: string) => (
@@ -28,6 +31,8 @@ export default function StatusStrip({
   syncState,
   onToggleTracking,
   onRetrySync,
+  backgroundError,
+  onRetryBackgroundTracking,
 }: StatusStripProps) {
   const { t } = useTranslation();
   const openSettings = () => Linking.openSettings();
@@ -66,6 +71,16 @@ export default function StatusStrip({
         onPress={isStartingTracking ? undefined : onToggleTracking}
         accessibilityHint={t('hint_toggle_tracking')}
       />
+
+      {backgroundError ? (
+        <StatusPill
+          tone="warning"
+          label={t('status_tracking_error')}
+          icon={icon('warning-outline')}
+          onPress={onRetryBackgroundTracking}
+          accessibilityHint={t('hint_retry_tracking')}
+        />
+      ) : null}
 
       {syncState === 'offline' ? (
         <StatusPill

@@ -617,7 +617,14 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function buildEarnings(userId: string) {
+interface EarningsFilter {
+  /** ISO date/datetime, inclusive lower bound on the trip's updated_at. */
+  from?: string;
+  /** ISO date/datetime, inclusive upper bound on the trip's updated_at. */
+  to?: string;
+}
+
+async function buildEarnings(userId: string, filter: EarningsFilter = {}) {
   const { data: vehicles } = await supabase.from('vehicles').select('id, latitude, longitude, capacity_kg').eq('driver_id', userId);
   if (!vehicles || vehicles.length === 0) return { total_earnings: 0, completed_trips: 0, recent_invoices: [] };
 
@@ -643,14 +650,24 @@ async function buildEarnings(userId: string) {
   }
 
   const vehicleIds = vehicles.map(v => v.id);
-  const { data: cargoTrips } = await supabase.from('cargo_manifest').select('*').in('vehicle_id', vehicleIds).eq('status', 'delivered').order('updated_at', { ascending: false });
-  const { data: routeTrips } = await supabase.from('routes').select(`
+  let cargoQuery = supabase.from('cargo_manifest').select('*').in('vehicle_id', vehicleIds).eq('status', 'delivered').order('updated_at', { ascending: false });
+  let routeQuery = supabase.from('routes').select(`
     *,
     route_stops (
       sequence,
       delivery_points ( name, address, latitude, longitude, demand_kg )
     )
   `).in('vehicle_id', vehicleIds).eq('status', 'completed').order('updated_at', { ascending: false });
+  if (filter.from) {
+    cargoQuery = cargoQuery.gte('updated_at', filter.from);
+    routeQuery = routeQuery.gte('updated_at', filter.from);
+  }
+  if (filter.to) {
+    cargoQuery = cargoQuery.lte('updated_at', filter.to);
+    routeQuery = routeQuery.lte('updated_at', filter.to);
+  }
+  const { data: cargoTrips } = await cargoQuery;
+  const { data: routeTrips } = await routeQuery;
 
   const allTrips = [
     ...(cargoTrips || []).map(t => ({ ...t, trip_type: 'cargo' })),
@@ -742,6 +759,36 @@ router.get('/driver/earnings', requireAuth, async (req: Request, res: Response) 
     const userId = req.user?.user_id;
     if (!userId || req.user?.role !== 'driver') { res.status(403).json({ detail: 'Only drivers' }); return; }
     res.json(await buildEarnings(userId));
+  } catch (e: any) { sendError(req, res, e); }
+});
+
+const HISTORY_DEFAULT_LIMIT = 20;
+const HISTORY_MAX_LIMIT = 100;
+
+// Full, paginated trip/earnings history with an optional date range.
+router.get('/driver/earnings/history', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.user_id;
+    if (!userId || req.user?.role !== 'driver') { res.status(403).json({ detail: 'Only drivers' }); return; }
+
+    const rawLimit = Number(req.query.limit);
+    const rawOffset = Number(req.query.offset);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), HISTORY_MAX_LIMIT) : HISTORY_DEFAULT_LIMIT;
+    const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+    const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
+    const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
+
+    const { total_earnings, completed_trips, recent_invoices } = await buildEarnings(userId, { from, to });
+    const page = recent_invoices.slice(offset, offset + limit);
+
+    res.json({
+      invoices: page,
+      total: completed_trips,
+      total_earnings,
+      limit,
+      offset,
+      has_more: offset + page.length < completed_trips,
+    });
   } catch (e: any) { sendError(req, res, e); }
 });
 

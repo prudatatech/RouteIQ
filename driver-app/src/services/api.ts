@@ -6,6 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_V1 } from '../config';
 import { supabase } from './supabase';
+import type { Invoice } from '../components/modals/InvoiceDialog';
 
 const STORAGE_KEYS = {
   DRIVER_INFO: 'margixindia_driver_info',
@@ -180,6 +181,23 @@ class ApiClient {
 
   async getDriverEarnings(): Promise<any> {
     return this.request('GET', '/auth/driver/earnings', undefined, true);
+  }
+
+  async getDriverEarningsHistory(params: { limit?: number; offset?: number; from?: string; to?: string } = {}): Promise<{
+    invoices: Invoice[];
+    total: number;
+    total_earnings: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  }> {
+    const query = new URLSearchParams();
+    if (params.limit != null) query.set('limit', String(params.limit));
+    if (params.offset != null) query.set('offset', String(params.offset));
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    const qs = query.toString();
+    return this.request('GET', `/auth/driver/earnings/history${qs ? `?${qs}` : ''}`, undefined, true);
   }
 
   // ── Driver GPS Ping ────────────────────────────────────────

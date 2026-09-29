@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { api } from '../services/api';
-import { locationService } from '../services/location';
+import { locationService, type BackgroundError } from '../services/location';
 import type { LatLng } from '../types/route';
 import { useTranslation } from './useTranslation';
 import { shortFeedback } from '../utils/feedback';
@@ -22,18 +22,26 @@ interface Options {
   onGeofenceArrival?: (alert: { stop_id: string; message: string }) => void;
   /** Server asked the app to re-fetch the route. */
   onRouteSyncRequested?: () => void;
+  /** Ask the device-location-status hook to re-check immediately (e.g. after a permission prompt), instead of waiting for its polling interval. */
+  onDeviceLocationRecheck?: () => void;
 }
 
-export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteSyncRequested }: Options) {
+export function useLocationTracking({
+  isRouteActive,
+  onGeofenceArrival,
+  onRouteSyncRequested,
+  onDeviceLocationRecheck,
+}: Options) {
   const { t } = useTranslation();
   const [isTracking, setIsTracking] = useState(locationService.isTracking);
   const [currentLoc, setCurrentLoc] = useState<LatLng | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [backgroundError, setBackgroundError] = useState<BackgroundError | null>(locationService.getLastBackgroundError());
 
   // locationService keeps the callbacks it was started with, so they read
   // the latest handlers through refs.
-  const optionsRef = useRef({ isRouteActive, onGeofenceArrival, onRouteSyncRequested });
-  optionsRef.current = { isRouteActive, onGeofenceArrival, onRouteSyncRequested };
+  const optionsRef = useRef({ isRouteActive, onGeofenceArrival, onRouteSyncRequested, onDeviceLocationRecheck });
+  optionsRef.current = { isRouteActive, onGeofenceArrival, onRouteSyncRequested, onDeviceLocationRecheck };
 
   const start = useCallback(async (): Promise<boolean> => {
     setIsStarting(true);
@@ -53,6 +61,7 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
           }
         },
         (loc) => setCurrentLoc({ lat: loc.lat, lng: loc.lng }),
+        (err) => setBackgroundError(err),
       );
       if (!result.success) {
         Alert.alert(t('tracking_failed_title'), result.error || t('tracking_failed_desc'));
@@ -76,6 +85,12 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
     try {
       deactivateKeepAwake();
     } catch {}
+  }, []);
+
+  /** Dismisses the background-error pill; the next ping/geofence check reports fresh. */
+  const retryBackgroundTracking = useCallback(() => {
+    locationService.clearLastBackgroundError();
+    setBackgroundError(null);
   }, []);
 
   /** Turns tracking on or off; returns true when the state changed. */
@@ -122,17 +137,28 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
+        // Let StatusStrip reflect the permission decision immediately instead
+        // of waiting for its own polling interval.
+        optionsRef.current.onDeviceLocationRecheck?.();
         if (status === 'granted') {
+          const servicesEnabled = await Location.hasServicesEnabledAsync();
+          if (!servicesEnabled) {
+            console.warn('Initial location fetch skipped: location services are off');
+            return;
+          }
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setCurrentLoc((current) => current ?? { lat: loc.coords.latitude, lng: loc.coords.longitude });
+        } else {
+          console.warn('Initial location fetch skipped: permission not granted');
         }
       } catch (e) {
         console.warn('Initial location fetch failed:', e);
+        optionsRef.current.onDeviceLocationRecheck?.();
       }
     })();
     // Runs once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { isTracking, isStarting, currentLoc, start, toggle, takeBreak };
+  return { isTracking, isStarting, currentLoc, start, toggle, takeBreak, backgroundError, retryBackgroundTracking };
 }
