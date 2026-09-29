@@ -2,7 +2,7 @@
  * Offline action queue.
  *
  * Stop completions (with proof of delivery), failed stops, declared loads, SOS
- * details and parcel scans are kept on the phone when there is no signal and
+ * details, parcel scans and the driver's own documents are kept on the phone when there is no signal and
  * sent, in the order they were made, when it is back. Every action carries its
  * own id, which is sent as the idempotency key, so one that reached the server
  * but whose reply was lost is not applied twice when it is sent again.
@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api, ApiError, type SosSeverity, type SosType } from './api';
+import { sendDocument, type DocumentUpload } from './documentUpload';
 import { uploadProofFiles, type PodPaths } from './podUpload';
 import { isNetworkError } from '../utils/errors';
 
@@ -37,6 +38,8 @@ export interface Payloads {
   fail_stop: { stopId: string; reason: FailureReasonCode; note?: string; lat?: number; lng?: number };
   declare_load: { vehicleId: string; percentage: number };
   sos_details: { alertId: string; details: { alert_type?: SosType; description?: string; severity?: SosSeverity } };
+  /** The driver's own document: every file is uploaded, then the document is recorded. */
+  upload_document: DocumentUpload;
   scan: { code: string; purpose: 'pickup' | 'delivery'; stopId?: string; method: 'camera' | 'manual'; lat?: number; lng?: number };
 }
 
@@ -160,6 +163,7 @@ class ActionQueue {
 
   private async enqueue(action: QueuedAction) {
     if (action.kind === 'complete_stop') await this.keepFiles(action);
+    if (action.kind === 'upload_document') await this.keepDocumentFiles(action);
     this.items.push(action);
     await this.save();
   }
@@ -182,7 +186,35 @@ class ActionQueue {
     }
   }
 
+  /** Copies the document pictures somewhere the system will not clear. */
+  private async keepDocumentFiles(action: Extract<QueuedAction, { kind: 'upload_document' }>) {
+    const p = action.payload;
+    try {
+      await FileSystem.makeDirectoryAsync(FILES_DIR, { intermediates: true });
+      const kept: string[] = [];
+      for (let i = 0; i < p.fileUris.length; i++) {
+        const uri = p.fileUris[i];
+        if (uri.startsWith(FILES_DIR)) {
+          kept.push(uri);
+          continue;
+        }
+        const to = `${FILES_DIR}${action.id}_doc${i}.jpg`;
+        await FileSystem.copyAsync({ from: uri, to });
+        kept.push(to);
+      }
+      p.fileUris = kept;
+    } catch (e) {
+      console.warn('[queue] could not keep the document files:', e);
+    }
+  }
+
   private async dropFiles(action: QueuedAction) {
+    if (action.kind === 'upload_document') {
+      for (const uri of action.payload.fileUris) {
+        if (uri.startsWith(FILES_DIR)) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
+      return;
+    }
     if (action.kind !== 'complete_stop') return;
     for (const uri of [action.payload.photoUri, action.payload.signatureUri]) {
       if (uri && uri.startsWith(FILES_DIR)) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
@@ -210,6 +242,14 @@ class ActionQueue {
           },
           key,
         );
+      }
+      case 'upload_document': {
+        const p = action.payload;
+        return sendDocument(p, key, (paths) => {
+          p.uploadedPaths = paths;
+          // Remember what was uploaded if this action is already saved
+          if (this.items.some((i) => i.id === action.id)) this.save();
+        });
       }
       case 'fail_stop': {
         const p = action.payload;

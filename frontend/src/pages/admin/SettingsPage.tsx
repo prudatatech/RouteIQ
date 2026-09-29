@@ -7,6 +7,7 @@ import { errorMessage, formatRupees } from '@/utils/display'
 import { useAuthStore } from '@/store/authStore'
 import { AlarmSettingsSection } from '@/components/fleet/AlarmSettings'
 import { AutoEscalationSetting } from '@/components/tpl/AutoEscalationSetting'
+import { PeopleSettingsCard } from '@/components/people/PeopleSettingsCard'
 
 const PHONE_PATTERN = /^\+?[0-9]{7,15}$/
 
@@ -141,6 +142,8 @@ export default function SettingsPage() {
           </Card>
 
           <DispatchPhoneCard />
+
+          <PeopleSettingsCard />
 
           <Card>
             <CardHeader title="Rate card" description="Read only here." />

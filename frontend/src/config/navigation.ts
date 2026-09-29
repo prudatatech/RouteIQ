@@ -65,7 +65,7 @@ export const navSections: NavSection[] = [
   {
     title: 'Admin',
     items: [
-      { to: '/admin/users', label: 'Users', icon: Users, roles: superadmin },
+      { to: '/admin/users', label: 'People', icon: Users, roles: staffAndManagers },
       { to: '/admin/kyc', label: 'KYC review', icon: FileCheck2, roles: superadmin, badge: 'pendingKyc' },
       { to: '/admin/audit', label: 'Audit log', icon: History, roles: superadmin },
       { to: '/admin/settings', label: 'Settings', icon: Settings, roles: staff },

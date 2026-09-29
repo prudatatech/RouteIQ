@@ -43,6 +43,7 @@ const STAFF: Record<string, Resolver> = {
   stop_failed: d => withOpen('/shipments', d.manifest_id),
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),
+  document_expiring: d => (str(d.user_id) ? `/admin/users/${str(d.user_id)}?tab=documents` : '/admin/users?tab=attention'),
 }
 
 const VENDOR: Record<string, Resolver> = {

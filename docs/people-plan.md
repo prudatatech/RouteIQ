@@ -161,3 +161,38 @@ Real people data is messy. Each case below has a decision so the build handles i
 - `user_bank_accounts` adds: `effective_from`, `proof_document_id`.
 - New: `user_phone_history` (user_id, phone, from_at, to_at), `driver_vehicle_assignments` (above).
 - New settings, stored in `system_settings` and editable on Settings: `licence_grace_days`, `document_retention_days`, `bank_change_cooldown_hours`, `driver_document_enforcement`.
+
+## Frontend notes
+
+Where the web and driver-app screens had to guess, this is what they assume. If the backend differs, change `peopleAPI` in `frontend/src/services/api.ts` (web) and the people calls in `driver-app/src/services/api.ts`.
+
+**Lists and detail**
+- `GET /people` returns an array, or `{items: [...]}`. Each row: `id, full_name, email, phone, role, status, employee_code, designation, vehicle_plate, employer_type, employer_partner_name, doc_summary {required, verified, pending, expiring, expired, missing}, last_login`. The web fetches `limit=500` and filters role and tab in the browser; only `status` and `q` go to the server. `doc_summary.required` counts groups (identity proof counts once).
+- `GET /people/:id` also returns `phone_history [{phone, from_at, to_at}]` and `vehicle_assignments [{id, vehicle_id, plate_number, assigned_at, unassigned_at, assigned_by_name}]`; `user.has_sign_in_account` (false when the Auth account is gone); `profile.updated_at`, `base_depot_name`, `reporting_manager_name`, `employer_partner_name`; names on `status_history` (`changed_by_name`), `notes` (`author_name`) and `activity` (`actor_name`). A vendor or 3PL id may answer 404; the page then links to KYC review.
+- `PATCH /people/:id` takes `{full_name?, email?, phone?, updated_at, profile: {...}}` (profile fields nested, like create). A stale `updated_at` answers 409. Clearing a field sends `null`. A phone change is the same PATCH with `phone` only.
+- Consent is saved with `PATCH profile {consent_method, consent_at, consent_by}` (current user id) before the first upload; the server may overwrite `consent_at` and `consent_by`.
+- "No PAN" is `PATCH profile {no_pan_reason}`; clearing sends `null`. A non-empty reason satisfies the tax ID group.
+
+**Status and account**
+- `POST /people/:id/status` `{status, reason?, leave_from?, leave_until?, suspended_until?}`. Reactivate is `status: 'onboarding'` on an inactive person. Refusals ("on route X") are shown as the server sends them, from `detail` or `error`.
+- `POST /people/:id/invite` sends or resends the sign-in invite (10 minute limit). `POST /people/:id/anonymise` (superadmin, inactive only). Role change keeps using `PATCH /users/:id {role}`.
+- `GET /people/duplicates?phone=&doc_type=&doc_number=` returns an array or `{duplicates: [...]}` or `{matches: [...]}` of `{id, full_name, role?}`. The web excludes the person being edited.
+
+**Documents**
+- `POST /people/:id/documents` also accepts `name_on_document, extra_file_paths, review_by`; licence classes are `metadata.licence_classes` (array). A document has `in_grace` (true when expired but inside the grace period), `verification_note`, `number_last4`, `extra_file_paths`, `resubmission_count`. Verify with a name mismatch sends `{status: 'verified', verification_note}`.
+- `GET /people/:id/documents/:docId/file?index=n` returns the signed link for extra page `n` (0 is the first extra page); without `index` it is the main file.
+- Required groups are worked out in the browser (`requiredGroups` in `components/people/types.ts`): licence (drivers), identity proof (Aadhaar, voter ID, passport), tax ID (PAN), photo. Staff can set "No PAN" with a reason. The age rule treats only the `TRANS` class as a transport licence (20+).
+
+**Bank**: bank rows may carry `effective_from`, `proof_document_id`, `verification_note`; sending `verification_note` with `is_verified: true` is required when the holder name differs from the person. The bank tab is hidden for partner drivers and for managers.
+
+**Settings**: `GET /people/settings` and `PUT /people/settings` with `{licence_grace_days, document_retention_days, bank_change_cooldown_hours, driver_document_enforcement}`.
+
+**CSV**: `POST /people/import` (multipart field `file`, `?commit=true` to create) returns `{dry_run?, created?, rows: [{row, name?, status: 'ok'|'error'|'duplicate', errors?, duplicate_of?: {id, full_name}}]}`. `GET /people/export.csv` and `GET /people/documents/expiring.csv?days=30` return CSV.
+
+**Dashboard**: `GET /dashboard/people-attention` returns `{expired_licences: [{user_id, full_name, expires_on}], expiring_licences: [...], missing_required: [{user_id, full_name, missing: [doc_type]}]}`.
+
+**Vehicles**: `GET /vehicles` (and the shipment assign options) carry `driver_licence_status`: `valid`, `expiring`, `expired`, `missing` or null. Screens that read vehicles straight from Supabase (vendor loads, bookings) read the status from `GET /vehicles` instead. When enforcement is `block`, the assign endpoints answer 4xx with a `detail` message that the screens show.
+
+**Notifications**: `document_expiring` with `data.user_id` opens `/admin/users/:user_id?tab=documents`.
+
+**Driver app**: uses `GET /people/me`, `POST /people/me/documents/upload-url`, `POST /people/me/documents` (with `extra_file_paths` and an `Idempotency-Key` header) and `GET /people/me/documents/:docId/file`. Uploads made offline go through the app's action queue as an `upload_document` entry. Emergency contacts are read-only in the app.

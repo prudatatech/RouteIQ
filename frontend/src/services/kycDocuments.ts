@@ -1,5 +1,5 @@
 import { supabase } from '@/services/supabase'
-import { vendorAPI } from '@/services/api'
+import { peopleAPI, vendorAPI } from '@/services/api'
 import { errorMessage } from '@/utils/display'
 
 const PUBLIC_URL_MARKER = '/storage/v1/object/public/kyc_documents/'
@@ -92,4 +92,22 @@ export async function openKycDocument(stored: string): Promise<void> {
     tab?.close()
     throw err
   }
+}
+
+/**
+ * Uploads a person's document (licence, Aadhaar, ...) through a signed upload URL from the
+ * backend (docs/people-plan.md). Returns the storage path to save with the document record.
+ */
+export async function uploadPersonDocument(personId: string, docType: string, file: File): Promise<string> {
+  let upload: { path: string; token: string }
+  try {
+    upload = await peopleAPI.documentUploadUrl(personId, { doc_type: docType, file_name: file.name, content_type: file.type })
+  } catch (err) {
+    throw new Error(errorMessage(err, 'We could not start the upload. Use a PDF, JPG or PNG under 10 MB.'))
+  }
+  const { error } = await supabase.storage
+    .from('kyc_documents')
+    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  if (error) throw new Error('We could not upload the file. Try again.')
+  return upload.path
 }

@@ -18,6 +18,9 @@ import { downloadCsv, toCsv } from '@/utils/csv'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
 import type { QuoteRequest } from '@/services/pricing'
+import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
+import { licenceSuffix } from '@/components/people/docs'
+import { useVehicleLicences } from '@/components/people/useVehicleLicences'
 
 /**
  * A vehicle can be assigned to a request only if it is within this straight-line
@@ -241,6 +244,7 @@ export default function VendorRequestsPage() {
     queryFn: loadVehicles,
     enabled: tab === 'open' && selection.count > 0,
   })
+  const licences = useVehicleLicences(tab === 'open' && selection.count > 0)
   const bulkAssignTargets = useMemo(() => selection.selectedRows.filter(isBulkSelectable), [selection.selectedRows])
   const bulkVehicleCandidates = useMemo(() => {
     if (!vehiclesForBulk.data || bulkAssignTargets.length === 0) return []
@@ -479,7 +483,7 @@ export default function VendorRequestsPage() {
                     className="w-44"
                     value={bulkVehicleId}
                     onChange={e => setBulkVehicleId(e.target.value)}
-                    options={bulkVehicleCandidates.map(v => ({ value: v.id, label: v.plate_number }))}
+                    options={bulkVehicleCandidates.map(v => ({ value: v.id, label: `${v.plate_number}${licenceSuffix(licences.get(v.id))}` }))}
                   />
                   <Input
                     label="Flat price per load (₹, optional)"
@@ -549,6 +553,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
   useEffect(() => { setVehicleId(''); setFlatPrice(''); setRatePerKm('') }, [request?.id])
 
   const vehicles = useQuery({ queryKey: ['assignable-vehicles'], queryFn: loadVehicles, enabled: canAssign || !!request?.assigned_vehicle_id })
+  const licences = useVehicleLicences(canAssign)
   const { eligible, withSpaceCount } = useMemo(
     () => (request && vehicles.data ? eligibleVehicles(request, vehicles.data) : { eligible: [], withSpaceCount: 0 }),
     [request, vehicles.data],
@@ -703,6 +708,7 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block font-mono text-sm font-medium text-text">{vehicle.plate_number}</span>
+                          <DriverLicenceBadge status={licences.get(vehicle.id)} className="my-1" />
                           <span className="block text-xs text-muted">
                             {[vehicle.vehicle_type ? humanize(vehicle.vehicle_type) : null, `${formatKm(distanceKm)} from pickup`].filter(Boolean).join(' · ')}
                           </span>
