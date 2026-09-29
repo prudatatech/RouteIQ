@@ -18,7 +18,7 @@ import OptimizePage from '@/pages/OptimizePage'
 import UsersPage from '@/pages/admin/UsersPage'
 import KycReviewPage from '@/pages/admin/KycReviewPage'
 import AuditLogPage from '@/pages/admin/AuditLogPage'
-import CargoNetworkPage from '@/pages/CargoNetworkPage'
+import BackhaulPage from '@/pages/BackhaulPage'
 import ShipmentsPage from '@/pages/ShipmentsPage'
 import ShipmentManifestPage from '@/pages/ShipmentManifestPage'
 import RouteDetailsPage from '@/pages/RouteDetailsPage'
@@ -326,7 +326,7 @@ export default function App() {
             <Route path="ai-hub" element={<MovedTo to="/optimize" />} />
             <Route path="backhaul" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <CargoNetworkPage />
+                <BackhaulPage />
               </PrivateRoute>
             } />
             <Route path="vendor-requests" element={

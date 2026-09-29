@@ -67,6 +67,11 @@ export default tseslint.config(
       'src/pages/RoutesPage.tsx',
       'src/pages/RouteDetailsPage.tsx',
       'src/pages/OptimizePage.tsx',
+      'src/pages/AnalyticsPage.tsx',
+      'src/components/analytics/**/*.{ts,tsx}',
+      'src/pages/BackhaulPage.tsx',
+      'src/components/backhaul/**/*.{ts,tsx}',
+      'src/store/cargoStore.ts',
     ],
     plugins: { design },
     rules: {

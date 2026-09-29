@@ -128,20 +128,17 @@ export const usersAPI = {
 }
 
 export const cargoAPI = {
-  scenarios: () => api.get('/cargo/scenarios').then(r => r.data),
-  securityAlerts: () => api.get('/cargo/security-alerts').then(r => r.data),
-  triggerAlert: (type: string, vehicleId: string, message: string) =>
-    api.post('/cargo/trigger-alert', { type, vehicle_id: vehicleId, message }).then(r => r.data),
+  /** Created shipments that are not on a route yet. */
+  openLoads: () => api.get('/cargo/open-loads').then(r => ensureArray(r.data)),
+  securityAlerts: () => api.get('/cargo/security-alerts').then(r => ensureArray(r.data)),
   resolveAlert: (alertId: string) =>
     api.post(`/cargo/resolve-alert/${alertId}`).then(r => r.data),
-  optimizePooling: (demands: any[]) =>
-    api.post('/cargo/optimize-pooling', demands).then(r => r.data),
+  optimizePooling: (shipmentIds: string[], vehicleId: string) =>
+    api.post('/cargo/optimize-pooling', { shipment_ids: shipmentIds, vehicle_id: vehicleId }).then(r => r.data),
   backhaulMatch: (opportunityId: string, availableCapacityKg: number) =>
     api.post('/cargo/backhaul-match', { opportunity_id: opportunityId, available_capacity_kg: availableCapacityKg }).then(r => r.data),
   verifyPod: (data: { tracking_id: string, recipient_name: string }) =>
     api.post('/cargo/verify-pod', data).then(r => r.data),
-  pricingRecommendations: (params: { distance_km: number, weight_kg: number, cargo_type: string, congestion_index: number, weather_severity: number }) =>
-    api.get('/cargo/pricing-recommendations', { params }).then(r => r.data),
 }
 
 export const capacityAPI = {
@@ -226,15 +223,14 @@ export const telemetryAPI = {
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
   metrics: () => api.get('/analytics/metrics').then(r => r.data),
-  activeMissions: () => api.get('/analytics/active-missions').then(r => r.data),
+  activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
   syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data),
   auditLogs: () => api.get('/analytics/audit-logs').then(r => r.data),
-  driverPerformance: () => api.get('/analytics/driver-performance').then(r => r.data),
-  financials: () => api.get('/analytics/financials').then(r => r.data),
-  vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => r.data),
+  driverPerformance: () => api.get('/analytics/driver-performance').then(r => ensureArray(r.data)),
+  vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => ensureArray(r.data)),
   fleetOverview: () => api.get('/analytics/fleet-overview').then(r => r.data),
-  vehicleHealth: () => api.get('/analytics/vehicle-health').then(r => r.data),
-  profitableRoutes: () => api.get('/analytics/profitable-routes').then(r => r.data),
+  /** Trips dispatched and deliveries per day, oldest first. */
+  dailyActivity: (days = 14) => api.get('/analytics/daily-activity', { params: { days } }).then(r => ensureArray(r.data)),
 }
 
 export const tplAPI = {
