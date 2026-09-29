@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import { FileText, Save, Truck, User } from 'lucide-react'
-import { Modal, Button, Input, Select, StatusPill, type SelectOption } from '@/components/ui'
+import { Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
 import { indianMobileError, rcNumberError } from '@/utils/validators'
 import { expiryStatus } from '@/utils/documentExpiry'
 
@@ -92,14 +92,23 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const queryClient = useQueryClient()
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<VehicleFormData>(DEFAULT_FORM_DATA)
+  const [attempted, setAttempted] = useState<Set<number>>(new Set())
+  const { confirm } = useConfirm()
+  // The form as it was when the window opened, to tell whether anything changed.
+  const baseline = useRef('')
   const isEditing = !!initialData
+  // A draft is saved as archived; a live vehicle must never be archived by closing its form.
+  const canSaveDraft = !isEditing || initialData.status === 'archived'
 
   useEffect(() => {
     if (isOpen) {
       const clean = Object.fromEntries(
         Object.entries(initialData ?? {}).filter(([, v]) => v !== null && v !== undefined),
       )
-      setFormData({ ...DEFAULT_FORM_DATA, ...clean } as VehicleFormData)
+      const next = { ...DEFAULT_FORM_DATA, ...clean } as VehicleFormData
+      baseline.current = JSON.stringify(next)
+      setFormData(next)
+      setAttempted(new Set())
       setStep(1)
     }
   }, [isOpen, initialData])
@@ -124,11 +133,23 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
       else await vehiclesAPI.create(payload)
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
-      toast.success('Draft saved')
+      toast.success('Draft saved. Finish it later from the Archived filter.')
+      onClose()
     } catch {
-      toast.error('Failed to save the draft')
+      toast.error('We could not save the draft. Try again.')
     }
-    onClose()
+  }
+
+  const requestClose = async () => {
+    if (JSON.stringify(formData) === baseline.current || mutation.isPending) { onClose(); return }
+    const discard = await confirm({
+      title: 'Discard your changes?',
+      message: canSaveDraft ? 'Use Save draft to keep what you entered.' : 'The vehicle keeps its current details.',
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      tone: 'danger',
+    })
+    if (discard) onClose()
   }
 
   const handleTypeChange = (type: string) => {
@@ -159,16 +180,27 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
     setFormData(prev => ({ ...prev, ...updates }))
   }
 
-  const handleNext = () => {
-    if (step === 1) {
-      if (!formData.plate_number.trim()) return toast.error('Plate number is required')
-      if (!formData.capacity_kg) return toast.error('Capacity is required')
+  const stepErrors = (n: number): Record<string, string> => {
+    const errors: Record<string, string> = {}
+    if (n === 1) {
+      if (!formData.plate_number.trim()) errors.plate = 'Enter the plate number.'
+      if (!(formData.capacity_kg > 0)) errors.capacity = 'Enter a capacity above 0.'
     }
-    if (step === 2) {
-      if (!formData.driver_name.trim()) return toast.error('Driver name is required')
-      if (!formData.driver_phone.trim()) return toast.error('Driver phone is required')
-      const phoneErr = indianMobileError(formData.driver_phone)
-      if (phoneErr) return toast.error(phoneErr)
+    if (n === 2) {
+      if (!formData.driver_name.trim()) errors.driver = 'Enter the driver’s name.'
+      if (!formData.driver_phone.trim()) errors.phone = 'Enter the driver’s phone number.'
+      else {
+        const phoneErr = indianMobileError(formData.driver_phone)
+        if (phoneErr) errors.phone = phoneErr
+      }
+    }
+    return errors
+  }
+
+  const handleNext = () => {
+    if (Object.keys(stepErrors(step)).length > 0) {
+      setAttempted(prev => new Set(prev).add(step))
+      return
     }
     setStep(s => s + 1)
   }
@@ -189,9 +221,11 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
 
   const handleFinish = () => {
     const missing = DOCS.filter(doc => !formData[docNumberKey(doc)]?.trim() || !formData[docExpiryKey(doc)]?.trim())
-    if (missing.length > 0) return toast.error(`Missing details for: ${missing.map(d => d.toUpperCase()).join(', ')}`)
-    const rcErr = rcNumberError(formData.rc_number)
-    if (rcErr) return toast.error(rcErr)
+    if (missing.length > 0 || rcNumberError(formData.rc_number)) {
+      setAttempted(prev => new Set(prev).add(3))
+      toast.error(missing.length > 0 ? `Add the number and expiry date for: ${missing.map(d => d.toUpperCase()).join(', ')}. Or save a draft.` : 'Check the RC number.')
+      return
+    }
     mutation.mutate(formData)
   }
 
@@ -203,13 +237,16 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   return (
     <Modal
       open={isOpen}
-      onClose={saveDraft}
+      onClose={requestClose}
+      closeOnBackdrop={false}
       size="xl"
       title={isEditing ? 'Update vehicle' : 'Add vehicle'}
       description={STEPS[step - 1].description}
       footer={
         <>
-          <Button variant="ghost" icon={<Save size={16} />} onClick={saveDraft}>Save draft</Button>
+          {canSaveDraft
+            ? <Button variant="ghost" icon={<Save size={16} />} onClick={saveDraft}>Save draft</Button>
+            : <Button variant="ghost" onClick={requestClose}>Cancel</Button>}
           <div className="flex-1" />
           <Button variant="secondary" onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>Back</Button>
           {step < 3 ? (
@@ -239,6 +276,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
             required
             placeholder="e.g. MH-01-AB-1234"
             value={formData.plate_number}
+            error={attempted.has(1) ? stepErrors(1).plate : undefined}
             onChange={e => set('plate_number', e.target.value.toUpperCase())}
           />
           <Select
@@ -262,7 +300,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
           />
           <div className="grid grid-cols-2 gap-4">
             <Select label="Vehicle type" options={VEHICLE_TYPES} value={formData.vehicle_type} onChange={e => handleTypeChange(e.target.value)} />
-            <Input label="Capacity (kg)" type="number" required value={formData.capacity_kg} onChange={e => handleCapacityChange(Number(e.target.value))} />
+            <Input label="Capacity (kg)" type="number" required min={1} value={formData.capacity_kg || ''} error={attempted.has(1) ? stepErrors(1).capacity : undefined} onChange={e => handleCapacityChange(Number(e.target.value))} />
           </div>
           <div>
             <p className="mb-1.5 text-sm font-medium text-text">Container dimensions (L × W × H, feet)</p>
@@ -279,7 +317,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
         <div className="space-y-4">
           <Input label="Spark GPS ID" hint="Optional hardware device ID" value={formData.spark_id} onChange={e => set('spark_id', e.target.value)} />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Driver name" required value={formData.driver_name} onChange={e => set('driver_name', e.target.value)} />
+            <Input label="Driver name" required value={formData.driver_name} error={attempted.has(2) ? stepErrors(2).driver : undefined} onChange={e => set('driver_name', e.target.value)} />
             <Input
               label="Driver phone"
               required
@@ -288,7 +326,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
               placeholder="+91 98765 43210"
               value={formData.driver_phone}
               onChange={e => set('driver_phone', e.target.value)}
-              error={indianMobileError(formData.driver_phone)}
+              error={attempted.has(2) ? stepErrors(2).phone : indianMobileError(formData.driver_phone)}
             />
           </div>
         </div>
@@ -308,10 +346,13 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
                     label={`${doc.toUpperCase()} number`}
                     value={formData[docNumberKey(doc)] || ''}
                     onChange={e => set(docNumberKey(doc), e.target.value.toUpperCase())}
-                    error={doc === 'rc' ? rcNumberError(formData.rc_number) : undefined}
+                    required
+                    error={(doc === 'rc' ? rcNumberError(formData.rc_number) : undefined) ?? (attempted.has(3) && !formData[docNumberKey(doc)]?.trim() ? 'Enter the number.' : undefined)}
                   />
                   <Input
                     label="Expiry date"
+                    required
+                    error={attempted.has(3) && !formData[docExpiryKey(doc)]?.trim() ? 'Choose the expiry date.' : undefined}
                     type="date"
                     value={formData[docExpiryKey(doc)] || ''}
                     onChange={e => set(docExpiryKey(doc), e.target.value)}

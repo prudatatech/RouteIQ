@@ -62,7 +62,7 @@ export default function OpenWindowModal({ open, onClose }: { open: boolean; onCl
     onSuccess: () => {
       toast.success('Bidding window opened. Vendors can bid now.')
       queryClient.invalidateQueries({ queryKey: ['bids-board'] })
-      queryClient.invalidateQueries({ queryKey: ['fleet'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       onClose()
     },
     onError: err => toast.error(errorMessage(err, 'We could not open this window. Try again.')),

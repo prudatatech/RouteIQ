@@ -336,7 +336,7 @@ export default function ShipmentManifestPage() {
       </ManifestCard>
 
       <p className="text-xs text-muted">
-        Printed from MargixIndia on {formatDate(new Date().toISOString())}. Reference <span className="font-mono">{shipment.id}</span>.
+        Printed from MargixIndia on {formatDate(new Date().toISOString())}. Reference <span className="font-mono">{shipment.tracking_id}</span>.
       </p>
     </Page>
   )

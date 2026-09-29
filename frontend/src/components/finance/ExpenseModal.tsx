@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { financeAPI, routesAPI, vehiclesAPI, type ExpenseInput } from '@/services/api'
 import { RECEIPT_TYPES, uploadReceipt } from '@/services/expenseReceipts'
-import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, Input, Modal, Select, Textarea, humanize } from '@/components/ui'
 import { errorMessage, formatDate } from '@/utils/display'
 import { EXPENSE_CATEGORIES, type Expense } from '@/utils/finance'
 
@@ -168,7 +168,7 @@ export default function ExpenseModal({ open, expense, onClose }: {
               { value: '', label: 'No route' },
               ...(routes.data ?? []).map(r => ({
                 value: r.id,
-                label: `${formatDate(r.created_at)}${r.total_distance_km ? ` · ${Math.round(r.total_distance_km)} km` : ''} · ${r.status}`,
+                label: `${formatDate(r.created_at)}${r.total_distance_km ? ` · ${Math.round(r.total_distance_km)} km` : ''} · ${humanize(r.status)}`,
               })),
             ]}
           />

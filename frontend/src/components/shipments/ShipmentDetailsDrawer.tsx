@@ -53,8 +53,11 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => shipmentsAPI.updateStatus(id, status),
-    onSuccess: (_data, { status }) => {
+    onSuccess: (_data, { id, status }) => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipment-history', id] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       toast.success(`Status changed to ${statusToLabel(status).toLowerCase()}`)
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not change the status. Try again.')),
@@ -125,6 +128,18 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       tone: 'danger',
     })
     if (ok) statusMutation.mutate({ id: s.id, status: 'cancelled' })
+  }
+
+  const changeStatus = async (status: (typeof FORWARD_STATUSES)[number]) => {
+    if (status === 'delivered') {
+      const ok = await confirm({
+        title: `Mark ${s.tracking_id} as delivered?`,
+        message: 'A delivered shipment cannot be changed back or cancelled.',
+        confirmLabel: 'Mark delivered',
+      })
+      if (!ok) return
+    }
+    statusMutation.mutate({ id: s.id, status })
   }
 
   const manifestLink = (
@@ -250,7 +265,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
                   size="sm"
                   disabled={statusMutation.isPending}
                   loading={statusMutation.isPending && statusMutation.variables?.status === st}
-                  onClick={() => statusMutation.mutate({ id: s.id, status: st })}
+                  onClick={() => changeStatus(st)}
                 >
                   {statusAction[st]}
                 </Button>

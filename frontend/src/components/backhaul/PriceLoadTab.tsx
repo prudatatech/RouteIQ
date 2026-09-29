@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { pricingAPI, type QuoteRequest } from '@/services/pricing'
 import type { ResolvedPlace } from '@/services/geocoding'
-import { Alert, Button, Card, CardBody, CardHeader, ErrorState, Input, PlaceSearch, Select, Skeleton } from '@/components/ui'
+import { Alert, Button, Card, CardBody, CardHeader, ErrorState, Input, PlaceSearch, Select, Skeleton, humanize } from '@/components/ui'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
 import { apiErrorMessage, useBackhaulVehicles } from './data'
@@ -19,7 +19,8 @@ const LOAD_TYPES = [
 /** Same rule the server uses to turn "Cold chain" into `cold_chain` inside a setting name. */
 const norm = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
+/** Today's date in India, as YYYY-MM-DD. */
+const todayIso = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
 
 /** Price a load with the same engine vendors and customers see, and edit the rate card behind it. */
 export default function PriceLoadTab() {
@@ -65,7 +66,7 @@ export default function PriceLoadTab() {
                 hint={vehicleTypes.length === 0 && !vehicles.isLoading ? 'No vehicle types on file yet' : undefined}
                 value={vehicleType}
                 onChange={e => setVehicleType(e.target.value)}
-                options={[{ value: '', label: 'Any vehicle' }, ...vehicleTypes.map(t => ({ value: t, label: t }))]}
+                options={[{ value: '', label: 'Any vehicle' }, ...vehicleTypes.map(t => ({ value: t, label: humanize(t) }))]}
               />
               <Select label="Load type" value={loadType} onChange={e => setLoadType(e.target.value)} options={LOAD_TYPES} />
               <Input label="Pickup date" type="date" min={todayIso()} value={date} onChange={e => setDate(e.target.value)} hint="Weather is only checked for pickups today." />
@@ -97,7 +98,7 @@ function RateCard({ vehicleTypes }: { vehicleTypes: string[] }) {
 
   const fields = useMemo(() => [
     ...BASE_FIELDS.map(f => ({ ...f })),
-    ...vehicleTypes.map(t => ({ key: `rate_per_km_${norm(t)}`, label: `${t} rate per km (₹)`, hint: undefined as string | undefined })),
+    ...vehicleTypes.map(t => ({ key: `rate_per_km_${norm(t)}`, label: `${humanize(t)} rate per km (₹)`, hint: undefined as string | undefined })),
     ...LOAD_TYPES.filter(l => l.value !== 'general').map(l => ({
       key: `load_multiplier_${l.value}`, label: `${l.label} multiplier`, hint: 'For example 1.2 charges 20% more. Leave blank for none.',
     })),

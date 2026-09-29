@@ -6,7 +6,7 @@ import { supabase } from '@/services/supabase'
 import { bookingsAPI, type CustomerBooking } from '@/services/api'
 import {
   Alert, Button, DataTable, DetailList, Drawer, ErrorState, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  useConfirm, useTabParam, useUrlState, type Column, type Tone,
+  humanize, useConfirm, useTabParam, useUrlState, type Column, type Tone,
 } from '@/components/ui'
 import { errorMessage, formatDate, formatKg, formatRelative, formatRupees } from '@/utils/display'
 
@@ -58,7 +58,13 @@ export default function BookingsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const bookings = useQuery({ queryKey: ['customer-bookings'], queryFn: bookingsAPI.list, refetchInterval: 30_000 })
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['customer-bookings'] })
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['customer-bookings'] })
+    // Confirming, assigning or cancelling changes the linked shipment and the vehicle's load.
+    queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+    queryClient.invalidateQueries({ queryKey: ['assignable-vehicles'] })
+  }
 
   const confirmBooking = useMutation({
     mutationFn: (id: string) => bookingsAPI.confirm(id),
@@ -210,7 +216,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
 
   const vehicles = useQuery({ queryKey: ['assignable-vehicles'], queryFn: loadVehicles, enabled: canAssign })
   const withSpace = useMemo(
-    () => (vehicles.data ?? []).filter(v => Number(v.available_capacity_kg ?? 0) >= Number(booking?.weight_kg ?? 0)),
+    () => (vehicles.data ?? []).filter(v => v.status !== 'maintenance' && v.status !== 'archived' && Number(v.available_capacity_kg ?? 0) >= Number(booking?.weight_kg ?? 0)),
     [vehicles.data, booking?.weight_kg],
   )
 
@@ -269,7 +275,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
               { label: 'Pickup date', value: formatDate(`${booking.pickup_date}T12:00:00+05:30`) },
               { label: 'Weight', value: <span className="tabular">{formatKg(booking.weight_kg)}</span> },
               { label: 'Load', value: booking.load_type === 'part' ? 'Part load' : 'Full truck' },
-              ...(booking.vehicle_type ? [{ label: 'Vehicle asked for', value: booking.vehicle_type }] : []),
+              ...(booking.vehicle_type ? [{ label: 'Vehicle asked for', value: humanize(booking.vehicle_type) }] : []),
               { label: 'Quoted price', value: booking.quoted_price != null ? <span className="tabular">{formatRupees(booking.quoted_price)}</span> : 'Not priced. Quote the customer directly.' },
               ...(booking.tracking_id ? [{ label: 'Tracking ID', value: <span className="font-mono">{booking.tracking_id}</span> }] : []),
             ]}
@@ -289,7 +295,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
                   placeholder={vehicles.isLoading ? 'Loading vehicles' : withSpace.length === 0 ? 'No vehicle has enough space' : 'Choose a vehicle'}
                   value={vehicleId}
                   onChange={e => setVehicleChoice({ bookingId: booking.id, vehicleId: e.target.value })}
-                  options={withSpace.map(v => ({ value: v.id, label: `${v.plate_number}${v.vehicle_type ? ` · ${v.vehicle_type}` : ''} · ${formatKg(v.available_capacity_kg)} free` }))}
+                  options={withSpace.map(v => ({ value: v.id, label: `${v.plate_number}${v.vehicle_type ? ` · ${humanize(v.vehicle_type)}` : ''} · ${formatKg(v.available_capacity_kg)} free` }))}
                 />
               )}
               <Alert tone="info">Assigning puts the shipment on the vehicle’s route and tells the customer.</Alert>

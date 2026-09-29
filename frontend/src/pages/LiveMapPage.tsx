@@ -45,7 +45,7 @@ export default function LiveMapPage() {
     onError: () => toast.error('We could not sync GPS. Try again.'),
   })
 
-  const { data: vehicles = [], isLoading } = useQuery<VehicleRow[]>({
+  const { data: vehicles = [], isLoading, isError, refetch } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
     queryFn: () => vehiclesAPI.list({ limit: 500 }) as Promise<VehicleRow[]>,
     refetchInterval: 10_000,
@@ -53,7 +53,7 @@ export default function LiveMapPage() {
 
   const fleet = vehicles.filter(v => v.status !== 'archived')
   const withPosition = fleet.filter(v => v.latitude != null && v.longitude != null)
-  const filtered = withPosition.filter(v => v.plate_number.toLowerCase().includes(search.toLowerCase()))
+  const filtered = withPosition.filter(v => v.plate_number.toLowerCase().includes(search.trim().toLowerCase()))
 
   const selectVehicle = (id: string) => {
     setSelectedId(id)
@@ -74,7 +74,7 @@ export default function LiveMapPage() {
       <aside className="flex h-64 shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-80 md:border-b-0 md:border-r">
         <div className="border-b border-border p-4">
           <h1 className="text-lg font-semibold text-text">Live map</h1>
-          <p className="mt-0.5 text-sm text-muted">{withPosition.length} of {fleet.length} vehicles reporting</p>
+          <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${withPosition.length.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles reporting`}</p>
           {isStaff && (
             <Button
               variant="secondary"
@@ -92,6 +92,8 @@ export default function LiveMapPage() {
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="space-y-2 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : isError ? (
+            <EmptyState compact icon={<Truck size={22} />} title="We could not load vehicles" description="Check your connection and try again." action={<Button variant="secondary" size="sm" onClick={() => refetch()}>Try again</Button>} />
           ) : filtered.length === 0 ? (
             <EmptyState
               compact

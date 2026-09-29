@@ -67,8 +67,10 @@ export default function RouteDetailsPage() {
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) => routesAPI.updateStatus((route as RouteDetail).id, status),
     onSuccess: () => {
-      toast.success('Route status updated')
+      toast.success('Route cancelled')
       queryClient.invalidateQueries({ queryKey: ['route', id] })
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
     },
     onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to update route status'),
   })
@@ -77,6 +79,7 @@ export default function RouteDetailsPage() {
     mutationFn: () => routesAPI.delete((route as RouteDetail).id),
     onSuccess: () => {
       toast.success('Route deleted')
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
       navigate('/routes')
     },
     onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to delete route'),
@@ -130,7 +133,7 @@ export default function RouteDetailsPage() {
   const fuel = getRouteFuel(route, distance)
   const isEstimated = !route.total_distance_km || route.total_distance_km <= 0
 
-  const vehicleName = route.vehicles?.plate_number || (route.vehicle_id ? route.vehicle_id.slice(0, 8) : 'Unassigned')
+  const vehicleName = route.vehicles?.plate_number || (route.vehicle_id ? 'Vehicle not found' : 'Unassigned')
 
   const mapVehicles: MapVehicle[] = route.vehicles?.latitude && route.vehicles?.longitude && route.vehicle_id
     ? [{ id: route.vehicle_id, label: vehicleName, status: route.vehicles.status ?? 'on_route', position: { lat: route.vehicles.latitude, lng: route.vehicles.longitude } }]
