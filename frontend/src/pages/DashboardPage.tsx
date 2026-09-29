@@ -1,21 +1,59 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Truck, Clock, Plus, Search, Filter, AlertTriangle, AlertCircle,
-  WifiOff, Wifi, ChevronRight, MapIcon, List, Calendar, ChevronDown,
-  Package, Activity
-} from 'lucide-react'
+import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight } from 'lucide-react'
 import { dashboardAPI, vehiclesAPI, shipmentsAPI } from '@/services/api'
-import { Spinner } from '@/components/ui'
+import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
-import _LiveTelemetryTab from '@/components/analytics/LiveTelemetryTab'
-import VendorRequestsAdmin from '@/components/dashboard/VendorRequestsAdmin'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
-import { useAutoAnimate } from '@formkit/auto-animate/react'
-import clsx from 'clsx'
+
+interface VehicleRow {
+  id: string
+  plate_number: string
+  status: string
+  last_sync?: string | null
+}
+
+interface ShipmentRow {
+  id: string
+  tracking_id: string
+  status: string
+  origin_name?: string | null
+  delivery_point?: { name?: string | null } | null
+  driver_name?: string | null
+  created_at?: string | null
+}
+
+interface SosAlertRow {
+  id: string
+  vehicle_id?: string | null
+  alert_type?: string | null
+  description?: string | null
+  status?: string | null
+  created_at: string
+}
+
+interface AttentionItem {
+  id: string
+  kind: 'incident' | 'offline'
+  title: string
+  subtitle: string
+  time: string
+  actionLabel: string
+  onAction: () => void
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -28,40 +66,26 @@ export default function DashboardPage() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedVehicleId = searchParams.get('vehicle')
-  const [zoomFocusEvent, setZoomFocusEvent] = useState(0)
-  const [mapView, setMapView] = useState<'map' | 'list'>('map')
-  const [fleetSearch, setFleetSearch] = useState('')
 
-  // Auto-animate refs
-  const [needsAttentionRef] = useAutoAnimate()
-  const [_tableRef] = useAutoAnimate()
-
-  // ── Data Queries ──────────────────────────────────────────────
   const { data: kpis, isLoading: kpisLoading } = useQuery({
     queryKey: ['kpis'],
     queryFn: dashboardAPI.kpis,
     refetchInterval: 30_000,
   })
 
-  const { data: vehicles = [], isLoading: vehiclesLoading, dataUpdatedAt: vehiclesUpdatedAt } = useQuery({
+  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
     queryFn: () => vehiclesAPI.list({ limit: 500 }),
     refetchInterval: 5_000,
   })
 
-  const { data: _summary } = useQuery({
-    queryKey: ['fleet-summary'],
-    queryFn: vehiclesAPI.summary,
-    refetchInterval: 30_000,
-  })
-
-  const { data: shipments = [] } = useQuery({
+  const { data: shipments = [], isLoading: shipmentsLoading, error: shipmentsError, refetch: refetchShipments } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments', 'active'],
     queryFn: () => shipmentsAPI.list({ status: 'in_transit', limit: 200 }),
     refetchInterval: 30_000,
   })
 
-  const { data: sosAlerts = [] } = useQuery({
+  const { data: sosAlerts = [] } = useQuery<SosAlertRow[]>({
     queryKey: ['sos-alerts'],
     queryFn: async () => {
       const { data } = await supabase
@@ -74,472 +98,147 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   })
 
-  // When the fleet data was last fetched
-  const lastRefresh = new Date(vehiclesUpdatedAt || Date.now())
-
-  // ── Derived Data ──────────────────────────────────────────────
-  const activeVehicles = vehicles.filter((v: any) => v.status !== 'archived')
-  const reportingVehicles = activeVehicles.filter((v: any) => v.status !== 'offline' && v.status !== 'maintenance')
-  const offlineVehicles = activeVehicles.filter((v: any) => v.status === 'offline')
-  const _incidentVehicles = activeVehicles.filter((v: any) => v.status === 'maintenance')
+  const activeVehicles = vehicles.filter(v => v.status !== 'archived')
+  const offlineVehicles = activeVehicles.filter(v => v.status === 'offline')
   const activeShipmentCount = shipments.length || kpis?.active_vehicles || 0
-  // No fabricated fallback: on_time_rate_pct is null when there is no route
-  // data for today to compute a real rate from.
+  // No fabricated fallback: on_time_rate_pct is null when there is no route data for today.
   const onTimeRate = typeof kpis?.on_time_rate_pct === 'number' ? kpis.on_time_rate_pct.toFixed(0) : null
-  const openIncidents = sosAlerts.filter((a: any) => a.status !== 'resolved').length
+  const openAlerts = sosAlerts.filter(a => a.status !== 'resolved')
 
-  // Needs attention items
-  const attentionItems: Array<{
-    id: string; type: 'incident' | 'warning' | 'offline' | 'online';
-    title: string; subtitle: string; time: string; action: string; actionFn: () => void
-  }> = []
-
-  // Add SOS alerts
-  sosAlerts.filter((a: any) => a.status !== 'resolved').forEach((alert: any) => {
-    const v = vehicles.find((veh: any) => veh.id === alert.vehicle_id)
-    attentionItems.push({
-      id: alert.id,
-      type: 'incident',
-      title: alert.alert_type === 'accident' ? 'Serious accident' : (alert.alert_type || 'Emergency Alert'),
-      subtitle: `${v?.plate_number || 'Unknown'} · ${alert.description || 'Reported'}`,
-      time: getTimeAgo(alert.created_at),
-      action: 'Review incident',
-      actionFn: () => navigate('/emergency'),
-    })
-  })
-
-  // Add offline vehicles
-  offlineVehicles.forEach((v: any) => {
-    attentionItems.push({
-      id: v.id,
-      type: 'offline',
+  // Needs attention: the same list backs both the count badge and the rows below.
+  const attentionItems: AttentionItem[] = [
+    ...openAlerts.map(alert => {
+      const v = vehicles.find(veh => veh.id === alert.vehicle_id)
+      return {
+        id: `sos-${alert.id}`,
+        kind: 'incident' as const,
+        title: alert.alert_type === 'accident' ? 'Serious accident' : 'Emergency alert',
+        subtitle: `${v?.plate_number || 'Unknown vehicle'} · ${alert.description || 'Reported'}`,
+        time: timeAgo(alert.created_at),
+        actionLabel: 'Review incident',
+        onAction: () => navigate('/emergency'),
+      }
+    }),
+    ...offlineVehicles.map(v => ({
+      id: `offline-${v.id}`,
+      kind: 'offline' as const,
       title: 'Vehicle offline',
-      subtitle: `${v.plate_number}`,
-      time: v.last_sync ? getTimeAgo(v.last_sync) : '',
-      action: 'View vehicle',
-      actionFn: () => {
-        setSearchParams({ vehicle: v.id })
-        setZoomFocusEvent(Date.now())
-      },
-    })
-  })
+      subtitle: v.plate_number,
+      time: v.last_sync ? timeAgo(v.last_sync) : '',
+      actionLabel: 'View vehicle',
+      onAction: () => { setSearchParams({ vehicle: v.id }); navigate('/fleet') },
+    })),
+  ]
 
-  // Fleet table data
-  const fleetTableData = activeVehicles
-    .filter((v: any) => !fleetSearch || v.plate_number.toLowerCase().includes(fleetSearch.toLowerCase()))
-    .slice(0, 20)
-
-  const now = new Date()
+  const columns: Column<ShipmentRow>[] = [
+    { key: 'tracking_id', header: 'Tracking ID', cell: s => <span className="font-mono text-xs">{s.tracking_id}</span> },
+    { key: 'status', header: 'Status', cell: s => <StatusPill status={s.status} /> },
+    {
+      key: 'route',
+      header: 'Route',
+      hideOnMobile: true,
+      cell: s => <span>{s.origin_name || 'Origin pending'} → {s.delivery_point?.name || 'Destination pending'}</span>,
+    },
+    { key: 'driver', header: 'Driver', hideOnMobile: true, hideBelow: 'lg', cell: s => s.driver_name || 'Unassigned' },
+    {
+      key: 'created',
+      header: 'Created',
+      sortValue: s => s.created_at ? new Date(s.created_at).getTime() : 0,
+      cell: s => s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—',
+    },
+  ]
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* ── Page Header ────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Control Tower</h1>
-          <button className="flex items-center gap-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
-            India operations <ChevronDown size={14} />
-          </button>
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Live
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors shadow-sm">
-            <Calendar size={14} className="text-slate-400" />
-            {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-            <ChevronDown size={14} className="text-slate-400" />
-          </button>
-          <button
-            onClick={openModal}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm shadow-blue-600/20"
-          >
-            <Plus size={16} strokeWidth={2.5} /> Create shipment
-          </button>
-        </div>
+    <Page>
+      <PageHeader
+        title="Dashboard"
+        description="Today's operations at a glance."
+        actions={<Button icon={<Plus size={16} />} onClick={openModal}>Create shipment</Button>}
+      />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat label="Active shipments" value={activeShipmentCount} loading={kpisLoading} icon={<Package size={18} />} />
+        <Stat
+          label="Tracked vehicles"
+          value={activeVehicles.length}
+          hint={`${activeVehicles.length - offlineVehicles.length} reporting · ${offlineVehicles.length} offline`}
+          loading={vehiclesLoading}
+          icon={<Truck size={18} />}
+        />
+        <Stat
+          label="Open incidents"
+          value={openAlerts.length}
+          hint={openAlerts.length > 0 ? 'Needs a response' : 'All clear'}
+          tone={openAlerts.length > 0 ? 'danger' : 'success'}
+          icon={openAlerts.length > 0 ? <AlertCircle size={18} /> : <Activity size={18} />}
+        />
+        <Stat
+          label="On-time delivery"
+          value={onTimeRate !== null ? `${onTimeRate}%` : '—'}
+          hint="Today"
+          loading={kpisLoading}
+          icon={<Clock size={18} />}
+        />
       </div>
 
-      {/* ── KPI Metrics Row ────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          {
-            label: 'Active shipments',
-            value: kpisLoading ? '—' : String(activeShipmentCount),
-            sub: 'Current',
-            highlight: false,
-            color: 'blue',
-            icon: Package,
-          },
-          {
-            label: 'Tracked vehicles',
-            value: kpisLoading ? '—' : String(activeVehicles.length),
-            sub: `${reportingVehicles.length} reporting · ${offlineVehicles.length} offline`,
-            highlight: false,
-            color: 'indigo',
-            icon: Truck,
-          },
-          {
-            label: 'Open incident',
-            value: String(openIncidents),
-            sub: openIncidents > 0 ? 'Requires response' : 'All clear',
-            highlight: openIncidents > 0,
-            color: openIncidents > 0 ? 'red' : 'emerald',
-            icon: openIncidents > 0 ? AlertCircle : Activity,
-          },
-          {
-            label: 'On-time delivery',
-            value: kpisLoading ? '—' : (onTimeRate !== null ? `${onTimeRate}%` : '—'),
-            sub: 'Today',
-            highlight: false,
-            color: 'emerald',
-            icon: Clock,
-          },
-        ].map(({ label, value, sub, highlight, color, icon: Icon }) => (
-          <div
-            key={label}
-            className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 hover:shadow-sm transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</div>
-              <div className={clsx(
-                "w-8 h-8 rounded-lg flex items-center justify-center",
-                color === 'blue' ? 'bg-blue-50 text-blue-600' :
-                color === 'indigo' ? 'bg-indigo-50 text-indigo-600' :
-                color === 'red' ? 'bg-red-50 text-red-600' :
-                'bg-emerald-50 text-emerald-600'
-              )}>
-                <Icon size={16} strokeWidth={2} />
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className={clsx(
-                "text-3xl font-bold tracking-tight",
-                highlight ? "text-red-600" : "text-slate-900"
-              )}>
-                {value}
-              </span>
-              {highlight && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
-            </div>
-            <div className="text-xs text-slate-400 mt-2">{sub}</div>
-          </div>
-        ))}
-      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader title="Live fleet" description="Vehicles reporting position now." />
+          <LiveMap
+            vehicles={activeVehicles}
+            selectedVehicleId={selectedVehicleId}
+            className="h-[420px]"
+          />
+        </Card>
 
-      {/* ── Main Content: Map + Alerts + Vendor ─────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px_350px] gap-4 xl:h-[520px]">
-        {/* Live Fleet Map */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-slate-900">Live fleet</h2>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Updated {getSecondsAgo(lastRefresh)} sec ago
-              </div>
-            </div>
-            <div className="flex bg-slate-100 p-0.5 rounded-lg">
-              <button
-                onClick={() => setMapView('map')}
-                className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  mapView === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                )}
-              >
-                <MapIcon size={13} /> Map
-              </button>
-              <button
-                onClick={() => setMapView('list')}
-                className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  mapView === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                )}
-              >
-                <List size={13} /> List
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 min-h-[360px] relative">
-            <LiveMap vehicles={activeVehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
-          </div>
-          <div className="flex items-center gap-5 px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Reporting
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-400" /> Offline
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500" /> Incident
-            </div>
-          </div>
-        </div>
-
-        {/* Needs Attention Panel */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-slate-900">Needs attention</h2>
-              {attentionItems.length > 0 && (
-                <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
-                  {attentionItems.length}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => navigate('/fleet')}
-              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-            >
-              View all
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {/* Alert Items */}
-            <div ref={needsAttentionRef as any} className="divide-y divide-slate-100">
-              {attentionItems.length === 0 ? (
-                <div className="py-12 text-center text-sm text-slate-400">
-                  <Activity size={24} className="mx-auto mb-2 text-slate-300" />
-                  All clear — no issues detected
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader
+            title="Needs attention"
+            actions={attentionItems.length > 0 && <StatusPill tone="danger" dot={false}>{attentionItems.length}</StatusPill>}
+          />
+          <div className="max-h-[420px] flex-1 overflow-y-auto divide-y divide-border">
+            {attentionItems.length === 0 ? (
+              <EmptyState compact icon={<Activity size={22} />} title="All clear" description="No issues need attention right now." />
+            ) : (
+              attentionItems.map(item => (
+                <div key={item.id} className="flex items-start gap-3 px-4 py-3">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger" aria-hidden="true">
+                    {item.kind === 'incident' ? <AlertCircle size={16} /> : <WifiOff size={16} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text">{item.title}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted">{item.subtitle}</p>
+                    {item.time && <p className="mt-0.5 text-xs text-disabled">{item.time}</p>}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={item.onAction} className="shrink-0">{item.actionLabel}</Button>
                 </div>
-              ) : (
-                attentionItems.map((item) => (
-                  <div key={item.id} className={clsx(
-                    "px-5 py-4 flex items-start gap-3 hover:bg-slate-50 transition-colors relative",
-                    item.type === 'incident' ? 'border-l-[3px] border-l-red-600 bg-red-50/30' :
-                    item.type === 'offline' ? 'border-l-[3px] border-l-[#d25c48] bg-[#fdf3ec]' :
-                    item.type === 'online' ? 'border-l-[3px] border-l-emerald-500 bg-emerald-50/30' :
-                    'border-l-[3px] border-l-amber-400 bg-amber-50/30'
-                  )}>
-                    <div className="flex-shrink-0 mt-0.5">
-                      {item.type === 'incident' && (
-                        <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center shadow-sm">
-                          <AlertCircle size={16} className="text-white" strokeWidth={2} />
-                        </div>
-                      )}
-                      {item.type === 'warning' && (
-                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shadow-sm">
-                          <AlertTriangle size={16} className="text-amber-600" strokeWidth={2} />
-                        </div>
-                      )}
-                      {item.type === 'offline' && (
-                        <div className="w-8 h-8 rounded-full bg-[#f8d2c6] flex items-center justify-center">
-                          <WifiOff size={16} className="text-[#a53b26]" strokeWidth={2} />
-                        </div>
-                      )}
-                      {item.type === 'online' && (
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-                          <Wifi size={16} className="text-emerald-500 animate-pulse" strokeWidth={2} />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={clsx(
-                        "text-sm font-bold",
-                        item.type === 'offline' ? "text-[#7a3321]" : 
-                        item.type === 'online' ? "text-emerald-800" : "text-slate-900"
-                      )}>{item.title}</div>
-                      <div className={clsx(
-                        "text-xs mt-0.5",
-                        item.type === 'offline' ? "text-[#8a4a3a]" : 
-                        item.type === 'online' ? "text-emerald-600" : "text-slate-500"
-                      )}>{item.subtitle}</div>
-                      <div className={clsx(
-                        "text-[11px] mt-0.5",
-                        item.type === 'offline' ? "text-[#9c5f50]" : 
-                        item.type === 'online' ? "text-emerald-500" : "text-slate-400"
-                      )}>{item.time}</div>
-                    </div>
-                    <button
-                      onClick={item.actionFn}
-                      className={clsx(
-                        "flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap",
-                        item.type === 'offline' 
-                          ? "bg-[#eff6ff] text-blue-700 hover:bg-blue-100" 
-                          : item.type === 'online' 
-                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                          : "text-blue-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-                      )}
-                    >
-                      {item.action}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Recent Fleet Events */}
-            <div className="border-t border-slate-200 px-5 py-3">
-              <h3 className="text-xs font-semibold text-slate-900 mb-3">Recent fleet events</h3>
-              <div className="space-y-2.5">
-                {[...activeVehicles]
-                  .filter((v: any) => v.last_sync)
-                  .sort((a: any, b: any) => new Date(b.last_sync).getTime() - new Date(a.last_sync).getTime())
-                  .slice(0, 4)
-                  .map((v: any, _i: number) => (
-                  <div key={v.id} className="flex items-center gap-3 text-xs">
-                    <span className="text-slate-400 font-mono w-10 text-right">
-                      {v.last_sync ? new Date(v.last_sync).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                    </span>
-                    <span className={clsx(
-                      "w-2 h-2 rounded-full flex-shrink-0",
-                      v.status === 'on_route' ? 'bg-emerald-500' :
-                      v.status === 'maintenance' ? 'bg-red-500' :
-                      v.status === 'offline' ? 'bg-slate-400' : 'bg-emerald-500'
-                    )} />
-                    <span className="text-slate-600 truncate">
-                      {v.plate_number} {v.status === 'on_route' ? 'reported position' : v.status === 'maintenance' ? 'incident opened' : 'synced'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+              ))
+            )}
           </div>
-        </div>
-
-        {/* Vendor Orders / Partner Requests Panel */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-sm">
-          <VendorRequestsAdmin />
-        </div>
+        </Card>
       </div>
 
-      {/* ── Fleet Status Table ─────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">Fleet status</h2>
-            <span className="text-xs text-slate-400">{activeVehicles.length} vehicles</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus-within:border-slate-300 transition-colors">
-              <Search size={14} className="text-slate-400" />
-              <input
-                placeholder="Search vehicles..."
-                className="bg-transparent border-none outline-none text-xs text-slate-700 w-44 placeholder:text-slate-400"
-                value={fleetSearch}
-                onChange={e => setFleetSearch(e.target.value)}
-              />
-            </div>
-            <button className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors">
-              <Filter size={13} /> Filters
-            </button>
-          </div>
+      <Card>
+        <CardHeader
+          title="Recent shipments"
+          description="Shipments currently in transit."
+          actions={<Button variant="ghost" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/shipments')}>View all</Button>}
+        />
+        <div className="p-4 pt-0 sm:p-6 sm:pt-0">
+          <DataTable
+            caption="Recent shipments"
+            columns={columns}
+            rows={shipments}
+            rowKey={s => s.id}
+            loading={shipmentsLoading}
+            error={shipmentsError ? 'We could not load shipments.' : undefined}
+            onRetry={() => refetchShipments()}
+            empty={{ title: 'No shipments in transit', description: 'Create a shipment to see it here.', action: <Button onClick={openModal}>Create shipment</Button> }}
+            onRowClick={s => navigate('/shipments?tracking=' + s.tracking_id)}
+            pageSize={10}
+          />
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px]">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
-                {['Vehicle', 'Driver', 'Location', 'Connection', 'Availability', 'Last update', 'Actions'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {vehiclesLoading ? (
-                <tr>
-                  <td colSpan={7} className="py-16">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Spinner size={24} />
-                      <span className="text-xs text-slate-400">Loading fleet data...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : fleetTableData.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-16 text-center text-sm text-slate-400">No vehicles found</td>
-                </tr>
-              ) : (
-                fleetTableData.map((v: any) => {
-                  const isOnline = v.status !== 'offline'
-                  const isIncident = v.status === 'maintenance'
-                  const statusLabel = isIncident ? 'Incident' : v.status === 'on_route' ? 'On Route' : v.status === 'available' ? 'Available' : v.status === 'idle' ? 'Idle' : 'Unknown'
-                  const _statusColor = isIncident ? 'text-red-600' : isOnline ? 'text-emerald-600' : 'text-slate-500'
-                  const statusDot = isIncident ? 'bg-red-500' : isOnline ? 'bg-emerald-500' : 'bg-slate-400'
-
-                  return (
-                    <tr key={v.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-slate-900">{v.plate_number}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-slate-600">{v.driver_name || 'Unassigned'}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-slate-600">
-                          {v.latitude
-                            ? `${v.latitude.toFixed(2)}, ${v.longitude.toFixed(2)}`
-                            : 'Unknown'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={clsx(
-                          "px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5",
-                          isOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
-                        )}>
-                          <span className={clsx("w-1.5 h-1.5 rounded-full", isOnline ? "bg-emerald-500" : "bg-slate-400")} />
-                          {isOnline ? 'Reporting' : 'Offline'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={clsx(
-                          "px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1.5",
-                          isIncident ? "bg-red-100 text-red-700" :
-                          isOnline ? "bg-emerald-100 text-emerald-700" :
-                          "bg-slate-100 text-slate-600"
-                        )}>
-                          <span className={clsx("w-1.5 h-1.5 rounded-full", statusDot)} />
-                          {statusLabel}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={clsx(
-                          "text-sm font-medium",
-                          isOnline ? "text-emerald-600 flex items-center gap-1.5" : "text-slate-500"
-                        )}>
-                          {isOnline && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                          {isOnline ? 'Live' : (v.last_sync ? getTimeAgo(v.last_sync) : '—')}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <button
-                          onClick={() => {
-                            navigate('/fleet')
-                          }}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                        >
-                          View <ChevronRight size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── Footer ─────────────────────────────────────────────── */}
-      <div className="text-right text-[11px] text-slate-400 pb-4">
-        Latest refresh: {lastRefresh.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} {lastRefresh.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST
-      </div>
-    </div>
+      </Card>
+    </Page>
   )
-}
-
-// ── Helpers ───────────────────────────────────────────────────────
-function getTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const secs = Math.floor(diff / 1000)
-  if (secs < 60) return `${secs} sec ago`
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins} min ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
-}
-
-function getSecondsAgo(date: Date): number {
-  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
 }

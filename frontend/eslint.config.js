@@ -45,8 +45,13 @@ export default tseslint.config(
     files: [
       'src/components/ui/**/*.{ts,tsx}',
       'src/components/vendor/vendorContext.ts',
+      'src/components/fleet/VehicleWizardModal.tsx',
       'src/config/**/*.{ts,tsx}',
       'src/pages/VendorRequestsPage.tsx',
+      'src/pages/DashboardPage.tsx',
+      'src/pages/LiveMapPage.tsx',
+      'src/pages/FleetPage.tsx',
+      'src/pages/EmergencyPage.tsx',
     ],
     plugins: { design },
     rules: {
