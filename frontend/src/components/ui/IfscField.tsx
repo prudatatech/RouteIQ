@@ -14,7 +14,14 @@ type Lookup =
   | { state: 'missing' }
   | { state: 'unavailable' }
 
-const statusOf = (err: unknown): number | undefined => (err as { response?: { status?: number } })?.response?.status
+const IFSC_NOT_FOUND = 'No bank branch has this IFSC'
+
+// Only the lookup's own "no such branch" answer counts as missing; any other 404
+// (an older backend without the endpoint, a proxy) means the code wasn't checked.
+const isUnknownIfsc = (err: unknown): boolean => {
+  const res = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response
+  return res?.status === 404 && res.data?.detail === IFSC_NOT_FOUND
+}
 
 /**
  * IFSC input that looks the branch up once 11 valid characters are typed and shows
@@ -51,7 +58,7 @@ export function IfscField({ value, onChange, onResolved, label = 'IFSC code', re
         details => { if (!stale) { setLookup({ state: 'found', details }); resolved.current?.(details) } },
         err => {
           if (stale) return
-          setLookup({ state: statusOf(err) === 404 ? 'missing' : 'unavailable' })
+          setLookup({ state: isUnknownIfsc(err) ? 'missing' : 'unavailable' })
           resolved.current?.(null)
         },
       )
@@ -59,7 +66,7 @@ export function IfscField({ value, onChange, onResolved, label = 'IFSC code', re
     return () => { stale = true; clearTimeout(timer) }
   }, [code])
 
-  const shownError = error || (lookup.state === 'missing' ? 'No bank branch has this IFSC' : undefined)
+  const shownError = error || (lookup.state === 'missing' ? IFSC_NOT_FOUND : undefined)
   return (
     <div className={clsx('space-y-2', className)}>
       <Input
