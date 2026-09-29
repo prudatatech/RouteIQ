@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessConfirmation, canAccessVehicle, isStaff } from '../core/ownership';
-import { sendError } from '../core/errors';
+import { parseRejectionReason, sendError } from '../core/errors';
 
 const router = Router();
 
@@ -274,7 +274,8 @@ router.post('/bids/:id/approve', requireAuth, requireRole('superadmin', 'admin')
 // POST /api/v1/capacity/bids/:id/reject
 router.post('/bids/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    const bid = await capacityService.rejectBid(req.params.id);
+    const reason = parseRejectionReason(req.body?.reason);
+    const bid = await capacityService.rejectBid(req.params.id, reason);
     res.json(bid);
   } catch (error: any) {
     sendError(req, res, error, 'error');

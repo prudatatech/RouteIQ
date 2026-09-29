@@ -31,6 +31,18 @@ export function sendError(req: Request, res: Response, err: unknown, key: ErrorK
   res.status(500).json({ [key]: 'Internal server error', request_id: requestId });
 }
 
+/**
+ * Trim and validate a required rejection reason (3-500 chars). Throws a 400
+ * HttpError otherwise. Used by every reject endpoint that stores why.
+ */
+export function parseRejectionReason(value: unknown): string {
+  const reason = typeof value === 'string' ? value.trim() : '';
+  if (reason.length < 3 || reason.length > 500) {
+    throw new HttpError(400, 'A reason of 3 to 500 characters is required');
+  }
+  return reason;
+}
+
 /** Final Express error handler. */
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   // Malformed JSON bodies from express.json()

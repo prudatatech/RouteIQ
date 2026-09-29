@@ -53,9 +53,25 @@ describe('vendor shipment request decisions', () => {
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('rejected');
   });
 
+  it('rejects a pending request and stores the reason', async () => {
+    const res = await put('reject', { reason: 'No matching lane available' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'rejected', rejection_reason: 'No matching lane available' });
+  });
+
+  it.each([
+    ['missing', {}],
+    ['too short', { reason: 'no' }],
+    ['too long', { reason: 'x'.repeat(501) }],
+  ])('requires a reason to reject (%s)', async (_name, body) => {
+    const res = await put('reject', body);
+    expect(res.status).toBe(400);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('pending');
+  });
+
   it('refuses to reject a request that already has a vehicle', async () => {
     reset('assigned');
-    const res = await put('reject');
+    const res = await put('reject', { reason: 'No matching lane available' });
     expect(res.status).toBe(409);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('assigned');
   });

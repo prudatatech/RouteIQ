@@ -530,10 +530,10 @@ export const capacityService = {
   /**
    * Superadmin manually rejects a backhaul bid
    */
-  async rejectBid(bidId: string) {
+  async rejectBid(bidId: string, reason: string) {
     const { data: bid, error: rejectErr } = await supabase
       .from('capacity_bids')
-      .update({ status: 'rejected' })
+      .update({ status: 'rejected', rejection_reason: reason })
       .eq('id', bidId)
       .eq('status', 'pending')
       .select('id, vendor_id, bid_amount')
@@ -548,11 +548,11 @@ export const capacityService = {
     notify(() => notificationService.sendNotification(
       bid.vendor_id,
       'Bid Rejected',
-      `Your bid of ₹${bid.bid_amount} was not accepted.`,
+      `Your bid of ₹${bid.bid_amount} was not accepted. Reason: ${reason}`,
       'bid_rejected',
       { bid_id: bid.id }
     ));
-    return { id: bidId, status: 'rejected' };
+    return { id: bidId, status: 'rejected', rejection_reason: reason };
   },
 
   /**
