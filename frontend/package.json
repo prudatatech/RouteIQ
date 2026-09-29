@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src --report-unused-disable-directives --max-warnings=159",
+    "lint": "eslint src --report-unused-disable-directives --max-warnings=132",
     "test": "vitest",
     "test:coverage": "vitest --coverage"
   },
