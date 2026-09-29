@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
-import { STAFF_ROLES, canAccessConfirmation, canAccessVehicle, isStaff } from '../core/ownership';
+import { STAFF_ROLES, canAccessConfirmation, canAccessRoute, canAccessVehicle, isStaff } from '../core/ownership';
+import { notificationService } from '../services/notification.service';
 import { parseRejectionReason, sendError } from '../core/errors';
 
 const router = Router();
@@ -238,6 +239,36 @@ router.post('/driver/flag-stop', requireAuth, requireRole('driver'), async (req,
       return res.status(403).json({ error: 'Not authorized for this confirmation' });
     }
     await capacityService.flagStop(confirmation_id);
+    res.json({ success: true });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/capacity/driver/postpone-route
+// The driver pressed "Not now" on a new route: tell dispatch it is waiting.
+router.post('/driver/postpone-route', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    const { route_id } = req.body;
+    if (typeof route_id !== 'string' || !route_id) {
+      return res.status(400).json({ error: 'route_id is required' });
+    }
+    if (!(await canAccessRoute(req.user!, route_id))) {
+      return res.status(403).json({ error: 'Not authorized for this route' });
+    }
+    const { supabase } = await import('../core/supabase');
+    const { data: driver } = await supabase.from('users').select('full_name').eq('id', req.user!.user_id).maybeSingle();
+    try {
+      await notificationService.notifyStaff(
+        'Route postponed by driver',
+        `${driver?.full_name ?? 'A driver'} has not accepted the new route yet and will be asked again in 10 minutes.`,
+        'route_postponed',
+        { route_id, driver_id: req.user!.user_id }
+      );
+    } catch (e) {
+      // Dispatch missing the heads-up must not stop the driver from snoozing
+      console.error('Could not notify staff about a postponed route:', e);
+    }
     res.json({ success: true });
   } catch (error: any) {
     sendError(req, res, error, 'error');

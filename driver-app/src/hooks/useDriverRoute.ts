@@ -20,6 +20,22 @@ import { isNetworkError } from '../utils/errors';
 const CACHED_ROUTE_KEY = 'cached_route';
 const LAST_SEEN_ROUTE_KEY = 'last_seen_route_id';
 const POLL_MS = 15000;
+/** "Not now" on a new route keeps the prompt (and its siren) away this long. */
+const SNOOZE_KEY = 'route_snoozed_until';
+export const ROUTE_SNOOZE_MS = 10 * 60 * 1000;
+
+async function readSnoozes(): Promise<Record<string, number>> {
+  try {
+    return JSON.parse((await AsyncStorage.getItem(SNOOZE_KEY)) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+async function isSnoozed(routeId: string): Promise<boolean> {
+  return ((await readSnoozes())[routeId] ?? 0) > Date.now();
+}
+
 
 export type SyncState = 'ok' | 'offline' | 'failed';
 
@@ -102,7 +118,7 @@ export function useDriverRoute() {
         const r = route.route;
         if (r && (r.status === 'active' || r.status === 'pending')) {
           const lastSeenId = await AsyncStorage.getItem(LAST_SEEN_ROUTE_KEY);
-          if (r.id !== lastSeenId && pendingRouteRef.current?.id !== r.id) {
+          if (r.id !== lastSeenId && pendingRouteRef.current?.id !== r.id && !(await isSnoozed(r.id))) {
             setPendingRoute(r);
           }
         }
@@ -159,8 +175,8 @@ export function useDriverRoute() {
       if (vId) {
         routeSub = supabase
           .channel(`driver-route-events-${vId}`)
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'routes', filter: `vehicle_id=eq.${vId}` }, (payload) => {
-            setPendingRoute(payload.new as PendingRoute);
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'routes', filter: `vehicle_id=eq.${vId}` }, async (payload) => {
+            if (!(await isSnoozed(payload.new.id))) setPendingRoute(payload.new as PendingRoute);
             loadData();
           })
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'routes', filter: `vehicle_id=eq.${vId}` }, () => {
@@ -247,8 +263,25 @@ export function useDriverRoute() {
     loadData();
   }, [pendingConfirmation, loadData]);
 
-  /** Hides the new-route prompt; it comes back on the next refresh until accepted. */
-  const postponeRoute = useCallback(() => setPendingRoute(null), []);
+  /**
+   * "Not now" on a new route: hides the prompt for 10 minutes (kept across app
+   * restarts) and lets dispatch know. It comes back after that until accepted.
+   */
+  const postponeRoute = useCallback(async () => {
+    const route = pendingRouteRef.current;
+    setPendingRoute(null);
+    if (!route) return;
+    try {
+      const snoozes = await readSnoozes();
+      const now = Date.now();
+      for (const id of Object.keys(snoozes)) if (snoozes[id] <= now) delete snoozes[id];
+      snoozes[route.id] = now + ROUTE_SNOOZE_MS;
+      await AsyncStorage.setItem(SNOOZE_KEY, JSON.stringify(snoozes));
+    } catch (e) {
+      console.warn('[home] could not save the snooze:', e);
+    }
+    api.postponeRoute(route.id).catch((e) => console.warn('[home] postponeRoute failed:', e));
+  }, []);
 
   const lastError = routeQuery.isError ? routeQuery.error : null;
   const syncState: SyncState =

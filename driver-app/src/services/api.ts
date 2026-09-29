@@ -243,6 +243,11 @@ class ApiClient {
     return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
   }
 
+  /** Tells dispatch the driver has not accepted a new route yet. */
+  async postponeRoute(route_id: string): Promise<any> {
+    return this.request('POST', '/capacity/driver/postpone-route', { route_id });
+  }
+
   async getMyRoute(): Promise<any> {
     return this.request('GET', `/telemetry/driver-ping/my-route?t=${Date.now()}`);
   }
