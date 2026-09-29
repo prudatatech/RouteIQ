@@ -97,7 +97,6 @@ const ensureArray = (data: unknown): unknown[] => Array.isArray(data) ? data : [
 // Vehicles API
 export const vehiclesAPI = {
   list: (params?: Record<string, unknown>) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
-  get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/vehicles/${id}`),
@@ -106,7 +105,6 @@ export const vehiclesAPI = {
 
 export const optimizationAPI = {
   optimize: (data: Record<string, unknown>) => api.post('/optimize', data).then(r => r.data),
-  predictETA: (data: Record<string, unknown>) => api.post('/optimize/eta', data).then(r => r.data),
   incubate: (vehicleId: string) => api.post(`/optimize/incubate/${vehicleId}`).then(r => r.data),
   reoptimizeRoute: (id: string) => api.post(`/optimize/reoptimize/${id}`).then(r => r.data),
 }
@@ -114,12 +112,6 @@ export const optimizationAPI = {
 export const dashboardAPI = {
   kpis: () => api.get('/dashboard/kpis/').then(r => r.data),
 }
-
-export const deliveryPointsAPI = {
-  list: (params?: Record<string, unknown>) => api.get('/routes/delivery-points/', { params }).then(r => r.data),
-}
-
-
 
 export const usersAPI = {
   me: () => api.get('/users/me').then(r => r.data),
@@ -205,13 +197,10 @@ export const marketplaceAPI = {
 }
 
 export const telemetryAPI = {
-  ingest: (data: object) => api.post('/telemetry/', data).then(r => r.data),
   /** Driver's own device position (role driver; vehicle resolved server-side). Speed in m/s. */
   driverPing: (ping: { lat: number, lng: number, speed: number, heading: number, accuracy?: number | null, timestamp: string }) =>
     api.post('/telemetry/driver-ping', ping).then(r => r.data),
   history: (vehicleId: string, limit = 100) => api.get(`/telemetry/${vehicleId}/history`, { params: { limit } }).then(r => r.data),
-  live: (vehicleId: string) => api.get(`/telemetry/${vehicleId}/live`).then(r => r.data),
-  logStoppage: (data: Record<string, unknown>) => api.post('/telemetry/stoppages', data).then(r => r.data),
   createMobileSession: (vehicleId: string, phone?: string) =>
     api.post('/telemetry/mobile-session', { vehicle_id: vehicleId, phone }).then(r => r.data),
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
@@ -223,9 +212,7 @@ export const telemetryAPI = {
 
 export const analyticsAPI = {
   insights: () => api.get('/analytics/insights').then(r => r.data),
-  metrics: () => api.get('/analytics/metrics').then(r => r.data),
   activeMissions: () => api.get('/analytics/active-missions').then(r => ensureArray(r.data)),
-  syncSparkGPS: () => api.post('/analytics/sync-sparkgps').then(r => r.data),
   auditLogs: () => api.get('/analytics/audit-logs').then(r => r.data),
   driverPerformance: () => api.get('/analytics/driver-performance').then(r => ensureArray(r.data)),
   vendorPerformance: () => api.get('/analytics/vendor-performance').then(r => ensureArray(r.data)),
@@ -239,7 +226,6 @@ export const tplAPI = {
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** Full record for staff/the partner, or for an applicant who supplies the application's PAN; otherwise status only. */
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
-  getPartnerByUserId: (userId: string) => api.get(`/tpl/by-user/${userId}`).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/tpl/reject/${id}`, { reason }).then(r => r.data),
   updateApplication: (id: string, data: Record<string, unknown>) => api.patch(`/tpl/${id}`, data).then(r => r.data),

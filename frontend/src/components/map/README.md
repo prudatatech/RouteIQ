@@ -15,9 +15,6 @@ import { MapView, type MapVehicle, type MapPoint, type MapRoute } from '@/compon
 - `VITE_MAPBOX_TOKEN` is optional. It is only used for driving directions
   (`fetchDrivingRoute`). Without it, routes are drawn as dashed straight lines.
 - Place search uses `services/geocoding.ts` (ArcGIS, no token).
-- `mapbox-gl` is no longer used by any map component and can be removed from
-  `package.json` once `RouteDetailsPage` drops its unused `import _mapboxgl from 'mapbox-gl'`.
-- `public/positron-style.json` is an empty file and is not used; delete it in the Phase 7 clean-up.
 
 ## Files
 
