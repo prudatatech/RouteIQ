@@ -52,6 +52,31 @@ router.post('/kyc/submit', requireAuth, requireRole('vendor'), async (req: any, 
   }
 });
 
+// The vendor's own invoices (issued when their load is delivered)
+router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, shipment_id, manifest_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
+      .eq('vendor_id', req.user.user_id)
+      .neq('status', 'void')
+      .order('issued_at', { ascending: false });
+    if (error) throw new Error(`Failed to list invoices: ${error.message}`);
+    const rows = data ?? [];
+    const ids = rows.map((r: any) => r.shipment_id).filter(Boolean);
+    const { data: shipments } = ids.length
+      ? await supabase.from('shipments').select('id, tracking_id').in('id', ids)
+      : { data: [] as any[] };
+    const tracking = new Map((shipments ?? []).map((s: any) => [s.id, s.tracking_id]));
+    res.json(rows.map((r: any) => ({
+      ...r,
+      reference: r.shipment_id ? (tracking.get(r.shipment_id) ?? null) : `CM-${String(r.manifest_id).slice(0, 8).toUpperCase()}`,
+    })));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // Create shipment request (Vendor)
 router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
