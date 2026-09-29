@@ -4,8 +4,9 @@
  */
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View, StyleSheet, Linking, Alert } from 'react-native';
 import * as Updates from 'expo-updates';
+import { useFonts } from 'expo-font';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import { NotificationListener } from './src/components/NotificationListener';
@@ -17,6 +18,7 @@ import { TranslationProvider } from './src/hooks/useTranslation';
 import AnimatedSplashScreen from './src/components/AnimatedSplashScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
+import { themeFonts } from './src/theme/fonts';
 
 const queryClient = new QueryClient();
 
@@ -31,6 +33,10 @@ Audio.setAudioModeAsync({
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [splashFinished, setSplashFinished] = useState(false);
+  // Hold the splash until the theme fonts are ready; if they fail to load the
+  // app still starts with the system font.
+  const [fontsLoaded, fontError] = useFonts(themeFonts);
+  const fontsReady = fontsLoaded || !!fontError;
 
   useEffect(() => {
     checkUpdatesAndAuth();
@@ -71,62 +77,40 @@ export default function App() {
   };
 
   // Loading state or Splash Screen
-  if (isLoggedIn === null || !splashFinished) {
+  if (isLoggedIn === null || !splashFinished || !fontsReady) {
     return (
-      <TranslationProvider>
-        <AnimatedSplashScreen onAnimationFinish={() => setSplashFinished(true)} />
-        <StatusBar style="light" />
-      </TranslationProvider>
+      <SafeAreaProvider>
+        <TranslationProvider>
+          <AnimatedSplashScreen onAnimationFinish={() => setSplashFinished(true)} />
+          <StatusBar style="light" />
+        </TranslationProvider>
+      </SafeAreaProvider>
     );
   }
 
   // Not logged in → show OTP login
   if (!isLoggedIn) {
     return (
-      <TranslationProvider>
-        <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />
-        <StatusBar style="light" />
-      </TranslationProvider>
+      <SafeAreaProvider>
+        <TranslationProvider>
+          <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />
+          <StatusBar style="dark" />
+        </TranslationProvider>
+      </SafeAreaProvider>
     );
   }
 
   // Logged in → show home
   return (
-    <QueryClientProvider client={queryClient}>
-      <TranslationProvider>
-        <NotificationListener />
-        <HomeScreen
-          onLogout={() => setIsLoggedIn(false)}
-          onNavigateToMap={async (lat?: number, lng?: number) => {
-            if (lat && lng) {
-              const url = `google.navigation:q=${lat},${lng}`;
-              try {
-                const supported = await Linking.canOpenURL(url);
-                if (supported) {
-                  await Linking.openURL(url);
-                } else {
-                  // Fallback to browser maps if app isn't installed
-                  await Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
-                }
-              } catch (err) {
-                Alert.alert('Error', 'Could not open map navigation');
-              }
-            } else {
-              Alert.alert('No Destination', 'Could not find next stop coordinates');
-            }
-          }}
-        />
-        <StatusBar style="light" />
-      </TranslationProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <TranslationProvider>
+          <NotificationListener />
+          <HomeScreen onLogout={() => setIsLoggedIn(false)} />
+          <StatusBar style="dark" />
+        </TranslationProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-  },
-});

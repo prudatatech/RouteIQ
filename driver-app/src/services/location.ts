@@ -18,6 +18,7 @@ import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, getCurrentSession } from './supabase';
 import { DEFAULT_PING_INTERVAL_MS, MIN_PING_INTERVAL_MS, MAX_PING_INTERVAL_MS } from '../config';
+import { colors } from '../theme';
 
 const QUEUE_KEY = 'margixindia_ping_queue';
 const VEHICLE_ID_KEY = 'margixindia_vehicle_id';
@@ -191,9 +192,9 @@ class LocationService {
         timeInterval: 3000,
         showsBackgroundLocationIndicator: true,
         foregroundService: {
-          notificationTitle: "margixindia Tracking",
+          notificationTitle: "MargixIndia tracking",
           notificationBody: "Location tracking is active for your route.",
-          notificationColor: "#27A150",
+          notificationColor: colors.accent,
         }
       });
     } catch (e) {
@@ -238,14 +239,16 @@ class LocationService {
         const now = Date.now();
         if (now - this.lastGpsOffNotificationTime > 60000) {
           this.lastGpsOffNotificationTime = now;
+          // A normal, single notification: the looping siren is kept for new
+          // assignments and dispatch calls only.
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: "GPS is Off!",
-              body: "Please turn on your location to continue your active delivery.",
-              sound: 'uber_driver_sound.mp3',
+              title: 'Location is off',
+              body: 'Turn on location so dispatch can follow your delivery.',
+              sound: 'default',
               autoDismiss: false,
             },
-            trigger: { seconds: 1, channelId: 'alarms' } as any,
+            trigger: { seconds: 1, channelId: 'default' } as any,
           });
         }
 

@@ -1,0 +1,292 @@
+import React, { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Alert, Image, Pressable, StyleSheet, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../../services/api';
+import { useTranslation } from '../../hooks/useTranslation';
+import type { Language } from '../../locales';
+import { INDIAN_VEHICLES, LANGUAGES } from '../../constants/profile';
+import { Button, Card, IconButton, Text, TextField } from '../../components/ui';
+import { colors, radius, size, space } from '../../theme';
+
+export const AVATAR_KEY = 'driver_avatar_uri';
+
+interface ProfileTabProps {
+  driverInfo: any;
+  onDriverInfoChange: (info: any) => void;
+  avatarUri: string | null;
+  onAvatarChange: (uri: string) => void;
+  onLogout: () => void;
+}
+
+const AVATAR = 96;
+const NAME_PATTERN = /^[\p{L}\s.-]+$/u;
+
+export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, onAvatarChange, onLogout }: ProfileTabProps) {
+  const { t, lang, setLanguage } = useTranslation();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [savingVehicle, setSavingVehicle] = useState<string | null>(null);
+
+  const shortId = driverInfo?.id ? String(driverInfo.id).slice(0, 6).toUpperCase() : null;
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+      if (!result.canceled && result.assets?.length) {
+        const uri = result.assets[0].uri;
+        onAvatarChange(uri);
+        await AsyncStorage.setItem(AVATAR_KEY, uri);
+      }
+    } catch (e) {
+      console.log('Image picker error', e);
+    }
+  };
+
+  const saveName = async () => {
+    const newName = nameValue.trim();
+    if (!newName) {
+      setNameError(t('name_empty'));
+      return;
+    }
+    if (!NAME_PATTERN.test(newName)) {
+      setNameError(t('name_invalid_chars'));
+      return;
+    }
+    setSavingName(true);
+    try {
+      await api.updateProfile({ full_name: newName });
+      onDriverInfoChange({ ...driverInfo, full_name: newName });
+      setIsEditingName(false);
+    } catch (e: any) {
+      setNameError(e?.message || t('name_save_failed'));
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const selectVehicle = async (vehicleType: string) => {
+    setSavingVehicle(vehicleType);
+    try {
+      await api.updateProfile({ vehicle_type: vehicleType });
+      onDriverInfoChange({ ...driverInfo, vehicle_type: vehicleType });
+    } catch (e: any) {
+      Alert.alert(t('error'), e?.message || t('vehicle_save_failed'));
+    } finally {
+      setSavingVehicle(null);
+    }
+  };
+
+  const confirmLogout = () => {
+    Alert.alert(t('logout'), t('logout_confirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('logout'), style: 'destructive', onPress: onLogout },
+    ]);
+  };
+
+  return (
+    <View style={styles.container}>
+      <Card style={styles.identity}>
+        <Pressable
+          onPress={pickImage}
+          accessibilityRole="button"
+          accessibilityLabel={t('change_photo')}
+          style={styles.avatarWrap}
+        >
+          <View style={styles.avatar}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <Ionicons name="person" size={size.icon.xl} color={colors.accent} />
+            )}
+          </View>
+          <View style={styles.avatarBadge}>
+            <Ionicons name="camera" size={size.icon.sm} color={colors.onAccentFill} />
+          </View>
+        </Pressable>
+
+        {isEditingName ? (
+          <View style={styles.nameEdit}>
+            <TextField
+              label={t('full_name')}
+              value={nameValue}
+              onChangeText={(v) => {
+                setNameValue(v);
+                if (nameError) setNameError('');
+              }}
+              error={nameError || undefined}
+              autoFocus
+              autoCapitalize="words"
+              onSubmitEditing={saveName}
+            />
+            <View style={styles.row}>
+              <Button
+                title={t('cancel')}
+                variant="secondary"
+                block={false}
+                style={styles.flex}
+                onPress={() => setIsEditingName(false)}
+                disabled={savingName}
+              />
+              <Button title={t('save')} block={false} style={styles.flex} onPress={saveName} loading={savingName} />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.nameRow}>
+            <View style={styles.nameText}>
+              <Text variant="heading" align="center">
+                {driverInfo?.full_name || t('driver')}
+              </Text>
+              {shortId ? (
+                <Text variant="mono" color="textMuted" align="center" accessibilityLabel={`${t('driver_id')} ${shortId}`}>
+                  #{shortId}
+                </Text>
+              ) : null}
+            </View>
+            <IconButton
+              accessibilityLabel={t('edit_name')}
+              onPress={() => {
+                setNameValue(driverInfo?.full_name || '');
+                setNameError('');
+                setIsEditingName(true);
+              }}
+              icon={(color) => <Ionicons name="pencil" size={size.icon.md} color={color} />}
+            />
+          </View>
+        )}
+        {driverInfo?.phone ? (
+          <Text variant="mono" color="textMuted" align="center">
+            {driverInfo.phone}
+          </Text>
+        ) : null}
+      </Card>
+
+      <Text variant="title" accessibilityRole="header">
+        {t('change_language')}
+      </Text>
+      <View style={styles.chips} accessibilityRole="radiogroup">
+        {LANGUAGES.map((l) => {
+          const selected = lang === l.code;
+          return (
+            <Pressable
+              key={l.code}
+              onPress={() => setLanguage(l.code as Language)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              accessibilityLabel={l.label}
+              style={[styles.chip, selected && styles.chipSelected]}
+            >
+              <Text variant="bodySmallMedium" color={selected ? 'accent' : 'text'}>
+                {l.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text variant="title" accessibilityRole="header">
+        {t('my_vehicle')}
+      </Text>
+      <Card padded={false} accessibilityRole="radiogroup">
+        {INDIAN_VEHICLES.map((v, idx) => {
+          const selected = driverInfo?.vehicle_type === v.id;
+          const label = t(v.key);
+          return (
+            <Pressable
+              key={v.id}
+              onPress={() => selectVehicle(v.id)}
+              disabled={savingVehicle !== null}
+              accessibilityRole="radio"
+              accessibilityState={{ selected, disabled: savingVehicle !== null }}
+              accessibilityLabel={`${label}, ${v.capacity_kg.toLocaleString()} kg`}
+              style={({ pressed }) => [styles.vehicle, idx > 0 && styles.vehicleBorder, pressed && styles.pressed]}
+            >
+              <View style={styles.flex}>
+                <Text variant="bodyMedium" color={selected ? 'accent' : 'text'}>
+                  {label}
+                </Text>
+                <Text variant="caption" color="textMuted">
+                  {`${v.capacity_kg.toLocaleString()} kg · ${v.container}`}
+                </Text>
+              </View>
+              {selected ? <Ionicons name="checkmark-circle" size={size.icon.md} color={colors.accent} /> : null}
+            </Pressable>
+          );
+        })}
+      </Card>
+
+      <Button
+        title={t('logout')}
+        variant="secondary"
+        onPress={confirmLogout}
+        icon={(color) => <Ionicons name="log-out-outline" size={size.icon.md} color={color} />}
+      />
+    </View>
+  );
+}
+
+const BADGE = 32;
+
+const styles = StyleSheet.create({
+  container: { gap: space[4] },
+  flex: { flex: 1 },
+  row: { flexDirection: 'row', gap: space[3] },
+  identity: { alignItems: 'center', gap: space[2] },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: BADGE,
+    height: BADGE,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentFill,
+    borderWidth: 2,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameEdit: { alignSelf: 'stretch', gap: space[3] },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
+  nameText: { alignItems: 'center' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
+  chip: {
+    minHeight: size.control,
+    paddingHorizontal: space[4],
+    borderRadius: radius.full,
+    borderWidth: size.border,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  vehicle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
+    minHeight: size.control + space[2],
+  },
+  vehicleBorder: { borderTopWidth: size.border, borderTopColor: colors.border },
+  pressed: { backgroundColor: colors.surfaceSubtle },
+});

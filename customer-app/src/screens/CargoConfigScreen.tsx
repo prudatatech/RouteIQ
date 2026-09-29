@@ -1,795 +1,380 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
-  Platform,
-  StatusBar,
-  Dimensions,
   PanResponder,
   LayoutAnimation,
+  type AccessibilityActionEvent,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+import { Button, Card, ScreenHeader, StatusPill, Text } from '../components/ui';
+import { colors, radius, size, space } from '../theme';
 
-const { width } = Dimensions.get('window');
-
-const COLORS = {
-  background: '#F6F5F0',
-  cardBg: '#FFFFFF',
-  primaryDark: '#1A2F2D',
-  primaryGreen: '#10B981',
-  textMain: '#111827',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-  accentLight: '#E0F2FE', // light blue
-  accentGreenLight: '#D1FAE5', // light green
-};
-
+/** Weight presets with the vehicle class usually used for them in India. */
 const TRUCK_TIERS = [
-  { id: '1', weight: 1.0, title: 'Light Load', desc: 'Boxes, pallets, eCommerce', truck: 'Tata Ace / Chota Hathi' },
-  { id: '2', weight: 2.5, title: 'Utility Pickup', desc: 'Furniture, appliances, FMCG', truck: 'Mahindra Bolero Pickup' },
-  { id: '3', weight: 4.5, title: 'Medium Cargo', desc: 'Retail inventory, machinery', truck: 'Eicher 14ft (6 Wheeler)' },
-  { id: '4', weight: 9.0, title: 'Heavy Freight', desc: 'Industrial raw materials', truck: 'Eicher 19ft (6 Wheeler)' },
-  { id: '5', weight: 15.0, title: 'Full Truckload', desc: 'Bulk haulage & steel', truck: 'Taurus (10 Wheeler)' },
-  { id: '6', weight: 21.0, title: 'Max Payload', desc: 'Long-haul, heavy logistics', truck: '32ft Multi-Axle Container' },
+  { id: '1', weight: 1.0, title: 'Light load', desc: 'Boxes, pallets, e-commerce', truck: 'Tata Ace / Chota Hathi' },
+  { id: '2', weight: 2.5, title: 'Utility pickup', desc: 'Furniture, appliances, FMCG', truck: 'Mahindra Bolero Pickup' },
+  { id: '3', weight: 4.5, title: 'Medium cargo', desc: 'Retail stock, machinery', truck: 'Eicher 14 ft (6 wheeler)' },
+  { id: '4', weight: 9.0, title: 'Heavy freight', desc: 'Industrial raw materials', truck: 'Eicher 19 ft (6 wheeler)' },
+  { id: '5', weight: 15.0, title: 'Full truckload', desc: 'Bulk haulage and steel', truck: 'Taurus (10 wheeler)' },
+  { id: '6', weight: 21.0, title: 'Maximum payload', desc: 'Long-haul, heavy loads', truck: '32 ft multi-axle container' },
 ];
 
+const MAX_WEIGHT_T = 25;
+const SNAP_RANGE_T = 2.0;
+const SLIDER_LABELS = ['0', '5 t', '10 t', '15 t', '25 t+'];
+
+const getTierForWeight = (weight: number) => {
+  if (weight <= 1.0) return 'Light';
+  if (weight <= 2.5) return 'Utility';
+  if (weight <= 9.0) return 'Medium';
+  return 'Heavy';
+};
+
+const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
+  unit === 't' ? tonnes.toFixed(1) : Math.round(tonnes * 1000).toLocaleString();
+
 export default function CargoConfigScreen({ navigation, route }: any) {
-  const { pickupLocation, dropoffLocation } = route.params || {};
-  
-  const [selectedWeight, setSelectedWeight] = useState(1.0);
+  const { pickupLocation, dropoffLocation, loadType } = route.params || {};
+
+  const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
   const [unit, setUnit] = useState<'t' | 'kg'>('t');
-  
-  const TRACK_WIDTH = Dimensions.get('window').width - 96; // Full width minus paddings
 
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponder: (evt, gestureState) => Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onMoveShouldSetPanResponderCapture: (evt, gestureState) => Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      
-      onPanResponderGrant: (evt) => {
-        const rawX = evt.nativeEvent.locationX;
-        const newPercentage = Math.max(0, Math.min(1, rawX / TRACK_WIDTH));
-        updateWeightFromPercentage(newPercentage);
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        // moveX is the absolute X on screen. Subtract 48 (padding of container + card)
-        const currentX = Math.max(0, Math.min(TRACK_WIDTH, gestureState.moveX - 48));
-        const newPercentage = currentX / TRACK_WIDTH;
-        updateWeightFromPercentage(newPercentage);
-      },
-    })
-  ).current;
+  // Measured track position, used to turn a finger position into a weight.
+  const trackRef = useRef<View>(null);
+  const [track, setTrack] = useState({ x: 0, width: 0 });
 
-  const updateWeightFromPercentage = (percentage: number) => {
-    const newWeight = percentage * 25; 
-    let snappedWeight = newWeight;
-    let closestDiff = 999;
-    
-    TRUCK_TIERS.forEach(tier => {
-      const diff = Math.abs(tier.weight - newWeight);
-      if (diff < 2.0) {
-        if (diff < closestDiff) {
-          closestDiff = diff;
-          snappedWeight = tier.weight;
-        }
+  const measureTrack = () => {
+    trackRef.current?.measureInWindow((x, _y, width) => setTrack({ x, width }));
+  };
+
+  const updateWeightFromRatio = useCallback((ratio: number) => {
+    const raw = Math.max(0, Math.min(1, ratio)) * MAX_WEIGHT_T;
+    let next = raw;
+    let closestDiff = Number.POSITIVE_INFINITY;
+    for (const tier of TRUCK_TIERS) {
+      const diff = Math.abs(tier.weight - raw);
+      if (diff < SNAP_RANGE_T && diff < closestDiff) {
+        closestDiff = diff;
+        next = tier.weight;
       }
-    });
-    
-    if (snappedWeight !== selectedWeight) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setSelectedWeight(snappedWeight);
     }
+    setSelectedWeight((current) => {
+      if (current === next) return current;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      return next;
+    });
+  }, []);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: (_evt, g) => Math.abs(g.dx) > Math.abs(g.dy),
+        onMoveShouldSetPanResponderCapture: (_evt, g) => Math.abs(g.dx) > Math.abs(g.dy),
+        onPanResponderGrant: (evt) => {
+          if (track.width > 0) updateWeightFromRatio(evt.nativeEvent.locationX / track.width);
+        },
+        onPanResponderMove: (_evt, g) => {
+          if (track.width > 0) updateWeightFromRatio((g.moveX - track.x) / track.width);
+        },
+      }),
+    [track, updateWeightFromRatio],
+  );
+
+  // Screen readers adjust the slider one preset at a time.
+  const onSliderAction = (event: AccessibilityActionEvent) => {
+    const next =
+      event.nativeEvent.actionName === 'increment'
+        ? TRUCK_TIERS.find((t) => t.weight > selectedWeight)
+        : [...TRUCK_TIERS].reverse().find((t) => t.weight < selectedWeight);
+    if (next) setSelectedWeight(next.weight);
   };
 
-  const getTierForWeight = (weight: number) => {
-    if (weight <= 1.0) return 'Light Logistics';
-    if (weight <= 2.5) return 'Utility Transit';
-    if (weight <= 9.0) return 'Medium Freight';
-    return 'Heavy Transport';
-  };
+  const suggestedTruck = TRUCK_TIERS.find((t) => t.weight === selectedWeight)?.truck;
+  const fillPercent = `${(selectedWeight / MAX_WEIGHT_T) * 100}%` as const;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-      
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
-          <Feather name="chevron-left" size={24} color={COLORS.primaryDark} />
-        </TouchableOpacity>
-        
-        <View style={styles.headerTitles}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandDot} />
-            <Text style={styles.brandText}>MARGIX LOGISTICS</Text>
-          </View>
-          <Text style={styles.headerTitle}>Cargo & Weight Config</Text>
-        </View>
-        
-        <TouchableOpacity style={styles.iconBtn}>
-          <Feather name="help-circle" size={20} color={COLORS.primaryDark} />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScreenHeader title="Cargo and weight" onBack={() => navigation.goBack()} backLabel="Back" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        
-        {/* ROUTE CARD */}
-        <View style={styles.routeCard}>
-          <View style={styles.routeTimeline}>
-            {/* Pickup */}
-            <View style={styles.routeRow}>
-              <View style={styles.timelineGraphic}>
-                <View style={[styles.dotOutline, { borderColor: COLORS.primaryGreen }]}>
-                  <View style={[styles.dotInner, { backgroundColor: COLORS.primaryGreen }]} />
-                </View>
-                <View style={styles.timelineLine} />
-              </View>
-              <View style={styles.routeTextContainer}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.locationTitle} numberOfLines={1}>
-                    {pickupLocation ? pickupLocation.split(',')[0] : 'Pickup Location'}
-                  </Text>
-                  <View style={styles.badgePickup}>
-                    <Text style={styles.badgePickupText}>PICKUP</Text>
-                  </View>
-                </View>
-                <Text style={styles.locationSub} numberOfLines={1}>{pickupLocation || 'Select location'}</Text>
-              </View>
-              <TouchableOpacity style={styles.editBtn}>
-                <Feather name="edit-2" size={14} color={COLORS.textMuted} />
-              </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* ROUTE */}
+        <Card style={styles.routeCard}>
+          {loadType ? <StatusPill label={loadType === 'part' ? 'Part load' : 'Full truck'} tone="neutral" /> : null}
+          <View style={styles.routeRow}>
+            <View style={styles.timeline}>
+              <View style={styles.dotFilled} />
+              <View style={styles.timelineLine} />
             </View>
-
-            {/* Dropoff */}
-            <View style={styles.routeRow}>
-              <View style={styles.timelineGraphic}>
-                <View style={[styles.dotOutline, { borderColor: '#EF4444' }]}>
-                  <View style={[styles.dotInner, { backgroundColor: '#EF4444' }]} />
-                </View>
-              </View>
-              <View style={styles.routeTextContainer}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.locationTitle} numberOfLines={1}>
-                    {dropoffLocation ? dropoffLocation.split(',')[0] : 'Drop-off Location'}
-                  </Text>
-                  <View style={styles.badgeDrop}>
-                    <Text style={styles.badgeDropText}>DROP-OFF</Text>
-                  </View>
-                </View>
-                <Text style={styles.locationSub} numberOfLines={1}>{dropoffLocation || 'Select location'}</Text>
-              </View>
+            <View style={styles.flex}>
+              <Text variant="caption" color="textMuted">
+                Pickup
+              </Text>
+              <Text variant="bodyMedium" numberOfLines={2}>
+                {pickupLocation || 'Not selected'}
+              </Text>
             </View>
           </View>
+          <View style={styles.routeRow}>
+            <View style={styles.timeline}>
+              <View style={styles.dotOutline} />
+            </View>
+            <View style={styles.flex}>
+              <Text variant="caption" color="textMuted">
+                Drop-off
+              </Text>
+              <Text variant="bodyMedium" numberOfLines={2}>
+                {dropoffLocation || 'Not selected'}
+              </Text>
+            </View>
+          </View>
+        </Card>
 
-        </View>
-
-        {/* SECTION LABEL */}
-        <View style={styles.progressRow}>
-          <Text style={styles.progressText}>Weight & Fleet Allocation</Text>
-        </View>
-
-        {/* BOTTOM SHEET SIMULATION */}
-        <View style={styles.bottomSheet}>
-          <View style={styles.sheetDragHandle} />
-          
-          <Text style={styles.sheetTitle}>Estimated Goods Weight</Text>
-          <Text style={styles.sheetSubtitle}>
-            Precision weight matches optimal chassis & zero overload penalty
+        {/* WEIGHT */}
+        <View style={styles.section}>
+          <Text variant="title" accessibilityRole="header">
+            Estimated weight of goods
           </Text>
-
-          {/* WEIGHT DISPLAY CARD */}
-          <View style={styles.weightCard}>
-            <View style={styles.weightHeader}>
-              <View style={styles.grossPayloadRow}>
-                <View style={styles.brandDot} />
-                <Text style={styles.grossPayloadText}>GROSS PAYLOAD</Text>
-              </View>
-              <View style={styles.unitToggle}>
-                <TouchableOpacity 
-                  style={[styles.unitBtn, unit === 't' && styles.unitBtnActive]}
-                  onPress={() => setUnit('t')}
-                >
-                  <Text style={[styles.unitBtnText, unit === 't' && styles.unitBtnTextActive]}>Tons (t)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.unitBtn, unit === 'kg' && styles.unitBtnActive]}
-                  onPress={() => setUnit('kg')}
-                >
-                  <Text style={[styles.unitBtnText, unit === 'kg' && styles.unitBtnTextActive]}>kg</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.weightMainRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                <Text style={styles.weightHugeText}>
-                  {unit === 't' ? selectedWeight.toFixed(1) : (selectedWeight * 1000).toLocaleString()}
-                </Text>
-                <Text style={styles.weightUnitText}>{unit === 't' ? 'TON' : 'KG'}</Text>
-              </View>
-              <View style={styles.tierBadge}>
-                <View style={[styles.brandDot, { backgroundColor: COLORS.primaryGreen }]} />
-                <Text style={styles.tierBadgeText}>{getTierForWeight(selectedWeight)}</Text>
-              </View>
-            </View>
-
-            <Text style={styles.approxText}>Approx. ~{(selectedWeight * 1000).toLocaleString()} kg</Text>
-
-            {/* INTERACTIVE SLIDER */}
-            <View style={styles.sliderTrack}>
-              <View style={[styles.sliderFill, { width: `${(selectedWeight / 25) * 100}%` }]} />
-              <View style={[styles.sliderThumb, { left: `${(selectedWeight / 25) * 100}%` }]} />
-              
-              {/* Invisible touch overlay for PanResponder */}
-              <View 
-                {...panResponder.panHandlers}
-                style={{ position: 'absolute', top: -20, bottom: -20, left: 0, right: 0, backgroundColor: 'transparent' }} 
-              />
-            </View>
-            <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabel}>0.5t</Text>
-              <Text style={styles.sliderLabel}>5.0t</Text>
-              <Text style={styles.sliderLabel}>10t</Text>
-              <Text style={styles.sliderLabel}>15t</Text>
-              <Text style={styles.sliderLabel}>25t+</Text>
-            </View>
-          </View>
-
-          {/* PRESETS GRID */}
-          <View style={styles.presetsHeaderRow}>
-            <Text style={styles.presetsTitle}>Quick Preset Categories</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewGuideText}>View Tier Guide</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.gridContainer}>
-            {TRUCK_TIERS.map((tier) => {
-              const isSelected = selectedWeight === tier.weight;
-              return (
-                <TouchableOpacity 
-                  key={tier.id}
-                  style={[styles.gridItem, isSelected && styles.gridItemActive]}
-                  onPress={() => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setSelectedWeight(tier.weight);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.gridItemHeader}>
-                    <Text style={styles.gridWeightText}>{tier.weight.toFixed(1)} t</Text>
-                    <View style={[styles.radioDot, isSelected && styles.radioDotActive]} />
-                  </View>
-                  <Text style={styles.gridTitleText}>{tier.title}</Text>
-                  <Text style={styles.gridDescText} numberOfLines={1}>{tier.desc}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* BOTTOM TRUCK INFO BANNER */}
-          <View style={styles.truckBanner}>
-            <View style={styles.truckIconBox}>
-              <MaterialCommunityIcons name="truck-outline" size={24} color="#FFFFFF" />
-            </View>
-            <View style={styles.truckBannerText}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={styles.truckBannerTitle}>
-                  {TRUCK_TIERS.find(t => t.weight === selectedWeight)?.truck || 'Margix Standard'}
-                </Text>
-                <View style={styles.zeroEmissionBadge}>
-                  <Text style={styles.zeroEmissionText}>INDIAN FLEET</Text>
-                </View>
-              </View>
-              <Text style={styles.truckBannerSub}>Payload limit: up to {(selectedWeight * 1000).toLocaleString()} kg</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={COLORS.primaryDark} />
-          </View>
-          
+          <Text variant="bodySmall" color="textMuted">
+            Choose the approximate weight so the right size of vehicle can be matched.
+          </Text>
         </View>
+
+        <Card style={styles.weightCard}>
+          <View style={styles.weightHeader}>
+            <Text variant="captionMedium" color="textMuted">
+              Gross weight
+            </Text>
+            <View style={styles.unitToggle} accessibilityRole="radiogroup" accessibilityLabel="Weight unit">
+              {(['t', 'kg'] as const).map((u) => {
+                const selected = unit === u;
+                return (
+                  <Pressable
+                    key={u}
+                    onPress={() => setUnit(u)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={u === 't' ? 'Tonnes' : 'Kilograms'}
+                    style={[styles.unitBtn, selected && styles.unitBtnActive]}
+                  >
+                    <Text variant="captionMedium" color={selected ? 'onAccentFill' : 'textMuted'}>
+                      {u === 't' ? 'Tonnes' : 'kg'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.weightMainRow}>
+            <View style={styles.weightValue}>
+              <Text variant="display">{formatWeight(selectedWeight, unit)}</Text>
+              <Text variant="title" color="textMuted">
+                {unit === 't' ? 't' : 'kg'}
+              </Text>
+            </View>
+            <StatusPill label={getTierForWeight(selectedWeight)} tone="accent" />
+          </View>
+
+          {/* SLIDER */}
+          <View
+            ref={trackRef}
+            onLayout={measureTrack}
+            style={styles.sliderTrack}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel="Estimated weight"
+            accessibilityValue={{ text: `${formatWeight(selectedWeight, unit)} ${unit === 't' ? 'tonnes' : 'kilograms'}` }}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={onSliderAction}
+          >
+            <View style={[styles.sliderFill, { width: fillPercent }]} />
+            <View style={[styles.sliderThumb, { left: fillPercent }]} />
+            <View {...panResponder.panHandlers} style={styles.sliderTouchArea} />
+          </View>
+          <View style={styles.sliderLabels} importantForAccessibility="no-hide-descendants">
+            {SLIDER_LABELS.map((label) => (
+              <Text key={label} variant="caption" color="textMuted">
+                {label}
+              </Text>
+            ))}
+          </View>
+        </Card>
+
+        {/* PRESETS */}
+        <Text variant="title" accessibilityRole="header">
+          Common loads
+        </Text>
+        <View style={styles.grid} accessibilityRole="radiogroup">
+          {TRUCK_TIERS.map((tier) => {
+            const isSelected = selectedWeight === tier.weight;
+            return (
+              <Pressable
+                key={tier.id}
+                style={({ pressed }) => [styles.gridItem, isSelected && styles.gridItemActive, pressed && styles.pressed]}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setSelectedWeight(tier.weight);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${tier.title}, ${tier.weight.toFixed(1)} tonnes, ${tier.desc}`}
+              >
+                <View style={styles.gridItemHeader}>
+                  <Text variant="bodyMedium">{tier.weight.toFixed(1)} t</Text>
+                  <View style={[styles.radioDot, isSelected && styles.radioDotActive]} />
+                </View>
+                <Text variant="bodySmallMedium">{tier.title}</Text>
+                <Text variant="caption" color="textMuted" numberOfLines={1}>
+                  {tier.desc}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* SUGGESTED VEHICLE */}
+        <Card style={styles.truckBanner}>
+          <View style={styles.truckIconBox}>
+            <Feather name="truck" size={size.icon.lg} color={colors.onAccentFill} />
+          </View>
+          <View style={styles.flex}>
+            <Text variant="caption" color="textMuted">
+              Suggested vehicle
+            </Text>
+            <Text variant="bodyMedium">{suggestedTruck ?? 'Chosen after you confirm the weight'}</Text>
+            <Text variant="caption" color="textMuted">
+              For loads up to {Math.round(selectedWeight * 1000).toLocaleString()} kg
+            </Text>
+          </View>
+        </Card>
       </ScrollView>
-      
-      {/* FIXED CONTINUE BUTTON */}
-      <View style={styles.bottomFixedBar}>
-        <TouchableOpacity style={[styles.continueBtn, styles.continueBtnDisabled]} disabled>
-          <Text style={styles.continueBtnText}>Continue to Pricing</Text>
-        </TouchableOpacity>
-        <Text style={styles.comingSoonText}>Booking is coming soon</Text>
-      </View>
-    </View>
+
+      {/* CONTINUE */}
+      <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
+        <Button title="Continue to pricing" disabled />
+        <Text variant="caption" color="textMuted" align="center">
+          Booking is coming soon.
+        </Text>
+      </SafeAreaView>
+    </SafeAreaView>
   );
 }
 
+const DOT = 12;
+const THUMB = 24;
+const TRACK_HEIGHT = 6;
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 20,
-    paddingBottom: 20,
-  },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.cardBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  headerTitles: {
-    alignItems: 'center',
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  brandDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.primaryGreen,
-    marginRight: 6,
-  },
-  brandText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.primaryDark,
-    letterSpacing: 1,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textMain,
-  },
-  routeCard: {
-    backgroundColor: COLORS.cardBg,
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 3,
-    marginBottom: 24,
-  },
-  routeTimeline: {
-    marginBottom: 16,
-  },
-  routeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  timelineGraphic: {
-    alignItems: 'center',
-    marginRight: 16,
-    width: 16,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
+  flex: { flex: 1 },
+  section: { gap: space[1] },
+  routeCard: { gap: space[2] },
+  routeRow: { flexDirection: 'row', gap: space[3] },
+  timeline: { width: DOT, alignItems: 'center', paddingTop: space[1] },
+  dotFilled: { width: DOT, height: DOT, borderRadius: radius.full, backgroundColor: colors.accent },
   dotOutline: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: DOT,
+    height: DOT,
+    borderRadius: radius.full,
     borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.accent,
+    backgroundColor: colors.surface,
   },
-  dotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  timelineLine: {
-    width: 2,
-    height: 24,
-    backgroundColor: '#E5E7EB',
-    position: 'absolute',
-    top: 16,
-    zIndex: -1,
-  },
-  routeTextContainer: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  locationTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textMain,
-    marginRight: 8,
-    maxWidth: '65%',
-  },
-  badgePickup: {
-    backgroundColor: COLORS.accentGreenLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  badgePickupText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  badgeDrop: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  badgeDropText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  locationSub: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginTop: 4,
-  },
-  editBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  etaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 'auto',
-  },
-  etaText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginLeft: 4,
-  },
-  progressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 20,
-  },
-  progressText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-  progressDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D1D5DB',
-    marginLeft: 4,
-  },
-  progDotActive: {
-    backgroundColor: COLORS.primaryDark,
-  },
-  bottomSheet: {
-    backgroundColor: COLORS.cardBg,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 10,
-    minHeight: Dimensions.get('window').height * 0.6,
-  },
-  sheetDragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E5E7EB',
-    alignSelf: 'center',
-    marginBottom: 24,
-  },
-  sheetTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: COLORS.textMain,
-    letterSpacing: -0.5,
-    marginBottom: 8,
-  },
-  sheetSubtitle: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  weightCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 24,
-  },
-  weightHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  grossPayloadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  grossPayloadText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    letterSpacing: 1,
-  },
+  timelineLine: { flex: 1, width: 2, minHeight: space[6], backgroundColor: colors.border, marginTop: space[1] },
+  weightCard: { gap: space[3] },
+  weightHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   unitToggle: {
     flexDirection: 'row',
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 20,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    borderWidth: size.border,
+    borderColor: colors.border,
+    padding: 2,
   },
   unitBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  unitBtnActive: {
-    backgroundColor: COLORS.primaryDark,
-  },
-  unitBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  unitBtnTextActive: {
-    color: '#FFFFFF',
-  },
-  weightMainRow: {
-    flexDirection: 'row',
+    minHeight: 36,
+    minWidth: size.control,
+    paddingHorizontal: space[3],
+    borderRadius: radius.control - 2,
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  weightHugeText: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: COLORS.textMain,
-    letterSpacing: -1,
-  },
-  weightUnitText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    marginLeft: 8,
-    marginBottom: 8,
-  },
-  tierBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.accentGreenLight,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  tierBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  approxText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginTop: 8,
-    textAlign: 'right',
-  },
+  unitBtnActive: { backgroundColor: colors.accentFill },
+  weightMainRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weightValue: { flexDirection: 'row', alignItems: 'baseline', gap: space[1] },
   sliderTrack: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    marginTop: 32,
-    marginBottom: 16,
-    position: 'relative',
+    height: TRACK_HEIGHT,
+    backgroundColor: colors.border,
+    borderRadius: radius.full,
+    marginTop: space[4],
+    marginBottom: space[2],
   },
   sliderFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: COLORS.primaryDark,
-    borderRadius: 3,
+    backgroundColor: colors.accentFill,
+    borderRadius: radius.full,
   },
   sliderThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.primaryDark,
+    width: THUMB,
+    height: THUMB,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentFill,
     borderWidth: 4,
-    borderColor: '#FFFFFF',
+    borderColor: colors.surface,
     position: 'absolute',
-    top: -9,
-    marginLeft: -12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    top: (TRACK_HEIGHT - THUMB) / 2,
+    marginLeft: -THUMB / 2,
   },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sliderLabel: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-  presetsHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  presetsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textMain,
-  },
-  viewGuideText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.primaryDark,
-  },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
+  // Taller invisible area so the thin track is easy to drag.
+  sliderTouchArea: { position: 'absolute', top: -space[4], bottom: -space[4], left: 0, right: 0 },
+  sliderLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space[3] },
   gridItem: {
     width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: colors.surface,
+    borderWidth: size.border,
+    borderColor: colors.border,
+    borderRadius: radius.card,
+    padding: space[4],
+    gap: space[1],
   },
-  gridItemActive: {
-    borderColor: COLORS.primaryDark,
-    borderWidth: 2,
-    backgroundColor: '#F8FAFC',
-  },
-  gridItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  gridWeightText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textMain,
-  },
+  gridItemActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  pressed: { opacity: 0.8 },
+  gridItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space[1] },
   radioDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E5E7EB',
+    width: DOT,
+    height: DOT,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    borderColor: colors.borderStrong,
   },
-  radioDotActive: {
-    backgroundColor: COLORS.primaryDark,
-  },
-  gridTitleText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textMain,
-    marginBottom: 4,
-  },
-  gridDescText: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-  },
-  truckBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4', // Light green hint
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-    borderRadius: 16,
-    padding: 16,
-  },
+  radioDotActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  truckBanner: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   truckIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.primaryDark,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  truckBannerText: {
-    flex: 1,
-  },
-  truckBannerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textMain,
-    marginRight: 8,
-  },
-  zeroEmissionBadge: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  zeroEmissionText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  truckBannerSub: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-  bottomFixedBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: COLORS.cardBg,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  continueBtn: {
-    backgroundColor: COLORS.primaryDark,
-    height: 56,
-    borderRadius: 28,
-    flexDirection: 'row',
+    width: size.control - space[2],
+    height: size.control - space[2],
+    borderRadius: radius.control,
+    backgroundColor: colors.accentFill,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  continueBtnDisabled: {
-    opacity: 0.4,
-  },
-  continueBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginRight: 8,
-  },
-  comingSoonText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: 8,
+  bottomBar: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: space[4],
+    paddingTop: space[3],
+    paddingBottom: space[3],
+    gap: space[2],
+    borderTopWidth: size.border,
+    borderTopColor: colors.border,
   },
 });

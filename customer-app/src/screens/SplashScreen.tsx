@@ -1,14 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Image, Animated, StyleSheet, Dimensions, Easing } from 'react-native';
 import { api } from '../services/api';
-const { width, height } = Dimensions.get('window');
+import { colors, radius } from '../theme';
+const { width } = Dimensions.get('window');
 
 export default function SplashScreen({ navigation }: any) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const rippleAnim = useRef(new Animated.Value(0)).current;
-  const barWidth = useRef(new Animated.Value(0)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [scaleAnim] = useState(() => new Animated.Value(0.5));
+  const [slideAnim] = useState(() => new Animated.Value(50));
+  const [rippleAnim] = useState(() => new Animated.Value(0));
+  const [barWidth] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     // 1. Ripple expands (Yellow background effect behind logo)
@@ -44,7 +45,7 @@ export default function SplashScreen({ navigation }: any) {
       }),
     ]).start();
 
-    // 3. Loading bar fills up smoothly (simulating app init)
+    // 3. Loading bar fills while the session is restored
     Animated.timing(barWidth, {
       toValue: 1,
       duration: 2000,
@@ -54,7 +55,7 @@ export default function SplashScreen({ navigation }: any) {
     }).start();
 
     const checkAuth = async () => {
-      // Simulate minimum splash screen time, and initialize the API client
+      // Show the splash for a minimum time while initialising the API client
       // (migrates legacy tokens and loads the session) in parallel.
       const [, hasSession] = await Promise.all([
         new Promise(resolve => setTimeout(resolve, 2800)),
@@ -67,12 +68,12 @@ export default function SplashScreen({ navigation }: any) {
         duration: 400,
         useNativeDriver: true,
       }).start(() => {
-        navigation.replace(hasSession ? 'Home' : 'Login');
+        navigation.replace(hasSession ? 'Main' : 'Login');
       });
     };
 
     checkAuth();
-  }, [navigation]);
+  }, [navigation, fadeAnim, scaleAnim, slideAnim, rippleAnim, barWidth]);
 
   const rippleScale = rippleAnim.interpolate({
     inputRange: [0, 1],
@@ -114,10 +115,11 @@ export default function SplashScreen({ navigation }: any) {
           }
         ]}
       >
-        <Image 
-          source={require('../../assets/margix-logo.png')} 
+        <Image
+          source={require('../../assets/margix-logo.png')}
           style={styles.logo}
           resizeMode="contain"
+          accessibilityLabel="MargixIndia"
         />
         
         {/* Sleek Loading Bar */}
@@ -137,7 +139,7 @@ export default function SplashScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -146,7 +148,7 @@ const styles = StyleSheet.create({
     width: width,
     height: width,
     borderRadius: width / 2,
-    backgroundColor: '#FFC800',
+    backgroundColor: colors.accentFill,
   },
   logoContainer: {
     alignItems: 'center',
@@ -155,24 +157,19 @@ const styles = StyleSheet.create({
   },
   logo: {
     width: '100%',
-    height: 120, // Increased size for more impact
-    marginBottom: 50,
+    height: 120,
+    marginBottom: 48,
   },
   loaderContainer: {
-    width: 140, // Wider for a more premium feel
+    width: 140,
     height: 4,
-    backgroundColor: 'rgba(255, 200, 0, 0.2)', // Light yellow background
-    borderRadius: 2,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.full,
     overflow: 'hidden',
   },
   loaderBar: {
     height: '100%',
-    backgroundColor: '#FFC800',
-    borderRadius: 2,
-    shadowColor: '#FFC800',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 5,
-    elevation: 3,
+    backgroundColor: colors.accentFill,
+    borderRadius: radius.full,
   },
 });

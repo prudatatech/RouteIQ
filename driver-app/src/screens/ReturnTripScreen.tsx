@@ -1,193 +1,138 @@
 import { useTranslation } from '../hooks/useTranslation';
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Switch } from 'react-native';
+import React, { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { View, StyleSheet, ActivityIndicator, Alert, Switch, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../services/api';
+import { Button, Card, ErrorBanner, ScreenHeader, Text } from '../components/ui';
+import { colors, space } from '../theme';
 
 interface ReturnTripScreenProps {
   vehicleId: string;
   onClose: () => void;
+  /** Rendered at the right of the header (the SOS button). */
+  headerRight?: ReactNode;
 }
 
-export default function ReturnTripScreen({ vehicleId, onClose }: ReturnTripScreenProps) {
+export default function ReturnTripScreen({ vehicleId, onClose, headerRight }: ReturnTripScreenProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
-  const [capacity, setCapacity] = useState<number>(0);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [capacity, setCapacity] = useState<number | null>(null);
   const [biddingOpen, setBiddingOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
-    loadVehicleInfo();
-  }, []);
-
-  const loadVehicleInfo = async () => {
+  const loadVehicleInfo = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadFailed(false);
       const vehicle = await api.getVehicleInfo(vehicleId);
       if (vehicle) {
-        setCapacity(vehicle.available_capacity_kg ?? vehicle.capacity_kg);
+        setCapacity(vehicle.available_capacity_kg ?? vehicle.capacity_kg ?? null);
         setBiddingOpen(vehicle.bidding_window_open || false);
       }
     } catch (error) {
       console.error('Failed to load vehicle info', error);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, [vehicleId]);
+
+  useEffect(() => {
+    loadVehicleInfo();
+  }, [loadVehicleInfo]);
 
   const toggleMatching = async (val: boolean) => {
     try {
       setUpdating(true);
       await api.toggleBiddingWindow(vehicleId, val);
       setBiddingOpen(val);
-      Alert.alert(val ? t('return_matching_enabled') : t('return_matching_disabled'), val ? t('return_searching_alert') : t('return_stopped_alert'));
+      Alert.alert(
+        val ? t('return_matching_enabled') : t('return_matching_disabled'),
+        val ? t('return_searching_alert') : t('return_stopped_alert'),
+      );
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update matching status');
+      Alert.alert(t('error'), error.message || t('return_matching_failed'));
     } finally {
       setUpdating(false);
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#3B82F6" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('return_title')}</Text>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-          <Text style={styles.closeBtnText}>X</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <ScreenHeader
+        title={t('return_title')}
+        onBack={onClose}
+        backIcon="close"
+        backLabel={t('close')}
+        right={headerRight}
+      />
 
-      <View style={styles.card}>
-        <Text style={styles.label}>{t('return_avail_cap')}</Text>
-        <Text style={styles.value}>{capacity} KG</Text>
-        <Text style={styles.subtitle}>{t('return_cap_desc')}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>{t('return_auto_match')}</Text>
-            <Text style={styles.subtitle}>{t('return_auto_match_desc')}</Text>
-          </View>
-          <Switch
-            value={biddingOpen}
-            onValueChange={toggleMatching}
-            disabled={updating}
-            trackColor={{ false: '#D1D5DB', true: '#27A150' }}
-            thumbColor={'#FFFFFF'}
-          />
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.accent} accessibilityLabel={t('loading')} />
         </View>
-      </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content}>
+          {loadFailed ? (
+            <ErrorBanner message={t('vehicle_load_failed')} action={{ label: t('retry'), onPress: loadVehicleInfo }} />
+          ) : null}
 
-      {biddingOpen && (
-        <View style={styles.searchingContainer}>
-          <ActivityIndicator size="small" color="#10B981" />
-          <Text style={styles.searchingText}>{t('return_searching')}</Text>
-        </View>
+          <Card style={styles.card}>
+            <Text variant="bodySmallMedium" color="textMuted">
+              {t('return_avail_cap')}
+            </Text>
+            <Text variant="heading">{capacity !== null ? `${capacity.toLocaleString()} kg` : '—'}</Text>
+            <Text variant="bodySmall" color="textMuted">
+              {t('return_cap_desc')}
+            </Text>
+          </Card>
+
+          <Card style={styles.row}>
+            <View style={styles.flex}>
+              <Text variant="title">{t('return_auto_match')}</Text>
+              <Text variant="bodySmall" color="textMuted">
+                {t('return_auto_match_desc')}
+              </Text>
+            </View>
+            <Switch
+              value={biddingOpen}
+              onValueChange={toggleMatching}
+              disabled={updating || loadFailed}
+              trackColor={{ false: colors.borderStrong, true: colors.accentFill }}
+              thumbColor={colors.surface}
+              accessibilityLabel={t('return_auto_match')}
+            />
+          </Card>
+
+          {biddingOpen && (
+            <View style={styles.searching} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={colors.success} />
+              <Text variant="bodySmallMedium" color="success">
+                {t('return_searching')}
+              </Text>
+            </View>
+          )}
+
+          <Button title={t('done')} onPress={onClose} />
+        </ScrollView>
       )}
-
-      <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
-        <Text style={styles.doneBtnText}>{t('done')}</Text>
-      </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    padding: 20,
-    justifyContent: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 40,
-  },
-  title: {
-    color: '#111827',
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  closeBtn: {
-    backgroundColor: '#E5E7EB',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeBtnText: {
-    color: '#6B7280',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  label: {
-    color: '#111827',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  value: {
-    color: '#27A150',
-    fontSize: 32,
-    fontWeight: '900',
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: '#6B7280',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  searchingContainer: {
+  container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  content: { padding: space[4], gap: space[4] },
+  card: { gap: space[1] },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  flex: { flex: 1, gap: space[1] },
+  searching: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#27A150',
-  },
-  searchingText: {
-    color: '#27A150',
-    fontWeight: '700',
-    marginLeft: 12,
-  },
-  doneBtn: {
-    backgroundColor: '#27A150',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  doneBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+    gap: space[2],
+    padding: space[3],
   },
 });
