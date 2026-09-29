@@ -119,6 +119,27 @@ export const usersAPI = {
   update: (id: string, data: Record<string, unknown>) => api.patch(`/users/${id}`, data).then(r => r.data),
 }
 
+export interface SearchResultItem {
+  id: string
+  label: string
+  sublabel?: string
+  type: string
+  path: string
+}
+
+export interface SearchResults {
+  shipments: SearchResultItem[]
+  cargo_manifests: SearchResultItem[]
+  vehicles: SearchResultItem[]
+  vendors: SearchResultItem[]
+  partners: SearchResultItem[]
+  users: SearchResultItem[]
+}
+
+export const searchAPI = {
+  search: (q: string) => api.get('/search', { params: { q } }).then(r => r.data.results as SearchResults),
+}
+
 export const cargoAPI = {
   /** Created shipments that are not on a route yet. */
   openLoads: () => api.get('/cargo/open-loads').then(r => ensureArray(r.data)),

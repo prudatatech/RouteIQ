@@ -24,6 +24,7 @@ import marketplaceRoutes from './marketplace.routes';
 import capacityRoutes from './capacity.routes';
 import vendorRoutes from './vendor.routes';
 import tplRoutes from './tpl.routes';
+import searchRoutes from './search.routes';
 
 const apiRouter = Router();
 
@@ -46,5 +47,6 @@ apiRouter.use('/marketplace', marketplaceRoutes);
 apiRouter.use('/capacity', capacityRoutes);
 apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/tpl', tplRoutes);
+apiRouter.use('/search', searchRoutes);
 
 export default apiRouter;

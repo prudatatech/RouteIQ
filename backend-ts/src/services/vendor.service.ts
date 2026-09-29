@@ -63,6 +63,22 @@ export const vendorService = {
     const { data, error } = await supabase.from('vendor_profiles').upsert(changes).select().single();
 
     if (error) throw new Error(error.message);
+
+    // Notify staff whenever this save is what sent the profile to KYC review (D2).
+    // A notification failure must not undo the profile save.
+    if (data?.kyc_status === 'submitted' && existing?.kyc_status !== 'submitted') {
+      try {
+        await notificationService.notifyStaff(
+          'KYC submitted',
+          `${companyName} submitted KYC details for review.`,
+          'kyc_submitted',
+          { profile_id: vendorId },
+        );
+      } catch (e) {
+        console.error('[vendor] KYC notification failed:', e);
+      }
+    }
+
     return data;
   },
 
@@ -127,8 +143,8 @@ export const vendorService = {
 
     if (error) throw new Error(error.message);
 
-    // Notify super admins
-    await notificationService.notifySuperAdmins(
+    // Notify every active admin/superadmin, not just superadmins (D2)
+    await notificationService.notifyStaff(
       'New Vendor Request',
       `Vendor requested a ${capacity}kg shipment (${enrichedMetadata.cargo?.category || 'General'}) from ${pickup.address} to ${drop.address}. ETA: ${totalHours.toFixed(1)} hrs.`,
       'vendor_request',

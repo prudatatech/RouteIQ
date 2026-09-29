@@ -3,6 +3,7 @@ import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
+import { notificationService } from './notification.service';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -120,6 +121,18 @@ export const tplService = {
       
       const { error: docErr } = await supabase.from('tpl_documents').insert(docsData);
       if (docErr) console.error("Failed to insert docs", docErr);
+    }
+
+    // Notifications are informative; a failure must not undo the application.
+    try {
+      await notificationService.notifyStaff(
+        '3PL application submitted',
+        `${companyName} applied to become a 3PL partner.`,
+        'tpl_application',
+        { partner_id: partnerId },
+      );
+    } catch (e) {
+      console.error('[tpl] Application notification failed:', e);
     }
 
     return partner;

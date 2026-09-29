@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, X } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
@@ -10,9 +10,28 @@ import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavI
 import { routePrefetch } from '@/config/lazyPages'
 import { useDraftStore } from '@/store/draftStore'
 import SOSListener from '@/components/SOSListener'
+import { CommandPalette } from './CommandPalette'
 import { GlobalDeliveryCelebration } from './GlobalDeliveryCelebration'
+import { NotificationsBell } from './NotificationsBell'
 import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
+
+/** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform ?? navigator.userAgent ?? '')
+
+/** Opens the global search palette on Ctrl/Cmd+K from anywhere in the app. */
+function useSearchShortcut(onOpen: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        onOpen()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onOpen])
+}
 
 // Pulls in the live map (maplibre) to place the shipment's stops, so it is
 // only fetched once a "Create shipment" button is actually clicked.
@@ -71,6 +90,30 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
   }, [enabled, isSuperadmin, loadVendorRequests, loadPartners, loadKyc])
 
   return counts
+}
+
+/** Opens the search palette; shown in the sidebar (desktop) and the phone top bar. */
+function SearchButton({ collapsed, onClick }: { collapsed: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={collapsed ? 'Search' : undefined}
+      className={clsx(
+        'flex h-10 min-w-0 flex-1 items-center rounded-control text-sm text-muted transition-colors hover:bg-surface-subtle hover:text-text',
+        collapsed ? 'justify-center' : 'gap-3 px-3',
+      )}
+    >
+      <Search size={18} aria-hidden="true" className="shrink-0" />
+      {!collapsed && (
+        <>
+          <span className="flex-1 truncate text-left">Search</span>
+          <span className="rounded-control border border-border px-1.5 py-0.5 text-xs text-muted">{isMac ? '⌘K' : 'Ctrl+K'}</span>
+        </>
+      )}
+      {collapsed && <span className="sr-only">Search ({isMac ? 'Cmd+K' : 'Ctrl+K'})</span>}
+    </button>
+  )
 }
 
 function Brand({ collapsed, bordered = true }: { collapsed: boolean; bordered?: boolean }) {
@@ -181,11 +224,13 @@ export default function AppLayout() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   // The modal (and the map it pulls in) is only fetched once a "Create shipment" button opens it.
   const isShipmentModalOpen = useDraftStore(s => s.isModalOpen)
 
   const isStaff = role === 'admin' || role === 'superadmin'
   const badges = useNavBadges(isStaff, role === 'superadmin')
+  useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
   const sections = navSections
     .map(s => ({ ...s, items: s.items.filter(i => role && (i.roles as string[]).includes(role)) }))
     .filter(s => s.items.length > 0)
@@ -246,6 +291,12 @@ export default function AppLayout() {
         )}
       >
         <Brand collapsed={collapsed} />
+        {isStaff && (
+          <div className={clsx('flex shrink-0 items-center gap-1 border-b border-border py-2', collapsed ? 'flex-col px-2' : 'pl-3 pr-2')}>
+            <SearchButton collapsed={collapsed} onClick={() => setSearchOpen(true)} />
+            <NotificationsBell />
+          </div>
+        )}
         <NavList items={sections} collapsed={collapsed} badges={badges} />
         <SidebarFooter collapsed={collapsed} onSignOut={signOut} onToggle={toggleCollapsed} />
       </aside>
@@ -254,7 +305,13 @@ export default function AppLayout() {
       <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-surface px-2 lg:hidden">
         <IconButton label="Open menu" icon={<Menu size={20} />} onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} />
         <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
-        <span className="text-base font-semibold">MargixIndia</span>
+        <span className="flex-1 text-base font-semibold">MargixIndia</span>
+        {isStaff && (
+          <>
+            <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />
+            <NotificationsBell />
+          </>
+        )}
       </header>
 
       {/* Phone and tablet menu */}
@@ -294,6 +351,7 @@ export default function AppLayout() {
       )}
       <SOSListener />
       <GlobalDeliveryCelebration />
+      {isStaff && <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />}
     </div>
   )
 }

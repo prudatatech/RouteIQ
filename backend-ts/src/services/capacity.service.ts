@@ -167,7 +167,7 @@ export const capacityService = {
 
     if (error) throw new Error(error.message);
 
-    notify(() => notificationService.notifySuperAdmins(
+    notify(() => notificationService.notifyStaff(
       'New Capacity Bid',
       `A vendor bid ₹${bidAmount} for ${weightKg} kg on ${windowVehicle?.plate_number ?? 'a vehicle'}.`,
       'capacity_bid',

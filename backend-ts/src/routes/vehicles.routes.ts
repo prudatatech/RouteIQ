@@ -10,6 +10,7 @@ import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
 import { sendError } from '../core/errors';
+import { notificationService } from '../services/notification.service';
 
 const router = Router();
 
@@ -275,7 +276,22 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     if (error) throw error;
 
     // Turn the vehicle status to maintenance or offline?
-    await supabase.from('vehicles').update({ status: 'maintenance' }).eq('id', req.params.vehicle_id);
+    const { data: vehicle } = await supabase
+      .from('vehicles')
+      .update({ status: 'maintenance' })
+      .eq('id', req.params.vehicle_id)
+      .select('plate_number, driver_name')
+      .maybeSingle();
+
+    // Notifications are informative; a failure must not undo the SOS report.
+    notificationService
+      .notifyStaff(
+        'Emergency SOS',
+        `${vehicle?.driver_name ?? 'A driver'} on ${vehicle?.plate_number ?? 'a vehicle'} triggered an SOS: ${alert.description}`,
+        'sos',
+        { alert_id: alert.id, vehicle_id: req.params.vehicle_id },
+      )
+      .catch(e => console.error('[vehicles] SOS notification failed:', e));
 
     res.status(201).json(alert);
   } catch (e: any) {

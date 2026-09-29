@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import {
@@ -36,11 +37,21 @@ export default function ShipmentsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<ShipmentRow | null>(null)
   const [assigning, setAssigning] = useState<ShipmentRow | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: shipments = [], isLoading, isError, refetch } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments'],
     queryFn: () => shipmentsAPI.list() as Promise<ShipmentRow[]>,
   })
+
+  // Opened from a link elsewhere (e.g. global search or a notification): ?open=<id>
+  // selects the matching row and opens its drawer, then the param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || isLoading) return
+    if (shipments.some(s => s.id === openId)) setSelectedId(openId)
+    setSearchParams(params => { params.delete('open'); return params }, { replace: true })
+  }, [searchParams, setSearchParams, shipments, isLoading])
 
   // Keep the list current when shipments or cargo manifests change anywhere.
   useEffect(() => {
