@@ -1,5 +1,6 @@
 import type { Tone } from '@/components/ui'
-import { requiredDocTypes, type DocSummary, type DriverLicenceStatus, type PersonDocument } from './types'
+import { maskAadhaar } from './validators'
+import { requiredGroups, type DocSummary, type DriverLicenceStatus, type PersonDocument, type RequiredGroup } from './types'
 
 export const EXPIRY_WARNING_DAYS = 30
 
@@ -13,23 +14,27 @@ export function daysUntil(date: string | null | undefined, now: Date = new Date(
   return Math.round((target - today) / 86_400_000)
 }
 
-export type DocState = 'verified' | 'pending' | 'rejected' | 'expired' | 'expiring'
+export type DocState = 'verified' | 'pending' | 'rejected' | 'expired' | 'expiring' | 'grace' | 'review_due'
 
 /** How a live document should read: expiry beats the stored status. */
 export function docState(doc: PersonDocument, now?: Date): DocState {
   const days = daysUntil(doc.expires_on, now)
-  if (doc.status === 'expired' || (days !== null && days < 0)) return 'expired'
+  const expired = doc.status === 'expired' || (days !== null && days < 0)
+  if (expired) return doc.in_grace ? 'grace' : 'expired'
   if (doc.status === 'rejected') return 'rejected'
   if (doc.status === 'pending') return 'pending'
   if (days !== null && days <= EXPIRY_WARNING_DAYS) return 'expiring'
+  const review = daysUntil(doc.review_by, now)
+  if (review !== null && review <= EXPIRY_WARNING_DAYS) return 'review_due'
   return 'verified'
 }
 
 export const DOC_STATE_LABEL: Record<DocState, string> = {
   verified: 'Verified', pending: 'Waiting for review', rejected: 'Rejected', expired: 'Expired', expiring: 'Expiring soon',
+  grace: 'Expired, in grace period', review_due: 'Review due',
 }
 export const DOC_STATE_TONE: Record<DocState, Tone> = {
-  verified: 'success', pending: 'warning', rejected: 'danger', expired: 'danger', expiring: 'warning',
+  verified: 'success', pending: 'warning', rejected: 'danger', expired: 'danger', expiring: 'warning', grace: 'warning', review_due: 'warning',
 }
 
 /** Live (not archived) documents, newest first, one per type. */
@@ -41,24 +46,31 @@ export function liveDocuments(docs: PersonDocument[]): PersonDocument[] {
     .filter(d => (d.doc_type === 'other' ? true : !seen.has(d.doc_type) && !!seen.add(d.doc_type)))
 }
 
-export interface Completeness {
-  required: string[]
-  verified: string[]
-  missing: string[]
+export interface GroupStatus {
+  group: RequiredGroup
+  /** The live document that satisfies (or is closest to satisfying) the group. */
+  doc: PersonDocument | null
+  state: DocState | 'missing' | 'waived'
+  /** Verified and in date. */
+  ok: boolean
 }
 
-/** Required documents for the role, and which are verified and in date. */
-export function completeness(role: string, docs: PersonDocument[]): Completeness {
+/** Each required group for the role: satisfied by any one of its document types. */
+export function groupStatuses(role: string, docs: PersonDocument[], noPanReason?: string | null): GroupStatus[] {
   const live = liveDocuments(docs)
-  const required = requiredDocTypes(role)
-  const verified: string[] = []
-  const missing: string[] = []
-  for (const t of required) {
-    const d = live.find(x => x.doc_type === t)
-    if (!d) missing.push(t)
-    else if (['verified', 'expiring'].includes(docState(d))) verified.push(t)
-  }
-  return { required, verified, missing }
+  return requiredGroups(role).map(group => {
+    const found = live.filter(d => group.types.includes(d.doc_type)).map(doc => ({ doc, state: docState(doc) }))
+    const good = found.find(f => ['verified', 'expiring', 'review_due'].includes(f.state))
+    const best = good ?? found[0]
+    if (best) return { group, doc: best.doc, state: best.state, ok: !!good }
+    if (group.waivable && noPanReason?.trim()) return { group, doc: null, state: 'waived' as const, ok: true }
+    return { group, doc: null, state: 'missing' as const, ok: false }
+  })
+}
+
+export function completeness(role: string, docs: PersonDocument[], noPanReason?: string | null) {
+  const groups = groupStatuses(role, docs, noPanReason)
+  return { groups, required: groups.length, verified: groups.filter(g => g.ok).length, missing: groups.filter(g => g.state === 'missing') }
 }
 
 /** "3/4 verified" with the tone that says how urgent it is. Null when no documents are required. */
@@ -86,4 +98,10 @@ export const LICENCE_WARNING: Record<'expired' | 'expiring' | 'missing', { text:
 
 export function licenceWarning(status: DriverLicenceStatus) {
   return status === 'expired' || status === 'expiring' || status === 'missing' ? LICENCE_WARNING[status] : null
+}
+
+/** Aadhaar shows only its last four digits, whatever the API sends. */
+export function maskedNumber(doc: PersonDocument) {
+  if (!doc.doc_number && !doc.number_last4) return null
+  return doc.doc_type === 'aadhaar' ? maskAadhaar(doc.doc_number, doc.number_last4) : doc.doc_number
 }

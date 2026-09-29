@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { supabase } from '@/services/supabase'
 import type {
-  PeopleAttention, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
+  PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
 
 
@@ -155,17 +155,44 @@ export const peopleAPI = {
   }) => api.post('/people', data).then(r => r.data as { id?: string; user?: { id: string } }),
   get: (id: string) => api.get(`/people/${id}`).then(r => r.data as PersonDetail),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/people/${id}`, data).then(r => r.data),
-  setStatus: (id: string, status: string, reason?: string) => api.post(`/people/${id}/status`, { status, reason }).then(r => r.data),
+  setStatus: (id: string, status: string, reason?: string, dates?: { leave_from?: string; leave_until?: string; suspended_until?: string }) =>
+    api.post(`/people/${id}/status`, { status, reason, ...dates }).then(r => r.data),
+  /** Sends (or resends) the sign-in invite. The server allows one every 10 minutes. */
+  resendInvite: (id: string) => api.post(`/people/${id}/invite`).then(r => r.data),
+  /** Superadmin, inactive people only. Clears personal data and keeps the record id. */
+  anonymise: (id: string) => api.post(`/people/${id}/anonymise`).then(r => r.data),
+  /** Matches on phone or a document number (normalised on the server). */
+  duplicates: (params: { phone?: string; doc_type?: string; doc_number?: string }) =>
+    api.get('/people/duplicates', { params }).then(r => {
+      const d = r.data
+      return (Array.isArray(d) ? d : Array.isArray(d?.duplicates) ? d.duplicates : Array.isArray(d?.matches) ? d.matches : []) as DuplicateMatch[]
+    }),
+  settings: () => api.get('/people/settings').then(r => r.data as PeopleSettings),
+  saveSettings: (data: Partial<PeopleSettings>) => api.put('/people/settings', data).then(r => r.data as PeopleSettings),
+  /** A CSV file. A dry run by default; `commit` creates the people. */
+  importCsv: (file: File, commit: boolean) => {
+    const body = new FormData()
+    body.append('file', file)
+    return api.post('/people/import', body, { params: commit ? { commit: true } : undefined, headers: { 'Content-Type': 'multipart/form-data' } })
+      .then(r => r.data as ImportReport)
+  },
+  exportCsv: (kind: 'people' | 'expiring', days = 30) =>
+    api.get(kind === 'people' ? '/people/export.csv' : '/people/documents/expiring.csv', {
+      params: kind === 'expiring' ? { days } : undefined, responseType: 'blob',
+    }).then(r => r.data as Blob),
   attention: () => api.get('/dashboard/people-attention').then(r => r.data as PeopleAttention),
 
   documentUploadUrl: (id: string, data: { doc_type: string; file_name: string; content_type: string }) =>
     api.post(`/people/${id}/documents/upload-url`, data).then(r => r.data as { path: string; signed_url: string; token: string }),
   addDocument: (id: string, data: {
-    doc_type: string; doc_number?: string; issued_on?: string; expires_on?: string; file_path: string; metadata?: Record<string, unknown>
+    doc_type: string; doc_number?: string; issued_on?: string; expires_on?: string; review_by?: string; name_on_document?: string
+    file_path: string; extra_file_paths?: string[]; metadata?: Record<string, unknown>
   }) => api.post(`/people/${id}/documents`, data).then(r => r.data as PersonDocument),
   updateDocument: (id: string, docId: string, data: Record<string, unknown>) =>
     api.patch(`/people/${id}/documents/${docId}`, data).then(r => r.data),
-  documentFile: (id: string, docId: string) => api.get(`/people/${id}/documents/${docId}/file`).then(r => r.data as { url: string }),
+  /** `index` picks an extra page (back of a card); leave it out for the main file. */
+  documentFile: (id: string, docId: string, index?: number) =>
+    api.get(`/people/${id}/documents/${docId}/file`, { params: index === undefined ? undefined : { index } }).then(r => r.data as { url: string }),
   archiveDocument: (id: string, docId: string) => api.delete(`/people/${id}/documents/${docId}`).then(r => r.data),
 
   emergencyContacts: (id: string) => api.get(`/people/${id}/emergency-contacts`).then(r => ensureArray(r.data) as EmergencyContact[]),

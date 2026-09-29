@@ -3,7 +3,7 @@ import { statusToLabel, type Tone } from '@/components/ui'
 /** Shapes of the people API in docs/people-plan.md. */
 
 export type PersonRole = 'superadmin' | 'admin' | 'manager' | 'driver'
-export type PersonStatus = 'onboarding' | 'active' | 'suspended' | 'inactive'
+export type PersonStatus = 'onboarding' | 'active' | 'on_leave' | 'suspended' | 'inactive'
 export type DocStatus = 'pending' | 'verified' | 'rejected' | 'expired'
 export type EmploymentType = 'permanent' | 'contract' | 'on_call'
 
@@ -15,10 +15,10 @@ export const ROLE_LABELS: Record<string, string> = {
 export const roleLabel = (role: string | null | undefined) => (role ? ROLE_LABELS[role] ?? role : '—')
 
 export const STATUS_LABELS: Record<PersonStatus, string> = {
-  onboarding: 'Onboarding', active: 'Active', suspended: 'Suspended', inactive: 'Left',
+  onboarding: 'Onboarding', active: 'Active', on_leave: 'On leave', suspended: 'Suspended', inactive: 'Left',
 }
 export const STATUS_TONES: Record<PersonStatus, Tone> = {
-  onboarding: 'info', active: 'success', suspended: 'warning', inactive: 'neutral',
+  onboarding: 'info', active: 'success', on_leave: 'info', suspended: 'warning', inactive: 'neutral',
 }
 export const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as PersonStatus[]).map(value => ({ value, label: STATUS_LABELS[value] }))
 export const statusLabel = (s: string | null | undefined) => STATUS_LABELS[s as PersonStatus] ?? statusToLabel(s)
@@ -34,25 +34,48 @@ export interface DocTypeInfo {
   label: string
   needsNumber: boolean
   needsExpiry: boolean
-  /** Roles that must have it. */
-  requiredFor: string[]
 }
 
 export const DOC_TYPES: DocTypeInfo[] = [
-  { type: 'driving_licence', label: 'Driving licence', needsNumber: true, needsExpiry: true, requiredFor: ['driver'] },
-  { type: 'aadhaar', label: 'Aadhaar', needsNumber: true, needsExpiry: false, requiredFor: ['driver', 'admin', 'manager', 'superadmin'] },
-  { type: 'pan', label: 'PAN', needsNumber: true, needsExpiry: false, requiredFor: ['driver', 'admin', 'manager', 'superadmin'] },
-  { type: 'photo', label: 'Photo', needsNumber: false, needsExpiry: false, requiredFor: ['driver', 'admin', 'manager', 'superadmin'] },
-  { type: 'police_verification', label: 'Police verification', needsNumber: false, needsExpiry: true, requiredFor: [] },
-  { type: 'medical_fitness', label: 'Medical fitness', needsNumber: false, needsExpiry: true, requiredFor: [] },
-  { type: 'address_proof', label: 'Address proof', needsNumber: false, needsExpiry: false, requiredFor: [] },
-  { type: 'offer_letter', label: 'Offer or appointment letter', needsNumber: false, needsExpiry: false, requiredFor: [] },
-  { type: 'other', label: 'Other', needsNumber: false, needsExpiry: false, requiredFor: [] },
+  { type: 'driving_licence', label: 'Driving licence', needsNumber: true, needsExpiry: true },
+  { type: 'aadhaar', label: 'Aadhaar', needsNumber: true, needsExpiry: false },
+  { type: 'voter_id', label: 'Voter ID', needsNumber: true, needsExpiry: false },
+  { type: 'passport', label: 'Passport', needsNumber: true, needsExpiry: false },
+  { type: 'pan', label: 'PAN', needsNumber: true, needsExpiry: false },
+  { type: 'photo', label: 'Photo', needsNumber: false, needsExpiry: false },
+  { type: 'police_verification', label: 'Police verification', needsNumber: false, needsExpiry: false },
+  { type: 'medical_fitness', label: 'Medical fitness', needsNumber: false, needsExpiry: true },
+  { type: 'address_proof', label: 'Address proof', needsNumber: false, needsExpiry: false },
+  { type: 'offer_letter', label: 'Offer or appointment letter', needsNumber: false, needsExpiry: false },
+  { type: 'bank_proof', label: 'Bank proof (cheque or passbook)', needsNumber: false, needsExpiry: false },
+  { type: 'other', label: 'Other', needsNumber: false, needsExpiry: false },
 ]
+
+/**
+ * "Required" is checked per group: one document of any listed type satisfies the group.
+ * Identity proof is one of Aadhaar, voter ID or passport; tax ID is PAN (or "No PAN" with a reason).
+ */
+export interface RequiredGroup {
+  key: string
+  label: string
+  types: string[]
+  /** Staff can waive the group with a written reason (PAN only). */
+  waivable?: boolean
+}
+const ALL_ROLES = ['driver', 'admin', 'manager', 'superadmin']
+const GROUPS: (RequiredGroup & { roles: string[] })[] = [
+  { key: 'licence', label: 'Driving licence', types: ['driving_licence'], roles: ['driver'] },
+  { key: 'identity', label: 'Identity proof', types: ['aadhaar', 'voter_id', 'passport'], roles: ALL_ROLES },
+  { key: 'tax', label: 'Tax ID', types: ['pan'], roles: ALL_ROLES, waivable: true },
+  { key: 'photo', label: 'Photo', types: ['photo'], roles: ALL_ROLES },
+]
+export const requiredGroups = (role: string | null | undefined): RequiredGroup[] =>
+  GROUPS.filter(g => !!role && g.roles.includes(role)).map(({ roles: _roles, ...g }) => g)
+export const groupHelp = (g: RequiredGroup) => g.types.length > 1 ? g.types.map(t => docLabelOf(t)).join(', ').replace(/, ([^,]*)$/, ' or $1') : null
+const docLabelOf = (t: string) => DOC_TYPES.find(d => d.type === t)?.label ?? t
 export const docInfo = (type: string) => DOC_TYPES.find(d => d.type === type)
 export const docLabel = (type: string) => docInfo(type)?.label ?? type
-export const requiredDocTypes = (role: string | null | undefined) =>
-  DOC_TYPES.filter(d => role && d.requiredFor.includes(role)).map(d => d.type)
+export const requiredDocTypes = (role: string | null | undefined) => requiredGroups(role).flatMap(g => g.types)
 
 export interface DocSummary {
   required: number
@@ -73,6 +96,8 @@ export interface PersonRow {
   employee_code: string | null
   designation: string | null
   vehicle_plate: string | null
+  employer_type?: EmployerType | null
+  employer_partner_name?: string | null
   doc_summary: DocSummary | null
   last_login: string | null
 }
@@ -87,7 +112,20 @@ export interface PersonUser {
   is_active?: boolean
   last_login?: string | null
   created_at?: string | null
+  /** False when the sign-in account was deleted or never created. */
+  has_sign_in_account?: boolean
 }
+
+export interface PhoneHistoryItem { phone: string; from_at: string | null; to_at: string | null }
+export interface VehicleAssignment {
+  id: string
+  vehicle_id: string
+  plate_number: string | null
+  assigned_at: string
+  unassigned_at: string | null
+  assigned_by_name?: string | null
+}
+export type EmployerType = 'company' | 'partner'
 
 export interface PersonProfile {
   employee_code?: string | null
@@ -111,6 +149,20 @@ export interface PersonProfile {
   reporting_manager_id?: string | null
   reporting_manager_name?: string | null
   photo_path?: string | null
+  updated_at?: string | null
+  employer_type?: EmployerType | null
+  employer_partner_id?: string | null
+  employer_partner_name?: string | null
+  /** Why this person has no PAN. Waives the tax ID group. */
+  no_pan_reason?: string | null
+  suspended_until?: string | null
+  leave_from?: string | null
+  leave_until?: string | null
+  consent_at?: string | null
+  consent_by?: string | null
+  consent_method?: string | null
+  invite_sent_at?: string | null
+  anonymised_at?: string | null
 }
 
 export interface PersonDocument {
@@ -127,6 +179,15 @@ export interface PersonDocument {
   verified_at: string | null
   archived_at: string | null
   created_at: string
+  name_on_document?: string | null
+  extra_file_paths?: string[] | null
+  review_by?: string | null
+  number_last4?: string | null
+  verification_method?: string | null
+  verification_note?: string | null
+  resubmission_count?: number | null
+  /** Set by the server when the document is past expiry but inside the licence grace period. */
+  in_grace?: boolean
 }
 
 export interface EmergencyContact {
@@ -147,6 +208,10 @@ export interface BankAccount {
   upi_id: string | null
   is_primary: boolean
   is_verified: boolean
+  /** Payouts use this account only from this time (bank change cooldown). */
+  effective_from?: string | null
+  proof_document_id?: string | null
+  verification_note?: string | null
 }
 
 export interface StatusHistoryItem {
@@ -193,7 +258,28 @@ export interface PersonDetail {
   notes: PersonNote[]
   activity: ActivityItem[]
   vehicle: PersonVehicle | null
+  phone_history?: PhoneHistoryItem[]
+  vehicle_assignments?: VehicleAssignment[]
 }
+
+export type EnforcementMode = 'off' | 'warn' | 'block'
+export interface PeopleSettings {
+  licence_grace_days: number
+  document_retention_days: number
+  bank_change_cooldown_hours: number
+  driver_document_enforcement: EnforcementMode
+}
+
+export interface DuplicateMatch { id: string; full_name: string | null; role?: string; status?: string; match?: string }
+
+export interface ImportRow {
+  row: number
+  name?: string | null
+  status: 'ok' | 'error' | 'duplicate'
+  errors?: string[]
+  duplicate_of?: { id: string; full_name: string | null } | null
+}
+export interface ImportReport { dry_run?: boolean; rows: ImportRow[]; created?: number }
 
 export interface PeopleAttention {
   expired_licences: { user_id: string; full_name: string | null; expires_on: string | null }[]
@@ -209,5 +295,20 @@ export function initialsOf(name: string | null | undefined) {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
 
-export const personName = (p: { full_name: string | null; email?: string | null; phone?: string | null }) =>
+/** A 10-digit Indian mobile number as +91XXXXXXXXXX; null when it is not one. */
+export function toE164(raw: string): string | null {
+  const digits = raw.replace(/[\s-]/g, '').replace(/^\+?91(?=\d{10}$)/, '').replace(/^0+/, '')
+  return /^[6-9]\d{9}$/.test(digits) ? `+91${digits}` : null
+}
+export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
+
+export const personName =(p: { full_name: string | null; email?: string | null; phone?: string | null }) =>
   p.full_name || p.email || p.phone || 'Unnamed person'
+
+export const LICENCE_CLASSES = [
+  { value: 'LMV', label: 'LMV (light)' }, { value: 'HMV', label: 'HMV (heavy)' }, { value: 'HGMV', label: 'HGMV (heavy goods)' },
+  { value: 'HPMV', label: 'HPMV (heavy passenger)' }, { value: 'TRANS', label: 'Transport' },
+]
+export const CONSENT_METHODS = [
+  { value: 'signed_form', label: 'Signed form' }, { value: 'in_app', label: 'Agreed in the app' }, { value: 'verbal', label: 'Said yes, recorded by staff' },
+]

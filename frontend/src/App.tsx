@@ -15,7 +15,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, routes, routeDetails, analytics, insights, optimize, shipments, shipmentManifest, emergency, bids,
-  backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
+  backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -28,6 +28,7 @@ const AnalyticsPage = analytics.Component
 const InsightsPage = insights.Component
 const OptimizePage = optimize.Component
 const UsersPage = adminUsers.Component
+const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
 const FinancePage = finance.Component
@@ -348,8 +349,13 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="admin/users" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
                 <UsersPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/users/:id" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+                <PersonPage />
               </PrivateRoute>
             } />
             <Route path="admin/kyc" element={
