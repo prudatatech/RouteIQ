@@ -212,6 +212,8 @@ export default function VendorDocumentsPage() {
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
     if (!form.emailAddress.trim()) errors[1].emailAddress = 'Enter a contact email'
     if (!form.mobileNumber.trim()) errors[1].mobileNumber = 'Enter a mobile number'
+    else if (!/^[6-9]\d{9}$/.test(form.mobileNumber.trim())) errors[1].mobileNumber = 'Enter a valid 10-digit mobile number'
+    if (form.telephone.trim() && !/^[6-9]\d{9}$/.test(form.telephone.trim())) errors[1].telephone = 'Enter a valid 10-digit number'
     if (!form.addressLine1.trim()) errors[1].addressLine1 = 'Search for the registered address'
     if (!form.city.trim()) errors[1].city = 'Enter the city'
     if (!form.state.trim()) errors[1].state = 'Enter the state'
@@ -440,8 +442,16 @@ export default function VendorDocumentsPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input label="Contact person" required value={form.contactPerson} onChange={e => setField('contactPerson', e.target.value)} error={err(1, 'contactPerson')} />
                 <Input label="Contact email" type="email" required value={form.emailAddress} onChange={e => setField('emailAddress', e.target.value)} error={err(1, 'emailAddress')} />
-                <Input label="Mobile number" required value={form.mobileNumber} onChange={e => setField('mobileNumber', e.target.value)} error={err(1, 'mobileNumber')} />
-                <Input label="Telephone" value={form.telephone} onChange={e => setField('telephone', e.target.value)} />
+                <Input
+                  label="Mobile number" required type="tel" inputMode="tel" maxLength={10}
+                  value={form.mobileNumber} onChange={e => setField('mobileNumber', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  error={err(1, 'mobileNumber')}
+                />
+                <Input
+                  label="Telephone" type="tel" inputMode="tel" maxLength={10}
+                  value={form.telephone} onChange={e => setField('telephone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  error={err(1, 'telephone')}
+                />
               </div>
 
               <AddressPicker

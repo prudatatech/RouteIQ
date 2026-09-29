@@ -157,11 +157,22 @@ export default function VendorShipmentRequestPage() {
     const errors: Record<number, Record<string, string>> = { 0: {}, 1: {}, 2: {} }
     if (!pickup) errors[0].pickup = 'Search or pick a pickup location'
     if (!drop) errors[0].drop = 'Search or pick a drop location'
+    if (!consigneeContact.trim() && !consigneeEmail.trim()) {
+      errors[1].consigneeContact = 'Enter a contact number or email'
+      errors[1].consigneeEmail = 'Enter a contact number or email'
+    } else {
+      if (consigneeContact.trim() && !/^[6-9]\d{9}$/.test(consigneeContact.trim())) {
+        errors[1].consigneeContact = 'Enter a valid 10-digit mobile number'
+      }
+      if (consigneeEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(consigneeEmail.trim())) {
+        errors[1].consigneeEmail = 'Enter a valid email address'
+      }
+    }
     if (!productCategory) errors[1].productCategory = 'Choose a product category'
     if (!productName.trim()) errors[1].productName = 'Enter the product name'
     if (!capacity || Number(capacity) <= 0) errors[1].capacity = 'Enter the gross weight'
     return errors
-  }, [pickup, drop, productCategory, productName, capacity])
+  }, [pickup, drop, consigneeContact, consigneeEmail, productCategory, productName, capacity])
 
   const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
   const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
@@ -276,9 +287,14 @@ export default function VendorShipmentRequestPage() {
                 <p className="mb-3 text-sm font-medium text-text">Consignee (receiver)</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input label="Name" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
-                  <Input label="Contact number" value={consigneeContact} onChange={e => setConsigneeContact(e.target.value)} />
+                  <Input
+                    label="Contact number" type="tel" inputMode="tel" maxLength={10}
+                    value={consigneeContact} onChange={e => setConsigneeContact(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    error={err(1, 'consigneeContact')}
+                    hint="Give a phone number or email below"
+                  />
                   <div className="sm:col-span-2">
-                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} />
+                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} error={err(1, 'consigneeEmail')} />
                   </div>
                 </div>
               </div>
