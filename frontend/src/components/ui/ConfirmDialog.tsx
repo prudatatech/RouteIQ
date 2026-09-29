@@ -13,15 +13,27 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<Request | null>(null)
   const [text, setText] = useState('')
   const confirmButton = useRef<HTMLButtonElement>(null)
+  const cancelButton = useRef<HTMLButtonElement>(null)
+  const pending = useRef<Request | null>(null)
+
+  // A new question replaces one that is still open; the old one counts as cancelled so its caller never hangs.
+  const open = useCallback((next: Request) => {
+    const previous = pending.current
+    if (previous?.kind === 'confirm') previous.resolve(false)
+    else if (previous?.kind === 'prompt') previous.resolve(null)
+    pending.current = next
+    setRequest(next)
+  }, [])
 
   const confirm = useCallback((options: ConfirmOptions) =>
-    new Promise<boolean>(resolve => setRequest({ kind: 'confirm', options, resolve })), [])
+    new Promise<boolean>(resolve => open({ kind: 'confirm', options, resolve })), [open])
 
   const prompt = useCallback((options: PromptOptions) =>
-    new Promise<string | null>(resolve => { setText(''); setRequest({ kind: 'prompt', options, resolve }) }), [])
+    new Promise<string | null>(resolve => { setText(''); open({ kind: 'prompt', options, resolve }) }), [open])
 
   const close = (accepted: boolean) => {
-    if (!request) return
+    if (!request || pending.current !== request) return
+    pending.current = null
     if (request.kind === 'confirm') request.resolve(accepted)
     else request.resolve(accepted ? text.trim() : null)
     setRequest(null)
@@ -40,10 +52,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         onClose={() => close(false)}
         title={options?.title}
         size="sm"
-        initialFocus={isPrompt ? undefined : confirmButton}
+        // Destructive questions start on Cancel so a stray Enter cannot delete anything.
+        initialFocus={isPrompt ? undefined : options?.tone === 'danger' ? cancelButton : confirmButton}
         footer={
           <>
-            <Button variant="secondary" onClick={() => close(false)}>{options?.cancelLabel ?? 'Cancel'}</Button>
+            <Button ref={cancelButton} variant="secondary" onClick={() => close(false)}>{options?.cancelLabel ?? 'Cancel'}</Button>
             <Button
               ref={confirmButton}
               variant={options?.tone === 'danger' ? 'danger' : 'primary'}

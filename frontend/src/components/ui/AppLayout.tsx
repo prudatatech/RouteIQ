@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -15,6 +15,7 @@ import { GlobalDeliveryCelebration } from './GlobalDeliveryCelebration'
 import { NotificationsBell } from './NotificationsBell'
 import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
+import { useDialog } from './useDialog'
 
 /** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform ?? navigator.userAgent ?? '')
@@ -64,13 +65,13 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
   }, [])
 
   const loadPartners = useCallback(async () => {
-    const { count } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-    setCounts(c => ({ ...c, pendingPartners: count ?? 0 }))
+    const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+    if (!error) setCounts(c => ({ ...c, pendingPartners: count ?? 0 }))
   }, [])
 
   const loadKyc = useCallback(async () => {
-    const { count } = await supabase.from('vendor_profiles').select('id', { count: 'exact', head: true }).eq('kyc_status', 'submitted')
-    setCounts(c => ({ ...c, pendingKyc: count ?? 0 }))
+    const { count, error } = await supabase.from('vendor_profiles').select('id', { count: 'exact', head: true }).eq('kyc_status', 'submitted')
+    if (!error) setCounts(c => ({ ...c, pendingKyc: count ?? 0 }))
   }, [])
 
   useEffect(() => {
@@ -244,14 +245,12 @@ export default function AppLayout() {
     })
   }
 
-  // Close the phone menu after navigating, and on Esc.
+  // Close the phone menu after navigating. While it is open, focus stays inside it, Esc closes it,
+  // the page behind does not scroll, and focus goes back to the menu button afterwards.
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
-  useEffect(() => {
-    if (!mobileOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false) }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [mobileOpen])
+  const menuPanel = useRef<HTMLDivElement>(null)
+  const closeMenu = useCallback(() => setMobileOpen(false), [])
+  useDialog(mobileOpen, closeMenu, menuPanel)
 
   // Keep fleet data fresh everywhere so pages open with current positions.
   useEffect(() => {
@@ -305,7 +304,7 @@ export default function AppLayout() {
       <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-surface px-2 lg:hidden">
         <IconButton label="Open menu" icon={<Menu size={20} />} onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} />
         <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
-        <span className="flex-1 text-base font-semibold">MargixIndia</span>
+        <span className="min-w-0 flex-1 truncate text-base font-semibold">MargixIndia</span>
         {isStaff && (
           <>
             <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />
@@ -316,9 +315,9 @@ export default function AppLayout() {
 
       {/* Phone and tablet menu */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-overlay animate-fade-in" onClick={() => setMobileOpen(false)} aria-hidden="true" />
-          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-dialog animate-slide-in-left">
+          <div ref={menuPanel} role="dialog" aria-modal="true" aria-label="Menu" tabIndex={-1} className="absolute inset-y-0 left-0 focus:outline-none flex w-72 max-w-[85vw] flex-col bg-surface shadow-dialog animate-slide-in-left">
             <div className="flex items-center justify-between border-b border-border pr-2">
               <Brand collapsed={false} bordered={false} />
               <IconButton label="Close menu" icon={<X size={20} />} onClick={() => setMobileOpen(false)} />
@@ -331,7 +330,8 @@ export default function AppLayout() {
 
       <main
         id="main"
-        className={clsx('min-w-0 transition-[padding] duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
+        tabIndex={-1}
+        className={clsx('min-w-0 focus:outline-none transition-[padding] duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
       >
         <Suspense fallback={<LoadingState label="Loading page…" className="min-h-[50vh]" />}>
           {fullBleed ? (

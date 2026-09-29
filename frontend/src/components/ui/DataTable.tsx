@@ -112,7 +112,11 @@ export function DataTable<T>({
 
   const rowProps = (row: T) => onRowClick ? {
     onClick: () => onRowClick(row),
-    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row) } },
+    // Only when the row itself has focus, so Enter and Space still work on buttons and checkboxes inside it.
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row) }
+    },
     tabIndex: 0,
   } : {}
 
@@ -128,7 +132,7 @@ export function DataTable<T>({
   return (
     <div className={clsx('overflow-hidden rounded-card border border-border bg-surface', className)}>
       {/* Table layout (tablet and up) */}
-      <div className="hidden max-h-[70vh] overflow-auto md:block">
+      <div className="hidden max-h-[70dvh] overflow-auto md:block">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead className="sticky top-0 z-10 bg-surface-subtle">
@@ -195,7 +199,7 @@ export function DataTable<T>({
                   {...rowProps(row)}
                   className={clsx(
                     'border-b border-border last:border-b-0',
-                    onRowClick && 'cursor-pointer hover:bg-surface-subtle focus:bg-surface-subtle focus:outline-none',
+                    onRowClick && 'cursor-pointer hover:bg-surface-subtle focus:outline-none focus-visible:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
                     selectedKey === key && 'bg-brand-soft hover:bg-brand-soft',
                   )}
                 >
@@ -204,7 +208,7 @@ export function DataTable<T>({
                       {selectable && (
                         <input
                           type="checkbox"
-                          aria-label={`Select row ${key}`}
+                          aria-label="Select row"
                           className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
                           checked={selection.selectedKeys.has(key)}
                           onChange={() => selection.onToggleRow(key, row)}
@@ -216,7 +220,7 @@ export function DataTable<T>({
                     <td
                       key={col.key}
                       className={clsx(
-                        'px-4 py-3 align-middle text-text',
+                        'break-words px-4 py-3 align-middle text-text',
                         alignClass[col.align ?? 'left'], col.hideBelow && hideClass[col.hideBelow], col.className,
                       )}
                     >
@@ -246,13 +250,13 @@ export function DataTable<T>({
                 <li
                   key={key}
                   {...rowProps(row)}
-                  className={clsx('space-y-1.5 px-4 py-3', onRowClick && 'cursor-pointer active:bg-surface-subtle', selectedKey === key && 'bg-brand-soft')}
+                  className={clsx('space-y-1.5 px-4 py-3', onRowClick && 'cursor-pointer active:bg-surface-subtle focus-visible:bg-surface-subtle', selectedKey === key && 'bg-brand-soft')}
                 >
                   {selection && selectable && (
                     <div className="flex justify-end" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        aria-label={`Select row ${key}`}
+                        aria-label="Select row"
                         className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
                         checked={selection.selectedKeys.has(key)}
                         onChange={() => selection.onToggleRow(key, row)}
@@ -262,7 +266,7 @@ export function DataTable<T>({
                   {columns.filter(c => !c.hideOnMobile).map((col, i) => (
                     <div key={col.key} className={clsx('flex items-start justify-between gap-4 text-sm', i === 0 && 'font-medium')}>
                       {i > 0 && <span className="shrink-0 text-xs text-muted">{col.header}</span>}
-                      <span className={clsx('min-w-0 text-text', i > 0 && 'text-right')}>{col.cell(row)}</span>
+                      <span className={clsx('min-w-0 break-words text-text', i > 0 && 'text-right')}>{col.cell(row)}</span>
                     </div>
                   ))}
                 </li>

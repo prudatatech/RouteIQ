@@ -251,7 +251,7 @@ export default function LiveMap({
           {isStaff && traffic && (
             <p className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-muted shadow-raised">
               {!traffic.configured
-                ? 'Traffic incidents are off. Add a TomTom key to show them.'
+                ? 'Traffic incidents are not set up yet.'
                 : traffic.incidents.length === 0
                   ? 'No traffic incidents on active routes.'
                   : `${traffic.incidents.length.toLocaleString('en-IN')} traffic ${traffic.incidents.length === 1 ? 'incident' : 'incidents'} on active routes.`}

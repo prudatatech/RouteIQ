@@ -53,6 +53,7 @@ export function NotificationsBell() {
   const [items, setItems] = useState<NotificationRow[]>([])
   const [unreadNotifications, setUnreadNotifications] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
@@ -71,12 +72,17 @@ export function NotificationsBell() {
   const load = useCallback(async () => {
     if (!userId) return
     try {
-      const [{ data }, { count }] = await Promise.all([
+      const [{ data, error }, { count }] = await Promise.all([
         supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(LIST_LIMIT),
         supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_read', false),
       ])
-      setItems((data as NotificationRow[] | null) ?? [])
-      setUnreadNotifications(count ?? 0)
+      setLoadFailed(!!error)
+      if (!error) {
+        setItems((data as NotificationRow[] | null) ?? [])
+        setUnreadNotifications(count ?? 0)
+      }
+    } catch {
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -98,7 +104,11 @@ export function NotificationsBell() {
       if (panelRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node)) return
       setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      buttonRef.current?.focus()
+    }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -108,14 +118,16 @@ export function NotificationsBell() {
   }, [open])
 
   const openNotification = async (n: NotificationRow) => {
-    if (!n.is_read) {
-      setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
-      setUnreadNotifications(c => Math.max(0, c - 1))
-      await supabase.from('notifications').update({ is_read: true }).eq('id', n.id)
-    }
     setOpen(false)
     const path = pathFor(n)
     if (path) navigate(path)
+    if (!n.is_read) {
+      setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
+      setUnreadNotifications(c => Math.max(0, c - 1))
+      // Go to the page first; marking it read happens in the background.
+      const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', n.id)
+      if (error) load()
+    }
   }
 
   const markAllRead = async () => {
@@ -154,9 +166,9 @@ export function NotificationsBell() {
       {open && (
         <div
           ref={panelRef}
-          role="menu"
+          role="region"
           aria-label="Notifications"
-          className="absolute right-0 z-40 mt-2 w-80 max-w-[90vw] rounded-card border border-border bg-surface shadow-dialog"
+          className="absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-1rem)] lg:left-0 lg:right-auto rounded-card border border-border bg-surface shadow-dialog"
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-text">Notifications</p>
@@ -169,7 +181,7 @@ export function NotificationsBell() {
           <div className="max-h-96 overflow-y-auto">
             {unreadThreads.length > 0 && (
               <div className="border-b border-border">
-                <p className="px-4 pt-3 text-xs font-medium uppercase tracking-wide text-muted">
+                <p className="px-4 pt-3 text-xs font-medium text-muted">
                   Messages from drivers ({unreadMessages})
                 </p>
                 <ul>
@@ -177,7 +189,6 @@ export function NotificationsBell() {
                     <li key={`${t.route_id ?? ''}${t.shipment_id ?? ''}`}>
                       <button
                         type="button"
-                        role="menuitem"
                         onClick={() => { setOpen(false); navigate(threadPath(t)) }}
                         className="flex w-full flex-col items-start gap-0.5 px-4 py-3 text-left hover:bg-surface-subtle"
                       >
@@ -198,7 +209,13 @@ export function NotificationsBell() {
             {loading && items.length === 0 && (
               <div className="flex justify-center py-6"><Spinner size={20} label="Loading notifications" /></div>
             )}
-            {!loading && items.length === 0 && unreadThreads.length === 0 && (
+            {!loading && loadFailed && (
+              <p role="alert" className="px-4 py-4 text-center text-sm text-danger">
+                We could not load your notifications.{' '}
+                <button type="button" onClick={load} className="font-medium underline">Try again</button>
+              </p>
+            )}
+            {!loading && !loadFailed && items.length === 0 && unreadThreads.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted">
                 No notifications yet. New SOS alerts, vendor requests, bids and reviews will show up here.
               </p>
@@ -208,7 +225,6 @@ export function NotificationsBell() {
                 <li key={n.id}>
                   <button
                     type="button"
-                    role="menuitem"
                     onClick={() => openNotification(n)}
                     className={clsx(
                       'flex w-full flex-col items-start gap-0.5 border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-surface-subtle',
