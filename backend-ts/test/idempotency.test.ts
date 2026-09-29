@@ -26,7 +26,7 @@ function fixtures() {
     ],
     delivery_points: [{ id: 'dp-1', shipment_id: 's1' }, { id: 'dp-2', shipment_id: 's2' }],
     shipments: [
-      { id: 's1', tracking_id: 'RTX-AAAA1111', status: 'in_transit', created_at: NOW, updated_at: NOW },
+      { id: 's1', tracking_id: 'RTX-AAAA1111', status: 'in_transit', freight_charge: 500, created_at: NOW, updated_at: NOW },
       { id: 's2', tracking_id: 'RTX-BBBB2222', status: 'in_transit', created_at: NOW, updated_at: NOW },
     ],
     cargo_manifest: [],
@@ -73,11 +73,25 @@ describe('idempotency keys', () => {
     expect(supabaseMock.rows('shipment_logs').filter(l => l.status === 'delivered')).toHaveLength(1);
   });
 
-  it('runs every request that has no key', async () => {
+  it('runs every request that has no key, but a stop is still decided only once', async () => {
     await complete(driver1, { stop_id: 'stop-1', received_by: 'R. Sharma' });
-    await complete(driver1, { stop_id: 'stop-1', received_by: 'R. Sharma' });
-    expect(supabaseMock.rows('shipment_logs').filter(l => l.status === 'delivered')).toHaveLength(2);
+    const again = await complete(driver1, { stop_id: 'stop-1', received_by: 'R. Sharma' });
+    expect(again.status).toBe(200);
+    expect(again.headers['idempotent-replay']).toBeUndefined();
+    expect(supabaseMock.rows('shipment_logs').filter(l => l.status === 'delivered')).toHaveLength(1);
     expect(supabaseMock.rows('idempotency_keys')).toHaveLength(0);
+  });
+
+  it('bills, logs and stamps the arrival once even when a repeat comes with a fresh key', async () => {
+    await complete(driver1, { stop_id: 'stop-1', received_by: 'R. Sharma' }, KEY);
+    const stampedAt = supabaseMock.rows('route_stops').find(s => s.id === 'stop-1')?.actual_arrival_at;
+    expect(stampedAt).toBeTruthy();
+    const again = await complete(driver1, { stop_id: 'stop-1', received_by: 'R. Sharma' }, 'a1b2c3d4-0000-4000-8000-000000000002');
+    expect(again.status).toBe(200);
+    expect(again.headers['idempotent-replay']).toBeUndefined();
+    expect(supabaseMock.rows('shipment_logs').filter(l => l.status === 'delivered')).toHaveLength(1);
+    expect(supabaseMock.rows('invoices')).toHaveLength(1);
+    expect(supabaseMock.rows('route_stops').find(s => s.id === 'stop-1')?.actual_arrival_at).toBe(stampedAt);
   });
 
   it('keeps keys apart per driver', async () => {

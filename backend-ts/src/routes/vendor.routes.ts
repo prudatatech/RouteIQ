@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { supabase } from '../core/supabase';
-import { parseRejectionReason, sendError } from '../core/errors';
+import { HttpError, parseRejectionReason, sendError } from '../core/errors';
+import { rateLimitByUser } from '../core/rate-limit';
+import {
+  KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorProfileSchema,
+  assertKycContent, parseBody,
+} from '../schemas/vendor';
 
 const router = Router();
 
@@ -31,7 +36,7 @@ router.get('/profile', requireAuth, async (req: any, res: any) => {
 // Upsert profile
 router.post('/profile', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
-    const { companyName, gstNumber, city, address, lat, lng } = req.body;
+    const { companyName, gstNumber, city, address, lat, lng } = parseBody(VendorProfileSchema, req.body);
     const profile = await vendorService.upsertProfile(req.user.user_id, companyName, gstNumber, city, address, lat, lng);
     res.json(profile);
   } catch (error: any) {
@@ -42,11 +47,33 @@ router.post('/profile', requireAuth, requireRole('vendor'), async (req: any, res
 // Submit (or resubmit) the full KYC wizard — always notifies staff (D2)
 router.post('/kyc/submit', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
-    const { companyName, gstNumber, city, address, lat, lng, companyLogo, kycData } = req.body;
+    const input = parseBody(KycSubmitSchema, req.body);
+    assertKycContent(req.user.user_id, input);
+    const { companyName, gstNumber, city, address, lat, lng, companyLogo, kycData } = input;
     const profile = await vendorService.submitKyc(req.user.user_id, {
       companyName, gstNumber, city, address, lat, lng, companyLogo, kycData,
     });
     res.json(profile);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Signed upload URL for one KYC document (the file goes straight to storage)
+router.post('/kyc/upload-url', requireAuth, requireRole('vendor'), rateLimitByUser('vendor-kyc-upload', 60, 60 * 60), async (req: any, res: any) => {
+  try {
+    const { key, content_type, size } = req.body ?? {};
+    res.json(await vendorService.createKycUploadUrl(req.user.user_id, { key, contentType: content_type, size }));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Save the vendor's uploaded documents on their profile
+router.put('/kyc/documents', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycDocumentsSchema, req.body);
+    res.json(await vendorService.saveKycDocuments(req.user.user_id, input));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -80,7 +107,7 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
 // Create shipment request (Vendor)
 router.post('/shipment-request', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
-    const { pickup, drop, capacity, metadata } = req.body;
+    const { pickup, drop, capacity, metadata } = parseBody(ShipmentRequestSchema, req.body);
     const request = await vendorService.createShipmentRequest(req.user.user_id, pickup, drop, capacity, metadata);
     res.json(request);
   } catch (error: any) {
@@ -119,11 +146,21 @@ router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin'
   }
 });
 
+// Approve a vendor's KYC (Admin/Super Admin): tells the vendor and is audited
+router.put('/kyc/:id/approve', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+  try {
+    const data = await vendorService.approveKyc(req.params.id, req.user);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // Reject a vendor's KYC, storing why (Admin/Super Admin)
 router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
   try {
     const reason = parseRejectionReason(req.body?.reason);
-    const data = await vendorService.rejectKyc(req.params.id, reason);
+    const data = await vendorService.rejectKyc(req.params.id, reason, req.user);
     res.json({ success: true, data });
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -133,8 +170,8 @@ router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), a
 // Assign vehicle to shipment request (Admin/Super Admin)
 router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
   try {
-    const { vehicle_id, cost, cost_per_km } = req.body;
-    if (!vehicle_id) return res.status(400).json({ error: 'vehicle_id is required' });
+    const { vehicle_id, cost, cost_per_km } = req.body ?? {};
+    if (typeof vehicle_id !== 'string' || !vehicle_id) throw new HttpError(400, 'vehicle_id is required');
     const request = await vendorService.assignVehicleToRequest(req.params.id, vehicle_id, cost, cost_per_km);
     res.json(request);
   } catch (error: any) {

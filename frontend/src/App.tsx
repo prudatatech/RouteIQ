@@ -234,32 +234,32 @@ export default function App() {
             <Route index element={<VendorPortalPage />} />
             <Route path="corridor" element={<VendorCorridorPage />} />
             <Route path="onboarding" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorOnboardingPage />
               </PrivateRoute>
             } />
             <Route path="documents" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorDocumentsPage />
               </PrivateRoute>
             } />
             <Route path="shipments" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorShipmentsPage />
               </PrivateRoute>
             } />
             <Route path="invoices" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorInvoicesPage />
               </PrivateRoute>
             } />
             <Route path="request" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorShipmentRequestPage />
               </PrivateRoute>
             } />
             <Route path="tracking" element={
-              <PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+              <PrivateRoute allowedRoles={['vendor']}>
                 <VendorTrackingPage />
               </PrivateRoute>
             } />
@@ -273,7 +273,7 @@ export default function App() {
           <Route path="/3pl/onboard/setup" element={<LazyRoute><TplSetupCredentialsPage /></LazyRoute>} />
           <Route path="/3pl-portal/activate" element={<TplActivateRedirect />} />
           <Route path="/3pl-portal/:id" element={
-            <LazyRoute><PrivateRoute allowedRoles={['vendor', 'admin', 'superadmin']}>
+            <LazyRoute><PrivateRoute allowedRoles={['vendor']}>
               <TplDashboardPage />
             </PrivateRoute></LazyRoute>
           } />

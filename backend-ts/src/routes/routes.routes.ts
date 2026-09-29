@@ -6,11 +6,11 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet } from '../core/redis';
-import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds } from '../core/ownership';
+import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds, isStaff } from '../core/ownership';
 import { RouteUpdateSchema } from '../schemas';
-import { notificationService } from '../services/notification.service';
-import { sendError } from '../core/errors';
-import { stampPlannedArrivals } from '../services/driver-performance.service';
+import { routeService } from '../services/route.service';
+import { HttpError, sendError } from '../core/errors';
+import { OPERATING_VEHICLE_STATUSES, ROUTE_STATUSES } from '../core/transitions';
 
 const router = Router();
 
@@ -195,60 +195,31 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── PATCH /:route_id/status ────────────────────────────────
+// Staff move a route along its lifecycle (pending -> active -> completed, or
+// cancelled); a driver may only start their own route. Every change follows
+// ROUTE_TRANSITIONS, so a completed or cancelled route cannot be re-opened.
 router.patch('/:route_id/status', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!(await canAccessRoute(req.user!, req.params.route_id))) {
       res.status(403).json({ detail: 'Not authorized to update this route' });
       return;
     }
-    const newStatus = req.body.status;
-
-    const { data: route, error } = await supabase
-      .from('routes')
-      .select('*, vehicles(*)')
-      .eq('id', req.params.route_id)
-      .single();
-
-    if (error || !route) {
-      res.status(404).json({ detail: 'Route not found' });
+    const newStatus = req.body?.status;
+    if (typeof newStatus !== 'string' || !newStatus) {
+      res.status(400).json({ detail: 'status is required' });
+      return;
+    }
+    if (!ROUTE_STATUSES.includes(newStatus)) {
+      res.status(400).json({ detail: `status must be one of: ${ROUTE_STATUSES.join(', ')}` });
+      return;
+    }
+    if (!isStaff(req.user) && !['active', 'in_progress'].includes(newStatus)) {
+      res.status(403).json({ detail: 'Drivers can only start their own route' });
       return;
     }
 
-    if (newStatus) {
-      await supabase.from('routes').update({ status: newStatus }).eq('id', route.id);
-
-      if (['in_progress', 'active'].includes(newStatus)) await stampPlannedArrivals(route.id);
-
-      // Side effects on vehicle
-      let vehicleStatus = route.vehicles?.status;
-      if (['in_progress', 'active'].includes(newStatus)) {
-        vehicleStatus = 'on_route';
-      } else if (['completed', 'cancelled'].includes(newStatus)) {
-        vehicleStatus = 'available';
-      }
-      if (vehicleStatus !== route.vehicles?.status) {
-        await supabase.from('vehicles').update({ status: vehicleStatus }).eq('id', route.vehicle_id);
-      }
-
-      // Notify driver when route is activated
-      if (['in_progress', 'active'].includes(newStatus) && route.vehicles?.driver_id) {
-        try {
-          await notificationService.sendNotification(
-            route.vehicles.driver_id,
-            '🚨 Route Activated',
-            'Your route has been activated. Open the app to start your journey.',
-            'route_activated',
-            { route_id: route.id }
-          );
-        } catch (notifErr) {
-          console.warn('Failed to send route activation notification:', notifErr);
-        }
-      }
-
-      res.json({ id: route.id, status: newStatus, vehicle_status: vehicleStatus });
-    } else {
-      res.status(400).json({ detail: 'status is required' });
-    }
+    const result = await routeService.changeStatus(req.params.route_id, newStatus);
+    res.json({ id: result.id, status: result.status, vehicle_status: result.vehicle_status });
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -318,34 +289,31 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
 
     const { data: route, error } = await supabase
       .from('routes')
-      .select('*, vehicles(*)')
+      .select('id, status, vehicle_id')
       .eq('id', req.params.route_id)
-      .single();
+      .maybeSingle();
 
     if (error || !route) {
       res.status(404).json({ detail: 'Route not found' });
       return;
     }
 
-    const routeUpdate: Record<string, any> = {};
-    if (parsed.data.vehicle_id !== undefined && parsed.data.vehicle_id !== null) {
-      routeUpdate.vehicle_id = parsed.data.vehicle_id;
-    }
-    if (parsed.data.status !== undefined && parsed.data.status !== null) {
-      routeUpdate.status = parsed.data.status;
-
-      // Vehicle status side effect
-      if (['active', 'in_progress'].includes(parsed.data.status)) {
-        await supabase.from('vehicles').update({ status: 'on_route' }).eq('id', route.vehicle_id);
-        await stampPlannedArrivals(route.id);
-      } else if (['completed', 'cancelled'].includes(parsed.data.status)) {
-        await supabase.from('vehicles').update({ status: 'available' }).eq('id', route.vehicle_id);
+    // Reassigning a route: only before it starts, and only to a vehicle that can take it
+    const newVehicleId = parsed.data.vehicle_id;
+    if (newVehicleId && newVehicleId !== route.vehicle_id) {
+      if (!['pending', 'optimizing'].includes(route.status)) {
+        throw new HttpError(409, `This route is ${String(route.status).replace('_', ' ')}. Only a route that has not started can change vehicle.`);
       }
+      const { data: vehicle } = await supabase.from('vehicles').select('id, status').eq('id', newVehicleId).maybeSingle();
+      if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+      if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
+        throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a route.`);
+      }
+      const { error: vehicleErr } = await supabase.from('routes').update({ vehicle_id: newVehicleId }).eq('id', route.id).eq('status', route.status);
+      if (vehicleErr) throw new Error(vehicleErr.message);
     }
 
-    if (Object.keys(routeUpdate).length > 0) {
-      await supabase.from('routes').update(routeUpdate).eq('id', route.id);
-    }
+    if (parsed.data.status) await routeService.changeStatus(route.id, parsed.data.status);
 
     // Re-fetch full route
     const { data: updated } = await supabase

@@ -9,9 +9,12 @@ import { cacheGet, cacheSet, cacheDeletePattern } from '../core/redis';
 import { STAFF_ROLES, canAccessVehicle, invalidateDriverVehicles } from '../core/ownership';
 import { VehicleCreateSchema, VehicleUpdateSchema } from '../schemas';
 import crypto from 'crypto';
-import { sendError } from '../core/errors';
+import { HttpError, sendError } from '../core/errors';
 import { idempotent } from '../core/idempotency';
 import { notificationService } from '../services/notification.service';
+import { parseCoordinate, parseDateTime, parseNumberInRange, parseOptionalText } from '../core/validate';
+import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { holdVehicleAfterSos } from '../services/route.service';
 
 const router = Router();
 
@@ -219,14 +222,15 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 
     // If declared_load_percentage is provided, update available_capacity_kg
     if (updateData.declared_load_percentage !== undefined && updateData.declared_load_percentage !== null) {
-      const { data: vInfo } = await supabase.from('vehicles').select('capacity_kg').eq('id', req.params.vehicle_id).single();
+      const { data: vInfo } = await supabase.from('vehicles').select('capacity_kg, status').eq('id', req.params.vehicle_id).single();
       if (vInfo && vInfo.capacity_kg) {
         const used = (updateData.declared_load_percentage / 100) * vInfo.capacity_kg;
         const available = Math.max(0, vInfo.capacity_kg - used);
         updateData.available_capacity_kg = available;
 
         // If they declared 0% load, they are fully available
-        if (updateData.declared_load_percentage === 0) {
+        // (a vehicle in maintenance or archived is only changed by staff, never by a load report)
+        if (updateData.declared_load_percentage === 0 && (!vInfo.status || (OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vInfo.status)))) {
           updateData.status = 'available';
         }
       }
@@ -254,34 +258,45 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
   }
 });
 
+const SOS_ALERT_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
+
 // ── POST /:vehicle_id/sos (Emergency Alert) ───────────────
 router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
-    const { alert_type, description, latitude, longitude } = req.body;
-
     // Ensure the driver is reporting for their own vehicle unless admin
     if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
       return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
     }
+    const alertType = req.body?.alert_type ?? 'sos';
+    if (typeof alertType !== 'string' || ![...SOS_ALERT_TYPES, 'sos'].includes(alertType)) {
+      throw new HttpError(400, `alert_type must be one of: ${SOS_ALERT_TYPES.join(', ')}`);
+    }
+    const severity = req.body?.severity ?? null;
+    if (severity !== null && !['serious', 'minor'].includes(severity)) throw new HttpError(400, 'severity must be serious or minor');
+    const description = parseOptionalText(req.body?.description, 'description', 500);
+    const latitude = parseCoordinate(req.body?.latitude, 'latitude', 90);
+    const longitude = parseCoordinate(req.body?.longitude, 'longitude', 180);
 
     const { data: alert, error } = await supabase.from('sos_alerts').insert({
       driver_id: req.user!.user_id,
       vehicle_id: req.params.vehicle_id,
-      alert_type: alert_type || 'sos',
+      alert_type: alertType,
       description: description || 'Driver triggered SOS emergency alert',
-      latitude: latitude,
-      longitude: longitude,
-      status: 'active'
+      latitude,
+      longitude,
+      status: 'active',
+      ...(severity ? { severity } : {}),
     }).select().single();
 
     if (error) throw error;
 
-    // Turn the vehicle status to maintenance or offline?
+    // The alert itself signals the emergency; the vehicle keeps its status (and keeps
+    // reporting its position) unless this is a serious breakdown or accident.
+    await holdVehicleAfterSos(req.params.vehicle_id, alertType, severity);
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .update({ status: 'maintenance' })
-      .eq('id', req.params.vehicle_id)
       .select('plate_number, driver_name')
+      .eq('id', req.params.vehicle_id)
       .maybeSingle();
 
     // Notifications are informative; a failure must not undo the SOS report.
@@ -303,17 +318,36 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
 // ── POST /:vehicle_id/return-trip ───────────────────────────
 router.post('/:vehicle_id/return-trip', requireAuth, requireRole('driver', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
-    const { opens_at, closes_at, floor_price } = req.body;
+    const body = req.body ?? {};
 
     if (!(await canAccessVehicle(req.user!, req.params.vehicle_id))) {
       return res.status(403).json({ detail: 'Unauthorized to report for this vehicle' });
     }
 
+    // The bidding window: opens now or later, closes within a day, never below a real floor price
+    const opensAt = body.opens_at ? parseDateTime(body.opens_at, 'opens_at') : new Date().toISOString();
+    const closesAt = body.closes_at
+      ? parseDateTime(body.closes_at, 'closes_at')
+      : new Date(new Date(opensAt).getTime() + 2 * 60 * 60 * 1000).toISOString(); // 2 hours default
+    const length = new Date(closesAt).getTime() - new Date(opensAt).getTime();
+    if (length <= 0) throw new HttpError(400, 'The window must close after it opens');
+    if (length > 24 * 60 * 60 * 1000) throw new HttpError(400, 'A bidding window can stay open for at most 24 hours');
+    if (new Date(closesAt).getTime() <= Date.now()) throw new HttpError(400, 'The window must close in the future');
+    const floorPrice = body.floor_price === undefined || body.floor_price === null
+      ? 100
+      : parseNumberInRange(body.floor_price, 'floor_price', 1, 1_000_000);
+
+    const { data: target } = await supabase.from('vehicles').select('status').eq('id', req.params.vehicle_id).maybeSingle();
+    if (!target) throw new HttpError(404, 'Vehicle not found');
+    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(target.status))) {
+      throw new HttpError(409, `This vehicle is in ${target.status} and can't offer space.`);
+    }
+
     const { data: window, error } = await supabase.from('capacity_windows').insert({
       vehicle_id: req.params.vehicle_id,
-      opens_at: opens_at || new Date().toISOString(),
-      closes_at: closes_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours default
-      floor_price: floor_price || 100.0,
+      opens_at: opensAt,
+      closes_at: closesAt,
+      floor_price: floorPrice,
     }).select().single();
 
     if (error) throw error;

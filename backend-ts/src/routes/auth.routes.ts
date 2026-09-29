@@ -546,8 +546,12 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
       return;
     }
 
-    if (vehicle_type !== undefined && (typeof vehicle_type !== 'string' || !vehicle_type.trim())) {
-      res.status(400).json({ detail: 'vehicle_type must be a non-empty string' });
+    if (vehicle_type !== undefined && (typeof vehicle_type !== 'string' || !vehicle_type.trim() || vehicle_type.length > 60)) {
+      res.status(400).json({ detail: 'vehicle_type must be a name of up to 60 characters' });
+      return;
+    }
+    if (full_name !== undefined && (typeof full_name !== 'string' || full_name.length > 100)) {
+      res.status(400).json({ detail: 'full_name must be a name of up to 100 characters' });
       return;
     }
 
@@ -795,9 +799,17 @@ router.get('/driver/earnings/history', requireAuth, async (req: Request, res: Re
 // ── POST /invite-vendor — Superadmin creates a vendor ──
 router.post('/invite-vendor', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
+    const { email, password } = req.body ?? {};
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
       res.status(400).json({ detail: 'email and password are required' });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.length > 254) {
+      res.status(400).json({ detail: 'Enter a valid email address' });
+      return;
+    }
+    if (password.length < 10 || password.length > 128) {
+      res.status(400).json({ detail: 'Password must be between 10 and 128 characters' });
       return;
     }
 

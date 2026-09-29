@@ -6,16 +6,19 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, canAccessRouteStop, canAccessManifest } from '../core/ownership';
-import { consumeRateLimit } from '../core/rate-limit';
+import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
 import { TelemetryCreateSchema } from '../schemas';
 import { TelemetryService } from '../services/telemetry.service';
 import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
-import { sendError } from '../core/errors';
-import { stampPlannedArrivals } from '../services/driver-performance.service';
+import { HttpError, sendError } from '../core/errors';
 import { InvoiceService } from '../services/invoice.service';
+import { notificationService } from '../services/notification.service';
+import { routeService, setOperatingVehicleStatus, holdVehicleAfterSos } from '../services/route.service';
+import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
+import { parseCoordinate } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
 import { idempotent } from '../core/idempotency';
@@ -120,17 +123,22 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTran
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.
 const SOS_TYPES = ['panic_button', 'accident', 'breakdown', 'medical', 'theft', 'other'];
-router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), async (req: Request, res: Response) => {
+router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByUser('sos-trigger', 10, 10 * 60), async (req: Request, res: Response) => {
   try {
-    const { lat, lng } = req.body;
-    const userId = req.user?.user_id;
-    const alertType = SOS_TYPES.includes(req.body.alert_type) ? req.body.alert_type : 'panic_button';
-    const note = typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 500) : '';
+    if (req.user!.role !== 'driver') {
+      res.status(403).json({ detail: 'Only drivers can raise an SOS' });
+      return;
+    }
+    const userId = req.user!.user_id;
+    const lat = parseCoordinate(req.body?.lat, 'lat', 90);
+    const lng = parseCoordinate(req.body?.lng, 'lng', 180);
+    const alertType = SOS_TYPES.includes(req.body?.alert_type) ? req.body.alert_type : 'panic_button';
+    const note = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 500) : '';
 
     // Get the driver's current vehicle
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id')
+      .select('id, plate_number, driver_name')
       .eq('driver_id', userId)
       .single();
 
@@ -150,6 +158,19 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), async (req: 
       status: 'active'
     }).select('id').single();
     if (sosErr) throw new Error(`Failed to record SOS: ${sosErr.message}`);
+
+    // Staff hear about it in their bell as well as on the SOS screen. A failed
+    // notification must not undo the alert.
+    try {
+      await notificationService.notifyStaff(
+        'Emergency SOS',
+        `${vehicle.driver_name ?? 'A driver'} on ${vehicle.plate_number ?? 'a vehicle'} triggered an SOS (${alertType.replace('_', ' ')}).`,
+        'sos',
+        { alert_id: created?.id ?? null, vehicle_id: vehicle.id },
+      );
+    } catch (e) {
+      console.error('[telemetry] SOS notification failed:', e);
+    }
 
     res.json({ status: 'success', message: 'SOS triggered successfully', id: created?.id ?? null });
   } catch (e: any) {
@@ -197,12 +218,15 @@ router.patch('/sos/:id/details', requireAuth, idempotent('sos-details'), async (
       .eq('id', req.params.id)
       .eq('driver_id', req.user!.user_id)
       .eq('status', 'active')
-      .select('id');
+      .select('id, vehicle_id, alert_type, severity');
     if (error) throw error;
     if (!data || data.length === 0) {
       res.status(404).json({ detail: 'No active alert of yours with this id' });
       return;
     }
+    // A serious breakdown or accident takes the vehicle out of dispatch; it keeps reporting its position.
+    const [alert] = data as any[];
+    await holdVehicleAfterSos(alert.vehicle_id, update.alert_type ?? alert.alert_type, update.severity ?? alert.severity);
     res.json({ success: true, id: req.params.id });
   } catch (e: any) {
     sendError(req, res, e);
@@ -238,13 +262,17 @@ router.post('/stoppages', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
+    const lat = parseCoordinate(req.body.lat, 'lat', 90);
+    const lng = parseCoordinate(req.body.lng, 'lng', 180);
+    const reason = typeof req.body.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim().slice(0, 100) : 'unknown';
+
     const { data, error } = await supabase
       .from('vehicle_stoppages')
       .insert({
         vehicle_id: req.body.vehicle_id,
-        latitude: req.body.lat,
-        longitude: req.body.lng,
-        reason: req.body.reason || 'unknown',
+        latitude: lat,
+        longitude: lng,
+        reason,
         start_time: new Date().toISOString(),
       })
       .select('id')
@@ -325,7 +353,7 @@ router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', '
 });
 
 // ── POST /mobile-push/:session_token (no auth) ─────────────
-router.post('/mobile-push/:session_token', async (req: Request, res: Response) => {
+router.post('/mobile-push/:session_token', rateLimitByIp('mobile-push', 300, 60), async (req: Request, res: Response) => {
   try {
     const token = req.params.session_token;
     const session = getMobileSession(token);
@@ -377,7 +405,7 @@ router.post('/mobile-push/:session_token', async (req: Request, res: Response) =
 });
 
 // ── GET /mobile-session/:session_token ─────────────────────
-router.get('/mobile-session/:session_token', (req: Request, res: Response) => {
+router.get('/mobile-session/:session_token', rateLimitByIp('mobile-session-lookup', 60, 60), (req: Request, res: Response) => {
   const session = getMobileSession(req.params.session_token);
   if (!session) {
     res.status(404).json({ detail: 'Session not found' });
@@ -385,6 +413,18 @@ router.get('/mobile-session/:session_token', (req: Request, res: Response) => {
   }
   res.json({ vehicle_id: session.vehicle_id, plate: session.plate, active: session.active });
 });
+
+const MAX_PINGS_PER_REQUEST = 200;
+const PING_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const PING_MAX_FUTURE_MS = 5 * 60 * 1000;
+
+/** The time a ping was taken, or now when it is missing, unreadable, from the future or older than a week. */
+function pingTimestamp(value: unknown): string {
+  const now = Date.now();
+  const parsed = typeof value === 'string' || typeof value === 'number' ? new Date(value).getTime() : NaN;
+  if (!Number.isFinite(parsed) || parsed > now + PING_MAX_FUTURE_MS || parsed < now - PING_MAX_AGE_MS) return new Date(now).toISOString();
+  return new Date(parsed).toISOString();
+}
 
 // ── POST /driver-ping — React Native background GPS (Ola/Uber style) ──
 router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => {
@@ -410,6 +450,10 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
 
     // Support batch pings (offline queue replay)
     const pings = Array.isArray(req.body.pings) ? req.body.pings : [req.body];
+    if (pings.length > MAX_PINGS_PER_REQUEST) {
+      res.status(400).json({ detail: `Send at most ${MAX_PINGS_PER_REQUEST} location points at a time` });
+      return;
+    }
 
     let processedCount = 0;
     let latestLat = 0;
@@ -419,14 +463,15 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
     const drivenPoints: PingPoint[] = [];
 
     for (const ping of pings) {
-      const lat = ping.lat || ping.latitude;
-      const lng = ping.lng || ping.longitude;
-      const speed = ping.speed || 0;
-      const heading = ping.heading || 0;
-      const accuracy = ping.accuracy || null;
-      const timestamp = ping.timestamp || new Date().toISOString();
+      const lat = Number(ping?.lat ?? ping?.latitude);
+      const lng = Number(ping?.lng ?? ping?.longitude);
+      const speed = Number(ping?.speed) || 0;
+      const heading = Number(ping?.heading) || 0;
+      const accuracy = ping?.accuracy == null ? null : Number(ping.accuracy) || null;
+      const timestamp = pingTimestamp(ping?.timestamp);
 
-      if (!lat || !lng) {
+      // Skip points that are not real positions (missing, out of range, or 0,0)
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
         continue;
       }
 
@@ -478,7 +523,10 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
           odometer_km: Math.round(((Number(vehicle.odometer_km) || 0) + drivenKm) * 1000) / 1000,
           odometer_updated_at: new Date().toISOString(),
         } : {}),
-        status: (vehicle.current_load_kg || 0) > 0 ? 'on_route' : (vehicle.status === 'offline' ? 'available' : vehicle.status),
+        // A vehicle in maintenance or archived stays that way however it reports
+        status: !(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))
+          ? vehicle.status
+          : (vehicle.current_load_kg || 0) > 0 ? 'on_route' : (vehicle.status === 'offline' ? 'available' : vehicle.status),
       }).eq('id', vehicle.id);
 
       // Cache in Redis
@@ -610,7 +658,11 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
       return;
     }
 
-    const { is_break } = req.body;
+    const isBreak = req.body?.is_break;
+    if (typeof isBreak !== 'boolean') {
+      res.status(400).json({ detail: 'is_break must be true or false' });
+      return;
+    }
 
     // Find the vehicle assigned to this driver
     const { data: vehicle } = await supabase
@@ -619,12 +671,8 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
       .eq('driver_id', req.user!.user_id)
       .single();
 
-    if (vehicle) {
-      await supabase
-        .from('vehicles')
-        .update({ status: is_break ? 'idle' : 'on_route' })
-        .eq('id', vehicle.id);
-    }
+    // A vehicle in maintenance or archived stays that way; only staff change those
+    if (vehicle) await setOperatingVehicleStatus(vehicle.id, isBreak ? 'idle' : 'on_route');
 
     res.json({ success: true });
   } catch (e: any) {
@@ -640,8 +688,8 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       return;
     }
 
-    const { route_id } = req.body;
-    if (!route_id) {
+    const { route_id } = req.body ?? {};
+    if (typeof route_id !== 'string' || !route_id) {
       res.status(400).json({ detail: 'route_id is required' });
       return;
     }
@@ -650,20 +698,25 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       return;
     }
 
-    // Check if it's a cargo manifest
-    const { data: manifest } = await supabase.from('cargo_manifest').select('id').eq('id', route_id).single();
+    // A cargo manifest is started from "scheduled"; a route from "pending". Starting one that
+    // is already under way succeeds (a retry), and one that is finished is refused.
+    const { data: manifest } = await supabase.from('cargo_manifest').select('id, status, vehicle_id').eq('id', route_id).maybeSingle();
     if (manifest) {
-      await supabase.from('cargo_manifest').update({ status: 'in_transit' }).eq('id', route_id);
+      if (manifest.status !== 'in_transit') {
+        assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, 'in_transit');
+        const { data: moved, error } = await supabase
+          .from('cargo_manifest')
+          .update({ status: 'in_transit' })
+          .eq('id', route_id)
+          .eq('status', manifest.status)
+          .select('id')
+          .maybeSingle();
+        if (error) throw error;
+        if (!moved) throw new HttpError(409, 'This load was just changed by someone else. Refresh and try again.');
+      }
+      await setOperatingVehicleStatus(manifest.vehicle_id, 'on_route');
     } else {
-      // Update route to active
-      await supabase.from('routes').update({ status: 'active' }).eq('id', route_id);
-      await stampPlannedArrivals(route_id);
-    }
-
-    // Also update vehicle to on_route
-    const { data: route } = await supabase.from('routes').select('vehicle_id').eq('id', route_id).single();
-    if (route?.vehicle_id) {
-      await supabase.from('vehicles').update({ status: 'on_route' }).eq('id', route.vehicle_id);
+      await routeService.changeStatus(route_id, 'active');
     }
 
     res.json({ success: true, status: 'active' });
@@ -674,6 +727,18 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 
 // ── POST /driver-ping/complete-stop — Driver marks delivery complete ──
 const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
+const MAX_SIGNATURE_CHARS = 400_000;
+
+/** Free up a vehicle after its last stop: no load, full capacity, available (unless staff hold it in maintenance). */
+async function resetVehicleAfterRoute(vehicleId: string): Promise<void> {
+  const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', vehicleId).single();
+  await supabase.from('vehicles').update({
+    current_load_kg: 0,
+    available_capacity_kg: veh ? (veh.capacity_kg || 1000) : 1000,
+  }).eq('id', vehicleId);
+  await setOperatingVehicleStatus(vehicleId, 'available');
+}
+
 router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
@@ -681,9 +746,21 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       return;
     }
 
-    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by, lat, lng } = req.body;
-    if (!stop_id) {
+    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by } = req.body ?? {};
+    if (typeof stop_id !== 'string' || !stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
+      return;
+    }
+    if (status !== 'completed' && status !== 'failed') {
+      res.status(400).json({ detail: 'status must be completed or failed' });
+      return;
+    }
+    if (received_by !== undefined && received_by !== null && (typeof received_by !== 'string' || received_by.length > 200)) {
+      res.status(400).json({ detail: 'received_by must be a name of up to 200 characters' });
+      return;
+    }
+    if (signature_data !== undefined && signature_data !== null && (typeof signature_data !== 'string' || signature_data.length > MAX_SIGNATURE_CHARS)) {
+      res.status(400).json({ detail: 'The signature is too large' });
       return;
     }
     // Proof-of-delivery files must be ones this stop's signed upload URLs produced
@@ -694,6 +771,8 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       }
     }
     const proofFiles = status === 'completed' ? { photo_url: photo_url ?? null, signature_url: signature_url ?? null } : {};
+    const lat = parseCoordinate(req.body?.lat, 'lat', 90) ?? undefined;
+    const lng = parseCoordinate(req.body?.lng, 'lng', 180) ?? undefined;
     // Why a stop failed, kept in the shipment's tamper-evident log
     const { reason, note } = req.body;
     if (reason !== undefined && !STOP_FAILURE_REASONS.includes(reason)) {
@@ -718,8 +797,42 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       const { data: manifest } = await supabase.from('cargo_manifest').select('*').eq('id', manifestId).single();
       if (!manifest) { res.status(404).json({ detail: 'Manifest not found' }); return; }
 
-      if (isPickup) {
-        await supabase.from('cargo_manifest').update({ status: 'in_transit' }).eq('id', manifestId);
+      // Vendor loads have no failed-stop state: dispatch decides what happens next
+      if (status === 'failed') {
+        await notificationService.notifyStaff(
+          'Driver could not complete a stop',
+          `A driver could not complete the ${isPickup ? 'pickup' : 'drop'} of a vendor load${reason ? ` (${String(reason).replace(/_/g, ' ')})` : ''}.`,
+          'stop_failed',
+          { manifest_id: manifestId, driver_id: req.user!.user_id },
+        ).catch(e => console.error('[telemetry] failed-stop notification failed:', e));
+        res.json({ status: 'failed', stop_id, route_id: manifestId, remaining_stops: 1, route_completed: false });
+        return;
+      }
+
+      const target = isPickup ? 'in_transit' : 'delivered';
+      // Pickup comes first and each step happens once: a repeat of the step already recorded
+      // succeeds without billing or moving load again.
+      let firstTime = false;
+      if (manifest.status !== target) {
+        if (!isPickup && manifest.status === 'scheduled') throw new HttpError(409, 'Complete the pickup before the drop.');
+        assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, target);
+        const { data: moved, error: moveErr } = await supabase
+          .from('cargo_manifest')
+          .update({
+            status: target,
+            ...(!isPickup && received_by ? { received_by } : {}),
+            ...(!isPickup && proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+            ...(!isPickup && proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+          })
+          .eq('id', manifestId)
+          .eq('status', manifest.status)
+          .select('id')
+          .maybeSingle();
+        if (moveErr) throw moveErr;
+        firstTime = Boolean(moved);
+      }
+
+      if (firstTime && isPickup) {
         // Add load to truck on pickup
         const pickupWeight = manifest.weight_kg || manifest.required_capacity_kg || 0;
         if (pickupWeight > 0 && manifest.vehicle_id) {
@@ -732,13 +845,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
             }).eq('id', manifest.vehicle_id);
           }
         }
-      } else {
-        await supabase.from('cargo_manifest').update({
-          status: 'delivered',
-          ...(received_by ? { received_by } : {}),
-          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
-          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
-        }).eq('id', manifestId);
+      } else if (firstTime) {
         await InvoiceService.onManifestDelivered(manifestId);
         await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
         // Auto-empty: subtract delivered weight from truck
@@ -750,19 +857,19 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
             await supabase.from('vehicles').update({
               current_load_kg: newLoad,
               available_capacity_kg: Math.max((veh.capacity_kg || 1000) - newLoad, 0),
-              status: 'available',
             }).eq('id', manifest.vehicle_id);
           }
-        } else {
-          await supabase.from('vehicles').update({ status: 'available' }).eq('id', manifest.vehicle_id);
         }
+        await setOperatingVehicleStatus(manifest.vehicle_id, 'available');
       }
 
-      // Broadcast completion
-      await wsManager.broadcast({
-        type: 'STOP_COMPLETED',
-        data: { stop_id, route_id: manifestId, completed_by: req.user!.user_id },
-      });
+      if (firstTime) {
+        // Broadcast completion
+        await wsManager.broadcast({
+          type: 'STOP_COMPLETED',
+          data: { stop_id, route_id: manifestId, completed_by: req.user!.user_id },
+        });
+      }
 
       res.json({
         status: 'completed',
@@ -780,22 +887,45 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       return;
     }
 
-    // Update route stop status
-    const { data: stop, error: stopErr } = await supabase
+    const { data: current, error: currentErr } = await supabase
       .from('route_stops')
-      .update({
-        status, // 'completed' or 'failed'
-        ...(status === 'completed' ? { actual_arrival_at: new Date().toISOString() } : {}),
-        ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
-        ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
-      })
+      .select('id, status, route_id, delivery_point_id, routes(status)')
       .eq('id', stop_id)
-      .select('route_id, delivery_point_id')
-      .single();
-
-    if (stopErr || !stop) {
+      .maybeSingle();
+    if (currentErr) throw currentErr;
+    if (!current) {
       res.status(404).json({ detail: 'Stop not found' });
       return;
+    }
+    const routeRaw = current.routes as { status?: string } | { status?: string }[] | null | undefined;
+    const routeStatus = Array.isArray(routeRaw) ? routeRaw[0]?.status : routeRaw?.status;
+    if (routeStatus && !['pending', 'active', 'in_progress'].includes(routeStatus)) {
+      throw new HttpError(409, `This route is ${routeStatus.replace('_', ' ')}, so its stops can't be changed.`);
+    }
+    // A stop is decided once: a repeat of the same answer succeeds without changing anything
+    const repeat = current.status === status;
+    if (!repeat && current.status !== 'pending') {
+      throw new HttpError(409, `This stop is already ${current.status}.`);
+    }
+
+    // Update route stop status, only while it is still pending
+    let stop: { route_id: string; delivery_point_id: string } = current;
+    if (!repeat) {
+      const { data: claimed, error: stopErr } = await supabase
+        .from('route_stops')
+        .update({
+          status, // 'completed' or 'failed'
+          ...(status === 'completed' ? { actual_arrival_at: new Date().toISOString() } : {}),
+          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
+          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+        })
+        .eq('id', stop_id)
+        .eq('status', 'pending')
+        .select('route_id, delivery_point_id')
+        .maybeSingle();
+      if (stopErr) throw stopErr;
+      if (!claimed) throw new HttpError(409, 'This stop was just changed by someone else. Refresh and try again.');
+      stop = claimed;
     }
 
     // If this delivery point is linked to a shipment, update the shipment too
@@ -805,19 +935,25 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       .eq('id', stop.delivery_point_id)
       .single();
 
-    if (dp?.shipment_id) {
+    if (!repeat && dp?.shipment_id) {
       if (status === 'completed') failureMetadata.parcel_verified = await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id);
       const { ShipmentService } = await import('../services/shipment.service');
-      await ShipmentService.updateShipmentStatus(
-        dp.shipment_id,
-        status === 'completed' ? 'delivered' : 'exception',
-        lat, lng,
-        received_by || null,
-        signature_data || null,
-        { id: req.user!.user_id, role: req.user!.role },
-        failureMetadata,
-        proofFiles
-      );
+      try {
+        await ShipmentService.updateShipmentStatus(
+          dp.shipment_id,
+          status === 'completed' ? 'delivered' : 'exception',
+          lat, lng,
+          received_by || null,
+          signature_data || null,
+          { id: req.user!.user_id, role: req.user!.role },
+          failureMetadata,
+          proofFiles
+        );
+      } catch (e) {
+        // The shipment was already settled another way (for example proof of delivery by
+        // dispatch); the stop itself is still recorded.
+        if (!(e instanceof HttpError && e.status === 409)) throw e;
+      }
     }
 
     // Check if all stops on this route are now completed or failed
@@ -828,55 +964,51 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       .eq('status', 'pending');
 
     if (!remainingStops || remainingStops.length === 0) {
-      // All stops done → mark route as completed
-      await supabase.from('routes').update({ status: 'completed' }).eq('id', stop.route_id);
+      if (!repeat) {
+        // All stops done → mark route as completed
+        await supabase
+          .from('routes')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', stop.route_id)
+          .in('status', ['pending', 'active', 'in_progress']);
 
-      // Free up vehicle and reset load
-      const { data: route } = await supabase
-        .from('routes')
-        .select('vehicle_id')
-        .eq('id', stop.route_id)
-        .single();
+        const { data: route } = await supabase
+          .from('routes')
+          .select('vehicle_id')
+          .eq('id', stop.route_id)
+          .single();
 
-      if (route) {
-        // Get the truck's full capacity to reset available space
-        const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', route.vehicle_id).single();
-        
-        await supabase.from('vehicles').update({
-          status: 'available',
-          current_load_kg: 0,
-          available_capacity_kg: veh ? (veh.capacity_kg || 1000) : 1000,
-        }).eq('id', route.vehicle_id);
+        if (route) await resetVehicleAfterRoute(route.vehicle_id);
       }
-    } else {
+    } else if (!repeat && dp?.shipment_id) {
       // Partial delivery: subtract this stop's shipment weight from the truck
-      if (dp?.shipment_id) {
-        const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).single();
-        if (shipment?.total_weight_kg) {
-          const driverId = req.user!.user_id;
-          const { data: vehicle } = await supabase.from('vehicles').select('id, current_load_kg, capacity_kg').eq('driver_id', driverId).single();
-          if (vehicle) {
-            const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.total_weight_kg, 0);
-            await supabase.from('vehicles').update({
-              current_load_kg: newLoad,
-              available_capacity_kg: Math.max((vehicle.capacity_kg || 1000) - newLoad, 0),
-            }).eq('id', vehicle.id);
-          }
+      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).single();
+      if (shipment?.total_weight_kg) {
+        const driverId = req.user!.user_id;
+        const { data: vehicle } = await supabase.from('vehicles').select('id, current_load_kg, capacity_kg').eq('driver_id', driverId).single();
+        if (vehicle) {
+          const newLoad = Math.max((vehicle.current_load_kg || 0) - shipment.total_weight_kg, 0);
+          await supabase.from('vehicles').update({
+            current_load_kg: newLoad,
+            available_capacity_kg: Math.max((vehicle.capacity_kg || 1000) - newLoad, 0),
+          }).eq('id', vehicle.id);
         }
       }
     }
 
     // Broadcast completion to dashboard
-    await wsManager.broadcast({
-      type: 'STOP_COMPLETED',
-      data: {
-        stop_id,
-        route_id: stop.route_id,
-        delivery_point_id: stop.delivery_point_id,
-        remaining_stops: remainingStops?.length || 0,
-        completed_by: req.user!.user_id,
-      },
-    });
+    if (!repeat) {
+      await wsManager.broadcast({
+        type: 'STOP_COMPLETED',
+        data: {
+          stop_id,
+          route_id: stop.route_id,
+          delivery_point_id: stop.delivery_point_id,
+          remaining_stops: remainingStops?.length || 0,
+          completed_by: req.user!.user_id,
+        },
+      });
+    }
 
     res.json({
       status: 'completed',

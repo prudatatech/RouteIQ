@@ -374,6 +374,11 @@ class ApiClient {
     return this.request('POST', '/capacity/driver/ack-stop', { confirmation_id });
   }
 
+  /** The driver accepts an inserted stop. Answering twice is refused with 409 (already answered). */
+  async confirmStop(confirmation_id: string): Promise<any> {
+    return this.request('POST', '/capacity/driver/confirm-stop', { confirmation_id });
+  }
+
   async flagStop(confirmation_id: string): Promise<any> {
     return this.request('POST', '/capacity/driver/flag-stop', { confirmation_id });
   }

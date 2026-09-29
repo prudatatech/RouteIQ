@@ -3,7 +3,9 @@ import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessConfirmation, canAccessRoute, canAccessVehicle, isStaff } from '../core/ownership';
 import { notificationService } from '../services/notification.service';
-import { parseRejectionReason, sendError } from '../core/errors';
+import { HttpError, parseRejectionReason, sendError } from '../core/errors';
+import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
+import { parseNumberInRange } from '../core/validate';
 
 const router = Router();
 
@@ -189,14 +191,29 @@ router.get('/windows/:id/bid-count', requireAuth, async (req, res) => {
 // POST /api/v1/capacity/driver/open-backhaul-window
 router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', 'admin', 'superadmin'), async (req, res) => {
   try {
-    const { vehicle_id, available_capacity_kg, trigger_type } = req.body;
-    if (!vehicle_id || !available_capacity_kg || !trigger_type) {
+    const { vehicle_id, available_capacity_kg, trigger_type } = req.body ?? {};
+    if (typeof vehicle_id !== 'string' || !vehicle_id || available_capacity_kg === undefined || !trigger_type) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     if (!(await canAccessVehicle(req.user!, vehicle_id))) {
       return res.status(403).json({ error: 'Not authorized for this vehicle' });
     }
-    const window = await capacityService.openBackhaulWindow(vehicle_id, available_capacity_kg, trigger_type);
+    // Drivers open the windows their own trip allows; a dispatch window is for staff
+    const allowedTriggers = isStaff(req.user) ? ['mid_route', 'return_trip', 'superadmin_dispatch'] : ['mid_route', 'return_trip'];
+    if (!allowedTriggers.includes(trigger_type)) {
+      throw new HttpError(400, `trigger_type must be one of: ${allowedTriggers.join(', ')}`);
+    }
+    const spare = parseNumberInRange(available_capacity_kg, 'available_capacity_kg', 1, 50000);
+    const { supabase } = await import('../core/supabase');
+    const { data: vehicle } = await supabase.from('vehicles').select('capacity_kg, status').eq('id', vehicle_id).maybeSingle();
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
+      throw new HttpError(409, `This vehicle is in ${vehicle.status} and can't offer space.`);
+    }
+    if (vehicle.capacity_kg && spare > vehicle.capacity_kg) {
+      throw new HttpError(400, `Free space can't be more than the vehicle's ${vehicle.capacity_kg} kg capacity`);
+    }
+    const window = await capacityService.openBackhaulWindow(vehicle_id, spare, trigger_type);
     res.json(window);
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -206,7 +223,10 @@ router.post('/driver/open-backhaul-window', requireAuth, requireRole('driver', '
 // POST /api/v1/capacity/driver/toggle-matching
 router.post('/driver/toggle-matching', requireAuth, requireRole('driver'), async (req, res) => {
   try {
-    const { vehicle_id, enabled } = req.body;
+    const { vehicle_id, enabled } = req.body ?? {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be true or false' });
+    }
     if (!vehicle_id || !(await canAccessVehicle(req.user!, vehicle_id))) {
       return res.status(403).json({ error: 'Not authorized for this vehicle' });
     }
@@ -225,6 +245,22 @@ router.post('/driver/ack-stop', requireAuth, requireRole('driver'), async (req, 
       return res.status(403).json({ error: 'Not authorized for this confirmation' });
     }
     await capacityService.ackStopDelivery(confirmation_id);
+    res.json({ success: true });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/capacity/driver/confirm-stop
+// The driver accepts an inserted stop. (Driver app 1.1.0 writes this answer directly, which
+// row-level security still allows for exactly this one change; newer builds use this endpoint.)
+router.post('/driver/confirm-stop', requireAuth, requireRole('driver'), async (req, res) => {
+  try {
+    const { confirmation_id } = req.body ?? {};
+    if (typeof confirmation_id !== 'string' || !confirmation_id || !(await canAccessConfirmation(req.user!, confirmation_id))) {
+      return res.status(403).json({ error: 'Not authorized for this confirmation' });
+    }
+    await capacityService.answerConfirmation(confirmation_id, 'confirmed');
     res.json({ success: true });
   } catch (error: any) {
     sendError(req, res, error, 'error');

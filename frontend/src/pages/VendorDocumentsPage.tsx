@@ -253,17 +253,15 @@ export default function VendorDocumentsPage() {
     if (!userId) return
     setUploadingKey(key)
     try {
-      const path = await uploadKycDocument(userId, key, file)
+      const path = await uploadKycDocument(key, file)
       const updatedUrls = { ...form.docUrls, [key]: path }
       setField('docUrls', updatedUrls)
       // Persist the storage path immediately (mirrors uploadOtherDoc below) so the
       // upload is not lost if the vendor closes the tab before hitting submit.
+      // The backend applies the review rules (an approved profile goes back to review).
       if (hasProfile) {
         try {
-          const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
-          const kycData = (profile?.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] }) || { data: form, otherDocs }
-          kycData.data = { ...(kycData.data ?? {}), docUrls: updatedUrls }
-          await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
+          await vendorAPI.saveKycDocuments({ docUrls: updatedUrls })
         } catch (e) {
           console.error('Failed to persist document reference', e)
         }
@@ -295,13 +293,10 @@ export default function VendorDocumentsPage() {
     if (!userId) return
     setUploadingKey('__other__')
     try {
-      const path = await uploadKycDocument(userId, 'other', file)
+      const path = await uploadKycDocument('other', file)
       const updated = [...otherDocs, { name: file.name, path }]
       setOtherDocs(updated)
-      const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
-      const kycData = (profile?.kyc_data as Record<string, unknown>) || { data: form, otherDocs: [] }
-      kycData.otherDocs = updated
-      await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
+      if (hasProfile) await vendorAPI.saveKycDocuments({ otherDocs: updated })
       toast.success('Document uploaded')
     } catch (err) {
       toast.error(errorMessage(err, 'Failed to upload document'))
@@ -314,10 +309,7 @@ export default function VendorDocumentsPage() {
     const updated = otherDocs.filter((_, i) => i !== index)
     setOtherDocs(updated)
     try {
-      const { data: profile } = await supabase.from('vendor_profiles').select('kyc_data').eq('id', userId).maybeSingle()
-      const kycData = (profile?.kyc_data as Record<string, unknown>) || { data: form, otherDocs: [] }
-      kycData.otherDocs = updated
-      await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
+      if (hasProfile) await vendorAPI.saveKycDocuments({ otherDocs: updated })
     } catch (err) {
       console.error('Failed to remove document', err)
     }
