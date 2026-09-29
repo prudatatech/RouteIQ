@@ -159,6 +159,7 @@ describe('service plans and log', () => {
       .send({ item: 'Engine oil', done_at: '2026-09-28', odometer_km: 45200, cost: 4200, note: 'Filter changed too' });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ item: 'Engine oil', cost: 4200, expense_recorded: true, plan_updated: true });
+    expect(res.body.vehicle_status).toBe(supabaseMock.rows('vehicles')[0].status); // so the UI can offer "Return to service"
 
     expect(supabaseMock.rows('vehicle_service_plans')[0]).toMatchObject({ last_done_km: 45200, last_done_at: '2026-09-28' });
     expect(supabaseMock.rows('vehicles')[0].odometer_km).toBe(45200);

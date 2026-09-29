@@ -2,6 +2,7 @@ import { supabase } from '../core/supabase';
 import { ShipmentService } from './shipment.service';
 import { tplNetworkService } from './tpl-network.service';
 import { HttpError } from '../core/errors';
+import { DISPATCHABLE_STATUSES, isDispatchable } from '../core/vehicles';
 
 const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
 
@@ -38,8 +39,8 @@ export const matchingService = {
     // In production, we'd use PostGIS ST_DWithin. Here we fetch idle trucks and calculate distance.
     const { data: vehicles, error: vehErr } = await supabase
       .from('vehicles')
-      .select('id, latitude, longitude, status, vehicle_type')
-      .in('status', ['idle', 'available', 'on_route']) // On-route trucks can take a load when they have capacity; idle preferred
+      .select('id, latitude, longitude, status, vehicle_type, plate_number')
+      .in('status', [...DISPATCHABLE_STATUSES]) // The one definition of "can be dispatched" (core/vehicles.ts)
       .eq('vehicle_type', required_vehicle_type || 'Tractor Trailer');
 
     if (vehErr) {
@@ -63,7 +64,7 @@ export const matchingService = {
       return R * c;
     };
 
-    for (const v of vehicles || []) {
+    for (const v of (vehicles || []).filter(isDispatchable)) {
       if (v.latitude && v.longitude) {
         const dist = getDist(pickup_lat, pickup_lng, v.latitude, v.longitude);
         if (dist <= 100) { // 100km radius
