@@ -316,6 +316,12 @@ export const tplAPI = {
     verify_pan?: string
   }): Promise<{ path: string; token: string; signed_url: string }> =>
     api.post('/tpl/applications/upload-url', data).then(r => r.data),
+  /** The partner swaps one of its documents for a file already uploaded to its folder; goes back to review. */
+  replaceDocument: (id: string, docId: string, path: string) =>
+    api.post(`/tpl/${id}/documents/${docId}/replace`, { path }).then(r => r.data),
+  /** The partner asks to change SLA, tax treatment or corridors; applied only once staff approve. */
+  requestSettings: (id: string, data: { sla_commitment: string; tax_treatment: string; corridors: unknown[] }) =>
+    api.post(`/tpl/${id}/settings`, data).then(r => r.data),
   pause: (id: string) => api.post(`/tpl/${id}/pause`).then(r => r.data),
   resume: (id: string) => api.post(`/tpl/${id}/resume`).then(r => r.data),
   delete: (id: string) => api.delete(`/tpl/${id}`).then(r => r.data),

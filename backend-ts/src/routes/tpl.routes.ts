@@ -10,7 +10,7 @@ import { tplService } from '../services/tpl.service';
 import { optionalAuth, requireAuth, requireRole } from '../core/auth';
 import { isStaff } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
-import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
+import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { settings } from '../core/config';
 
 const router = Router();
@@ -121,7 +121,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // POST /api/v1/tpl/approve/:id
 router.post('/approve/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
-    const data = await tplService.approve(req.params.id, req.user!.user_id);
+    const data = await tplService.approve(req.params.id, req.user!);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');
@@ -133,7 +133,7 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
   try {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     if (!reason) throw new HttpError(400, 'A reason is required');
-    const data = await tplService.reject(req.params.id, reason);
+    const data = await tplService.reject(req.params.id, reason, req.user!);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');
@@ -156,10 +156,32 @@ router.patch('/:id', optionalAuth, async (req, res) => {
   }
 });
 
+// POST /api/v1/tpl/:id/documents/:docId/replace — the partner swaps one of its documents.
+// The new file was uploaded through /applications/upload-url; the partner goes back to review.
+router.post('/:id/documents/:docId/replace', requireAuth, rateLimitByUser('tpl-doc-replace', 30, 60 * 60), async (req, res) => {
+  try {
+    const data = await tplService.replaceDocument(req.params.id, req.params.docId, req.body?.path, req.user!);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// POST /api/v1/tpl/:id/settings — the partner requests new SLA, tax treatment or corridors.
+// Nothing is applied until staff approve; the partner goes back to review meanwhile.
+router.post('/:id/settings', requireAuth, rateLimitByUser('tpl-settings', 30, 60 * 60), async (req, res) => {
+  try {
+    const data = await tplService.requestSettingsUpdate(req.params.id, req.body ?? {}, req.user!);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/:id/pause
 router.post('/:id/pause', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
-    res.json({ success: true, data: await tplService.pausePartner(req.params.id) });
+    res.json({ success: true, data: await tplService.pausePartner(req.params.id, req.user!) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }
@@ -168,7 +190,7 @@ router.post('/:id/pause', requireAuth, requireRole('superadmin'), async (req, re
 // POST /api/v1/tpl/:id/resume
 router.post('/:id/resume', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
-    res.json({ success: true, data: await tplService.resumePartner(req.params.id) });
+    res.json({ success: true, data: await tplService.resumePartner(req.params.id, req.user!) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }
@@ -177,7 +199,7 @@ router.post('/:id/resume', requireAuth, requireRole('superadmin'), async (req, r
 // DELETE /api/v1/tpl/:id
 router.delete('/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
-    res.json({ success: true, data: await tplService.deletePartner(req.params.id) });
+    res.json({ success: true, data: await tplService.deletePartner(req.params.id, req.user!) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }

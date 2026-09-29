@@ -148,13 +148,8 @@ export default function TplDashboardPage() {
       const fileName = await uploadTplDocument(file, doc.doc_type, { applicationId: id! })
         .catch((err: Error) => { throw new Error(`Upload failed: ${err.message}`) })
 
-      const { error: docError } = await supabase.from('tpl_documents')
-        .update({ file_url: fileName, uploaded_at: new Date().toISOString() })
-        .eq('id', doc.id)
-      if (docError) throw new Error('Failed to update the document record.')
-
-      const { error: partnerError } = await supabase.from('tpl_partners').update({ status: 'pending' }).eq('id', id)
-      if (partnerError) throw new Error('Failed to update partner status.')
+      // The backend checks the file, sends the partner back to review and tells staff.
+      await tplAPI.replaceDocument(id!, doc.id, fileName)
 
       setPartner((p) => p && ({ ...p, status: 'pending' }))
       setDocuments(docs => docs.map(d => (d.id === doc.id ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d)))
@@ -203,16 +198,14 @@ export default function TplDashboardPage() {
 
     setIsSubmittingSettings(true)
     try {
-      const updates = {
+      const requested = {
         sla_commitment: settingsForm.slaCommitment,
         tax_treatment: settingsForm.taxTreatment,
-        corridors: settingsForm.corridors,
-        requested_at: new Date().toISOString(),
+        corridors: settingsForm.corridors.filter(c => c.name.trim()),
       }
-      const { error: updateError } = await supabase.from('tpl_partners')
-        .update({ pending_updates: updates, status: 'pending' })
-        .eq('id', id)
-      if (updateError) throw updateError
+      const updates = { ...requested, requested_at: new Date().toISOString() }
+      // Nothing changes until staff approve; the backend validates the request and tells staff.
+      await tplAPI.requestSettings(id!, requested)
 
       setPartner((p) => p && ({ ...p, pending_updates: updates, status: 'pending' }))
       toast.success('Settings update requested. Awaiting approval.')

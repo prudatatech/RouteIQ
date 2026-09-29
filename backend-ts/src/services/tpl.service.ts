@@ -4,6 +4,8 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
 import { notificationService } from './notification.service';
+import { auditService, type AuditActor } from './audit.service';
+import { assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -67,6 +69,7 @@ export const tplService = {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+    assertApplicationFields(data);
     const phone = parseMobile(data.phone);
 
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
@@ -236,6 +239,7 @@ export const tplService = {
    */
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    assertApplicationFields(data ?? {}, true);
 
     const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
@@ -309,71 +313,94 @@ export const tplService = {
   },
 
   /**
-   * Approve a 3PL partner
+   * Tell a partner about a decision. Applicants without an account yet only
+   * see the outcome on their tracking page, so there is nobody to notify.
    */
-  async approve(id: string, approverId: string) {
-    // Fetch the existing partner to get pending_updates
+  async notifyPartner(partner: { user_id?: string | null }, title: string, body: string, type: string, partnerId: string) {
+    if (!partner.user_id) return;
+    try {
+      await notificationService.sendNotification(partner.user_id, title, body, type, { partner_id: partnerId });
+    } catch (e) {
+      console.error('[tpl] Partner notification failed:', e);
+    }
+  },
+
+  /**
+   * Move a partner from one of `from` to `to`. The update only applies while the
+   * partner is still in one of those states, so two people acting at once (or a
+   * double click) cannot both succeed. Throws 404/409 when nothing changed.
+   */
+  async transition(id: string, from: string[], changes: Record<string, unknown>, refusal: (status: string) => string) {
+    const { data, error } = await supabase
+      .from('tpl_partners')
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .in('status', from)
+      .select()
+      .maybeSingle();
+    if (error) throw new Error(`Failed to update partner: ${error.message}`);
+    if (data) return data;
+    const { data: existing } = await supabase.from('tpl_partners').select('status').eq('id', id).maybeSingle();
+    if (!existing) throw new HttpError(404, 'Partner not found');
+    throw new HttpError(409, refusal(String(existing.status)));
+  },
+
+  /**
+   * Approve a pending 3PL application, or a partner's pending profile update.
+   * Only a partner waiting for review can be approved.
+   */
+  async approve(id: string, actor: AuditActor) {
     const { data: partner, error: fetchErr } = await supabase
       .from('tpl_partners')
       .select('*')
       .eq('id', id)
-      .single();
-
+      .maybeSingle();
     if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Partner not found');
 
     const updates = partner.pending_updates;
-    const partnerUpdates: any = {
-      status: 'active',
-      pending_updates: null
-    };
-
+    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null };
     if (updates) {
       if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;
       if (updates.tax_treatment) partnerUpdates.tax_treatment = updates.tax_treatment;
-      
-      // Update Corridors if present
-      if (updates.corridors && Array.isArray(updates.corridors)) {
-        // Delete old corridors and insert new ones
-        await supabase.from('tpl_corridors').delete().eq('partner_id', id);
-        
-        const corridorPayloads = updates.corridors.map((c: any) => ({
-          partner_id: id,
-          corridor_name: c.name,
-          vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
-          proposed_rate: c.rate,
-          priority: c.priority
-        }));
-        
-        if (corridorPayloads.length > 0) {
-          await supabase.from('tpl_corridors').insert(corridorPayloads);
-        }
+    }
+
+    // Claim the review first, then apply the requested corridors
+    const updatedPartner = await this.transition(id, ['pending'], partnerUpdates, status => `This partner is already ${status} and is not waiting for review`);
+
+    if (updates?.corridors && Array.isArray(updates.corridors)) {
+      await supabase.from('tpl_corridors').delete().eq('partner_id', id);
+      const corridorPayloads = updates.corridors.map((c: any) => ({
+        partner_id: id,
+        corridor_name: c.name,
+        vehicle_types: c.vehicles ? c.vehicles.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
+        proposed_rate: c.rate,
+        priority: c.priority
+      }));
+      if (corridorPayloads.length > 0) {
+        await supabase.from('tpl_corridors').insert(corridorPayloads);
       }
     }
 
-    // 1. Update status and apply merged updates
-    const { data: updatedPartner, error } = await supabase
-      .from('tpl_partners')
-      .update(partnerUpdates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw new Error(`Approval failed: ${error.message}`);
-
-    // 2. Create actual Auth User for them (simulated here)
-    console.log(`[TPL Provisoning] Provisioning account for ${updatedPartner.company_name} approved by ${approverId}`);
-    
+    await this.notifyPartner(
+      partner,
+      updates ? 'Changes approved' : 'Application approved',
+      updates ? 'Your requested changes were approved and your profile is active again.' : 'Your 3PL application was approved.',
+      'tpl_approved',
+      id,
+    );
+    await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },
-  
+
   /**
    * Reject a pending 3PL application (or a partner's pending profile update),
    * recording why so the applicant can see it on the tracking page.
    */
-  async reject(id: string, reason: string) {
+  async reject(id: string, reason: string, actor: AuditActor) {
     const { data: partner, error: fetchErr } = await supabase
       .from('tpl_partners')
-      .select('id, status, pending_updates')
+      .select('id, status, pending_updates, user_id')
       .eq('id', id)
       .maybeSingle();
     if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
@@ -382,13 +409,20 @@ export const tplService = {
     // Rejecting a profile update just clears the request and keeps the partner active;
     // rejecting a first-time application moves it out of the queue.
     const nextStatus = partner.pending_updates ? 'active' : 'rejected';
-    const { data: updated, error } = await supabase
-      .from('tpl_partners')
-      .update({ status: nextStatus, pending_updates: null, rejection_reason: reason })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Rejection failed: ${error.message}`);
+    const updated = await this.transition(
+      id,
+      ['pending'],
+      { status: nextStatus, pending_updates: null, rejection_reason: reason },
+      status => `This partner is already ${status} and is not waiting for review`,
+    );
+    await this.notifyPartner(
+      partner,
+      partner.pending_updates ? 'Changes not approved' : 'Application not approved',
+      `Reason: ${reason}`,
+      'tpl_rejected',
+      id,
+    );
+    await auditService.record('staff-console', actor, 'tpl_rejected', { partner_id: id, company_name: updated.company_name, reason });
     return updated;
   },
 
@@ -422,39 +456,112 @@ export const tplService = {
   },
 
   /**
-   * Pause a 3PL partner
+   * Pause an active 3PL partner
    */
-  async pausePartner(id: string) {
-    const { error } = await supabase
-      .from('tpl_partners')
-      .update({ status: 'paused' })
-      .eq('id', id);
-    if (error) throw new Error(`Failed to pause partner: ${error.message}`);
+  async pausePartner(id: string, actor: AuditActor) {
+    const paused = await this.transition(id, ['active'], { status: 'paused' }, status => `Only an active partner can be paused. This one is ${status}.`);
+    await this.notifyPartner(paused, 'Account paused', 'Your 3PL account was paused. Contact support to resume it.', 'tpl_paused', id);
+    await auditService.record('staff-console', actor, 'tpl_paused', { partner_id: id, company_name: paused.company_name });
     return true;
   },
 
   /**
-   * Resume a 3PL partner
+   * Resume a paused 3PL partner. Only a paused partner can be resumed: a
+   * pending, rejected or deleted-then-recreated one must go through review.
    */
-  async resumePartner(id: string) {
-    const { error } = await supabase
-      .from('tpl_partners')
-      .update({ status: 'active' })
-      .eq('id', id);
-    if (error) throw new Error(`Failed to resume partner: ${error.message}`);
+  async resumePartner(id: string, actor: AuditActor) {
+    const resumed = await this.transition(id, ['paused'], { status: 'active' }, status => `Only a paused partner can be resumed. This one is ${status}.`);
+    await this.notifyPartner(resumed, 'Account resumed', 'Your 3PL account is active again.', 'tpl_resumed', id);
+    await auditService.record('staff-console', actor, 'tpl_resumed', { partner_id: id, company_name: resumed.company_name });
     return true;
   },
 
   /**
    * Delete a 3PL partner (Hard delete)
    */
-  async deletePartner(id: string) {
+  async deletePartner(id: string, actor: AuditActor) {
+    const { data: partner } = await supabase.from('tpl_partners').select('company_name').eq('id', id).maybeSingle();
     const { error } = await supabase
       .from('tpl_partners')
       .delete()
       .eq('id', id);
     if (error) throw new Error(`Failed to delete partner: ${error.message}`);
+    await auditService.record('staff-console', actor, 'tpl_deleted', { partner_id: id, company_name: partner?.company_name ?? null });
     return true;
+  },
+
+  /**
+   * The partner replaces one of their documents from their dashboard. The file
+   * was uploaded through a signed URL issued for this partner's folder; the new
+   * path is checked here. An active partner goes back to review (operations
+   * pause until staff approve again) and staff are told.
+   */
+  async replaceDocument(partnerId: string, docId: string, path: unknown, actor: AuditActor) {
+    const partner = await this.getPartner(partnerId);
+    if (partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
+    if (!['active', 'pending'].includes(partner.status)) {
+      throw new HttpError(409, `Your account is ${partner.status}. Contact support before changing documents.`);
+    }
+    const documents = (partner.tpl_documents ?? []) as { id: string; doc_type: string; file_url: string }[];
+    const doc = documents.find(d => d.id === docId);
+    if (!doc) throw new HttpError(404, 'Document not found');
+    if (typeof path !== 'string' || !path.startsWith(`${partner.id}/`) || path.slice(partner.id.length + 1).includes('/') || path.includes('..')) {
+      throw new HttpError(400, 'Upload the document through the dashboard first');
+    }
+
+    const uploadedAt = new Date().toISOString();
+    const { error } = await supabase.from('tpl_documents').update({ file_url: path, uploaded_at: uploadedAt }).eq('id', docId).eq('partner_id', partner.id);
+    if (error) throw new Error(`Failed to update document: ${error.message}`);
+
+    if (partner.status === 'active') {
+      await this.transition(partner.id, ['active'], { status: 'pending' }, status => `Your account is ${status}.`);
+    }
+    try {
+      await notificationService.notifyStaff(
+        '3PL partner changed a document',
+        `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
+        'tpl_update',
+        { partner_id: partner.id },
+      );
+    } catch (e) {
+      console.error('[tpl] Document notification failed:', e);
+    }
+    await auditService.record('partner-portal', actor, 'tpl_document_replaced', { partner_id: partner.id, doc_type: doc.doc_type });
+    return { id: docId, file_url: path, uploaded_at: uploadedAt, status: 'pending' as const };
+  },
+
+  /**
+   * The partner asks to change their SLA, tax treatment or corridors. Nothing
+   * changes until staff approve: the request is kept as pending_updates and an
+   * active partner goes back to review meanwhile.
+   */
+  async requestSettingsUpdate(partnerId: string, input: Record<string, unknown>, actor: AuditActor) {
+    const partner = await this.getPartner(partnerId);
+    if (partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
+    if (!['active', 'pending'].includes(partner.status)) {
+      throw new HttpError(409, `Your account is ${partner.status}. Contact support before changing settings.`);
+    }
+    const settingsUpdate = assertPartnerSettings(input);
+    const pendingUpdates = { ...settingsUpdate, requested_at: new Date().toISOString() };
+
+    const updated = await this.transition(
+      partner.id,
+      ['active', 'pending'],
+      { pending_updates: pendingUpdates, status: 'pending' },
+      status => `Your account is ${status}.`,
+    );
+    try {
+      await notificationService.notifyStaff(
+        '3PL partner requested changes',
+        `${partner.company_name} asked to change its SLA, tax treatment or corridors.`,
+        'tpl_update',
+        { partner_id: partner.id },
+      );
+    } catch (e) {
+      console.error('[tpl] Settings notification failed:', e);
+    }
+    await auditService.record('partner-portal', actor, 'tpl_settings_requested', { partner_id: partner.id });
+    return { status: updated.status, pending_updates: updated.pending_updates };
   },
 
   /**
