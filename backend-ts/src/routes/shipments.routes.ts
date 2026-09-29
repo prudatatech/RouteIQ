@@ -40,19 +40,14 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, r
   }
 });
 
-// ── GET /track/:tracking_id (PUBLIC — no auth) ─────────────
-router.get('/track/:tracking_id', requireAuth, async (req: Request, res: Response) => {
+// ── GET /track/:tracking_id (PUBLIC — the tracking id is the secret, like a courier's) ──
+// Anyone with the id can track it (the public /track page and mobile links rely on
+// this), so the response carries no vendor, driver or contact details.
+router.get('/track/:tracking_id', async (req: Request, res: Response) => {
   try {
     const info = await ShipmentService.getPublicTracking(req.params.tracking_id);
     if (!info) {
       res.status(404).json({ detail: 'Shipment with this tracking ID not found' });
-      return;
-    }
-
-    const user = (req as any).user;
-    const isAdmin = ['admin', 'superadmin'].includes(user.role);
-    if (!isAdmin && user.user_id !== info.vendor_id) {
-      res.status(403).json({ detail: 'Forbidden: You do not have access to this tracking information.' });
       return;
     }
 

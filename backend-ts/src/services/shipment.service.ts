@@ -39,6 +39,20 @@ const getETA = (distance: string, createdAt: string): string => {
   });
 };
 
+/** Average road speed used for the public arrival estimate (straight-line distance). */
+const ETA_AVERAGE_SPEED_KMPH = 40;
+
+/** Straight-line arrival estimate in minutes, or null when a position is missing. */
+function estimateEtaMinutes(fromLat?: number | null, fromLng?: number | null, toLat?: number | null, toLng?: number | null): number | null {
+  if (fromLat == null || fromLng == null || toLat == null || toLng == null) return null;
+  const R = 6371;
+  const dLat = ((toLat - fromLat) * Math.PI) / 180;
+  const dLng = ((toLng - fromLng) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((fromLat * Math.PI) / 180) * Math.cos((toLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.max(1, Math.round((km / ETA_AVERAGE_SPEED_KMPH) * 60));
+}
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -944,7 +958,7 @@ export class ShipmentService {
 
       const { data: manifest } = await supabase
         .from('cargo_manifest')
-        .select('*, vehicles(*), vendor_shipment_requests(vendor_id)')
+        .select('*, vehicles(*)')
         .gte('id', `${manifestIdPrefix}-0000-0000-0000-000000000000`)
         .lte('id', `${manifestIdPrefix}-ffff-ffff-ffff-ffffffffffff`)
         .limit(1)
@@ -955,17 +969,16 @@ export class ShipmentService {
       const trackingInfo: Record<string, any> = {
         id: manifest.id,
         tracking_id: trackingId,
-        vendor_id: manifest.vendor_shipment_requests?.vendor_id || null,
         status: manifest.status === 'scheduled' ? 'created' : manifest.status,
-        priority: 'high',
-        total_items: 1,
+        priority: null,
+        total_items: null,
         total_weight_kg: manifest.capacity_kg,
-        origin_name: 'Pickup Point',
+        origin_name: manifest.pickup_location,
         origin_address: manifest.pickup_location,
         origin_lat: manifest.pickup_lat,
         origin_lng: manifest.pickup_lng,
         destination: {
-          name: 'Drop Point',
+          name: manifest.drop_location,
           address: manifest.drop_location,
           lat: manifest.drop_lat,
           lng: manifest.drop_lng
@@ -985,23 +998,11 @@ export class ShipmentService {
           lng: v.longitude,
         };
 
-        // Rough ETA calculation based on distance from vehicle to pickup or drop
-        const targetLat = manifest.status === 'in_transit' ? manifest.drop_lat : manifest.pickup_lat;
-        const targetLng = manifest.status === 'in_transit' ? manifest.drop_lng : manifest.pickup_lng;
-
-        if (v.latitude && v.longitude && targetLat && targetLng) {
-          const R = 6371; // km
-          const dLat = (targetLat - v.latitude) * Math.PI / 180;
-          const dLon = (targetLng - v.longitude) * Math.PI / 180;
-          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(v.latitude * Math.PI / 180) * Math.cos(targetLat * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          const distanceKm = R * c;
-
-          // Assume 40km/h average speed
-          trackingInfo.eta_minutes = Math.max(5.0, Math.round((distanceKm / 40) * 60));
-        }
+        // Next stop: pickup until the load is in transit, then the drop.
+        const target = manifest.status === 'in_transit'
+          ? { lat: manifest.drop_lat, lng: manifest.drop_lng }
+          : { lat: manifest.pickup_lat, lng: manifest.pickup_lng };
+        trackingInfo.eta_minutes = estimateEtaMinutes(v.latitude, v.longitude, target.lat, target.lng);
       }
 
       return trackingInfo;
@@ -1057,8 +1058,10 @@ export class ShipmentService {
             lng: vehicle.longitude,
           };
         }
-        if (route.status === 'active') {
-          trackingInfo.eta_minutes = Math.max(5.0, route.total_duration_minutes);
+        // The route's total duration is not an arrival time; estimate from where the
+        // vehicle is now to this shipment's drop point instead.
+        if (route.status === 'active' && vehicle) {
+          trackingInfo.eta_minutes = estimateEtaMinutes(vehicle.latitude, vehicle.longitude, dp.latitude, dp.longitude);
         }
       }
     }
