@@ -22,6 +22,8 @@ export interface AddressPickerProps {
   showMap?: boolean
   /** Offer "Use my location" (useful for vendors at their premises; less so for a far destination). */
   allowCurrentLocation?: boolean
+  /** Share recently used places between pickers with the same key (see PlaceSearch). */
+  recentPlacesKey?: string
   className?: string
 }
 
@@ -37,7 +39,7 @@ const pinnedLabel = ({ lat, lng }: LatLng) => `Pinned location (${lat.toFixed(5)
  */
 export default function AddressPicker({
   label, value, onChange, required, error, hint, placeholder, kind = 'location', mapHeight = 220,
-  showMap = true, allowCurrentLocation = true, className,
+  showMap = true, allowCurrentLocation = true, recentPlacesKey, className,
 }: AddressPickerProps) {
   const map = useRef<MapViewHandle>(null)
   const [locating, setLocating] = useState(false)
@@ -87,6 +89,7 @@ export default function AddressPicker({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        recentPlacesKey={recentPlacesKey}
       />
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">

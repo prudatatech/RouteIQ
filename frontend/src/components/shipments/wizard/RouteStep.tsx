@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { Checkbox, IconButton, Input, PlaceSearch } from '@/components/ui'
-import { MapView, type MapPoint } from '@/components/map'
-import type { ResolvedPlace } from '@/services/geocoding'
+import { AddressPicker, MapView, type LatLng, type MapPoint } from '@/components/map'
+import { reversePlace, type ResolvedPlace } from '@/services/geocoding'
 import type { StepProps } from './stepProps'
 import { todayIso } from './validation'
 
@@ -17,12 +17,12 @@ function routePoints(
   stops: { id: string; name: string; address: string; lat: number; lng: number }[],
 ): MapPoint[] {
   const points: MapPoint[] = []
-  if (origin) points.push({ id: 'pickup', kind: 'pickup', label: `Pickup: ${origin.address ?? ''}`, position: { lat: origin.lat, lng: origin.lng } })
+  if (origin) points.push({ id: 'pickup', kind: 'pickup', label: `Pickup: ${origin.address ?? ''}`, position: { lat: origin.lat, lng: origin.lng }, draggable: true })
   stops.forEach((s, i) => {
     if (!s.lat || !s.lng) return
-    points.push({ id: s.id || `stop-${i}`, kind: 'location', label: `Stop ${i + 1}: ${s.name}`, position: { lat: s.lat, lng: s.lng } })
+    points.push({ id: s.id || `stop-${i}`, kind: 'location', label: `Stop ${i + 1}: ${s.name}`, position: { lat: s.lat, lng: s.lng }, draggable: true })
   })
-  if (destination) points.push({ id: 'drop', kind: 'drop', label: `Destination: ${destination.address ?? ''}`, position: { lat: destination.lat, lng: destination.lng } })
+  if (destination) points.push({ id: 'drop', kind: 'drop', label: `Destination: ${destination.address ?? ''}`, position: { lat: destination.lat, lng: destination.lng }, draggable: true })
   return points
 }
 
@@ -38,37 +38,66 @@ export default function RouteStep({ data, update, errors }: StepProps) {
     ? { address: data.delivery_point_address || data.delivery_point_name, lat: data.dest_lat, lng: data.dest_lng }
     : null
 
+  const setOrigin = (place: ResolvedPlace | null) => update(place
+    ? { origin_name: nameOf(place), origin_address: place.address, origin_lat: place.lat, origin_lng: place.lng }
+    : { origin_name: '', origin_address: '', origin_lat: 0, origin_lng: 0 })
+  const setDestination = (place: ResolvedPlace | null) => update(place
+    ? { delivery_point_name: nameOf(place), delivery_point_address: place.address, dest_lat: place.lat, dest_lng: place.lng }
+    : { delivery_point_name: '', delivery_point_address: '', dest_lat: 0, dest_lng: 0 })
+
+  /** A pin placed on the map, named by reverse lookup (coordinates when no name is found). */
+  const placeAt = async (position: LatLng): Promise<ResolvedPlace> =>
+    (await reversePlace(position.lat, position.lng).catch(() => null))
+      ?? { address: `Pinned location (${position.lat.toFixed(5)}, ${position.lng.toFixed(5)})`, lat: position.lat, lng: position.lng }
+
+  // Clicking the map fills the pickup first, then the destination.
+  const onPick = async (position: LatLng) => {
+    if (origin && destination) return
+    const place = await placeAt(position)
+    if (!origin) setOrigin(place)
+    else setDestination(place)
+  }
+
+  const onPointMove = async (id: string, position: LatLng) => {
+    const place = await placeAt(position)
+    if (id === 'pickup') setOrigin(place)
+    else if (id === 'drop') setDestination(place)
+    else update({ stops: stops.map(s => (s.id === id ? { ...s, name: nameOf(place), address: place.address, lat: place.lat, lng: place.lng } : s)) })
+  }
+
   return (
     <div className="space-y-5">
-      <PlaceSearch
+      <AddressPicker
         label="Pickup"
         required
+        kind="pickup"
+        showMap={false}
         placeholder="Where is the cargo collected?"
-        value={origin}
+        value={origin && { address: origin.address ?? '', lat: origin.lat, lng: origin.lng }}
         error={errors.origin}
         recentPlacesKey={RECENT_PLACES_KEY}
-        onChange={place => update(place
-          ? { origin_name: nameOf(place), origin_address: place.address, origin_lat: place.lat, origin_lng: place.lng }
-          : { origin_name: '', origin_address: '', origin_lat: 0, origin_lng: 0 })}
+        onChange={setOrigin}
       />
-      <PlaceSearch
+      <AddressPicker
         label="Destination"
         required
+        kind="drop"
+        showMap={false}
+        allowCurrentLocation={false}
         placeholder="Where is it going?"
-        value={destination}
+        value={destination && { address: destination.address ?? '', lat: destination.lat, lng: destination.lng }}
         error={errors.destination}
         recentPlacesKey={RECENT_PLACES_KEY}
-        onChange={place => update(place
-          ? { delivery_point_name: nameOf(place), delivery_point_address: place.address, dest_lat: place.lat, dest_lng: place.lng }
-          : { delivery_point_name: '', delivery_point_address: '', dest_lat: 0, dest_lng: 0 })}
+        onChange={setDestination}
       />
 
-      {(origin || destination) && (
+      <div>
         <div className="overflow-hidden rounded-card border border-border">
           <MapView
             mode={origin && destination ? 'route' : 'picker'}
-            height={220}
-            interactive={false}
+            height={260}
+            onPick={origin && destination ? undefined : onPick}
+            onPointMove={onPointMove}
             points={routePoints(origin, destination, stops)}
             route={origin && destination
               ? {
@@ -76,10 +105,15 @@ export default function RouteStep({ data, update, errors }: StepProps) {
                 planned: true,
               }
               : null}
-            ariaLabel="Preview of the pickup, stops and destination"
+            ariaLabel="Map of the pickup, stops and destination. Click to place a pin, drag pins to adjust."
           />
         </div>
-      )}
+        <p className="mt-1.5 text-xs text-muted">
+          {!origin ? 'Click the map to set the pickup, or search above.'
+            : !destination ? 'Click the map to set the destination, or search above.'
+              : 'Drag any pin to the exact gate or dock.'}
+        </p>
+      </div>
 
       <div className="space-y-2">
         <PlaceSearch
