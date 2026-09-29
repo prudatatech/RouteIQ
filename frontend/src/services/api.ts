@@ -116,6 +116,8 @@ export const optimizationAPI = {
 
 export const dashboardAPI = {
   kpis: () => api.get('/dashboard/kpis/').then(r => r.data),
+  /** Exact number of shipments in each status, counted by the server (staff only). */
+  shipmentCounts: () => api.get('/dashboard/shipment-counts').then(r => r.data as { counts: Record<string, number>; total: number }),
 }
 
 export const usersAPI = {
