@@ -26,6 +26,7 @@ import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
 import { useParcelScan } from '../hooks/useParcelScan';
 import { useActionQueue } from '../hooks/useActionQueue';
+import { useDispatchPhone } from '../hooks/useDispatchPhone';
 import { withQueuedStops } from '../utils/queuedStops';
 import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
@@ -80,6 +81,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { refresh } = data;
   // Actions waiting to be sent (no signal) show on the route already: a stop done offline counts as done.
   const queue = useActionQueue(refresh);
+  const dispatch = useDispatchPhone();
   const routeData = useMemo(() => withQueuedStops(data.routeData, queue.items), [data.routeData, queue.items]);
   const route = routeData?.route;
   const routeActive = !!routeData?.active && route?.status === 'active';
@@ -182,6 +184,16 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         takeBreak();
       },
     });
+    list.push({
+      key: 'call_dispatch',
+      icon: 'call-outline',
+      title: t('call_dispatch'),
+      subtitle: dispatch.phone ?? t('dispatch_no_number_title'),
+      onPress: () => {
+        closeModal();
+        dispatch.callDispatch();
+      },
+    });
     if (routeActive) {
       list.push({
         key: 'full_route',
@@ -235,7 +247,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       },
     });
     return list;
-  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, t]);
+  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, dispatch, t]);
 
   const sosButton = <SosButton onHoldComplete={raiseSos} onTap={() => openModal({ kind: 'sosCountdown' })} />;
 
@@ -268,10 +280,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         return data.incomingCall ? (
           <IncomingCallDialog
             caller={data.incomingCall.caller}
+            phone={dispatch.phone}
             onDecline={() => data.setIncomingCall(null)}
             onAnswer={() => {
               data.setIncomingCall(null);
-              Alert.alert(t('call_answer_title'), t('call_answer_desc'));
+              dispatch.callDispatch();
             }}
           />
         ) : null;
@@ -426,6 +439,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               sending={messages.sending}
               onRetry={messages.retry}
               onSend={messages.sendMessage}
+              onCallDispatch={dispatch.callDispatch}
             />
           )}
           {activeTab === 'wallet' && <WalletTab onOpenInvoice={(invoice) => openModal({ kind: 'invoice', invoice })} />}

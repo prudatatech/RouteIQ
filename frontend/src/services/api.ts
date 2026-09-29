@@ -332,6 +332,12 @@ export const messagesAPI = {
   unread: () => api.get('/messages/unread').then(r => r.data as { total: number; threads: UnreadThread[] }),
 }
 
+/** The dispatcher's phone number, which drivers call from the driver app. */
+export const dispatchAPI = {
+  contact: () => api.get('/driver/dispatch-contact').then(r => r.data as { phone: string | null }),
+  saveContact: (phone: string | null) => api.put('/driver/dispatch-contact', { phone }).then(r => r.data as { phone: string | null }),
+}
+
 export const tplAPI = {
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),

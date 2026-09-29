@@ -9,6 +9,8 @@
  *   URL and records the path; POST /storage/v1/object/sign/<bucket>/<path> does
  *   the same for a signed download URL.
  *
+ * Upserts match an existing row on the `on_conflict` columns (default `id`).
+ *
  * Filters: `eq.`, `neq.`, `is.` and `in.(...)` on query params. `select`,
  * `order`, `limit` and other operators are ignored, so fixture rows are
  * returned as written (including any embedded relations they carry).
@@ -329,7 +331,11 @@ class MockSupabase {
           this.mutations.push({ method: 'POST', table, body, query: Object.fromEntries(url.searchParams) });
           const upsert = String(req.headers['prefer'] ?? '').includes('merge-duplicates');
           result = (Array.isArray(body) ? body : [body]).map((input: Row) => {
-            const existing = upsert && input.id != null ? rows.find(r => r.id === input.id) : undefined;
+            // Upsert matches on `on_conflict` columns (default: id)
+            const conflictColumns = (url.searchParams.get('on_conflict') ?? 'id').split(',');
+            const existing = upsert && conflictColumns.every(c => input[c] != null)
+              ? rows.find(r => conflictColumns.every(c => r[c] === input[c]))
+              : undefined;
             if (existing) return Object.assign(existing, input);
             const row = { id: crypto.randomUUID(), ...input };
             rows.push(row);

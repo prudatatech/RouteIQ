@@ -16,6 +16,7 @@ interface MessagesTabProps {
   sending: boolean;
   onRetry: () => void;
   onSend: (body: string) => Promise<void>;
+  onCallDispatch: () => void;
 }
 
 const MAX_LENGTH = 2000;
@@ -31,21 +32,33 @@ const formatTime = (iso: string) =>
   }).format(new Date(iso));
 
 /** Text conversation with dispatch for the current route. */
-export default function MessagesTab({ hasRoute, messages, loading, failed, sending, onRetry, onSend }: MessagesTabProps) {
+export default function MessagesTab({ hasRoute, messages, loading, failed, sending, onRetry, onSend, onCallDispatch }: MessagesTabProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const busy = useRef(false);
 
+  const callButton = (
+    <Button
+      title={t('call_dispatch')}
+      variant="secondary"
+      onPress={onCallDispatch}
+      icon={(color) => <Ionicons name="call-outline" size={size.icon.md} color={color} />}
+    />
+  );
+
   if (!hasRoute) {
     return (
-      <Card>
-        <EmptyState
-          icon={<Ionicons name="chatbubbles-outline" size={size.icon.xl} color={colors.textMuted} />}
-          title={t('messages_no_route_title')}
-          message={t('messages_no_route_desc')}
-        />
-      </Card>
+      <View style={styles.container}>
+        <Card>
+          <EmptyState
+            icon={<Ionicons name="chatbubbles-outline" size={size.icon.xl} color={colors.textMuted} />}
+            title={t('messages_no_route_title')}
+            message={t('messages_no_route_desc')}
+          />
+        </Card>
+        {callButton}
+      </View>
     );
   }
 
@@ -66,6 +79,8 @@ export default function MessagesTab({ hasRoute, messages, loading, failed, sendi
 
   return (
     <View style={styles.container}>
+      {callButton}
+
       {failed ? <ErrorBanner message={t('messages_load_failed')} action={{ label: t('retry'), onPress: onRetry }} /> : null}
 
       <Card style={styles.thread}>

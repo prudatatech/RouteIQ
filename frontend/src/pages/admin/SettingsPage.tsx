@@ -1,11 +1,75 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { financeAPI } from '@/services/api'
+import { dispatchAPI, financeAPI } from '@/services/api'
 import { Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Page, PageHeader, Skeleton } from '@/components/ui'
 import { errorMessage, formatRupees } from '@/utils/display'
 
-/** Numbers the fleet's costs are worked out from. */
+const PHONE_PATTERN = /^\+?[0-9]{7,15}$/
+
+/** The number drivers call from the driver app. */
+function DispatchPhoneCard() {
+  const queryClient = useQueryClient()
+  const contact = useQuery({ queryKey: ['dispatch-contact'], queryFn: () => dispatchAPI.contact() })
+  const [phone, setPhone] = useState('')
+  const [error, setError] = useState<string | undefined>()
+
+  useEffect(() => {
+    if (contact.data) setPhone(contact.data.phone ?? '')
+  }, [contact.data])
+
+  const save = useMutation({
+    mutationFn: (value: string | null) => dispatchAPI.saveContact(value),
+    onSuccess: data => {
+      toast.success(data.phone ? 'Dispatch phone saved' : 'Dispatch phone removed')
+      queryClient.setQueryData(['dispatch-contact'], data)
+    },
+    onError: err => toast.error(errorMessage(err, 'We could not save the dispatch phone. Try again.')),
+  })
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const cleaned = phone.replace(/[\s\-().]/g, '')
+    if (cleaned && !PHONE_PATTERN.test(cleaned)) {
+      setError('Enter 7 to 15 digits, with an optional + at the start')
+      return
+    }
+    setError(undefined)
+    save.mutate(cleaned || null)
+  }
+
+  const current = contact.data?.phone ?? ''
+  const unchanged = phone.replace(/[\s\-().]/g, '') === current
+
+  return (
+    <Card>
+      <CardHeader title="Dispatch phone" description="Drivers call this number from the driver app: from More actions, and when dispatch rings them." />
+      <CardBody>
+        {contact.isLoading ? <Skeleton className="h-16 w-full" /> : contact.isError ? (
+          <ErrorState compact title="We could not load the dispatch phone" onRetry={() => contact.refetch()} />
+        ) : (
+          <form onSubmit={submit} noValidate className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <Input
+              label="Phone number"
+              className="sm:w-64"
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="+91 98765 43210"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              error={error}
+              hint={current ? undefined : 'Not set yet. Drivers see that no number is set.'}
+            />
+            <Button type="submit" loading={save.isPending} disabled={unchanged}>{phone.trim() ? 'Save phone' : 'Remove phone'}</Button>
+          </form>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/** Numbers the fleet's costs are worked out from, and how drivers reach dispatch. */
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['finance', 'settings'], queryFn: () => financeAPI.settings() })
@@ -42,7 +106,7 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Values that profit and loss and pricing are worked out from." />
+      <PageHeader title="Settings" description="Values that profit and loss and pricing are worked out from, and the number drivers call." />
 
       {settings.isError ? (
         <ErrorState title="We could not load settings" description="Check your connection and try again." onRetry={() => settings.refetch()} />
@@ -71,6 +135,8 @@ export default function SettingsPage() {
               )}
             </CardBody>
           </Card>
+
+          <DispatchPhoneCard />
 
           <Card>
             <CardHeader title="Rate card" description="Read only here." />

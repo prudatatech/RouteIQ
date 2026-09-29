@@ -7,6 +7,8 @@ import { colors, radius, size, space } from '../../theme';
 
 interface IncomingCallDialogProps {
   caller: string;
+  /** The number the driver will ring back; shown when known. */
+  phone?: string | null;
   onDecline: () => void;
   onAnswer: () => void;
 }
@@ -14,7 +16,7 @@ interface IncomingCallDialogProps {
 const CALL_BUTTON = 64;
 
 /** Dispatch is calling the driver. */
-export default function IncomingCallDialog({ caller, onDecline, onAnswer }: IncomingCallDialogProps) {
+export default function IncomingCallDialog({ caller, phone, onDecline, onAnswer }: IncomingCallDialogProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -28,6 +30,11 @@ export default function IncomingCallDialog({ caller, onDecline, onAnswer }: Inco
         <Text variant="body" color="textMuted" align="center">
           {`${caller} ${t('is_calling')}`}
         </Text>
+        {phone ? (
+          <Text variant="monoMedium" color="textMuted" align="center">
+            {phone}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.actions}>
@@ -49,12 +56,12 @@ export default function IncomingCallDialog({ caller, onDecline, onAnswer }: Inco
             style={({ pressed }) => [styles.callButton, styles.answer, pressed && styles.pressed]}
             onPress={onAnswer}
             accessibilityRole="button"
-            accessibilityLabel={t('answer')}
+            accessibilityLabel={t('call_dispatch')}
           >
             <Ionicons name="call" size={size.icon.lg} color={colors.onSolid} />
           </Pressable>
           <Text variant="caption" color="textMuted">
-            {t('answer')}
+            {t('call_dispatch')}
           </Text>
         </View>
       </View>

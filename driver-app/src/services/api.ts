@@ -333,6 +333,11 @@ class ApiClient {
     return this.request('POST', '/driver/scan', data, true, idempotencyHeader(idempotencyKey));
   }
 
+  /** The number to call dispatch on, or null when staff have not set one. */
+  async getDispatchContact(): Promise<{ phone: string | null }> {
+    return this.request('GET', '/driver/dispatch-contact');
+  }
+
   // ── Messages with dispatch ─────────────────────────────────
 
   async getMessages(route_id: string): Promise<ChatMessage[]> {
