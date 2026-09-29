@@ -42,7 +42,11 @@ export function DocumentsTab({ detail, canEdit, canAdmin }: { detail: PersonDeta
 
   const review = useMutation({
     mutationFn: ({ doc, data }: { doc: PersonDocument; data: Record<string, unknown> }) => peopleAPI.updateDocument(user.id, doc.id, data),
-    onSuccess: (_d, { data }) => { toast.success(data.status === 'verified' ? 'Document verified' : 'Document rejected'); refresh() },
+    onSuccess: (saved, { data }) => {
+      toast.success(data.status === 'verified' ? 'Document verified' : 'Document rejected')
+      for (const message of (saved as { warning_messages?: string[] } | undefined)?.warning_messages ?? []) toast(message, { duration: 9000 })
+      refresh()
+    },
     onError: err => toast.error(errorMessage(err, 'We could not update this document. Try again.')),
   })
   const archive = useMutation({

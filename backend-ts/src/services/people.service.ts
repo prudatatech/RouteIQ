@@ -35,7 +35,7 @@ import {
   assertPhoneAvailable, duplicateError, getProfile, parseProfileInput, profileOut, recordPhoneChange, releasePhone, saveProfile,
 } from './people-profile.service';
 import { findDocumentDuplicate, listDocuments } from './people-documents.service';
-import { listBankAccounts, listContacts, listNotes } from './people-bank.service';
+import { getPayoutAccount, listBankAccounts, listContacts, listNotes } from './people-bank.service';
 
 /** Placeholder sign-in email driver OTP login uses for a phone. Never shown as the person's email. */
 export const driverEmailFor = (phone: string): string => `driver_${phone.replace(/\+/g, '')}@${DRIVER_EMAIL_DOMAIN}`;
@@ -265,6 +265,7 @@ export async function getPersonDetail(actor: Actor, id: string) {
     complete: doc_summary.required > 0 && doc_summary.verified === doc_summary.required,
     emergency_contacts: contacts,
     bank_accounts: bank,
+    payout_account: bankAllowed && subject.role === 'driver' ? await getPayoutAccount(id) : null,
     bank_access: profile.employer_type === 'partner' ? 'partner' : bankAllowed ? 'full' : 'none',
     status_history: historyRows.map(h => ({ ...h, changed_by_name: names.get(h.changed_by) ?? null })),
     notes,
@@ -582,6 +583,38 @@ async function checkDriverBusy(subject: PersonRow, verb: string): Promise<Releas
   return { vehicleIds: ids, plates: list.map(v => v.plate_number as string), pendingRoutes: (routes ?? []).filter(r => r.status === 'pending').length };
 }
 
+/**
+ * A driver who can no longer work must not leave stop prompts hanging: the
+ * scheduler would otherwise auto-accept them for a person who is not there.
+ * Unanswered prompts for their vehicles are closed as `released` (the same
+ * column the confirmation timeout writes) and staff are told which ones.
+ */
+export async function releaseUnansweredPrompts(actor: Actor, subject: PersonRow, vehicleIds: string[], why: string): Promise<number> {
+  if (vehicleIds.length === 0) return 0;
+  const { data: open, error } = await supabase.from('driver_confirmations').select('id, route_stop_id, vehicle_id').in('vehicle_id', vehicleIds).is('action', null);
+  if (error) throw new Error(`Failed to read stop prompts: ${error.message}`);
+  const released: Array<{ id: string; route_stop_id: string | null; vehicle_id: string }> = [];
+  for (const conf of open ?? []) {
+    // Only if the driver has not answered in the meantime
+    const { data } = await supabase.from('driver_confirmations').update({ action: 'released', responded_at: nowIso() }).eq('id', conf.id).is('action', null).select('id').maybeSingle();
+    if (data) released.push(conf as any);
+  }
+  if (released.length === 0) return 0;
+  const name = subject.full_name ?? 'A driver';
+  await logActivity(subject.id, actor.user_id, 'prompts_released', { prompts: released.map(r => r.id), stops: released.map(r => r.route_stop_id), reason: why });
+  try {
+    await notificationService.notifyStaff(
+      'Stop prompts released',
+      `${name} ${why}. ${released.length} unanswered stop prompt${released.length === 1 ? ' was' : 's were'} released and need${released.length === 1 ? 's' : ''} dispatch attention.`,
+      'stop_prompts_released',
+      { user_id: subject.id, prompts: released.map(r => ({ id: r.id, route_stop_id: r.route_stop_id, vehicle_id: r.vehicle_id })) },
+    );
+  } catch (e: any) {
+    console.error('[people] could not notify about released prompts:', e.message);
+  }
+  return released.length;
+}
+
 export async function changeStatus(actor: Actor, id: string, body: Record<string, any>) {
   const subject = await loadPerson(id);
   if (id === actor.user_id) throw new HttpError(403, "You can't change your own status");
@@ -633,8 +666,13 @@ export async function changeStatus(actor: Actor, id: string, body: Record<string
         invalidateDriverVehicles();
         await cacheDeletePattern('vehicles:list:*');
         await logActivity(id, actor.user_id, 'vehicles_released', { vehicles: busy.plates, pending_routes: busy.pendingRoutes });
+        await releaseUnansweredPrompts(actor, subject, busy.vehicleIds, status === 'inactive' ? 'was deactivated' : 'was suspended');
       }
     }
+  }
+  if (status === 'on_leave' && subject.role === 'driver') {
+    const { data: theirs } = await supabase.from('vehicles').select('id').eq('driver_id', id);
+    await releaseUnansweredPrompts(actor, subject, (theirs ?? []).map(v => v.id as string), 'was put on leave');
   }
 
   const isActive = SIGN_IN_STATUSES.has(status);

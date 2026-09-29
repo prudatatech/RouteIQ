@@ -171,6 +171,12 @@ export async function importPeople(actor: Actor, csv: string, commit: boolean): 
 
 // ── Exports ────────────────────────────────────────────────
 
+/** A timestamp as an Indian date and time (YYYY-MM-DD HH:mm IST), or empty. */
+export function istStamp(iso: unknown): string {
+  const t = typeof iso === 'string' ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? `${new Date(t + 330 * 60_000).toISOString().slice(0, 16).replace('T', ' ')} IST` : '';
+}
+
 /** People and where their documents stand, as CSV. No bank or identity numbers. */
 export async function exportPeopleCsv(): Promise<string> {
   const people = await listPeopleAll({});
@@ -181,7 +187,7 @@ export async function exportPeopleCsv(): Promise<string> {
     people.map(p => {
       const profile = byId.get(p.id);
       return [p.full_name, p.role, p.status, p.phone, p.email, p.employee_code, p.designation, profile?.department, profile?.date_of_joining, p.vehicle_plate,
-        p.doc_summary.required, p.doc_summary.verified, p.doc_summary.pending, p.doc_summary.expiring, p.doc_summary.expired, p.doc_summary.missing, p.last_login];
+        p.doc_summary.required, p.doc_summary.verified, p.doc_summary.pending, p.doc_summary.expiring, p.doc_summary.expired, p.doc_summary.missing, istStamp(p.last_login)];
     }),
   );
 }

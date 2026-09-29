@@ -18,6 +18,7 @@ import { sendError } from '../core/errors';
 import { normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { driverWindows, inWindows } from '../services/driver-assignments.service';
+import { getPayoutAccount } from '../services/people-bank.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -790,7 +791,7 @@ router.get('/driver/earnings', requireAuth, async (req: Request, res: Response) 
   try {
     const userId = req.user?.user_id;
     if (!userId || req.user?.role !== 'driver') { res.status(403).json({ detail: 'Only drivers' }); return; }
-    res.json(await buildEarnings(userId));
+    res.json({ ...(await buildEarnings(userId)), payout_account: await getPayoutAccount(userId) });
   } catch (e: any) { sendError(req, res, e); }
 });
 
@@ -820,6 +821,7 @@ router.get('/driver/earnings/history', requireAuth, async (req: Request, res: Re
       limit,
       offset,
       has_more: offset + page.length < completed_trips,
+      payout_account: await getPayoutAccount(userId),
     });
   } catch (e: any) { sendError(req, res, e); }
 });
