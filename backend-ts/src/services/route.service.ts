@@ -105,7 +105,7 @@ export const routeService = {
         .from('routes')
         .select('id')
         .eq('vehicle_id', route.vehicle_id)
-        .in('status', ['active', 'in_progress'])
+        .eq('status', 'active')
         .neq('id', route.id)
         .limit(1);
       if (othersErr) throw new Error(`Failed to check the vehicle's other routes: ${othersErr.message}`);

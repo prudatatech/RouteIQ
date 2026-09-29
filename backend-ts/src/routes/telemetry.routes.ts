@@ -624,7 +624,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       .from('routes')
       .select('id, status, total_distance_km, total_duration_minutes')
       .eq('vehicle_id', vehicle?.id || '')
-      .in('status', ['active', 'pending', 'in_progress'])
+      .in('status', ['active', 'pending'])
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -970,7 +970,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
           .from('routes')
           .update({ status: 'completed', completed_at: new Date().toISOString() })
           .eq('id', stop.route_id)
-          .in('status', ['pending', 'active', 'in_progress']);
+          .in('status', ['pending', 'active']);
 
         const { data: route } = await supabase
           .from('routes')

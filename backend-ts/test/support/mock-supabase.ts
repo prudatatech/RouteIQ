@@ -34,6 +34,39 @@ type Schema = Record<string, string[]>;
 
 const schema: Schema = JSON.parse(fs.readFileSync(path.join(__dirname, 'db-schema.json'), 'utf8'));
 
+/** Allowed values of enum columns ("table.column" -> labels), as in the live database. */
+const enums: Record<string, string[]> = JSON.parse(fs.readFileSync(path.join(__dirname, 'db-enums.json'), 'utf8'));
+
+/**
+ * Postgres rejects a value an enum doesn't have (22P02), in filters and in
+ * written rows alike. Returns the message, or null when every value is valid.
+ */
+function validateEnumValues(table: string, params: URLSearchParams, body: unknown): string | null {
+  const bad = (column: string, value: unknown) => {
+    const allowed = enums[`${table}.${column}`];
+    return allowed && typeof value === 'string' && !allowed.includes(value)
+      ? `invalid input value for enum ${table}_${column}: "${value}"`
+      : null;
+  };
+  for (const [key, raw] of params) {
+    if (!enums[`${table}.${key}`]) continue;
+    const m = /^(?:not\.)?(eq|neq|in)\.(.*)$/.exec(raw);
+    if (!m) continue;
+    const values = m[1] === 'in' ? m[2].replace(/^\(|\)$/g, '').split(',').map(v => v.replace(/^"|"$/g, '')) : [m[2]];
+    for (const v of values) {
+      const err = bad(key, v);
+      if (err) return err;
+    }
+  }
+  for (const row of Array.isArray(body) ? body : body && typeof body === 'object' ? [body] : []) {
+    for (const [column, value] of Object.entries(row as Record<string, unknown>)) {
+      const err = bad(column, value);
+      if (err) return err;
+    }
+  }
+  return null;
+}
+
 interface ColumnError {
   message: string;
 }
@@ -316,6 +349,14 @@ class MockSupabase {
           if (bodyErr) return sendColumnError(bodyErr);
         }
       }
+      let written: unknown;
+      try {
+        written = (req.method === 'POST' || req.method === 'PATCH') && raw ? JSON.parse(raw) : undefined;
+      } catch {
+        written = undefined;
+      }
+      const enumErr = validateEnumValues(table, url.searchParams, written);
+      if (enumErr) return send(400, { code: '22P02', details: null, hint: null, message: enumErr });
 
       const rows = this.rows(table);
       const matching = rows.filter(row => matches(row, url.searchParams));

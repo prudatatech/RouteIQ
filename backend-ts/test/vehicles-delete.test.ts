@@ -50,8 +50,8 @@ describe('DELETE /vehicles/:id — refuses while on an active route', () => {
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);
   });
 
-  it.each(['active', 'in_progress'])('refuses to delete a vehicle with a %s route', async routeStatus => {
-    reset('available', [{ id: 'route-1', vehicle_id: 'veh-1', status: routeStatus }]);
+  it('refuses to delete a vehicle with an active route', async () => {
+    reset('available', [{ id: 'route-1', vehicle_id: 'veh-1', status: 'active' }]);
     const res = await del('veh-1');
     expect(res.status).toBe(409);
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);

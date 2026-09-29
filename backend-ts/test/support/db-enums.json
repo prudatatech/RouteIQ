@@ -1,0 +1,51 @@
+{
+    "users.role": [
+        "superadmin",
+        "admin",
+        "manager",
+        "driver",
+        "vendor"
+    ],
+    "routes.status": [
+        "pending",
+        "optimizing",
+        "active",
+        "completed",
+        "cancelled"
+    ],
+    "vehicles.status": [
+        "available",
+        "on_route",
+        "idle",
+        "maintenance",
+        "offline",
+        "archived"
+    ],
+    "shipments.status": [
+        "created",
+        "picked_up",
+        "in_transit",
+        "delivered",
+        "cancelled",
+        "assigned",
+        "exception"
+    ],
+    "shipments.priority": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+    ],
+    "vehicles.vehicle_type": [
+        "truck",
+        "van",
+        "bike",
+        "car"
+    ],
+    "maintenance_alerts.severity": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+    ]
+}

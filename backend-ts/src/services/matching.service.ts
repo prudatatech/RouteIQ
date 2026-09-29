@@ -39,7 +39,7 @@ export const matchingService = {
     const { data: vehicles, error: vehErr } = await supabase
       .from('vehicles')
       .select('id, latitude, longitude, status, vehicle_type')
-      .in('status', ['idle', 'available', 'active']) // Allow active if they have available capacity, but idle preferred
+      .in('status', ['idle', 'available', 'on_route']) // On-route trucks can take a load when they have capacity; idle preferred
       .eq('vehicle_type', required_vehicle_type || 'Tractor Trailer');
 
     if (vehErr) {

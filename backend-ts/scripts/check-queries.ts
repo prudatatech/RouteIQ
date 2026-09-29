@@ -12,6 +12,10 @@
  *     objects) naming an unknown column as a literal object key.
  *   - `.eq/.neq/.in/.is/.gt/.lt/.gte/.lte/.order('col', ...)` naming an unknown
  *     column on the table currently in scope.
+ *   - `.eq/.neq('col', 'value')` and `.in('col', ['a', 'b'])` on an enum column
+ *     using a value the enum doesn't have (Postgres rejects it, a 500 at runtime).
+ *     Allowed values come from backend-ts/test/support/db-enums.json
+ *     (scripts/dump-enums.sql).
  *
  * How it works (deliberately simple, regex/string scanning, no real JS/TS parser):
  *   1. Find every `.from('table')` (or "..."/`...`) call.
@@ -46,6 +50,16 @@ import path from 'path';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCHEMA_PATH = path.join(ROOT, 'backend-ts', 'test', 'support', 'db-schema.json');
+const ENUMS_PATH = path.join(ROOT, 'backend-ts', 'test', 'support', 'db-enums.json');
+
+/** "table.column" -> allowed enum values. */
+type Enums = Record<string, string[]>;
+
+function loadEnums(): Enums {
+  return fs.existsSync(ENUMS_PATH) ? (JSON.parse(fs.readFileSync(ENUMS_PATH, 'utf8')) as Enums) : {};
+}
+
+let ENUMS: Enums = {};
 
 type Schema = Record<string, string[]>;
 
@@ -160,6 +174,22 @@ function splitTopLevel(str: string): string[] {
   }
   if (current.trim()) parts.push(current);
   return parts;
+}
+
+/** Text of a call's second argument (after the first top-level comma), trimmed. */
+function secondArgument(args: string): string {
+  let depth = 0;
+  for (let i = 0; i < args.length; i++) {
+    const c = args[i];
+    if (c === '"' || c === "'" || c === '`') {
+      i = skipString(args, i);
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ',' && depth === 0) return args.slice(i + 1).trim();
+  }
+  return '';
 }
 
 const EMBED_RE = /^(?:(\w+):)?(\w+)(?:!(\w+))?\(([\s\S]*)\)$/;
@@ -323,12 +353,27 @@ function checkFile(file: string, schema: Schema, mismatches: Mismatch[]): void {
       if (columns && column && !columns.includes(column) && STRING_LITERAL.test(`'${column}'`)) {
         mismatches.push({ file, line: fLine, message: `unknown column '${column}' on table '${table}' (.${fMatch[1]})` });
       }
+      const allowed = ENUMS[`${table}.${column}`];
+      if (allowed && ['eq', 'neq', 'in'].includes(fMatch[1])) {
+        const openParen = fMatch.index + fMatch[0].length - 1;
+        const valueArg = secondArgument(chain.slice(openParen + 1, matchBracket(chain, openParen) - 1));
+        // Only literal values: a bare string, or an array made only of strings.
+        const literals = fMatch[1] === 'in'
+          ? (/^\[\s*(['"][\w-]*['"]\s*,?\s*)*\]$/.test(valueArg) ? [...valueArg.matchAll(/['"]([\w-]*)['"]/g)].map(m => m[1]) : [])
+          : (/^['"][\w-]*['"]$/.test(valueArg) ? [valueArg.slice(1, -1)] : []);
+        for (const value of literals) {
+          if (!allowed.includes(value)) {
+            mismatches.push({ file, line: fLine, message: `'${value}' is not a value of ${table}.${column} (allowed: ${allowed.join(', ')})` });
+          }
+        }
+      }
     }
   }
 }
 
 function main(): void {
   const schema = loadSchema();
+  ENUMS = loadEnums();
   const mismatches: Mismatch[] = [];
 
   const files = [

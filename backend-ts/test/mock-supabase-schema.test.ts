@@ -54,4 +54,26 @@ describe('mock Supabase schema validation', () => {
     const rows = await res.json();
     expect(rows).toHaveLength(1);
   });
+  it('rejects a filter with a value the enum does not have (like the open-loads "pending" 500)', async () => {
+    const res = await fetch(`${supabaseMock.url}/rest/v1/shipments?select=id&status=in.(created,pending)`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('22P02');
+    expect(body.message).toContain('"pending"');
+  });
+
+  it('accepts filters that use real enum values', async () => {
+    const res = await fetch(`${supabaseMock.url}/rest/v1/shipments?select=id&status=eq.created`);
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects writing a value the enum does not have', async () => {
+    const res = await fetch(`${supabaseMock.url}/rest/v1/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('22P02');
+  });
 });
