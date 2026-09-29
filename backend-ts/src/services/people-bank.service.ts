@@ -17,7 +17,7 @@ import {
 import { notificationService } from './notification.service';
 import {
   Actor, PersonRow, assertCanModify, assertFresh, canManage, isUuid, last4, logActivity, nowIso, parseRequiredText,
-  superadminIds,
+  superadminIds, withWarnings,
 } from './people-common';
 import { getPeopleSettings } from './people-settings.service';
 import { getProfile } from './people-profile.service';
@@ -143,6 +143,63 @@ export function serializeBank(row: Record<string, any>, personName: string | nul
   };
 }
 
+const istDate = (iso: string): string => new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' });
+
+export interface PayoutAccount {
+  id: string;
+  account_holder: string;
+  bank_name: string | null;
+  account_number: string | null;
+  account_last4: string | null;
+  ifsc: string | null;
+  upi_id: string | null;
+  is_verified: boolean;
+  effective_from: string | null;
+  /** Set while a newer primary account is still in its cooling period. */
+  note: string | null;
+  pending_from: string | null;
+}
+
+/**
+ * The account payouts go to at time `at`: the primary account once its
+ * `effective_from` has passed. While a new primary is still cooling, the
+ * previous account that was already in effect keeps receiving payouts and the
+ * result carries the note "New details active from <date>". Null when the
+ * person has no usable account or is paid by a partner. Masked: safe to show
+ * to the driver.
+ */
+export async function getPayoutAccount(userId: string, at: Date = new Date()): Promise<PayoutAccount | null> {
+  const profile = await getProfile(userId);
+  if (profile?.employer_type === 'partner') return null;
+  const { data, error } = await supabase.from('user_bank_accounts').select('*').eq('user_id', userId);
+  if (error) throw new Error(`Failed to read bank accounts: ${error.message}`);
+  const rows = data ?? [];
+  const inEffect = (r: Record<string, any>) => !r.effective_from || Date.parse(r.effective_from) <= at.getTime();
+  const primary = rows.find(r => r.is_primary);
+  let chosen: Record<string, any> | undefined;
+  let pendingFrom: string | null = null;
+  if (primary && inEffect(primary)) {
+    chosen = primary;
+  } else {
+    if (primary) pendingFrom = primary.effective_from;
+    chosen = rows.filter(r => r !== primary && inEffect(r)).sort((a, b) => String(b.effective_from ?? b.created_at).localeCompare(String(a.effective_from ?? a.created_at)))[0];
+  }
+  if (!chosen) return null;
+  return {
+    id: chosen.id,
+    account_holder: chosen.account_holder,
+    bank_name: chosen.bank_name ?? null,
+    account_number: maskAccountNumber(chosen.account_number),
+    account_last4: last4(chosen.account_number),
+    ifsc: chosen.ifsc ?? null,
+    upi_id: chosen.upi_id ?? null,
+    is_verified: !!chosen.is_verified,
+    effective_from: chosen.effective_from ?? null,
+    note: pendingFrom ? `New details active from ${istDate(pendingFrom)}` : null,
+    pending_from: pendingFrom,
+  };
+}
+
 export async function listBankAccounts(subject: PersonRow): Promise<Array<Record<string, any>>> {
   const { data, error } = await supabase.from('user_bank_accounts').select('*').eq('user_id', subject.id);
   if (error) throw new Error(`Failed to read bank accounts: ${error.message}`);
@@ -224,7 +281,7 @@ export async function createBankAccount(actor: Actor, subject: PersonRow, body: 
   await logActivity(subject.id, actor.user_id, 'bank_added', { account_id: data.id, account_last4: last4(data.account_number), effective_from: effectiveFrom });
   await announceBankChange(actor, subject, 'added', effectiveFrom);
   const out = serializeBank(data, subject.full_name);
-  return { ...out, warnings: out.name_mismatch ? ['account_holder_mismatch'] : [] };
+  return withWarnings(out, out.name_mismatch ? ['account_holder_mismatch'] : []);
 }
 
 async function loadBank(userId: string, accountId: string) {
@@ -276,7 +333,7 @@ export async function updateBankAccount(actor: Actor, subject: PersonRow, accoun
   });
   if (detailsChanged) await announceBankChange(actor, subject, 'changed', patch.effective_from);
   const out = serializeBank(data, subject.full_name);
-  return { ...out, warnings: out.name_mismatch ? ['account_holder_mismatch'] : [] };
+  return withWarnings(out, out.name_mismatch ? ['account_holder_mismatch'] : []);
 }
 
 export async function deleteBankAccount(actor: Actor, subject: PersonRow, accountId: string): Promise<void> {
