@@ -118,6 +118,11 @@ export function useLocationTracking({
   }, [start, stop, t]);
 
   const takeBreak = useCallback(() => {
+    // Same rule as pausing: while a route is active the phone keeps reporting, so no break
+    if (optionsRef.current.isRouteActive) {
+      Alert.alert(t('cannot_pause_title'), t('cannot_pause_desc'));
+      return;
+    }
     Alert.alert(t('alert_take_break_title'), t('alert_take_break_desc'), [
       { text: t('cancel'), style: 'cancel' },
       {

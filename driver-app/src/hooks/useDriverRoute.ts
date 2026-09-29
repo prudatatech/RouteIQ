@@ -189,10 +189,18 @@ export function useDriverRoute() {
               // Map the manifest to the route shape used by the assignment prompt
               setPendingRoute({
                 id: payload.new.id,
-                status: payload.new.status === 'scheduled' ? 'pending' : 'in_progress',
+                status: 'pending',
                 route_type: payload.new.route_type || 'forward',
                 stops: [],
               });
+              loadData();
+            },
+          )
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'cargo_manifest', filter: `vehicle_id=eq.${vId}` },
+            // A load cancelled by dispatch or delivered: the route changes
+            () => {
               loadData();
             },
           )

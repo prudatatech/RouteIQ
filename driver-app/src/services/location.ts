@@ -1,22 +1,22 @@
 /**
- * margixindia Driver App — Ola/Uber-Style Live GPS Location Service
- * 
- * ARCHITECTURE (same as Ola/Uber/Zomato):
- * 1. Phone GPS → BestForNavigation accuracy (street-level)
- * 2. GPS coordinates written DIRECTLY to Supabase cloud (always reachable)
- * 3. Supabase Realtime broadcasts changes to admin dashboard instantly
- * 4. Offline queue ensures no data loss on bad network
- * 
- * Flow: Phone GPS → Supabase vehicles table (lat/lng update)
- *                  → Supabase telemetry table (history insert)
- *       Dashboard ← Supabase Realtime subscription (instant update)
+ * margixindia Driver App — Live GPS Location Service
+ *
+ * 1. Phone GPS at navigation accuracy, in the foreground and (through
+ *    expo-task-manager) in the background
+ * 2. Positions go to the backend (POST /telemetry/driver-ping), never straight
+ *    to the database, so its rules run on every one: odometer, geofence
+ *    arrival, overspeed / low-fuel / GPS-lost alerts, the live broadcast
+ * 3. The vehicle's status is the backend's to decide (from its route or
+ *    load); the app never writes it
+ * 4. An offline queue holds positions the server could not take and replays
+ *    them in batches
  */
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
-import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, getCurrentSession } from './supabase';
+import { api, ApiError } from './api';
 import { DEFAULT_PING_INTERVAL_MS, MIN_PING_INTERVAL_MS, MAX_PING_INTERVAL_MS } from '../config';
 import { colors } from '../theme';
 import { translateNow } from '../locales';
@@ -24,6 +24,8 @@ import { translateNow } from '../locales';
 const QUEUE_KEY = 'margixindia_ping_queue';
 const VEHICLE_ID_KEY = 'margixindia_vehicle_id';
 const DRIVER_ID_KEY = 'margixindia_driver_id';
+/** Points sent per request; the backend takes up to 200. */
+const PING_BATCH_SIZE = 100;
 export const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
 
 interface LocationPing {
@@ -61,26 +63,22 @@ class LocationService {
   private consecutiveErrors: number = 0;
   private lastGpsOffNotificationTime = 0;
   private consecutiveSendFailures = 0;
-  private consecutiveGeofenceFailures = 0;
   private lastBackgroundError: BackgroundError | null = null;
 
   /**
-   * Non-blocking: records a background failure (queue replay/send or
-   * geofence check) without ever throwing or interrupting tracking. Only
-   * surfaces to the UI once the same kind of failure repeats
-   * BACKGROUND_ERROR_THRESHOLD times in a row, so a single blip stays quiet.
+   * Non-blocking: records a background failure (a position that could not be
+   * sent) without ever throwing or interrupting tracking. Only surfaces to the
+   * UI once the same failure repeats BACKGROUND_ERROR_THRESHOLD times in a
+   * row, so a single blip stays quiet.
    */
-  private recordBackgroundFailure(kind: 'send' | 'geofence', message: string) {
-    const count =
-      kind === 'send' ? ++this.consecutiveSendFailures : ++this.consecutiveGeofenceFailures;
-    if (count < BACKGROUND_ERROR_THRESHOLD) return;
+  private recordBackgroundFailure(message: string) {
+    if (++this.consecutiveSendFailures < BACKGROUND_ERROR_THRESHOLD) return;
     this.lastBackgroundError = { at: Date.now(), message };
     this.onBackgroundError?.(this.lastBackgroundError);
   }
 
-  private clearBackgroundFailure(kind: 'send' | 'geofence') {
-    if (kind === 'send') this.consecutiveSendFailures = 0;
-    else this.consecutiveGeofenceFailures = 0;
+  private clearBackgroundFailure() {
+    this.consecutiveSendFailures = 0;
     if (this.lastBackgroundError) {
       this.lastBackgroundError = null;
       this.onBackgroundError?.(null);
@@ -95,7 +93,6 @@ class LocationService {
   /** Dismiss the current background error so the UI can retry quietly. */
   clearLastBackgroundError() {
     this.consecutiveSendFailures = 0;
-    this.consecutiveGeofenceFailures = 0;
     this.lastBackgroundError = null;
     this.onBackgroundError?.(null);
   }
@@ -105,6 +102,9 @@ class LocationService {
    * Call this after login or when vehicle is assigned.
    */
   async setIdentity(vehicleId: string, driverId: string) {
+    // Positions queued by another driver on this phone must not be reported as this driver's
+    const previousDriver = await AsyncStorage.getItem(DRIVER_ID_KEY);
+    if (previousDriver && previousDriver !== driverId) await this.clearQueue();
     this.vehicleId = vehicleId;
     this.driverId = driverId;
     await AsyncStorage.setItem(VEHICLE_ID_KEY, vehicleId);
@@ -181,7 +181,6 @@ class LocationService {
     this.isRunning = true;
     this.consecutiveErrors = 0;
     this.consecutiveSendFailures = 0;
-    this.consecutiveGeofenceFailures = 0;
     this.lastBackgroundError = null;
 
     // Initial precise ping
@@ -211,18 +210,6 @@ class LocationService {
     Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(e => console.warn('Failed to stop bg location', e));
     this.isRunning = false;
     Notifications.cancelScheduledNotificationAsync('gps-dead-man-switch').catch(() => { });
-
-    if (this.vehicleId) {
-      // Notify backend that GPS is intentionally turned off
-      supabase
-        .from('vehicles')
-        .update({
-          status: 'idle',
-          last_heartbeat: new Date().toISOString()
-        })
-        .eq('id', this.vehicleId)
-        .then(({ error }) => { if (error) console.error(error); else console.log('Backend notified: GPS OFF / Idle'); });
-    }
   }
 
   /**
@@ -279,16 +266,14 @@ class LocationService {
     const dLat = Math.abs(ping.lat - this.lastLat);
     const dLng = Math.abs(ping.lng - this.lastLng);
     if (dLat > 0.00002 || dLng > 0.00002 || this.lastLat === 0) {
-      await this.sendToSupabase(ping);
+      await this.sendPings([ping]);
       this.lastLat = ping.lat;
       this.lastLng = ping.lng;
     }
-
   }
 
   /**
-   * Collect GPS and send DIRECTLY to Supabase cloud.
-   * No local backend needed — data goes straight to the cloud.
+   * Collect GPS and send it (with anything queued while offline) to the backend.
    */
   private async collectAndSend() {
     try {
@@ -311,15 +296,7 @@ class LocationService {
           });
         }
 
-        if (this.vehicleId) {
-          await supabase
-            .from('vehicles')
-            .update({
-              last_heartbeat: new Date().toISOString(),
-              status: 'idle',
-            })
-            .eq('id', this.vehicleId);
-        }
+        // Nothing is sent while GPS is off: the missing heartbeat is what raises the GPS-lost alert.
         return; // Skip getting position if GPS is disabled at OS level
       }
 
@@ -337,18 +314,11 @@ class LocationService {
         timestamp: new Date(location.timestamp).toISOString(),
       };
 
-      // Send queued pings first (offline replay). Clear before replaying so a
-      // ping that fails again is re-queued rather than dropped.
+      // Positions queued while offline go first, in one batch with the current one. Clear before
+      // replaying so a batch that fails again is re-queued rather than dropped.
       const queue = await this.getQueue();
-      if (queue.length > 0) {
-        await this.clearQueue();
-        for (const queuedPing of queue) {
-          await this.sendToSupabase(queuedPing);
-        }
-      }
-
-      // Send current ping
-      await this.sendToSupabase(ping);
+      if (queue.length > 0) await this.clearQueue();
+      await this.sendPings([...queue, ping]);
       this.lastLat = ping.lat;
       this.lastLng = ping.lng;
       this.consecutiveErrors = 0;
@@ -360,131 +330,54 @@ class LocationService {
   }
 
   /**
-   * Write GPS data DIRECTLY to Supabase.
-   * Updates: vehicles.latitude/longitude (live position)
-   * Inserts: telemetry row (history trail)
+   * Send positions to the backend in batches. The backend records them, runs its
+   * rules and answers with what the app needs next (a geofence arrival, commands,
+   * how often to report). Positions it could not take (no signal, server trouble)
+   * are queued and replayed; ones it refuses for good are dropped so they do not
+   * come back for ever.
    */
-  private async sendToSupabase(ping: LocationPing) {
-    if (!this.vehicleId) return;
+  private async sendPings(pings: LocationPing[]) {
+    if (!this.vehicleId || pings.length === 0) return;
 
-    // Writes are authorised by the driver's session (row-level security). The
-    // session is restored from secure storage, so this also works in the
-    // headless background task. Without one, keep the ping for later.
+    // Without a session the server would refuse them; keep them for later.
     if (!(await getCurrentSession())) {
-      await this.enqueue(ping);
+      await this.enqueue(pings);
       return;
     }
 
-    try {
-      // 1. UPDATE vehicle's live position in Supabase
-      const { error: vehicleError } = await supabase
-        .from('vehicles')
-        .update({
-          latitude: ping.lat,
-          longitude: ping.lng,
-          last_heartbeat: new Date().toISOString(),
-          status: ping.speed > 2 ? 'on_route' : 'idle',
-        })
-        .eq('id', this.vehicleId);
-
-      if (vehicleError) {
-        console.error('Supabase vehicle update error:', vehicleError.message);
-        // Queue for retry
-        await this.enqueue(ping);
+    for (let i = 0; i < pings.length; i += PING_BATCH_SIZE) {
+      const batch = pings.slice(i, i + PING_BATCH_SIZE);
+      try {
+        const answer = await api.sendPing(batch);
+        this.clearBackgroundFailure();
+        this.handlePingAnswer(answer);
+      } catch (e: any) {
+        const refusedForGood = e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+        if (refusedForGood) {
+          console.warn('Server refused a location batch, dropping it:', e.message);
+          continue;
+        }
+        // Never blocks tracking; only surfaced to the UI once it repeats (see recordBackgroundFailure).
+        console.warn('Server unreachable, queuing pings:', e?.message);
+        await this.enqueue(pings.slice(i));
+        this.recordBackgroundFailure(e?.message || 'Could not reach the server');
         return;
       }
-
-      // 2. INSERT telemetry record for history trail
-      const speedKmph = ping.speed > 50 ? ping.speed : ping.speed * 3.6;
-      const { error: telemetryError } = await supabase
-        .from('telemetry')
-        .insert({
-          id: Crypto.randomUUID(),
-          vehicle_id: this.vehicleId,
-          latitude: ping.lat,
-          longitude: ping.lng,
-          speed_kmph: parseFloat(speedKmph.toFixed(1)),
-          heading: ping.heading,
-          fuel_level_pct: null,
-          timestamp: ping.timestamp,
-        });
-
-      if (telemetryError) {
-        console.warn('Telemetry insert warning:', telemetryError.message);
-        // Non-fatal — vehicle position already updated
-      }
-
-      // 3. Check geofence proximity
-      await this.checkGeofence(ping);
-
-      console.log(`📍 GPS → Supabase: ${ping.lat.toFixed(6)}, ${ping.lng.toFixed(6)} | ${speedKmph.toFixed(0)} km/h | acc: ${ping.accuracy.toFixed(0)}m`);
-      this.clearBackgroundFailure('send');
-
-    } catch (networkError: any) {
-      // Network failure → queue for offline replay. Never blocks tracking;
-      // only surfaced to the UI once it repeats (see recordBackgroundFailure).
-      console.warn('Supabase unreachable, queuing ping:', networkError.message);
-      await this.enqueue(ping);
-      this.recordBackgroundFailure('send', networkError?.message || 'Could not reach the server');
     }
   }
 
-  /**
-   * Geofence check — if within 50m of a delivery point, alert the driver.
-   */
-  private async checkGeofence(ping: LocationPing) {
-    if (!this.vehicleId || !this.onGeofenceAlert) return;
+  private handlePingAnswer(answer: { geofence_alert?: any; pending_commands?: any[]; next_ping_interval_ms?: number }) {
+    if (answer.geofence_alert) this.onGeofenceAlert?.(answer.geofence_alert);
+    if (answer.pending_commands && answer.pending_commands.length > 0) this.onPendingCommand?.(answer.pending_commands);
 
-    try {
-      const { data: activeRoutes, error: routesError } = await supabase
-        .from('routes')
-        .select('id, route_stops(id, delivery_point_id, sequence, status, delivery_points(id, name, latitude, longitude))')
-        .eq('vehicle_id', this.vehicleId)
-        .eq('status', 'active');
-
-      if (routesError) throw routesError;
-      // Reached the server successfully — clear any earlier repeated-failure state.
-      this.clearBackgroundFailure('geofence');
-
-      if (!activeRoutes || activeRoutes.length === 0) return;
-
-      for (const route of activeRoutes) {
-        const pendingStops = (route.route_stops || [])
-          .filter((s: any) => s.status === 'pending')
-          .sort((a: any, b: any) => a.sequence - b.sequence);
-
-        for (const stop of pendingStops) {
-          const dp: any = Array.isArray(stop.delivery_points) ? stop.delivery_points[0] : stop.delivery_points;
-          if (!dp) continue;
-
-          // Haversine distance
-          const R = 6371000;
-          const dLat = ((dp.latitude - ping.lat) * Math.PI) / 180;
-          const dLng = ((dp.longitude - ping.lng) * Math.PI) / 180;
-          const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos((ping.lat * Math.PI) / 180) *
-            Math.cos((dp.latitude * Math.PI) / 180) *
-            Math.sin(dLng / 2) ** 2;
-          const dist = 2 * R * Math.asin(Math.sqrt(a));
-
-          if (dist <= 50) {
-            this.onGeofenceAlert({
-              type: 'GEOFENCE_ARRIVAL',
-              stop_id: stop.id,
-              delivery_point_id: dp.id,
-              delivery_point_name: dp.name,
-              distance_meters: Math.round(dist),
-              message: `You are ${Math.round(dist)}m from ${dp.name}. Did you deliver?`,
-            });
-            return; // Only one alert at a time
-          }
-        }
+    // The server sets how often to report: often when moving fast, rarely when stopped
+    const wanted = Number(answer.next_ping_interval_ms);
+    if (Number.isFinite(wanted) && wanted > 0) {
+      const interval = Math.min(Math.max(wanted, MIN_PING_INTERVAL_MS), MAX_PING_INTERVAL_MS);
+      if (interval !== this.currentInterval) {
+        this.currentInterval = interval;
+        if (this.isRunning) this.restartInterval();
       }
-    } catch (e: any) {
-      // Non-fatal — never blocks tracking; only surfaced to the UI once it
-      // repeats (see recordBackgroundFailure).
-      console.warn('Geofence check failed:', e);
-      this.recordBackgroundFailure('geofence', e?.message || 'Geofence check failed');
     }
   }
 
@@ -504,9 +397,9 @@ class LocationService {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(capped));
   }
 
-  private async enqueue(ping: LocationPing) {
+  private async enqueue(pings: LocationPing[]) {
     const queue = await this.getQueue();
-    queue.push(ping);
+    queue.push(...pings);
     await this.saveQueue(queue);
   }
 
