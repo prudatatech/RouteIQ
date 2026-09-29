@@ -78,3 +78,86 @@ Rules:
 - **Web person profile** `/admin/users/:id`: header with photo, name, role, status pill, completeness meter and actions (Edit, Change status). Tabs: Overview, Documents, Bank and payout, Emergency contacts, Activity, Notes; Performance for drivers; KYC link for vendors.
 - **Dashboard**: "Needs attention" gets expired or expiring driver licences and people with required documents missing.
 - **Driver app, Profile**: "My documents" list with status and expiry, upload or replace a document with the camera or a file (goes to pending), and emergency contacts.
+
+## Real-world cases (decisions)
+
+Real people data is messy. Each case below has a decision so the build handles it instead of breaking.
+
+### Identity and duplicates
+
+| Case | Decision |
+|---|---|
+| The same person added twice (same phone, Aadhaar, PAN or licence number) | Create and edit check for duplicates (`GET /people/duplicates?phone=&doc_type=&doc_number=`) and refuse with a link to the existing person. Numbers are compared by a normalised hash, so spacing and case don't matter. |
+| A driver changes their SIM or phone number | Staff change the phone on the profile. The old number is kept in `user_phone_history` and can't be used by anyone else for 90 days (recycled numbers). The driver signs in with OTP on the new number and lands on the same record. |
+| A phone number that belonged to someone who left | Refused while the old owner is active or within 90 days of leaving. After that it's allowed and noted in the activity log. |
+| No Aadhaar (e.g. a Nepali driver) or no PAN | Identity proof is a group: one of Aadhaar, voter ID, passport. Tax ID: PAN, or "No PAN" with a reason. "Required" is checked per group, not per document. |
+| Name spelled differently on each document | Each document keeps `name_on_document`. When it doesn't match the profile name (after normalising case and spaces), it shows a warning. Staff can still verify it with a note. |
+| Under-age person, or wrong date of birth | Date of birth must make them 18+ (20+ for a transport licence class). Future dates are refused. |
+| Someone leaves and is rehired | Reactivate the same record: status goes from inactive to onboarding. History, documents and employee code are kept. A new employee code is never issued for the same person. |
+| A driver who works for a 3PL partner or vendor, not for us | `employer_type` is `company` or `partner`, with `employer_partner_id`. Partner drivers show the partner's name, and their bank and payout tab is hidden because the partner pays them. |
+| The sign-in account was deleted directly in Supabase | The profile shows "No sign-in account" with "Send invite" (staff) or "Driver signs in with OTP" (driver). The new account links to the same record by email or phone. |
+| Staff member never accepted the invite | Stays onboarding with "Invite sent on …" and a "Resend invite" action. Invites can't be resent more often than every 10 minutes. |
+| Email change for staff | Updates the sign-in email through the Auth admin API. The person confirms it on the new address. Logged. |
+
+### Status and availability
+
+| Case | Decision |
+|---|---|
+| Suspending or deactivating someone who is on an active route | Refused, naming the route. Staff finish or reassign the route first. A pending route or an unanswered stop prompt is released, and the vehicle's driver is cleared, with confirmation. |
+| Temporary suspension | `suspended_until` is optional. A daily job reactivates the person when it passes, and notifies staff. |
+| Leave (sick, holiday) | New status `on_leave` with `leave_from` and `leave_until`. They can still sign in but aren't dispatchable. A daily job returns them to active after `leave_until`. |
+| Deactivating the last active superadmin, or yourself | Refused. |
+| Role change (e.g. manager to admin) | Only a superadmin. Logged. A driver can't be turned into staff or the reverse on the same record; create a new person instead, because the sign-in methods differ. |
+| Suspended or inactive person still signed in | Status change revokes their sessions (Auth admin sign-out) and clears their push token, so the app stops receiving work. |
+
+### Documents
+
+| Case | Decision |
+|---|---|
+| Front and back pages (licence, Aadhaar) | A document has one main file plus `extra_file_paths` (up to 4). The upload flow lets you add a back page. |
+| Blurry or wrong upload | Reject with a reason. The person is notified to re-upload, and `resubmission_count` is kept. |
+| Expired licence but renewal in progress | A setting, `licence_grace_days` (default 0), treats a licence as usable for that many days after expiry. The status reads "Expired, in grace period". |
+| Documents with no expiry that still need re-checking (police verification) | `review_by` date. It's treated like an expiry for reminders, but shows "Review due". |
+| Licence class doesn't cover the vehicle | Licence `metadata.licence_classes` (array: LMV, HMV, HGMV, HPMV, TRANS). Dispatch warns when the vehicle's type or capacity needs a class the driver doesn't have (light vehicles under 7,500 kg need LMV; heavier need HMV, HGMV or TRANS). |
+| Number formats | Aadhaar: 12 digits with a Verhoeff check. PAN: AAAAA9999A. Driving licence: state code plus digits, loosely checked (warn, don't refuse). Voter ID: 3 letters and 7 digits. Passport: letter and 7 digits. IFSC: 4 letters, 0, and 6 characters. |
+| Aadhaar privacy | Never store the full Aadhaar number. Keep `number_last4` and a salted `number_hash` for duplicate checks. Staff see "XXXX XXXX 1234". The file itself stays private. |
+| Consent | Record `consent_at`, `consent_by` and `consent_method` (e.g. "signed form", "in app") on the profile before documents are stored. The upload screens show a one-line consent notice. |
+| Retention after someone leaves | A setting, `document_retention_days` (default 365). A daily job archives and deletes files for people inactive longer than that, but keeps the record, dates and verification history. |
+| iPhone photos (HEIC) and huge files | The driver app converts to JPEG and compresses. The web accepts PDF, JPG and PNG up to 10 MB with a clear message. |
+| Upload with no signal (driver app) | Uses the existing offline queue. The document shows "Waiting to upload". |
+| Verification source | `verification_method`: `manual` now. DigiLocker and Parivahan are future options and stay disabled in the UI until they're configured. |
+
+### Bank and payout
+
+| Case | Decision |
+|---|---|
+| Account holder name differs from the person | Warning. Needs a note to verify. |
+| Proof of account | Optional `proof_document_id` (cancelled cheque or passbook, uploaded as a document of type `bank_proof`). |
+| Bank details changed (fraud risk) | The person and all superadmins are notified. The new account is only used for payouts after `effective_from` (a setting, `bank_change_cooldown_hours`, default 24). |
+| Partner-employed drivers | No bank tab (see identity). |
+
+### Dispatch and history
+
+| Case | Decision |
+|---|---|
+| How strict dispatch is about driver documents | A setting, `driver_document_enforcement`: `off`, `warn` (default) or `block`. `block` refuses assignment when the licence is expired (after grace), missing, the wrong class, or the driver isn't active. |
+| A driver moves between vehicles | New `driver_vehicle_assignments` (driver_id, vehicle_id, assigned_at, unassigned_at, assigned_by), written whenever `vehicles.driver_id` changes. Earnings and performance use it, so trips on an archived or reassigned vehicle still count for the right driver. |
+| Two staff editing the same profile | Edits send `updated_at`. A stale edit gets a 409 "Someone else changed this profile. Reload to see their changes." |
+| Too many reminder notifications | Staff get one daily digest ("3 licences expire this week") instead of one notification per document. The person still gets their own reminders. |
+
+### Bulk and reporting
+
+| Case | Decision |
+|---|---|
+| Moving existing people in | `POST /people/import` takes a CSV (name, role, phone, email, employee code, designation, department, joining date). A dry run by default returns row-by-row errors and duplicates; `?commit=true` creates them. |
+| Reports | `GET /people/export.csv` (people and document status) and `GET /people/documents/expiring.csv?days=30`. |
+| Deletion request from a person | Never hard delete someone with history. "Anonymise" (superadmin, after they're inactive): clears personal fields, contacts, bank data and files, and keeps the record ID so routes and invoices stay intact. Logged. |
+
+### Extra schema for these cases (same migration file)
+
+- `users.status` adds `on_leave`.
+- `user_profiles` adds: `employer_type`, `employer_partner_id` (references tpl_partners), `suspended_until`, `leave_from`, `leave_until`, `consent_at`, `consent_by`, `consent_method`, `invite_sent_at`, `anonymised_at`.
+- `user_documents` adds: `name_on_document`, `extra_file_paths text[]`, `review_by`, `number_last4`, `number_hash`, `verification_method`, `resubmission_count`. `doc_type` adds `voter_id`, `passport` and `bank_proof`.
+- `user_bank_accounts` adds: `effective_from`, `proof_document_id`.
+- New: `user_phone_history` (user_id, phone, from_at, to_at), `driver_vehicle_assignments` (above).
+- New settings, stored in `system_settings` and editable on Settings: `licence_grace_days`, `document_retention_days`, `bank_change_cooldown_hours`, `driver_document_enforcement`.
