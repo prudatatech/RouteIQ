@@ -9,7 +9,7 @@ import {
   Page, PageHeader, Button, StatusPill, EmptyState, Skeleton, useConfirm, buttonClasses,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
-import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel } from '@/utils/sos'
+import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
 import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { canReturnToService } from '@/utils/vehicles'
@@ -62,7 +62,7 @@ export default function EmergencyPage() {
       return Promise.all((data ?? []).map(attachDetails))
     },
     // Open alerts first, so an old unresolved one is never pushed off the list by resolved ones.
-    select: rows => [...rows].sort((a, b) => Number(a.status === 'resolved') - Number(b.status === 'resolved')),
+    select: rows => [...rows].sort((a, b) => Number(!isOpenSos(a.status)) - Number(!isOpenSos(b.status))),
   })
 
   useEffect(() => {
@@ -73,8 +73,14 @@ export default function EmergencyPage() {
         toast.error('New SOS')
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sos_alerts' }, payload => {
+        // A driver cancelling from the app closes the alert here at once, with a note saying why.
+        const before = queryClient.getQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'])?.find(a => a.id === payload.new.id)
+        if (before && isOpenSos(before.status) && payload.new.status === 'cancelled') {
+          toast(`${before.vehicle?.plate_number ?? 'A driver'} cancelled their SOS`)
+        }
         queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
           prev?.map(a => a.id === payload.new.id ? { ...a, ...payload.new } : a))
+        queryClient.invalidateQueries({ queryKey: ['vehicles', 'sos-counts'] })
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -124,16 +130,45 @@ export default function EmergencyPage() {
     if (!selectedId && !openId && alerts.length > 0) setSelectedId(alerts[0].id)
   }, [alerts, selectedId, openId])
 
+  /** Shows the alert's new status at once, and refreshes the lists and per-vehicle counts. */
+  const applyStatus = (alert: SosAlert, status: SosStatus) => {
+    queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
+      prev?.map(a => a.id === alert.id ? { ...a, status } : a))
+    queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
+    queryClient.invalidateQueries({ queryKey: ['vehicles', 'sos-counts'] })
+    queryClient.invalidateQueries({ queryKey: ['vehicles', 'sos-history', alert.vehicle_id] })
+  }
+
+  /** The server says what went wrong (usually that someone else already closed it); reload so the list shows the truth. */
+  const failed = (err: unknown, fallback: string) => {
+    toast.error(apiErrorMessage(err, fallback))
+    queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
+  }
+
   const acknowledge = async (alert: SosAlert) => {
     try {
       await telemetryAPI.acknowledgeSos(alert.id)
-      queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
-        prev?.map(a => a.id === alert.id ? { ...a, status: 'acknowledged' } : a))
-      queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
+      applyStatus(alert, 'acknowledged')
       toast.success('SOS acknowledged')
     } catch (err) {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(message || 'We could not acknowledge this SOS. Try again.')
+      failed(err, 'We could not acknowledge this SOS. Try again.')
+    }
+  }
+
+  const cancel = async (alert: SosAlert) => {
+    const ok = await confirm({
+      title: 'Close this SOS as a false alarm?',
+      message: `The ${sosTypeLabel(alert.alert_type)} SOS for ${alert.vehicle?.plate_number ?? 'this vehicle'} is closed as cancelled. It stays in the vehicle's SOS history.`,
+      confirmLabel: 'Close as false alarm',
+      cancelLabel: 'Keep it open',
+    })
+    if (!ok) return
+    try {
+      await telemetryAPI.cancelSos(alert.id)
+      applyStatus(alert, 'cancelled')
+      toast.success('SOS closed as a false alarm')
+    } catch (err) {
+      failed(err, 'We could not close this SOS. Try again.')
     }
   }
 
@@ -146,12 +181,10 @@ export default function EmergencyPage() {
     if (!ok) return
     try {
       await telemetryAPI.resolveSos(alert.id)
-      queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev =>
-        prev?.map(a => a.id === alert.id ? { ...a, status: 'resolved' } : a))
-      queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
+      applyStatus(alert, 'resolved')
       toast.success('SOS resolved')
     } catch (err) {
-      toast.error(apiErrorMessage(err, 'We could not resolve this SOS. Try again.'))
+      failed(err, 'We could not resolve this SOS. Try again.')
       return
     }
     // A serious accident or breakdown put the vehicle in maintenance; resolving does not bring it back.
@@ -191,7 +224,7 @@ export default function EmergencyPage() {
   const pinned = alerts.filter(a => isOpenSos(a.status) || a.id === selectedId)
   const points: MapPoint[] = pinned.flatMap(a => {
     const isSelected = a.id === selectedId
-    const isResolved = a.status === 'resolved'
+    const isResolved = !isOpenSos(a.status)
     const lat = isSelected && livePosition ? livePosition.lat : a.latitude
     const lng = isSelected && livePosition ? livePosition.lng : a.longitude
     if (lat == null || lng == null) return []
@@ -288,11 +321,14 @@ export default function EmergencyPage() {
                           <ExternalLink size={14} aria-hidden="true" /> Open in Google Maps
                         </a>
                       )}
-                      {isActive && alert.status === 'active' && (
+                      {isActive && (!alert.status || alert.status === 'active') && (
                         <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
                       )}
                       {isActive && (
                         <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
+                      )}
+                      {isActive && (
+                        <Button size="sm" variant="secondary" onClick={() => cancel(alert)}>False alarm</Button>
                       )}
                       {alert.vehicle_id && canReturnToService({ status: alert.vehicle?.status }) && (
                         <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => returnToService(alert, true)}>Return to service</Button>

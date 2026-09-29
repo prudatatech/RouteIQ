@@ -26,6 +26,7 @@ import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
 import { recordGpsPoints, type GpsFix } from '../services/gps-history.service';
 import { idempotent } from '../core/idempotency';
+import { transitionSos } from '../services/sos.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
 import { manifestParcelCode } from '../core/parcelCode';
@@ -92,30 +93,15 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
   }
 });
 
-// ── PUT /sos/:id/acknowledge and /sos/:id/resolve ─────────────
-// active → acknowledged (someone is handling it) → resolved. Each step only applies
-// from the states listed, so two dispatchers acting at once can't undo each other.
-const SOS_TRANSITIONS: Record<'acknowledged' | 'resolved', string[]> = {
-  acknowledged: ['active'],
-  resolved: ['active', 'acknowledged'],
-};
-
+// ── PUT /sos/:id/acknowledge, PUT /sos/:id/resolve, POST /sos/:id/cancel ──────
+// active → acknowledged (someone is handling it) → resolved, or cancelled (a false alarm) from
+// either open state. The rules live in services/sos.service.ts; repeating a step the alert is
+// already in succeeds, and a step it cannot take is a 409 that names the current status.
 function sosTransition(next: 'acknowledged' | 'resolved') {
   return async (req: Request, res: Response) => {
     try {
-      // Service role: staff have no UPDATE policy on sos_alerts
-      const { data, error } = await supabase
-        .from('sos_alerts')
-        .update({ status: next, updated_at: new Date().toISOString() })
-        .eq('id', req.params.id)
-        .in('status', SOS_TRANSITIONS[next])
-        .select('id');
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        res.status(409).json({ detail: `This alert is not in a state that can be ${next}` });
-        return;
-      }
-      res.json({ success: true, status: next });
+      const { changed } = await transitionSos(req.params.id, next);
+      res.json({ success: true, status: next, changed });
     } catch (e: any) {
       sendError(req, res, e);
     }
@@ -124,6 +110,33 @@ function sosTransition(next: 'acknowledged' | 'resolved') {
 
 router.put('/sos/:id/acknowledge', requireAuth, requireRole(...STAFF_ROLES), sosTransition('acknowledged'));
 router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTransition('resolved'));
+
+// Cancel: the driver withdraws their own alert from the app (a mistake, or the trouble passed),
+// or staff close one as a false alarm. Staff are told when a driver cancels.
+router.post('/sos/:id/cancel', requireAuth, requireRole('driver', ...STAFF_ROLES), idempotent('sos-cancel'), async (req: Request, res: Response) => {
+  try {
+    const byDriver = req.user!.role === 'driver';
+    const { alert, changed } = await transitionSos(req.params.id, 'cancelled', byDriver ? { driverId: req.user!.user_id } : {});
+    if (changed && byDriver) {
+      try {
+        const { data: vehicle } = alert.vehicle_id
+          ? await supabase.from('vehicles').select('plate_number, driver_name').eq('id', alert.vehicle_id).maybeSingle()
+          : { data: null };
+        await notificationService.notifyStaff(
+          'SOS cancelled',
+          `${vehicle?.driver_name ?? 'The driver'} on ${vehicle?.plate_number ?? 'a vehicle'} cancelled their SOS. It was raised by mistake or is no longer needed.`,
+          'sos',
+          { alert_id: alert.id, vehicle_id: alert.vehicle_id, cancelled: true },
+        );
+      } catch (e) {
+        console.error('[telemetry] SOS cancel notification failed:', e);
+      }
+    }
+    res.json({ success: true, status: 'cancelled', changed });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
 
 // ── POST /sos/trigger ─────────────────────────────────────────
 // Optional alert_type lets the driver say what kind of emergency it is.

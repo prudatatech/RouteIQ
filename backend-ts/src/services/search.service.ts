@@ -141,7 +141,7 @@ async function searchVehicles(term: string): Promise<SearchResultItem[]> {
       label: v.plate_number ?? v.id,
       sublabel: [v.driver_name, v.status].filter(Boolean).join(' · '),
       type: 'vehicle',
-      path: `/fleet?open=${v.id}`,
+      path: `/fleet/${v.id}`,
     }));
 }
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { SosDetailsState, SosState } from '../../hooks/useSos';
+import type { SosCancelState, SosDetailsState, SosState } from '../../hooks/useSos';
 import type { SosSeverity, SosType } from '../../services/api';
 import { Banner, Button, Text, TextField } from '../ui';
 import { colors, radius, size, space } from '../../theme';
@@ -10,8 +10,10 @@ import { colors, radius, size, space } from '../../theme';
 interface SosDialogProps {
   state: SosState;
   details: SosDetailsState;
+  cancelState: SosCancelState;
   onRetry: () => void;
   onSendDetails: (type: SosType, description: string, severity?: SosSeverity) => void;
+  onCancel: () => void;
   onClose: () => void;
 }
 
@@ -24,7 +26,7 @@ const DETAIL_TYPES: { type: SosType; label: string; icon: keyof typeof Ionicons.
 ];
 
 /** Shows the SOS as it is sent, then lets the driver say what happened. */
-export default function SosDialog({ state, details, onRetry, onSendDetails, onClose }: SosDialogProps) {
+export default function SosDialog({ state, details, cancelState, onRetry, onSendDetails, onCancel, onClose }: SosDialogProps) {
   const { t } = useTranslation();
   const [type, setType] = useState<SosType | null>(null);
   const [description, setDescription] = useState('');
@@ -41,6 +43,21 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
           {t('sos_sending_desc')}
         </Text>
       </View>
+    );
+  }
+
+  if (state.phase === 'cancelled') {
+    return (
+      <>
+        <View style={styles.header} accessibilityLiveRegion="assertive">
+          <Ionicons name="checkmark-circle" size={size.icon.xl} color={colors.success} />
+          <Text variant="heading" accessibilityRole="header">
+            {t('sos_cancelled_title')}
+          </Text>
+          <Text variant="body">{t('sos_cancelled_desc')}</Text>
+        </View>
+        <Button title={t('close')} variant="secondary" onPress={onClose} />
+      </>
     );
   }
 
@@ -153,6 +170,14 @@ export default function SosDialog({ state, details, onRetry, onSendDetails, onCl
         </>
       )}
 
+      <View style={styles.cancel}>
+        <Text variant="bodySmall" color="textMuted">
+          {t('sos_cancel_hint')}
+        </Text>
+        {cancelState === 'failed' ? <Banner tone="danger" message={t('sos_cancel_failed')} /> : null}
+        <Button title={t('sos_cancel')} variant="secondary" loading={cancelState === 'sending'} onPress={onCancel} />
+      </View>
+
       <Button title={t('close')} variant="ghost" onPress={onClose} />
     </>
   );
@@ -162,6 +187,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: space[3], paddingVertical: space[4] },
   header: { gap: space[2] },
   injured: { gap: space[2] },
+  cancel: { gap: space[2] },
   types: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   type: {
     flexDirection: 'row',

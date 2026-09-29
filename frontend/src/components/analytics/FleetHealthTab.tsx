@@ -39,7 +39,7 @@ export default function FleetHealthTab() {
     {
       key: 'open', header: <span className="sr-only">Open</span>, align: 'right',
       cell: r => (
-        <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); navigate(`/fleet?open=${r.vehicle_id}`) }}>
+        <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); navigate(`/fleet/${r.vehicle_id}`) }}>
           Open vehicle
         </Button>
       ),
@@ -61,7 +61,7 @@ export default function FleetHealthTab() {
         loading={isLoading}
         error={isError ? 'We could not load fleet health. Check your connection and try again.' : undefined}
         onRetry={() => refetch()}
-        onRowClick={r => navigate(`/fleet?open=${r.vehicle_id}`)}
+        onRowClick={r => navigate(`/fleet/${r.vehicle_id}`)}
         initialSort={{ key: 'score', direction: 'asc' }}
         empty={{
           title: data.length === 0 ? 'No vehicles yet' : 'No vehicle needs attention',

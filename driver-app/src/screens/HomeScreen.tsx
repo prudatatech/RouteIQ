@@ -327,8 +327,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           <SosDialog
             state={sos.state}
             details={sos.details}
+            cancelState={sos.cancelState}
             onRetry={sos.trigger}
             onSendDetails={sos.sendDetails}
+            onCancel={sos.cancel}
             onClose={closeModal}
           />
         );

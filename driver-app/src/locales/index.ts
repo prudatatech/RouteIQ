@@ -513,6 +513,11 @@ export const translations = {
     fuel_kmpl: 'km/l',
     fuel_bill_tag: 'Bill',
     fuel_no_bill_tag: 'No bill',
+    sos_cancel: 'Cancel this SOS',
+    sos_cancel_hint: 'Sent by mistake, or no longer needed? Cancelling tells dispatch it is a false alarm.',
+    sos_cancelled_title: 'SOS cancelled',
+    sos_cancelled_desc: 'Dispatch has been told you no longer need help.',
+    sos_cancel_failed: 'Could not cancel the SOS. Try again, or call dispatch.',
 
   }, hi: {
     backhaul_sub: 'डिस्पैच को बताएं कि कितनी जगह खाली है',
@@ -1024,6 +1029,11 @@ export const translations = {
     fuel_kmpl: 'किमी/ली',
     fuel_bill_tag: 'बिल',
     fuel_no_bill_tag: 'बिल नहीं',
+    sos_cancel: 'यह SOS रद्द करें',
+    sos_cancel_hint: 'गलती से भेजा गया या अब ज़रूरत नहीं? रद्द करने पर डिस्पैच को पता चलेगा कि यह झूठा अलार्म था।',
+    sos_cancelled_title: 'SOS रद्द किया गया',
+    sos_cancelled_desc: 'डिस्पैच को बता दिया गया है कि अब आपको मदद की ज़रूरत नहीं है।',
+    sos_cancel_failed: 'SOS रद्द नहीं हो सका। दोबारा कोशिश करें, या डिस्पैच को कॉल करें।',
 
   }, mr: {
 

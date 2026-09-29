@@ -77,7 +77,7 @@ export default function InsightsPage() {
           query={insights}
           items={byType.idle_vehicle}
           empty="No vehicle has been idle for a day or more."
-          action={i => i.vehicle_id ? { label: 'View vehicle', to: `/fleet?open=${i.vehicle_id}` } : null}
+          action={i => i.vehicle_id ? { label: 'View vehicle', to: `/fleet/${i.vehicle_id}` } : null}
         />
         <InsightCard
           title="Reroute suggestions"

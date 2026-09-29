@@ -18,6 +18,7 @@ import {
 import {
   getAlertThresholds, saveAlertThresholds, thresholdLimits, THRESHOLD_FIELDS,
 } from '../services/alert-settings.service';
+import { getFleetAnalytics } from '../services/fleet-analytics.service';
 import { loadFleetHealth } from '../services/vehicle-health.service';
 import { loadPlans, serviceStatus } from '../services/service-plans.service';
 import { getVehicleActivity } from '../services/vehicle-activity.service';
@@ -42,6 +43,17 @@ async function requireVehicle(id: string): Promise<{ id: string; plate_number: s
   if (!data) throw new HttpError(404, 'Vehicle not found');
   return data as { id: string; plate_number: string; odometer_km: number | null; status: string };
 }
+
+// ── Analytics ──────────────────────────────────────────────
+
+// GET /fleet/analytics?days=30 — utilisation, status breakdown, distance, alerts and SOS for the last `days` days
+router.get('/analytics', ...staff, async (req: Request, res: Response) => {
+  try {
+    res.json(await getFleetAnalytics(parseInt(req.query.days as string, 10) || 30));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
 
 // ── Health ─────────────────────────────────────────────────
 

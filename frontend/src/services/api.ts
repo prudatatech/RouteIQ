@@ -105,10 +105,21 @@ const ensureArray = (data: unknown): unknown[] => Array.isArray(data) ? data : [
 // Vehicles API
 export const vehiclesAPI = {
   list: (params?: Record<string, unknown>) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
+  get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/vehicles/${id}`),
   summary: () => api.get('/vehicles/summary').then(r => r.data),
+  /** How many times each vehicle has raised an SOS: { [vehicle_id]: { total, last_30_days, open, cancelled } }. Staff only. */
+  sosCounts: () => api.get('/vehicles/sos-counts').then(r => r.data as Record<string, { total: number; last_30_days: number; open: number; cancelled: number }>),
+  /** One vehicle's SOS history (newest first) with its counts. Staff only. */
+  sosHistory: (id: string) => api.get(`/vehicles/${id}/sos`).then(r => r.data as {
+    counts: { total: number; last_30_days: number; open: number; cancelled: number }
+    alerts: {
+      id: string; driver_id: string | null; alert_type: string | null; description: string | null; severity: string | null
+      latitude: number | null; longitude: number | null; status: string | null; created_at: string; updated_at: string | null
+    }[]
+  }),
   /** Staff raise an SOS for a vehicle. `severity` is whether injuries are reported. */
   raiseSos: (id: string, data: {
     alert_type: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other'
@@ -263,6 +274,8 @@ export const fleetAPI = {
   serviceDue: () => api.get('/fleet/service-due').then(r => ensureArray(r.data)),
   alerts: (status: 'active' | 'resolved' | 'all') => api.get('/fleet/alerts', { params: { status } }).then(r => ensureArray(r.data)),
   alertSummary: () => api.get('/fleet/alerts/summary').then(r => r.data),
+  /** Utilisation, status breakdown, distance, alerts and SOS for the last `days` days. */
+  analytics: (days: number) => api.get('/fleet/analytics', { params: { days } }).then(r => r.data),
   acknowledgeAlert: (id: string) => api.post(`/fleet/alerts/${id}/acknowledge`).then(r => r.data),
   resolveAlert: (id: string) => api.post(`/fleet/alerts/${id}/resolve`).then(r => r.data),
   alertSettings: () => api.get('/fleet/alert-settings').then(r => r.data),
@@ -412,6 +425,8 @@ export const telemetryAPI = {
   callDriver: (vehicleId: string) => api.post(`/telemetry/call-driver/${vehicleId}`).then(r => r.data),
   acknowledgeSos: (id: string) => api.put(`/telemetry/sos/${id}/acknowledge`).then(r => r.data),
   resolveSos: (id: string) => api.put(`/telemetry/sos/${id}/resolve`).then(r => r.data),
+  /** Staff close an alert as a false alarm. (The driver cancels their own from the app.) */
+  cancelSos: (id: string) => api.post(`/telemetry/sos/${id}/cancel`).then(r => r.data),
   /** Driver raises an SOS for their assigned vehicle. */
   triggerSos: (data: { lat?: number, lng?: number, alert_type?: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other' }) =>
     api.post('/telemetry/sos/trigger', data).then(r => r.data),

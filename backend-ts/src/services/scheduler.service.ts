@@ -2,6 +2,7 @@
  * margixindia — Scheduler
  *
  * One interval job:
+ *   - reminds staff about SOS alerts nobody has acknowledged or resolved (escalateStaleSos)
  *   - closes bidding windows whose end time has passed (resolveExpiredWindows)
  *   - auto-resolves driver confirmations nobody answered (checkConfirmationsTimeout)
  *   - once per Indian calendar day, the people job (people-jobs.service): documents past
@@ -12,6 +13,7 @@
  * test app never starts it.
  */
 import { capacityService } from './capacity.service';
+import { escalateStaleSos } from './sos.service';
 import { runPeopleDailyJob } from './people-jobs.service';
 import { todayKey } from './people-docs.service';
 
@@ -35,6 +37,11 @@ export async function runSchedulerTick(): Promise<{ windowsClosed: number } | nu
       await capacityService.checkConfirmationsTimeout();
     } catch (e: any) {
       console.error('[scheduler] Confirmation timeout check failed:', e.message);
+    }
+    try {
+      await escalateStaleSos();
+    } catch (e: any) {
+      console.error('[scheduler] SOS reminder check failed:', e.message);
     }
     const today = todayKey();
     if (documentsCheckedOn !== today) {

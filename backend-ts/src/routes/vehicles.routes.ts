@@ -18,6 +18,7 @@ import { assertVehicleStatusChange, changeVehicleStatus, isPlaceholderPlate, isT
 import { rateLimitByUser } from '../core/rate-limit';
 import { holdVehicleAfterSos } from '../services/route.service';
 import { capacityService } from '../services/capacity.service';
+import { emptySosCounts, loadSosCounts } from '../services/sos.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 
@@ -249,6 +250,36 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
       archived,
       drafts,
     });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /sos-counts ────────────────────────────────────────
+// How many times each vehicle has raised an SOS: { [vehicle_id]: { total, last_30_days, open, cancelled } }.
+// Vehicles that never raised one are absent. Staff only.
+router.get('/sos-counts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    res.json(await loadSosCounts());
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /:vehicle_id/sos ───────────────────────────────────
+// One vehicle's SOS history, newest first, with its counts. Staff only.
+router.get('/:vehicle_id/sos', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
+    const { data, error } = await supabase
+      .from('sos_alerts')
+      .select('id, driver_id, alert_type, description, severity, latitude, longitude, status, created_at, updated_at')
+      .eq('vehicle_id', req.params.vehicle_id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    const counts = (await loadSosCounts(req.params.vehicle_id))[req.params.vehicle_id] ?? emptySosCounts();
+    res.json({ counts, alerts: data ?? [] });
   } catch (e: any) {
     sendError(req, res, e);
   }

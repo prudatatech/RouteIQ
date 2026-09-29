@@ -63,19 +63,21 @@ export class AnalyticsService {
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
+    // The fleet is counted the way Fleet's own summary counts it: placeholder vehicles (TEMP-…,
+    // DRFT-…) and archived ones are not fleet assets, and "idle" includes "available".
     const [
-      { count: totalVehicles },
-      { count: runningVehicles },
-      { count: idleVehicles },
+      { data: vehicleRows },
       { count: tripsToday },
       deliveredTimes,
     ] = await Promise.all([
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }).neq('status', 'archived'),
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'idle'),
+      supabase.from('vehicles').select('plate_number, status'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
       AnalyticsService.deliveryTimes(startISO, endISO),
     ]);
+    const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived');
+    const totalVehicles = fleet.length;
+    const runningVehicles = fleet.filter((v: any) => v.status === 'on_route').length;
+    const idleVehicles = fleet.filter((v: any) => v.status === 'idle' || v.status === 'available').length;
 
     // Planned distance of the routes dispatched in range
     const { data: routesToday } = await supabase
@@ -102,10 +104,10 @@ export class AnalyticsService {
     return {
       trips_today: tripsToday || 0,
       deliveries_today: deliveredTimes.length,
-      running_vehicles: runningVehicles || 0,
-      idle_vehicles: idleVehicles || 0,
-      total_vehicles: totalVehicles || 0,
-      fleet_utilisation_pct: totalVehicles ? Math.round(((runningVehicles || 0) / totalVehicles) * 100) : null,
+      running_vehicles: runningVehicles,
+      idle_vehicles: idleVehicles,
+      total_vehicles: totalVehicles,
+      fleet_utilisation_pct: totalVehicles ? Math.round((runningVehicles / totalVehicles) * 100) : null,
       total_distance_km: Math.round(totalDistanceToday),
       backhaul_loads_today: backhaulLoads.length,
       backhaul_revenue: Math.round(backhaulRevenue),
