@@ -15,6 +15,7 @@ import { STAFF_ROLES, canAccessVehicle, isStaff } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
 import { rateLimitByUser } from '../core/rate-limit';
+import { idempotent } from '../core/idempotency';
 import { auditService } from '../services/audit.service';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import { cacheDeletePattern } from '../core/redis';
@@ -159,7 +160,7 @@ router.get('/vehicles/:id/fuel-logs', requireAuth, async (req: Request, res: Res
 });
 
 // POST /fleet/vehicles/:id/fuel-logs — log a fill-up, with or without a bill
-router.post('/vehicles/:id/fuel-logs', requireAuth, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/fuel-logs', requireAuth, idempotent('fuel_log'), async (req: Request, res: Response) => {
   try {
     await requireVehicleAccess(req, req.params.id);
     const vehicle = await requireVehicle(req.params.id);

@@ -242,6 +242,16 @@ describe('permissions', () => {
     expect((await post({ litres: 40, total_amount: 4000 }, bearer('drv-other'))).status).toBe(403);
   });
 
+  it('applies a fill the phone resends with the same idempotency key once', async () => {
+    supabaseMock.reset({ ...{}, users: [{ id: 'drv-own', role: 'driver', is_active: true }], vehicles: [{ id: VEHICLE, plate_number: 'MH12AB1234', status: 'idle', driver_id: 'drv-own' }], vehicle_fuel_logs: [], expenses: [], idempotency_keys: [] });
+    const send = () => request(app).post(url()).set(driver).set('Idempotency-Key', 'fuel-key-12345').send({ litres: 40, total_amount: 4000 });
+    const first = await send();
+    const again = await send();
+    expect(first.status).toBe(201);
+    expect(again.body.id).toBe(first.body.id);
+    expect(supabaseMock.rows('vehicle_fuel_logs')).toHaveLength(1);
+  });
+
   it('lets a driver enter a fill from the last week only', async () => {
     expect((await post({ litres: 40, total_amount: 4000, filled_at: daysAgo(3) }, driver)).status).toBe(201);
     expect((await post({ litres: 41, total_amount: 4100, filled_at: daysAgo(30) }, driver)).status).toBe(400);
