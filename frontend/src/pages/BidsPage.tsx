@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, Download, FileCheck, FileX, Plus, X } from 'lucide-react'
@@ -33,7 +34,6 @@ interface CapacityWindow {
   closes_at: string
   floor_price: number | null
   winning_bid_id: string | null
-  fallback_used: boolean | null
   trigger_type: string | null
   status: string | null
   vehicles: WindowVehicle | null
@@ -126,7 +126,7 @@ function useNow(ms: number) {
 async function loadBoard() {
   const { data: windows, error: wErr } = await supabase
     .from('capacity_windows')
-    .select('id, opens_at, closes_at, floor_price, winning_bid_id, fallback_used, trigger_type, status, vehicles(plate_number, vehicle_type, capacity_kg, available_capacity_kg)')
+    .select('id, opens_at, closes_at, floor_price, winning_bid_id, trigger_type, status, vehicles(plate_number, vehicle_type, capacity_kg, available_capacity_kg)')
     .order('opens_at', { ascending: false })
     .limit(WINDOW_LIMIT)
   if (wErr) throw wErr
@@ -175,13 +175,15 @@ export default function BidsPage() {
   const [shown, setShown] = useState(WINDOWS_PER_PAGE)
   const [selected, setSelected] = useState<{ bid: Bid; window: CapacityWindow } | null>(null)
   const [opening, setOpening] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [focusWindowId, setFocusWindowId] = useState<string | null>(null)
 
   const board = useQuery({ queryKey: ['bids-board'], queryFn: loadBoard })
   const confirmations = useQuery({ queryKey: ['driver-confirmations'], queryFn: loadConfirmations })
   useRealtimeRefresh('bids_page', ['capacity_windows', 'capacity_bids'], [['bids-board']])
   useRealtimeRefresh('bids_page_confirmations', ['driver_confirmations'], [['driver-confirmations']])
 
-  useEffect(() => { setShown(WINDOWS_PER_PAGE) }, [tab])
+  useEffect(() => { setShown(prev => (prev === Number.MAX_SAFE_INTEGER ? prev : WINDOWS_PER_PAGE)) }, [tab])
 
   const bidsByWindow = useMemo(() => {
     const map = new Map<string, Bid[]>()
@@ -197,6 +199,37 @@ export default function BidsPage() {
     const bids = bidsByWindow.get(w.id) ?? []
     return { window: w, bids, state: windowState(w, bids, now) }
   }), [board.data, bidsByWindow, now])
+
+  // Opened from a link (a notification): ?open=<bid id or window id> switches to the tab the window is under, then
+  // opens that bid, or scrolls to that window. The param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || board.isLoading) return
+    const byBid = windows.find(w => w.bids.some(b => b.id === openId))
+    const found = byBid ?? windows.find(w => w.window.id === openId)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      if (found) {
+        const t: TabId = found.state === 'open' || found.state === 'upcoming' ? 'open' : found.state === 'cancelled' ? 'closed' : found.state
+        if (t === 'open') next.delete('tab'); else next.set('tab', t)
+      }
+      return next
+    }, { replace: true })
+    if (!found) return
+    setShown(Number.MAX_SAFE_INTEGER)
+    if (byBid) setSelected({ bid: byBid.bids.find(b => b.id === openId)!, window: byBid.window })
+    else setFocusWindowId(found.window.id)
+  }, [searchParams, setSearchParams, windows, board.isLoading])
+
+  useEffect(() => {
+    if (!focusWindowId) return
+    const el = document.getElementById(`window-${focusWindowId}`)
+    if (!el) return
+    el.scrollIntoView({ block: 'center' })
+    el.focus({ preventScroll: true })
+    setFocusWindowId(null)
+  }, [focusWindowId, tab, shown])
 
   const counts = useMemo(() => {
     const c: Record<TabId, number> = { open: 0, decide: 0, awarded: 0, closed: 0, all: windows.length }
@@ -231,7 +264,7 @@ export default function BidsPage() {
 
   const approve = useMutation({
     mutationFn: (bidId: string) => capacityAPI.approveBid(bidId),
-    onSuccess: () => { toast.success('Bid approved. The drop-off was added to the vehicle’s route.'); setSelected(null) },
+    onSuccess: () => { toast.success('Bid approved. The pickup and drop-off were added to the vehicle’s route.'); setSelected(null) },
     onError: err => toast.error(errorMessage(err, 'We could not approve this bid. Try again.')),
     onSettled: refresh,
   })
@@ -278,7 +311,7 @@ export default function BidsPage() {
             {vendorName(bid)} gets {formatKg(bid.weight_kg)} of space on {window.vehicles?.plate_number ?? 'this vehicle'} for {formatRupees(bid.bid_amount)}.
           </p>
           <p>
-            The drop-off is added to the vehicle’s route and the driver is asked to confirm it.
+            The pickup at the vendor and the drop-off are added to the vehicle’s route and the driver is asked to confirm them. The vehicle’s free space goes down by this load only.
             {others > 0 && ` The other ${others === 1 ? 'bid' : `${others} bids`} on this vehicle will be marked as not selected.`}
           </p>
         </div>
@@ -392,7 +425,7 @@ export default function BidsPage() {
       <section className="space-y-3">
         <SectionHeader
           title="Driver confirmations"
-          description="When a bid is approved, the driver is asked to accept the new stop. If they don't answer within 2 minutes it is accepted automatically."
+          description="When a bid is approved, the driver is asked to accept the new stops. If they decline, the award is cancelled and the window opens again; if they don't answer within 2 minutes it is accepted automatically."
         />
         <ConfirmationsTable query={confirmations} />
       </section>
@@ -434,7 +467,7 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
 
   return (
     <Card>
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+      <div id={`window-${win.id}`} tabIndex={-1} className="flex flex-col gap-3 border-b border-border px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:flex-row sm:items-start sm:justify-between sm:px-6">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-lg font-semibold text-text">{vehicle?.plate_number ?? 'Vehicle not found'}</h2>
@@ -446,8 +479,8 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
         </div>
         <dl className="grid shrink-0 grid-cols-3 gap-4 text-sm sm:text-right">
           <div>
-            <dt className="text-xs text-muted">Floor price</dt>
-            <dd className="font-medium tabular text-text">{formatRupees(win.floor_price)}</dd>
+            <dt className="text-xs text-muted">Minimum bid</dt>
+            <dd className="font-medium tabular text-text">{win.floor_price != null ? formatRupees(win.floor_price) : 'Set per load'}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted">Free space now</dt>
@@ -467,8 +500,8 @@ function WindowCard({ window: win, bids, state, busy, endingId, onEnd, onOpen, o
         </div>
       )}
 
-      {win.fallback_used && !win.winning_bid_id && (
-        <p className="border-b border-border px-4 py-3 text-sm text-muted sm:px-6">No bid was chosen; a standby shipment was used for this space.</p>
+      {state === 'closed' && bids.length > 0 && !win.winning_bid_id && (
+        <p className="border-b border-border px-4 py-3 text-sm text-muted sm:px-6">This window closed without a winning bid.</p>
       )}
 
       {bids.length === 0 ? (
@@ -578,13 +611,13 @@ function BidDrawer({ selection, state, busy, onClose, onApprove, onReject }: {
               { label: 'City', value: bid.vendor?.city ?? 'Not given' },
               { label: 'Bid amount', value: <span className="tabular">{formatRupees(bid.bid_amount)}</span> },
               {
-                label: 'Floor price',
-                value: floor == null ? 'None set' : (
+                label: 'Minimum bid',
+                value: floor == null ? 'Set per load by the pricing engine' : (
                   <span className="tabular">
                     {formatRupees(floor)}
                     {difference != null && (
                       <span className="block text-xs text-muted">
-                        {difference === 0 ? 'Bid equals the floor' : `${formatRupees(Math.abs(difference))} ${difference > 0 ? 'above' : 'below'} the floor`}
+                        {difference === 0 ? 'Bid equals the minimum bid' : `${formatRupees(Math.abs(difference))} ${difference > 0 ? 'above' : 'below'} the minimum bid`}
                       </span>
                     )}
                   </span>

@@ -41,9 +41,10 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   onPlaced: () => void
 }) {
   const capacityKg = w.vehicles?.available_capacity_kg ?? null
-  const floorPrice = w.floor_price ?? 0
+  // The window's minimum bid, when staff set one; otherwise it comes from the price check for this load (see `minimum`)
+  const windowMinimum = w.floor_price != null ? Number(w.floor_price) : null
 
-  const [bidAmount, setBidAmount] = useState(floorPrice ? String(floorPrice) : '')
+  const [bidAmount, setBidAmount] = useState(windowMinimum ? String(windowMinimum) : '')
   const [weightKg, setWeightKg] = useState('')
   const [dropoff, setDropoff] = useState<ResolvedPlace | null>(null)
   const [dropoffTouched, setDropoffTouched] = useState(false)
@@ -70,6 +71,8 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       }
     : null
   const quote = usePriceQuote(quoteInput)
+  // Minimum bid: staff's price for the whole window, else the low end of the price check for this load's weight and drop-off
+  const minimum = windowMinimum ?? (quote.data?.status === 'ok' ? quote.data.low : null)
 
   const remainingMs = useCountdown(w.closes_at)
   const closed = remainingMs === 0
@@ -80,7 +83,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   const weight = Number(weightKg)
   const ewayClean = ewayBill.replace(/\s+/g, '')
   const errors = {
-    amount: !bidAmount ? 'Enter your bid' : amount <= 0 ? 'Bid must be positive' : amount < floorPrice ? `Minimum bid is ${formatRupees(floorPrice)}` : null,
+    amount: !bidAmount ? 'Enter your bid' : amount <= 0 ? 'Bid must be positive' : minimum !== null && amount < minimum ? `Minimum bid is ${formatRupees(minimum)}` : null,
     weight: !weightKg ? 'Enter the load weight' : weight <= 0 ? 'Weight must be positive' : capacityKg != null && weight > capacityKg ? `Only ${capacityKg.toLocaleString('en-IN')} kg available` : null,
     dropoff: dropoff ? null : 'Choose a drop-off location from the list',
     eway: ewayClean && !/^\d{12}$/.test(ewayClean) ? 'E-way bill number is 12 digits' : null,
@@ -130,7 +133,12 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted">Floor price <span className="font-medium text-text">{formatRupees(floorPrice)}</span></span>
+          <span className="text-muted">
+            Minimum bid{' '}
+            <span className="font-medium text-text">
+              {minimum !== null ? formatRupees(minimum) : windowMinimum === null ? 'set for your load' : ''}
+            </span>
+          </span>
           <span className={closed ? 'font-medium text-danger' : 'text-muted'}>
             {closed ? 'Bidding closed' : <>Closes in <span className="tabular font-medium text-text">{minutes}:{String(seconds).padStart(2, '0')}</span></>}
           </span>
@@ -140,7 +148,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Your bid (₹)" type="number" min={floorPrice} step="1" required
+            label="Your bid (₹)" type="number" min={minimum ?? 0} step="1" required
             inputMode="decimal" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
             error={bidAmount || attempted ? errors.amount ?? undefined : undefined}
           />
@@ -167,7 +175,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
           ) : (
             <PriceSuggestion
               query={quote}
-              onUse={q => setBidAmount(String(Math.max(q.suggested, floorPrice)))}
+              onUse={q => setBidAmount(String(Math.max(q.suggested, minimum ?? 0)))}
               useLabel="Bid this price"
               idle="Enter the load weight and a drop-off location to see a suggested price."
             />
