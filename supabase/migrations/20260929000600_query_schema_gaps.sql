@@ -9,7 +9,7 @@
 -- as high priority when it's carrying cold-chain or hazardous cargo. Every
 -- other cargo-carrying table (delivery_points, depots, telemetry,
 -- vehicle_stoppages) already has this column as json; add it to vehicles too.
-ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS cargo_types json;
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS cargo_types jsonb;
 
 -- Backhaul bid acceptance (capacity.service.ts) falls back to a human-readable
 -- label for the vehicle's current location when the vendor has no address on
