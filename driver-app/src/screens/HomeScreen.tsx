@@ -20,6 +20,7 @@ import { useDriverRoute } from '../hooks/useDriverRoute';
 import { useLocationTracking } from '../hooks/useLocationTracking';
 import { useDeviceLocationStatus } from '../hooks/useDeviceLocationStatus';
 import { useSnappedRoute } from '../hooks/useSnappedRoute';
+import { useGpsOffEscalation } from '../hooks/useGpsOffEscalation';
 import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
@@ -104,11 +105,12 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     assignmentWaiting: assignmentKind,
   });
 
-  // Losing GPS on a route gets one short buzz; the status strip keeps showing it.
+  // Losing GPS on a route gets one short buzz, and a louder notification if it stays off for 2 minutes.
   const gpsOffOnRoute = !!data.routeData?.active && deviceLocation.checked && !deviceLocation.servicesEnabled;
   useEffect(() => {
     if (gpsOffOnRoute) shortFeedback();
   }, [gpsOffOnRoute]);
+  useGpsOffEscalation(gpsOffOnRoute);
 
   const showBackhaul = useCallback(() => setShowBackhaulPopup(true), []);
   const hideBackhaul = useCallback(() => setShowBackhaulPopup(false), []);
