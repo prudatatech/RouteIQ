@@ -24,6 +24,9 @@ export class ApiError extends Error {
 }
 
 /** Emergency types accepted by POST /telemetry/sos/trigger. */
+/** 'serious' when someone is injured, 'minor' when not. */
+export type SosSeverity = 'serious' | 'minor';
+
 export type SosType = 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other';
 
 export class SessionExpiredError extends Error {
@@ -236,7 +239,7 @@ class ApiClient {
   }
 
   /** Adds what happened to the alert already raised (own, active alerts only). */
-  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string }): Promise<any> {
+  async updateSosDetails(id: string, details: { alert_type?: SosType; description?: string; severity?: SosSeverity }): Promise<any> {
     return this.request('PATCH', `/telemetry/sos/${id}/details`, details);
   }
 

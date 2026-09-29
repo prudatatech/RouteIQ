@@ -6,7 +6,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Vibration } from 'react-native';
 import * as Location from 'expo-location';
-import { api, ApiError, type SosType } from '../services/api';
+import { api, ApiError, type SosSeverity, type SosType } from '../services/api';
 import type { LatLng } from '../types/route';
 import { isNetworkError } from '../utils/errors';
 
@@ -68,7 +68,7 @@ export function useSos(currentLoc: LatLng | null) {
     }
   }, []);
 
-  const sendDetails = useCallback(async (type: SosType, description: string) => {
+  const sendDetails = useCallback(async (type: SosType, description: string, severity?: SosSeverity) => {
     const id = alertIdRef.current;
     if (!id) {
       setDetails('failed');
@@ -76,7 +76,7 @@ export function useSos(currentLoc: LatLng | null) {
     }
     setDetails('sending');
     try {
-      await api.updateSosDetails(id, { alert_type: type, description: description.trim() || undefined });
+      await api.updateSosDetails(id, { alert_type: type, description: description.trim() || undefined, severity });
       setDetails('sent');
     } catch (e) {
       console.warn('SOS details failed', e);

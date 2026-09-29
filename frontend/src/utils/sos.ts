@@ -13,6 +13,13 @@ const SOS_TYPE_LABELS: Record<string, string> = {
   other: 'Other emergency',
 }
 
+/** What the driver said about injuries; null when they did not say. */
+export function sosSeverityLabel(severity: string | null | undefined): string | null {
+  if (severity === 'serious') return 'Injuries reported'
+  if (severity === 'minor') return 'No injuries reported'
+  return null
+}
+
 export function sosTypeLabel(type: string | null | undefined): string {
   if (!type) return SOS_TYPE_LABELS.panic_button
   return SOS_TYPE_LABELS[type] ?? humanize(type)

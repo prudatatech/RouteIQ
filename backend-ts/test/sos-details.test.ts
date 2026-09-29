@@ -33,6 +33,16 @@ describe('SOS details', () => {
     expect(JSON.stringify(supabaseMock.writes('sos_alerts'))).toContain('Rear-ended on NH48');
   });
 
+  it('stores whether anyone was injured as severity', async () => {
+    const res = await details(driver, { alert_type: 'accident', severity: 'serious' });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(supabaseMock.writes('sos_alerts'))).toContain('"severity":"serious"');
+  });
+
+  it('rejects a severity other than serious or minor', async () => {
+    expect((await details(driver, { severity: 'catastrophic' })).status).toBe(400);
+  });
+
   it("refuses another driver's alert", async () => {
     expect((await details(other, { alert_type: 'accident' })).status).toBe(404);
   });

@@ -152,6 +152,7 @@ router.post('/sos/trigger', requireAuth, async (req: Request, res: Response) => 
 // ── PATCH /sos/:id/details ────────────────────────────────────
 // The driver adds what happened to the alert they already raised, instead of
 // raising a second one. Only their own alert, and only while it is active.
+const SOS_SEVERITIES = ['serious', 'minor'];
 router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response) => {
   try {
     const update: Record<string, string> = {};
@@ -169,6 +170,13 @@ router.patch('/sos/:id/details', requireAuth, async (req: Request, res: Response
       }
       const note = req.body.description.trim().slice(0, 500);
       if (note) update.description = note;
+    }
+    if (req.body.severity !== undefined) {
+      if (!SOS_SEVERITIES.includes(req.body.severity)) {
+        res.status(400).json({ detail: 'severity must be serious or minor' });
+        return;
+      }
+      update.severity = req.body.severity;
     }
     if (Object.keys(update).length === 0) {
       res.status(400).json({ detail: 'Nothing to update' });
