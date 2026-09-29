@@ -99,6 +99,8 @@ export const settings = {
   EWAYBILL_GSP_USERNAME: env('EWAYBILL_GSP_USERNAME'),
   EWAYBILL_GSP_PASSWORD: env('EWAYBILL_GSP_PASSWORD'),
   EWAYBILL_GSP_CLIENT_ID: env('EWAYBILL_GSP_CLIENT_ID'),
+  // Base URL of the GSP's API. GSTIN search runs only when this and the three credentials above are set.
+  EWAYBILL_GSP_BASE_URL: env('EWAYBILL_GSP_BASE_URL'),
   FLEET_TELEMATICS_WEBHOOK_SECRET: env('FLEET_TELEMATICS_WEBHOOK_SECRET', 'test_secret'),
 
   // CORS: exact origins, comma-separated. '*' is not supported.

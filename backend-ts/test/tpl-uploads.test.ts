@@ -108,7 +108,7 @@ describe('POST /tpl/applications/upload-url', () => {
 
 describe('attaching uploaded documents', () => {
   const onboard = (documents: unknown) => request(app).post('/api/v1/tpl/onboard').send({
-    custom_id: 'fresh_3pl', companyName: 'Fresh', email: 'hi@fresh.in', pan: 'FGHIJ5678K', documents,
+    custom_id: 'fresh_3pl', companyName: 'Fresh', email: 'hi@fresh.in', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1', documents,
   });
 
   it('accepts documents from the application\'s own upload folder', async () => {
@@ -204,7 +204,7 @@ describe('upload URL rate limit', () => {
 describe('3PL applicant phone', () => {
   it('rejects a phone number that is not a 10-digit Indian mobile', async () => {
     const res = await request(app).post('/api/v1/tpl/onboard').send({
-      companyName: 'Acme Logistics', email: 'new-partner@acme.in', pan: 'ABCDE1234F', phone: '12345',
+      companyName: 'Acme Logistics', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '12345',
     });
     expect(res.status).toBe(400);
     expect(res.body.detail ?? res.body.error).toMatch(/mobile/i);

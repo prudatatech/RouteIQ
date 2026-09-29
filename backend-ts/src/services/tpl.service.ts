@@ -4,6 +4,7 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
 import { notificationService } from './notification.service';
+import { gstinError, normalizeGstin } from '../utils/gstin';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -67,6 +68,8 @@ export const tplService = {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+    const gstProblem = gstinError(gst, pan);
+    if (gstProblem) throw new HttpError(400, gstProblem);
     const phone = parseMobile(data.phone);
 
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
@@ -92,7 +95,7 @@ export const tplService = {
         email: email,
         phone,
         pan_number: pan,
-        gstin: gst,
+        gstin: normalizeGstin(gst),
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
         bank_ifsc: bankIfsc || null,
@@ -236,6 +239,8 @@ export const tplService = {
    */
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const gstProblem = gst !== undefined ? gstinError(gst, pan) : undefined;
+    if (gstProblem) throw new HttpError(400, gstProblem);
 
     const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
@@ -256,7 +261,7 @@ export const tplService = {
         company_name: companyName,
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         pan_number: pan,
-        gstin: gst,
+        ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
         bank_ifsc: bankIfsc || null,

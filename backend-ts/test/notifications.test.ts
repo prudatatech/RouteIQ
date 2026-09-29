@@ -67,7 +67,7 @@ describe('staff notifications (D2)', () => {
     const APPROVED = {
       id: VENDOR,
       company_name: 'Acme Logistics',
-      gst_number: '27ABCDE1234F1Z5',
+      gst_number: '27ABCDE1234F1Z0',
       city: 'Pune',
       address: '1 MG Road, Pune',
       latitude: 18.5,
@@ -137,7 +137,7 @@ describe('staff notifications (D2)', () => {
         companyName: 'Northline Logistics',
         email: 'ops@northline.example',
         pan: 'ABCDE1234F',
-        gst: '27ABCDE1234F1Z5',
+        gst: '27ABCDE1234F1Z0',
       });
       expect(res.status).toBe(200);
 

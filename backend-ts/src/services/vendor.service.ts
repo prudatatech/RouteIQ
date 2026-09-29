@@ -1,6 +1,16 @@
 import { supabase } from '../core/supabase';
 import { notificationService } from './notification.service';
 import { HttpError } from '../core/errors';
+import { gstinError, normalizeGstin } from '../utils/gstin';
+
+/** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
+function cleanVendorGstin(raw: unknown): string {
+  const gstin = normalizeGstin(raw);
+  if (!gstin) return '';
+  const problem = gstinError(gstin);
+  if (problem) throw new HttpError(400, problem);
+  return gstin;
+}
 
 /** Request states an admin can still act on (approve, reject or assign a vehicle). */
 const OPEN_REQUEST_STATUSES = ['pending', 'approved'];
@@ -37,6 +47,7 @@ export const vendorService = {
    * guard does for direct client edits (20260929000100).
    */
   async upsertProfile(vendorId: string, companyName: string, gstNumber: string, city: string, address: string, lat: number, lng: number) {
+    gstNumber = cleanVendorGstin(gstNumber);
     const changes: Record<string, unknown> = {
       id: vendorId,
       company_name: companyName,
@@ -100,6 +111,7 @@ export const vendorService = {
     companyLogo?: string | null;
     kycData: unknown;
   }) {
+    payload = { ...payload, gstNumber: cleanVendorGstin(payload.gstNumber) };
     const { data: existing, error: currentErr } = await supabase
       .from('vendor_profiles')
       .select('kyc_status')

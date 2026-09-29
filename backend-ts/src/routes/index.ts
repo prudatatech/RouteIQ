@@ -24,6 +24,7 @@ import marketplaceRoutes from './marketplace.routes';
 import capacityRoutes from './capacity.routes';
 import vendorRoutes from './vendor.routes';
 import tplRoutes from './tpl.routes';
+import gstinRoutes from './gstin.routes';
 import searchRoutes from './search.routes';
 import notificationsRoutes from './notifications.routes';
 
@@ -48,6 +49,7 @@ apiRouter.use('/marketplace', marketplaceRoutes);
 apiRouter.use('/capacity', capacityRoutes);
 apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/tpl', tplRoutes);
+apiRouter.use('/gstin', gstinRoutes);
 apiRouter.use('/search', searchRoutes);
 apiRouter.use('/notifications', notificationsRoutes);
 

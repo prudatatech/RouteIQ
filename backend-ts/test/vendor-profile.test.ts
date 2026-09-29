@@ -10,7 +10,7 @@ const VENDOR = 'vendor-1';
 const APPROVED = {
   id: VENDOR,
   company_name: 'Acme Logistics',
-  gst_number: '27ABCDE1234F1Z5',
+  gst_number: '27ABCDE1234F1Z0',
   city: 'Pune',
   address: '1 MG Road, Pune',
   latitude: 18.5,
@@ -43,7 +43,7 @@ beforeEach(() => {
 describe('POST /vendor/profile', () => {
   it.each([
     ['company name', { companyName: 'Acme Freight Pvt Ltd' }],
-    ['GST number', { gstNumber: '27ZZZZZ9999Z1Z5' }],
+    ['GST number', { gstNumber: '27ZZZZZ9999Z1Z8' }],
     ['registered address', { address: '9 FC Road, Pune' }],
   ])('sends an approved vendor back to review when the %s changes', async (_field, change) => {
     const res = await save({ ...SAME, ...change });
