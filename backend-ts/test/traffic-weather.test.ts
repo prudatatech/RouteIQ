@@ -205,3 +205,55 @@ describe('weather on a route', () => {
     expect(severityFromReading(800, 5, 100)).toBeGreaterThanOrEqual(0.6);
   });
 });
+
+describe('vendor loads (cargo manifests) as routes', () => {
+  // A vendor load from Mumbai to Pune, its truck near Lonavala. The console opens it at /routes/<manifest id>.
+  const load = {
+    id: 'manifest-1',
+    vehicle_id: 'veh-2',
+    status: 'in_transit',
+    pickup_lat: 19.076, pickup_lng: 72.8777,
+    drop_lat: 18.5204, drop_lng: 73.8567,
+    vehicles: { plate_number: 'MH02CD5678', latitude: 18.75, longitude: 73.4 },
+  };
+  const resetWithLoad = (extra: Record<string, unknown> = {}) => supabaseMock.reset({
+    users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+    routes: [],
+    cargo_manifest: [{ ...load, ...extra }],
+    traffic_incidents: [],
+    depots: [],
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    settings.OPENWEATHER_API_KEY = '';
+    settings.TOMTOM_API_KEY = '';
+  });
+
+  it('gives weather for a vendor load instead of a 404', async () => {
+    resetWithLoad({ vehicles: { plate_number: 'MH02CD5678', latitude: 15.3, longitude: 75.1 } });
+    settings.OPENWEATHER_API_KEY = 'test-key';
+    vi.spyOn(externalHttp, 'getJson').mockResolvedValue({
+      weather: [{ id: 800, main: 'Clear', description: 'clear sky' }], main: { temp: 30 }, wind: { speed: 2 }, visibility: 10000,
+    });
+    const res = await request(app).get('/api/v1/weather/route/manifest-1').set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ available: true, description: 'clear sky' });
+  });
+
+  it('still 404s for an id that is neither a route nor a vendor load', async () => {
+    resetWithLoad();
+    settings.OPENWEATHER_API_KEY = 'test-key';
+    expect((await request(app).get('/api/v1/weather/route/nope').set(admin())).status).toBe(404);
+  });
+
+  it('checks traffic on vendor loads that are on the road', async () => {
+    resetWithLoad();
+    await cacheSet('active_reroute_suggestions', [], 60);
+    settings.TOMTOM_API_KEY = 'test-key';
+    vi.spyOn(externalHttp, 'getJson').mockResolvedValue(tomtom([accident]));
+    vi.spyOn(externalHttp, 'postJson').mockRejectedValue(new Error('ML service is down'));
+    const res = await request(app).post('/api/v1/traffic/refresh').set(admin());
+    expect(res.body).toMatchObject({ configured: true, routes_checked: 1 });
+    expect(supabaseMock.rows('traffic_incidents')[0].affected_route_ids).toEqual(['manifest-1']);
+  });
+});

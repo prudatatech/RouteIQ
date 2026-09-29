@@ -2,6 +2,8 @@
  * margixindia — Weather routes (OpenWeather)
  *
  * GET /weather/route/:route_id  current conditions at the middle of a route
+ *                               (a vendor load's cargo manifest id works too;
+ *                               the console shows vendor loads as routes)
  */
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireRole } from '../core/auth';
@@ -21,13 +23,26 @@ router.get('/route/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (
       .eq('id', req.params.route_id)
       .maybeSingle();
     if (error) throw error;
-    if (!route) throw new HttpError(404, 'Route not found');
 
-    const r = route as any;
     const path: LatLng[] = [];
     const push = (lat: unknown, lng: unknown) => { const p = { lat: Number(lat), lng: Number(lng) }; if (isValidPoint(p)) path.push(p); };
-    push(r.vehicles?.latitude, r.vehicles?.longitude);
-    for (const s of [...(r.route_stops ?? [])].sort((a: any, b: any) => a.sequence - b.sequence)) push(s.delivery_points?.latitude, s.delivery_points?.longitude);
+    if (route) {
+      const r = route as any;
+      push(r.vehicles?.latitude, r.vehicles?.longitude);
+      for (const s of [...(r.route_stops ?? [])].sort((a: any, b: any) => a.sequence - b.sequence)) push(s.delivery_points?.latitude, s.delivery_points?.longitude);
+    } else {
+      const { data: manifest, error: mErr } = await supabase
+        .from('cargo_manifest')
+        .select('id, pickup_lat, pickup_lng, drop_lat, drop_lng, vehicles(latitude, longitude)')
+        .eq('id', req.params.route_id)
+        .maybeSingle();
+      if (mErr) throw mErr;
+      if (!manifest) throw new HttpError(404, 'Route not found');
+      const m = manifest as any;
+      push(m.vehicles?.latitude, m.vehicles?.longitude);
+      if (path.length === 0) push(m.pickup_lat, m.pickup_lng);
+      push(m.drop_lat, m.drop_lng);
+    }
     if (path.length === 0) {
       res.json({ configured: true, available: false, reason: 'This route has no locations yet.' });
       return;

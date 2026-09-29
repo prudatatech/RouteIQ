@@ -111,6 +111,22 @@ async function loadActiveRoutes(): Promise<ActiveRoute[]> {
     }
     if (path.length >= 2) routes.push({ id: r.id, vehicle_id: r.vehicle_id, path, plate: r.vehicles?.plate_number ?? null });
   }
+
+  // Vendor loads on the road are routes too: truck (or pickup, before it has a position) to drop.
+  const { data: loads, error: loadsErr } = await supabase
+    .from('cargo_manifest')
+    .select('id, vehicle_id, pickup_lat, pickup_lng, drop_lat, drop_lng, vehicles(plate_number, latitude, longitude)')
+    .eq('status', 'in_transit');
+  if (loadsErr) throw new Error(loadsErr.message);
+  for (const m of (loads ?? []) as any[]) {
+    if (!m.vehicle_id) continue;
+    const truck = { lat: Number(m.vehicles?.latitude), lng: Number(m.vehicles?.longitude) };
+    const start = isValidPoint(truck) ? truck : { lat: Number(m.pickup_lat), lng: Number(m.pickup_lng) };
+    const drop = { lat: Number(m.drop_lat), lng: Number(m.drop_lng) };
+    if (isValidPoint(start) && isValidPoint(drop)) {
+      routes.push({ id: m.id, vehicle_id: m.vehicle_id, path: [start, drop], plate: m.vehicles?.plate_number ?? null });
+    }
+  }
   return routes;
 }
 
