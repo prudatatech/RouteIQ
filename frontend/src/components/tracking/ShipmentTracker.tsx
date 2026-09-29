@@ -8,6 +8,7 @@ import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { fetchDrivingRoute, type DrivingRoute } from '@/components/map/directions'
 import { formatEta } from '@/utils/timeFormat'
+import { formatKg } from '@/utils/display'
 
 function formatEventTime(value: string) {
   const d = new Date(value)
@@ -103,7 +104,9 @@ function stepIndex(status: string | undefined) {
  * Used by the public customer tracker (`/track/:trackingId`) and reusable by vendor
  * tracking. Pure presentation — the caller fetches the data and owns polling.
  */
-export function ShipmentTracker({ shipment, isLoading, error, onRetry, className }: {
+export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetry, className }: {
+  /** The ID that was looked up; named in the not-found message. */
+  trackingId?: string
   shipment: ShipmentTrackingData | null | undefined
   isLoading?: boolean
   /** Message to show when loading failed. */
@@ -143,8 +146,8 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
       <Card padded className={className}>
         <EmptyState
           icon={<MapPin size={22} />}
-          title="No shipment found"
-          description="Check the tracking ID and try again."
+          title={trackingId ? `No shipment found for ${trackingId}` : 'No shipment found'}
+          description="Check the tracking ID for typos. You can find it in the message or email you got from your shipper."
         />
       </Card>
     )
@@ -221,8 +224,8 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
             { label: 'Origin', value: shipment.origin_name || shipment.origin_address || '—' },
             { label: 'Destination', value: shipment.destination?.name || shipment.destination?.address || '—' },
             { label: 'Priority', value: shipment.priority ? shipment.priority.charAt(0).toUpperCase() + shipment.priority.slice(1) : '—' },
-            { label: 'Weight', value: shipment.total_weight_kg != null ? `${shipment.total_weight_kg} kg` : '—' },
-            { label: 'Items', value: shipment.total_items ?? '—' },
+            { label: 'Weight', value: formatKg(shipment.total_weight_kg) },
+            { label: 'Items', value: shipment.total_items != null ? shipment.total_items.toLocaleString('en-IN') : '—' },
           ]}
         />
       </Card>
@@ -235,14 +238,17 @@ export function ShipmentTracker({ shipment, isLoading, error, onRetry, className
         <div className="space-y-6">
           <Card padded>
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-text">Estimated arrival</p>
+              <p className="text-sm font-medium text-text">Time to arrival</p>
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : etaMinutes != null ? formatEta(etaMinutes) : '—'}
+              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatEta(etaMinutes)) : '—'}
             </p>
-            {!delivered && etaMinutes == null && (
-              <p className="mt-1 text-xs text-muted">No live vehicle assigned yet.</p>
+            {!delivered && !cancelled && etaMinutes == null && (
+              <p className="mt-1 text-xs text-muted">Shown once a vehicle is on its way and sharing its location.</p>
+            )}
+            {!delivered && !cancelled && etaMinutes != null && (
+              <p className="mt-1 text-xs text-muted">An estimate from the vehicle's position now. Traffic and stops can change it.</p>
             )}
           </Card>
 

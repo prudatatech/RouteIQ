@@ -85,7 +85,8 @@ export default function TplOnboardingPage() {
     const errors: Record<number, Record<string, string>> = { 1: {}, 2: {} }
     if (!companyName.trim()) errors[1].companyName = 'Enter your company legal name'
     if (!editId && (!customId || customIdError)) errors[1].customId = customIdError || 'Choose a valid 3PL ID'
-    if (!email.trim()) errors[1].email = 'Enter a contact email'
+    if (editId) { /* the email is not changed when editing */ }
+    else if (!email.trim()) errors[1].email = 'Enter a contact email'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors[1].email = 'Enter a valid email address'
     if (!phone.trim()) errors[1].phone = 'Enter a mobile number'
     else if (!MOBILE_PATTERN.test(phone.trim())) errors[1].phone = 'Enter a valid 10-digit mobile number'
@@ -101,9 +102,10 @@ export default function TplOnboardingPage() {
     if (!bankIfsc.trim()) errors[1].bankIfsc = 'Enter the IFSC code'
     else if (!IFSC_PATTERN.test(bankIfsc.trim())) errors[1].bankIfsc = 'IFSC looks wrong (e.g. HDFC0001234)'
 
+    if (!corridors.some(c => c.name.trim())) errors[2].corridors = 'Add at least one corridor you serve, for example DEL-BOM.'
     if (!isDeclared) errors[2].declaration = 'Accept the declaration to submit'
     return errors
-  }, [companyName, customId, customIdError, editId, email, phone, pan, gst, bankAccount, bankIfsc, isDeclared])
+  }, [companyName, customId, customIdError, editId, email, phone, pan, gst, bankAccount, bankIfsc, isDeclared, corridors])
 
   // Random suffix chosen once so the suggestions do not change on every render.
   const [idSuffix] = useState(() => Math.floor(Math.random() * 1000))
@@ -189,7 +191,7 @@ export default function TplOnboardingPage() {
       if (typeof draft.taxTreatment === 'string') setTaxTreatment(draft.taxTreatment)
       if (Array.isArray(draft.corridors) && draft.corridors.length > 0) setCorridors(draft.corridors as CorridorFormRow[])
       if (typeof draft.step === 'number') setStep(draft.step)
-      toast('Restored your saved draft. Documents must be re-attached.', { icon: '📝' })
+      toast('We restored the details you had typed. Attach your documents again.')
     } catch (e) {
       console.error('Failed to restore draft', e)
     }
@@ -218,7 +220,8 @@ export default function TplOnboardingPage() {
   const handleNext = () => {
     setAttempted(prev => ({ ...prev, 1: true }))
     if (!stepValid(1)) {
-      toast.error('Please fix the errors before continuing.')
+      toast.error('Some details need fixing. See the messages under each field.')
+      window.scrollTo(0, 0)
       return
     }
     setStep(2)
@@ -227,7 +230,11 @@ export default function TplOnboardingPage() {
   const handleFileSelect = (docType: string, file: File | undefined) => {
     if (!file) return
     if (file.size > 2 * 1024 * 1024) {
-      toast.error(`${file.name} is over the 2 MB limit.`)
+      toast.error(`${file.name} is over the 2 MB limit. Choose a smaller file.`)
+      return
+    }
+    if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) {
+      toast.error(`${file.name} is not a PDF, PNG or JPG file.`)
       return
     }
     setUploadedDocs(prev => ({ ...prev, [docType]: file }))
@@ -236,8 +243,9 @@ export default function TplOnboardingPage() {
   const handleSubmit = async () => {
     setAttempted({ 1: true, 2: true })
     if (!stepValid(1) || !stepValid(2)) {
-      toast.error('Please fix the errors before submitting.')
+      toast.error(stepValid(1) ? 'Accept the declaration to submit.' : 'Some company details need fixing.')
       setStep(stepValid(1) ? 2 : 1)
+      window.scrollTo(0, 0)
       return
     }
     setSubmitting(true)
@@ -245,7 +253,7 @@ export default function TplOnboardingPage() {
       const payload = {
         custom_id: customId,
         companyName, email, phone, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment,
-        corridors,
+        corridors: corridors.filter(c => c.name.trim()),
         // Keep documents that aren't being replaced by a new upload in this save, so
         // editing without re-uploading every file doesn't delete the untouched ones.
         documents: existingDocs.filter(d => !(d.type in uploadedDocs)) as { type: string, url: string }[],
@@ -260,18 +268,14 @@ export default function TplOnboardingPage() {
         payload.documents.push({ type: docType, url: path })
       }))
 
-      const promise = editId ? tplAPI.updateApplication(editId, payload) : tplAPI.onboard(payload)
-      const data = await toast.promise(promise, {
-        loading: editId ? 'Updating application…' : 'Submitting application…',
-        success: editId ? 'Application updated.' : 'Application submitted.',
-        error: editId ? 'Failed to update application.' : 'Failed to submit application.',
-      })
+      const data = editId ? await tplAPI.updateApplication(editId, payload) : await tplAPI.onboard(payload)
       setTrackingId(customId || editId || data.id)
       clearDraft()
       setStep(3)
+      window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
-      toast.error(errorMessage(err, 'Something went wrong. Please try again.'))
+      toast.error(errorMessage(err, 'We could not send your application. Check your connection and try again. Your details are kept.'))
     } finally {
       setSubmitting(false)
     }
@@ -299,7 +303,7 @@ export default function TplOnboardingPage() {
         </div>
 
         {/* Stepper */}
-        <ol className="flex items-center justify-center gap-3 text-sm">
+        <ol aria-label="Steps" className="flex items-center justify-center gap-3 text-sm">
           {steps.slice(0, 2).map((s, i) => (
             <li key={s.id} className="flex items-center gap-3">
               <span className={clsx(
@@ -308,7 +312,7 @@ export default function TplOnboardingPage() {
               )}>
                 {step > s.id ? <CheckCircle2 size={14} /> : s.id}
               </span>
-              <span className={clsx(step === s.id ? 'font-medium text-text' : 'text-muted')}>{s.label}</span>
+              <span aria-current={step === s.id ? 'step' : undefined} className={clsx(step === s.id ? 'font-medium text-text' : 'text-muted')}>{s.label}</span>
               {i === 0 && <span className="h-px w-8 bg-border" aria-hidden="true" />}
             </li>
           ))}
@@ -332,15 +336,17 @@ export default function TplOnboardingPage() {
                   onChange={e => handleCustomIdChange(e.target.value)}
                   placeholder="e.g. acme_3pl"
                 />
-                <Input label="Contact email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" error={err(1, 'email')} />
+                {!editId && (
+                  <Input label="Contact email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" error={err(1, 'email')} hint="Your partner login is set up with this email once you are approved." />
+                )}
                 <Input
                   label="Mobile number" type="tel" inputMode="tel" required maxLength={10}
                   value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   placeholder="9876543210" error={err(1, 'phone')}
                 />
-                <Input label="Company PAN" required value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" error={err(1, 'pan')} />
+                <Input label="Company PAN" required maxLength={10} value={pan} onChange={e => setPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="font-mono" error={err(1, 'pan')} hint="You need it to edit your application later." />
                 <div>
-                  <Input label="GSTIN" required value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="15-character GSTIN" hint="Its last character is a check digit, so a typing mistake is caught." className="font-mono" error={err(1, 'gst')} />
+                  <Input label="GSTIN" required maxLength={15} value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="15-character GSTIN" hint="Its last character is a check digit, so a typing mistake is caught." className="font-mono" error={err(1, 'gst')} />
                   <GstinStatus gstin={gst} pan={pan} />
                 </div>
                 <Select label="MSME status" options={MSME_OPTIONS.map(o => ({ value: o, label: o }))} value={msmeStatus} onChange={e => setMsmeStatus(e.target.value)} />
@@ -365,12 +371,14 @@ export default function TplOnboardingPage() {
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <Input
                     label="Account number" required value={bankAccount}
+                    inputMode="numeric"
                     onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
                     error={err(1, 'bankAccount')}
                     hint="9–18 digits"
                   />
                   <Input
                     label="IFSC code" required value={bankIfsc}
+                    maxLength={11}
                     onChange={e => setBankIfsc(e.target.value.toUpperCase())}
                     className="font-mono" error={err(1, 'bankIfsc')}
                     placeholder="HDFC0001234"
@@ -383,7 +391,7 @@ export default function TplOnboardingPage() {
 
         {step === 1 && (
           <div className="flex justify-end">
-            <Button onClick={handleNext}>Next: Operational profile</Button>
+            <Button onClick={handleNext}>Next: operational profile</Button>
           </div>
         )}
 
@@ -399,6 +407,7 @@ export default function TplOnboardingPage() {
                 />
                 <div className="border-t border-border pt-8">
                   <CorridorEditor corridors={corridors} onChange={setCorridors} />
+                  {err(2, 'corridors') && <p role="alert" className="mt-2 text-sm text-danger">{err(2, 'corridors')}</p>}
                 </div>
 
                 <div className="border-t border-border pt-8">
@@ -434,10 +443,10 @@ export default function TplOnboardingPage() {
                                 >
                                   <Eye size={14} />
                                 </button>
-                                <label className="cursor-pointer text-muted hover:text-text">
+                                <label className="cursor-pointer rounded-control text-muted hover:text-text focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
                                   <UploadCloud size={14} />
                                   <span className="sr-only">Replace {docType}</span>
-                                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
+                                  <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
                                 </label>
                                 {file && (
                                   <button
@@ -456,10 +465,10 @@ export default function TplOnboardingPage() {
                               </div>
                             </>
                           ) : (
-                            <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2">
+                            <label className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-control focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
                               <UploadCloud size={20} className="text-muted" />
                               <span className="text-xs font-medium text-text">{docType}</span>
-                              <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
+                              <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg" onChange={e => handleFileSelect(docType, e.target.files?.[0])} />
                             </label>
                           )}
                         </div>
@@ -482,7 +491,7 @@ export default function TplOnboardingPage() {
 
             <div className="flex items-center justify-between">
               <Button variant="ghost" onClick={() => setStep(1)}>Back</Button>
-              <Button disabled={!isDeclared} loading={submitting} onClick={handleSubmit}>
+              <Button loading={submitting} onClick={handleSubmit}>
                 {editId ? 'Save changes' : 'Submit application'}
               </Button>
             </div>
@@ -497,15 +506,15 @@ export default function TplOnboardingPage() {
             <h2 className="text-lg font-semibold text-text">{editId ? 'Application updated' : 'Application submitted'}</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted">
               {editId
-                ? 'Your updated identity and operational terms have been sent for review.'
-                : 'Your identity and operational terms have been sent for review.'}
+                ? 'Your changes have been sent for review.'
+                : 'We will review it and email you at the address you gave. Once approved, set up your partner login.'}
             </p>
             <div className="mx-auto mt-6 max-w-sm rounded-control border border-border bg-surface-subtle p-4">
               <p className="text-xs text-muted">Your 3PL tracking ID</p>
               <p className="mt-1 select-all font-mono text-sm font-semibold text-brand">{trackingId || '—'}</p>
-              <p className="mt-2 text-xs text-muted">Save this ID to check your status or edit your application before it's approved.</p>
+              <p className="mt-2 text-xs text-muted">Save this ID. With it and your company PAN you can check your status or edit your application until it is approved.</p>
             </div>
-            <Button variant="secondary" className="mt-6" onClick={() => navigate('/3pl/onboard/track')}>
+            <Button variant="secondary" className="mt-6" onClick={() => navigate(`/3pl/onboard/track?id=${encodeURIComponent(trackingId)}`)}>
               Track my application
             </Button>
           </Card>

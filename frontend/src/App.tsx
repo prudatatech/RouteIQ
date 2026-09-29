@@ -11,6 +11,7 @@ import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
+import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, routes, routeDetails, analytics, insights, optimize, shipments, shipmentManifest, emergency, bids,
@@ -414,6 +415,7 @@ export default function App() {
               </PrivateRoute>
             } />
           </Route>
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </ChunkErrorBoundary>
       </BrowserRouter>

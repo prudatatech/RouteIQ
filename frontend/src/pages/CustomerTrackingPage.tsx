@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
@@ -26,6 +26,9 @@ export default function CustomerTrackingPage() {
     },
   })
 
+  // Keep the box in step with the address (back button, shared link).
+  useEffect(() => { setSearchId(trackingId ?? '') }, [trackingId])
+
   const notFound = isError && (error as AxiosError)?.response?.status === 404
 
   return (
@@ -48,7 +51,7 @@ export default function CustomerTrackingPage() {
           </div>
 
           <form
-            onSubmit={e => { e.preventDefault(); const id = searchId.trim(); if (id) navigate(`/track/${id}`) }}
+            onSubmit={e => { e.preventDefault(); const id = searchId.trim(); if (id) navigate(`/track/${encodeURIComponent(id)}`) }}
             className="flex max-w-md flex-col gap-2 sm:flex-row"
           >
             <div className="relative flex-1">
@@ -58,6 +61,9 @@ export default function CustomerTrackingPage() {
                 value={searchId}
                 onChange={e => setSearchId(e.target.value)}
                 placeholder="e.g. RTX-1A2B3C4D"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
                 aria-label="Tracking ID"
                 className="h-control w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-base text-text placeholder:text-disabled focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 sm:text-sm"
               />
@@ -68,6 +74,7 @@ export default function CustomerTrackingPage() {
 
         {trackingId && (
           <ShipmentTracker
+            trackingId={trackingId}
             shipment={notFound ? null : shipment}
             isLoading={isLoading}
             error={isError && !notFound ? 'Check your connection and try again.' : null}

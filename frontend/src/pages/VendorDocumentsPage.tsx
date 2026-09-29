@@ -10,7 +10,7 @@ import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
-import { Alert, Button, Card, Checkbox, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
@@ -85,7 +85,11 @@ const DOC_FIELDS: { key: string; label: string; hint?: string }[] = [
   { key: 'companyLogo', label: 'Company logo', hint: 'Shown in the header once approved' },
 ]
 
-const STEPS = ['Company', 'Contact & address', 'Documents', 'Declaration & review'] as const
+const STEPS = ['Company', 'Contact & address', 'Bank & documents', 'Review & submit'] as const
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
 
 /**
  * The company & KYC wizard, shared by the first-time setup flow (/vendor/onboarding)
@@ -102,6 +106,8 @@ export default function VendorDocumentsPage() {
   const mode: 'onboarding' | 'documents' = location.pathname.startsWith('/vendor/onboarding') ? 'onboarding' : 'documents'
 
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [kycStatus, setKycStatus] = useState<KycStatus>('pending')
@@ -129,7 +135,8 @@ export default function VendorDocumentsPage() {
     const load = async () => {
       const { data: profile, error } = await supabase.from('vendor_profiles').select('*').eq('id', userId).maybeSingle()
       if (cancelled) return
-      if (error) { console.error('Failed to load vendor profile', error); setLoading(false); return }
+      if (error) { console.error('Failed to load vendor profile', error); setLoadFailed(true); setLoading(false); return }
+      setLoadFailed(false)
       if (!profile) { setHasProfile(false); setLoading(false); return }
       setHasProfile(true)
       const status = String(profile.kyc_status ?? 'pending').toLowerCase() as KycStatus
@@ -161,7 +168,7 @@ export default function VendorDocumentsPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, load)
       .subscribe()
     return () => { cancelled = true; supabase.removeChannel(channel) }
-  }, [userId])
+  }, [userId, reloadKey])
 
   // --- Draft autosave (localStorage) ---------------------------------------
   // Files themselves are never restorable from localStorage — only the storage
@@ -179,7 +186,7 @@ export default function VendorDocumentsPage() {
       if (draft.form) setForm(prev => ({ ...prev, ...draft.form }))
       if (draft.otherDocs) setOtherDocs(draft.otherDocs)
       if (typeof draft.step === 'number') setStep(draft.step)
-      toast('Restored your saved draft. Files must be re-attached.', { icon: '📝' })
+      toast('We restored the details you had typed.')
     } catch (e) {
       console.error('Failed to restore draft', e)
     }
@@ -217,6 +224,7 @@ export default function VendorDocumentsPage() {
 
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
     if (!form.emailAddress.trim()) errors[1].emailAddress = 'Enter a contact email'
+    else if (!EMAIL_PATTERN.test(form.emailAddress.trim())) errors[1].emailAddress = 'Enter an email like you@company.com'
     if (!form.mobileNumber.trim()) errors[1].mobileNumber = 'Enter a mobile number'
     else if (!/^[6-9]\d{9}$/.test(form.mobileNumber.trim())) errors[1].mobileNumber = 'Enter a valid 10-digit mobile number'
     if (form.telephone.trim() && !/^[6-9]\d{9}$/.test(form.telephone.trim())) errors[1].telephone = 'Enter a valid 10-digit number'
@@ -229,8 +237,11 @@ export default function VendorDocumentsPage() {
 
     if (!form.beneficiaryAccountName.trim()) errors[2].beneficiaryAccountName = 'Enter the account holder name'
     if (!form.bankAccountNumber.trim()) errors[2].bankAccountNumber = 'Enter the bank account number'
+    else if (!ACCOUNT_PATTERN.test(form.bankAccountNumber.trim())) errors[2].bankAccountNumber = 'Account number must be 9 to 18 digits'
     if (!form.bankName.trim()) errors[2].bankName = 'Enter the bank name'
+    if (!form.bankBranchName.trim()) errors[2].bankBranchName = 'Enter the branch name'
     if (!form.bankIfscCode.trim()) errors[2].bankIfscCode = 'Enter the IFSC code'
+    else if (!IFSC_PATTERN.test(form.bankIfscCode.trim())) errors[2].bankIfscCode = 'IFSC looks wrong (e.g. HDFC0001234)'
 
     if (!form.declaration) errors[3].declaration = 'Accept the declaration to submit'
     return errors
@@ -331,7 +342,16 @@ export default function VendorDocumentsPage() {
   // --- Submit -------------------------------------------------------------
   const submit = async () => {
     setAttempted({ 0: true, 1: true, 2: true, 3: true })
-    if (!stepValid(0) || !stepValid(1) || !stepValid(2) || !stepValid(3) || !userId) return
+    const firstInvalid = [0, 1, 2, 3].find(i => !stepValid(i))
+    if (firstInvalid !== undefined) {
+      if (firstInvalid !== step) {
+        toast.error(`Some details in "${STEPS[firstInvalid]}" need fixing.`)
+        setStep(firstInvalid)
+        window.scrollTo(0, 0)
+      }
+      return
+    }
+    if (!userId) return
 
     if (hasProfile && kycStatus === 'approved') {
       const ok = await confirm({
@@ -413,6 +433,19 @@ export default function VendorDocumentsPage() {
     )
   }
 
+  if (loadFailed && !hasProfile) {
+    return (
+      <Page>
+        <PageHeader title={mode === 'onboarding' ? 'Set up your company' : 'Company & KYC'} />
+        <ErrorState
+          title="We could not load your company details"
+          description="Check your connection and try again."
+          onRetry={() => { setLoading(true); setReloadKey(k => k + 1) }}
+        />
+      </Page>
+    )
+  }
+
   const title = mode === 'onboarding' ? 'Set up your company' : 'Company & KYC'
   const description = mode === 'onboarding'
     ? 'Tell us about your company so we can verify it and open up bidding and posting loads.'
@@ -422,6 +455,11 @@ export default function VendorDocumentsPage() {
     <Page width="form">
       <PageHeader title={title} description={description} />
 
+      {hasProfile && kycStatus === 'pending' && (
+        <Alert tone="warning" title="Finish your KYC">
+          Your company profile is saved, but you cannot post loads or bid until you submit your bank details and documents for review.
+        </Alert>
+      )}
       {hasProfile && kycStatus === 'approved' && (
         <Alert tone="success" title="KYC approved" action={!isEditing && !readOnly ? undefined : (
           !isEditing ? <Button variant="secondary" size="sm" onClick={() => setIsEditingKyc(true)}>Update details</Button> : undefined
@@ -444,7 +482,7 @@ export default function VendorDocumentsPage() {
         <ReadOnlySummary form={form} otherDocs={otherDocs} onView={openViewer} />
       ) : (
         <Card padded className="space-y-6">
-          <Stepper current={step} onSelect={i => { if (i < step || stepValid(step)) setStep(i) }} />
+          <Stepper current={step} onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
 
           {step === 0 && (
             <div className="space-y-4">
@@ -512,10 +550,10 @@ export default function VendorDocumentsPage() {
                 <p className="mb-3 text-sm font-medium text-text">Bank details</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input label="Beneficiary account name" required value={form.beneficiaryAccountName} onChange={e => setField('beneficiaryAccountName', e.target.value)} error={err(2, 'beneficiaryAccountName')} />
-                  <Input label="Bank account number" required value={form.bankAccountNumber} onChange={e => setField('bankAccountNumber', e.target.value)} error={err(2, 'bankAccountNumber')} />
+                  <Input label="Bank account number" required value={form.bankAccountNumber} onChange={e => setField('bankAccountNumber', e.target.value.replace(/\D/g, '').slice(0, 18))} error={err(2, 'bankAccountNumber')} inputMode="numeric" hint="9 to 18 digits" />
                   <Input label="Bank name" required value={form.bankName} onChange={e => setField('bankName', e.target.value)} error={err(2, 'bankName')} />
                   <Input label="Branch name" required value={form.bankBranchName} onChange={e => setField('bankBranchName', e.target.value)} error={err(2, 'bankBranchName')} />
-                  <Input label="IFSC code" required value={form.bankIfscCode} onChange={e => setField('bankIfscCode', e.target.value.toUpperCase())} error={err(2, 'bankIfscCode')} inputClassName="uppercase" />
+                  <Input label="IFSC code" required value={form.bankIfscCode} placeholder="HDFC0001234" maxLength={11} onChange={e => setField('bankIfscCode', e.target.value.toUpperCase())} error={err(2, 'bankIfscCode')} inputClassName="uppercase" />
                   <Select label="Account type" required options={ACCOUNT_TYPES} value={form.accountType} onChange={e => setField('accountType', e.target.value)} />
                 </div>
               </div>
@@ -544,13 +582,13 @@ export default function VendorDocumentsPage() {
               <div>
                 <p className="mb-3 text-sm font-medium text-text">Other documents <span className="font-normal text-muted">(optional)</span></p>
                 <div className="rounded-card border border-dashed border-border p-4">
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-brand hover:underline">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-control text-sm font-medium text-brand hover:underline focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
                     <Upload size={14} />
                     {uploadingKey === '__other__' ? 'Uploading…' : 'Upload a document'}
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      className="hidden"
+                      className="sr-only"
                       disabled={uploadingKey === '__other__'}
                       onChange={e => { const f = e.target.files?.[0]; if (f) uploadOtherDoc(f); e.target.value = '' }}
                     />
@@ -602,7 +640,7 @@ export default function VendorDocumentsPage() {
               {step < STEPS.length - 1 ? (
                 <Button type="button" onClick={goNext}>Continue</Button>
               ) : (
-                <Button type="button" onClick={submit} loading={submitting} disabled={!stepValid(3)}>
+                <Button type="button" onClick={submit} loading={submitting}>
                   {mode === 'onboarding' ? 'Create company profile' : 'Submit for review'}
                 </Button>
               )}
@@ -629,6 +667,7 @@ function Stepper({ current, onSelect }: { current: number; onSelect: (i: number)
           <button
             type="button"
             onClick={() => onSelect(i)}
+            aria-current={i === current ? 'step' : undefined}
             className="flex items-center gap-2 rounded-control px-1 py-1 text-left"
           >
             <span className={
@@ -669,13 +708,13 @@ function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }:
             <Button type="button" variant="ghost" size="sm" onClick={onRemove}>Remove</Button>
           </>
         ) : (
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-medium text-brand hover:underline">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-control text-sm font-medium text-brand hover:underline focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand">
             <Upload size={14} />
             {busy ? 'Uploading…' : 'Upload'}
             <input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png"
-              className="hidden"
+              className="sr-only"
               disabled={busy}
               onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = '' }}
             />

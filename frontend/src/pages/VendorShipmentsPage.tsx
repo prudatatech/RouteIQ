@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import { supabase, openChannel } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, useTabParam, type Column, type TabItem,
+  Button, DataTable, statusToLabel, Page, PageHeader, SearchInput, StatusPill, Tabs, useTabParam, type Column, type TabItem,
 } from '@/components/ui'
 
 interface VendorBid {
@@ -47,6 +48,7 @@ export default function VendorShipmentsPage() {
         capacityAPI.myBids(),
         supabase.from('vendor_shipment_requests').select('*, cargo_manifest(id)').eq('vendor_id', userId).order('created_at', { ascending: false }),
       ])
+      if (r.error) throw r.error
       setBids(b as VendorBid[])
       setRequests((r.data ?? []) as VendorRequest[])
       setError(null)
@@ -74,11 +76,11 @@ export default function VendorShipmentsPage() {
   const [requestTab, setRequestTab] = useTabParam(['all', ...requestStatuses], 'all', 'loadStatus')
   const bidTabs: TabItem<string>[] = [
     { id: 'all', label: 'All', count: bids.length },
-    ...bidStatuses.map(s => ({ id: s, label: s.replace(/_/g, ' '), count: bids.filter(b => b.status === s).length })),
+    ...bidStatuses.map(s => ({ id: s, label: statusToLabel(s), count: bids.filter(b => b.status === s).length })),
   ]
   const requestTabs: TabItem<string>[] = [
     { id: 'all', label: 'All', count: requests.length },
-    ...requestStatuses.map(s => ({ id: s, label: s.replace(/_/g, ' '), count: requests.filter(r => r.status === s).length })),
+    ...requestStatuses.map(s => ({ id: s, label: statusToLabel(s), count: requests.filter(r => r.status === s).length })),
   ]
 
   const filteredBids = useMemo(() => {
@@ -98,10 +100,10 @@ export default function VendorShipmentsPage() {
   }, [requests, requestTab, requestSearch])
 
   const bidColumns: Column<VendorBid>[] = [
-    { key: 'date', header: 'Date', cell: b => new Date(b.submitted_at).toLocaleDateString('en-IN'), sortValue: b => b.submitted_at },
-    { key: 'amount', header: 'Bid', cell: b => `₹${b.bid_amount.toLocaleString('en-IN')}`, sortValue: b => b.bid_amount },
+    { key: 'date', header: 'Date', cell: b => formatDate(b.submitted_at), sortValue: b => b.submitted_at },
+    { key: 'amount', header: 'Bid', cell: b => formatRupees(b.bid_amount), sortValue: b => b.bid_amount },
     { key: 'vehicle', header: 'Vehicle', cell: b => b.capacity_windows?.vehicles?.vehicle_type ?? '—', hideOnMobile: true, sortValue: b => b.capacity_windows?.vehicles?.vehicle_type },
-    { key: 'weight', header: 'Weight', cell: b => b.weight_kg != null ? `${b.weight_kg.toLocaleString('en-IN')} kg` : '—', hideOnMobile: true, sortValue: b => b.weight_kg },
+    { key: 'weight', header: 'Weight', cell: b => formatKg(b.weight_kg), hideOnMobile: true, sortValue: b => b.weight_kg },
     {
       key: 'status', header: 'Status', sortValue: b => b.status,
       cell: b => (
@@ -114,9 +116,9 @@ export default function VendorShipmentsPage() {
   ]
 
   const requestColumns: Column<VendorRequest>[] = [
-    { key: 'date', header: 'Date', cell: r => new Date(r.created_at).toLocaleDateString('en-IN'), sortValue: r => r.created_at },
-    { key: 'route', header: 'Route', cell: r => <span className="truncate">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span>, sortValue: r => r.pickup_location },
-    { key: 'weight', header: 'Weight', cell: r => r.required_capacity_kg != null ? `${Number(r.required_capacity_kg).toLocaleString('en-IN')} kg` : '—', hideOnMobile: true, sortValue: r => r.required_capacity_kg },
+    { key: 'date', header: 'Date', cell: r => formatDate(r.created_at), sortValue: r => r.created_at },
+    { key: 'route', header: 'Route', cell: r => <span className="break-words">{r.pickup_location ?? '—'} → {r.drop_location ?? '—'}</span>, sortValue: r => r.pickup_location },
+    { key: 'weight', header: 'Weight', cell: r => formatKg(r.required_capacity_kg), hideOnMobile: true, sortValue: r => r.required_capacity_kg },
     {
       key: 'status', header: 'Status', sortValue: r => r.status,
       cell: r => (
@@ -161,7 +163,9 @@ export default function VendorShipmentsPage() {
           loading={loading}
           error={error ?? undefined}
           onRetry={fetchData}
-          empty={{ title: 'No bids yet', description: 'Bids you place on capacity windows will show up here.' }}
+          empty={bids.length > 0
+            ? { title: 'No bids match', description: 'Try another status or search.' }
+            : { title: 'No bids yet', description: 'Bids you place on capacity windows will show up here.', action: <Button onClick={() => navigate('/vendor/corridor')}>See open capacity</Button> }}
         />
       </section>
 
@@ -179,7 +183,9 @@ export default function VendorShipmentsPage() {
           loading={loading}
           error={error ?? undefined}
           onRetry={fetchData}
-          empty={{ title: 'No loads posted yet', action: <Button onClick={() => navigate('/vendor/request')}>Post a load</Button> }}
+          empty={requests.length > 0
+            ? { title: 'No loads match', description: 'Try another status or search.' }
+            : { title: 'No loads posted yet', description: 'Post a load and dispatch will find a vehicle for it.', action: <Button onClick={() => navigate('/vendor/request')}>Post a load</Button> }}
         />
       </section>
     </Page>

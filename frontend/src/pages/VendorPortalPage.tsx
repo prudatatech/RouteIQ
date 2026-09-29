@@ -1,12 +1,13 @@
 import { ArrowRight, Gavel, MapPin, Package } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { useVendorContext } from '@/components/vendor/vendorContext'
-import { Alert, Card, Page, PlaceSearch } from '@/components/ui'
+import { Alert, buttonClasses, Card, Page, PlaceSearch } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 
 export default function VendorPortalPage() {
   const navigate = useNavigate()
-  const { vendorProfile, isSignedIn, isVendor } = useVendorContext()
+  const { vendorProfile, profileLoading, isSignedIn, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
 
   const goPostLoad = (query?: string, place?: ResolvedPlace | null) => {
@@ -15,7 +16,8 @@ export default function VendorPortalPage() {
       return
     }
     if (!kycApproved) {
-      navigate('/vendor/documents')
+      toast('Finish your company KYC first. It only takes a few minutes.')
+      navigate(vendorProfile ? '/vendor/documents' : '/vendor/onboarding')
       return
     }
     const params = new URLSearchParams()
@@ -37,13 +39,26 @@ export default function VendorPortalPage() {
           Find verified fleet capacity, post a load with your own floor price, and track it end to end.
         </p>
 
-        {isVendor && !kycApproved && (
+        {isVendor && !kycApproved && !profileLoading && (
           <div className="mx-auto max-w-2xl pt-2 text-left">
-            <Alert tone="warning" title="Complete your KYC to post loads and bid">
-              Your company needs an approved KYC before you can post a load or place a bid.{' '}
-              <button type="button" onClick={() => navigate('/vendor/documents')} className="font-medium underline">
-                Complete company & KYC
-              </button>
+            <Alert
+              tone={vendorProfile?.kycStatus === 'submitted' ? 'info' : 'warning'}
+              title={
+                vendorProfile?.kycStatus === 'submitted' ? 'Your KYC is in review'
+                  : vendorProfile?.kycStatus === 'rejected' ? 'Your KYC needs changes'
+                    : vendorProfile ? 'Finish your KYC to post loads and bid' : 'Set up your company to post loads and bid'
+              }
+              action={vendorProfile?.kycStatus === 'submitted' ? undefined : (
+                <Link to={vendorProfile ? '/vendor/documents' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+                  {vendorProfile ? 'Open company & KYC' : 'Set up company'}
+                </Link>
+              )}
+            >
+              {vendorProfile?.kycStatus === 'submitted'
+                ? 'You can post loads and bid once we approve it. We will notify you.'
+                : vendorProfile?.kycStatus === 'rejected'
+                  ? 'Open Company & KYC to see what to fix, then submit again.'
+                  : 'You can browse capacity now. Posting a load or placing a bid needs an approved KYC.'}
             </Alert>
           </div>
         )}
