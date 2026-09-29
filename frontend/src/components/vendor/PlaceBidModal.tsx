@@ -1,6 +1,6 @@
+import { errorMessage } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import type { AxiosError } from 'axios'
 import { capacityAPI } from '@/services/api'
 import { Alert, Button, Input, Modal, Select } from '@/components/ui'
 import AddressPicker from '@/components/map/AddressPicker'
@@ -83,8 +83,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       onPlaced()
       onClose()
     } catch (err) {
-      const e = err as AxiosError<{ error?: string; detail?: string }>
-      toast.error(e.response?.data?.error ?? e.response?.data?.detail ?? 'Failed to place bid')
+      toast.error(errorMessage(err, 'Failed to place bid'))
     } finally {
       setSubmitting(false)
     }

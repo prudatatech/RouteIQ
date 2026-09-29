@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Building2, CheckCircle2, UploadCloud, Trash2, Eye } from 'lucide-react'
@@ -266,7 +267,7 @@ export default function TplOnboardingPage() {
       setStep(3)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      toast.error(errorMessage(err, 'Something went wrong. Please try again.'))
     } finally {
       setSubmitting(false)
     }

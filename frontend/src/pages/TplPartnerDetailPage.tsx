@@ -1,3 +1,4 @@
+import { errorMessage } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -56,7 +57,7 @@ export default function TplPartnerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Approval failed.'),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Approval failed.')),
   })
 
   const reject = useMutation({
@@ -66,7 +67,7 @@ export default function TplPartnerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Rejection failed.'),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Rejection failed.')),
   })
 
   const togglePause = useMutation({
@@ -127,7 +128,7 @@ export default function TplPartnerDetailPage() {
       const url = await getKycDocumentUrl(doc.file_url)
       setPreview({ url, name: doc.doc_type })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not open document.')
+      toast.error(errorMessage(err, 'Could not open document.'))
     }
   }
 

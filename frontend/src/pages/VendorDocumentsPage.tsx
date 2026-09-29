@@ -265,7 +265,7 @@ export default function VendorDocumentsPage() {
       }
       toast.success('Document uploaded')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
+      toast.error(errorMessage(err, 'Failed to upload document'))
     } finally {
       setUploadingKey(null)
     }
@@ -299,7 +299,7 @@ export default function VendorDocumentsPage() {
       await supabase.from('vendor_profiles').update({ kyc_data: kycData }).eq('id', userId)
       toast.success('Document uploaded')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to upload document')
+      toast.error(errorMessage(err, 'Failed to upload document'))
     } finally {
       setUploadingKey(null)
     }
@@ -374,7 +374,7 @@ export default function VendorDocumentsPage() {
       else window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'We could not save your details. Check your connection and try again.')
+      toast.error(errorMessage(err, 'We could not save your details. Check your connection and try again.'))
     } finally {
       setSubmitting(false)
     }
