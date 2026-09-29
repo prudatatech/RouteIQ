@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Button, Card, ScreenHeader, StatusPill, Text } from '../components/ui';
+import { Button, Card, ScreenHeader, StatusPill, Text, TextField } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
 import { formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
@@ -26,6 +26,8 @@ const TRUCK_TIERS = [
 ];
 
 const MAX_WEIGHT_T = 25;
+/** Smallest load that can be booked (100 kg); the slider and the typed weight share this range. */
+const MIN_WEIGHT_T = 0.1;
 const SNAP_RANGE_T = 2.0;
 const SLIDER_MARKS_T = [0, 5, 10, 15, 25];
 const sliderLabel = (tonnes: number, unit: 't' | 'kg') =>
@@ -41,12 +43,30 @@ const getTierKey = (weight: number) => {
 const formatWeight = (tonnes: number, unit: 't' | 'kg') =>
   unit === 't' ? tonnes.toFixed(1) : formatNumber(Math.round(tonnes * 1000));
 
+/** The weight as plain digits for the text box: "4.5" tonnes or "4500" kg. */
+const inputText = (tonnes: number, unit: 't' | 'kg') =>
+  unit === 't' ? String(Math.round(tonnes * 1000) / 1000) : String(Math.round(tonnes * 1000));
+
+/** Reads what was typed as tonnes, or null when it is not a number within the allowed range. */
+function parseWeight(text: string, unit: 't' | 'kg'): number | null {
+  const cleaned = text.trim().replace(',', '.');
+  if (!/^\d*\.?\d+$|^\d+\.$/.test(cleaned)) return null;
+  const tonnes = unit === 't' ? Number(cleaned) : Number(cleaned) / 1000;
+  const kg = Math.round(tonnes * 1000);
+  if (!Number.isFinite(tonnes) || kg < MIN_WEIGHT_T * 1000 || kg > MAX_WEIGHT_T * 1000) return null;
+  return kg / 1000;
+}
+
 export default function CargoConfigScreen({ navigation, route }: any) {
   const { t } = useTranslation();
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType } = route.params || {};
 
   const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
   const [unit, setUnit] = useState<'t' | 'kg'>('t');
+  // What the customer is typing; null means show the slider's weight.
+  const [draft, setDraft] = useState<string | null>(null);
+  const draftWeight = draft === null ? null : parseWeight(draft, unit);
+  const draftInvalid = draft !== null && draftWeight === null;
 
   // Measured track position, used to turn a finger position into a weight.
   const trackRef = useRef<View>(null);
@@ -57,7 +77,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
   };
 
   const updateWeightFromRatio = useCallback((ratio: number) => {
-    const raw = Math.max(0, Math.min(1, ratio)) * MAX_WEIGHT_T;
+    const raw = Math.max(MIN_WEIGHT_T, Math.round(Math.max(0, Math.min(1, ratio)) * MAX_WEIGHT_T * 10) / 10);
     let next = raw;
     let closestDiff = Number.POSITIVE_INFINITY;
     for (const tier of TRUCK_TIERS) {
@@ -67,6 +87,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
         next = tier.weight;
       }
     }
+    setDraft(null);
     setSelectedWeight((current) => {
       if (current === next) return current;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -97,9 +118,27 @@ export default function CargoConfigScreen({ navigation, route }: any) {
       event.nativeEvent.actionName === 'increment'
         ? TRUCK_TIERS.find((t) => t.weight > selectedWeight)
         : [...TRUCK_TIERS].reverse().find((t) => t.weight < selectedWeight);
-    if (next) setSelectedWeight(next.weight);
+    if (next) {
+      setDraft(null);
+      setSelectedWeight(next.weight);
+    }
   };
 
+  const onTypeWeight = (text: string) => {
+    // Digits and one decimal point only; a comma counts as a point.
+    const cleaned = text.replace(',', '.').replace(/[^0-9.]/g, '');
+    const [whole, ...rest] = cleaned.split('.');
+    const next = rest.length ? `${whole}.${rest.join('')}` : whole;
+    setDraft(next);
+    const parsed = parseWeight(next, unit);
+    if (parsed !== null && parsed !== selectedWeight) setSelectedWeight(parsed);
+  };
+
+  const rangeText = {
+    min: unit === 't' ? String(MIN_WEIGHT_T) : formatNumber(MIN_WEIGHT_T * 1000),
+    max: unit === 't' ? String(MAX_WEIGHT_T) : formatNumber(MAX_WEIGHT_T * 1000),
+    unit,
+  };
   const suggestedTruck = TRUCK_TIERS.find((t) => t.weight === selectedWeight)?.truck;
   const fillPercent = `${(selectedWeight / MAX_WEIGHT_T) * 100}%` as const;
 
@@ -161,7 +200,10 @@ export default function CargoConfigScreen({ navigation, route }: any) {
                 return (
                   <Pressable
                     key={u}
-                    onPress={() => setUnit(u)}
+                    onPress={() => {
+                      setUnit(u);
+                      setDraft(null);
+                    }}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
                     accessibilityLabel={u === 't' ? t('tonnes') : t('kilograms')}
@@ -209,6 +251,19 @@ export default function CargoConfigScreen({ navigation, route }: any) {
               </Text>
             ))}
           </View>
+
+          {/* TYPED WEIGHT */}
+          <TextField
+            label={t(unit === 't' ? 'cargo_type_weight_t' : 'cargo_type_weight_kg')}
+            value={draft ?? inputText(selectedWeight, unit)}
+            onChangeText={onTypeWeight}
+            keyboardType="decimal-pad"
+            inputMode="decimal"
+            selectTextOnFocus
+            maxLength={8}
+            hint={t('cargo_weight_range_hint', rangeText)}
+            error={draftInvalid ? t('cargo_weight_range_error', rangeText) : undefined}
+          />
         </Card>
 
         {/* PRESETS */}
@@ -265,6 +320,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
         <Button
           title={t('cargo_see_price')}
           accessibilityHint={t('cargo_see_price_hint')}
+          disabled={draftInvalid}
           onPress={() =>
             navigation.navigate('Quote', {
               pickupLocation,
