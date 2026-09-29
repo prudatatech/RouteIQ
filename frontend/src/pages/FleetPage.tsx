@@ -12,7 +12,7 @@ import {
 import { MapView } from '@/components/map'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { expiryStatus } from '@/utils/documentExpiry'
@@ -120,8 +120,7 @@ export default function FleetPage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
     }
-    const channel = supabase
-      .channel('fleet_page_updates')
+    const channel = openChannel('fleet_page_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidate)
       .subscribe()
     return () => { supabase.removeChannel(channel) }

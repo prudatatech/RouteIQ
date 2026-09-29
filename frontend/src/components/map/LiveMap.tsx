@@ -6,7 +6,7 @@ import { describeIncident } from '@/utils/traffic'
 import { useAuthStore } from '@/store/authStore'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { formatEta } from '@/utils/timeFormat'
 import MapView from './MapView'
 import { fetchDrivingRoute, type DrivingRoute } from './directions'
@@ -129,8 +129,7 @@ export default function LiveMap({
   // New stops added mid-route show up without waiting for the next refetch.
   useEffect(() => {
     if (!selectedId) return
-    const channel = supabase
-      .channel(`map-route-stops-${selectedId}`)
+    const channel = openChannel(`map-route-stops-${selectedId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'route_stops' }, () => {
         queryClient.invalidateQueries({ queryKey: ['routes'] })
       })

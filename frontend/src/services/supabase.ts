@@ -14,3 +14,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storageKey: 'margixindia-auth',
   },
 });
+
+let channelSeq = 0;
+
+/**
+ * A new realtime channel for one component instance. `supabase.channel(name)`
+ * hands back the existing channel when the name is already in use (the same
+ * component on screen twice, or a remount before the old channel is removed),
+ * and adding listeners to that subscribed channel throws. A per-call suffix
+ * keeps every subscription separate.
+ */
+export function openChannel(name: string) {
+  channelSeq += 1;
+  return supabase.channel(`${name}:${channelSeq}`);
+}

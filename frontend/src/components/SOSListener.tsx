@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, MapPin } from 'lucide-react'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { Button, Modal } from '@/components/ui'
 import { sosTypeLabel } from '@/utils/sos'
@@ -70,8 +70,7 @@ export default function SOSListener() {
   useEffect(() => {
     if (role !== 'superadmin' && role !== 'admin') return
     const siren = alarm.current
-    const channel = supabase
-      .channel('sos_alerts_channel')
+    const channel = openChannel('sos_alerts_channel')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sos_alerts' }, async payload => {
         const alert = payload.new as SosAlert
         if (alert.vehicle_id) {

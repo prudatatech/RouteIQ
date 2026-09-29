@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Clock, ShieldCheck, TrendingUp, Zap } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { formatEta } from '@/utils/timeFormat'
 import { capacityAPI, vendorAPI } from '@/services/api'
@@ -102,8 +102,8 @@ export default function VendorCorridorPage() {
 
   useEffect(() => {
     fetchData()
-    const subW = supabase.channel('vendor_corr_win').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_windows' }, fetchData).subscribe()
-    const subB = supabase.channel('vendor_corr_bids').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData).subscribe()
+    const subW = openChannel('vendor_corr_win').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_windows' }, fetchData).subscribe()
+    const subB = openChannel('vendor_corr_bids').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData).subscribe()
     return () => { supabase.removeChannel(subW); supabase.removeChannel(subB) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, session])

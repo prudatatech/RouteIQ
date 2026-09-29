@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { capacityAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
@@ -60,8 +60,8 @@ export default function VendorShipmentsPage() {
   useEffect(() => {
     if (!userId) return
     fetchData()
-    const subB = supabase.channel('vendor_bids_shipments').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData).subscribe()
-    const subR = supabase.channel('vendor_reqs_shipments').on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, fetchData).subscribe()
+    const subB = openChannel('vendor_bids_shipments').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData).subscribe()
+    const subR = openChannel('vendor_reqs_shipments').on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, fetchData).subscribe()
     return () => { supabase.removeChannel(subB); supabase.removeChannel(subR) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])

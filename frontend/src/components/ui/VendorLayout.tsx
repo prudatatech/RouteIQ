@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
@@ -76,8 +76,7 @@ export default function VendorLayout() {
     const onUpdated = () => { loadProfile() }
     window.addEventListener('vendor-profile-updated', onUpdated)
     // KYC decisions made by staff arrive through realtime.
-    const channel = supabase
-      .channel('vendor-layout-profile')
+    const channel = openChannel('vendor-layout-profile')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, onUpdated)
       .subscribe()
     return () => {

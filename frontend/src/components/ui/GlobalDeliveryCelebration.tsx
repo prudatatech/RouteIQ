@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 
 /**
  * Announces deliveries confirmed by drivers while staff are in the console. A short
@@ -8,7 +8,7 @@ import { supabase } from '@/services/supabase'
  */
 export function GlobalDeliveryCelebration() {
   useEffect(() => {
-    const channel = supabase.channel('global_delivery_events')
+    const channel = openChannel('global_delivery_events')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shipments' }, payload => {
         if (payload.new.status === 'delivered' && payload.old.status !== 'delivered') {
           const ref = payload.new.tracking_id ? ` ${payload.new.tracking_id}` : ''

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Check, FileText, Trash2, Upload } from 'lucide-react'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
@@ -157,8 +157,7 @@ export default function VendorDocumentsPage() {
     }
     load()
 
-    const channel = supabase
-      .channel(`vendor-kyc-${userId}`)
+    const channel = openChannel(`vendor-kyc-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles', filter: `id=eq.${userId}` }, load)
       .subscribe()
     return () => { cancelled = true; supabase.removeChannel(channel) }

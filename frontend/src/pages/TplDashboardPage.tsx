@@ -10,7 +10,7 @@ import {
 } from '@/components/ui'
 import type { Column } from '@/components/ui'
 import toast from 'react-hot-toast'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { useQuery } from '@tanstack/react-query'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
 import { TplOrdersTab } from '@/components/tpl/TplOrdersTab'
@@ -124,7 +124,7 @@ export default function TplDashboardPage() {
 
     fetchDashboardData()
 
-    const channel = supabase.channel(`public:tpl_partners:id=eq.${id}`)
+    const channel = openChannel(`public:tpl_partners:id=eq.${id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, payload => {
         if (payload.new) {
           setPartner(payload.new as TplPartner)

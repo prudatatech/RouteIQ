@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 
 /**
  * Refetches the given queries whenever a row in one of `tables` changes
  * (Supabase realtime). Bursts of changes are batched into one refetch.
- * `channel` must be unique across the app.
+ * `channel` names the subscription; each mount gets its own channel.
  */
 export function useRealtimeRefresh(channel: string, tables: string[], queryKeys: QueryKey[]) {
   const queryClient = useQueryClient()
@@ -21,7 +21,7 @@ export function useRealtimeRefresh(channel: string, tables: string[], queryKeys:
         keysRef.current.forEach(queryKey => queryClient.invalidateQueries({ queryKey }))
       }, 300)
     }
-    const sub = supabase.channel(channel)
+    const sub = openChannel(channel)
     tableList.split(',').forEach(table => {
       sub.on('postgres_changes', { event: '*', schema: 'public', table }, refresh)
     })

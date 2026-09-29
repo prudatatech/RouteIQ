@@ -14,7 +14,7 @@ import {
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
 
@@ -59,8 +59,7 @@ export default function ShipmentsPage() {
 
   // Keep the list current when shipments or cargo manifests change anywhere.
   useEffect(() => {
-    const channel = supabase
-      .channel('public:shipments_and_manifests')
+    const channel = openChannel('public:shipments_and_manifests')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, () => {
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
       })

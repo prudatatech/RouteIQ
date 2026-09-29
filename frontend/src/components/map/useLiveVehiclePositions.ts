@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import type { LatLng } from './types'
 
 interface VehicleRow {
@@ -53,8 +53,7 @@ export function useLiveVehiclePositions(): Record<string, LatLng> {
       return before !== undefined && before !== row.status
     }
 
-    const channel = supabase
-      .channel(`map-vehicles-${channelId}`)
+    const channel = openChannel(`map-vehicles-${channelId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'vehicles' },

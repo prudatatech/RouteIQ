@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bell, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { messagesAPI, type UnreadThread } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { formatTimeAgo } from '@/utils/timeFormat'
@@ -85,8 +85,7 @@ export function NotificationsBell() {
   useEffect(() => {
     if (!userId) return
     load()
-    const channel = supabase
-      .channel(`notifications_${userId}`)
+    const channel = openChannel(`notifications_${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, load)
       .subscribe()
     return () => { supabase.removeChannel(channel) }

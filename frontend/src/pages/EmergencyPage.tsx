@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User } from 'lucide-react'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import {
@@ -59,8 +59,7 @@ export default function EmergencyPage() {
   })
 
   useEffect(() => {
-    const channel = supabase
-      .channel('emergency_page_listener')
+    const channel = openChannel('emergency_page_listener')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sos_alerts' }, async payload => {
         const enhanced = await attachDetails(payload.new as SosAlert)
         queryClient.setQueryData<SosAlert[]>(['sos-alerts', 'emergency-page'], prev => [enhanced, ...(prev ?? [])])
@@ -80,8 +79,7 @@ export default function EmergencyPage() {
   useEffect(() => {
     setLivePosition(null)
     if (!selected?.vehicle_id) return
-    const channel = supabase
-      .channel('emergency-live-gps')
+    const channel = openChannel('emergency-live-gps')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vehicles', filter: `id=eq.${selected.vehicle_id}` }, payload => {
         const row = payload.new as { latitude?: number; longitude?: number }
         if (row.latitude != null && row.longitude != null) setLivePosition({ lat: row.latitude, lng: row.longitude })

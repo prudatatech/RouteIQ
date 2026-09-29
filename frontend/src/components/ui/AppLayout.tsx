@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
-import { supabase } from '@/services/supabase'
+import { supabase, openChannel } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavItem } from '@/config/navigation'
 import { routePrefetch } from '@/config/lazyPages'
@@ -76,7 +76,7 @@ function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
   useEffect(() => {
     if (!enabled) return
     loadVendorRequests()
-    const channel = supabase.channel('nav_badges')
+    const channel = openChannel('nav_badges')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, loadVendorRequests)
     if (isSuperadmin) {
       loadPartners()
@@ -259,7 +259,7 @@ export default function AppLayout() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
     }
-    const channel = supabase.channel('global_fleet_updates')
+    const channel = openChannel('global_fleet_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, invalidateFleet)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, invalidateFleet)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, invalidateFleet)
