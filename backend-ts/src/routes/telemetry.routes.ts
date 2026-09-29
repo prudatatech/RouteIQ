@@ -660,6 +660,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 });
 
 // ── POST /driver-ping/complete-stop — Driver marks delivery complete ──
+const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
 router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
@@ -671,6 +672,17 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
     if (!stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
       return;
+    }
+    // Why a stop failed, kept in the shipment's tamper-evident log
+    const { reason, note } = req.body;
+    if (reason !== undefined && !STOP_FAILURE_REASONS.includes(reason)) {
+      res.status(400).json({ detail: 'Unknown reason' });
+      return;
+    }
+    const failureMetadata: Record<string, string> = {};
+    if (status === 'failed' && reason) {
+      failureMetadata.failure_reason = reason;
+      if (typeof note === 'string' && note.trim()) failureMetadata.failure_note = note.trim().slice(0, 300);
     }
 
     // Check for cargo manifest stops
@@ -769,7 +781,8 @@ router.post('/driver-ping/complete-stop', requireAuth, async (req: Request, res:
         lat, lng,
         received_by || null,
         signature_data || null,
-        { id: req.user!.user_id, role: req.user!.role }
+        { id: req.user!.user_id, role: req.user!.role },
+        failureMetadata
       );
     }
 

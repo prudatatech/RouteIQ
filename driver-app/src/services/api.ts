@@ -268,6 +268,9 @@ class ApiClient {
     received_by?: string;
     photo_url?: string;
     signature_data?: string;
+    /** Why a stop failed (status 'failed'): stored in the shipment log. */
+    reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
+    note?: string;
   }): Promise<any> {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data);
   }

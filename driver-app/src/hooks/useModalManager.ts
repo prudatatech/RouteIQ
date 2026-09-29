@@ -12,6 +12,7 @@ export type DriverModal =
   | { kind: 'sos' }
   | { kind: 'sosCountdown' }
   | { kind: 'pod'; stop: RouteStop }
+  | { kind: 'issue'; stop: RouteStop }
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
   | { kind: 'moreActions' }

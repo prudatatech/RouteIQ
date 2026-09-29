@@ -10,6 +10,7 @@ import type { DriverRoute, LatLng, RouteStop } from '../types/route';
 import { errorMessage } from '../utils/errors';
 import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
 import { ARRIVAL_RADIUS_M, distanceMeters, stopCoord } from '../utils/route';
+import type { FailureReason } from '../components/modals/IssueDialog';
 import { useTranslation } from './useTranslation';
 
 interface Options {
@@ -22,6 +23,8 @@ interface Options {
   startTracking: () => Promise<boolean>;
   /** Open the proof-of-delivery form for a stop. */
   openPod: (stop: RouteStop) => void;
+  /** Open the "why could this stop not be completed" form for a stop. */
+  openIssue: (stop: RouteStop) => void;
   /** Show the live backhaul offers popup. */
   showBackhaulPopup: () => void;
 }
@@ -35,6 +38,7 @@ export function useRouteActions({
   refresh,
   startTracking,
   openPod,
+  openIssue,
   showBackhaulPopup,
 }: Options) {
   const { t } = useTranslation();
@@ -112,26 +116,23 @@ export function useRouteActions({
 
   const confirmAtStop = useCallback((stop: RouteStop) => atStop(stop, () => openPod(stop)), [atStop, openPod]);
 
-  const failStop = useCallback(
-    (stop: RouteStop) => {
-      Alert.alert(t('alert_report_issue_title'), t('alert_report_issue_desc'), [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('mark_failed'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.completeStop({ stop_id: stop.id, status: 'failed' });
-              Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
-              refresh();
-            } catch (err) {
-              Alert.alert(t('error'), errorMessage(err, t('action_failed')));
-            }
-          },
-        },
-      ]);
+  /** Opens the reason form; submitIssue sends it. */
+  const failStop = openIssue;
+
+  /** Marks the stop failed with the driver's reason; throws so the form can show the error. */
+  const submitIssue = useCallback(
+    async (stop: RouteStop, reason: FailureReason, note: string) => {
+      await api.completeStop({
+        stop_id: stop.id,
+        status: 'failed',
+        reason,
+        ...(note ? { note } : {}),
+        ...(currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {}),
+      });
+      Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
+      refresh();
     },
-    [refresh, t],
+    [currentLoc, refresh, t],
   );
 
   const findReturnLoad = useCallback(async () => {
@@ -189,6 +190,7 @@ export function useRouteActions({
     openFullRoute,
     confirmAtStop,
     failStop,
+    submitIssue,
     findReturnLoad,
     completeStop,
     declareCapacity,

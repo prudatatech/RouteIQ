@@ -20,6 +20,7 @@ interface NextActionCardProps {
   onNavigate: (stop: RouteStop) => void;
   onArrivedManually: (stop: RouteStop) => void;
   onConfirmStop: (stop: RouteStop) => void;
+  onReportIssue: (stop: RouteStop) => void;
   onFindReturnLoad: () => void;
   onRefresh: () => void;
 }
@@ -160,6 +161,12 @@ export default function NextActionCard(props: NextActionCardProps) {
             onPress={() => props.onNavigate(stop)}
             icon={(color) => <Ionicons name="navigate" size={size.icon.md} color={color} />}
           />
+          <Button
+            title={t('issue_btn')}
+            variant="secondary"
+            onPress={() => props.onReportIssue(stop)}
+            icon={(color) => <Ionicons name="warning-outline" size={size.icon.md} color={color} />}
+          />
         </>
       ) : (
         <>
@@ -169,6 +176,12 @@ export default function NextActionCard(props: NextActionCardProps) {
             icon={(color) => <Ionicons name="navigate" size={size.icon.md} color={color} />}
           />
           <Button title={t('na_arrived_manual')} variant="ghost" onPress={() => props.onArrivedManually(stop)} />
+          <Button
+            title={t('issue_btn')}
+            variant="secondary"
+            onPress={() => props.onReportIssue(stop)}
+            icon={(color) => <Ionicons name="warning-outline" size={size.icon.md} color={color} />}
+          />
         </>
       )}
     </Card>

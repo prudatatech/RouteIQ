@@ -35,6 +35,7 @@ import DriverTabBar, { type DriverTab } from '../components/home/DriverTabBar';
 import MoreActionsSheet, { type MoreAction } from '../components/home/MoreActionsSheet';
 import AssignmentDialog from '../components/modals/AssignmentDialog';
 import PodDialog from '../components/modals/PodDialog';
+import IssueDialog from '../components/modals/IssueDialog';
 import SosDialog from '../components/modals/SosDialog';
 import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
@@ -78,6 +79,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { open: openModal, close: closeModal } = modal;
 
   const openPod = useCallback((stop: RouteStop) => openModal({ kind: 'pod', stop }), [openModal]);
+  const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop }), [openModal]);
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
   const arrivedStops = useRef(new Set<string>());
@@ -120,6 +122,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     refresh,
     startTracking: tracking.start,
     openPod,
+    openIssue,
     showBackhaulPopup: showBackhaul,
   });
 
@@ -277,6 +280,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             onCancel={closeModal}
             onSubmit={async (receiverName) => {
               await actions.completeStop(active.stop, receiverName);
+              closeModal();
+            }}
+          />
+        );
+      case 'issue':
+        return (
+          <IssueDialog
+            stopName={active.stop.delivery_point?.name}
+            onCancel={closeModal}
+            onSubmit={async (reason, note) => {
+              await actions.submitIssue(active.stop, reason, note);
               closeModal();
             }}
           />
