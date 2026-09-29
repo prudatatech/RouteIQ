@@ -218,6 +218,9 @@ export const shipmentsAPI = {
   assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
   /** Ordered status timeline (staff only) — see ShipmentService.getShipmentHistory. */
   history: (id: string) => api.get(`/shipments/${id}/history`).then(r => r.data),
+  /** Staff rate the driver of a delivered shipment, 1 to 5. */
+  rateDriver: (id: string, rating: number, note?: string | null) =>
+    api.post(`/shipments/${id}/rating`, { rating, note: note ?? undefined }).then(r => r.data),
 }
 
 export const routesAPI = {

@@ -88,7 +88,8 @@ describe('analytics', () => {
     expect(v1).toMatchObject({ id: 'v1', driver_name: 'Ravi Kumar', total_routes: 3, completed_routes: 1, completion_pct: 50, total_distance_km: 120 });
     expect(v2).toMatchObject({ id: 'v2', driver_name: null, total_routes: 0, completion_pct: null });
     expect(v1).not.toHaveProperty('rating');
-    expect(v1).not.toHaveProperty('on_time_pct');
+    // With no timed stops or ratings the figures are null, never a default
+    expect(v1).toMatchObject({ on_time_pct: null, avg_rating: null });
   });
 
   it('counts trips and deliveries per Indian calendar day', async () => {

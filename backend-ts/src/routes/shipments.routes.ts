@@ -10,6 +10,7 @@ import { ShipmentCreateSchema } from '../schemas';
 import { ShipmentService } from '../services/shipment.service';
 import { SecurityService } from '../services/security.service';
 import { sendError } from '../core/errors';
+import { rateDelivery } from '../services/driver-performance.service';
 
 const router = Router();
 
@@ -183,6 +184,16 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
 // Ordered status timeline from the tamper-evident `shipment_logs` chain, with
 // who made each change (when known) and a short note. See
 // ShipmentTracker's public tracking response for the customer-safe cut.
+// POST /:shipment_id/rating — staff rate the driver after delivery (1 to 5, optional note)
+router.post('/:shipment_id/rating', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+  try {
+    const { rating, note } = req.body ?? {};
+    res.json(await rateDelivery(req.params.shipment_id, Number(rating), typeof note === 'string' ? note : null, req.user!.user_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
 router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const events = await ShipmentService.getShipmentHistory(req.params.shipment_id);

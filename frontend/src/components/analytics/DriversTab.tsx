@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Gauge, Route, UserCheck } from 'lucide-react'
+import { Clock, Gauge, Route, Star } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { DataTable, SearchInput, Select, Stat, StatusPill, humanize, type Column } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
@@ -16,6 +16,12 @@ interface DriverRow {
   completed_routes: number
   completion_pct: number | null
   total_distance_km: number
+  deliveries: number
+  timed_deliveries: number
+  on_time_deliveries: number
+  on_time_pct: number | null
+  avg_rating: number | null
+  rating_count: number
 }
 
 const STATUS_OPTIONS = [
@@ -45,8 +51,20 @@ const columns: Column<DriverRow>[] = [
     cell: r => <span className="tabular">{formatNumber(r.completed_routes)}</span>,
   },
   {
-    key: 'rate', header: 'Completion rate', align: 'right', hideBelow: 'md', sortValue: r => r.completion_pct,
-    cell: r => <span className="tabular">{formatPercent(r.completion_pct)}</span>,
+    key: 'deliveries', header: 'Deliveries', align: 'right', sortValue: r => r.deliveries,
+    cell: r => <span className="tabular">{formatNumber(r.deliveries)}</span>,
+  },
+  {
+    key: 'ontime', header: 'On time', align: 'right', sortValue: r => r.on_time_pct,
+    cell: r => r.on_time_pct == null
+      ? <span className="text-muted" title="No stops with a planned arrival time yet">No data yet</span>
+      : <span className="tabular" title={`${r.on_time_deliveries} of ${r.timed_deliveries} timed stops`}>{formatPercent(r.on_time_pct)}</span>,
+  },
+  {
+    key: 'rating', header: 'Rating', align: 'right', sortValue: r => r.avg_rating,
+    cell: r => r.avg_rating == null
+      ? <span className="text-muted">Not rated</span>
+      : <span className="tabular">{r.avg_rating.toLocaleString('en-IN', { minimumFractionDigits: 1 })} <span className="text-muted">({formatNumber(r.rating_count)})</span></span>,
   },
   {
     key: 'distance', header: 'Distance', align: 'right', sortValue: r => r.total_distance_km,
@@ -76,11 +94,20 @@ export default function DriversTab() {
     )
   }, [data, search, status])
 
-  const totals = useMemo(() => ({
-    trips: data.reduce((s, d) => s + d.completed_routes, 0),
-    distance: data.reduce((s, d) => s + d.total_distance_km, 0),
-    withDriver: data.filter(d => d.driver_name).length,
-  }), [data])
+  const totals = useMemo(() => {
+    const timed = data.reduce((s, d) => s + d.timed_deliveries, 0)
+    const onTime = data.reduce((s, d) => s + d.on_time_deliveries, 0)
+    const ratings = data.reduce((s, d) => s + d.rating_count, 0)
+    const ratingSum = data.reduce((s, d) => s + (d.avg_rating ?? 0) * d.rating_count, 0)
+    return {
+      deliveries: data.reduce((s, d) => s + d.deliveries, 0),
+      distance: data.reduce((s, d) => s + d.total_distance_km, 0),
+      timed,
+      onTimePct: timed > 0 ? (onTime / timed) * 100 : null,
+      ratings,
+      avgRating: ratings > 0 ? ratingSum / ratings : null,
+    }
+  }, [data])
 
   const top = useMemo(() => [...data]
     .filter(d => d.completed_routes > 0)
@@ -90,15 +117,23 @@ export default function DriversTab() {
 
   return (
     <div className="space-y-6">
-      <section aria-label="Totals" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Trips completed" icon={<Route size={18} />} loading={isLoading} value={isError ? '—' : formatNumber(totals.trips)} hint="All time" />
-        <Stat label="Distance driven" icon={<Gauge size={18} />} loading={isLoading} value={isError ? '—' : `${formatNumber(totals.distance)} km`} hint="On completed routes" />
+      <section aria-label="Totals" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Deliveries" icon={<Route size={18} />} loading={isLoading} value={isError ? '—' : formatNumber(totals.deliveries)} hint="Stops completed, all time" />
         <Stat
-          label="Vehicles with a driver"
-          icon={<UserCheck size={18} />}
+          label="On-time deliveries"
+          icon={<Clock size={18} />}
           loading={isLoading}
-          value={isError ? '—' : `${formatNumber(totals.withDriver)} of ${formatNumber(data.length)}`}
+          value={isError ? '—' : totals.onTimePct == null ? 'No data yet' : formatPercent(totals.onTimePct)}
+          hint={totals.onTimePct == null ? 'Shown once routes with planned arrival times are delivered' : `${formatNumber(totals.timed)} stops with a planned arrival time`}
         />
+        <Stat
+          label="Average rating"
+          icon={<Star size={18} />}
+          loading={isLoading}
+          value={isError ? '—' : totals.avgRating == null ? 'Not rated yet' : `${totals.avgRating.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} of 5`}
+          hint={totals.avgRating == null ? 'Rate a delivery from its shipment page' : `${formatNumber(totals.ratings)} rated deliveries`}
+        />
+        <Stat label="Distance driven" icon={<Gauge size={18} />} loading={isLoading} value={isError ? '—' : `${formatNumber(totals.distance)} km`} hint="On completed routes" />
       </section>
 
       <ChartCard

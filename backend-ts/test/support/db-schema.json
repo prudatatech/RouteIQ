@@ -203,7 +203,9 @@
     "sequence",
     "status",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "planned_arrival_at",
+    "actual_arrival_at"
   ],
   "routes": [
     "id",
@@ -264,7 +266,13 @@
     "updated_at",
     "required_vehicle_type",
     "bid_id",
-    "metadata"
+    "metadata",
+    "driver_rating",
+    "driver_rating_note",
+    "driver_rated_at",
+    "driver_rated_by",
+    "rated_vehicle_id",
+    "rated_driver_id"
   ],
   "sos_alerts": [
     "id",
