@@ -77,6 +77,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
   const arrivedStops = useRef(new Set<string>());
+  const deviceLocation = useDeviceLocationStatus();
   const tracking = useLocationTracking({
     isRouteActive: routeActive,
     onGeofenceArrival: (alert) => {
@@ -85,9 +86,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       shortFeedback();
     },
     onRouteSyncRequested: refresh,
+    onDeviceLocationRecheck: deviceLocation.recheck,
   });
   const { takeBreak } = tracking;
-  const deviceLocation = useDeviceLocationStatus();
   const snapped = useSnappedRoute(data.routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
 

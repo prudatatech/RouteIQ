@@ -22,9 +22,16 @@ interface Options {
   onGeofenceArrival?: (alert: { stop_id: string; message: string }) => void;
   /** Server asked the app to re-fetch the route. */
   onRouteSyncRequested?: () => void;
+  /** Ask the device-location-status hook to re-check immediately (e.g. after a permission prompt), instead of waiting for its polling interval. */
+  onDeviceLocationRecheck?: () => void;
 }
 
-export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteSyncRequested }: Options) {
+export function useLocationTracking({
+  isRouteActive,
+  onGeofenceArrival,
+  onRouteSyncRequested,
+  onDeviceLocationRecheck,
+}: Options) {
   const { t } = useTranslation();
   const [isTracking, setIsTracking] = useState(locationService.isTracking);
   const [currentLoc, setCurrentLoc] = useState<LatLng | null>(null);
@@ -32,8 +39,8 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
 
   // locationService keeps the callbacks it was started with, so they read
   // the latest handlers through refs.
-  const optionsRef = useRef({ isRouteActive, onGeofenceArrival, onRouteSyncRequested });
-  optionsRef.current = { isRouteActive, onGeofenceArrival, onRouteSyncRequested };
+  const optionsRef = useRef({ isRouteActive, onGeofenceArrival, onRouteSyncRequested, onDeviceLocationRecheck });
+  optionsRef.current = { isRouteActive, onGeofenceArrival, onRouteSyncRequested, onDeviceLocationRecheck };
 
   const start = useCallback(async (): Promise<boolean> => {
     setIsStarting(true);
@@ -122,12 +129,23 @@ export function useLocationTracking({ isRouteActive, onGeofenceArrival, onRouteS
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
+        // Let StatusStrip reflect the permission decision immediately instead
+        // of waiting for its own polling interval.
+        optionsRef.current.onDeviceLocationRecheck?.();
         if (status === 'granted') {
+          const servicesEnabled = await Location.hasServicesEnabledAsync();
+          if (!servicesEnabled) {
+            console.warn('Initial location fetch skipped: location services are off');
+            return;
+          }
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setCurrentLoc((current) => current ?? { lat: loc.coords.latitude, lng: loc.coords.longitude });
+        } else {
+          console.warn('Initial location fetch skipped: permission not granted');
         }
       } catch (e) {
         console.warn('Initial location fetch failed:', e);
+        optionsRef.current.onDeviceLocationRecheck?.();
       }
     })();
     // Runs once on mount.
