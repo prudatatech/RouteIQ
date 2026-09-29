@@ -5,7 +5,6 @@ import axios from 'axios'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { 
-  INDIA_POSITIONS, 
   STATUS_COLORS, 
   VEHICLE_EMOJI, 
   CARGO_EMOJI,
@@ -457,7 +456,14 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
           lastVehiclesRef = vehiclesRef.current;
         }
 
-        const features = vehiclesRef.current.map((v, i) => {
+        const features = vehiclesRef.current.flatMap((v) => {
+          // Only plot vehicles with a real position (stored or live); never place them at made-up spots
+          if (!currentPositions.current[v.id]) {
+             if (v.latitude == null || v.longitude == null) return []
+             currentPositions.current[v.id] = { lat: v.latitude, lng: v.longitude }
+             dirtyFlags.current[v.id] = true
+          }
+
           const primaryCargo = v.cargo_types?.[0] || 'general'
           const cargoEmoji = CARGO_EMOJI[primaryCargo] || ''
           const vehicleEmoji = VEHICLE_EMOJI[v.vehicle_type || 'truck'] || '🚛'
@@ -466,13 +472,6 @@ export default function LiveMap({ vehicles, selectedVehicleId, zoomFocusEvent, o
           
           if (!map.hasImage(iconName)) {
             addEmojiIcon(iconName, combinedEmoji)
-          }
-          
-          if (!currentPositions.current[v.id]) {
-             const fallbackLat = INDIA_POSITIONS[i % INDIA_POSITIONS.length].lat
-             const fallbackLng = INDIA_POSITIONS[i % INDIA_POSITIONS.length].lng
-             currentPositions.current[v.id] = { lat: v.latitude ?? fallbackLat, lng: v.longitude ?? fallbackLng }
-             dirtyFlags.current[v.id] = true
           }
           
           if (dirtyFlags.current[v.id]) {

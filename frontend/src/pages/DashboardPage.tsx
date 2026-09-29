@@ -31,7 +31,6 @@ export default function DashboardPage() {
   const [zoomFocusEvent, setZoomFocusEvent] = useState(0)
   const [mapView, setMapView] = useState<'map' | 'list'>('map')
   const [fleetSearch, setFleetSearch] = useState('')
-  const [lastRefresh, setLastRefresh] = useState(new Date())
 
   // Auto-animate refs
   const [needsAttentionRef] = useAutoAnimate()
@@ -44,7 +43,7 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   })
 
-  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery({
+  const { data: vehicles = [], isLoading: vehiclesLoading, dataUpdatedAt: vehiclesUpdatedAt } = useQuery({
     queryKey: ['vehicles', 'live'],
     queryFn: () => vehiclesAPI.list({ limit: 500 }),
     refetchInterval: 5_000,
@@ -75,11 +74,8 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   })
 
-  // Update refresh timestamp
-  useEffect(() => {
-    const interval = setInterval(() => setLastRefresh(new Date()), 30_000)
-    return () => clearInterval(interval)
-  }, [])
+  // When the fleet data was last fetched
+  const lastRefresh = new Date(vehiclesUpdatedAt || Date.now())
 
   // ── Derived Data ──────────────────────────────────────────────
   const activeVehicles = vehicles.filter((v: any) => v.status !== 'archived')
@@ -113,7 +109,7 @@ export default function DashboardPage() {
   })
 
   // Add offline vehicles
-  offlineVehicles.slice(0, 3).forEach((v: any) => {
+  offlineVehicles.forEach((v: any) => {
     attentionItems.push({
       id: v.id,
       type: 'offline',
@@ -121,26 +117,6 @@ export default function DashboardPage() {
       subtitle: `${v.plate_number}`,
       time: v.last_sync ? getTimeAgo(v.last_sync) : '',
       action: 'View vehicle',
-      actionFn: () => {
-        setSearchParams({ vehicle: v.id })
-        setZoomFocusEvent(Date.now())
-      },
-    })
-  })
-
-  // Add online vehicles (put them at the top so they are visible)
-  const recentlyOnline = [...reportingVehicles]
-    .sort((a: any, b: any) => new Date(b.last_sync || 0).getTime() - new Date(a.last_sync || 0).getTime())
-    .slice(0, 2);
-
-  recentlyOnline.forEach((v: any) => {
-    attentionItems.unshift({
-      id: v.id,
-      type: 'online',
-      title: 'Vehicle online',
-      subtitle: `${v.plate_number}`,
-      time: v.last_sync ? getTimeAgo(v.last_sync) : 'Just now',
-      action: 'Track live',
       actionFn: () => {
         setSearchParams({ vehicle: v.id })
         setZoomFocusEvent(Date.now())
@@ -251,7 +227,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Main Content: Map + Alerts + Vendor ─────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px_350px] gap-4 h-[440px]">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px_350px] gap-4 xl:h-[520px]">
         {/* Live Fleet Map */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
@@ -283,7 +259,7 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-          <div className="h-[440px] relative">
+          <div className="flex-1 min-h-[360px] relative">
             <LiveMap vehicles={activeVehicles} selectedVehicleId={selectedVehicleId} zoomFocusEvent={zoomFocusEvent} />
           </div>
           <div className="flex items-center gap-5 px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">
@@ -304,9 +280,9 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-slate-900">Needs attention</h2>
-              {attentionItems.filter(i => i.type !== 'online').length > 0 && (
+              {attentionItems.length > 0 && (
                 <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">
-                  {attentionItems.filter(i => i.type !== 'online').length}
+                  {attentionItems.length}
                 </span>
               )}
             </div>
@@ -327,7 +303,7 @@ export default function DashboardPage() {
                   All clear — no issues detected
                 </div>
               ) : (
-                attentionItems.slice(0, 5).map((item) => (
+                attentionItems.map((item) => (
                   <div key={item.id} className={clsx(
                     "px-5 py-4 flex items-start gap-3 hover:bg-slate-50 transition-colors relative",
                     item.type === 'incident' ? 'border-l-[3px] border-l-red-600 bg-red-50/30' :

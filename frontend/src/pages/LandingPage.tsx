@@ -86,16 +86,12 @@ export default function LandingPage() {
              <div className="flex-1 p-6 flex flex-col gap-6">
                {/* KPI Row */}
                <div className="grid grid-cols-4 gap-4 h-24">
-                 {[
-                   { label: 'Total Fleet', val: '148', sub: '+5% this week' },
-                   { label: 'Active Routes', val: '92', sub: '7 pending' },
-                   { label: 'Delivered Today', val: '312', sub: '98% on-time' },
-                   { label: 'Avg. Utilization', val: '88.4%', sub: '+2.1% growth' }
-                 ].map((k, i) => (
+                 {/* Illustration only: shapes, not figures */}
+                 {['Total Fleet', 'Active Routes', 'Delivered Today', 'Utilization'].map((label, i) => (
                    <div key={i} className="bg-surface rounded-xl border border-border/50 p-4 flex flex-col justify-between relative overflow-hidden">
-                     <div className="text-xs font-bold text-muted uppercase tracking-wider">{k.label}</div>
-                     <div className="text-2xl font-black text-text">{k.val}</div>
-                     <div className="text-[10px] text-green-500 font-bold">{k.sub}</div>
+                     <div className="text-xs font-bold text-muted uppercase tracking-wider">{label}</div>
+                     <div className="h-5 w-16 rounded bg-text/10" />
+                     <div className="h-2 w-20 rounded bg-green-500/20" />
                      {i === 3 && (
                        <svg className="absolute bottom-0 right-0 w-24 h-12 text-primary opacity-20" viewBox="0 0 100 50">
                          <path d="M0 50 Q 20 20 40 40 T 80 10 T 100 30 L 100 50 Z" fill="currentColor" />
@@ -139,28 +135,24 @@ export default function LandingPage() {
                            <Truck size={12} />
                          </div>
                        </div>
-                       <span className="mt-1 bg-bg border border-border px-1.5 py-0.5 rounded text-[8px] font-black text-text shadow-sm uppercase">TRK-104</span>
                      </div>
                      
                      <div className="absolute top-[60%] left-[40%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                        <div className="bg-green-500 text-white p-1.5 rounded-full relative z-10 shadow-lg shadow-green-500/40 border border-green-600">
                          <Truck size={12} />
                        </div>
-                       <span className="mt-1 bg-bg border border-border px-1.5 py-0.5 rounded text-[8px] font-black text-text shadow-sm uppercase">TRK-066</span>
                      </div>
 
                      <div className="absolute top-[40%] left-[70%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                        <div className="bg-yellow-500 text-white p-1.5 rounded-full relative z-10 shadow-lg shadow-yellow-500/40 border border-yellow-600">
                          <Truck size={12} />
                        </div>
-                       <span className="mt-1 bg-bg border border-border px-1.5 py-0.5 rounded text-[8px] font-black text-text shadow-sm uppercase">TRK-089</span>
                      </div>
 
                      <div className="absolute top-[20%] left-[50%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                        <div className="bg-red-500 text-white p-1.5 rounded-full relative z-10 shadow-lg shadow-red-500/40 border border-red-600">
                          <Truck size={12} />
                        </div>
-                       <span className="mt-1 bg-bg border border-border px-1.5 py-0.5 rounded text-[8px] font-black text-text shadow-sm uppercase">TRK-121</span>
                      </div>
                    </div>
                  </div>
@@ -170,19 +162,19 @@ export default function LandingPage() {
                    <div className="text-xs font-bold text-text uppercase tracking-widest mb-4">Real-Time Truck Status</div>
                    <div className="flex-1 space-y-3 overflow-hidden">
                      {[
-                       { id: 'TRK-104', status: 'En Route', route: 'DEL → BOM', color: 'text-primary', bg: 'bg-primary/10' },
-                       { id: 'TRK-089', status: 'Delayed', route: 'PUN → HYD', color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
-                       { id: 'TRK-121', status: 'Traffic', route: 'BOM → BLR', color: 'text-red-500', bg: 'bg-red-500/10' },
-                       { id: 'TRK-066', status: 'Delivered', route: 'CHE → BLR', color: 'text-green-500', bg: 'bg-green-500/10' },
+                       { status: 'En Route', color: 'text-primary', bg: 'bg-primary/10' },
+                       { status: 'Delayed', color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
+                       { status: 'Traffic', color: 'text-red-500', bg: 'bg-red-500/10' },
+                       { status: 'Delivered', color: 'text-green-500', bg: 'bg-green-500/10' },
                      ].map((t, i) => (
                        <div key={i} className="flex items-center justify-between p-2 rounded-lg hover:bg-surface2 transition-colors border border-border/30">
                          <div className="flex items-center gap-3">
                            <div className={`w-8 h-8 rounded-md flex items-center justify-center ${t.bg} ${t.color}`}>
                              <Truck size={14} />
                            </div>
-                           <div>
-                             <div className="text-[10px] font-black uppercase text-text">{t.id}</div>
-                             <div className="text-[9px] font-bold text-muted">{t.route}</div>
+                           <div className="space-y-1.5">
+                             <div className="h-2 w-12 rounded bg-text/15" />
+                             <div className="h-2 w-16 rounded bg-text/10" />
                            </div>
                          </div>
                          <div className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded ${t.bg} ${t.color}`}>
@@ -234,7 +226,7 @@ export default function LandingPage() {
           <span className="font-display font-black text-sm uppercase tracking-widest">MargixIndia</span>
         </div>
         <div className="text-xs font-bold text-muted uppercase tracking-widest">
-          © {new Date().getFullYear()} Safexpress MargixIndia. All rights reserved.
+          © {new Date().getFullYear()} MargixIndia. All rights reserved.
         </div>
       </footer>
     </div>
