@@ -16,6 +16,7 @@ Principle (workflow blueprint, principle 7): every handoff notifies and deep-lin
 | `delivery_rated` | The customer rates a delivery (confirm receipt). A rating staff enter themselves does not notify staff | `shipment_id`, `code`, `rating`, `rated_at`, `comment?` | `/shipments/:shipment_id` |
 | `stop_prompts_released` | A driver stops working with unanswered stop prompts | `user_id`, `prompts[]` | `/admin/users/:user_id` |
 | `people_status` | Leave or suspension ended and people are active again | `count`, `user_ids[]` | one person: `/admin/users/:id`, several: `/admin/users` |
+| `driver_pay_rate_missing` | A trip finished for a vehicle type with no driver pay rate (the entry is ₹0 until a rate is set). Once per vehicle type | `vehicle_type`, `link` | `/money/driver-pay` |
 | `bank_details_changed` | Bank details changed (person and superadmins) | `user_id` | `/admin/users/:user_id?tab=bank` |
 | `customer_booking` | A customer books or cancels | `booking_id` | `/requests?open=:booking_id&source=customer` |
 | `vendor_request`, `vendor_request_cancelled` | A vendor posts or cancels a load | `request_id` | `/requests?open=:request_id&source=vendor` |
@@ -75,4 +76,5 @@ Invoice ids by recipient: a vendor load carries `manifest_id` and `request_id` (
 | `shipment_delivered`, `shipment_cancelled` | Shipment changed | `shipment_id`, `route_id` |
 | `dispatch_message` | Message from dispatch | `route_id` |
 | `maintenance` | Vehicle moved to maintenance | `vehicle_id`, `job_id` |
+| `payout_sent` | Staff record a payment to the driver (cash, bank or UPI). Once per payout | `payout_id`, `amount`, `method`, `link` (`/wallet`) | the Wallet tab |
 | `account_changed` | Sign-in email changed | `user_id` |

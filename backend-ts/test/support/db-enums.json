@@ -246,5 +246,28 @@
         "hub_crossdock",
         "partial_delivery_remainder",
         "manual"
+    ],
+    "driver_pay_rates.vehicle_type": [
+        "truck",
+        "van",
+        "bike",
+        "car"
+    ],
+    "driver_pay_entries.status": [
+        "earned",
+        "approved",
+        "paid",
+        "void"
+    ],
+    "driver_pay_entries.km_source": [
+        "gps",
+        "planned",
+        "estimated",
+        "none"
+    ],
+    "driver_payouts.method": [
+        "cash",
+        "bank",
+        "upi"
     ]
 }
