@@ -13,7 +13,7 @@ export interface LayerPrefs {
   clusters: boolean
 }
 
-export const DEFAULT_LAYER_PREFS: LayerPrefs = { base: 'streets', flow: false, traffic: true, routes: true, trails: true, clusters: true }
+export const DEFAULT_LAYER_PREFS: LayerPrefs = { base: 'streets', flow: true, traffic: true, routes: true, trails: true, clusters: true }
 
 const STORAGE_KEY = 'margixindia.liveMap.layers'
 

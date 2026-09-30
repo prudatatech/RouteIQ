@@ -102,7 +102,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     trails,
     lines,
     baseStyle = 'streets',
-    traffic,
     clusters: clusteringOn = true,
     selectedId = null,
     onSelect,
@@ -125,6 +124,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const follow = props.follow ?? defaults.follow
   const controls = props.controls ?? defaults.controls
   const showLegend = props.showLegend ?? defaults.showLegend
+  // Live traffic flow is on by default for every map except picker (address selection).
+  const traffic = props.traffic ?? (mode !== 'picker' ? { flow: true } : undefined)
 
   const vehicles = useMemo(() => withValidPosition(props.vehicles), [props.vehicles])
   const points = useMemo(() => withValidPosition(props.points), [props.points])

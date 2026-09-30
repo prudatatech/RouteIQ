@@ -84,7 +84,7 @@ export function TrafficLegend({ enabled, stacked = false }: {
     <ul
       aria-label="Traffic"
       className={clsx(
-        'absolute left-2 z-10 flex max-w-[calc(100%-6.5rem)] flex-wrap gap-x-3 gap-y-1 rounded-control border border-border bg-surface px-3 py-1.5 text-xs text-text shadow-raised',
+        'absolute right-2 z-10 flex flex-col gap-1 rounded-control border border-border bg-surface/90 px-3 py-2 text-xs text-text shadow-raised backdrop-blur-sm',
         stacked ? 'bottom-12' : 'bottom-2',
       )}
     >
