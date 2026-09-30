@@ -315,14 +315,17 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const [shipRes, manRes] = await Promise.all([
-    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share, status, pieces_total, pieces_delivered, pieces_short, pieces_returned').in('status', ['delivered', 'partially_delivered']).gte('updated_at', startISO).lt('updated_at', endISO),
     supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
   ]);
   if (shipRes.error) throw new Error(`Failed to read shipments: ${shipRes.error.message}`);
   if (manRes.error) throw new Error(`Failed to read manifests: ${manRes.error.message}`);
   // A master is billed only for the part it kept (its freight_share); its lots are billed on their own
   const ownPart = (r: any) => !r.is_master || num(r.freight_share) > 0;
-  const shipments = (shipRes.data ?? []).filter((s: any) => ownPart(s) && s.updated_at >= startISO && s.updated_at < endISO);
+  // A partial delivery is unpriced only once settled: nothing left on a vehicle or at a hub
+  const settledPartial = (s: any) => s.status !== 'partially_delivered' || s.is_master || s.pieces_total == null
+    || num(s.pieces_total) - num(s.pieces_delivered) - num(s.pieces_short) - num(s.pieces_returned) <= 0;
+  const shipments = (shipRes.data ?? []).filter((s: any) => ownPart(s) && settledPartial(s) && s.updated_at >= startISO && s.updated_at < endISO);
   // A manifest without a vendor request came from a won bid and is billed on its shipment
   const manifests = (manRes.data ?? []).filter((m: any) => m.vendor_request_id && ownPart(m) && m.updated_at >= startISO && m.updated_at < endISO);
 

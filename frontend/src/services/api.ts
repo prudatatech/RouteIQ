@@ -459,7 +459,7 @@ export const vendorAPI = {
   loads: () => api.get('/vendor/loads').then(r => ensureArray(r.data)),
   /** One load with where it is, lots, proof of delivery, problems in plain words, claims and whether a claim can be raised. */
   load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
-  assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
+  assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number, dispatch?: boolean }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }
 
@@ -483,7 +483,8 @@ export const shipmentsAPI = {
   updateMetadata: (id: string, metadata: object) => api.put(`/shipments/${id}/metadata`, metadata).then(r => r.data),
   delete: (id: string) => api.delete(`/shipments/${id}`).then(r => r.data),
   getAssignOptions: (id: string, mode: 'near' | 'any') => api.get(`/shipments/${id}/assign-options`, { params: { mode } }).then(r => r.data),
-  assignDriver: (id: string, vehicleId: string) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId }).then(r => r.data),
+  /** `dispatch: true` sends the trip to the driver now; otherwise it waits in Dispatch under Trips to send. */
+  assignDriver: (id: string, vehicleId: string, dispatch = false) => api.post(`/shipments/${id}/assign`, { vehicle_id: vehicleId, dispatch }).then(r => r.data),
   /** Ordered status timeline (staff only) — see ShipmentService.getShipmentHistory. */
   history: (id: string) => api.get(`/shipments/${id}/history`).then(r => r.data),
   /** Staff rate the driver of a delivered shipment, 1 to 5. */
@@ -645,7 +646,7 @@ export const bookingsAPI = {
   list: () => api.get('/bookings').then(r => ensureArray(r.data) as CustomerBooking[]),
   /** Creates the shipment, so the booking can be dispatched like any other load. `price` (rupees before GST) overrides the customer's quote. */
   confirm: (id: string, price?: number | null) => api.post(`/bookings/${id}/confirm`, price == null ? {} : { price }).then(r => r.data),
-  assign: (id: string, vehicle_id: string) => api.post(`/bookings/${id}/assign`, { vehicle_id }).then(r => r.data),
+  assign: (id: string, vehicle_id: string, dispatch = false) => api.post(`/bookings/${id}/assign`, { vehicle_id, dispatch }).then(r => r.data),
   cancel: (id: string, reason: string) => api.post(`/bookings/${id}/cancel`, { reason }).then(r => r.data),
 }
 

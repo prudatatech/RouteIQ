@@ -636,7 +636,7 @@ export const vendorService = {
    * The vehicle must be in an operating status and have the free capacity the load needs.
    * A price per km alone becomes a total (rate x road distance) when the distance is known.
    */
-  async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number | null, costPerKm?: number | null) {
+  async assignVehicleToRequest(requestId: string, vehicleId: string, cost?: number | null, costPerKm?: number | null, opts: { dispatch?: boolean } = {}) {
     for (const [label, amount] of [['Cost', cost], ['Cost per km', costPerKm]] as const) {
       if (amount !== undefined && amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) {
         throw new HttpError(400, `${label} must be a number between 0 and 10,000,000`);
@@ -722,17 +722,18 @@ export const vendorService = {
       throw new Error(`Failed to create manifest: ${manifestErr.message}`);
     }
 
-    // The load now sits on the vehicle. It goes on the road only from an operating status
-    // (checked above), so a vehicle that went into maintenance meanwhile is left alone.
+    // The load now sits on the vehicle. It goes on the road only when the caller asked to send it
+    // (dispatch: true) and only from an operating status (checked above), so a vehicle that went
+    // into maintenance meanwhile is left alone. Without dispatch the driver is not told yet.
     const newLoad = (Number(assignee.current_load_kg) || 0) + required;
     const newAvail = Math.max(0, (free ?? 0) - required);
     await supabase.from('vehicles').update({
       current_load_kg: newLoad,
       available_capacity_kg: newAvail,
-      status: 'on_route',
+      ...(opts.dispatch === true ? { status: 'on_route' } : {}),
     }).eq('id', vehicleId).in('status', [...OPERATING_VEHICLE_STATUSES]);
 
-    if (assignee.driver_id) {
+    if (opts.dispatch === true && assignee.driver_id) {
       // Notify the driver instantly so the listener triggers
       await notificationService.sendNotification(
         assignee.driver_id,

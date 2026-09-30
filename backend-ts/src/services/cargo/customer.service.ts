@@ -39,7 +39,7 @@ export async function customerCargo(customerId: string, bookingId: string) {
   const notices = open
     .map((e: any) => {
       const notice = ownerNotice(e.type);
-      return notice ? { id: e.id, type: e.type, title: notice.title, message: notice.message, opened_at: e.created_at ?? null, revised_eta: eta } : null;
+      return notice ? { id: e.id, type: e.type, title: notice.title, message: notice.message, opened_at: e.created_at ?? null, revised_eta: eta, lot_code: e.lot_code ?? null } : null;
     })
     .filter(Boolean);
   const delivered = ['delivered', 'partially_delivered', 'returned'].includes(c.rawStatus);

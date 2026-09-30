@@ -153,11 +153,21 @@ describe('assigning a vehicle', () => {
     supabaseMock.rows('vehicles')[0] = vehicle();
   });
 
-  it('adds the load to the vehicle and puts it on the road', async () => {
+  it('adds the load to the vehicle but does not send it, and does not tell the driver, without dispatch', async () => {
     const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000 });
     expect(res.status).toBe(200);
-    expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ status: 'on_route', current_load_kg: 600, available_capacity_kg: 400 });
+    expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ status: 'available', current_load_kg: 600, available_capacity_kg: 400 });
     expect(supabaseMock.rows('vendor_shipment_requests')[0].cost).toBe(9000);
+    const sent = supabaseMock.writes('notifications', 'POST').map(w => w.body);
+    expect(sent.some(b => b.type === 'cargo_assigned')).toBe(false);
+    expect(sent.some(b => b.type === 'vehicle_assigned')).toBe(true);
+  });
+
+  it('puts the vehicle on the road and tells the driver when dispatch is true', async () => {
+    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000, dispatch: true });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ status: 'on_route', current_load_kg: 600, available_capacity_kg: 400 });
+    expect(supabaseMock.writes('notifications', 'POST').map(w => w.body).some(b => b.type === 'cargo_assigned')).toBe(true);
   });
 
   it('refuses a load that does not fit the free capacity, without claiming the request', async () => {

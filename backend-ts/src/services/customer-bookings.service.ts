@@ -264,7 +264,7 @@ export async function confirmBooking(id: string, actor: LogActor, options: { pri
 }
 
 /** Staff put a vehicle on a confirmed booking's shipment. The shipment's own assign rules apply (vehicle in service, type, capacity). */
-export async function assignBooking(id: string, vehicleId: string, actor: LogActor) {
+export async function assignBooking(id: string, vehicleId: string, actor: LogActor, opts: { dispatch?: boolean } = {}) {
   const booking = await getBookingRow(id);
   if (!booking.shipment_id || !['confirmed', 'assigned', 'in_transit'].includes(booking.status)) {
     throw new HttpError(409, 'Confirm the booking before assigning a vehicle');
@@ -279,7 +279,7 @@ export async function assignBooking(id: string, vehicleId: string, actor: LogAct
   if (!vehicle) throw new HttpError(404, 'Vehicle not found');
 
   // Assigning marks the shipment assigned, which moves this booking and tells the customer
-  await ShipmentService.assignDriver(booking.shipment_id, vehicleId, actor);
+  await ShipmentService.assignDriver(booking.shipment_id, vehicleId, actor, { dispatch: opts.dispatch === true });
   const updated = await getBookingRow(id);
   if (updated.status !== 'assigned') throw new HttpError(409, 'This booking changed while you were assigning it. Reload and try again.');
   return updated;
@@ -334,7 +334,8 @@ const SHIPMENT_TO_BOOKING: Record<string, BookingStatus> = {
   picked_up: 'in_transit',
   in_transit: 'in_transit',
   // Still on its way: out for delivery, at a hub, or coming back. Holds, cases, partial
-  // deliveries, returns and losses keep the booking's status; the cargo notifications explain them.
+  // deliveries (see onShipmentStatus: delivered once settled), returns and losses keep the booking's
+  // status; the cargo notifications explain them.
   out_for_delivery: 'in_transit',
   at_hub: 'in_transit',
   returning: 'in_transit',
@@ -365,7 +366,12 @@ export async function onShipmentStatus(shipmentId: string, shipmentStatus: strin
     }
     return;
   }
-  const next = SHIPMENT_TO_BOOKING[shipmentStatus];
+  let next: BookingStatus | undefined = SHIPMENT_TO_BOOKING[shipmentStatus];
+  if (shipmentStatus === 'partially_delivered') {
+    // Delivered only once nothing is left on a vehicle, at a hub, returning or on hold; until then it is still on its way
+    const { consignmentSettled } = await import('./cargo/lots.service');
+    next = (await consignmentSettled('shipment', shipmentId)) ? 'delivered' : 'in_transit';
+  }
   if (!next) return;
   const { data: booking, error } = await supabase.from('customer_bookings').select(BOOKING_COLUMNS).eq('shipment_id', shipmentId).maybeSingle();
   if (error || !booking) return;

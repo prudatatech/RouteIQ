@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { AlertTriangle, Ban, Truck, User } from 'lucide-react'
-import { Button, EmptyState, ErrorState, Modal, SearchInput, Skeleton, StatusPill, humanize, useConfirm } from '@/components/ui'
+import { Button, Checkbox, EmptyState, ErrorState, Modal, SearchInput, Skeleton, StatusPill, humanize, useConfirm } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { bookingsAPI, fleetAPI, shipmentsAPI, vehiclesAPI, vendorAPI, type CustomerBooking } from '@/services/api'
 import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
@@ -80,11 +81,14 @@ function subjectOf({ shipment, booking, loads }: Pick<Props, 'shipment' | 'booki
  */
 export default function AssignVehicleModal({ shipment = null, booking = null, loads = null, onClose, onAssigned }: Props) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { confirm } = useConfirm()
   const subject = useMemo(() => subjectOf({ shipment, booking, loads }), [shipment, booking, loads])
   const open = subject !== null
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Sending the trip to the driver is a choice: unchecked, the trip waits in Dispatch under Trips to send
+  const [sendNow, setSendNow] = useState(true)
 
   const vehicles = useQuery<AssignableVehicle[]>({
     queryKey: ['vehicles', 'assign'],
@@ -137,14 +141,14 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     const failed: AssignResult['failed'] = []
     try {
       if (shipment) {
-        try { await shipmentsAPI.assignDriver(shipment.id, a.vehicle.id); assignedIds.push(shipment.id) }
+        try { await shipmentsAPI.assignDriver(shipment.id, a.vehicle.id, sendNow); assignedIds.push(shipment.id) }
         catch (err) { failed.push({ id: shipment.id, message: errorMessage(err, 'We could not assign the vehicle. Try again.') }) }
       } else if (booking) {
-        try { await bookingsAPI.assign(booking.id, a.vehicle.id); assignedIds.push(booking.id) }
+        try { await bookingsAPI.assign(booking.id, a.vehicle.id, sendNow); assignedIds.push(booking.id) }
         catch (err) { failed.push({ id: booking.id, message: errorMessage(err, 'We could not assign the vehicle. Try again.') }) }
       } else if (loads) {
         for (const load of loads) {
-          try { await vendorAPI.assignVehicle(load.id, { vehicle_id: a.vehicle.id }); assignedIds.push(load.id) }
+          try { await vendorAPI.assignVehicle(load.id, { vehicle_id: a.vehicle.id, dispatch: sendNow }); assignedIds.push(load.id) }
           catch (err) { failed.push({ id: load.id, message: `${vendorName(load)}: ${errorMessage(err, 'failed')}` }) }
         }
       }
@@ -156,6 +160,16 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     }
     if (failed.length > 0) {
       toast.error(assignedIds.length === 0 ? failed[0].message : `Assigned ${assignedIds.length}, ${failed.length} failed: ${failed.slice(0, 3).map(f => f.message).join('; ')}`)
+    } else if (!sendNow) {
+      toast.success(
+        (t) => (
+          <span>
+            Assigned. Send the trip from Dispatch → Trips to send.{' '}
+            <button type="button" className="font-medium underline" onClick={() => { toast.dismiss(t.id); navigate('/routes?status=pending') }}>Open Trips to send</button>
+          </span>
+        ),
+        { duration: 8000 },
+      )
     } else {
       toast.success(subject.kind === 'booking' ? 'Vehicle assigned. The customer has been told.' : subject.kind === 'vendor' ? 'Vehicle assigned. The load was added to its shipments.' : 'Vehicle assigned')
     }
@@ -186,6 +200,12 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
             <LiveMap vehicles={mapVehicles} />
           </div>
         )}
+        <Checkbox
+          checked={sendNow}
+          onChange={e => setSendNow(e.target.checked)}
+          label="Send to driver now"
+          description="The driver is told and the trip starts. Uncheck to send it later from Dispatch, Trips to send."
+        />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <SearchInput value={search} onChange={setSearch} label="Search vehicles" placeholder="Plate, driver or type" className="w-full sm:max-w-xs" />
           {vehicles.data && <p className="text-sm text-muted">{available} of {assessments.length} {assessments.length === 1 ? 'vehicle' : 'vehicles'} can take this</p>}

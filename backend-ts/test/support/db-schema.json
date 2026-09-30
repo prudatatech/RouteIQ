@@ -245,7 +245,8 @@
     "vendor_request_id",
     "payment_method",
     "payment_reference",
-    "void_reason"
+    "void_reason",
+    "notes"
   ],
   "kyc_profiles": [
     "id",

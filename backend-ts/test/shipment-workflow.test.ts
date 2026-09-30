@@ -151,7 +151,7 @@ describe('assigning a shipment', () => {
     customer_bookings: [bookingRow({ status: 'confirmed', shipment_id: SHIPMENT, tracking_id: 'RTX-AAAA1111' })],
   }));
 
-  it('marks it assigned, logs it, moves the booking, and dispatches the route', async () => {
+  it('marks it assigned, logs it, moves the booking, and keeps the trip pending until it is sent', async () => {
     const res = await post(`/shipments/${SHIPMENT}/assign`, { vehicle_id: VEHICLE });
     expect(res.status).toBe(200);
     expect(one('shipments', SHIPMENT).status).toBe('assigned');
@@ -160,12 +160,37 @@ describe('assigning a shipment', () => {
     expect(one('customer_bookings', BOOKING)).toMatchObject({ status: 'assigned', vehicle_id: VEHICLE });
     expect(notesFor(CUSTOMER).some(n => n.title === 'Vehicle assigned')).toBe(true);
 
+    // The trip waits in Dispatch: nothing started, the driver is not told
+    const route = supabaseMock.rows('routes')[0];
+    expect(route.status).toBe('pending');
+    expect(route.started_at).toBeFalsy();
+    expect(one('vehicles', VEHICLE).status).not.toBe('on_route');
+    expect(notesFor(DRIVER).some(n => n.type === 'route_activated')).toBe(false);
+    expect(supabaseMock.rows('route_stops').map(s => s.sequence).sort()).toEqual([1, 2]);
+  });
+
+  it('dispatches the route and tells the driver when dispatch is true', async () => {
+    const res = await post(`/shipments/${SHIPMENT}/assign`, { vehicle_id: VEHICLE, dispatch: true });
+    expect(res.status).toBe(200);
     const route = supabaseMock.rows('routes')[0];
     expect(route.status).toBe('active');
     expect(route.started_at).toBeTruthy();
     expect(one('vehicles', VEHICLE).status).toBe('on_route');
     expect(notesFor(DRIVER).some(n => n.type === 'route_activated')).toBe(true);
-    expect(supabaseMock.rows('route_stops').map(s => s.sequence).sort()).toEqual([1, 2]);
+  });
+
+  it('assigns a booking without dispatch by default, and dispatches it when asked', async () => {
+    const ok = await post(`/bookings/${BOOKING}/assign`, { vehicle_id: VEHICLE });
+    expect(ok.status).toBe(200);
+    expect(supabaseMock.rows('routes')[0].status).toBe('pending');
+    expect(notesFor(DRIVER).some(n => n.type === 'route_activated')).toBe(false);
+  });
+
+  it('dispatches a booking\'s trip when dispatch is true', async () => {
+    const ok = await post(`/bookings/${BOOKING}/assign`, { vehicle_id: VEHICLE, dispatch: true });
+    expect(ok.status).toBe(200);
+    expect(supabaseMock.rows('routes')[0].status).toBe('active');
+    expect(notesFor(DRIVER).some(n => n.type === 'route_activated')).toBe(true);
   });
 
   it('refuses a vehicle that is in maintenance, too small, or the wrong class', async () => {
@@ -264,13 +289,23 @@ describe('choosing a vehicle', () => {
 describe('a shipment with a vehicle at creation', () => {
   beforeEach(() => reset());
 
-  it('is created assigned, on a route that is dispatched', async () => {
-    const res = await post('/shipments/', {
-      origin_name: 'Hub', origin_address: 'Bhiwandi', origin_lat: 19.3, origin_lng: 73.06,
-      dest_name: 'Store', dest_address: 'Pune', dest_lat: 18.5, dest_lng: 73.8, total_items: 1, total_weight_kg: 50, vehicle_id: VEHICLE,
-    });
+  const body = {
+    origin_name: 'Hub', origin_address: 'Bhiwandi', origin_lat: 19.3, origin_lng: 73.06,
+    dest_name: 'Store', dest_address: 'Pune', dest_lat: 18.5, dest_lng: 73.8, total_items: 1, total_weight_kg: 50, vehicle_id: VEHICLE,
+  };
+
+  it('is created assigned, on a route that stays pending until it is sent', async () => {
+    const res = await post('/shipments/', body);
     expect(res.status).toBe(201);
     expect(supabaseMock.rows('shipments')[0].status).toBe('assigned');
+    expect(supabaseMock.rows('routes')[0].status).toBe('pending');
+    expect(one('vehicles', VEHICLE).status).not.toBe('on_route');
+    expect(notesFor(DRIVER).some(n => n.type === 'route_activated')).toBe(false);
+  });
+
+  it('dispatches the route at creation when dispatch is true', async () => {
+    const res = await post('/shipments/', { ...body, dispatch: true });
+    expect(res.status).toBe(201);
     expect(supabaseMock.rows('routes')[0].status).toBe('active');
     expect(one('vehicles', VEHICLE).status).toBe('on_route');
   });

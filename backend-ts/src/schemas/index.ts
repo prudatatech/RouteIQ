@@ -218,6 +218,8 @@ export const ShipmentCreateSchema = z.object({
   load_type: z.enum(['full', 'partial']).default('full'),
   enable_mobile_gps: z.boolean().default(false),
   vehicle_id: z.string().uuid().optional().nullable(),
+  /** With a vehicle: send the trip to the driver now. Default false, the trip waits in Dispatch. */
+  dispatch: z.boolean().optional(),
   open_bidding: z.boolean().optional(),
   metadata: z.any().optional(),
   bidding_opens_at: z.string().optional().nullable(),

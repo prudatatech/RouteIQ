@@ -42,12 +42,12 @@ router.post('/:id/confirm', async (req: Request, res: Response) => {
   }
 });
 
-// ── POST /bookings/:id/assign — { vehicle_id } ─────────────
+// ── POST /bookings/:id/assign — { vehicle_id, dispatch? } ─────────────
 router.post('/:id/assign', async (req: Request, res: Response) => {
   try {
-    const parsed = z.object({ vehicle_id: z.string().uuid('Choose a vehicle') }).safeParse(req.body);
+    const parsed = z.object({ vehicle_id: z.string().uuid('Choose a vehicle'), dispatch: z.boolean().optional() }).safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
-    res.json(await assignBooking(bookingId(req), parsed.data.vehicle_id, actor(req)));
+    res.json(await assignBooking(bookingId(req), parsed.data.vehicle_id, actor(req), { dispatch: parsed.data.dispatch === true }));
   } catch (e) {
     sendError(req, res, e);
   }

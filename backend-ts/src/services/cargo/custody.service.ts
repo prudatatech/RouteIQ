@@ -284,6 +284,17 @@ async function afterManifestDelivered(c: Consignment): Promise<void> {
 
 /** Side effects of a status change, by kind of consignment. */
 async function afterStatus(c: Consignment, previous: string, next: string, actor: Actor | null): Promise<void> {
+  // A partial delivery whose last pieces are settled later (returned, found short) keeps its status:
+  // try the invoice again; it is only issued once nothing is left to hold, and never twice
+  if (next === previous && next === 'partially_delivered' && c.kind === 'shipment') {
+    await InvoiceService.onShipmentDelivered(c.id);
+    try {
+      const { onShipmentStatus } = await import('../customer-bookings.service');
+      await onShipmentStatus(c.id, next);
+    } catch (e) {
+      console.error('Failed to update the customer booking:', e);
+    }
+  }
   if (next === previous) return;
   if (c.kind === 'shipment') {
     await ShipmentService.afterStatusChange(c.id, next, actor);
@@ -945,18 +956,35 @@ export interface WhereView {
   eway_part_b_required: boolean;
 }
 
-/** Open cases a consignment is in. */
-export async function openExceptionsFor(c: { kind: 'shipment' | 'manifest'; id: string }) {
+/**
+ * Open cases a consignment is in. For a master, the open cases of all its lots too, each
+ * tagged with its lot code (`lot_code`), so a case that sits on one lot shows on the booking.
+ */
+export async function openExceptionsFor(c: { kind: 'shipment' | 'manifest'; id: string; isMaster?: boolean }) {
   const column = c.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
-  const { data: items } = await supabase.from('cargo_exception_items').select('exception_id').eq(column, c.id);
-  const ids = [...new Set((items ?? []).map((i: any) => i.exception_id))];
-  if (ids.length === 0) return [];
+  const lotCodes = new Map<string, string>();
+  const ids = [c.id];
+  if (c.isMaster) {
+    const { lotsOf } = await import('./lots.service');
+    for (const l of await lotsOf(c.kind, c.id)) {
+      ids.push(l.id);
+      lotCodes.set(l.id, l.code);
+    }
+  }
+  const { data: items } = await supabase.from('cargo_exception_items').select(`exception_id, ${column}`).in(column, ids);
+  const codeOf = new Map<string, string>();
+  for (const i of (items ?? []) as any[]) {
+    const lot = lotCodes.get(i[column]);
+    if (lot && !codeOf.has(i.exception_id)) codeOf.set(i.exception_id, lot);
+  }
+  const caseIds = [...new Set((items ?? []).map((i: any) => i.exception_id))];
+  if (caseIds.length === 0) return [];
   const { data } = await supabase
     .from('cargo_exceptions')
     .select('id, code, type, severity, status, sla_due_at, description, created_at')
-    .in('id', ids)
+    .in('id', caseIds)
     .in('status', ['open', 'investigating', 'action_planned']);
-  return (data ?? []) as any[];
+  return ((data ?? []) as any[]).map(e => (codeOf.has(e.id) ? { ...e, lot_code: codeOf.get(e.id) } : e));
 }
 
 export async function whereIs(c: Consignment, opts: { redacted?: boolean; user?: TokenData | null } = {}): Promise<WhereView> {
