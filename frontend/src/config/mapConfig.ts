@@ -7,8 +7,8 @@ import { statusToLabel, statusToTone, type Tone } from '@/components/ui/status'
  *
  * The base map is Carto Voyager, a rich Google Maps–like style with POIs,
  * land-use colours, building footprints and road hierarchy. Free, no token.
- * A Mapbox token is optional and only used for driving directions;
- * without it routes are drawn as straight lines.
+ * Driving directions come from the backend (POST /routing/directions), so no map key is needed
+ * in the browser; without a provider on the server routes are drawn as straight lines.
  */
 
 /** Base map style. Carto Voyager — colourful, with POIs and land-use (no token needed). */
@@ -90,13 +90,6 @@ export const MAP_DEFAULTS = {
   MIN_ZOOM: 3,
   MAX_ZOOM: 18,
 }
-
-/** Mapbox token for driving directions, or null when it is missing or still the placeholder. */
-export const MAPBOX_TOKEN: string | null = (() => {
-  const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
-  if (!token || /^your_mapbox_token/i.test(token)) return null
-  return token
-})()
 
 /* ── Colours ────────────────────────────────────────────────────────────── */
 

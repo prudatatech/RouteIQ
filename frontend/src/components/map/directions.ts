@@ -1,4 +1,4 @@
-import { MAPBOX_TOKEN } from '@/config/mapConfig'
+import { api } from '@/services/api'
 import { alignCongestion, type CongestionLevel } from './congestion'
 import type { LatLng } from './types'
 
@@ -9,21 +9,25 @@ export interface DrivingRoute {
   durationSeconds: number
   distanceMeters: number
   /**
-   * Congestion of each line segment (`coordinates.length - 1` entries, "unknown" where Mapbox has
-   * no data), from the `congestion` annotation. Empty when the response had none.
+   * Congestion of each line segment (`coordinates.length - 1` entries, "unknown" where there is
+   * no data), from the provider's `congestion` annotation. Empty when the answer had none.
    */
   congestion: CongestionLevel[]
-  /** Length in metres of each line segment, from the `distance` annotation (same length as `congestion`). */
+  /** Length in metres of each line segment (same length as `congestion`). */
   segmentMeters: number[]
-  /** Duration in seconds of each line segment, from the `duration` annotation (same length as `congestion`). */
+  /** Duration in seconds of each line segment (same length as `congestion`). */
   segmentSeconds: number[]
 }
 
-/** The Mapbox Directions API accepts at most 25 waypoints. */
+/** The backend accepts at most 25 waypoints per request. */
 const MAX_WAYPOINTS = 25
 
-/** True when driving directions can be fetched (a Mapbox token is configured). */
-export const directionsAvailable = MAPBOX_TOKEN !== null
+/**
+ * Driving directions come from the backend (`POST /routing/directions`), which holds the Mapbox
+ * and TomTom keys, so the browser needs no map token and this is always on. When the server has no
+ * provider set up (503) or finds no route, callers get null and draw the dashed straight line.
+ */
+export const directionsAvailable = true
 
 /**
  * How long a road route stays valid. Live traffic moves within minutes, so an old answer would
@@ -51,36 +55,6 @@ function fresh<T>(entry: Cached<T> | undefined, maxAgeMs: number): entry is Cach
   return entry !== undefined && Date.now() - entry.at < maxAgeMs
 }
 
-/**
- * Road route through the waypoints, in order, using live traffic (Mapbox driving-traffic), with
- * per-segment congestion, duration and distance annotations.
- * Returns null without a Mapbox token, with fewer than two waypoints, or when
- * no route is found; callers then draw a dashed straight line instead.
- *
- * Results are cached in memory for a few minutes, and concurrent requests for the same
- * waypoints are de-duplicated onto a single network call.
- */
-export async function fetchDrivingRoute(waypoints: LatLng[], signal?: AbortSignal): Promise<DrivingRoute | null> {
-  if (!MAPBOX_TOKEN || waypoints.length < 2) return null
-
-  const key = waypointsKey(waypoints)
-  const cached = routeCache.get(key)
-  if (fresh(cached, ROUTE_CACHE_MS)) return cached.value
-
-  let pending = inFlight.get(key)
-  if (!pending) {
-    pending = requestDrivingRoute(waypoints, MAPBOX_TOKEN)
-      .then((result) => {
-        routeCache.set(key, { value: result, at: Date.now() })
-        return result
-      })
-      .finally(() => { inFlight.delete(key) })
-    inFlight.set(key, pending)
-  }
-
-  return withSignal(pending, signal)
-}
-
 /** `signal` only cancels this caller's wait; the shared request keeps going for other callers. */
 function withSignal<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return pending
@@ -92,69 +66,119 @@ function withSignal<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   })
 }
 
-interface MapboxLeg {
-  annotation?: { congestion?: unknown[]; duration?: unknown[]; distance?: unknown[] }
+/** Directions as the backend sends them (`POST /routing/directions`). */
+export interface DirectionsResponse {
+  coordinates?: [number, number][]
+  distance_meters?: number
+  duration_seconds?: number
+  congestion?: unknown[]
+  segment_meters?: unknown[]
+  segment_seconds?: unknown[]
 }
 
 const numbers = (values: unknown[] | undefined): number[] =>
   (values ?? []).map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0))
 
-/** Turns a Mapbox directions response into a DrivingRoute. Exported for tests. */
-export function parseDrivingRoute(data: {
-  routes?: { geometry: { coordinates: [number, number][] }; duration: number; distance: number; legs?: MapboxLeg[] }[]
-}): DrivingRoute | null {
-  const best = data.routes?.[0]
-  if (!best) return null
-  const coordinates = best.geometry.coordinates
-  const legs = best.legs ?? []
-  const joined = (pick: (a: NonNullable<MapboxLeg['annotation']>) => unknown[] | undefined) =>
-    legs.flatMap((leg) => (leg.annotation ? pick(leg.annotation) ?? [] : []))
-  const congestion = joined((a) => a.congestion)
-  const segments = Math.max(0, coordinates.length - 1)
+/** Turns the backend's directions answer into a DrivingRoute. Exported for tests. */
+export function parseDirectionsResponse(data: DirectionsResponse | null | undefined): DrivingRoute | null {
+  const coordinates = data?.coordinates
+  if (!data || !Array.isArray(coordinates) || coordinates.length < 2) return null
+  const segments = coordinates.length - 1
   const pad = (values: number[]) => Array.from({ length: segments }, (_, i) => values[i] ?? 0)
+  const congestion = data.congestion ?? []
   return {
     coordinates,
-    durationSeconds: best.duration,
-    distanceMeters: best.distance,
+    durationSeconds: Number(data.duration_seconds) || 0,
+    distanceMeters: Number(data.distance_meters) || 0,
     congestion: congestion.length > 0 ? alignCongestion(congestion, coordinates.length) : [],
-    segmentMeters: pad(numbers(joined((a) => a.distance))),
-    segmentSeconds: pad(numbers(joined((a) => a.duration))),
+    segmentMeters: pad(numbers(data.segment_meters)),
+    segmentSeconds: pad(numbers(data.segment_seconds)),
   }
 }
 
-async function requestDrivingRoute(waypoints: LatLng[], token: string): Promise<DrivingRoute | null> {
-  const coords = waypoints.slice(0, MAX_WAYPOINTS).map((p) => `${p.lng},${p.lat}`).join(';')
-  const url =
-    `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}` +
-    `?overview=full&geometries=geojson&annotations=congestion,duration,distance&access_token=${encodeURIComponent(token)}`
+/** The server has no provider (503) or no road route (404): not an error, the caller draws a straight line. */
+export function isNoRoute(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } })?.response?.status
+  return status === 503 || status === 404
+}
 
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Directions request failed (${res.status})`)
-  return parseDrivingRoute(await res.json())
+async function requestDirections(waypoints: LatLng[], traffic: boolean): Promise<DrivingRoute | null> {
+  try {
+    const res = await api.post('/routing/directions', {
+      waypoints: waypoints.slice(0, MAX_WAYPOINTS).map((p) => ({ lat: p.lat, lng: p.lng })),
+      traffic,
+    })
+    return parseDirectionsResponse(res.data as DirectionsResponse)
+  } catch (error) {
+    if (isNoRoute(error)) return null
+    throw error
+  }
+}
+
+function cachedRoute(key: string, load: () => Promise<DrivingRoute | null>, signal?: AbortSignal): Promise<DrivingRoute | null> {
+  const cached = routeCache.get(key)
+  if (fresh(cached, ROUTE_CACHE_MS)) return Promise.resolve(cached.value)
+
+  let pending = inFlight.get(key)
+  if (!pending) {
+    pending = load()
+      .then((result) => {
+        routeCache.set(key, { value: result, at: Date.now() })
+        return result
+      })
+      .finally(() => { inFlight.delete(key) })
+    inFlight.set(key, pending)
+  }
+  return withSignal(pending, signal)
 }
 
 /**
- * Driving time through the waypoints ignoring traffic (Mapbox `driving`, speed-limit based).
- * The gap to `DrivingRoute.durationSeconds` is what traffic adds. Null without a token or when
- * no route is found. The waypoint key is coarse (about 1 km) so a moving vehicle reuses it.
+ * Road route through the waypoints, in order, using live traffic, with per-segment congestion,
+ * duration and distance annotations (congestion comes from Mapbox; the TomTom fallback has none).
+ * Returns null with fewer than two waypoints, when the server has no directions provider, or when
+ * no route is found; callers then draw a dashed straight line instead. Other failures reject.
+ *
+ * Results are cached in memory for a few minutes, and concurrent requests for the same
+ * waypoints are de-duplicated onto a single network call.
+ */
+export async function fetchDrivingRoute(waypoints: LatLng[], signal?: AbortSignal): Promise<DrivingRoute | null> {
+  if (waypoints.length < 2) return null
+  return cachedRoute(waypointsKey(waypoints), () => requestDirections(waypoints, true), signal)
+}
+
+/**
+ * The road line from a tracked shipment's vehicle to its next stop, for the public tracking page
+ * (no sign-in, so it cannot ask for arbitrary directions). The server works out both ends itself;
+ * `positionKey` only keeps the browser from asking again until the vehicle has moved.
+ */
+export async function fetchTrackedRoute(trackingId: string, positionKey: string, signal?: AbortSignal): Promise<DrivingRoute | null> {
+  return cachedRoute(`track:${trackingId}:${positionKey}`, async () => {
+    try {
+      const res = await api.get(`/shipments/track/${encodeURIComponent(trackingId)}/route`)
+      return parseDirectionsResponse(res.data as DirectionsResponse)
+    } catch (error) {
+      if (isNoRoute(error)) return null
+      throw error
+    }
+  }, signal)
+}
+
+/**
+ * Driving time through the waypoints ignoring traffic (speed-limit based).
+ * The gap to `DrivingRoute.durationSeconds` is what traffic adds. Null when the server has no
+ * provider or no route is found. The waypoint key is coarse (about 1 km) so a moving vehicle reuses it.
  */
 export async function fetchFreeFlowSeconds(waypoints: LatLng[], signal?: AbortSignal): Promise<number | null> {
-  if (!MAPBOX_TOKEN || waypoints.length < 2) return null
+  if (waypoints.length < 2) return null
   const key = waypointsKey(waypoints, 2)
   const cached = freeFlowCache.get(key)
   if (fresh(cached, FREE_FLOW_CACHE_MS)) return cached.value
 
   let pending = freeFlowInFlight.get(key)
   if (!pending) {
-    const coords = waypoints.slice(0, MAX_WAYPOINTS).map((p) => `${p.lng},${p.lat}`).join(';')
-    const url =
-      `https://api.mapbox.com/directions/v5/mapbox/driving/${coords}` +
-      `?overview=false&access_token=${encodeURIComponent(MAPBOX_TOKEN)}`
-    pending = fetch(url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Directions request failed (${res.status})`)
-        const data = (await res.json()) as { routes?: { duration: number }[] }
-        const seconds = data.routes?.[0]?.duration ?? null
+    pending = requestDirections(waypoints, false)
+      .then((route) => {
+        const seconds = route ? route.durationSeconds : null
         freeFlowCache.set(key, { value: seconds, at: Date.now() })
         return seconds
       })

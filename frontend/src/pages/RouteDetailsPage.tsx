@@ -98,7 +98,7 @@ export default function RouteDetailsPage() {
     [route],
   )
 
-  // Real driving directions when a Mapbox token is configured; otherwise MapView
+  // Real driving directions from the backend; when it has none, MapView
   // draws a dashed straight line through the stops.
   const [road, setRoad] = useState<DrivingRoute | null>(null)
   const [trafficTick, setTrafficTick] = useState(0)

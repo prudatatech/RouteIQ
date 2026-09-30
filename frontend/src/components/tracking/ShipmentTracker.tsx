@@ -6,7 +6,7 @@ import { StatusPill } from '@/components/ui/StatusPill'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
-import { fetchDrivingRoute, type DrivingRoute } from '@/components/map/directions'
+import { fetchTrackedRoute, type DrivingRoute } from '@/components/map/directions'
 import { formatKg, formatMinutes, formatDateTime } from '@/utils/display'
 
 /** Vehicle fields the public tracking endpoint returns — no driver identity or phone. */
@@ -58,21 +58,22 @@ function nextStopOf(shipment: ShipmentTrackingData): LatLngPoint | null {
 }
 
 /** Road route (with live traffic) from the vehicle to its next stop; null when unavailable. */
-function useRemainingRoute(vehicle: LatLngPoint | null, stop: LatLngPoint | null, enabled: boolean) {
+function useRemainingRoute(trackingId: string | null, vehicle: LatLngPoint | null, stop: LatLngPoint | null, enabled: boolean) {
   // ~100 m rounding so each position poll does not trigger a new Directions request.
-  const key = vehicle && stop && enabled
+  const key = trackingId && vehicle && stop && enabled
     ? [vehicle.lat.toFixed(3), vehicle.lng.toFixed(3), stop.lat.toFixed(5), stop.lng.toFixed(5)].join(',')
     : null
   const [result, setResult] = useState<{ key: string; route: DrivingRoute | null } | null>(null)
   useEffect(() => {
     if (!key) return
-    const [vLat, vLng, sLat, sLng] = key.split(',').map(Number)
     const ctrl = new AbortController()
-    fetchDrivingRoute([{ lat: vLat, lng: vLng }, { lat: sLat, lng: sLng }], ctrl.signal)
+    // The public page has no sign-in, so the server finds the vehicle and the next stop of this
+    // shipment itself; the key only tells the browser when the vehicle has moved enough to ask again.
+    fetchTrackedRoute(trackingId!, key, ctrl.signal)
       .then(route => setResult({ key, route }))
       .catch(() => { /* aborted or failed: fall back to the backend estimate */ })
     return () => ctrl.abort()
-  }, [key])
+  }, [key, trackingId])
   return key && result?.key === key ? result.route : null
 }
 
@@ -116,7 +117,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
   const vehiclePos = vLat != null && vLng != null ? { lat: vLat, lng: vLng } : null
   const nextStop = useMemo(() => (shipment ? nextStopOf(shipment) : null), [shipment])
   const inProgress = !!shipment && shipment.status !== 'delivered' && shipment.status !== 'cancelled'
-  const drivingRoute = useRemainingRoute(vehiclePos, nextStop, inProgress)
+  const drivingRoute = useRemainingRoute(shipment?.tracking_id ?? null, vehiclePos, nextStop, inProgress)
 
   if (isLoading) {
     return (

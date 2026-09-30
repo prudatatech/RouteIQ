@@ -67,4 +67,3 @@ else
   echo "  AZURE_TENANT_ID       = $TENANT"
   echo "  AZURE_SUBSCRIPTION_ID = $SUB"
 fi
-echo "Optional: add the public Mapbox token (pk.) as the variable VITE_MAPBOX_TOKEN so web maps draw roads."

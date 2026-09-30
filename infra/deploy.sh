@@ -177,13 +177,10 @@ fi
 # 9. frontend
 if [[ $SKIP_WEB -eq 0 ]]; then
   API_URL="https://${API_DOMAIN:-$API_FQDN}"
-  # The public pk. token: from secrets.env locally, or the VITE_MAPBOX_TOKEN variable in CI
-  MAPBOX_PUBLIC="$(secret_value VITE_MAPBOX_TOKEN)"; MAPBOX_PUBLIC="${MAPBOX_PUBLIC:-${VITE_MAPBOX_TOKEN:-}}"
-  [[ -n "$MAPBOX_PUBLIC" ]] || warn "VITE_MAPBOX_TOKEN is blank in secrets.env: the map builds without a public Mapbox token"
   log "Building frontend against $API_URL"
   ( cd "$ROOT_DIR/frontend"
     npm ci
-    VITE_API_URL="$API_URL" VITE_MAPBOX_TOKEN="$MAPBOX_PUBLIC" npm run build )
+    VITE_API_URL="$API_URL" npm run build )
   log "Deploying frontend to Static Web App $WEB_APP"
   # The token is fetched now and handed over through the environment: never written to disk.
   SWA_CLI_DEPLOYMENT_TOKEN="$(az staticwebapp secrets list --name "$WEB_APP" --resource-group "$RG" --query properties.apiKey -o tsv)"

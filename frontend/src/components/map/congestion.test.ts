@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { alignCongestion, congestionFeatures, congestionRuns, normalizeCongestion, summarizeCongestion, type CongestionLevel } from './congestion'
-import { parseDrivingRoute } from './directions'
 
 const line: [number, number][] = [[77, 28], [77.1, 28], [77.2, 28], [77.3, 28], [77.4, 28]]
 
@@ -69,44 +68,5 @@ describe('congestion summary', () => {
   it('says when there is no traffic data at all', () => {
     expect(summarizeCongestion(['unknown', 'unknown'], [10, 10]).known).toBe(false)
     expect(summarizeCongestion([], undefined)).toMatchObject({ slowMetres: 0, known: false })
-  })
-})
-
-describe('Mapbox directions response', () => {
-  const geometry = { coordinates: line }
-
-  it('joins the per-leg annotations into per-segment arrays', () => {
-    const route = parseDrivingRoute({
-      routes: [{
-        geometry, duration: 900, distance: 12000,
-        legs: [
-          { annotation: { congestion: ['low', 'heavy'], duration: [100, 200], distance: [1000, 2000] } },
-          { annotation: { congestion: ['severe', 'unknown'], duration: [300, 400], distance: [3000, 4000] } },
-        ],
-      }],
-    })
-    expect(route).not.toBeNull()
-    expect(route!.congestion).toEqual(['low', 'heavy', 'severe', 'unknown'])
-    expect(route!.segmentSeconds).toEqual([100, 200, 300, 400])
-    expect(route!.segmentMeters).toEqual([1000, 2000, 3000, 4000])
-    expect(route!.durationSeconds).toBe(900)
-  })
-
-  it('leaves congestion empty when the response has no annotation, so the route stays one colour', () => {
-    const route = parseDrivingRoute({ routes: [{ geometry, duration: 10, distance: 20, legs: [{}] }] })
-    expect(route!.congestion).toEqual([])
-    expect(route!.segmentMeters).toEqual([0, 0, 0, 0])
-  })
-
-  it('returns null when no route was found', () => {
-    expect(parseDrivingRoute({ routes: [] })).toBeNull()
-    expect(parseDrivingRoute({})).toBeNull()
-  })
-
-  it('cuts an annotation that is longer than the geometry', () => {
-    const route = parseDrivingRoute({
-      routes: [{ geometry, duration: 1, distance: 1, legs: [{ annotation: { congestion: ['low', 'low', 'low', 'low', 'heavy', 'heavy'] } }] }],
-    })
-    expect(route!.congestion).toHaveLength(4)
   })
 })
