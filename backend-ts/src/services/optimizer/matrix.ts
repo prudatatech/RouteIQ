@@ -25,6 +25,8 @@ export interface CostMatrix {
   estimated: boolean;
   /** Provider requests made. */
   requests: number;
+  /** A routing key is set, so an estimate means the provider failed rather than that nothing was configured. */
+  providerConfigured: boolean;
   /** Why an estimate was used, in plain words. Null when every figure is routed. */
   note: string | null;
 }
@@ -201,7 +203,7 @@ export async function buildCostMatrix(points: LatLng[], options: MatrixOptions):
   const n = points.length;
   const trafficFactor = options.estimateTrafficFactor ?? 1;
   if (n < 2) {
-    return { distanceKm: n === 1 ? [[0]] : [], durationMin: n === 1 ? [[0]] : [], source: 'estimated', estimated: false, requests: 0, note: null };
+    return { distanceKm: n === 1 ? [[0]] : [], durationMin: n === 1 ? [[0]] : [], source: 'estimated', estimated: false, requests: 0, note: null, providerConfigured: false };
   }
   const reasons: string[] = [];
 
@@ -221,6 +223,7 @@ export async function buildCostMatrix(points: LatLng[], options: MatrixOptions):
           source: 'mapbox',
           estimated: gaps > 0,
           requests: filled.requests,
+          providerConfigured: true,
           note: gaps > 0 ? `${gaps} pair${gaps === 1 ? '' : 's'} of stops had no road route, so straight-line distance was used for them.` : null,
         };
       } catch (e) {
@@ -243,6 +246,7 @@ export async function buildCostMatrix(points: LatLng[], options: MatrixOptions):
           source: 'tomtom',
           estimated: gaps > 0,
           requests: filled.requests,
+          providerConfigured: true,
           note: gaps > 0 ? `${gaps} pair${gaps === 1 ? '' : 's'} of stops had no road route, so straight-line distance was used for them.` : null,
         };
       } catch (e) {
@@ -257,5 +261,5 @@ export async function buildCostMatrix(points: LatLng[], options: MatrixOptions):
   const note = reasons.length > 0
     ? `${reasons.join('; ')}, so distances are straight-line x ${ROAD_FACTOR}.`
     : `No road-routing key (MAPBOX_ACCESS_TOKEN or TOMTOM_API_KEY) is set, so distances are straight-line x ${ROAD_FACTOR}.`;
-  return { ...estimatedMatrix(points, trafficFactor), source: 'estimated', estimated: true, requests: 0, note };
+  return { ...estimatedMatrix(points, trafficFactor), source: 'estimated', estimated: true, requests: 0, note, providerConfigured: Boolean(settings.MAPBOX_ACCESS_TOKEN || settings.TOMTOM_API_KEY) };
 }

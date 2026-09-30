@@ -72,7 +72,7 @@ describe('optimize with the ML service down', () => {
     expect(res.body.engine).toBe('fallback-estimated');
     expect(res.body.estimated).toBe(true);
     expect(res.body.matrix_source).toBe('estimated');
-    expect(res.body.engine_note).toMatch(/ML service was not used/);
+    expect(res.body.engine_note).toMatch(/ML service: /);
     expect(res.body.algorithm).toBe('cheapest-insertion+2opt');
     expect(res.body.routes.length).toBeGreaterThan(0);
 
@@ -123,7 +123,7 @@ describe('optimize with the ML service down', () => {
     expect(res.body.engine).toBe('fallback-road-matrix');
     expect(res.body.estimated).toBe(false);
     expect(res.body.matrix_source).toBe('mapbox');
-    expect(res.body.engine_note).toMatch(/Mapbox/);
+    expect(res.body.engine_note).toMatch(/health check/);
   });
 
   it('answers ETA with the physics estimate and says it is one', async () => {

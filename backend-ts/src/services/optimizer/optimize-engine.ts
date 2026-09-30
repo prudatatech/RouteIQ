@@ -332,11 +332,10 @@ async function solveInProcess(args: OptimizeArgs, mlReason: string | null): Prom
 
   const totalKm = routes.reduce((s, r) => s + r.total_distance_km, 0);
   const engine: OptimizerEngine = matrix.estimated ? 'fallback-estimated' : 'fallback-road-matrix';
+  // What the engine name does not already say: why the ML service was skipped, and a routing provider that failed
   const note = [
-    mlReason ? `The ML service was not used (${mlReason}).` : null,
-    matrix.estimated
-      ? matrix.note
-      : `Distances and times are road figures from ${matrix.source === 'mapbox' ? 'Mapbox' : 'TomTom'}.`,
+    mlReason ? `ML service: ${mlReason}.` : null,
+    matrix.estimated && matrix.providerConfigured ? matrix.note : null,
   ].filter(Boolean).join(' ');
 
   return {
