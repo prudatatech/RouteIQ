@@ -70,6 +70,31 @@ export interface ShipmentRow {
   consignee_name?: string | null
   consignee_phone?: string | null
   consignee_gstin?: string | null
+  /** Set on a lot in GET /shipments when its master is on the same page. */
+  master_tracking_id?: string | null
+  /** Set on a master in GET /shipments: how its lots stand (merged or emptied lots left out). */
+  lots_summary?: LotsSummary | null
+  pieces_total?: number | null
+  current_vehicle_id?: string | null
+  eway_bill_ref?: string | null
+  eway_part_b_required?: boolean | null
+}
+
+/** A master's `lots_summary` in GET /shipments. */
+export interface LotsSummary {
+  count: number
+  delivered_lots: number
+  pieces_delivered: number
+  lots: {
+    id: string
+    code: string
+    label: string | null
+    status: string
+    current_holder: string | null
+    current_vehicle_id: string | null
+    pieces_total: number | null
+    consignee_name: string | null
+  }[]
 }
 
 /** One entry of GET /shipments/:id/history (backend-ts ShipmentService.getShipmentHistory). */

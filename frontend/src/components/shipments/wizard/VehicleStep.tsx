@@ -117,14 +117,21 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
         <div className="grid gap-2 sm:grid-cols-2">
           {[
             { bidding: false, title: 'Assign directly', description: 'Choose a vehicle now, or assign one later.' },
-            { bidding: true, title: 'Open to vendor bids', description: 'Vendors near the pickup bid for the spare space on a vehicle.' },
+            {
+              bidding: true,
+              title: 'Open to vendor bids',
+              // A multi-drop shipment is a master with lots, which the backend can't open for bidding
+              description: data.multi_drop ? 'Not for a shipment with several drops.' : 'Vendors near the pickup bid for the spare space on a vehicle.',
+            },
           ].map(mode => {
             const active = data.open_bidding === mode.bidding
+            const unavailable = mode.bidding && !!data.multi_drop
             return (
               <label
                 key={String(mode.bidding)}
                 className={clsx(
-                  'flex cursor-pointer items-start gap-3 rounded-control border p-3 transition-colors',
+                  'flex items-start gap-3 rounded-control border p-3 transition-colors',
+                  unavailable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
                   active ? 'border-brand bg-brand-soft' : 'border-border-strong hover:bg-surface-subtle',
                 )}
               >
@@ -132,6 +139,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
                   type="radio"
                   name="dispatch_mode"
                   checked={active}
+                  disabled={unavailable}
                   onChange={() => update(mode.bidding
                     ? { open_bidding: true, bidding_duration_mins: data.bidding_duration_mins || 5, enable_mobile_gps: true }
                     : { open_bidding: false })}

@@ -173,6 +173,13 @@ const where = (over: Partial<WhereIsIt> = {}): WhereIsIt => ({
   delivery_otp_required: false,
   rto: false,
   is_master: false,
+  lot_label: null,
+  lot_seq: null,
+  master: null,
+  eway_bill_ref: null,
+  eway_part_b_required: false,
+  lots: [],
+  totals: null,
   ...over,
 })
 

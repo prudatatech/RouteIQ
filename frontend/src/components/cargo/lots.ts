@@ -1,11 +1,12 @@
 /**
  * Pure rules for lots (docs/cargo-plan.md, "Lots: splitting one consignment across drops, trucks
  * and hubs"): sharing weight, value and freight by pieces with the rounding remainder on the last
- * lot, balancing a split, the even split, merge eligibility, the rolled-up progress wording and the
- * master's rolled-up status. No React here; covered by lots.test.ts.
+ * lot, balancing a split, the even split, the split reasons the goods allow, merge eligibility and
+ * the progress bar of a master. The master's rolled-up status and progress wording are the
+ * backend's (the master row's status, `totals.progress_text`). No React here; covered by lots.test.ts.
  */
 import type { Tone } from '@/components/ui/status'
-import type { Lot, Pieces, SplitReason, WhereIsIt } from '@/services/cargo'
+import type { Lot, LotTotals, Pieces, SplitReason, WhereIsIt } from '@/services/cargo'
 
 const n = (x: number) => x.toLocaleString('en-IN')
 const pcs = (x: number) => `${n(x)} ${x === 1 ? 'piece' : 'pieces'}`
@@ -110,11 +111,11 @@ export function phoneError(raw: string, required = false): string | undefined {
   return /^(\+91|0)?[6-9]\d{9}$/.test(v) ? undefined : 'Enter a 10-digit mobile number.'
 }
 
-/** A GSTIN: 15 characters, state code first. Optional. */
+/** A GSTIN: 15 characters, the 2-digit state code first (the backend's check). Optional. */
 export function gstinError(raw: string): string | undefined {
   const v = raw.trim().toUpperCase()
   if (!v) return undefined
-  return /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(v) ? undefined : 'Enter a 15-character GSTIN, like 10ABCDE1234F1Z5.'
+  return /^[0-9]{2}[0-9A-Z]{13}$/.test(v) ? undefined : 'Enter a 15-character GSTIN, like 10ABCDE1234F1Z5.'
 }
 
 // ── Splitting a consignment ────────────────────────────────────────────────
@@ -122,6 +123,11 @@ export function gstinError(raw: string): string | undefined {
 /** What the goods being split have: undelivered pieces held, and their weight, value and freight (null when not known). */
 export interface SplitAvailable {
   pieces: number
+  /**
+   * Pieces already delivered, short or returned, which stay on the consignment. With some, one lot
+   * is enough (the remainder after a partial delivery going to another consignee).
+   */
+  accounted?: number
   weight_kg: number | null
   declared_value: number | null
   freight: number | null
@@ -175,7 +181,7 @@ export function splitBalance(available: SplitAvailable, rows: SplitRowInput[]): 
   const stay = Math.max(0, remainderPieces)
   const pieceWeights = [...parsed.map(r => r.pieces ?? 0), stay]
   const lots = parsed.filter(r => r.pieces != null).length + (stay > 0 ? 1 : 0)
-  if (rows.length > 0 && remainderPieces >= 0 && lots < 2) {
+  if (rows.length > 0 && remainderPieces >= 0 && lots < 2 && !(available.accounted ?? 0)) {
     problems.push(`A split makes at least two lots. Move fewer than all ${pcs(available.pieces)}, or add another lot.`)
   }
 
@@ -224,17 +230,40 @@ export function heldPieces(p: Pieces): number {
   return Math.max(0, (p.total ?? 0) - p.delivered - p.short - p.returned)
 }
 
-/** A consignment can be split when it is not a master, is still moving, and one holder has at least two pieces. */
+/** Pieces already delivered, short or returned: a split leaves them on the consignment it splits. */
+export const accountedPieces = (p: Pieces) => p.delivered + p.short + p.returned
+
+/**
+ * A consignment can be split when it is not a master, is still moving, its pieces are counted,
+ * and its holder has at least two pieces, or one when some were already delivered (the remainder
+ * after a partial delivery can go on as one lot).
+ */
 export function canSplit(w: Pick<WhereIsIt, 'status' | 'current_holder' | 'pieces'> & { is_master?: boolean }): boolean {
-  if (w.is_master || TERMINAL.includes(w.status) || w.current_holder === 'consignee') return false
-  return heldPieces(w.pieces) >= 2
+  if (w.is_master || TERMINAL.includes(w.status) || w.current_holder === 'consignee' || w.pieces.total == null) return false
+  const held = heldPieces(w.pieces)
+  return held >= 2 || (held >= 1 && accountedPieces(w.pieces) > 0)
 }
 
 /** The split_reason that fits where the goods are: cross-dock at a hub, the rest after a partial delivery, else a manual split. */
-export function defaultSplitReason(w: Pick<WhereIsIt, 'status' | 'current_holder'>): SplitReason {
+export function defaultSplitReason(w: Pick<WhereIsIt, 'status' | 'current_holder' | 'pieces'>): SplitReason {
   if (w.current_holder === 'hub') return 'hub_crossdock'
-  if (w.status === 'partially_delivered') return 'partial_delivery_remainder'
+  if (w.pieces.delivered > 0) return 'partial_delivery_remainder'
   return 'manual'
+}
+
+/**
+ * The split reasons the backend accepts for goods where they are: a partial transfer needs goods on
+ * a vehicle, a cross-dock goods at a hub, a remainder some pieces delivered. A multi-drop split is
+ * made when the shipment is booked, so it is not offered here.
+ */
+export function splitReasonsFor(w: Pick<WhereIsIt, 'current_holder' | 'pieces'>): SplitReason[] {
+  const reasons: SplitReason[] = ['partial_transfer', 'hub_crossdock', 'partial_delivery_remainder', 'manual']
+  return reasons.filter(r => {
+    if (r === 'partial_transfer') return w.current_holder === 'vehicle'
+    if (r === 'hub_crossdock') return w.current_holder === 'hub'
+    if (r === 'partial_delivery_remainder') return w.pieces.delivered > 0
+    return true
+  })
 }
 
 // ── Partial transfer ───────────────────────────────────────────────────────
@@ -260,87 +289,30 @@ export function lotPlace(l: Pick<Lot, 'current_holder' | 'vehicle' | 'depot'>): 
   return { key: 'consignor', text: 'with the sender' }
 }
 
-export interface RollupPart {
+export interface ProgressSegment {
   key: string
-  /** "25 at Patna hub" */
-  text: string
+  label: string
   value: number
   tone: Tone
 }
 
-export interface LotRollup {
-  total: number
-  delivered: number
-  /** Where the rest is, biggest first, then returned and short. */
-  parts: RollupPart[]
-  /** "60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234" */
-  headline: string
-}
-
-/** The master's progress, rolled up from its lots. */
-export function lotRollup(lots: Pick<Lot, 'status' | 'current_holder' | 'vehicle' | 'depot' | 'pieces'>[]): LotRollup {
-  let total = 0
-  let delivered = 0
-  let returned = 0
-  let short = 0
-  const places = new Map<string, RollupPart>()
-  for (const l of lots) {
-    const t = l.pieces.total ?? 0
-    total += t
-    // A delivered lot whose counts were never filled in counts as delivered in full
-    const d = l.status === 'delivered' && l.pieces.delivered === 0 ? Math.max(0, t - l.pieces.short - l.pieces.returned) : l.pieces.delivered
-    delivered += d
-    returned += l.pieces.returned
-    short += l.pieces.short
-    const rest = Math.max(0, t - d - l.pieces.short - l.pieces.returned)
-    if (rest === 0) continue
-    if (l.current_holder === 'consignee') { delivered += rest; continue }
-    const place = lotPlace(l)
-    const tone: Tone = l.current_holder === 'vehicle' ? 'info' : l.current_holder === 'hub' ? 'brand' : 'neutral'
-    const prev = places.get(place.key)
-    places.set(place.key, { key: place.key, text: place.text, value: (prev?.value ?? 0) + rest, tone })
-  }
-  const parts: RollupPart[] = [...places.values()]
-    .sort((a, b) => b.value - a.value)
-    .map(p => ({ ...p, text: `${n(p.value)} ${p.text}` }))
-  if (returned > 0) parts.push({ key: 'returned', text: `${n(returned)} returned`, value: returned, tone: 'neutral' })
-  if (short > 0) parts.push({ key: 'short', text: `${n(short)} short`, value: short, tone: 'danger' })
-  const headline = total === 0
-    ? 'No pieces counted yet'
-    : [`${n(delivered)} of ${n(total)} delivered`, ...parts.map(p => p.text)].join(' · ')
-  return { total, delivered, parts, headline }
-}
-
-const MOVING = ['picked_up', 'in_transit', 'out_for_delivery', 'at_hub', 'returning']
-const DONE = ['delivered', 'returned', 'lost', 'cancelled', 'partially_delivered']
-
 /**
- * A master's status from its lots' statuses (the backend's rollup, so a list can show it without
- * another call): delivered when every lot is; returned when every lot is; an exception or hold
- * when any lot has one; in transit when any lot is on the move; partly delivered when some are
- * delivered and the rest finished otherwise or not started; else assigned or created.
+ * The stacked bar of a master's progress from the backend's totals: delivered, then what is on
+ * vehicles, at hubs and with the sender, then returned and short. The words are the backend's
+ * `progress_text`.
  */
-export function rollupStatus(statuses: (string | null | undefined)[]): string | null {
-  const s = statuses.filter((x): x is string => !!x)
-  if (s.length === 0) return null
-  const all = (v: string) => s.every(x => x === v)
-  if (all('delivered')) return 'delivered'
-  if (all('returned')) return 'returned'
-  if (all('cancelled')) return 'cancelled'
-  if (all('lost')) return 'lost'
-  if (s.includes('exception')) return 'exception'
-  if (s.includes('on_hold')) return 'on_hold'
-  if (s.some(x => MOVING.includes(x))) return 'in_transit'
-  if (s.some(x => x === 'delivered' || x === 'partially_delivered')) return 'partially_delivered'
-  if (s.every(x => DONE.includes(x))) return 'partially_delivered'
-  if (s.includes('assigned')) return 'assigned'
-  return 'created'
+export function progressSegments(t: Pick<LotTotals, 'delivered' | 'returned' | 'short' | 'by_holder'>): ProgressSegment[] {
+  return [
+    { key: 'delivered', label: 'Delivered', value: t.delivered, tone: 'success' as Tone },
+    { key: 'vehicle', label: 'On vehicles', value: t.by_holder.vehicle, tone: 'info' as Tone },
+    { key: 'hub', label: 'At hubs', value: t.by_holder.hub, tone: 'brand' as Tone },
+    { key: 'consignor', label: 'With the sender', value: t.by_holder.consignor, tone: 'neutral' as Tone },
+    { key: 'returned', label: 'Returned', value: t.returned, tone: 'neutral' as Tone },
+    { key: 'short', label: 'Short or lost', value: t.short, tone: 'danger' as Tone },
+  ].filter(s => s.value > 0)
 }
 
 // ── Merging ────────────────────────────────────────────────────────────────
-
-/** Lots that have not left yet (merging is allowed only before any of them has left). */
-const NOT_LEFT = ['created', 'assigned', 'scheduled', 'picked_up', 'at_hub']
 
 export const lotKey = (l: Pick<Lot, 'shipment_id' | 'manifest_id'>) => l.shipment_id ?? l.manifest_id ?? ''
 
@@ -356,13 +328,16 @@ const dropKey = (l: Pick<Lot, 'drop'>) => {
   return (l.drop.address ?? l.drop.name ?? '').trim().toLowerCase()
 }
 
-type MergeLot = Pick<Lot, 'shipment_id' | 'manifest_id' | 'label' | 'status' | 'current_holder' | 'vehicle' | 'depot' | 'consignee' | 'drop'>
+type MergeLot = Pick<Lot, 'shipment_id' | 'manifest_id' | 'label' | 'status' | 'current_holder' | 'vehicle' | 'depot' | 'consignee' | 'drop' | 'pieces'>
 
-/** Why a lot can never be merged in its state (null when it can). */
+/**
+ * Why a lot can never be merged in its state (null when it can): the backend refuses lots that are
+ * settled or have delivered, short or returned pieces. Whether a lot moved since the split (a
+ * custody event) or is on a transfer is only known to the backend, which answers 409.
+ */
 export function mergeBlock(l: MergeLot): string | null {
-  if (l.status === 'delivered' || l.status === 'partially_delivered') return 'Already delivered'
-  if (TERMINAL.includes(l.status)) return 'Finished'
-  if (!NOT_LEFT.includes(l.status)) return 'Already on its way'
+  if (l.status === 'delivered' || l.status === 'partially_delivered' || l.pieces.delivered > 0) return 'Already delivered'
+  if (TERMINAL.includes(l.status) || l.pieces.short + l.pieces.returned > 0) return 'Finished'
   return null
 }
 
@@ -371,6 +346,7 @@ export function mergeMismatch(l: MergeLot, anchor: MergeLot): string | null {
   const place = lotPlace(l)
   const anchorPlace = lotPlace(anchor)
   if (place.key !== anchorPlace.key) return `It is ${place.text}, lot ${anchor.label ?? ''} is ${anchorPlace.text}`.replace(/\s+/g, ' ')
+  if (l.status !== anchor.status) return `It is at a different stage from lot ${anchor.label ?? ''}`.replace(/\s+/g, ' ')
   if (consigneeKey(l) !== consigneeKey(anchor)) return 'It goes to a different consignee'
   if (dropKey(l) !== dropKey(anchor)) return 'It goes to a different drop'
   return null

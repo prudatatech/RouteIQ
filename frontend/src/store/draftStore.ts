@@ -66,6 +66,8 @@ export interface DraftDrop {
   pieces: string;
   weight_kg: string;
   declared_value: string;
+  /** This drop's own e-way bill reference; empty when not known yet. */
+  eway_bill_ref?: string;
 }
 
 const initialDraftData: DraftShipmentData = {

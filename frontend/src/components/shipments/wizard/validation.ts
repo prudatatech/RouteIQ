@@ -42,6 +42,9 @@ export function draftDropsBalance(d: DraftShipmentData) {
   )
 }
 
+/** The most drops one shipment takes (POST /shipments `drops[]`); each becomes a lot. */
+export const MAX_DROPS = 26
+
 /** Problems that stop the user leaving a step. Empty when the step is complete. */
 export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
   const e: FieldErrors = {}
@@ -50,10 +53,11 @@ export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
     if (!d.origin_lat || !d.origin_lng) e.origin = 'Choose a pickup address from the suggestions.'
     if (d.multi_drop) {
       if (drops.length < 2) e.drops = 'Add at least two drops, or deliver to one destination.'
+      else if (drops.length > MAX_DROPS) e.drops = `A shipment can have at most ${MAX_DROPS} drops. Book another shipment for the rest.`
       for (const x of drops) {
         if (!x.lat || !x.lng) e[`drop:${x.id}:place`] = 'Choose the drop address from the suggestions.'
         if (!x.consignee_name.trim()) e[`drop:${x.id}:consignee_name`] = 'Enter who receives this drop.'
-        const phone = phoneError(x.consignee_phone, true)
+        const phone = phoneError(x.consignee_phone)
         if (phone) e[`drop:${x.id}:consignee_phone`] = phone
         const gstin = gstinError(x.consignee_gstin)
         if (gstin) e[`drop:${x.id}:consignee_gstin`] = gstin
@@ -85,7 +89,9 @@ export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
       if (balance.problems.length > 0) e.drops_split = balance.problems.join(' ')
     }
   }
-  if (step === 'vehicle' && d.open_bidding) {
+  if (step === 'vehicle' && d.open_bidding && d.multi_drop) {
+    e.vehicle = 'A shipment with several drops can’t be opened to vendor bids. Assign a vehicle, or book one shipment per drop.'
+  } else if (step === 'vehicle' && d.open_bidding) {
     if (!d.selectedVehicleId) e.vehicle = 'Choose the vehicle whose spare space vendors will bid on.'
     if (d.asking_price && !(Number(d.asking_price) > 0)) e.asking_price = 'Enter a price above 0, or leave it empty.'
   }

@@ -13,9 +13,9 @@ import { depotsAPI } from '@/services/api'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { errorMessage, formatKg, formatRupees } from '@/utils/display'
 import {
-  SPLIT_REASONS, cargoKeys, lotsAPI, type CargoRef, type SplitLotInput, type SplitReason, type WhereIsIt,
+  cargoKeys, lotsAPI, type CargoRef, type Holder, type SplitLotInput, type SplitReason, type WhereIsIt,
 } from '@/services/cargo'
-import { defaultSplitReason, gstinError, heldPieces, hubName, phoneError, splitBalance, type SplitAvailable } from './lots'
+import { defaultSplitReason, gstinError, heldPieces, hubName, phoneError, splitBalance, splitReasonsFor, type SplitAvailable } from './lots'
 import { useOperatingVehicles } from './useOperatingVehicles'
 
 type Destination = 'drop' | 'vehicle' | 'hub' | 'stay'
@@ -31,6 +31,7 @@ interface Row {
   place: ResolvedPlace | null
   vehicle_id: string
   depot_id: string
+  eway_bill_ref: string
 }
 
 type RowErrors = Partial<Record<'place' | 'vehicle_id' | 'depot_id' | 'consignee_phone' | 'consignee_gstin' | 'consignee_name', string>>
@@ -38,21 +39,34 @@ type RowErrors = Partial<Record<'place' | 'vehicle_id' | 'depot_id' | 'consignee
 let rowSeq = 0
 const newRow = (pieces = ''): Row => ({
   id: `lot-${(rowSeq += 1)}`, pieces, weight_kg: '', consignee_name: '', consignee_phone: '', consignee_gstin: '',
-  destination: 'drop', place: null, vehicle_id: '', depot_id: '',
+  destination: 'drop', place: null, vehicle_id: '', depot_id: '', eway_bill_ref: '',
 })
 
-const DESTINATIONS: { id: Destination; label: string }[] = [
+/** Where a lot can go from where the goods are: only goods on a vehicle can be sent to a hub. */
+const destinationsFor = (holder: Holder): { id: Destination; label: string }[] => [
   { id: 'drop', label: 'New drop' },
   { id: 'vehicle', label: 'Vehicle' },
-  { id: 'hub', label: 'Hub' },
+  ...(holder === 'vehicle' ? [{ id: 'hub' as const, label: 'Hub' }] : []),
   { id: 'stay', label: 'Stays here' },
 ]
 
+/** What naming a vehicle does, by where the goods are (the backend's split rules). */
+const VEHICLE_HINT: Record<Holder, string> = {
+  vehicle: 'A transfer to this vehicle is planned for this lot.',
+  hub: 'The lot goes on this vehicle’s route and leaves the hub with a hub-out.',
+  consignor: 'This vehicle is assigned to pick the lot up.',
+  consignee: '',
+}
+
 const n = (x: number) => x.toLocaleString('en-IN')
 
-function rowErrors(r: Row): RowErrors {
+function rowErrors(r: Row, reason: SplitReason): RowErrors {
   const e: RowErrors = {}
   if (r.destination === 'drop' && !r.place) e.place = 'Choose the drop address from the suggestions.'
+  // The rest after a partial delivery goes to another consignee or place; the same consignee's re-attempt needs no split
+  if (reason === 'partial_delivery_remainder' && r.destination !== 'drop' && !r.consignee_name.trim()) {
+    e.consignee_name = 'Give this lot a new drop or a consignee.'
+  }
   if (r.destination === 'vehicle' && !r.vehicle_id) e.vehicle_id = 'Choose the vehicle.'
   if (r.destination === 'hub' && !r.depot_id) e.depot_id = 'Choose the hub.'
   const phone = phoneError(r.consignee_phone)
@@ -71,9 +85,10 @@ function toInput(r: Row): SplitLotInput {
     ...(r.consignee_name.trim() ? { consignee_name: r.consignee_name.trim() } : {}),
     ...(r.consignee_phone.trim() ? { consignee_phone: r.consignee_phone.replace(/[\s-]/g, '') } : {}),
     ...(r.consignee_gstin.trim() ? { consignee_gstin: r.consignee_gstin.trim().toUpperCase() } : {}),
-    ...(r.destination === 'drop' && r.place ? { drop: { address: r.place.address, lat: r.place.lat, lng: r.place.lng } } : {}),
+    ...(r.destination === 'drop' && r.place ? { drop: { name: r.place.address.split(', ')[0] || r.place.address, address: r.place.address, lat: r.place.lat, lng: r.place.lng } } : {}),
     ...(r.destination === 'vehicle' ? { to_vehicle_id: r.vehicle_id } : {}),
     ...(r.destination === 'hub' ? { to_depot_id: r.depot_id } : {}),
+    ...(r.eway_bill_ref.trim() ? { eway_bill_ref: r.eway_bill_ref.trim() } : {}),
   }
 }
 
@@ -94,6 +109,8 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
 }) {
   const queryClient = useQueryClient()
   const available: SplitAvailable = { pieces: heldPieces(where.pieces), ...figures }
+  const reasons = splitReasonsFor(where)
+  const destinations = destinationsFor(where.current_holder)
   const [rows, setRows] = useState<Row[]>(() => [newRow()])
   const [reason, setReason] = useState<SplitReason>(() => defaultSplitReason(where))
   const [note, setNote] = useState('')
@@ -103,7 +120,7 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
   const depots = useQuery({ queryKey: ['depots'], queryFn: depotsAPI.list })
 
   const balance = splitBalance(available, rows)
-  const errorsByRow = rows.map(rowErrors)
+  const errorsByRow = rows.map(r => rowErrors(r, reason))
   const fieldsOk = errorsByRow.every(e => Object.keys(e).length === 0)
   const here = herePhrase(where)
 
@@ -168,6 +185,8 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
               vehiclesLoading={vehicles.isLoading}
               depotOptions={depotOptions}
               depotsLoading={depots.isLoading}
+              destinations={destinations}
+              vehicleHint={VEHICLE_HINT[where.current_holder]}
             />
           ))}
         </ol>
@@ -187,7 +206,7 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
             label="Reason"
             value={reason}
             onChange={e => setReason(e.target.value as SplitReason)}
-            options={SPLIT_REASONS.filter(r => r !== 'multi_drop').map(r => ({ value: r, label: statusToLabel(r, 'split_reason') }))}
+            options={reasons.map(r => ({ value: r, label: statusToLabel(r, 'split_reason') }))}
             hint="Recorded on every lot."
           />
           <Textarea label="Note" value={note} onChange={e => setNote(e.target.value)} maxLength={300} rows={2} hint="Optional, for the custody record." />
@@ -200,6 +219,7 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
 
 function LotRow({
   index, row, figures, errors, showPieceError, canRemove, onChange, onRemove, vehicleOptions, vehiclesLoading, depotOptions, depotsLoading,
+  destinations, vehicleHint,
 }: {
   index: number
   row: Row
@@ -213,6 +233,8 @@ function LotRow({
   vehiclesLoading: boolean
   depotOptions: { value: string; label: string }[]
   depotsLoading: boolean
+  destinations: { id: Destination; label: string }[]
+  vehicleHint: string
 }) {
   const groupId = useId()
   const title = `New lot ${index + 1}`
@@ -258,7 +280,7 @@ function LotRow({
       <fieldset className="space-y-3">
         <legend className="mb-2 text-sm font-medium text-text">Where it goes</legend>
         <div role="radiogroup" aria-label={`Where ${title.toLowerCase()} goes`} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {DESTINATIONS.map(d => (
+          {destinations.map(d => (
             <label
               key={d.id}
               className={clsx(
@@ -299,7 +321,7 @@ function LotRow({
             disabled={vehiclesLoading || vehicleOptions.length === 0}
             options={vehicleOptions}
             error={errors.vehicle_id}
-            hint="A transfer is planned for this lot."
+            hint={vehicleHint}
           />
         )}
         {row.destination === 'hub' && (
@@ -326,6 +348,16 @@ function LotRow({
           <Input label="GSTIN" value={row.consignee_gstin} onChange={e => onChange({ consignee_gstin: e.target.value })} error={errors.consignee_gstin} maxLength={15} inputClassName="font-mono uppercase" />
         </div>
       </fieldset>
+
+      <Input
+        label="E-way bill"
+        value={row.eway_bill_ref}
+        onChange={e => onChange({ eway_bill_ref: e.target.value })}
+        maxLength={60}
+        hint="Optional. This lot’s own e-way bill; you can add it later."
+        inputClassName="font-mono"
+        className="sm:max-w-xs"
+      />
     </li>
   )
 }

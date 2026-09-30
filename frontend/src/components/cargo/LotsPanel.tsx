@@ -8,12 +8,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-import { AlertTriangle, ArrowUpLeft, Combine, MapPin, Split, User } from 'lucide-react'
-import { Alert, Button, ErrorState, Skeleton, StatusPill, toneClasses, useConfirm } from '@/components/ui'
+import { AlertTriangle, ArrowUpLeft, Combine, FileText, MapPin, Split, User } from 'lucide-react'
+import { Alert, Button, ErrorState, Input, Skeleton, StatusPill, toneClasses, useConfirm } from '@/components/ui'
 import { errorMessage } from '@/utils/display'
-import { cargoKeys, lotsAPI, type CargoRef, type Lot, type LotsView, type WhereIsIt } from '@/services/cargo'
+import { cargoKeys, lotsAPI, type CargoRef, type Lot, type LotTotals, type LotsView, type WhereIsIt } from '@/services/cargo'
 import { consignmentHref } from './logic'
-import { canSplit, heldPieces, lotKey, lotPlace, lotRollup, mergeCheck, roundTo, type LotRollup, type SplitAvailable } from './lots'
+import { accountedPieces, canSplit, heldPieces, lotKey, lotPlace, mergeCheck, progressSegments, roundTo, type SplitAvailable } from './lots'
 import SplitLotsModal from './SplitLotsModal'
 
 const n = (x: number) => x.toLocaleString('en-IN')
@@ -22,16 +22,13 @@ const fill: Record<string, string> = {
   success: toneClasses.success.dot, info: toneClasses.info.dot, brand: toneClasses.brand.dot, neutral: toneClasses.neutral.dot, danger: toneClasses.danger.dot,
 }
 
-/** "60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234" with a stacked bar. Colour is never the only cue. */
-export function LotsProgress({ rollup, className }: { rollup: LotRollup; className?: string }) {
-  const base = Math.max(rollup.total, 1)
-  const segments = [
-    ...(rollup.delivered > 0 ? [{ key: 'delivered', value: rollup.delivered, tone: 'success' }] : []),
-    ...rollup.parts.map(p => ({ key: p.key, value: p.value, tone: p.tone as string })),
-  ]
+/** The backend's "60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234" with a stacked bar. Colour is never the only cue. */
+export function LotsProgress({ totals, className }: { totals: LotTotals; className?: string }) {
+  const segments = progressSegments(totals)
+  const base = Math.max(totals.pieces_total ?? 0, segments.reduce((a, s) => a + s.value, 0), 1)
   return (
     <div className={clsx('space-y-2', className)}>
-      <p className="text-sm text-text">{rollup.headline}</p>
+      <p className="text-sm text-text">{totals.progress_text || 'No pieces counted yet'}</p>
       {segments.length > 0 && (
         <div className="flex h-2 w-full overflow-hidden rounded-full bg-neutral-soft" aria-hidden="true">
           {segments.map(s => <span key={s.key} className={fill[s.tone] ?? fill.neutral} style={{ width: `${(s.value / base) * 100}%` }} />)}
@@ -50,7 +47,7 @@ function splitFigures(where: WhereIsIt, self: Lot | null, fallback: Omit<SplitAv
   const held = heldPieces(where.pieces)
   const ratio = total > 0 && held < total ? held / total : 1
   const scale = (v: number | null, d: number) => (v == null ? null : roundTo(v * ratio, d))
-  return { weight_kg: scale(base.weight_kg, 2), declared_value: scale(base.declared_value, 0), freight: scale(base.freight, 2) }
+  return { weight_kg: scale(base.weight_kg, 2), declared_value: scale(base.declared_value, 2), freight: scale(base.freight, 2), accounted: accountedPieces(where.pieces) }
 }
 
 export default function LotsPanel({ code, cargoRef, where, figures }: {
@@ -119,15 +116,16 @@ export function LotsTree({ view, currentKey }: { view: LotsView; currentKey?: st
   const { confirm } = useConfirm()
   const [merging, setMerging] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
-  const rollup = lotRollup(view.lots)
-  const check = mergeCheck(view.lots, selected)
-  // Merging needs two lots that have not left yet; otherwise the action is not offered at all
-  const unblocked = mergeCheck(view.lots, []).perLot
-  const anyMergeable = view.lots.filter(l => !unblocked[lotKey(l)]).length >= 2
+  // Merged or emptied lots are cancelled with nothing on them; the backend leaves them out of the totals
+  const lots = view.lots.filter(l => l.status !== 'cancelled')
+  const check = mergeCheck(lots, selected)
+  // Merging needs two lots that are not settled; otherwise the action is not offered at all
+  const unblocked = mergeCheck(lots, []).perLot
+  const anyMergeable = lots.filter(l => !unblocked[lotKey(l)]).length >= 2
 
   const merge = useMutation({
     mutationFn: () => lotsAPI.merge(selected.map(k => {
-      const l = view.lots.find(x => lotKey(x) === k)!
+      const l = lots.find(x => lotKey(x) === k)!
       return l.shipment_id ? { shipment_id: l.shipment_id } : { manifest_id: l.manifest_id! }
     })),
     onSuccess: merged => {
@@ -142,7 +140,7 @@ export function LotsTree({ view, currentKey }: { view: LotsView; currentKey?: st
 
   const toggle = (key: string) => setSelected(s => (s.includes(key) ? s.filter(k => k !== key) : [...s, key]))
   const doMerge = async () => {
-    const labels = selected.map(k => view.lots.find(l => lotKey(l) === k)?.label).filter(Boolean).join(', ')
+    const labels = selected.map(k => lots.find(l => lotKey(l) === k)?.label).filter(Boolean).join(', ')
     const ok = await confirm({
       title: `Merge lots ${labels}?`,
       message: 'They become one lot with the pieces, weight, value and freight added up. Their custody history is kept.',
@@ -159,13 +157,13 @@ export function LotsTree({ view, currentKey }: { view: LotsView; currentKey?: st
             {view.master.tracking_id ?? 'Master'}
           </Link>
           <StatusPill status={view.master.status} kind="cargo" />
-          <span className="text-xs text-muted">Master · {n(view.lots.length)} lots</span>
+          <span className="text-xs text-muted">Master · {n(view.totals.lots)} lots</span>
         </div>
-        <LotsProgress rollup={rollup} />
+        <LotsProgress totals={view.totals} />
       </div>
 
       <ul className="space-y-0 border-l border-border pl-3" aria-label="Lots of this consignment">
-        {view.lots.map(l => {
+        {lots.map(l => {
           const key = lotKey(l)
           const why = check.perLot[key]
           const disabled = merging && !!why && !selected.includes(key)
@@ -253,6 +251,7 @@ function LotItem({ lot, current, merging, checked, disabled, disabledReason, onT
               {lot.drop && <span className="inline-flex min-w-0 items-center gap-1"><MapPin size={12} aria-hidden="true" /> <span className="break-words">{lot.drop.name || lot.drop.address}</span></span>}
             </p>
           )}
+          <LotEway lot={lot} />
           {cases.length > 0 && (
             <p className="flex flex-wrap gap-x-3 text-xs">
               {cases.map(c => (
@@ -266,5 +265,63 @@ function LotItem({ lot, current, merging, checked, disabled, disabledReason, onT
         </div>
       </div>
     </li>
+  )
+}
+
+/** A lot's own e-way bill reference (POST /cargo/lots/eway), and whether Part B is due after a transfer. */
+function LotEway({ lot }: { lot: Lot }) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(lot.eway_bill_ref ?? '')
+  const [error, setError] = useState('')
+  const ref: CargoRef | null = lot.shipment_id ? { shipment_id: lot.shipment_id } : lot.manifest_id ? { manifest_id: lot.manifest_id } : null
+  const save = useMutation({
+    mutationFn: () => lotsAPI.setEway(ref!, value.trim()),
+    onSuccess: saved => {
+      queryClient.invalidateQueries({ queryKey: cargoKeys.all })
+      toast.success(`E-way bill ${saved.eway_bill_ref ?? ''} saved for lot ${lot.label ?? ''}`.replace(/\s+/g, ' '))
+      setEditing(false)
+    },
+    onError: err => setError(errorMessage(err, 'We could not save the e-way bill. Try again.')),
+  })
+  if (!ref) return null
+  const settled = ['delivered', 'returned', 'lost', 'cancelled'].includes(lot.status)
+
+  if (editing) {
+    return (
+      <form
+        className="flex flex-wrap items-end gap-2 pt-1"
+        onSubmit={e => {
+          e.preventDefault()
+          if (!value.trim()) { setError('Enter the e-way bill number.'); return }
+          setError('')
+          save.mutate()
+        }}
+      >
+        <Input
+          label={`E-way bill of lot ${lot.label ?? ''}`}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          error={error}
+          maxLength={60}
+          inputClassName="font-mono"
+          className="min-w-0 flex-1 sm:max-w-xs"
+        />
+        <Button size="sm" type="submit" loading={save.isPending}>Save</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setValue(lot.eway_bill_ref ?? ''); setError('') }}>Cancel</Button>
+      </form>
+    )
+  }
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
+      <FileText size={12} aria-hidden="true" />
+      {lot.eway_bill_ref ? <span>E-way bill <span className="font-mono text-text">{lot.eway_bill_ref}</span></span> : <span>No e-way bill</span>}
+      {lot.eway_part_b_required && <StatusPill tone="warning" dot={false}>Part B due</StatusPill>}
+      {!settled && (
+        <button type="button" onClick={() => setEditing(true)} className="font-medium text-brand hover:underline">
+          {lot.eway_bill_ref ? 'Change' : 'Add'}
+        </button>
+      )}
+    </p>
   )
 }

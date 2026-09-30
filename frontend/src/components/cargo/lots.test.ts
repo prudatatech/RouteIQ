@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Lot, Pieces } from '@/services/cargo'
 import {
   allocateByPieces, canSplit, defaultSplitReason, dropsBalance, evenSplit, followPieces, groupLots, gstinError, heldPieces, hubName,
-  lotRollup, mergeCheck, partialTransferNote, phoneError, rollupStatus, roundTo, splitBalance,
+  mergeCheck, partialTransferNote, phoneError, progressSegments, roundTo, splitBalance, splitReasonsFor,
 } from './lots'
 import { consignmentActions } from './logic'
 
@@ -14,16 +14,19 @@ const lot = (label: string, over: Partial<Lot> = {}): Lot => ({
   tracking_id: `RTX-ABC123-${label}`,
   lot_label: label,
   label,
+  seq: null,
   status: 'at_hub',
   current_holder: 'hub',
   vehicle: null,
   depot: { id: 'd1', name: 'Patna' },
   pieces: pieces(10),
-  weight_kg: null,
+  weight_kg: 100,
   declared_value: null,
   freight_share: null,
   drop: { name: 'Sharma Traders', address: 'Boring Road, Patna', lat: 25.61, lng: 85.12 },
   consignee: { name: 'Sharma Traders', phone: '9876543210', gstin: null },
+  eway_bill_ref: null,
+  eway_part_b_required: false,
   split_reason: 'multi_drop',
   open_exceptions: [],
   ...over,
@@ -101,6 +104,8 @@ describe('splitBalance', () => {
   })
   it('needs at least two lots and a whole number of pieces on every row', () => {
     expect(splitBalance(available, [{ pieces: '100', weight_kg: '' }]).problems[0]).toMatch(/at least two lots/)
+    // The rest after a partial delivery can go on as one lot: the consignment keeps what it delivered
+    expect(splitBalance({ ...available, accounted: 20 }, [{ pieces: '100', weight_kg: '' }]).balanced).toBe(true)
     const b = splitBalance(available, [{ pieces: '2.5', weight_kg: '-1' }])
     expect(b.rows[0].errors).toEqual({ pieces: 'Enter a whole number of 1 or more.', weight_kg: 'Enter a weight of 0 or more.' })
     expect(b.balanced).toBe(false)
@@ -140,48 +145,15 @@ describe('dropsBalance', () => {
   })
 })
 
-describe('lotRollup', () => {
-  it('words the master progress: delivered, then where the rest is, biggest first', () => {
-    const r = lotRollup([
-      lot('A', { status: 'delivered', current_holder: 'consignee', depot: null, pieces: pieces(60, { delivered: 60 }) }),
-      lot('B', { pieces: pieces(25) }),
-      lot('C', { status: 'in_transit', current_holder: 'vehicle', depot: null, vehicle: { id: 'v1', plate_number: 'HR55AB1234' }, pieces: pieces(15, { on_board: 15 }) }),
-    ])
-    expect(r.headline).toBe('60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234')
-    expect(r.parts.map(p => p.value)).toEqual([25, 15])
-  })
-  it('adds up lots in the same place and lists returned and short pieces last', () => {
-    const r = lotRollup([
-      lot('A', { status: 'created', current_holder: 'consignor', depot: null, pieces: pieces(10) }),
-      lot('B', { status: 'created', current_holder: 'consignor', depot: null, pieces: pieces(5) }),
-      lot('C', { status: 'returned', current_holder: 'consignor', depot: null, pieces: pieces(4, { returned: 3, short: 1 }) }),
-    ])
-    expect(r.headline).toBe('0 of 19 delivered · 15 with the sender · 3 returned · 1 short')
-  })
-  it('counts a delivered lot with no counts as delivered in full', () => {
-    expect(lotRollup([lot('A', { status: 'delivered', current_holder: 'consignee', pieces: pieces(8) })]).delivered).toBe(8)
-    expect(lotRollup([]).headline).toBe('No pieces counted yet')
+describe('progressSegments', () => {
+  it('draws the backend totals: delivered, then on vehicles, at hubs, with the sender, returned and short', () => {
+    const segments = progressSegments({ delivered: 60, returned: 3, short: 1, by_holder: { consignor: 0, vehicle: 15, hub: 25 } })
+    expect(segments.map(s => [s.key, s.value])).toEqual([['delivered', 60], ['vehicle', 15], ['hub', 25], ['returned', 3], ['short', 1]])
   })
   it('does not add "hub" to a name that already says it', () => {
     expect(hubName('Patna')).toBe('Patna hub')
     expect(hubName('Patna Hub')).toBe('Patna Hub')
     expect(hubName('Gurgaon Depot')).toBe('Gurgaon Depot')
-  })
-})
-
-describe('rollupStatus', () => {
-  it('follows the contract rules', () => {
-    expect(rollupStatus(['delivered', 'delivered'])).toBe('delivered')
-    expect(rollupStatus(['returned', 'returned'])).toBe('returned')
-    expect(rollupStatus(['delivered', 'in_transit'])).toBe('in_transit')
-    expect(rollupStatus(['in_transit', 'on_hold'])).toBe('on_hold')
-    expect(rollupStatus(['exception', 'on_hold'])).toBe('exception')
-    expect(rollupStatus(['delivered', 'returned'])).toBe('partially_delivered')
-    expect(rollupStatus(['delivered', 'lost'])).toBe('partially_delivered')
-    expect(rollupStatus(['delivered', 'created'])).toBe('partially_delivered')
-    expect(rollupStatus(['created', 'assigned'])).toBe('assigned')
-    expect(rollupStatus(['created'])).toBe('created')
-    expect(rollupStatus([])).toBeNull()
   })
 })
 
@@ -195,21 +167,27 @@ describe('mergeCheck', () => {
     const c = lot('C', { current_holder: 'vehicle', depot: null, vehicle: { id: 'v1', plate_number: 'HR55AB1234' }, status: 'picked_up' })
     const d = lot('D', { consignee: { name: 'Gupta Stores', phone: '9000000000', gstin: null } })
     const e = lot('E', { drop: { name: null, address: 'Danapur', lat: 25.63, lng: 85.04 } })
-    const f = lot('F', { status: 'in_transit', current_holder: 'vehicle', depot: null, vehicle: { id: 'v1', plate_number: 'HR55AB1234' } })
+    const f = lot('F', { status: 'on_hold' })
     const g = lot('G', { status: 'delivered', current_holder: 'consignee' })
-    const check = mergeCheck([a, b, c, d, e, f, g], ['s-A'])
+    const h = lot('H', { pieces: pieces(10, { short: 2 }) })
+    const check = mergeCheck([a, b, c, d, e, f, g, h], ['s-A'])
     expect(check.perLot).toEqual({
       's-A': null,
       's-B': null,
       's-C': 'It is on HR55AB1234, lot A is at Patna hub',
       's-D': 'It goes to a different consignee',
       's-E': 'It goes to a different drop',
-      's-F': 'Already on its way',
+      's-F': 'It is at a different stage from lot A',
       's-G': 'Already delivered',
+      's-H': 'Finished',
     })
     expect(check.ok).toBe(false)
     expect(check.reason).toMatch(/at least two lots/)
     expect(mergeCheck([a, d], ['s-A', 's-D']).reason).toBe('Lot D can\'t be merged: it goes to a different consignee.')
+  })
+  it('leaves lots on one vehicle to the backend, which knows whether they moved since the split', () => {
+    const onTruck = { status: 'in_transit', current_holder: 'vehicle' as const, depot: null, vehicle: { id: 'v1', plate_number: 'HR55AB1234' } }
+    expect(mergeCheck([lot('A', onTruck), lot('B', onTruck)], ['s-A', 's-B']).ok).toBe(true)
   })
   it('matches consignees by name and the last 10 digits of the phone', () => {
     const b2 = lot('B', { consignee: { name: '  sharma  traders', phone: '+91 98765 43210', gstin: null } })
@@ -226,11 +204,20 @@ describe('splitting a consignment', () => {
     expect(canSplit({ ...where, is_master: true })).toBe(false)
     expect(canSplit({ ...where, status: 'delivered' })).toBe(false)
     expect(canSplit({ ...where, pieces: pieces(1) })).toBe(false)
+    // One piece left after a partial delivery can still go on as its own lot
+    expect(canSplit({ status: 'partially_delivered', current_holder: 'vehicle', pieces: pieces(10, { delivered: 9, on_board: 1 }) })).toBe(true)
+    // Goods without a count can't be split
+    expect(canSplit({ ...where, pieces: { ...pieces(0), total: null } })).toBe(false)
   })
   it('picks the split reason from where the goods are', () => {
-    expect(defaultSplitReason({ status: 'at_hub', current_holder: 'hub' })).toBe('hub_crossdock')
-    expect(defaultSplitReason({ status: 'partially_delivered', current_holder: 'vehicle' })).toBe('partial_delivery_remainder')
-    expect(defaultSplitReason({ status: 'created', current_holder: 'consignor' })).toBe('manual')
+    expect(defaultSplitReason({ status: 'at_hub', current_holder: 'hub', pieces: pieces(10) })).toBe('hub_crossdock')
+    expect(defaultSplitReason({ status: 'partially_delivered', current_holder: 'vehicle', pieces: pieces(10, { delivered: 4 }) })).toBe('partial_delivery_remainder')
+    expect(defaultSplitReason({ status: 'created', current_holder: 'consignor', pieces: pieces(10) })).toBe('manual')
+  })
+  it('offers only the reasons the backend accepts for where the goods are', () => {
+    expect(splitReasonsFor({ current_holder: 'vehicle', pieces: pieces(10) })).toEqual(['partial_transfer', 'manual'])
+    expect(splitReasonsFor({ current_holder: 'hub', pieces: pieces(10, { delivered: 2 }) })).toEqual(['hub_crossdock', 'partial_delivery_remainder', 'manual'])
+    expect(splitReasonsFor({ current_holder: 'consignor', pieces: pieces(10) })).toEqual(['manual'])
   })
   it('offers no custody action on a master', () => {
     const actions = consignmentActions({
@@ -270,5 +257,8 @@ describe('consignee fields', () => {
     expect(phoneError('12345')).toBe('Enter a 10-digit mobile number.')
     expect(gstinError('10abcde1234f1z5')).toBeUndefined()
     expect(gstinError('10ABCDE')).toMatch(/15-character/)
+    // The backend's check: two digits, then 13 letters or digits
+    expect(gstinError('27AAAAA0000A1ZZ')).toBeUndefined()
+    expect(gstinError('AB1234567890123')).toMatch(/15-character/)
   })
 })
