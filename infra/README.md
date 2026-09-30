@@ -1,5 +1,7 @@
 # MargixIndia on Azure: runbook
 
+> Overview of every system and which process to follow: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md). This page is the detailed Azure runbook.
+
 Everything is code. Nothing is hand-clicked, nothing in this repo belongs to one Azure account, and
 secrets never enter git (they live in `infra/secrets.env`, which is gitignored). Supabase holds all
 the data, so the Azure side is stateless and can be rebuilt at any time.
