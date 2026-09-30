@@ -34,6 +34,8 @@
     { "file": "frontend/src/components/shipments/RelatedLinks.tsx", "phrase": "Manifest and label", "reason": "Printed paperwork page: the document is called Manifest." },
     { "file": "frontend/src/pages/ShipmentPage.tsx", "phrase": "Manifest and label", "reason": "Printed paperwork page: the document is called Manifest." },
     { "file": "frontend/src/components/shipments/ShipmentDetailsDrawer.tsx", "phrase": "Open manifest", "reason": "Opens the printed paperwork page, which is called Manifest." },
-    { "file": "frontend/src/pages/ShipmentManifestPage.tsx", "phrase": "manifest", "reason": "This page is the printed paperwork, so it names its own document Manifest." }
+    { "file": "frontend/src/pages/ShipmentManifestPage.tsx", "phrase": "manifest", "reason": "This page is the printed paperwork, so it names its own document Manifest." },
+    { "file": "driver-app/src/locales/index.ts", "phrase": "Route map", "reason": "The road path drawn on the driver's map." },
+    { "file": "driver-app/src/locales/index.ts", "phrase": "Open full route in Google Maps", "reason": "Navigation: the road route in Google Maps." }
   ]
 }
