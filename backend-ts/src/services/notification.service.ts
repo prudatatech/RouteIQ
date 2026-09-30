@@ -4,6 +4,9 @@ import { pushService } from './push.service';
 /** Notification types managers receive too: the day-to-day work they act on. */
 export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
   'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'capacity_bid', 'route_postponed', 'document_expiring', 'stop_prompts_released', 'vehicle_request',
+  // Cargo cases, transfers, returns, hubs and claims (docs/cargo-plan.md); cargo_delivery_otp goes to customers only
+  'cargo_exception_opened', 'cargo_exception_escalated', 'cargo_exception_resolved', 'cargo_transfer_planned', 'cargo_transfer_completed',
+  'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update', 'driver_action_rejected',
 ]);
 
 export const notificationService = {

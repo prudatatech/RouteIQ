@@ -3,6 +3,8 @@
  *
  * One interval job:
  *   - reminds staff about SOS alerts nobody has acknowledged or resolved (escalateStaleSos)
+ *   - escalates cargo cases past their SLA (escalateOverdueExceptions), and opens a delay case
+ *     for goods whose live ETA slips past CARGO_DELAY_EXCEPTION_MINUTES (detectDelays)
  *   - closes bidding windows whose end time has passed (resolveExpiredWindows)
  *   - auto-resolves driver confirmations nobody answered (checkConfirmationsTimeout)
  *   - once per Indian calendar day, the people job (people-jobs.service): documents past
@@ -16,6 +18,7 @@
  */
 import { capacityService } from './capacity.service';
 import { escalateStaleSos } from './sos.service';
+import { detectDelays, escalateOverdueExceptions } from './cargo/exception.service';
 import { runPeopleDailyJob } from './people-jobs.service';
 import { todayKey } from './people-docs.service';
 import { syncAllOdometers } from './odometer-sync.service';
@@ -47,6 +50,16 @@ export async function runSchedulerTick(): Promise<{ windowsClosed: number } | nu
       await escalateStaleSos();
     } catch (e: any) {
       console.error('[scheduler] SOS reminder check failed:', e.message);
+    }
+    try {
+      await escalateOverdueExceptions();
+    } catch (e: any) {
+      console.error('[scheduler] Cargo case escalation failed:', e.message);
+    }
+    try {
+      await detectDelays();
+    } catch (e: any) {
+      console.error('[scheduler] Cargo delay check failed:', e.message);
     }
     const today = todayKey();
     if (documentsCheckedOn !== today) {

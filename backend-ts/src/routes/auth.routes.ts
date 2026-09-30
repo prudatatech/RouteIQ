@@ -19,6 +19,7 @@ import { normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { driverWindows, inWindows } from '../services/driver-assignments.service';
 import { getPayoutAccount } from '../services/people-bank.service';
+import { sendSms, smsConfigured } from '../services/sms.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -38,10 +39,6 @@ const OTP_FAILURES_PER_HOUR = 10;      // wrong guesses per phone per hour, acro
 function generateOTP(): string {
   const len = Math.min(Math.max(settings.OTP_LENGTH || 6, 4), 8);
   return crypto.randomInt(0, 10 ** len).toString().padStart(len, '0');
-}
-
-function twilioConfigured(): boolean {
-  return Boolean(settings.TWILIO_ACCOUNT_SID && settings.TWILIO_AUTH_TOKEN && settings.TWILIO_PHONE_NUMBER);
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -93,7 +90,7 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       res.status(400).json({ detail: 'Invalid phone number' });
       return;
     }
-    if (!twilioConfigured() && settings.isProduction) {
+    if (!smsConfigured() && settings.isProduction) {
       console.error('[OTP] Twilio is not configured; refusing to issue OTPs in production');
       res.status(503).json({ detail: 'SMS delivery is temporarily unavailable. Please try again later.' });
       return;
@@ -115,7 +112,7 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
     let message = `Your margixindia ${kind} login OTP is: ${otp}. Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Do not share this code.`;
     if (!existing) message = `Welcome ${kind === 'driver' ? 'Driver' : 'Customer'}! ${message}`;
 
-    if (!(await sendTwilioSMS(phone, message))) {
+    if (!(await sendSms(phone, message))) {
       await cacheDelete(`otp:${kind}:${phone}`);
       res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
       return;
@@ -170,47 +167,6 @@ async function verifyOtp(kind: OtpKind, phone: string, otp: unknown, res: Respon
 
   await cacheDelete(otpKey);
   return true;
-}
-
-/**
- * Sends SMS via Twilio REST API (no SDK needed — just HTTP POST).
- */
-async function sendTwilioSMS(to: string, body: string): Promise<boolean> {
-  const accountSid = settings.TWILIO_ACCOUNT_SID;
-  const authToken = settings.TWILIO_AUTH_TOKEN;
-  const from = settings.TWILIO_PHONE_NUMBER;
-
-  if (!accountSid || !authToken || !from) {
-    if (settings.isProduction) return false;
-    console.warn(`[DEV OTP] Twilio not configured. To: ${to}, Message: ${body}`);
-    return true;
-  }
-
-  try {
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-    const params = new URLSearchParams({ To: to, From: from, Body: body });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    });
-
-    if (response.ok) {
-      console.log(`SMS sent to ${to}`);
-      return true;
-    } else {
-      const errData: any = await response.json();
-      console.error(`Twilio SMS failed: ${errData.message || response.status}`);
-      return false;
-    }
-  } catch (e: any) {
-    console.error(`Twilio SMS error: ${e.message}`);
-    return false;
-  }
 }
 
 // ── POST /driver/send-otp — Send OTP to the driver's phone ──
