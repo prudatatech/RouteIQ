@@ -17,6 +17,8 @@ import DriverRating from './DriverRating'
 import ParcelLabel from './ParcelLabel'
 import MessagesPanel from '@/components/messages/MessagesPanel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
+import ConsignmentCargo from '@/components/cargo/ConsignmentCargo'
+import { refOfShipmentRow } from '@/components/cargo/logic'
 import { formatDate, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 
 const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
@@ -28,7 +30,9 @@ const statusAction: Record<(typeof FORWARD_STATUSES)[number], string> = {
 
 /** Mirrors the backend rule in ShipmentService.deleteShipment: once a shipment
  * has moved, deleting it would erase real history. Cancel it instead. */
-const UNDELETABLE_STATUSES = new Set(['picked_up', 'in_transit', 'delivered'])
+const UNDELETABLE_STATUSES = new Set([
+  'picked_up', 'in_transit', 'delivered', 'out_for_delivery', 'at_hub', 'partially_delivered', 'on_hold', 'returning', 'returned', 'lost',
+])
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -98,12 +102,14 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const destination = destinationOf(s)
   const stops = deliveryPointsOf(s).length
   const plate = plateOf(s)
-  const closed = s.status === 'delivered' || s.status === 'cancelled'
+  const closed = ['delivered', 'cancelled', 'returned', 'lost'].includes(s.status ?? '')
   // Mirrors the backend rule (SHIPMENT_TRANSITIONS): a shipment only moves forward, and can be
-  // cancelled only before it is picked up.
+  // cancelled only before it is picked up. Cargo states (at a hub, on hold, returning…) move only
+  // through the custody and exception actions in the Cargo section, not by a plain status change.
+  const beforePickup = s.status === 'created' || s.status === 'assigned'
   const currentStep = FORWARD_STATUSES.indexOf(s.status as (typeof FORWARD_STATUSES)[number])
-  const nextStatuses = FORWARD_STATUSES.filter((_, i) => i > currentStep)
-  const canCancel = currentStep < 0
+  const nextStatuses = beforePickup || currentStep >= 0 ? FORWARD_STATUSES.filter((_, i) => i > currentStep) : []
+  const canCancel = beforePickup
   // Dispatch can (re)assign a load that is waiting, already assigned, or whose delivery failed
   const canAssign = ['created', 'assigned', 'exception'].includes(s.status ?? '')
   const assignLabel = s.status === 'exception' ? 'Assign again' : s.status === 'assigned' ? 'Change vehicle' : 'Assign vehicle'
@@ -168,7 +174,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       title={<span className="font-mono">{s.tracking_id}</span>}
       description={
         <div className="flex flex-wrap items-center gap-2">
-          <StatusPill status={s.status}>{shipmentStatusLabel(s.status)}</StatusPill>
+          <StatusPill status={s.status} kind="cargo">{shipmentStatusLabel(s.status)}</StatusPill>
           {s.priority && <StatusPill tone={priorityTone[s.priority] ?? 'neutral'} dot={false}>{humanize(s.priority)} priority</StatusPill>}
         </div>
       }
@@ -223,8 +229,8 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
             ]}
           />
           {s.status === 'exception' && (
-            <Alert tone="danger" title="The delivery attempt failed">
-              The driver could not deliver this load. Assign a vehicle again to try another delivery, or cancel the shipment.
+            <Alert tone="danger" title="A problem is open on this shipment">
+              Work it from its case under Cargo below, or assign a vehicle again to try another delivery.
             </Alert>
           )}
           {!manifestOnly && !closed && canAssign && (s.status !== 'created' || !s.vehicle_id) && (
@@ -233,6 +239,10 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
               : <Button variant="secondary" icon={<Truck size={16} />} onClick={() => onAssign(s)}>{assignLabel}</Button>
           )}
         </Section>
+
+        <section className="space-y-3" aria-label="Cargo">
+          <ConsignmentCargo key={s.id} code={s.tracking_id} cargoRef={refOfShipmentRow(s)} />
+        </section>
 
         {!manifestOnly && !s.vehicle_id && !isBiddingOpen(s) && (
           <EscalationPanel key={s.id} source={{ shipment_id: s.id }} canEscalate={s.status === 'created'} />
@@ -282,7 +292,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {!manifestOnly && !closed && (
+        {!manifestOnly && !closed && (nextStatuses.length > 0 || canCancel || s.status === 'assigned') && (
           <Section title="Update status">
             <div className="flex flex-wrap gap-2">
               {nextStatuses.map(st => (

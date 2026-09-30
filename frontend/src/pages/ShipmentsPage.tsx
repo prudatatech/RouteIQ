@@ -21,6 +21,8 @@ import { formatDate, formatKg } from '@/utils/display'
 
 const TAB_IDS = ['all', ...SHIPMENT_STATUSES] as const
 type TabId = (typeof TAB_IDS)[number]
+/** Cargo custody states are rare; their tabs show only while something is in them (or they are open). */
+const QUIET_TABS: readonly TabId[] = ['at_hub', 'out_for_delivery', 'on_hold', 'partially_delivered', 'returning', 'returned', 'lost']
 
 function PlaceCell({ name, address }: { name?: string | null; address?: string | null }) {
   if (!name && !address) return <span className="text-muted">—</span>
@@ -116,7 +118,7 @@ export default function ShipmentsPage() {
         const urgent = s.priority === 'high' || s.priority === 'critical'
         return (
           <div className="flex flex-col items-end gap-1 md:items-start">
-            <StatusPill status={s.status}>{shipmentStatusLabel(s.status)}</StatusPill>
+            <StatusPill status={s.status} kind="cargo">{shipmentStatusLabel(s.status)}</StatusPill>
             {isBiddingOpen(s) && <StatusPill tone="warning" dot={false}>Bidding open</StatusPill>}
             {urgent && <span className={s.priority === 'critical' ? 'text-xs font-medium text-danger' : 'text-xs font-medium text-warning'}>{humanize(s.priority!)} priority</span>}
           </div>
@@ -225,7 +227,7 @@ export default function ShipmentsPage() {
           label="Filter by status"
           value={tab}
           onChange={setTab}
-          tabs={TAB_IDS.map(id => ({
+          tabs={TAB_IDS.filter(id => !QUIET_TABS.includes(id) || id === tab || (counts[id] ?? 0) > 0).map(id => ({
             id,
             label: id === 'all' ? 'All' : shipmentStatusLabel(id),
             count: isLoading ? undefined : counts[id] ?? 0,

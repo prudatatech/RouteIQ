@@ -4,6 +4,7 @@ import { Package, Route as RouteIcon } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { Card, CardBody, CardHeader, DataTable, SectionHeader, StatusPill, buttonClasses, type Column } from '@/components/ui'
 import { formatDate, formatDateTime, formatKg, formatKm } from '@/utils/display'
+import { OnBoardCard } from '@/components/cargo/OnBoardList'
 import LoadBar from './LoadBar'
 import type { Vehicle } from './types'
 
@@ -78,6 +79,7 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
           <LoadBar vehicle={vehicle} />
         </CardBody>
       </Card>
+      <OnBoardCard vehicleId={vehicle.id} />
       <section className="space-y-3" aria-label="Routes">
         <SectionHeader title="Routes" description="Routes given to this vehicle, newest first" />
         <DataTable

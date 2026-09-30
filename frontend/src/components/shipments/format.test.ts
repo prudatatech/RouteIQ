@@ -5,8 +5,16 @@ import {
 
 describe('shipment statuses', () => {
   it('lists every status the database has, and counts the unfinished ones as active', () => {
-    expect([...SHIPMENT_STATUSES].sort()).toEqual(['assigned', 'cancelled', 'created', 'delivered', 'exception', 'in_transit', 'picked_up'])
-    expect(ACTIVE_SHIPMENT_STATUSES).toEqual(['created', 'assigned', 'picked_up', 'in_transit', 'exception'])
+    expect([...SHIPMENT_STATUSES].sort()).toEqual([
+      'assigned', 'at_hub', 'cancelled', 'created', 'delivered', 'exception', 'in_transit', 'lost', 'on_hold', 'out_for_delivery',
+      'partially_delivered', 'picked_up', 'returned', 'returning',
+    ])
+    expect(ACTIVE_SHIPMENT_STATUSES).toEqual([
+      'created', 'assigned', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery', 'on_hold', 'exception', 'partially_delivered', 'returning',
+    ])
+    expect(isActiveShipmentStatus('at_hub')).toBe(true)
+    expect(isActiveShipmentStatus('returned')).toBe(false)
+    expect(shipmentStatusLabel('lost')).toBe('Lost')
     expect(isActiveShipmentStatus('assigned')).toBe(true)
     expect(isActiveShipmentStatus('exception')).toBe(true)
     expect(isActiveShipmentStatus('delivered')).toBe(false)

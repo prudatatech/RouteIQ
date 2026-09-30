@@ -19,6 +19,7 @@ import { VehiclePhotoCard } from '@/components/fleet/photos/VehiclePhotoCard'
 import { MoveToMaintenanceModal } from '@/components/fleet/maintenance/MoveToMaintenanceModal'
 import { ReturnToServiceModal } from '@/components/fleet/maintenance/ReturnToServiceModal'
 import LoadBar from '@/components/fleet/LoadBar'
+import { OnBoardCard } from '@/components/cargo/OnBoardList'
 import CargoChips from '@/components/fleet/CargoChips'
 import SosCountBadge from '@/components/fleet/SosCountBadge'
 import VehicleSosTab from '@/components/fleet/VehicleSosTab'
@@ -267,6 +268,7 @@ export default function VehicleDetailPage() {
                 )}
               </CardBody>
             </Card>
+            <OnBoardCard vehicleId={vehicle.id} className="lg:col-span-3" />
             <div className="lg:col-span-3"><VehiclePhotoCard key={`photos-${vehicle.id}`} vehicleId={vehicle.id} /></div>
           </div>
         )}

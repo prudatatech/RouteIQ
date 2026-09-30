@@ -1,12 +1,32 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { fleetAPI } from '@/services/api'
+import { depotsAPI, fleetAPI } from '@/services/api'
+import { cargoKeys, exceptionsAPI, type CargoException } from '@/services/cargo'
+import { OnBoardList } from '@/components/cargo/OnBoardList'
+import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
+import { formatKg } from '@/utils/display'
 import { Alert, Button, Checkbox, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 import { apiErrorMessage } from '../health'
 import { istToday } from './condition'
 import { maintenanceKeys, MAINTENANCE_REASONS, REASON_LABELS, type MaintenanceReason, type OpenWork } from './types'
 import { useRefreshVehicle } from './useRefreshVehicle'
+
+type CargoPlan = 'transship' | 'hub' | 'hold'
+
+const PLAN_OPTIONS: { value: CargoPlan; label: string; description: string }[] = [
+  { value: 'transship', label: 'Transship now', description: 'After the move, pick a relief vehicle on the case that opens.' },
+  { value: 'hub', label: 'Move to a hub', description: 'The goods are sent to the depot you choose.' },
+  { value: 'hold', label: 'Hold with the vehicle', description: 'The goods stay on the vehicle, on hold under the case that opens.' },
+]
+
+/** The case the backend opened for the goods: the newest open breakdown or accident on this vehicle, else the newest open case. */
+async function findMaintenanceCase(vehicleId: string): Promise<CargoException | null> {
+  const cases = await exceptionsAPI.list({ vehicle_id: vehicleId, status: 'open' })
+  const newest = (list: CargoException[]) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null
+  return newest(cases.filter(c => c.type === 'vehicle_breakdown' || c.type === 'vehicle_accident')) ?? newest(cases)
+}
 
 /**
  * Move a vehicle to maintenance. Asks why, when it should be back, and where it is going. A vehicle
@@ -27,10 +47,13 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   const [workshop, setWorkshop] = useState('')
   const [note, setNote] = useState(sos?.description?.replace(/^\[Raised by staff[^\]]*\]\s*/, '') ?? '')
   const [release, setRelease] = useState(false)
+  const [plan, setPlan] = useState<CargoPlan | ''>('')
+  const [depotId, setDepotId] = useState('')
   const [error, setError] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const refresh = useRefreshVehicle(vehicleId)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const preview = useQuery<{ open_work: OpenWork }>({
     queryKey: maintenanceKeys.preview(vehicleId),
@@ -40,15 +63,45 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   })
   const work = preview.data?.open_work
 
+  const onBoard = useOnBoard(vehicleId, { enabled: open })
+  const cargo = onBoard.data?.items ?? []
+  const hasCargo = cargo.length > 0
+  const totals = onBoardTotals(cargo)
+  const depots = useQuery({ queryKey: ['depots'], queryFn: depotsAPI.list, enabled: open && plan === 'hub' })
+  // Routes and loads not yet picked up need the tick; goods already on board follow the plan instead.
+  const needsRelease = !!work?.blocking && (!hasCargo || (work.routes.length > 0 || work.manifests.length > 0))
+
+  /** The move went through and goods were on board: carry out the plan on the case the backend opened. */
+  const planCargo = async () => {
+    try {
+      const found = await findMaintenanceCase(vehicleId)
+      if (!found) {
+        toast('The goods on board are on hold. Open Cargo, then Exceptions, to plan them.', { duration: 8000 })
+      } else if (plan === 'transship') {
+        navigate(`/cargo/exceptions/${found.id}?action=transship`)
+      } else if (plan === 'hub') {
+        await exceptionsAPI.act(found.id, { action: 'move_to_hub', depot_id: depotId })
+        toast.success(`Goods are on their way to the hub under case ${found.code}`)
+      } else {
+        toast.success(`Goods held on the vehicle under case ${found.code}`)
+      }
+    } catch (err) {
+      toast.error(apiErrorMessage(err, 'The vehicle is in maintenance, but the goods could not be planned. Open Cargo, then Exceptions, to finish.'))
+    } finally {
+      queryClient.invalidateQueries({ queryKey: cargoKeys.all })
+    }
+  }
+
   const save = useMutation({
     mutationFn: (body: object) => fleetAPI.openMaintenance(vehicleId, body),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success(`${plate} moved to maintenance`)
       refresh()
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       onClose()
+      if (hasCargo) await planCargo()
     },
     onError: err => {
       setError(apiErrorMessage(err, 'We could not move the vehicle to maintenance. Try again.'))
@@ -60,7 +113,9 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
     const next: Record<string, string> = {}
     if (!expected) next.expected = 'Say when the vehicle should be back.'
     else if (expected < istToday()) next.expected = 'The expected return date cannot be in the past.'
-    if (work?.blocking && !release) next.release = 'Tick the box to release its routes and loads, or wait until they finish.'
+    if (needsRelease && !release) next.release = 'Tick the box to release its routes and loads, or wait until they finish.'
+    if (hasCargo && !plan) next.plan = 'Choose what happens to the goods on board.'
+    if (hasCargo && plan === 'hub' && !depotId) next.depot = 'Choose the hub to send the goods to.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
     setError('')
@@ -69,7 +124,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
       expected_return_date: expected,
       workshop: workshop.trim() || null,
       note: note.trim() || null,
-      release_work: work?.blocking ? release : false,
+      release_work: work?.blocking ? (needsRelease ? release : true) : false,
       sos_alert_id: sos?.id ?? null,
     })
   }
@@ -84,28 +139,72 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={save.isPending} disabled={preview.isLoading}>Move to maintenance</Button>
+          <Button type="submit" loading={save.isPending} disabled={preview.isLoading || onBoard.isLoading || onBoard.isError}>Move to maintenance</Button>
         </>
       )}
     >
       <div className="space-y-4">
-        {preview.isLoading && <Skeleton className="h-16 w-full" />}
+        {(preview.isLoading || onBoard.isLoading) && <Skeleton className="h-16 w-full" />}
+        {onBoard.isError && (
+          <Alert tone="danger" title="We could not check the cargo on board">
+            <p>Try again before moving the vehicle, so no goods are left without a plan.</p>
+            <div className="mt-2"><Button variant="secondary" size="sm" onClick={() => onBoard.refetch()}>Try again</Button></div>
+          </Alert>
+        )}
         {work?.blocking && (
           <Alert tone="warning" title={`${plate} has work in progress`}>
             <p>{work.summary}.</p>
-            {work.shipments_on_board > 0 && (
-              <p className="mt-1">Shipments already picked up stay on the vehicle. Arrange for them to be moved.</p>
+            {needsRelease && (
+              <div className="mt-2">
+                <Checkbox
+                  checked={release}
+                  onChange={e => setRelease(e.target.checked)}
+                  error={errors.release}
+                  label="Release its routes and loads"
+                  description={hasCargo
+                    ? 'Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told. Goods already on board follow the plan below.'
+                    : 'Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told.'}
+                />
+              </div>
             )}
-            <div className="mt-2">
-              <Checkbox
-                checked={release}
-                onChange={e => setRelease(e.target.checked)}
-                error={errors.release}
-                label="Release its routes and shipments"
-                description="Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told."
-              />
-            </div>
           </Alert>
+        )}
+        {hasCargo && (
+          <fieldset className="space-y-3 rounded-card border border-border p-3">
+            <legend className="px-1 text-sm font-medium text-text">Goods on board</legend>
+            <p className="text-sm text-muted">
+              {totals.consignments.toLocaleString('en-IN')} {totals.consignments === 1 ? 'consignment' : 'consignments'}, {totals.pieces.toLocaleString('en-IN')} pieces, {formatKg(totals.weightKg)}. Choose what happens to them.
+            </p>
+            <div className="max-h-48 overflow-y-auto rounded-control border border-border px-3">
+              <OnBoardList items={cargo} compact />
+            </div>
+            <div className="space-y-2" role="radiogroup" aria-label="Plan for the goods on board" aria-invalid={!!errors.plan}>
+              {PLAN_OPTIONS.map(o => (
+                <label key={o.value} className="flex cursor-pointer items-start gap-2.5 text-sm">
+                  <input
+                    type="radio"
+                    name="cargo-plan"
+                    value={o.value}
+                    checked={plan === o.value}
+                    onChange={() => { setPlan(o.value); setErrors(prev => ({ ...prev, plan: '' })) }}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
+                  />
+                  <span><span className="block font-medium text-text">{o.label}</span><span className="block text-xs text-muted">{o.description}</span></span>
+                </label>
+              ))}
+            </div>
+            {errors.plan && <p className="text-sm text-danger" role="alert">{errors.plan}</p>}
+            {plan === 'hub' && (
+              <Select
+                label="Hub"
+                value={depotId}
+                onChange={e => setDepotId(e.target.value)}
+                options={[{ value: '', label: depots.isLoading ? 'Loading hubs…' : 'Choose a hub' }, ...(depots.data ?? []).map(d => ({ value: d.id, label: d.name }))]}
+                error={errors.depot ?? (depots.isError ? 'We could not load the hubs. Close this and try again.' : undefined)}
+                required
+              />
+            )}
+          </fieldset>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
