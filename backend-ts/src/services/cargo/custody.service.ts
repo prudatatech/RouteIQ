@@ -936,8 +936,10 @@ export interface WhereView {
   on_hold_reason: string | null;
   /** A master that was split (its status, holder and pieces are rolled up from its lots). */
   is_master: boolean;
-  /** For a lot: its label and master. */
+  /** For a lot: its label and master (also flat as `lot_label` and `master`). */
   lot: { label: string; seq: number | null; master: { ref: { shipment_id: string } | { manifest_id: string }; code: string } } | null;
+  lot_label: string | null;
+  master: { ref: { shipment_id: string } | { manifest_id: string }; code: string } | null;
   /** A lot's own e-way bill reference, and whether Part B needs updating after a vehicle change. */
   eway_bill_ref: string | null;
   eway_part_b_required: boolean;
@@ -995,12 +997,17 @@ export async function whereIs(c: Consignment, opts: { redacted?: boolean; user?:
     rto: c.rto,
     on_hold_reason: opts.redacted ? null : c.onHoldReason,
     is_master: false,
-    lot: c.parentId && c.lotLabel
-      ? { label: c.lotLabel, seq: c.row.lot_seq != null ? Number(c.row.lot_seq) : null, master: await masterRefOf(c) }
-      : null,
+    ...(await lotTag(c)),
     eway_bill_ref: c.row.eway_bill_ref ?? null,
     eway_part_b_required: c.row.eway_part_b_required === true,
   };
+}
+
+/** The lot fields of `where`: its label and master, nested and flat. */
+async function lotTag(c: Consignment): Promise<Pick<WhereView, 'lot' | 'lot_label' | 'master'>> {
+  if (!c.parentId || !c.lotLabel) return { lot: null, lot_label: null, master: null };
+  const master = await masterRefOf(c);
+  return { lot: { label: c.lotLabel, seq: c.row.lot_seq != null ? Number(c.row.lot_seq) : null, master }, lot_label: c.lotLabel, master };
 }
 
 /** The ref and code of a lot's master. */

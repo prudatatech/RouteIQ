@@ -92,6 +92,8 @@ export const SplitSchema = z.object({
   ref: RefSchema,
   reason: z.enum(SPLIT_REASONS).default('manual'),
   lots: z.array(LotInputSchema).min(1).max(26),
+  /** Free text for the record, added to the split events. */
+  note: z.string().trim().max(300).nullable().optional(),
 });
 
 export const MergeSchema = z.object({ refs: z.array(RefSchema).min(2, 'Name at least two lots to merge').max(26) });
@@ -114,9 +116,13 @@ export function lotLabel(seq: number): string {
   return out;
 }
 
-/** The label of the n-th lot made from lot `parent`: A → A1, A2; A1 → A1.1, A1.2. */
+/**
+ * The label of the n-th lot made from lot `parent`: its letter and a number (A → A1, A2). Lots of
+ * A1 go on numbering under the same letter (A3, A4), so every label is a letter and a number.
+ */
 export function childLabel(parent: string, n: number): string {
-  return /[A-Z]$/.test(parent) ? `${parent}${n}` : `${parent}.${n}`;
+  const root = /^[A-Z]+/.exec(parent.toUpperCase())?.[0] ?? parent;
+  return `${root}${n}`;
 }
 
 // ── Conservation ────────────────────────────────────────────
@@ -403,6 +409,8 @@ export async function lotView(l: Consignment, opts: { redacted?: boolean } = {})
 }
 
 export interface LotTotals {
+  /** The pieces added up, in the shape of `where.pieces`. */
+  pieces: PiecesView;
   lots: number;
   pieces_total: number | null;
   delivered: number;
@@ -438,11 +446,13 @@ export function lotTotals(master: Consignment, lots: Consignment[], views: LotVi
   const parts = [`${delivered} of ${own.total ?? '?'} delivered`, ...[...places.entries()].map(([place, n]) => `${n} ${place}`)];
   if (returned > 0) parts.push(`${returned} returned`);
   if (short > 0) parts.push(`${short} short or lost`);
+  const damaged = own.damaged + sum(p => p.damaged);
   return {
+    pieces: { total: own.total, delivered, damaged, short, returned, on_board: byHolder.vehicle },
     lots: lots.filter(l => l.rawStatus !== 'cancelled').length,
     pieces_total: own.total,
     delivered,
-    damaged: own.damaged + sum(p => p.damaged),
+    damaged,
     short,
     returned,
     held: byHolder.consignor + byHolder.vehicle + byHolder.hub,
@@ -516,6 +526,8 @@ export async function masterWhere(master: Consignment, opts: { redacted?: boolea
     on_hold_reason: opts.redacted ? null : open.find(o => o.l.onHoldReason)?.l.onHoldReason ?? null,
     is_master: true,
     lot: null,
+    lot_label: null,
+    master: null,
     eway_bill_ref: master.row.eway_bill_ref ?? null,
     eway_part_b_required: all.some(l => l.row.eway_part_b_required === true && !FINAL.includes(l.rawStatus)),
     lots: views.filter((_, i) => shownIds.has(all[i].id)),
@@ -537,7 +549,8 @@ export async function masterTimeline(master: Consignment, opts: { redacted?: boo
 
 /** `GET /cargo/lots/:ref`: the master (from itself or any of its lots), its lots and the totals. */
 export async function lotsOverview(c: Consignment, opts: { redacted?: boolean; user?: TokenData | null } = {}) {
-  const master = (await masterOf(c)) ?? c;
+  const master = await masterOf(c);
+  if (!master) throw new HttpError(404, `${c.code} is not split into lots.`);
   const all = master.isMaster ? await lotsOf(master.kind, master.id) : [];
   const shown = await visibleLots(all, opts.user);
   const views = await Promise.all(all.map(l => lotView(l, opts)));
@@ -555,6 +568,8 @@ export async function lotsOverview(c: Consignment, opts: { redacted?: boolean; u
       weight_kg: master.weightKg,
       declared_value: numOrNull(master.row.declared_value),
       freight_share: opts.redacted ? null : numOrNull(master.row.freight_share),
+      /** The whole consignment's freight (a load's: none on the row) */
+      freight_charge: opts.redacted || master.kind !== 'shipment' ? null : numOrNull(master.row.freight_charge),
     },
     lots: views.filter((_, i) => shownIds.has(all[i].id)),
     totals,
@@ -727,7 +742,7 @@ interface DropPoint { id?: string; name: string | null; address: string | null; 
  */
 export async function splitConsignment(
   target: Consignment,
-  input: { reason: SplitReason; lots: LotInput[] },
+  input: { reason: SplitReason; lots: LotInput[]; note?: string | null },
   actor: Actor | null,
   opts: { via?: 'api' | 'transfer' | 'create' } = {},
 ): Promise<SplitResult> {
@@ -1021,7 +1036,7 @@ export async function splitConsignment(
 
   // Custody: a split event on the master (and the lot split again), and on every new lot
   const list = lotCs.map((l, i) => `${l.lotLabel} (${lots[i].pieces})`).join(', ');
-  const why = REASON_TEXT[input.reason];
+  const why = `${REASON_TEXT[input.reason]}${input.note ? `; ${input.note}` : ''}`;
   const sourceLabel = c.parentId ? `Lot ${c.lotLabel}` : null;
   const place = { holder: c.holder, vehicleId: c.vehicleId, depotId: c.depotId };
   const at = (x: Consignment): Consignment => ({ ...x, ...place });

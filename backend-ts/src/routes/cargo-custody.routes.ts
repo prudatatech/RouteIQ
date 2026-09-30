@@ -255,7 +255,7 @@ router.post('/lots/split', requireAuth, requireRole(...STAFF_ROLES), idempotent(
   try {
     const body = parse(SplitSchema, req.body);
     const c = await resolveRef(body.ref);
-    res.status(201).json(await splitConsignment(c, { reason: body.reason, lots: body.lots }, actorOf(req), { via: 'api' }));
+    res.status(201).json(await splitConsignment(c, { reason: body.reason, lots: body.lots, note: body.note ?? null }, actorOf(req), { via: 'api' }));
   } catch (e) {
     sendError(req, res, e);
   }

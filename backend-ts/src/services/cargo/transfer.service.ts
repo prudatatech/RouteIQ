@@ -187,7 +187,8 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   if (toVehicle) await notifyVehicleDriver(toVehicle.id, 'Cargo transfer planned', `Collect ${summary} from ${from.plate_number}${where}. Count them in when you receive them.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   await notifyStaffSafe(`Transfer ${transfer.code} planned`, `${summary} from ${from.plate_number} to ${target}.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   const view = await getTransfer(transfer.id);
-  return splits.length > 0 ? { ...view, splits } : view;
+  // `lots` names the two lots of the first split too, for clients that move one consignment at a time
+  return splits.length > 0 ? { ...view, splits, lots: { moving: splits[0].moving, staying: splits[0].staying } } : view;
 }
 
 function matchItems(items: any[], body: z.infer<typeof HandoverSchema>['items'], refs: Consignment[]): { item: any; c: Consignment; input: (typeof body)[number] }[] {

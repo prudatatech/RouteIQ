@@ -44,6 +44,7 @@ describe('partial transfer: 30 of 100 on board', () => {
       staying: { ref: { shipment_id: staying.id }, code: `${S1}-B`, label: 'B', pieces: 70 },
     }]);
     expect(res.body.items).toEqual([expect.objectContaining({ ref: { shipment_id: moving.id }, code: `${S1}-A`, pieces_planned: 30 })]);
+    expect(res.body.lots).toEqual({ moving: res.body.splits[0].moving, staying: res.body.splits[0].staying });
 
     expect(one('shipments', ID.s1)).toMatchObject({ is_master: true, status: 'in_transit', current_holder: 'vehicle', current_vehicle_id: null, freight_share: 0 });
     expect(moving).toMatchObject({ split_reason: 'partial_transfer', status: 'in_transit', current_holder: 'vehicle', current_vehicle_id: ID.v1, pieces_total: 30, total_weight_kg: 300, freight_share: 1500, seal_number: 'SEAL-1' });
@@ -159,7 +160,7 @@ describe('a split master refuses to hold goods', () => {
     expect(res.body.where.lots[0].freight_share).toBeNull();
     const lot = await request(app).get(api(`/cargo/where/${S1}-B`)).set(auth.customer());
     expect(lot.status).toBe(200);
-    expect(lot.body).toMatchObject({ code: `${S1}-B`, is_master: false, lot: { label: 'B', master: { code: S1 } } });
+    expect(lot.body).toMatchObject({ code: `${S1}-B`, is_master: false, lot: { label: 'B', master: { code: S1 } }, lot_label: 'B', master: { ref: { shipment_id: ID.s1 }, code: S1 } });
     // Another customer sees nothing
     expect((await request(app).get(api(`/cargo/where/${S1}-B`)).set(auth.customer(ID.otherCustomer))).status).toBe(404);
   });

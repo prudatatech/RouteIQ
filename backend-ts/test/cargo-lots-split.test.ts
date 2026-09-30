@@ -35,9 +35,9 @@ const lotsOf = (masterId: string, kind: 'shipments' | 'cargo_manifest' = 'shipme
 const sum = (rows: any[], f: (r: any) => number) => Math.round(rows.reduce((s, r) => s + (Number(f(r)) || 0), 0) * 100) / 100;
 
 describe('labels', () => {
-  it('names lots A to Z then AA, and lots of a lot A1, A2 then A1.1', () => {
+  it('names lots A to Z then AA, and lots of a lot by its letter and a number', () => {
     expect([1, 2, 26, 27, 28].map(lotLabel)).toEqual(['A', 'B', 'Z', 'AA', 'AB']);
-    expect([childLabel('A', 1), childLabel('A', 2), childLabel('A1', 1), childLabel('AB', 3)]).toEqual(['A1', 'A2', 'A1.1', 'AB3']);
+    expect([childLabel('A', 1), childLabel('A', 2), childLabel('A1', 3), childLabel('AB', 3)]).toEqual(['A1', 'A2', 'A3', 'AB3']);
   });
 });
 
@@ -104,9 +104,17 @@ describe('nested split', () => {
     expect(splitOf(lots[2].id)).toHaveLength(1);
     expect(splitOf(ID.s1)[1].notes).toMatch(/Lot A split into lots A1 \(20\), A2 \(40\)/);
 
-    // A1 split again: A1.1 and A1.2
-    const deeper = await split({ ref: `${S1}-A1`, lots: [{ pieces: 5 }] });
-    expect(deeper.body.lots.map((l: any) => l.label)).toEqual(['A1.1', 'A1.2']);
+    // A1 split again: its lots go on numbering under A (A3 and A4), still under the same master
+    const deeper = await split({ ref: `${S1}-A1`, lots: [{ pieces: 5 }], note: 'Two consignees in Baner' });
+    expect(deeper.body.lots.map((l: any) => l.label)).toEqual(['A3', 'A4']);
+    expect(supabaseMock.rows('cargo_custody_events').filter(e => e.kind === 'split').pop()!.notes).toMatch(/Two consignees in Baner/);
+    // GET /cargo/lots from any lot gives the master and every lot
+    const family = await request(app).get(api(`/cargo/lots/${S1}-A3`)).set(auth.admin());
+    expect(family.body.master).toMatchObject({ code: S1, is_master: true, freight_charge: 5000 });
+    expect(family.body.lots.map((l: any) => l.label)).toEqual(['A', 'B', 'A1', 'A2', 'A3', 'A4']);
+    expect(family.body.totals.pieces).toEqual({ total: 100, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: 100 });
+    // A consignment never split has no lots
+    expect((await request(app).get(api(`/cargo/lots/${shipmentRow(ID.s2).tracking_id}`)).set(auth.admin())).status).toBe(404);
     const where = await request(app).get(api(`/cargo/where/${S1}`)).set(auth.admin());
     expect(where.body.totals).toMatchObject({ lots: 4, held: 100, by_holder: { vehicle: 100, hub: 0, consignor: 0 } });
   });
