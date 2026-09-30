@@ -17,15 +17,17 @@ const draft = (over: Partial<DraftShipmentData> = {}): DraftShipmentData => ({
   multi_drop: true,
   drops: [
     drop('near', { lat: 28.4, lng: 77.3, pieces: '50' }),
-    drop('far', { lat: 25.6, lng: 85.1, pieces: '25', weight_kg: '400' }),
+    drop('far', { lat: 25.6, lng: 85.1, pieces: '25', weight_kg: '400', eway_bill_ref: '181234567890' }),
     drop('mid', { lat: 26.8, lng: 80.9, pieces: '25', consignee_gstin: '10abcde1234f1z5' }),
   ],
   ...over,
 })
 
 describe('multi-drop booking', () => {
-  it('needs two drops, each with an address, a consignee and a phone', () => {
+  it('needs two to 26 drops, each with an address and a consignee; the phone is optional', () => {
     expect(validateStep('route', draft({ drops: [drop('a')] })).drops).toMatch(/at least two drops/)
+    expect(validateStep('route', draft({ drops: Array.from({ length: 27 }, (_, i) => drop(`d${i}`)) })).drops).toMatch(/at most 26 drops/)
+    expect(validateStep('route', draft({ drops: [drop('a', { consignee_phone: '' }), drop('b')] }))['drop:a:consignee_phone']).toBeUndefined()
     const e = validateStep('route', draft({ drops: [drop('a', { lat: 0, lng: 0, consignee_name: '', consignee_phone: '12' }), drop('b')] }))
     expect(e['drop:a:place']).toMatch(/drop address/)
     expect(e['drop:a:consignee_name']).toMatch(/receives/)
@@ -40,9 +42,9 @@ describe('multi-drop booking', () => {
   it('sends drops[] with weight following pieces unless typed, and ends at the farthest drop', () => {
     const body = buildShipmentPayload(draft({ declared_value: '50000' }))
     expect(body.drops).toEqual([
-      { address: 'near road', lat: 28.4, lng: 77.3, consignee_name: 'Consignee near', consignee_phone: '9876543210', pieces: 50, weight_kg: 400 },
-      { address: 'far road', lat: 25.6, lng: 85.1, consignee_name: 'Consignee far', consignee_phone: '9876543210', pieces: 25, weight_kg: 400 },
-      { address: 'mid road', lat: 26.8, lng: 80.9, consignee_name: 'Consignee mid', consignee_phone: '9876543210', consignee_gstin: '10ABCDE1234F1Z5', pieces: 25, weight_kg: 200 },
+      { name: 'near', address: 'near road', lat: 28.4, lng: 77.3, consignee_name: 'Consignee near', consignee_phone: '9876543210', pieces: 50, weight_kg: 400 },
+      { name: 'far', address: 'far road', lat: 25.6, lng: 85.1, consignee_name: 'Consignee far', consignee_phone: '9876543210', pieces: 25, weight_kg: 400, eway_bill_ref: '181234567890' },
+      { name: 'mid', address: 'mid road', lat: 26.8, lng: 80.9, consignee_name: 'Consignee mid', consignee_phone: '9876543210', consignee_gstin: '10ABCDE1234F1Z5', pieces: 25, weight_kg: 200 },
     ])
     expect(body.declared_value).toBe(50000)
     expect(body.stops).toEqual([])
@@ -52,6 +54,9 @@ describe('multi-drop booking', () => {
   it('sends every drop value only when one was typed', () => {
     const body = buildShipmentPayload(draft({ declared_value: '10000', drops: [drop('a', { pieces: '60', declared_value: '7000' }), drop('b', { pieces: '40' })], total_items: 100 }))
     expect(body.drops?.map(d => d.declared_value)).toEqual([7000, 3000])
+  })
+  it('can not be opened to vendor bids, which the backend refuses for several drops', () => {
+    expect(validateStep('vehicle', draft({ open_bidding: true, selectedVehicleId: 'v1' })).vehicle).toMatch(/several drops/)
   })
   it('leaves a one-destination booking as before', () => {
     const body = buildShipmentPayload(draft({ multi_drop: false, dest_lat: 25.6, dest_lng: 85.1, delivery_point_name: 'Patna', delivery_point_address: 'Patna' }))

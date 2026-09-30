@@ -71,6 +71,7 @@ export function buildDrops(data: DraftShipmentData) {
   const balance = draftDropsBalance(data)
   const anyValueTyped = balance.rows.some(r => r.valueTyped)
   return toShipmentDrops(drops.map((d, i) => ({
+    name: d.name,
     address: d.address,
     lat: d.lat,
     lng: d.lng,
@@ -80,6 +81,7 @@ export function buildDrops(data: DraftShipmentData) {
     pieces: balance.rows[i].pieces ?? 0,
     weight_kg: balance.rows[i].weight_kg,
     declared_value: anyValueTyped ? balance.rows[i].declared_value : null,
+    eway_bill_ref: d.eway_bill_ref,
   })))
 }
 

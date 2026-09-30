@@ -17,6 +17,7 @@ import { refKey, type ConditionCode, type LotFamily, type TransferItem } from '.
 import { sendHandover } from '../../services/cargoActions';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
+import { normalizeParcelCode } from '../../utils/parcel';
 import { formatDateTime } from '../../utils/format';
 import { openTurnByTurn } from '../../utils/navigation';
 import CargoScreen from '../../components/cargo/CargoScreen';
@@ -229,23 +230,19 @@ export default function HandoverScreen({ vehicleTransfer, onDone, onClose, heade
 }
 
 /**
- * The pieces the handing-over vehicle held of this consignment before the split: the moving lot
- * plus its sibling lots still on that vehicle. For a lot of a lot (`A1`), only the lots of the same
- * letter count. Null when no sibling is on the vehicle (a whole consignment moves).
+ * The pieces the handing-over vehicle held before a partial transfer split them: the moving lot
+ * plus the lot that stays. The transfer does not repeat the split, so it is read from the lots: a
+ * partial transfer makes the moving lot and, right after it (the next `seq`), the lot that stays
+ * on the vehicle. Null when the item is a whole consignment (no such pair).
  */
 function piecesBeforeSplit(item: TransferItem, family: LotFamily | null, fromVehicleId: string | null): number | null {
-  const moving = item.piecesPlanned;
-  if (!family || moving === null || !fromVehicleId) return null;
-  const letter = /^([A-Z])\d+$/.exec(item.lot.label ?? '')?.[1] ?? null;
-  const siblings = family.lots.filter(
-    (l) =>
-      l.code !== item.code &&
-      l.holder === 'vehicle' &&
-      l.vehicleId === fromVehicleId &&
-      (letter === null || (l.label ?? '').startsWith(letter)),
+  if (!family || item.piecesPlanned === null || !fromVehicleId) return null;
+  const moving = family.lots.find((l) => normalizeParcelCode(l.code) === normalizeParcelCode(item.code));
+  if (!moving || moving.splitReason !== 'partial_transfer' || moving.seq === null) return null;
+  const staying = family.lots.find(
+    (l) => l.seq === moving.seq! + 1 && l.splitReason === 'partial_transfer' && l.holder === 'vehicle' && l.vehicleId === fromVehicleId,
   );
-  if (siblings.length === 0) return null;
-  return moving + siblings.reduce((sum, l) => sum + (l.pieces ?? 0), 0);
+  return staying?.pieces != null ? item.piecesPlanned + staying.pieces : null;
 }
 
 /**

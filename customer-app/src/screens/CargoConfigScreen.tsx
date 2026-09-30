@@ -16,6 +16,7 @@ import { colors, radius, size, space } from '../theme';
 import { formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
 import { DropsEditor, checkDrops, newDropId, toBookingDrops, type DropDraft } from '../components/booking/DropsEditor';
+import { MAX_DROPS } from '../services/api';
 
 /** The place search tags its answer with this prefix and the drop's id, so the home screen ignores it. */
 const DROP_TARGET = 'drop:';
@@ -81,7 +82,7 @@ export default function CargoConfigScreen({ navigation, route }: any) {
     pieces: '',
   });
   const blankDrop = (): DropDraft => ({ id: newDropId(), address: null, coord: null, consigneeName: '', consigneePhone: '', pieces: '' });
-  const addDrop = () => setDrops((cur) => [...(cur ?? [firstDrop()]), blankDrop()]);
+  const addDrop = () => setDrops((cur) => (cur && cur.length >= MAX_DROPS ? cur : [...(cur ?? [firstDrop()]), blankDrop()]));
   const updateDrop = (id: string, patch: Partial<DropDraft>) => setDrops((cur) => cur && cur.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   const removeDrop = (id: string) =>
     setDrops((cur) => {

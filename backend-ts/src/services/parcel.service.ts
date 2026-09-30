@@ -8,7 +8,8 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { getDriverVehicleIds } from '../core/ownership';
-import { manifestParcelCode, normalizeParcelCode } from '../core/parcelCode';
+import { normalizeParcelCode } from '../core/parcelCode';
+import { codeOf } from './cargo/consignment';
 
 export type ScanPurpose = 'pickup' | 'delivery';
 export type ScanMethod = 'camera' | 'manual';
@@ -87,11 +88,11 @@ export async function loadDriverParcels(driverId: string): Promise<DriverParcels
 
   const { data: manifestRows, error: manifestErr } = await supabase
     .from('cargo_manifest')
-    .select('id, status')
+    .select('id, status, parent_manifest_id, lot_label')
     .in('vehicle_id', vehicleIds)
     .in('status', OPEN_MANIFEST_STATUSES);
   if (manifestErr) throw new Error(`Load lookup failed: ${manifestErr.message}`);
-  const manifests = (manifestRows ?? []).map(m => ({ id: m.id as string, status: m.status as string, code: manifestParcelCode(m.id as string) }));
+  const manifests = (manifestRows ?? []).map(m => ({ id: m.id as string, status: m.status as string, code: codeOf('manifest', m) }));
 
   return { stops, manifests };
 }

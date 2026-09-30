@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, IconButton, Text, TextField } from '../ui';
 import { colors, radius, size, space } from '../../theme';
-import type { BookingDrop } from '../../services/api';
+import { MAX_DROPS, type BookingDrop } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
 
 /** One drop being filled in: the place may not be chosen yet, and the numbers are still text. */
@@ -49,12 +49,18 @@ export function checkDrops(drops: DropDraft[], totalText: string): DropsCheck {
     if (Object.keys(p).length) problems[d.id] = p;
   }
   const balance = total !== null ? total - assigned : null;
-  return { total, assigned, balance, problems, ok: total !== null && total > 0 && balance === 0 && Object.keys(problems).length === 0 };
+  const count = drops.length >= 2 && drops.length <= MAX_DROPS;
+  return { total, assigned, balance, problems, ok: count && total !== null && total > 0 && balance === 0 && Object.keys(problems).length === 0 };
 }
 
-/** The drops as the booking sends them (`drops[]` in docs/cargo-plan.md). Only call once checkDrops is ok. */
+/**
+ * The drops as the booking sends them (the server's DropInputSchema). No weights: the server takes
+ * them for every drop or none. Only call once checkDrops is ok.
+ */
 export function toBookingDrops(drops: DropDraft[]): BookingDrop[] {
   return drops.map((d) => ({
+    // The place's name: the first part of the address, as the booking's pickup_name and drop_name
+    name: d.address!.split(',')[0].trim() || null,
     address: d.address!,
     lat: d.coord!.latitude,
     lng: d.coord!.longitude,
@@ -199,12 +205,18 @@ export function DropsEditor({ drops, totalPieces, onTotalPieces, onChange, onPic
         );
       })}
 
-      <Button
-        title={t('drops_add')}
-        variant="secondary"
-        onPress={onAdd}
-        icon={(color) => <Feather name="plus" size={size.icon.md} color={color} />}
-      />
+      {drops.length < MAX_DROPS ? (
+        <Button
+          title={t('drops_add')}
+          variant="secondary"
+          onPress={onAdd}
+          icon={(color) => <Feather name="plus" size={size.icon.md} color={color} />}
+        />
+      ) : (
+        <Text variant="bodySmall" color="textMuted">
+          {t('drops_max', { n: MAX_DROPS })}
+        </Text>
+      )}
     </View>
   );
 }

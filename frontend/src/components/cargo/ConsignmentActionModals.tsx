@@ -83,10 +83,12 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
       })
     },
     onSuccess: transfer => {
-      const moving = transfer.split_lots?.moving?.tracking_id
+      // A partial move split the goods first: the moving lot is on the transfer, the staying lot stays on board
+      const split = transfer.splits?.[0]
       const planned = transfer.code ? `Transfer ${transfer.code} planned` : 'Transfer planned'
-      done(moving
-        ? `${planned}: ${Number(pieces).toLocaleString('en-IN')} of ${onBoard.toLocaleString('en-IN')} move as lot ${moving}. Both drivers are told.`
+      const count = (x: number | null) => (x ?? 0).toLocaleString('en-IN')
+      done(split
+        ? `${planned}: ${count(split.moving.pieces)} move as lot ${split.moving.tracking_id ?? split.moving.label}, ${count(split.staying.pieces)} stay on board as lot ${split.staying.tracking_id ?? split.staying.label}. Both drivers are told.`
         : `${planned}. Both drivers are told.`)
       if (transfer.id) navigate(`/cargo/transfers/${transfer.id}`)
     },

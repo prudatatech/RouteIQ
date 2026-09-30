@@ -5,7 +5,7 @@
  * one delivery sheet. Only lots are grouped: a consignment that was never
  * split keeps its own sheet, exactly as before.
  */
-import { NO_LOT, readLotTag, type ConsignmentRef, type LotTag, type OnBoardItem } from '../services/cargo';
+import { NO_LOT, lotTagOfCode, type ConsignmentRef, type LotTag, type OnBoardItem } from '../services/cargo';
 import type { DriverRoute, RouteStop } from '../types/route';
 import { distanceMeters, sortedStops, stopCoord } from './route';
 import { sameParcelCode } from './parcel';
@@ -40,11 +40,16 @@ const samePlace = (a: RouteStop, b: RouteStop) => {
   return sameAddress(a, b) || (!!p && !!q && distanceMeters(p, q) <= SAME_PLACE_M);
 };
 
-/** One stop as a lot: its code, the on-board record of it, and the drop's own consignee and pieces. */
+/**
+ * One stop as a lot: its code, the on-board record of it, and the drop's own consignee and pieces.
+ * A drop made for a lot names it (`lot_shipment_id`); its label is the end of the lot's code.
+ */
 export function dropLotOf(stop: RouteStop, onBoard: readonly OnBoardItem[]): DropLot {
   const code = stop.parcel?.code ?? '';
   const item = onBoard.find((i) => i.stopId === stop.id) ?? (code ? onBoard.find((i) => sameParcelCode(i.code, code)) : undefined);
-  const fromDrop = code ? readLotTag(stop.delivery_point, code) : NO_LOT;
+  const point = stop.delivery_point;
+  const consignee = { name: point?.consignee_name, phone: point?.consignee_phone };
+  const fromDrop = lotTagOfCode(point?.lot_shipment_id ? code : null, consignee);
   const tag = item?.lot ?? NO_LOT;
   return {
     stop,
@@ -54,8 +59,9 @@ export function dropLotOf(stop: RouteStop, onBoard: readonly OnBoardItem[]): Dro
     lot: {
       label: tag.label ?? fromDrop.label,
       masterCode: tag.masterCode ?? fromDrop.masterCode,
-      consigneeName: tag.consigneeName ?? fromDrop.consigneeName,
-      consigneePhone: tag.consigneePhone ?? fromDrop.consigneePhone,
+      // The drop's own consignee (name and phone together), else the lot's name from on-board
+      consigneeName: fromDrop.consigneeName ?? tag.consigneeName,
+      consigneePhone: fromDrop.consigneePhone,
     },
   };
 }

@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { IconButton, Input, PlaceSearch } from '@/components/ui'
 import type { DraftDrop } from '@/store/draftStore'
 import type { ResolvedPlace } from '@/services/geocoding'
-import { dropError, type FieldErrors } from './validation'
+import { MAX_DROPS, dropError, type FieldErrors } from './validation'
 
 const nameOf = (place: ResolvedPlace) => place.address.split(', ')[0] || place.address
 
@@ -19,6 +19,7 @@ const newDrop = (place?: ResolvedPlace): DraftDrop => ({
   pieces: '',
   weight_kg: '',
   declared_value: '',
+  eway_bill_ref: '',
 })
 
 /**
@@ -67,12 +68,12 @@ export default function DropsEditor({ drops, onChange, errors, recentPlacesKey }
               />
               <Input
                 label="Phone"
-                required
                 type="tel"
                 inputMode="tel"
                 value={d.consignee_phone}
                 onChange={e => update(d.id, { consignee_phone: e.target.value })}
                 error={dropError(errors, d.id, 'consignee_phone')}
+                hint="Optional"
                 maxLength={16}
               />
               <Input
@@ -85,23 +86,36 @@ export default function DropsEditor({ drops, onChange, errors, recentPlacesKey }
                 inputClassName="font-mono uppercase"
               />
             </div>
+            <Input
+              label="E-way bill"
+              value={d.eway_bill_ref ?? ''}
+              onChange={e => update(d.id, { eway_bill_ref: e.target.value })}
+              hint="Optional. This drop’s own e-way bill; it can be added to its lot later."
+              maxLength={60}
+              inputClassName="font-mono"
+              className="sm:max-w-xs"
+            />
           </li>
         ))}
       </ol>
-      <PlaceSearch
-        key={addKey}
-        label={drops.length === 0 ? 'First drop' : 'Add a drop'}
-        hint="Search for the address; you add the consignee after."
-        placeholder="Add a drop"
-        value={null}
-        error={errors.drops}
-        recentPlacesKey={recentPlacesKey}
-        onChange={place => {
-          if (!place) return
-          onChange([...drops, newDrop(place)])
-          setAddKey(k => k + 1)
-        }}
-      />
+      {drops.length >= MAX_DROPS ? (
+        <p className="text-sm text-muted">{MAX_DROPS} drops is the most one shipment takes. Book another shipment for the rest.</p>
+      ) : (
+        <PlaceSearch
+          key={addKey}
+          label={drops.length === 0 ? 'First drop' : 'Add a drop'}
+          hint="Search for the address; you add the consignee after."
+          placeholder="Add a drop"
+          value={null}
+          error={errors.drops}
+          recentPlacesKey={recentPlacesKey}
+          onChange={place => {
+            if (!place) return
+            onChange([...drops, newDrop(place)])
+            setAddKey(k => k + 1)
+          }}
+        />
+      )}
     </div>
   )
 }

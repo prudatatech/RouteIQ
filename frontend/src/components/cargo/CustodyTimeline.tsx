@@ -90,8 +90,8 @@ export function CustodyTimeline({ events, className, showLots = true }: { events
             body: (
               <>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  {showLots && e.lot_label && (
-                    <StatusPill tone="brand" dot={false} className="whitespace-nowrap">Lot {e.lot_label}</StatusPill>
+                  {showLots && e.lot?.label && (
+                    <StatusPill tone="brand" dot={false} className="whitespace-nowrap">Lot {e.lot.label}</StatusPill>
                   )}
                   <span className="text-sm font-medium text-text">{custodyKindLabel(e.kind)}</span>
                   {e.condition && <ConditionPill condition={e.condition} />}

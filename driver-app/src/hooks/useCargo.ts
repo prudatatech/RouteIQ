@@ -21,10 +21,11 @@ import {
   type OnBoardItem,
 } from '../services/cargo';
 
-// v2: items carry their lot (label, master, consignee)
-const ON_BOARD_KEY = 'cargo_on_board_v2';
+// v3: items carry the server's lot (label, master) and consignee name
+const ON_BOARD_KEY = 'cargo_on_board_v3';
 const TRANSFERS_KEY = 'cargo_transfers_v2';
-const LOTS_KEY = 'cargo_lots_v1';
+// v2: lots carry their seq and split reason
+const LOTS_KEY = 'cargo_lots_v2';
 
 async function readJson<T>(key: string): Promise<T | undefined> {
   try {

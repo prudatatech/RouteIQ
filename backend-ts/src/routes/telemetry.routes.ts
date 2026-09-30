@@ -28,9 +28,8 @@ import { idempotent } from '../core/idempotency';
 import { transitionSos } from '../services/sos.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
-import { manifestParcelCode } from '../core/parcelCode';
 import { recordCustody, DELIVERY_FAILURE_REASONS, type CustodyInput } from '../services/cargo/custody.service';
-import { CONDITIONS, resolveRef } from '../services/cargo/consignment';
+import { CONDITIONS, codeOf, resolveRef } from '../services/cargo/consignment';
 
 const router = Router();
 
@@ -1291,7 +1290,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
         delivery_point: st.delivery_points,
         parcel: {
           kind: 'manifest',
-          code: manifestParcelCode(m.id),
+          // A load lot's code is its master's with the label (CM-XXXXXXXX-B), as printed on the parcel
+          code: codeOf('manifest', m),
           status: m.status,
           purpose: st.id.endsWith('_pickup') ? 'pickup' : 'delivery',
         },
@@ -1336,6 +1336,11 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           latitude: s.delivery_points.latitude,
           longitude: s.delivery_points.longitude,
           demand_kg: s.delivery_points.demand_kg,
+          // Lots (docs/cargo-plan.md): a drop made for one lot carries its pieces and its own consignee
+          pieces: s.delivery_points.pieces ?? null,
+          consignee_name: s.delivery_points.consignee_name ?? null,
+          consignee_phone: s.delivery_points.consignee_phone ?? null,
+          lot_shipment_id: s.delivery_points.lot_shipment_id ?? null,
         } : null,
         // The code on the parcel for this stop (its tracking ID), for scan checks in the app
         parcel: shipmentParcels.get(s.delivery_points?.shipment_id)

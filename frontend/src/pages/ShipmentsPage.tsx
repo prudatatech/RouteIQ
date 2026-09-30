@@ -19,7 +19,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatDate, formatKg } from '@/utils/display'
-import { groupLots, rollupStatus } from '@/components/cargo/lots'
+import { groupLots } from '@/components/cargo/lots'
 
 const TAB_IDS = ['all', ...SHIPMENT_STATUSES] as const
 type TabId = (typeof TAB_IDS)[number]
@@ -39,9 +39,10 @@ function PlaceCell({ name, address }: { name?: string | null; address?: string |
 /** One row of the list: a shipment, or a split master with its lots. */
 interface ListRow extends ShipmentRow {
   lots: ShipmentRow[]
-  /** A master's status rolled up from its lots; a plain shipment's own status. */
+  /** The row's status: a master's is the rollup of its lots, which the backend stores on it. */
   shownStatus: string | null
 }
+
 
 const lotHolder = (s: ShipmentRow) => plateOf(s) ?? (s.current_holder === 'hub' ? 'At a hub' : s.current_holder === 'consignee' ? 'Delivered' : s.vehicle_id ? 'Assigned' : 'With the sender')
 
@@ -67,7 +68,7 @@ function LotRows({ lots, selectedId, onOpen }: { lots: ShipmentRow[]; selectedId
                 {[l.consignee_name, dest?.name && dest.name !== l.consignee_name ? dest.name : dest?.address].filter(Boolean).join(' · ') || <span className="text-muted">No drop</span>}
               </span>
               <span className="min-w-0 truncate text-muted">
-                {l.total_items != null ? `${l.total_items.toLocaleString('en-IN')} pcs · ` : ''}{lotHolder(l)}
+                {(l.pieces_total ?? l.total_items) != null ? `${(l.pieces_total ?? l.total_items)!.toLocaleString('en-IN')} pcs · ` : ''}{lotHolder(l)}
               </span>
             </button>
           </li>
@@ -127,11 +128,12 @@ export default function ShipmentsPage() {
 
   const rows = useMemo(() => shipments.filter(Boolean), [shipments])
 
-  // A split master is one row with its lots under it; its status rolls up from the lots
+  // A split master is one row with its lots under it; the backend stores its rolled-up status on it
   const listRows = useMemo<ListRow[]>(() => groupLots(rows).map(({ row, lots }) => ({
     ...row,
-    lots,
-    shownStatus: lots.length > 0 ? rollupStatus(lots.map(l => l.status)) ?? row.status ?? null : row.status ?? null,
+    // Merged or emptied lots are cancelled with nothing on them (lots_summary leaves them out too)
+    lots: row.status === 'cancelled' ? lots : lots.filter(l => l.status !== 'cancelled'),
+    shownStatus: row.status ?? null,
   })), [rows])
 
   /** A row is in a status tab by its own (rolled-up) status or any of its lots' statuses. */
@@ -200,7 +202,11 @@ export default function ShipmentsPage() {
         return (
           <div className="flex flex-col items-end gap-1 md:items-start">
             <StatusPill status={s.shownStatus} kind="cargo">{shipmentStatusLabel(s.shownStatus)}</StatusPill>
-            {s.lots.length > 0 && <span className="text-xs text-muted">Across {s.lots.length.toLocaleString('en-IN')} lots</span>}
+            {s.lots_summary && s.lots_summary.count > 0 && (
+              <span className="text-xs text-muted">
+                {s.lots_summary.delivered_lots.toLocaleString('en-IN')} of {s.lots_summary.count.toLocaleString('en-IN')} lots delivered
+              </span>
+            )}
             {isBiddingOpen(s) && <StatusPill tone="warning" dot={false}>Bidding open</StatusPill>}
             {urgent && <span className={s.priority === 'critical' ? 'text-xs font-medium text-danger' : 'text-xs font-medium text-warning'}>{humanize(s.priority!)} priority</span>}
           </div>
@@ -273,7 +279,7 @@ export default function ShipmentsPage() {
 
   const exportCsv = () => {
     // Each master is followed by its lots, which carry their master's code
-    const flat = filtered.flatMap(r => [{ s: r as ShipmentRow, status: r.shownStatus, master: '' }, ...r.lots.map(l => ({ s: l, status: l.status ?? null, master: r.tracking_id }))])
+    const flat = filtered.flatMap(r => [{ s: r as ShipmentRow, status: r.shownStatus, master: r.master_tracking_id ?? '' }, ...r.lots.map(l => ({ s: l, status: l.status ?? null, master: r.tracking_id }))])
     const csv = toCsv(flat.map(({ s, status, master }) => {
       const dest = destinationOf(s)
       return {

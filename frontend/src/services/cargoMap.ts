@@ -10,12 +10,13 @@
  * - the case timeline has `{ at, source: 'case' | 'custody' | 'sos' | 'maintenance', kind, text, by, by_name, role }`;
  * - claims carry `consignment_code`; hub and on-board rows carry `next_leg` / `next_stop` by name and address;
  * - lots (docs/cargo-plan.md "Lots") carry `label` and embedded `vehicle`, `depot`, `drop`, `consignee`;
- *   a lot's code is the master's with a suffix (`RTX-ABC123-B`), which also gives its label when none is sent.
+ *   a lot's code is the master's with a suffix (`RTX-ABC123-B`, a lot of a lot `RTX-ABC123-A3`),
+ *   which also gives its label on rows that carry only the code.
  */
 import type {
   CargoClaim, CargoException, CargoTransfer, CargoVehicle, CaseTimelineEntry, ClaimSummary, ConsignmentLabel, CustodyEvent, ExceptionDetail,
-  ExceptionItem, HubInventoryRow, HubSummary, Lot, LotsView, OnBoard, OnBoardItem, Pieces, ReliefVehicle, ShipmentDropInput, SplitResult,
-  TransferItem, WhereIsIt,
+  ExceptionItem, HubInventoryRow, HubSummary, Lot, LotTotals, LotsView, MergeResult, OnBoard, OnBoardItem, Pieces, ReliefVehicle,
+  ShipmentDropInput, SplitLot, SplitResult, TransferItem, TransferSplit, WhereIsIt,
 } from './cargo'
 
 type Raw = Record<string, unknown>
@@ -35,17 +36,25 @@ export function listOf<T>(data: unknown, key: string): T[] {
 }
 
 /**
- * The lot label in a lot code: `RTX-ABC123-B` → `B`, `CM-AA110000-A2` → `A2`. Null for a
+ * A lot code: the master's code and the lot label, which is letters and, for a lot of a lot, a
+ * number (`RTX-ABC123-B`, `RTX-ABC123-A3`). The backend labels a master's lots A … Z and a lot's
+ * lots with its letter and the next free number, so a label is never nested (`A1.1`).
+ */
+const LOT_CODE = /^((?:RTX|CM)-[A-Z0-9]+)-([A-Z]{1,2}[0-9]*)$/i
+
+/**
+ * The lot label in a lot code: `RTX-ABC123-B` → `B`, `CM-AA110000-A3` → `A3`. Null for a
  * master or an unsplit consignment (`RTX-ABC123`).
  */
 export function lotLabelFromCode(code: string | null | undefined): string | null {
-  const m = typeof code === 'string' ? /^(?:RTX|CM)-[A-Z0-9]+-([A-Z][0-9]*)$/i.exec(code.trim()) : null
-  return m ? m[1].toUpperCase() : null
+  const m = typeof code === 'string' ? LOT_CODE.exec(code.trim()) : null
+  return m ? m[2].toUpperCase() : null
 }
 
 /** The master's code of a lot code: `RTX-ABC123-B` → `RTX-ABC123`. Null when it is not a lot code. */
 export function masterCodeOf(code: string | null | undefined): string | null {
-  return lotLabelFromCode(code) ? String(code).trim().replace(/-[A-Z][0-9]*$/i, '') : null
+  const m = typeof code === 'string' ? LOT_CODE.exec(code.trim()) : null
+  return m ? m[1] : null
 }
 
 /**
@@ -106,6 +115,7 @@ export function mapWhere(raw: unknown): WhereIsIt {
   const w = obj(raw) ?? {}
   const label = labelOf(w)
   const depot = obj(w.depot)
+  const lot = obj(w.lot)
   return {
     ref: {
       ...(label.manifest_id ? { manifest_id: label.manifest_id } : { shipment_id: label.shipment_id ?? '' }),
@@ -124,9 +134,14 @@ export function mapWhere(raw: unknown): WhereIsIt {
     delivery_otp_required: w.delivery_otp_required === true,
     rto: w.rto === true,
     on_hold_reason: str(w.on_hold_reason),
-    is_master: w.is_master === true || arr(w.lots).length > 0,
-    lot_label: label.lot_label ?? null,
-    master: obj(w.master) ? labelOf(w.master) : null,
+    is_master: w.is_master === true,
+    lot_label: str(w.lot_label) ?? str(lot?.label),
+    lot_seq: num(lot?.seq),
+    master: obj(w.master) ? labelOf(w.master) : lot && obj(lot.master) ? labelOf(lot.master) : null,
+    eway_bill_ref: str(w.eway_bill_ref),
+    eway_part_b_required: w.eway_part_b_required === true,
+    lots: arr(w.lots).map(mapLot),
+    totals: obj(w.totals) ? mapLotTotals(w.totals) : null,
   }
 }
 
@@ -173,8 +188,7 @@ export function mapCustodyEvent(raw: unknown): CustodyEvent {
     recorded_by: str(recorder?.id) ?? str(e.recorded_by),
     recorded_by_name: str(recorder?.name),
     recorded_role: str(e.recorded_role) ?? str(recorder?.role),
-    lot_label: str(e.lot_label) ?? str(lot?.label) ?? lotLabelFromCode(str(e.lot_code) ?? str(lot?.code)),
-    lot_code: str(e.lot_code) ?? str(lot?.code),
+    lot: lot ? { ...labelOf(lot), label: str(lot.label) } : null,
   }
 }
 
@@ -286,20 +300,19 @@ export function mapTransfer(raw: unknown): CargoTransfer {
       ? { id: String(depot.id), name: str(depot.name) ?? 'Hub', address: str(depot.address), latitude: num(depot.latitude), longitude: num(depot.longitude) }
       : null,
     exception: exc && str(exc.id) ? { id: String(exc.id), code: String(exc.code ?? ''), type: exc.type as CargoException['type'], status: exc.status as CargoException['status'] } : null,
-    split_lots: mapTransferLots(t),
+    splits: arr(t.splits).map(mapTransferSplit),
   }
 }
 
-/**
- * The two lots a partial transfer made. Read from `lots: { moving, staying }` (or `moving_lot` /
- * `staying_lot`), each `{ ref, code }`. Null for a whole-consignment transfer.
- */
-function mapTransferLots(t: Raw): CargoTransfer['split_lots'] {
-  const lots = obj(t.lots)
-  const moving = obj(lots?.moving) ?? obj(t.moving_lot)
-  const staying = obj(lots?.staying) ?? obj(t.staying_lot)
-  if (!moving && !staying) return null
-  return { moving: moving ? labelOf(moving) : null, staying: staying ? labelOf(staying) : null }
+const mapSplitLot = (raw: unknown): SplitLot => {
+  const l = obj(raw) ?? {}
+  return { ...labelOf(l), label: str(l.label), pieces: num(l.pieces) }
+}
+
+/** One split of the POST /cargo/transfers answer: `{ from: {ref, code}, moving: {ref, code, label, pieces}, staying }`. */
+function mapTransferSplit(raw: unknown): TransferSplit {
+  const s = obj(raw) ?? {}
+  return { from: labelOf(s.from), moving: mapSplitLot(s.moving), staying: mapSplitLot(s.staying) }
 }
 
 /** A claim (GET /cargo/claims, /cargo/claims/:id, PATCH answers). */
@@ -390,6 +403,7 @@ export function mapHubInventoryRow(raw: unknown): HubInventoryRow {
 export function mapOnBoardItem(raw: unknown): OnBoardItem {
   const r = obj(raw) ?? {}
   const stop = obj(r.next_stop)
+  const lot = obj(r.lot)
   return {
     ...labelOf(r),
     pieces_on_board: num(r.pieces_on_board) ?? 0,
@@ -401,6 +415,9 @@ export function mapOnBoardItem(raw: unknown): OnBoardItem {
     on_hold_reason: str(r.on_hold_reason),
     next_stop: stop ? { name: str(stop.name), address: str(stop.address) } : null,
     open_exceptions: arr(r.open_exceptions).map(mapBrief),
+    lot: lot && str(lot.label) ? { label: String(lot.label), master: labelOf(lot.master) } : null,
+    consignee_name: str(r.consignee_name),
+    display: str(r.display),
   }
 }
 
@@ -412,99 +429,123 @@ export function mapOnBoard(raw: unknown, vehicleId: string): OnBoard {
 
 // ── Lots ───────────────────────────────────────────────────────────────────
 
-/** A lot's pieces: the full counts object, or a bare number (its total). */
-function mapLotPieces(raw: unknown): Pieces {
-  const n = num(raw)
-  if (n != null) return { total: n, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: null }
-  return mapPieces(raw)
-}
-
-/** One lot of GET /cargo/lots/:ref. */
+/** One LotView (GET /cargo/lots/:ref, a master's `where.lots`, POST /cargo/lots/eway). */
 export function mapLot(raw: unknown): Lot {
   const l = obj(raw) ?? {}
-  const label = labelOf(l)
+  const vehicle = obj(l.vehicle)
   const depot = obj(l.depot)
   const drop = obj(l.drop)
   const consignee = obj(l.consignee)
-  const consigneeName = str(consignee?.name) ?? str(l.consignee_name)
-  const consigneePhone = str(consignee?.phone) ?? str(l.consignee_phone)
-  const consigneeGstin = str(consignee?.gstin) ?? str(l.consignee_gstin)
-  const lotLabel = str(l.label) ?? label.lot_label ?? null
+  const label = str(l.label)
   return {
-    ...label,
-    label: lotLabel,
-    lot_label: lotLabel,
+    ...labelOf(l),
+    label,
+    lot_label: label,
+    seq: num(l.seq),
     status: String(l.status ?? ''),
     current_holder: (str(l.current_holder) ?? 'consignor') as Lot['current_holder'],
-    vehicle: mapVehicle(l.vehicle),
-    depot: depot && str(depot.id)
-      ? { id: String(depot.id), name: str(depot.name) ?? 'Hub', address: str(depot.address), latitude: num(depot.latitude), longitude: num(depot.longitude) }
-      : null,
-    pieces: mapLotPieces(l.pieces),
-    weight_kg: num(l.weight_kg),
+    vehicle: vehicle && str(vehicle.id) ? { id: String(vehicle.id), plate_number: str(vehicle.plate_number) ?? '—' } : null,
+    depot: depot && str(depot.id) ? { id: String(depot.id), name: str(depot.name) ?? 'Hub' } : null,
+    pieces: mapPieces(l.pieces),
+    weight_kg: num(l.weight_kg) ?? 0,
     declared_value: num(l.declared_value),
     freight_share: num(l.freight_share),
-    drop: drop && (str(drop.address) || str(drop.name))
-      ? { name: str(drop.name), address: str(drop.address), lat: num(drop.lat) ?? num(drop.latitude), lng: num(drop.lng) ?? num(drop.longitude) }
-      : null,
-    consignee: consigneeName || consigneePhone || consigneeGstin ? { name: consigneeName, phone: consigneePhone, gstin: consigneeGstin } : null,
+    drop: drop ? { name: str(drop.name), address: str(drop.address), lat: num(drop.lat), lng: num(drop.lng) } : null,
+    consignee: consignee ? { name: str(consignee.name), phone: str(consignee.phone), gstin: str(consignee.gstin) } : null,
+    eway_bill_ref: str(l.eway_bill_ref),
+    eway_part_b_required: l.eway_part_b_required === true,
     split_reason: (str(l.split_reason) as Lot['split_reason']) ?? null,
     open_exceptions: arr(l.open_exceptions).map(mapBrief),
   }
 }
 
-/** GET /cargo/lots/:ref → `{ master, lots, totals }`, lots in label order (A, B, … A1, A2). */
-export function mapLots(raw: unknown): LotsView {
-  const d = obj(raw) ?? {}
-  const m = obj(d.master) ?? {}
-  const lots = arr(d.lots).map(mapLot).sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '', undefined, { numeric: true }))
-  const totalsRaw = obj(d.totals)
-  const totals = totalsRaw && obj(totalsRaw.pieces) ? mapPieces(totalsRaw.pieces) : totalsRaw ? mapPieces(totalsRaw) : mapLotPieces(m.pieces)
+/** The backend's LotTotals: a master's pieces added up across its lots, with its progress line. */
+export function mapLotTotals(raw: unknown): LotTotals {
+  const t = obj(raw) ?? {}
+  const by = obj(t.by_holder) ?? {}
   return {
-    master: {
-      ...labelOf(m),
-      lot_label: null,
-      status: String(m.status ?? ''),
-      pieces: mapLotPieces(m.pieces),
-      weight_kg: num(m.weight_kg) ?? num(totalsRaw?.weight_kg),
-      declared_value: num(m.declared_value) ?? num(totalsRaw?.declared_value),
-      freight: num(m.freight_charge) ?? num(m.freight) ?? num(totalsRaw?.freight),
-    },
-    lots,
-    totals,
+    pieces: mapPieces(t.pieces),
+    lots: num(t.lots) ?? 0,
+    pieces_total: num(t.pieces_total),
+    delivered: num(t.delivered) ?? 0,
+    damaged: num(t.damaged) ?? 0,
+    short: num(t.short) ?? 0,
+    returned: num(t.returned) ?? 0,
+    held: num(t.held) ?? 0,
+    by_holder: { consignor: num(by.consignor) ?? 0, vehicle: num(by.vehicle) ?? 0, hub: num(by.hub) ?? 0 },
+    weight_kg: num(t.weight_kg) ?? 0,
+    progress_text: str(t.progress_text) ?? '',
   }
 }
 
-/** POST /cargo/lots/split → `{ master: {ref, code}, lots: [{ref, code, label, pieces, weight_kg}] }`. */
+/** GET /cargo/lots/:ref → `{ master, lots, totals }`, lots in the backend's order (by lot number). */
+export function mapLots(raw: unknown): LotsView {
+  const d = obj(raw) ?? {}
+  const m = obj(d.master) ?? {}
+  return {
+    master: {
+      ...labelOf(m),
+      is_master: m.is_master === true,
+      status: String(m.status ?? ''),
+      current_holder: (str(m.current_holder) ?? 'consignor') as LotsView['master']['current_holder'],
+      pieces: mapPieces(m.pieces),
+      weight_kg: num(m.weight_kg) ?? 0,
+      declared_value: num(m.declared_value),
+      freight_share: num(m.freight_share),
+      freight_charge: num(m.freight_charge),
+    },
+    lots: arr(d.lots).map(mapLot),
+    totals: mapLotTotals(d.totals),
+  }
+}
+
+/**
+ * POST /cargo/lots/split → `{ master: {ref, code}, source: {ref, code}, lots: [{ ref, code, label,
+ * pieces, weight_kg, declared_value, freight_share, status, transfer }] }`.
+ */
 export function mapSplitResult(raw: unknown): SplitResult {
   const d = obj(raw) ?? {}
   return {
     master: labelOf(d.master),
+    source: labelOf(d.source),
     lots: arr(d.lots).map(x => {
       const l = obj(x) ?? {}
-      const label = labelOf(l)
-      return { ...label, label: str(l.label) ?? label.lot_label ?? null, pieces: num(l.pieces), weight_kg: num(l.weight_kg) }
+      const transfer = obj(l.transfer)
+      return {
+        ...labelOf(l),
+        label: str(l.label),
+        pieces: num(l.pieces),
+        weight_kg: num(l.weight_kg),
+        declared_value: num(l.declared_value),
+        freight_share: num(l.freight_share),
+        transfer: transfer && str(transfer.id) ? { id: String(transfer.id), code: String(transfer.code ?? '') } : null,
+      }
     }),
   }
 }
 
-/** POST /cargo/lots/merge → `{ ref, code }`: the lot the others were merged into. */
-export const mapMergeResult = (raw: unknown): ConsignmentLabel => labelOf(raw)
+/** POST /cargo/lots/merge → `{ ref, code, label, pieces }`: the lot the others were merged into. */
+export function mapMergeResult(raw: unknown): MergeResult {
+  const d = obj(raw) ?? {}
+  return { ...labelOf(d), label: str(d.label), pieces: num(d.pieces) }
+}
 
 /** The multi-drop form's rows as POST /shipments `drops[]`; optional fields are left out when empty. */
 export function toShipmentDrops(rows: {
-  address: string; lat: number; lng: number; consignee_name: string; consignee_phone: string; consignee_gstin?: string | null
-  pieces: number; weight_kg?: number | null; declared_value?: number | null
+  name?: string | null; address: string; lat: number; lng: number; consignee_name: string; consignee_phone?: string | null
+  consignee_gstin?: string | null; pieces: number; weight_kg?: number | null; declared_value?: number | null; eway_bill_ref?: string | null
 }[]): ShipmentDropInput[] {
   return rows.map(r => ({
+    ...(r.name?.trim() ? { name: r.name.trim() } : {}),
     address: r.address,
     lat: r.lat,
     lng: r.lng,
     consignee_name: r.consignee_name.trim(),
-    consignee_phone: r.consignee_phone.trim(),
+    ...(r.consignee_phone?.trim() ? { consignee_phone: r.consignee_phone.trim() } : {}),
     ...(r.consignee_gstin?.trim() ? { consignee_gstin: r.consignee_gstin.trim().toUpperCase() } : {}),
     pieces: r.pieces,
     ...(r.weight_kg != null ? { weight_kg: r.weight_kg } : {}),
     ...(r.declared_value != null ? { declared_value: r.declared_value } : {}),
+    ...(r.eway_bill_ref?.trim() ? { eway_bill_ref: r.eway_bill_ref.trim() } : {}),
   }))
 }

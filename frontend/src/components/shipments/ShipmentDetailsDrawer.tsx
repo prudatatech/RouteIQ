@@ -109,7 +109,8 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   // goods do after that (pickup, in transit, hubs, delivery, holds, returns) is a custody event or
   // a case action in the Cargo section, not a plain status change.
   const beforePickup = s.status === 'created' || s.status === 'assigned'
-  const canCancel = beforePickup && s.is_master !== true
+  // Cancelling a split master cancels its lots; the backend refuses it once any lot was picked up
+  const canCancel = beforePickup
   // A vehicle can be (re)assigned while the goods are still with the sender. Goods on a vehicle
   // (a failed delivery included) move by a transfer or a re-attempt; assignDriver refuses them.
   const withSender = !s.current_holder || s.current_holder === 'consignor'
@@ -137,7 +138,9 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const cancelShipment = async () => {
     const ok = await confirm({
       title: `Cancel shipment ${s.tracking_id}?`,
-      message: 'The shipment is marked as cancelled. You can still see it under Cancelled.',
+      message: master
+        ? 'The shipment and every one of its lots are marked as cancelled. You can still see them under Cancelled.'
+        : 'The shipment is marked as cancelled. You can still see it under Cancelled.',
       confirmLabel: 'Cancel shipment',
       cancelLabel: 'Keep shipment',
       tone: 'danger',
@@ -308,7 +311,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           <Section title="Update status">
             <p className="text-sm text-muted">Record the pickup, the move and the delivery under Cargo above, with the pieces and proof.</p>
             <div className="flex flex-wrap gap-2">
-              {s.status === 'assigned' && (
+              {s.status === 'assigned' && !master && (
                 <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={unassignShipment}>
                   Take off vehicle
                 </Button>
