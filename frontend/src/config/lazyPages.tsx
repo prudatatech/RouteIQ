@@ -24,6 +24,7 @@ export const analytics = page(() => import('@/pages/AnalyticsPage'))
 export const finance = page(() => import('@/pages/FinancePage'))
 export const insights = page(() => import('@/pages/InsightsPage'))
 export const optimize = page(() => import('@/pages/OptimizePage'))
+export const routePlanner = page(() => import('@/pages/RoutePlannerPage'))
 export const shipments = page(() => import('@/pages/ShipmentsPage'))
 export const shipmentManifest = page(() => import('@/pages/ShipmentManifestPage'))
 export const emergency = page(() => import('@/pages/EmergencyPage'))
@@ -74,6 +75,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/shipments': shipments.preload,
   '/emergency': emergency.preload,
   '/optimize': optimize.preload,
+  '/route-planner': routePlanner.preload,
   '/backhaul': backhaul.preload,
   '/bids': bids.preload,
   '/vendor-requests': vendorRequests.preload,

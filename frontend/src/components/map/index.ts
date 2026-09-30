@@ -17,6 +17,7 @@ export type { CongestionLevel } from './congestion'
 export type { LiveMapProps, LiveMapStop, LiveMapVehicle } from './LiveMap'
 export type {
   LatLng,
+  MapAltRoute,
   MapControls,
   MapFit,
   MapMode,

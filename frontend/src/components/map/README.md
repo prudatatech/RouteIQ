@@ -83,6 +83,7 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 | `showLabels` | `boolean` | `false` | Always show plate + status under vehicles (otherwise only when selected) |
 | `onPick` | `(pos) => void` | | Click to pick a location; crosshair cursor |
 | `onPointMove` | `(id, pos) => void` | | Called when a `draggable` point is dropped |
+| `altRoutes` / `onAltRouteSelect` | `MapAltRoute[]` / `(id) => void` | | Other route options drawn muted under `route` (`{ id, coordinates, label? }`); clicking one reports its id. Used by the route planner |
 | `initialCenter` / `initialZoom` | | India (`VITE_MAP_CENTER_*`, `VITE_MAP_ZOOM`) | Only used before there is content to fit |
 | `pitch` | `number` | `0` | Driver navigation uses 60 |
 | `height` | `number \| string` | | Without it the map fills its parent, **at least 320 px** |

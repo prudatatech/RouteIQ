@@ -12,6 +12,7 @@ import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, ROUTE_TRANSITIONS, assertTransition } from '../core/transitions';
 import { manifestParcelCode } from '../core/parcelCode';
+import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
 import { stampPlannedArrivals } from './driver-performance.service';
 
@@ -356,3 +357,105 @@ export const routeService = {
     return { id: route.id, status: next, vehicle_status: after?.status ?? vehicle?.status ?? null, changed: true };
   },
 };
+
+// ── Routes planned in the route planner ─────────────────────
+
+export interface PlannedRouteStopInput {
+  name: string;
+  address?: string | null;
+  lat: number;
+  lng: number;
+  /** An existing delivery point (a shipment's drop) to reuse instead of creating one. */
+  delivery_point_id?: string | null;
+}
+
+export interface PlannedRouteInput {
+  vehicle_id: string;
+  /** In driving order; the last one is the destination. The start is kept in `plan`, not as a stop. */
+  stops: PlannedRouteStopInput[];
+  distance_km: number;
+  duration_minutes: number;
+  traffic_delay_minutes: number | null;
+  estimated_fuel_liters: number | null;
+  /** Origin, departure, road options and provider, kept with the route. */
+  plan: Record<string, unknown>;
+}
+
+/**
+ * Saves a route built in the route planner as a pending route for the vehicle, stopping at the
+ * planned places in order. Stops that are a shipment's drop reuse its delivery point; every other
+ * place gets a new one. Dispatching it later is the same as for any route (changeStatus).
+ */
+export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: string }): Promise<{ id: string; vehicle_id: string; status: string; stops: { delivery_point_id: string; sequence: number }[] }> {
+  const { data: vehicle, error: vErr } = await supabase.from('vehicles').select('id, status, plate_number, driver_id').eq('id', input.vehicle_id).maybeSingle();
+  if (vErr) throw new Error(vErr.message);
+  if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+  if (!isDispatchable(vehicle as { status?: string | null; plate_number?: string | null })) {
+    throw new HttpError(409, `That vehicle is ${String((vehicle as any).status).replace('_', ' ')} and can't take a route.`);
+  }
+
+  const reuseIds = input.stops.map(s => s.delivery_point_id).filter((id): id is string => !!id);
+  if (reuseIds.length > 0) {
+    const { data: found, error } = await supabase.from('delivery_points').select('id').in('id', reuseIds);
+    if (error) throw new Error(error.message);
+    const known = new Set((found ?? []).map((d: any) => d.id));
+    if (reuseIds.some(id => !known.has(id))) throw new HttpError(400, 'One of the stops refers to a delivery point that no longer exists.');
+  }
+
+  const newRows = input.stops.filter(s => !s.delivery_point_id).map(s => ({
+    name: s.name, address: s.address ?? null, latitude: s.lat, longitude: s.lng, status: 'pending',
+  }));
+  let created: { id: string }[] = [];
+  if (newRows.length > 0) {
+    const { data, error } = await supabase.from('delivery_points').insert(newRows).select('id');
+    if (error || !data || data.length !== newRows.length) throw new Error(error?.message ?? 'Could not save the stops');
+    created = data as { id: string }[];
+  }
+  const removeCreated = async () => { if (created.length) await supabase.from('delivery_points').delete().in('id', created.map(c => c.id)); };
+
+  let next = 0;
+  const pointIds = input.stops.map(s => s.delivery_point_id ?? created[next++].id);
+
+  const { data: route, error: routeErr } = await supabase
+    .from('routes')
+    .insert({
+      vehicle_id: input.vehicle_id,
+      depot_id: null,
+      status: 'pending',
+      total_distance_km: input.distance_km,
+      total_duration_minutes: input.duration_minutes,
+      estimated_fuel_liters: input.estimated_fuel_liters,
+      traffic_delay_minutes: input.traffic_delay_minutes ?? 0,
+      waypoints: [],
+      plan: { ...input.plan, created_by: actor.id },
+    })
+    .select()
+    .single();
+  if (routeErr || !route) {
+    await removeCreated();
+    throw new Error(routeErr?.message ?? 'Could not save the route');
+  }
+
+  const stopRows = pointIds.map((delivery_point_id, i) => ({ route_id: route.id, delivery_point_id, sequence: i + 1, status: 'pending' }));
+  const { error: stopsErr } = await supabase.from('route_stops').insert(stopRows);
+  if (stopsErr) {
+    await supabase.from('routes').delete().eq('id', route.id);
+    await removeCreated();
+    throw new Error(stopsErr.message);
+  }
+
+  if ((vehicle as any).driver_id) {
+    try {
+      await notificationService.sendNotification(
+        (vehicle as any).driver_id,
+        'New route assigned',
+        `A new route with ${stopRows.length} stops has been assigned to you.`,
+        'route_assigned',
+        { route_id: route.id },
+      );
+    } catch (notifErr) {
+      console.warn('Failed to send route assignment notification:', notifErr);
+    }
+  }
+  return { id: route.id, vehicle_id: route.vehicle_id, status: route.status, stops: stopRows.map(s => ({ delivery_point_id: s.delivery_point_id, sequence: s.sequence })) };
+}

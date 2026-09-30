@@ -56,6 +56,15 @@ export interface MapTraffic {
   incidents?: boolean
 }
 
+/** A secondary route line drawn muted under the main route (a route planner's alternatives). Clickable. */
+export interface MapAltRoute {
+  id: string
+  /** GeoJSON [lng, lat] pairs. */
+  coordinates: [number, number][]
+  /** Screen-reader name, for example "Alternative 2, 3 h 20 min". */
+  label?: string
+}
+
 /** A driven path drawn as a line (a vehicle's trail from its GPS history). */
 export interface MapTrail {
   id: string
@@ -113,6 +122,9 @@ export interface MapViewProps {
   route?: MapRoute | null
   /** Driven paths, drawn under the vehicles. */
   trails?: MapTrail[]
+  /** Other route options, drawn muted under `route`. Clicking one calls onAltRouteSelect with its id. */
+  altRoutes?: MapAltRoute[]
+  onAltRouteSelect?: (id: string) => void
   points?: MapPoint[]
   /** Id of the selected vehicle or point. */
   selectedId?: string | null

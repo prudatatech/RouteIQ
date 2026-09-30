@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, shipments, shipmentManifest, emergency, bids,
+  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, bids,
   backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
@@ -29,6 +29,7 @@ const RouteDetailsPage = routeDetails.Component
 const AnalyticsPage = analytics.Component
 const InsightsPage = insights.Component
 const OptimizePage = optimize.Component
+const RoutePlannerPage = routePlanner.Component
 const UsersPage = adminUsers.Component
 const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
@@ -340,6 +341,11 @@ export default function App() {
             <Route path="optimize" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <OptimizePage />
+              </PrivateRoute>
+            } />
+            <Route path="route-planner" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <RoutePlannerPage />
               </PrivateRoute>
             } />
             <Route path="bids" element={
