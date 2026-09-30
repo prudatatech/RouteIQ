@@ -11,8 +11,11 @@ export function withQueuedStops(data: MyRouteResponse | null, queued: readonly Q
 
   const outcome = new Map<string, 'completed' | 'failed'>();
   for (const a of queued) {
-    if (a.kind === 'complete_stop') outcome.set(a.payload.stopId, 'completed');
-    else if (a.kind === 'fail_stop') outcome.set(a.payload.stopId, 'failed');
+    // A refusal or a missed delivery sent through complete-stop fails the stop
+    if (a.kind === 'complete_stop') {
+      const failed = a.payload.outcome === 'refused' || a.payload.outcome === 'not_delivered';
+      outcome.set(a.payload.stopId, failed ? 'failed' : 'completed');
+    } else if (a.kind === 'fail_stop') outcome.set(a.payload.stopId, 'failed');
   }
   if (outcome.size === 0) return data;
 

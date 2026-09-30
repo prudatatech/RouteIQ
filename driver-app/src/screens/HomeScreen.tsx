@@ -6,8 +6,8 @@
  * and a "More actions" sheet for everything used less often. Data and
  * behaviour live in hooks: useDriverRoute (route, assignments, sync),
  * useLocationTracking (GPS), useDeviceLocationStatus, useSnappedRoute,
- * useAlertSiren, useRouteActions, useSos and useModalManager (one dialog at
- * a time).
+ * useAlertSiren, useRouteActions, useSos, useCargo (what is on board,
+ * transfers) and useModalManager (one dialog at a time).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, DeviceEventEmitter, KeyboardAvoidingView, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
@@ -25,7 +25,10 @@ import { useGpsOffEscalation } from '../hooks/useGpsOffEscalation';
 import { useAlertSiren } from '../hooks/useAlertSiren';
 import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
-import { useParcelScan } from '../hooks/useParcelScan';
+import { useParcelScan, type ScanOutcome } from '../hooks/useParcelScan';
+import { useCargoTransfers, useOnBoard } from '../hooks/useCargo';
+import { sendCustody, type CargoSendResult } from '../services/cargoActions';
+import { manifestRefOfStop } from '../services/cargo';
 import { useActionQueue } from '../hooks/useActionQueue';
 import { useDispatchPhone } from '../hooks/useDispatchPhone';
 import { withQueuedStops } from '../utils/queuedStops';
@@ -42,8 +45,6 @@ import StatusStrip from '../components/home/StatusStrip';
 import DriverTabBar, { type DriverTab } from '../components/home/DriverTabBar';
 import MoreActionsSheet, { type MoreAction } from '../components/home/MoreActionsSheet';
 import AssignmentDialog from '../components/modals/AssignmentDialog';
-import PodDialog from '../components/modals/PodDialog';
-import IssueDialog from '../components/modals/IssueDialog';
 import SosDialog from '../components/modals/SosDialog';
 import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
@@ -57,8 +58,17 @@ import ScanTab from './tabs/ScanTab';
 import MessagesTab from './tabs/MessagesTab';
 import WalletTab from './tabs/WalletTab';
 import ProfileTab, { AVATAR_KEY } from './tabs/ProfileTab';
+import DeliveryScreen from './cargo/DeliveryScreen';
+import PickupScreen, { type PickupItem } from './cargo/PickupScreen';
+import CargoCheckScreen from './cargo/CargoCheckScreen';
+import HandoverScreen from './cargo/HandoverScreen';
+import HubDropScreen from './cargo/HubDropScreen';
+import ReturnPickupScreen from './cargo/ReturnPickupScreen';
+import CargoTransfersCard from '../components/home/CargoTransfersCard';
+import type { ScanMethod } from '../components/scan/ParcelScanner';
 import { colors, space } from '../theme';
-import { OPEN_TAB_EVENT } from '../components/NotificationListener';
+import { fill } from '../locales';
+import { CARGO_CHANGED_EVENT, OPEN_TAB_EVENT } from '../components/NotificationListener';
 
 interface HomeScreenProps {
   onLogout: () => void;
@@ -68,10 +78,17 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   moreActions: 'sheet',
   returnTrip: 'full',
   fuel: 'full',
+  pod: 'full',
+  issue: 'full',
+  pickup: 'full',
+  cargoCheck: 'full',
+  handover: 'full',
+  hubDrop: 'full',
+  returnPickup: 'full',
 };
 
 /** Dialogs where the driver types or captures something: only Cancel or Back closes them, never a stray touch outside. */
-const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos', 'fuel'];
+const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos', 'fuel', 'pickup', 'cargoCheck', 'handover', 'hubDrop', 'returnPickup'];
 
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();
@@ -111,7 +128,22 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const modal = useModalManager({ call: !!data.incomingCall, assignment: !!assignmentKind });
   const { open: openModal, close: closeModal } = modal;
 
-  const openPod = useCallback((stop: RouteStop) => openModal({ kind: 'pod', stop }), [openModal]);
+  // Parcels scanned at the current pickup, waiting for their pickup details
+  const [pickupItems, setPickupItems] = useState<PickupItem[]>([]);
+  // A vendor load's pickup stop is a pickup, not a delivery: it opens the pickup details
+  const openPod = useCallback(
+    (stop: RouteStop) => {
+      const load = manifestRefOfStop(stop.id);
+      if (load && stop.parcel?.purpose === 'pickup' && stop.parcel.code) {
+        const code = stop.parcel.code;
+        setPickupItems((cur) => (cur.some((i) => i.code === code) ? cur : [...cur, { code, ref: load }]));
+        openModal({ kind: 'pickup' });
+        return;
+      }
+      openModal({ kind: 'pod', stop });
+    },
+    [openModal],
+  );
   const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop }), [openModal]);
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
@@ -131,7 +163,35 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const snapped = useSnappedRoute(routeData, tracking.currentLoc);
   const sos = useSos(tracking.currentLoc);
   const messages = useDriverMessages({ routeId: routeData?.active ? route?.id ?? null : null, tabOpen: activeTab === 'messages' });
-  const scans = useParcelScan({ route, currentLoc: tracking.currentLoc, refresh });
+  const scans = useParcelScan({ route, currentLoc: tracking.currentLoc });
+  const onBoard = useOnBoard(!!data.activeVehicleId);
+  const cargoTransfers = useCargoTransfers(data.activeVehicleId);
+  const { refetch: refetchOnBoard } = onBoard;
+  const { refetch: refetchTransfers } = cargoTransfers;
+
+  // A transfer planned or a case opened by dispatch: reload what is on board and the transfers
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(CARGO_CHANGED_EVENT, () => {
+      refetchOnBoard();
+      refetchTransfers();
+    });
+    return () => sub.remove();
+  }, [refetchOnBoard, refetchTransfers]);
+
+  const scanCode = useCallback(
+    async (code: string, method: ScanMethod): Promise<ScanOutcome> => {
+      const outcome = await scans.handleCode(code, method);
+      if (outcome.kind === 'picked_up') {
+        setPickupItems((cur) =>
+          cur.some((i) => i.code === outcome.code)
+            ? cur
+            : [...cur, { code: outcome.code, ref: outcome.ref }],
+        );
+      }
+      return outcome;
+    },
+    [scans],
+  );
 
   // The looping siren is only for a new assignment or a dispatch call.
   const { pulse } = useAlertSiren({
@@ -174,6 +234,49 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const step = getNextStep(routeData, tracking.isTracking, tracking.currentLoc);
   const finished = isRouteFinished(route);
   const nextPending = pendingStops(route)[0];
+
+  /** "Departed" for consignments just picked up: the server moves them to in transit. */
+  const depart = useCallback(
+    async (items: { ref: PickupItem['ref']; code: string }[]) => {
+      try {
+        const result = await sendCustody({
+          label: 'departed',
+          photoUris: [],
+          events: items.map((item) => ({
+            ref: item.ref,
+            code: item.code,
+            fields: { kind: 'departed' as const, ...(tracking.currentLoc ? { lat: tracking.currentLoc.lat, lng: tracking.currentLoc.lng } : {}) },
+          })),
+        });
+        Alert.alert(result.queued ? t('queue_saved_title') : t('cargo_departed_title'), result.queued ? t('queue_saved_desc') : t('cargo_departed_desc'));
+        refetchOnBoard();
+        refresh();
+      } catch (e: any) {
+        Alert.alert(t('error'), e?.message || t('action_failed'));
+      }
+    },
+    [tracking.currentLoc, refetchOnBoard, refresh, t],
+  );
+
+  const afterPickup = useCallback(
+    (items: PickupItem[], result: CargoSendResult) => {
+      setPickupItems([]);
+      scans.markPickedUp(items.map((i) => i.code));
+      closeModal();
+      refetchOnBoard();
+      const codes = result.exceptions.map((e) => e.code).join(', ');
+      const saved = result.queued ? t('queue_saved_desc') : t('cargo_pickup_saved_desc');
+      const message = [saved, codes ? `${t('cargo_case_opened')} ${codes}` : '', t('cargo_depart_prompt_desc')].filter(Boolean).join('\n\n');
+      Alert.alert(result.queued ? t('queue_saved_title') : t('cargo_pickup_saved_title'), message, [
+        { text: t('not_now'), style: 'cancel' },
+        { text: t('cargo_depart_now'), onPress: () => depart(items) },
+      ]);
+    },
+    [closeModal, refetchOnBoard, depart, scans, t],
+  );
+
+  // Picked up but not yet on the move: offered as "Depart with cargo"
+  const awaitingDeparture = onBoard.items.filter((i) => i.status === 'picked_up');
 
   const raiseSos = useCallback(() => {
     openModal({ kind: 'sos' });
@@ -244,6 +347,50 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         },
       });
     }
+    if (awaitingDeparture.length > 0) {
+      list.push({
+        key: 'depart',
+        icon: 'arrow-forward-circle-outline',
+        title: t('cargo_depart_now'),
+        subtitle: fill(t('cargo_n_consignments'), { n: awaitingDeparture.length }),
+        onPress: () => {
+          closeModal();
+          depart(awaitingDeparture);
+        },
+      });
+    }
+    if (pickupItems.length > 0) {
+      list.push({
+        key: 'pickup_details',
+        icon: 'clipboard-outline',
+        title: t('cargo_pickup_details'),
+        subtitle: fill(t('cargo_n_consignments'), { n: pickupItems.length }),
+        onPress: () => openModal({ kind: 'pickup' }),
+      });
+    }
+    if (data.activeVehicleId) {
+      list.push({
+        key: 'cargo_check',
+        icon: 'cube-outline',
+        title: t('cargo_check_title'),
+        subtitle: t('cargo_check_sub'),
+        onPress: () => openModal({ kind: 'cargoCheck' }),
+      });
+      list.push({
+        key: 'hub_drop',
+        icon: 'business-outline',
+        title: t('cargo_hub_title'),
+        subtitle: t('cargo_hub_sub'),
+        onPress: () => openModal({ kind: 'hubDrop' }),
+      });
+      list.push({
+        key: 'return_pickup',
+        icon: 'arrow-undo-outline',
+        title: t('cargo_return_title'),
+        subtitle: t('cargo_return_sub'),
+        onPress: () => openModal({ kind: 'returnPickup' }),
+      });
+    }
     if (data.activeVehicleId) {
       list.push({
         key: 'log_fuel',
@@ -279,7 +426,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
       },
     });
     return list;
-  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, dispatch, t]);
+  }, [routeActive, nextPending, data.activeVehicleId, data.lastSyncedAt, finished, actions, takeBreak, refresh, openModal, closeModal, dispatch, awaitingDeparture, pickupItems.length, depart, t]);
 
   const sosButton = <SosButton onHoldComplete={raiseSos} onTap={() => openModal({ kind: 'sosCountdown' })} />;
 
@@ -332,31 +479,77 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             onSendDetails={sos.sendDetails}
             onCancel={sos.cancel}
             onClose={closeModal}
+            onCheckCargo={onBoard.items.length > 0 ? () => openModal({ kind: 'cargoCheck' }) : undefined}
           />
         );
       case 'pod':
+      case 'issue':
         return (
-          <PodDialog
-            stopName={active.stop.delivery_point?.name}
-            parcelCode={active.stop.parcel?.code}
+          <DeliveryScreen
+            key={`${active.kind}-${active.stop.id}`}
+            stop={active.stop}
+            initialKind={active.kind === 'issue' ? 'not_delivered' : 'full'}
             parcelVerified={scans.verified.has(active.stop.id)}
             onScanCode={(code, method) => scans.checkForStop(active.stop, code, method)}
-            onCancel={closeModal}
-            onSubmit={async (pod) => {
-              await actions.completeStop(active.stop, pod);
+            onClose={closeModal}
+            headerRight={sosButton}
+            onSubmit={async (outcome, info) => {
+              await actions.deliver(active.stop, outcome, info);
               closeModal();
+              refetchOnBoard();
             }}
           />
         );
-      case 'issue':
+      case 'pickup':
         return (
-          <IssueDialog
-            stopName={active.stop.delivery_point?.name}
-            onCancel={closeModal}
-            onSubmit={async (reason, note) => {
-              await actions.submitIssue(active.stop, reason, note);
+          <PickupScreen
+            items={pickupItems}
+            currentLoc={tracking.currentLoc}
+            onScan={scanCode}
+            onRemove={(code) => setPickupItems((cur) => cur.filter((i) => i.code !== code))}
+            onDone={afterPickup}
+            onClose={closeModal}
+            headerRight={sosButton}
+          />
+        );
+      case 'cargoCheck':
+        return <CargoCheckScreen currentLoc={tracking.currentLoc} onClose={closeModal} headerRight={sosButton} />;
+      case 'handover':
+        return (
+          <HandoverScreen
+            key={active.transfer.transfer.id}
+            vehicleTransfer={active.transfer}
+            onDone={() => {
               closeModal();
+              refetchTransfers();
+              refetchOnBoard();
+              refresh();
             }}
+            onClose={closeModal}
+            headerRight={sosButton}
+          />
+        );
+      case 'hubDrop':
+        return (
+          <HubDropScreen
+            currentLoc={tracking.currentLoc}
+            onClose={() => {
+              closeModal();
+              refresh();
+            }}
+            headerRight={sosButton}
+          />
+        );
+      case 'returnPickup':
+        return (
+          <ReturnPickupScreen
+            route={route}
+            currentLoc={tracking.currentLoc}
+            onClose={() => {
+              closeModal();
+              refetchOnBoard();
+            }}
+            headerRight={sosButton}
           />
         );
       case 'capacity':
@@ -445,6 +638,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         >
           {syncBanner}
           {activeTab === 'route' && (
+            <CargoTransfersCard transfers={cargoTransfers.transfers} onOpen={(transfer) => openModal({ kind: 'handover', transfer })} />
+          )}
+          {activeTab === 'route' && (
             <RouteTab
               routeData={routeData}
               step={step}
@@ -468,7 +664,17 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             />
           )}
           {activeTab === 'scan' && (
-            <ScanTab hasRoute={!!routeData?.active && !!route?.stops?.length} onScan={scans.handleCode} onDeliver={openPod} />
+            <ScanTab
+              hasRoute={!!routeData?.active && !!route?.stops?.length}
+              onScan={async (code, method) => {
+                const outcome = await scanCode(code, method);
+                // Straight on to the pickup details: pieces, condition, photos, signature
+                if (outcome.kind === 'picked_up') openModal({ kind: 'pickup' });
+                return outcome;
+              }}
+              onDeliver={openPod}
+              onPickupDetails={() => openModal({ kind: 'pickup' })}
+            />
           )}
           {activeTab === 'messages' && (
             <MessagesTab

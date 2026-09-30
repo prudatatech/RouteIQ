@@ -10,8 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { actionQueue } from '../services/actionQueue';
 import type { DriverRoute, LatLng, RouteStop } from '../types/route';
-import { errorMessage } from '../utils/errors';
 import { normalizeParcelCode, planScan, sameParcelCode } from '../utils/parcel';
+import { manifestRefOfStop, type ConsignmentRef } from '../services/cargo';
 import type { ScanMethod } from '../components/scan/ParcelScanner';
 
 const STORE_KEY = 'parcel_scan_state';
@@ -23,7 +23,13 @@ interface Stored {
 }
 
 export type ScanOutcome =
-  | { kind: 'picked_up'; code: string; already: boolean; /** No signal: saved on the phone, sent later. */ queued?: boolean }
+  | {
+      /** A parcel waiting for pickup on this route; the pickup details record it. */
+      kind: 'picked_up';
+      code: string;
+      /** The vendor load, or the tracking ID (the server takes either). */
+      ref: ConsignmentRef;
+    }
   | { kind: 'verified'; stop: RouteStop; isNext: boolean }
   | { kind: 'already_done'; stop: RouteStop }
   | { kind: 'not_on_route' }
@@ -34,10 +40,9 @@ export type StopCheck = 'ok' | 'wrong';
 interface Options {
   route: DriverRoute | undefined;
   currentLoc: LatLng | null;
-  refresh: () => Promise<unknown>;
 }
 
-export function useParcelScan({ route, currentLoc, refresh }: Options) {
+export function useParcelScan({ route, currentLoc }: Options) {
   const [verified, setVerified] = useState<Set<string>>(new Set());
   const [pickedUp, setPickedUp] = useState<Set<string>>(new Set());
   const loaded = useRef(false);
@@ -111,21 +116,11 @@ export function useParcelScan({ route, currentLoc, refresh }: Options) {
         case 'already_done':
           return { kind: 'already_done', stop: plan.stop };
         case 'pickup':
-          try {
-            const outcome = await actionQueue.submit('scan', {
-              code,
-              purpose: 'pickup',
-              ...(plan.stop ? { stopId: plan.stop.id } : {}),
-              method,
-              ...position,
-            });
-            markPickedUp(plan.code);
-            if (outcome.status === 'queued') return { kind: 'picked_up', code: plan.code, already: false, queued: true };
-            refresh();
-            return { kind: 'picked_up', code: outcome.result.tracking_id, already: outcome.result.already };
-          } catch (e) {
-            return { kind: 'error', message: errorMessage(e, '') };
-          }
+          // Checked against the route on the phone only. The pickup itself is recorded by the
+          // pickup details (a `pickup` custody event with the count, condition, photos and
+          // signature): the server's pickup scan would already record it with the booked count,
+          // and a second pickup is refused.
+          return { kind: 'picked_up', code: plan.code, ref: manifestRefOfStop(plan.stop?.id) ?? plan.code };
         case 'delivery':
           markVerified(plan.stop.id);
           reportDelivery(plan.stop, code, method);
@@ -133,7 +128,7 @@ export function useParcelScan({ route, currentLoc, refresh }: Options) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [route, pickedUp, markPickedUp, markVerified, reportDelivery, refresh, currentLoc],
+    [route, pickedUp, markVerified, reportDelivery, currentLoc],
   );
 
   /** A scan made from the proof-of-delivery form, for that stop only. */
@@ -147,8 +142,11 @@ export function useParcelScan({ route, currentLoc, refresh }: Options) {
     [markVerified, reportDelivery],
   );
 
+  /** Parcels whose pickup was saved (or kept to send): a new scan of them is no longer a pickup. */
+  const markPickedUpMany = useCallback((codes: string[]) => codes.forEach(markPickedUp), [markPickedUp]);
+
   return useMemo(
-    () => ({ verified, pickedUp, handleCode, checkForStop }),
-    [verified, pickedUp, handleCode, checkForStop],
+    () => ({ verified, pickedUp, handleCode, checkForStop, markPickedUp: markPickedUpMany }),
+    [verified, pickedUp, handleCode, checkForStop, markPickedUpMany],
   );
 }

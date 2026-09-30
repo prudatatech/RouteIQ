@@ -8,6 +8,7 @@ import { API_V1 } from '../config';
 import { supabase } from './supabase';
 import type { Invoice } from '../components/modals/InvoiceDialog';
 import { translateNow } from '../locales';
+import type { ConditionCode, ConsignmentRef, CustodyBody, DeliveryReason } from './cargo';
 
 const STORAGE_KEYS = {
   DRIVER_INFO: 'margixindia_driver_info',
@@ -477,9 +478,23 @@ class ApiClient {
     photo_url?: string;
     signature_url?: string;
     signature_data?: string;
-    /** Why a stop failed (status 'failed'): stored in the shipment log. */
-    reason?: 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
+    /** Why a stop failed (status 'failed'): stored in the custody record and the shipment log. */
+    reason?: DeliveryReason;
     note?: string;
+    /**
+     * The delivery sheet's outcome. When given it decides the stop's status (refused and
+     * not_delivered fail it) and the custody event the server records.
+     */
+    outcome?: 'delivered' | 'delivered_with_remarks' | 'partial' | 'refused' | 'not_delivered';
+    /** More photos from pod-upload-url (damage photos); only kept for a completed stop. */
+    photo_paths?: string[];
+    pieces?: number;
+    pieces_refused?: number;
+    pieces_short?: number;
+    pieces_damaged?: number;
+    condition?: ConditionCode;
+    /** The customer's delivery code, when the booking asks for one. */
+    otp?: string;
   }, idempotencyKey?: string): Promise<any> {
     return this.request('POST', '/telemetry/driver-ping/complete-stop', data, true, idempotencyHeader(idempotencyKey));
   }
@@ -547,8 +562,86 @@ class ApiClient {
     method?: 'camera' | 'manual';
     lat?: number;
     lng?: number;
-  }, idempotencyKey?: string): Promise<{ ok: true; kind: 'shipment' | 'manifest'; tracking_id: string; stop_id: string | null; already: boolean; status: string }> {
+  }, idempotencyKey?: string): Promise<{
+    ok: true;
+    kind: 'shipment' | 'manifest';
+    shipment_id?: string | null;
+    manifest_id?: string | null;
+    tracking_id: string;
+    stop_id: string | null;
+    already: boolean;
+    status: string;
+  }> {
     return this.request('POST', '/driver/scan', data, true, idempotencyHeader(idempotencyKey));
+  }
+
+  // ── Cargo custody (docs/cargo-plan.md) ─────────────────────
+
+  /** Server record that the driver accepted the route: an `accepted` custody event per consignment. */
+  async acceptRoute(route_id: string, idempotencyKey?: string): Promise<any> {
+    return this.request('POST', '/telemetry/driver-ping/accept-route', { route_id }, true, idempotencyHeader(idempotencyKey));
+  }
+
+  /** Where a consignment is: status, holder, pieces, seal, open cases. `ref` is a tracking ID, load code or shipment id. */
+  async getCargoWhere(ref: string): Promise<any> {
+    return this.request('GET', `/cargo/where/${encodeURIComponent(ref)}`);
+  }
+
+  /**
+   * A signed upload URL for a custody photo or signature, in the consignment's folder (`ref`) or
+   * the transfer's (`transfer_id`). Custody events accept only files from those folders.
+   */
+  async getCustodyUploadUrl(
+    owner: { ref: ConsignmentRef } | { transfer_id: string },
+    data: { kind: 'photo' | 'signature'; content_type: 'image/jpeg' | 'image/png'; size: number },
+  ): Promise<{ path: string; signed_url: string; token: string }> {
+    return this.request('POST', '/cargo/custody/upload-url', { ...owner, ...data });
+  }
+
+  /** Records one custody event (pickup, departure, hub drop, return pickup, inspection). Answers 201 with the new state. */
+  async postCustody(body: CustodyBody, idempotencyKey?: string): Promise<any> {
+    return this.request('POST', '/cargo/custody', body, true, idempotencyHeader(idempotencyKey));
+  }
+
+  /** What is on the driver's vehicle now: `{ vehicle, totals, items }`. */
+  async getCargoOnBoard(): Promise<any> {
+    return this.request('GET', '/cargo/driver/on-board');
+  }
+
+  /** The transfers of the driver's own vehicle with this status, each with its items and vehicles. */
+  async getCargoTransfers(status: 'planned' | 'in_progress'): Promise<any> {
+    return this.request('GET', `/cargo/transfers?status=${status}`);
+  }
+
+  async getCargoTransfer(id: string): Promise<any> {
+    return this.request('GET', `/cargo/transfers/${encodeURIComponent(id)}`);
+  }
+
+  /** The count at a handover. `direction` picks handover-out (this vehicle gives) or handover-in (it receives). */
+  async postTransferHandover(
+    id: string,
+    direction: 'out' | 'in',
+    body: {
+      items: Array<{ ref: ConsignmentRef; condition: ConditionCode } & ({ pieces_out: number } | { pieces_in: number })>;
+      photo_paths?: string[];
+      signature_path?: string;
+    },
+    idempotencyKey?: string,
+  ): Promise<any> {
+    return this.request('POST', `/cargo/transfers/${encodeURIComponent(id)}/handover-${direction}`, body, true, idempotencyHeader(idempotencyKey));
+  }
+
+  /** Hubs goods can be dropped at: the depots (GET /cargo/hubs is for staff only). */
+  async getCargoHubs(): Promise<any> {
+    return this.request('GET', '/depots');
+  }
+
+  /** Tells dispatch the server refused an action the driver made offline. */
+  async reportRejectedAction(
+    data: { action: string; error: string; payload_summary: string },
+    idempotencyKey?: string,
+  ): Promise<any> {
+    return this.request('POST', '/cargo/driver/rejected-action', data, true, idempotencyHeader(idempotencyKey));
   }
 
   /** The number to call dispatch on, or null when staff have not set one. */

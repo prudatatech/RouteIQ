@@ -6,6 +6,7 @@
  */
 import * as ImageManipulator from 'expo-image-manipulator';
 import { api, ApiError } from './api';
+import type { ConsignmentRef } from './cargo';
 
 export type PodKind = 'photo' | 'signature';
 
@@ -66,6 +67,53 @@ export async function uploadProofFiles(
   if (pod.signatureUri && !paths.signature_url) {
     paths.signature_url = await uploadProofFile(stopId, 'signature', pod.signatureUri);
     onProgress?.({ ...paths });
+  }
+  return paths;
+}
+
+/** Storage paths of custody files already uploaded; `photos[i]` belongs to the i-th photo. */
+export interface CargoFilePaths {
+  photos: string[];
+  signature?: string;
+}
+
+/** Whose folder a custody file goes into: a consignment's, or a transfer's (for handovers). */
+export type CargoFileOwner = { ref: ConsignmentRef } | { transfer_id: string };
+
+/** Uploads one custody image with POST /cargo/custody/upload-url and returns its storage path. */
+async function uploadCargoFile(owner: CargoFileOwner, kind: PodKind, uri: string): Promise<string> {
+  const contentType = kind === 'photo' ? 'image/jpeg' : 'image/png';
+  const blob = await (await fetch(uri)).blob();
+  const target = await api.getCustodyUploadUrl(owner, { kind, content_type: contentType, size: blob.size });
+  const response = await fetch(target.signed_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType, 'x-upsert': 'false' },
+    body: blob,
+  });
+  if (!response.ok) throw new ApiError(`The ${kind} could not be uploaded (${response.status})`, response.status);
+  return target.path;
+}
+
+/**
+ * Photos and a signature for a custody event (pickup, cargo check, hub drop, return pickup) or a
+ * transfer handover, into the owner's own folder: the server accepts only files from there.
+ * Already uploaded files are skipped, so a retry never uploads twice.
+ */
+export async function uploadCargoFiles(
+  owner: CargoFileOwner,
+  files: { photoUris: string[]; signatureUri?: string | null },
+  done: CargoFilePaths = { photos: [] },
+  onProgress?: (paths: CargoFilePaths) => void,
+): Promise<CargoFilePaths> {
+  const paths: CargoFilePaths = { photos: [...done.photos], signature: done.signature };
+  for (let i = 0; i < files.photoUris.length; i++) {
+    if (paths.photos[i]) continue;
+    paths.photos[i] = await uploadCargoFile(owner, 'photo', files.photoUris[i]);
+    onProgress?.({ photos: [...paths.photos], signature: paths.signature });
+  }
+  if (files.signatureUri && !paths.signature) {
+    paths.signature = await uploadCargoFile(owner, 'signature', files.signatureUri);
+    onProgress?.({ photos: [...paths.photos], signature: paths.signature });
   }
   return paths;
 }

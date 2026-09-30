@@ -20,6 +20,9 @@ export const SESSION_EXPIRED_EVENT = 'customer:session-expired';
 /** Emitted once a booking is sent, so the planner can clear the trip that was just booked. */
 export const BOOKING_CREATED_EVENT = 'customer:booking-created';
 
+/** Emitted once a claim is filed, so the booking screen can show it in its claim list. */
+export const CLAIM_CREATED_EVENT = 'customer:claim-created';
+
 /** Emitted after notifications are read, so the tab badge can update. */
 export const NOTIFICATIONS_CHANGED_EVENT = 'customer:notifications-changed';
 
@@ -121,10 +124,12 @@ class ApiClient {
     path: string,
     body?: any,
     requireAuth = true,
-    isRetry = false
+    isRetry = false,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...extraHeaders,
     };
 
     if (requireAuth && this.accessToken) {
@@ -149,7 +154,7 @@ class ApiClient {
 
     if (response.status === 401 && requireAuth) {
       if (!isRetry && (await this.refreshAccessToken())) {
-        return this.request<T>(method, path, body, requireAuth, true);
+        return this.request<T>(method, path, body, requireAuth, true, extraHeaders);
       }
       await this.clearTokens();
       DeviceEventEmitter.emit(SESSION_EXPIRED_EVENT);
@@ -244,6 +249,49 @@ class ApiClient {
   async cancelBooking(id: string, reason?: string): Promise<Booking> {
     return this.request('POST', `/customer/bookings/${id}/cancel`, reason ? { reason } : {});
   }
+
+  // ── Cargo: where it is, proof of delivery, receipt and claims ──
+
+  /**
+   * Where the goods are, their custody timeline, the POD, open notices, claims and the rating
+   * (docs/cargo-plan.md, "Responses"). Answers 409 while the booking has no shipment.
+   */
+  async getBookingCargo(bookingId: string): Promise<BookingCargo> {
+    return normaliseBookingCargo(await this.request('GET', `/customer/bookings/${bookingId}/cargo`));
+  }
+
+  /** The same key on a resend makes the server apply the confirmation once. A delivery is rated once (409 after that). */
+  async confirmReceipt(bookingId: string, input: ConfirmReceiptInput, idempotencyKey?: string): Promise<Record<string, unknown>> {
+    return this.request('POST', `/customer/bookings/${bookingId}/confirm-receipt`, input, true, false, idempotencyHeader(idempotencyKey));
+  }
+
+  /** Files a claim. Pass the same key when retrying after a lost reply, so only one claim is created. */
+  async createClaim(input: ClaimInput, idempotencyKey?: string): Promise<Claim> {
+    const data = await this.request('POST', '/cargo/claims', input, true, false, idempotencyHeader(idempotencyKey));
+    const claim = normaliseClaim(data);
+    if (!claim) throw new Error(SERVER_MESSAGE());
+    return claim;
+  }
+
+  /** A signed upload for one claim photo; the server adds the path to the claim's documents when it issues it. */
+  async getClaimUploadUrl(claimId: string, file: { content_type: string; size: number; file_name: string }): Promise<UploadTarget> {
+    const data = await this.request('POST', `/cargo/claims/${claimId}/documents-upload-url`, file);
+    if (typeof data?.signed_url !== 'string') throw new Error(SERVER_MESSAGE());
+    return { path: String(data.path ?? ''), signed_url: data.signed_url, token: data.token ?? null };
+  }
+
+  /** The customer's own claims for one consignment (tracking ID). The server answers a plain array. */
+  async listClaims(ref: string): Promise<Claim[]> {
+    const data = await this.request('GET', `/cargo/claims?ref=${encodeURIComponent(ref)}`);
+    return asArray(data).map(normaliseClaim).filter((c): c is Claim => c !== null);
+  }
+}
+
+const idempotencyHeader = (key?: string): Record<string, string> | undefined => (key ? { 'Idempotency-Key': key } : undefined);
+
+/** A key the server accepts (8 to 100 letters, digits, dashes), made once per form so a resend matches. */
+export function newIdempotencyKey(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export interface QuoteRequest {
@@ -265,6 +313,24 @@ export interface BookingRequest extends QuoteRequest {
   drop_address: string;
 }
 
+/** Shipment statuses. An unknown future value still type-checks as a string, so a new status never breaks the app. */
+export type ShipmentStatus =
+  | 'created'
+  | 'assigned'
+  | 'picked_up'
+  | 'in_transit'
+  | 'out_for_delivery'
+  | 'at_hub'
+  | 'on_hold'
+  | 'exception'
+  | 'partially_delivered'
+  | 'delivered'
+  | 'returning'
+  | 'returned'
+  | 'lost'
+  | 'cancelled'
+  | (string & {});
+
 export type BookingStatus = 'requested' | 'confirmed' | 'assigned' | 'in_transit' | 'delivered' | 'cancelled';
 
 export interface Booking {
@@ -284,8 +350,8 @@ export interface Booking {
   pickup_date: string;
   quoted_price: number | null;
   status: BookingStatus;
-  /** Status of the linked shipment. `exception` means a delivery attempt failed (a booking has no status for it). */
-  shipment_status?: string | null;
+  /** Status of the linked shipment, more detailed than the booking's. `exception` means a delivery attempt failed. */
+  shipment_status?: ShipmentStatus | null;
   tracking_id: string | null;
   cancel_reason: string | null;
   created_at: string;
@@ -327,6 +393,283 @@ export interface NotificationItem {
   is_read: boolean;
   data: Record<string, any> | null;
   created_at: string;
+}
+
+// ── Cargo types and parsers ─────────────────────────────────
+
+export type CustodyKind =
+  | 'booked'
+  | 'accepted'
+  | 'arrived_pickup'
+  | 'pickup'
+  | 'departed'
+  | 'arrived_drop'
+  | 'delivery'
+  | 'partial_delivery'
+  | 'refused'
+  | 'undelivered'
+  | 'handover_out'
+  | 'handover_in'
+  | 'hub_in'
+  | 'hub_out'
+  | 'return_pickup'
+  | 'return_delivery'
+  | 'inspection'
+  | 'hold'
+  | 'release_hold'
+  | 'lost'
+  | (string & {});
+
+export type ConditionCode = 'good' | 'damaged_packaging' | 'damaged_goods' | 'wet' | 'seal_tampered' | 'shortage' | 'excess' | (string & {});
+
+/**
+ * One recorded handover or check of the goods (the customer's redacted view: no notes, case
+ * ids, transfer ids or people). `summary` is the server's plain English line.
+ */
+export interface CustodyEvent {
+  id: string;
+  kind: CustodyKind;
+  summary: string | null;
+  recorded_at: string | null;
+  pieces: number | null;
+  condition: ConditionCode | null;
+  from_holder: string | null;
+  to_holder: string | null;
+  depot_name: string | null;
+  receiver_name: string | null;
+  photo_urls: string[];
+  signature_url: string | null;
+}
+
+export interface CargoPieces {
+  total: number | null;
+  delivered: number | null;
+  damaged: number | null;
+  short: number | null;
+  returned: number | null;
+  on_board: number | null;
+}
+
+/** Where the goods are now. */
+export interface CargoWhere {
+  shipment_id: string | null;
+  status: ShipmentStatus | null;
+  current_holder: string | null;
+  vehicle: { plate_number: string | null; lat: number | null; lng: number | null; last_seen_at: string | null } | null;
+  depot: { id: string | null; name: string | null; address: string | null } | null;
+  pieces: CargoPieces;
+  seal_number: string | null;
+  delivery_attempts: number | null;
+  max_delivery_attempts: number | null;
+  delivery_otp_required: boolean;
+  rto: boolean;
+}
+
+export interface ProofOfDelivery {
+  photo_url: string | null;
+  signature_url: string | null;
+  /** The server's `received_by`. */
+  receiver_name: string | null;
+  /** Not in the POD itself: the time of the delivery event on the timeline. */
+  delivered_at: string | null;
+}
+
+/** An open problem, told in plain words by the server, with the new ETA when there is one. */
+export interface CargoNotice {
+  id: string | null;
+  type: string;
+  title: string | null;
+  message: string;
+  revised_eta: string | null;
+}
+
+export type ClaimType = 'damage' | 'shortage' | 'loss' | 'theft' | 'delay';
+export type ClaimStatus = 'draft' | 'filed' | 'surveyed' | 'approved' | 'rejected' | 'settled' | 'withdrawn' | (string & {});
+
+export interface Claim {
+  id: string;
+  code: string | null;
+  claim_type: string | null;
+  status: ClaimStatus;
+  claimed_amount: number | null;
+  approved_amount: number | null;
+  settled_amount: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  settled_at: string | null;
+}
+
+export interface BookingCargo {
+  where: CargoWhere | null;
+  /** Oldest first. */
+  timeline: CustodyEvent[];
+  pod: ProofOfDelivery | null;
+  exceptions: CargoNotice[];
+  claims: Claim[];
+  /** The server gives no send time: the app looks for the `cargo_delivery_otp` notification. */
+  delivery_otp: { required: boolean; sent_at: string | null } | null;
+  /** Set once the delivery was rated (`rating: { rating }`); it can be rated only once. */
+  receipt: { rating: number | null; confirmed_at: string | null } | null;
+}
+
+export interface ConfirmReceiptInput {
+  rating: number;
+  comment?: string;
+  /** A problem with the delivery; the server opens a claim of this type. */
+  issue?: { type: ClaimType; description: string; claimed_amount?: number };
+}
+
+export interface ClaimInput {
+  ref: { shipment_id: string };
+  claim_type: ClaimType;
+  /** May be left for later. */
+  claimed_amount?: number | null;
+  notes: string;
+}
+
+export interface UploadTarget {
+  path: string;
+  signed_url: string;
+  token: string | null;
+}
+
+const asObject = (v: unknown): Record<string, any> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : null);
+const asArray = (v: unknown): any[] => (Array.isArray(v) ? v : []);
+const asString = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : typeof v === 'number' ? String(v) : null);
+/** Numbers may arrive as strings (Postgres numeric). */
+const asNumber = (v: unknown): number | null => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+
+function normaliseEvent(raw: unknown, index: number): CustodyEvent | null {
+  const e = asObject(raw);
+  const kind = asString(e?.kind);
+  if (!e || !kind) return null;
+  return {
+    id: asString(e.id) ?? `${kind}-${index}`,
+    kind,
+    summary: asString(e.summary),
+    recorded_at: asString(e.recorded_at),
+    pieces: asNumber(e.pieces),
+    condition: asString(e.condition),
+    from_holder: asString(e.from_holder),
+    to_holder: asString(e.to_holder),
+    depot_name: asString(asObject(e.to_depot)?.name) ?? asString(asObject(e.from_depot)?.name),
+    receiver_name: asString(e.receiver_name),
+    photo_urls: asArray(e.photo_urls)
+      .map(asString)
+      .filter((u): u is string => u !== null),
+    signature_url: asString(e.signature_url),
+  };
+}
+
+function normaliseWhere(raw: unknown): CargoWhere | null {
+  const w = asObject(raw);
+  if (!w) return null;
+  const ref = asObject(w.ref);
+  const vehicle = asObject(w.vehicle);
+  const depot = asObject(w.depot);
+  const pieces = asObject(w.pieces) ?? {};
+  return {
+    shipment_id: asString(ref?.shipment_id) ?? asString(w.shipment_id),
+    status: asString(w.status),
+    current_holder: asString(w.current_holder),
+    vehicle: vehicle
+      ? {
+          plate_number: asString(vehicle.plate_number),
+          lat: asNumber(vehicle.lat),
+          lng: asNumber(vehicle.lng),
+          last_seen_at: asString(vehicle.last_seen_at),
+        }
+      : null,
+    depot: depot ? { id: asString(depot.id), name: asString(depot.name), address: asString(depot.address) } : null,
+    pieces: {
+      total: asNumber(pieces.total),
+      delivered: asNumber(pieces.delivered),
+      damaged: asNumber(pieces.damaged),
+      short: asNumber(pieces.short),
+      returned: asNumber(pieces.returned),
+      on_board: asNumber(pieces.on_board),
+    },
+    seal_number: asString(w.seal_number),
+    delivery_attempts: asNumber(w.delivery_attempts),
+    max_delivery_attempts: asNumber(w.max_delivery_attempts),
+    delivery_otp_required: w.delivery_otp_required === true,
+    rto: w.rto === true,
+  };
+}
+
+function normaliseClaim(raw: unknown): Claim | null {
+  const c = asObject(raw);
+  const id = asString(c?.id);
+  if (!c || !id) return null;
+  return {
+    id,
+    code: asString(c.code),
+    claim_type: asString(c.claim_type),
+    status: asString(c.status) ?? 'filed',
+    claimed_amount: asNumber(c.claimed_amount),
+    approved_amount: asNumber(c.approved_amount),
+    settled_amount: asNumber(c.settled_amount),
+    created_at: asString(c.created_at),
+    updated_at: asString(c.updated_at),
+    settled_at: asString(c.settled_at),
+  };
+}
+
+function normaliseNotice(raw: unknown): CargoNotice | null {
+  const n = asObject(raw);
+  const message = asString(n?.message);
+  if (!n || !message) return null;
+  return {
+    id: asString(n.id),
+    type: asString(n.type) ?? 'other',
+    title: asString(n.title),
+    message,
+    revised_eta: asString(n.revised_eta),
+  };
+}
+
+const timeOf = (e: CustodyEvent) => (e.recorded_at ? new Date(e.recorded_at).getTime() || 0 : 0);
+
+/**
+ * GET /customer/bookings/:id/cargo: `{ booking_id, shipment_id, tracking_id, where, timeline,
+ * pod: { received_by, photo_url, signature_url, signature_data } | null, exceptions, claims,
+ * rating: { rating } | null }`.
+ */
+export function normaliseBookingCargo(raw: unknown): BookingCargo {
+  const d = asObject(raw) ?? {};
+  const timeline = asArray(d.timeline)
+    .map(normaliseEvent)
+    .filter((e): e is CustodyEvent => e !== null)
+    // Sorted here (stable, so equal times keep the server's order) so the screen never depends on it.
+    .sort((a, b) => timeOf(a) - timeOf(b));
+  const pod = asObject(d.pod);
+  const rating = asNumber(asObject(d.rating)?.rating);
+  const where = normaliseWhere(d.where);
+  if (where && !where.shipment_id) where.shipment_id = asString(d.shipment_id);
+  const delivery = [...timeline].reverse().find((e) => e.kind === 'delivery' || e.kind === 'partial_delivery');
+  return {
+    where,
+    timeline,
+    pod: pod
+      ? {
+          photo_url: asString(pod.photo_url),
+          signature_url: asString(pod.signature_url),
+          receiver_name: asString(pod.received_by),
+          delivered_at: delivery?.recorded_at ?? null,
+        }
+      : null,
+    exceptions: asArray(d.exceptions)
+      .map(normaliseNotice)
+      .filter((n): n is CargoNotice => n !== null),
+    claims: asArray(d.claims)
+      .map(normaliseClaim)
+      .filter((c): c is Claim => c !== null),
+    delivery_otp: where?.delivery_otp_required ? { required: true, sent_at: null } : null,
+    receipt: rating != null ? { rating, confirmed_at: null } : null,
+  };
 }
 
 export const api = new ApiClient();

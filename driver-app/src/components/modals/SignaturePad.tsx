@@ -10,6 +10,9 @@ interface SignaturePadProps {
   /** Called with a local PNG file of the signature. */
   onDone: (uri: string) => void;
   onCancel: () => void;
+  /** Whose signature this is; defaults to the receiver's. */
+  title?: string;
+  hint?: string;
 }
 
 const PAD_HEIGHT = 220;
@@ -22,8 +25,8 @@ const pathOf = (points: Point[]) =>
     ? `M${points[0].x} ${points[0].y} l0.1 0.1`
     : points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 
-/** Drawing pad for the receiver's signature. */
-export default function SignaturePad({ onDone, onCancel }: SignaturePadProps) {
+/** Drawing pad for a signature: the receiver's, or whoever hands over or takes the goods. */
+export default function SignaturePad({ onDone, onCancel, title, hint }: SignaturePadProps) {
   const { t } = useTranslation();
   const [strokes, setStrokes] = useState<Point[][]>([]);
   const [saving, setSaving] = useState(false);
@@ -76,13 +79,13 @@ export default function SignaturePad({ onDone, onCancel }: SignaturePadProps) {
   return (
     <View style={styles.wrap}>
       <Text variant="heading" accessibilityRole="header">
-        {t('pod_signature_title')}
+        {title ?? t('pod_signature_title')}
       </Text>
       <Text variant="bodySmall" color="textMuted">
-        {t('pod_signature_hint')}
+        {hint ?? t('pod_signature_hint')}
       </Text>
 
-      <View ref={captureView} collapsable={false} style={styles.pad} {...pan.panHandlers} accessibilityLabel={t('pod_signature_title')}>
+      <View ref={captureView} collapsable={false} style={styles.pad} {...pan.panHandlers} accessibilityLabel={title ?? t('pod_signature_title')}>
         <Svg width="100%" height={PAD_HEIGHT} pointerEvents="none">
           {strokes.map((s, i) => (
             <Path key={i} d={pathOf(s)} stroke={colors.text} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" />

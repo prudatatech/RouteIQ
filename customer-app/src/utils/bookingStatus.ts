@@ -12,13 +12,35 @@ export const BOOKING_STATUS: Record<BookingStatus, { label: string; tone: Tone }
   cancelled: { label: 'status_cancelled', tone: 'neutral' },
 };
 
+/**
+ * Shipment statuses that say more than a booking's own status can (a booking
+ * only knows "on its way" or "delivered"), so the pill shows these instead.
+ */
+export const SHIPMENT_STATUS: Partial<Record<string, { label: string; tone: Tone }>> = {
+  out_for_delivery: { label: 'status_out_for_delivery', tone: 'accent' },
+  at_hub: { label: 'status_at_hub', tone: 'info' },
+  partially_delivered: { label: 'status_partially_delivered', tone: 'warning' },
+  on_hold: { label: 'status_on_hold', tone: 'warning' },
+  returning: { label: 'status_returning', tone: 'warning' },
+  returned: { label: 'status_returned', tone: 'neutral' },
+  lost: { label: 'status_lost', tone: 'danger' },
+};
+
 /** A shipment whose delivery attempt failed and is waiting for another. The booking keeps its own status, so this reads the shipment's. */
 export const deliveryFailed = (booking: Pick<Booking, 'status' | 'shipment_status'>) =>
   booking.shipment_status === 'exception' && booking.status !== 'delivered' && booking.status !== 'cancelled';
 
-/** The pill for a booking: its status, or "Delivery attempt failed" after a failed attempt. */
-export const bookingStatusInfo = (booking: Pick<Booking, 'status' | 'shipment_status'>): { label: string; tone: Tone } =>
-  deliveryFailed(booking) ? { label: 'status_delivery_failed', tone: 'danger' } : BOOKING_STATUS[booking.status];
+/** The pill for a booking: "Delivery attempt failed", a detailed shipment status, or the booking's own status. */
+export const bookingStatusInfo = (booking: Pick<Booking, 'status' | 'shipment_status'>): { label: string; tone: Tone } => {
+  if (deliveryFailed(booking)) return { label: 'status_delivery_failed', tone: 'danger' };
+  const detailed = booking.shipment_status ? SHIPMENT_STATUS[booking.shipment_status] : undefined;
+  if (detailed && booking.status !== 'cancelled') return detailed;
+  return BOOKING_STATUS[booking.status];
+};
+
+/** The goods have reached the receiver, in full or in part. */
+export const isDelivered = (booking: Pick<Booking, 'status' | 'shipment_status'>) =>
+  booking.status === 'delivered' || booking.shipment_status === 'delivered' || booking.shipment_status === 'partially_delivered';
 
 /** Steps a booking goes through, in order. */
 export const BOOKING_STEPS: { status: BookingStatus; label: string }[] = [

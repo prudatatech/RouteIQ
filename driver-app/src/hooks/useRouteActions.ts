@@ -10,9 +10,11 @@ import type { DriverRoute, LatLng, RouteStop } from '../types/route';
 import { errorMessage } from '../utils/errors';
 import { fullRouteUrl, openTurnByTurn } from '../utils/navigation';
 import { ARRIVAL_RADIUS_M, distanceMeters, stopCoord } from '../utils/route';
-import type { FailureReason } from '../components/modals/IssueDialog';
 import type { PodInput } from '../services/podUpload';
-import { actionQueue } from '../services/actionQueue';
+import { actionQueue, type FailureReasonCode, type Payloads } from '../services/actionQueue';
+import { manifestRefOfStop, type ConsignmentInfo, type ConsignmentRef } from '../services/cargo';
+import { openCaseCodes, sendCustody } from '../services/cargoActions';
+import type { DeliveryOutcome } from '../screens/cargo/DeliveryScreen';
 import { useTranslation } from './useTranslation';
 
 interface Options {
@@ -23,9 +25,9 @@ interface Options {
   isTracking: boolean;
   refresh: () => Promise<unknown>;
   startTracking: () => Promise<boolean>;
-  /** Open the proof-of-delivery form for a stop. */
+  /** Open the delivery sheet for a stop, on "delivered". */
   openPod: (stop: RouteStop) => void;
-  /** Open the "why could this stop not be completed" form for a stop. */
+  /** Open the delivery sheet for a stop, on "not delivered". */
   openIssue: (stop: RouteStop) => void;
   /** Show the live backhaul offers popup. */
   showBackhaulPopup: () => void;
@@ -111,7 +113,7 @@ export function useRouteActions({
    * the phone and sent later; throws so the form can show any other error.
    */
   const submitIssue = useCallback(
-    async (stop: RouteStop, reason: FailureReason, note: string) => {
+    async (stop: RouteStop, reason: FailureReasonCode, note: string) => {
       const outcome = await actionQueue.submit('fail_stop', {
         stopId: stop.id,
         reason,
@@ -183,6 +185,111 @@ export function useRouteActions({
     [currentLoc, refresh, findReturnLoad, t],
   );
 
+  /**
+   * The delivery sheet's outcome, sent as one complete-stop with `outcome`: the server records the
+   * custody event (delivery, partial_delivery, refused) and settles the stop in the same call.
+   * "Not delivered" is the plain failed stop. The server keeps no photos on a failed stop, so the
+   * photos of refused goods follow as an `inspection` of those goods. Everything goes through the
+   * offline queue. Throws so the sheet can show an error.
+   */
+  const deliver = useCallback(
+    async (stop: RouteStop, outcome: DeliveryOutcome, info: ConsignmentInfo | null) => {
+      if (outcome.kind === 'not_delivered') return submitIssue(stop, outcome.reason, outcome.note);
+
+      const position = currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {};
+      const ref: ConsignmentRef | null = info?.ref ?? manifestRefOfStop(stop.id) ?? stop.parcel?.code ?? null;
+      let payload: Payloads['complete_stop'];
+      if (outcome.kind === 'refused') {
+        payload = {
+          stopId: stop.id,
+          receiverName: '',
+          outcome: 'refused',
+          details: { reason: outcome.reason, ...(outcome.note ? { note: outcome.note } : {}) },
+          ...position,
+        };
+      } else {
+        const pod = outcome.pod;
+        const otp = outcome.otp ? { otp: outcome.otp } : {};
+        payload = {
+          stopId: stop.id,
+          receiverName: pod.receiverName,
+          photoUri: pod.photoUri,
+          signatureUri: pod.signatureUri,
+          ...position,
+          ...(outcome.kind === 'full'
+            ? { outcome: 'delivered' as const, details: otp }
+            : outcome.kind === 'remarks'
+              ? {
+                  outcome: 'delivered_with_remarks' as const,
+                  extraPhotoUris: outcome.damagePhotos,
+                  details: { condition: outcome.condition, ...(outcome.note ? { note: outcome.note } : {}), ...otp },
+                }
+              : {
+                  outcome: 'partial' as const,
+                  details: {
+                    pieces: outcome.accepted,
+                    pieces_refused: outcome.refused,
+                    pieces_short: outcome.short,
+                    ...(outcome.note ? { note: outcome.note } : {}),
+                    ...otp,
+                  },
+                }),
+        };
+      }
+
+      const sent = await actionQueue.submit('complete_stop', payload).catch(async (e) => {
+        // Dispatch changed the stop (for example cancelled the delivery): show the route as it is now
+        if (e instanceof ApiError && e.status === 409) await refresh();
+        throw e;
+      });
+      let queued = sent.status === 'queued';
+
+      if (outcome.kind === 'refused' && outcome.photos.length && ref) {
+        const onBoard = info?.piecesOnBoard;
+        const photos = await sendCustody({
+          label: 'refused_photos',
+          photoUris: outcome.photos,
+          events: [
+            {
+              ref,
+              code: stop.parcel?.code ?? '',
+              fields: {
+                kind: 'inspection',
+                // A count that matches what is held records the photos without opening another case
+                ...(onBoard ? { pieces: onBoard } : { condition: outcome.reason === 'damaged_refused' ? 'damaged_goods' : 'good' }),
+                notes: t('cargo_refusal_photo'),
+                ...position,
+              },
+            },
+          ],
+        }).catch((e) => {
+          console.warn('[delivery] refusal photos not recorded:', e);
+          return null;
+        });
+        if (photos?.queued) queued = true;
+      }
+
+      if (queued) {
+        Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
+        return;
+      }
+      await refresh();
+      const cases = outcome.kind !== 'full' && ref ? await openCaseCodes([ref]) : [];
+      const codes = cases.map((c) => c.code).join(', ');
+      const title = outcome.kind === 'refused' ? t('alert_reported_title') : t('stop_completed_title');
+      const body = outcome.kind === 'refused' ? t('cargo_refusal_saved') : outcome.kind === 'partial' ? t('cargo_partial_saved') : t('stop_completed_desc');
+      if (outcome.kind === 'full' && sent.status === 'sent' && sent.result?.route_completed) {
+        Alert.alert(t('alert_route_completed_title'), t('alert_route_completed_desc'), [
+          { text: t('no'), style: 'cancel' },
+          { text: t('yes_find_cargo'), onPress: findReturnLoad },
+        ]);
+        return;
+      }
+      Alert.alert(title, codes ? `${body}\n\n${t('cargo_case_opened')} ${codes}` : body);
+    },
+    [submitIssue, currentLoc, refresh, findReturnLoad, t],
+  );
+
   const declareCapacity = useCallback(
     async (percentage: number) => {
       if (!activeVehicleId) return;
@@ -202,6 +309,7 @@ export function useRouteActions({
     submitIssue,
     findReturnLoad,
     completeStop,
+    deliver,
     declareCapacity,
   };
 }

@@ -20,10 +20,16 @@ Notifications.setNotificationHandler({
 /** Emitted with the DriverTab to show when the driver taps a push notification. */
 export const OPEN_TAB_EVENT = 'driver:open-tab';
 
+/** Emitted when a cargo notification arrives (a transfer planned, a case opened ...), so the cargo data reloads. */
+export const CARGO_CHANGED_EVENT = 'driver:cargo-changed';
+
+const isCargoType = (type: unknown) => typeof type === 'string' && (type.startsWith('cargo_') || type === 'driver_action_rejected');
+
 /** Chat messages open the Messages tab; everything else (assignments, route changes) opens Home. */
 function openTabFor(response: Notifications.NotificationResponse) {
   const content = response.notification.request.content;
   const type = String((content.data as { type?: unknown } | undefined)?.type ?? '');
+  if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
   DeviceEventEmitter.emit(OPEN_TAB_EVENT, /message|chat/i.test(type) ? 'messages' : 'route');
 }
 
@@ -50,7 +56,8 @@ export const NotificationListener = () => {
 
     // Listen for incoming push notifications to play custom sounds if needed
     const subscription = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Push notification received!', notification);
+      const type = (notification.request.content.data as { type?: unknown } | undefined)?.type;
+      if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
     });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTabFor);
@@ -80,6 +87,7 @@ export const NotificationListener = () => {
         filter: `user_id=eq.${userId}`
       }, (payload) => {
         const newNotif = payload.new as any;
+        if (isCargoType(newNotif?.type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, newNotif.type);
         
         // Show Toast/Alert for the driver
         if (Platform.OS === 'android') {

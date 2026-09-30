@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../services/api';
 import { locationService } from '../services/location';
 import { supabase } from '../services/supabase';
+import { actionQueue } from '../services/actionQueue';
 import type { MyRouteResponse } from '../types/route';
 import { isNetworkError } from '../utils/errors';
 
@@ -44,6 +45,8 @@ export interface PendingRoute {
   status?: string;
   route_type?: string;
   stops?: unknown[];
+  /** A vendor load, not a route: it has no server-side route to accept. */
+  is_manifest?: boolean;
 }
 
 export interface IncomingCall {
@@ -119,7 +122,7 @@ export function useDriverRoute() {
         if (r && (r.status === 'active' || r.status === 'pending')) {
           const lastSeenId = await AsyncStorage.getItem(LAST_SEEN_ROUTE_KEY);
           if (r.id !== lastSeenId && pendingRouteRef.current?.id !== r.id && !(await isSnoozed(r.id))) {
-            setPendingRoute(r);
+            setPendingRoute({ ...r, is_manifest: !!route.is_manifest });
           }
         }
       } else if (routeErr) {
@@ -192,6 +195,7 @@ export function useDriverRoute() {
                 status: 'pending',
                 route_type: payload.new.route_type || 'forward',
                 stops: [],
+                is_manifest: true,
               });
               loadData();
             },
@@ -257,7 +261,13 @@ export function useDriverRoute() {
       return 'stop';
     }
     if (pendingRouteRef.current) {
-      await AsyncStorage.setItem(LAST_SEEN_ROUTE_KEY, pendingRouteRef.current.id);
+      const accepted = pendingRouteRef.current;
+      await AsyncStorage.setItem(LAST_SEEN_ROUTE_KEY, accepted.id);
+      // The server record of the acceptance (an `accepted` custody event per consignment); the
+      // phone's own record above still decides the prompt. Queued when there is no signal.
+      if (!accepted.is_manifest) {
+        actionQueue.submit('accept_route', { routeId: accepted.id }).catch((e) => console.warn('[home] accept-route failed:', e));
+      }
       setPendingRoute(null);
       loadData();
       return 'route';

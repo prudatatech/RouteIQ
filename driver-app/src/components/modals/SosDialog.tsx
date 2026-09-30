@@ -15,6 +15,8 @@ interface SosDialogProps {
   onSendDetails: (type: SosType, description: string, severity?: SosSeverity) => void;
   onCancel: () => void;
   onClose: () => void;
+  /** Opens the cargo-on-board check; offered after an accident or breakdown when the vehicle carries cargo. */
+  onCheckCargo?: () => void;
 }
 
 const DETAIL_TYPES: { type: SosType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -26,7 +28,7 @@ const DETAIL_TYPES: { type: SosType; label: string; icon: keyof typeof Ionicons.
 ];
 
 /** Shows the SOS as it is sent, then lets the driver say what happened. */
-export default function SosDialog({ state, details, cancelState, onRetry, onSendDetails, onCancel, onClose }: SosDialogProps) {
+export default function SosDialog({ state, details, cancelState, onRetry, onSendDetails, onCancel, onClose, onCheckCargo }: SosDialogProps) {
   const { t } = useTranslation();
   const [type, setType] = useState<SosType | null>(null);
   const [description, setDescription] = useState('');
@@ -97,7 +99,19 @@ export default function SosDialog({ state, details, cancelState, onRetry, onSend
       </View>
 
       {details === 'sent' || details === 'queued' ? (
-        <Banner tone="info" message={details === 'queued' ? t('sos_details_queued') : t('sos_details_sent')} />
+        <>
+          <Banner tone="info" message={details === 'queued' ? t('sos_details_queued') : t('sos_details_sent')} />
+          {onCheckCargo && (type === 'accident' || type === 'breakdown') ? (
+            <View style={styles.injured}>
+              <Text variant="bodyMedium">{t('cargo_sos_check_prompt')}</Text>
+              <Button
+                title={t('cargo_check_title')}
+                onPress={onCheckCargo}
+                icon={(color) => <Ionicons name="cube-outline" size={size.icon.md} color={color} />}
+              />
+            </View>
+          ) : null}
+        </>
       ) : (
         <>
           <Text variant="bodyMedium">{t('sos_what_happened')}</Text>

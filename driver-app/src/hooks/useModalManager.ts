@@ -7,12 +7,19 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Invoice } from '../components/modals/InvoiceDialog';
 import type { RouteStop } from '../types/route';
+import type { VehicleTransfer } from './useCargo';
 
 export type DriverModal =
   | { kind: 'sos' }
   | { kind: 'sosCountdown' }
+  /** The delivery sheet, opened on "delivered" (pod) or on "not delivered" (issue). */
   | { kind: 'pod'; stop: RouteStop }
   | { kind: 'issue'; stop: RouteStop }
+  | { kind: 'pickup' }
+  | { kind: 'cargoCheck' }
+  | { kind: 'handover'; transfer: VehicleTransfer }
+  | { kind: 'hubDrop' }
+  | { kind: 'returnPickup' }
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
   | { kind: 'fuel' }

@@ -13,6 +13,7 @@ import LocationSearchScreen from './src/screens/LocationSearchScreen';
 import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import QuoteScreen from './src/screens/QuoteScreen';
 import BookingDetailScreen from './src/screens/BookingDetailScreen';
+import ClaimScreen from './src/screens/ClaimScreen';
 import { SESSION_EXPIRED_EVENT } from './src/services/api';
 import { TranslationProvider } from './src/hooks/useTranslation';
 import { themeFonts } from './src/theme/fonts';
@@ -70,6 +71,7 @@ export default function App() {
           <Stack.Screen name="CargoConfig" component={CargoConfigScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Quote" component={QuoteScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="BookingDetail" component={BookingDetailScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Claim" component={ClaimScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>
       </TranslationProvider>

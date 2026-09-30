@@ -35,7 +35,11 @@ export default function NotificationsScreen({ navigation }: any) {
 
   const openNotification = useCallback(
     async (item: NotificationItem) => {
-      if (item.type === 'booking' && typeof item.data?.booking_id === 'string') {
+      // Cargo updates (delays, transfers, claims) open their booking too. The delivery code stays
+      // put: its text is what the customer reads out to the driver.
+      const opensBooking =
+        item.type === 'booking' || (item.type?.startsWith('cargo_') && item.type !== 'cargo_delivery_otp');
+      if (opensBooking && typeof item.data?.booking_id === 'string') {
         navigation.navigate('BookingDetail', { id: item.data.booking_id });
       }
       if (item.is_read || readIds.has(item.id)) return;

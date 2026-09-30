@@ -15,10 +15,12 @@ interface ScanTabProps {
   onScan: (code: string, method: ScanMethod) => Promise<ScanOutcome>;
   /** Open proof of delivery for the stop the parcel belongs to. */
   onDeliver: (stop: RouteStop) => void;
+  /** Open the pickup details (pieces, condition, photos, signature) for parcels just picked up. */
+  onPickupDetails: () => void;
 }
 
 /** Scan a parcel to load it at pickup, or to check it is the right one at a stop. */
-export default function ScanTab({ hasRoute, onScan, onDeliver }: ScanTabProps) {
+export default function ScanTab({ hasRoute, onScan, onDeliver, onPickupDetails }: ScanTabProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ScanOutcome | null>(null);
@@ -61,7 +63,7 @@ export default function ScanTab({ hasRoute, onScan, onDeliver }: ScanTabProps) {
         <ParcelScanner onCode={handle} busy={busy} />
       </Card>
 
-      {outcome ? <OutcomeCard outcome={outcome} onDeliver={onDeliver} onDismiss={() => setOutcome(null)} /> : null}
+      {outcome ? <OutcomeCard outcome={outcome} onDeliver={onDeliver} onPickupDetails={onPickupDetails} onDismiss={() => setOutcome(null)} /> : null}
     </View>
   );
 }
@@ -69,10 +71,12 @@ export default function ScanTab({ hasRoute, onScan, onDeliver }: ScanTabProps) {
 function OutcomeCard({
   outcome,
   onDeliver,
+  onPickupDetails,
   onDismiss,
 }: {
   outcome: ScanOutcome;
   onDeliver: (stop: RouteStop) => void;
+  onPickupDetails: () => void;
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
@@ -85,8 +89,10 @@ function OutcomeCard({
 
   switch (outcome.kind) {
     case 'picked_up':
-      title = outcome.already ? t('scan_already_picked_up') : t('scan_picked_up_title');
-      message = outcome.queued ? `${outcome.code} · ${t('scan_queued')}` : outcome.code;
+      // The right parcel for this pickup; the pickup details record it
+      title = t('scan_verified_title');
+      message = outcome.code;
+      action = { label: t('cargo_pickup_details'), onPress: onPickupDetails };
       break;
     case 'verified': {
       const name = outcome.stop.delivery_point?.name || `${t('stop')} ${outcome.stop.sequence}`;

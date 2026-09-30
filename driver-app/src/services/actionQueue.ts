@@ -2,27 +2,81 @@
  * Offline action queue.
  *
  * Stop completions (with proof of delivery), failed stops, declared loads, SOS
- * details, parcel scans and the driver's own documents are kept on the phone when there is no signal and
- * sent, in the order they were made, when it is back. Every action carries its
+ * details, parcel scans, the driver's own documents, cargo custody events
+ * (pickup, delivery outcomes, hub drop, return pickup, cargo checks),
+ * transfer handovers and route acceptance are kept on the phone when there is
+ * no signal and sent, in the order they were made, when it is back. Every action carries its
  * own id, which is sent as the idempotency key, so one that reached the server
  * but whose reply was lost is not applied twice when it is sent again.
  *
  * The queue lives in AsyncStorage, so it survives the app being closed. Photos
  * and signatures are copied into the app's document folder so they are still
  * there when the action is finally sent.
+ *
+ * An action the server refuses for good is dropped, the driver is told, and
+ * dispatch is told once through POST /cargo/driver/rejected-action (that
+ * report waits on the phone too when there is no signal).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api, ApiError, type SosSeverity, type SosType } from './api';
 import { sendDocument, type DocumentUpload } from './documentUpload';
-import { uploadProofFiles, type PodPaths } from './podUpload';
+import { uploadCargoFiles, uploadProofFile, uploadProofFiles, type CargoFilePaths, type PodPaths } from './podUpload';
+import { exceptionIdsOf, type ConditionCode, type ConsignmentRef, type CustodyFields, type DeliveryReason } from './cargo';
 import { isNetworkError } from '../utils/errors';
+import { translateNow } from '../locales';
 
 const STORAGE_KEY = 'action_queue_v1';
+const REPORTS_KEY = 'rejected_action_reports_v1';
 const FILES_DIR = `${FileSystem.documentDirectory ?? ''}action-queue/`;
 
 export type FailureReasonCode = 'customer_unavailable' | 'address_unreachable' | 'customer_refused' | 'premises_closed' | 'other';
+
+/** The delivery sheet's outcome, sent with complete-stop (see telemetry.routes.ts). */
+export type StopOutcome = 'delivered' | 'delivered_with_remarks' | 'partial' | 'refused' | 'not_delivered';
+
+/** One custody event of a `custody` action. */
+export interface QueuedCustodyEvent {
+  /** `{shipment_id}` / `{manifest_id}`, or the parcel code when that is all the phone knows. */
+  ref: ConsignmentRef;
+  code: string;
+  fields: CustodyFields;
+  /** This event's own photos (a damage photo of one consignment); the action's shared files are added too. */
+  photoUris?: string[];
+  /**
+   * Paths uploaded for this event: the shared photos first, then its own, and the signature. The
+   * server accepts only files from the consignment's own folder, so each event uploads its copy.
+   */
+  uploaded?: CargoFilePaths;
+}
+
+/**
+ * What the driver did that is recorded as custody events: every event gets the
+ * shared photos and signature, and its own idempotency key (the action id plus
+ * its index), so a retry after a partial send skips what already went.
+ */
+export interface CustodyPayload {
+  /** For the "could not send" message: pickup, departed, hub_in ... */
+  label: string;
+  events: QueuedCustodyEvent[];
+  photoUris: string[];
+  signatureUri?: string | null;
+  /** Events already accepted by the server. */
+  sent?: number;
+  /** Cases the server opened for the events sent (`exception_ids`). */
+  exceptionIds?: string[];
+}
+
+export interface TransferPayload {
+  transferId: string;
+  direction: 'out' | 'in';
+  /** Whole consignments: the server moves each one with all its pieces on board. */
+  items: Array<{ ref: ConsignmentRef; pieces: number; condition: ConditionCode }>;
+  photoUris: string[];
+  signatureUri?: string | null;
+  uploaded?: CargoFilePaths;
+}
 
 export interface Payloads {
   complete_stop: {
@@ -34,6 +88,21 @@ export interface Payloads {
     signatureUri?: string | null;
     /** Files already uploaded, so a retry does not upload them again. */
     uploaded?: PodPaths;
+    /** The delivery sheet's outcome and counts; absent for the older plain completion. */
+    outcome?: StopOutcome;
+    details?: {
+      pieces?: number;
+      pieces_refused?: number;
+      pieces_short?: number;
+      pieces_damaged?: number;
+      condition?: ConditionCode;
+      otp?: string;
+      reason?: DeliveryReason;
+      note?: string;
+    };
+    /** More photos (damage), uploaded to the stop like the delivery photo. */
+    extraPhotoUris?: string[];
+    uploadedExtra?: string[];
   };
   fail_stop: { stopId: string; reason: FailureReasonCode; note?: string; lat?: number; lng?: number };
   declare_load: { vehicleId: string; percentage: number };
@@ -41,6 +110,9 @@ export interface Payloads {
   /** The driver's own document: every file is uploaded, then the document is recorded. */
   upload_document: DocumentUpload;
   scan: { code: string; purpose: 'pickup' | 'delivery'; stopId?: string; method: 'camera' | 'manual'; lat?: number; lng?: number };
+  custody: CustodyPayload;
+  transfer: TransferPayload;
+  accept_route: { routeId: string };
 }
 
 export type ActionKind = keyof Payloads;
@@ -164,8 +236,33 @@ class ActionQueue {
   private async enqueue(action: QueuedAction) {
     if (action.kind === 'complete_stop') await this.keepFiles(action);
     if (action.kind === 'upload_document') await this.keepDocumentFiles(action);
+    if (action.kind === 'custody' || action.kind === 'transfer') await this.keepCargoFiles(action);
     this.items.push(action);
     await this.save();
+  }
+
+  /** Copies custody photos and signatures somewhere the system will not clear. */
+  private async keepCargoFiles(action: Extract<QueuedAction, { kind: 'custody' | 'transfer' }>) {
+    const p = action.payload;
+    try {
+      await FileSystem.makeDirectoryAsync(FILES_DIR, { intermediates: true });
+      const keep = async (uri: string, name: string) => {
+        if (uri.startsWith(FILES_DIR)) return uri;
+        const to = `${FILES_DIR}${action.id}_${name}`;
+        await FileSystem.copyAsync({ from: uri, to });
+        return to;
+      };
+      for (let i = 0; i < p.photoUris.length; i++) p.photoUris[i] = await keep(p.photoUris[i], `photo${i}.jpg`);
+      if (p.signatureUri) p.signatureUri = await keep(p.signatureUri, 'signature.png');
+      if (action.kind === 'custody') {
+        for (let e = 0; e < action.payload.events.length; e++) {
+          const uris = action.payload.events[e].photoUris ?? [];
+          for (let i = 0; i < uris.length; i++) uris[i] = await keep(uris[i], `e${e}_photo${i}.jpg`);
+        }
+      }
+    } catch (e) {
+      console.warn('[queue] could not keep the cargo files:', e);
+    }
   }
 
   /** Copies the proof photo and signature somewhere the system will not clear. */
@@ -181,6 +278,9 @@ class ActionQueue {
       };
       p.photoUri = await keep(p.photoUri, 'photo.jpg');
       p.signatureUri = await keep(p.signatureUri, 'signature.png');
+      if (p.extraPhotoUris) {
+        for (let i = 0; i < p.extraPhotoUris.length; i++) p.extraPhotoUris[i] = (await keep(p.extraPhotoUris[i], `extra${i}.jpg`)) ?? p.extraPhotoUris[i];
+      }
     } catch (e) {
       console.warn('[queue] could not keep the proof files:', e);
     }
@@ -209,6 +309,14 @@ class ActionQueue {
   }
 
   private async dropFiles(action: QueuedAction) {
+    if (action.kind === 'custody' || action.kind === 'transfer') {
+      const uris = [...action.payload.photoUris, action.payload.signatureUri];
+      if (action.kind === 'custody') for (const e of action.payload.events) uris.push(...(e.photoUris ?? []));
+      for (const uri of uris) {
+        if (uri && uri.startsWith(FILES_DIR)) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
+      return;
+    }
     if (action.kind === 'upload_document') {
       for (const uri of action.payload.fileUris) {
         if (uri.startsWith(FILES_DIR)) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
@@ -216,7 +324,7 @@ class ActionQueue {
       return;
     }
     if (action.kind !== 'complete_stop') return;
-    for (const uri of [action.payload.photoUri, action.payload.signatureUri]) {
+    for (const uri of [action.payload.photoUri, action.payload.signatureUri, ...(action.payload.extraPhotoUris ?? [])]) {
       if (uri && uri.startsWith(FILES_DIR)) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
     }
   }
@@ -232,12 +340,21 @@ class ActionQueue {
           // Remember what was uploaded if this action is already saved
           if (this.items.some((i) => i.id === action.id)) this.save();
         });
+        const extra = p.extraPhotoUris ?? [];
+        const uploadedExtra = [...(p.uploadedExtra ?? [])];
+        for (let i = uploadedExtra.length; i < extra.length; i++) {
+          uploadedExtra.push(await uploadProofFile(p.stopId, 'photo', extra[i]));
+          p.uploadedExtra = [...uploadedExtra];
+          if (this.items.some((i) => i.id === action.id)) this.save();
+        }
         return api.completeStop(
           {
             stop_id: p.stopId,
-            status: 'completed',
+            ...(p.outcome ? { outcome: p.outcome } : { status: 'completed' as const }),
             received_by: p.receiverName,
             ...paths,
+            ...(uploadedExtra.length ? { photo_paths: uploadedExtra } : {}),
+            ...(p.details ?? {}),
             ...(p.lat !== undefined && p.lng !== undefined ? { lat: p.lat, lng: p.lng } : {}),
           },
           key,
@@ -268,6 +385,31 @@ class ActionQueue {
         return api.declareCapacity(action.payload.vehicleId, action.payload.percentage, key);
       case 'sos_details':
         return api.updateSosDetails(action.payload.alertId, action.payload.details, key);
+      case 'custody':
+        return this.sendCustody(action);
+      case 'transfer': {
+        const p = action.payload;
+        const files = await uploadCargoFiles({ transfer_id: p.transferId }, p, p.uploaded, (uploaded) => {
+          p.uploaded = uploaded;
+          if (this.items.some((i) => i.id === action.id)) this.save();
+        });
+        return api.postTransferHandover(
+          p.transferId,
+          p.direction,
+          {
+            items: p.items.map((i) =>
+              p.direction === 'out'
+                ? { ref: i.ref, pieces_out: i.pieces, condition: i.condition }
+                : { ref: i.ref, pieces_in: i.pieces, condition: i.condition },
+            ),
+            ...(files.photos.length ? { photo_paths: files.photos } : {}),
+            ...(files.signature ? { signature_path: files.signature } : {}),
+          },
+          key,
+        );
+      }
+      case 'accept_route':
+        return api.acceptRoute(action.payload.routeId, key);
       case 'scan': {
         const p = action.payload;
         return api.scanParcel(
@@ -282,6 +424,110 @@ class ActionQueue {
         );
       }
     }
+  }
+
+  /** Sends a custody action's events in order; each has its own key, so a retry resumes where it stopped. */
+  private async sendCustody(action: Extract<QueuedAction, { kind: 'custody' }>) {
+    const p = action.payload;
+    const persist = () => {
+      if (this.items.some((i) => i.id === action.id)) this.save();
+    };
+    let last: any = null;
+    for (let index = p.sent ?? 0; index < p.events.length; index++) {
+      const event = p.events[index];
+      const photoUris = [...p.photoUris, ...(event.photoUris ?? [])];
+      const files = photoUris.length || p.signatureUri
+        ? await uploadCargoFiles({ ref: event.ref }, { photoUris, signatureUri: p.signatureUri }, event.uploaded, (uploaded) => {
+            event.uploaded = uploaded;
+            persist();
+          })
+        : { photos: [] };
+      last = await api.postCustody(
+        {
+          ...event.fields,
+          ref: event.ref,
+          ...(files.photos.length ? { photo_paths: files.photos } : {}),
+          ...(files.signature ? { signature_path: files.signature } : {}),
+        },
+        index === 0 ? action.id : `${action.id}_${index}`,
+      );
+      const opened = exceptionIdsOf(last);
+      if (opened.length) p.exceptionIds = [...(p.exceptionIds ?? []), ...opened];
+      p.sent = index + 1;
+      persist();
+    }
+    return { last, exceptionIds: p.exceptionIds ?? [] };
+  }
+
+  /** A short, file-free description of an action, for dispatch. */
+  private summary(action: QueuedAction): Record<string, unknown> {
+    switch (action.kind) {
+      case 'complete_stop':
+        return { stop_id: action.payload.stopId, outcome: action.payload.outcome ?? 'delivered', ...(action.payload.details ?? {}), otp: undefined };
+      case 'fail_stop':
+        return { stop_id: action.payload.stopId, reason: action.payload.reason };
+      case 'custody':
+        return {
+          label: action.payload.label,
+          sent: action.payload.sent ?? 0,
+          events: action.payload.events.map((e) => ({
+            code: e.code,
+            kind: e.fields.kind,
+            pieces: e.fields.pieces ?? null,
+            condition: e.fields.condition ?? null,
+          })),
+        };
+      case 'transfer':
+        return {
+          transfer_id: action.payload.transferId,
+          direction: action.payload.direction,
+          items: action.payload.items.map((i) => ({ pieces: i.pieces, condition: i.condition })),
+        };
+      case 'accept_route':
+        return { route_id: action.payload.routeId };
+      case 'scan':
+        return { code: action.payload.code, purpose: action.payload.purpose, stop_id: action.payload.stopId ?? null };
+      case 'declare_load':
+        return { vehicle_id: action.payload.vehicleId, percentage: action.payload.percentage };
+      case 'sos_details':
+        return { alert_id: action.payload.alertId, alert_type: action.payload.details.alert_type ?? null };
+      case 'upload_document':
+        return { doc_type: action.payload.docType };
+    }
+  }
+
+  /** Keeps a report for dispatch of an action the server refused; it is sent once, now or when back online. */
+  private async reportRejected(action: QueuedAction, message: string) {
+    const report: RejectedReport = {
+      id: action.id,
+      action: action.kind,
+      error: message.slice(0, 500),
+      // The server takes a short text: what it was and when it was made
+      payload_summary: JSON.stringify({ ...this.summary(action), made_at: new Date(action.createdAt).toISOString() }).slice(0, 500),
+    };
+    const reports = await readReports();
+    if (!reports.some((r) => r.id === report.id)) reports.push(report);
+    await writeReports(reports);
+    await this.sendReports();
+  }
+
+  /** Sends the refused-action reports still waiting. A report the server refuses is not retried. */
+  private async sendReports() {
+    const reports = await readReports();
+    if (reports.length === 0) return;
+    const left: RejectedReport[] = [];
+    for (let i = 0; i < reports.length; i++) {
+      const r = reports[i];
+      try {
+        await api.reportRejectedAction({ action: r.action, error: r.error, payload_summary: r.payload_summary }, `rejected-${r.id}`);
+      } catch (e) {
+        if (isRetryable(e)) {
+          left.push(...reports.slice(i));
+          break;
+        }
+      }
+    }
+    await writeReports(left);
   }
 
   /**
@@ -330,10 +576,32 @@ class ActionQueue {
         this.failureListeners.forEach((l) => l(failure));
         await this.dropFiles(action);
         await this.save();
+        await this.reportRejected(action, failure.message).catch((err) => console.warn('[queue] could not keep the report:', err));
       }
     }
+    await this.sendReports().catch(() => {});
     return { sent, failed };
   }
+}
+
+interface RejectedReport {
+  id: string;
+  action: ActionKind;
+  error: string;
+  payload_summary: string;
+}
+
+async function readReports(): Promise<RejectedReport[]> {
+  try {
+    const parsed = JSON.parse((await AsyncStorage.getItem(REPORTS_KEY)) ?? '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeReports(reports: RejectedReport[]) {
+  await AsyncStorage.setItem(REPORTS_KEY, JSON.stringify(reports)).catch(() => {});
 }
 
 export const actionQueue = new ActionQueue();

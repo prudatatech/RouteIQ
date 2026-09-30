@@ -57,7 +57,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     web: {
       favicon: './assets/favicon.png',
     },
-    plugins: ['expo-secure-store'],
+    plugins: [
+      'expo-secure-store',
+      // Claim photos: from the library or taken on the spot. No video, so no microphone.
+      [
+        'expo-image-picker',
+        {
+          photosPermission: 'Allow MargixIndia to use your photos so you can add them to a claim.',
+          cameraPermission: 'Allow MargixIndia to use your camera so you can photograph damaged goods for a claim.',
+          microphonePermission: false,
+        },
+      ],
+    ],
   };
 
   return merged as ExpoConfig;

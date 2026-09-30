@@ -1,18 +1,37 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  DeviceEventEmitter,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Banner, Button, Card, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { TrackingMap } from '../components/TrackingMap';
+import { CustodyTimeline } from '../components/cargo/CustodyTimeline';
+import { DeliveryOtpCard } from '../components/cargo/DeliveryOtpCard';
+import { ProofOfDeliveryCard } from '../components/cargo/ProofOfDeliveryCard';
+import { ConfirmReceiptCard } from '../components/cargo/ConfirmReceiptCard';
+import { ClaimsCard } from '../components/cargo/ClaimsCard';
 import { colors, fontFamily, radius, size, space } from '../theme';
-import { api, type BookingDetail } from '../services/api';
+import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail, type Claim } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
-import { BOOKING_STEPS, bookingStatusInfo, canCancel, deliveryFailed, formatMinutes } from '../utils/bookingStatus';
+import { BOOKING_STEPS, bookingStatusInfo, canCancel, deliveryFailed, formatMinutes, isDelivered } from '../utils/bookingStatus';
+import { claimClosesAt, claimWindowOpen, deliveredAt, mergeClaims } from '../utils/cargo';
 import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
 
 /** How often live tracking refreshes while the shipment is moving. */
 const LIVE_REFRESH_MS = 30_000;
+
+/** Shipment statuses where the goods are still moving or waiting, so the screen keeps refreshing. */
+const LIVE_SHIPMENT = ['exception', 'out_for_delivery', 'at_hub', 'on_hold', 'returning', 'partially_delivered'];
 
 /** When each step happened, from the booking and the shipment's history. */
 function stepTimes(detail: BookingDetail): Partial<Record<string, string>> {
@@ -31,43 +50,133 @@ export default function BookingDetailScreen({ navigation, route }: any) {
   const id: string = route.params.id;
   const { data, loading, error, reload } = useRemote(() => api.getBooking(id), id, t('booking_load_failed'));
 
+  // Custody data exists once the booking has become a shipment (it then has a tracking ID).
+  const trackingId = data?.booking.tracking_id ?? null;
+  const hasShipment = !!trackingId && data?.booking.status !== 'requested';
+  const cargo = useRemote(
+    () => (hasShipment ? api.getBookingCargo(id) : Promise.resolve(null)),
+    `cargo:${id}:${hasShipment}`,
+    t('cargo_load_failed'),
+  );
+  const claims = useRemote(
+    () => (hasShipment && trackingId ? api.listClaims(trackingId) : Promise.resolve([] as Claim[])),
+    `claims:${hasShipment ? trackingId : ''}`,
+    t('claims_load_failed'),
+  );
+  const { reload: reloadCargo } = cargo;
+  const { reload: reloadClaims } = claims;
+
+  // Bumped on every refresh, so child cards that load their own data refresh with the screen.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useCallback(() => {
+    reload();
+    reloadCargo();
+    setRefreshKey((k) => k + 1);
+  }, [reload, reloadCargo]);
+  const refreshAll = useCallback(() => {
+    refresh();
+    reloadClaims();
+  }, [refresh, reloadClaims]);
+
+  // A claim filed on the next screen shows up here when the customer comes back.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(CLAIM_CREATED_EVENT, () => {
+      reloadClaims();
+      reloadCargo();
+    });
+    return () => sub.remove();
+  }, [reloadClaims, reloadCargo]);
+
   const status = data?.booking.status;
-  const live = !!data?.tracking && (status === 'assigned' || status === 'in_transit' || data.booking.shipment_status === 'exception');
+  const shipmentStatus = cargo.data?.where?.status ?? data?.booking.shipment_status ?? null;
+  const live =
+    !!data?.tracking && (status === 'assigned' || status === 'in_transit' || (!!shipmentStatus && LIVE_SHIPMENT.includes(shipmentStatus)));
   useEffect(() => {
     if (!live) return;
-    const timer = setInterval(reload, LIVE_REFRESH_MS);
+    const timer = setInterval(refresh, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [live, reload]);
+  }, [live, refresh]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScreenHeader title={t('booking_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
       {!data ? (
         <View style={styles.center}>
           {loading ? <ActivityIndicator color={colors.accent} /> : <ErrorBanner message={error ?? t('booking_load_failed_short')} action={{ label: t('try_again'), onPress: reload }} />}
         </View>
       ) : (
-        <Details detail={data} error={error} reload={reload} loading={loading} />
+        <Details
+          detail={data}
+          error={error}
+          loading={loading}
+          refresh={refresh}
+          refreshAll={refreshAll}
+          cargo={cargo.data}
+          cargoError={cargo.error}
+          retryCargo={reloadCargo}
+          listedClaims={claims.data}
+          claimsError={claims.error}
+          retryClaims={reloadClaims}
+          refreshKey={refreshKey}
+          navigation={navigation}
+        />
       )}
     </SafeAreaView>
   );
 }
 
-function Details({ detail, error, reload, loading }: { detail: BookingDetail; error?: string; reload: () => void; loading: boolean }) {
+interface DetailsProps {
+  detail: BookingDetail;
+  error?: string;
+  loading: boolean;
+  refresh: () => void;
+  refreshAll: () => void;
+  cargo: BookingCargo | null | undefined;
+  cargoError?: string;
+  retryCargo: () => void;
+  listedClaims: Claim[] | undefined;
+  claimsError?: string;
+  retryClaims: () => void;
+  refreshKey: number;
+  navigation: any;
+}
+
+function Details({
+  detail,
+  error,
+  loading,
+  refresh,
+  refreshAll,
+  cargo,
+  cargoError,
+  retryCargo,
+  listedClaims,
+  claimsError,
+  retryClaims,
+  refreshKey,
+  navigation,
+}: DetailsProps) {
   const { t } = useTranslation();
   const { booking, tracking } = detail;
-  const status = bookingStatusInfo(booking);
+  const where = cargo?.where ?? null;
+  // The cargo view is fresher than the booking, so its status wins when there is one.
+  const shipment = { status: booking.status, shipment_status: where?.status ?? booking.shipment_status };
+  const status = bookingStatusInfo(shipment);
   const times = stepTimes(detail);
   const cancelled = booking.status === 'cancelled';
   const reached = BOOKING_STEPS.findIndex((s) => s.status === booking.status);
   const vehicle = tracking?.vehicle;
+  const delivered = !cancelled && isDelivered(shipment);
+  const notices = cargo?.exceptions ?? [];
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Read once: the claim window is measured in days, so a clock frozen at screen open is close enough.
+  const [now] = useState(() => Date.now());
   // Only a pull down shows the spinner, not the quiet refresh that runs while a shipment is moving.
   const [pulling, setPulling] = useState(false);
   const pull = () => {
     setPulling(true);
-    reload();
+    refreshAll();
   };
   const [wasLoading, setWasLoading] = useState(loading);
   if (wasLoading !== loading) {
@@ -80,11 +189,11 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
     setCancelError(null);
     try {
       await api.cancelBooking(booking.id);
-      reload();
+      refresh();
     } catch (e: any) {
       setCancelError(e?.message || t('cancel_failed'));
       // The booking may have been picked up in the meantime, so show its current state.
-      reload();
+      refresh();
     } finally {
       setCancelling(false);
     }
@@ -101,117 +210,168 @@ function Details({ detail, error, reload, loading }: { detail: BookingDetail; er
     );
   const vehiclePoint = vehicle?.lat != null && vehicle?.lng != null ? { latitude: vehicle.lat, longitude: vehicle.lng } : null;
 
+  const handedOverAt = delivered ? deliveredAt(cargo, tracking) : null;
+  const claimWindow = delivered ? claimWindowOpen(handedOverAt, now) : null;
+  const allClaims = mergeClaims(listedClaims, cargo?.claims);
+  const shipmentId = where?.shipment_id ?? null;
+  // The receipt form waits for the cargo data, which says whether the customer already confirmed.
+  const cargoSettled = cargo !== undefined || !!cargoError;
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={pulling} onRefresh={pull} tintColor={colors.accent} />}
-    >
-      {error ? <ErrorBanner message={error} action={{ label: t('try_again'), onPress: reload }} /> : null}
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={pulling} onRefresh={pull} tintColor={colors.accent} />}
+      >
+        {error ? <ErrorBanner message={error} action={{ label: t('try_again'), onPress: refresh }} /> : null}
 
-      <Card style={styles.card}>
-        <StatusPill label={t(status.label)} tone={status.tone} />
-        <View style={styles.place}>
-          <Text variant="caption" color="textMuted">
-            {t('pickup')}
-          </Text>
-          <Text variant="bodyMedium">{booking.pickup_address}</Text>
-        </View>
-        <View style={styles.place}>
-          <Text variant="caption" color="textMuted">
-            {t('dropoff')}
-          </Text>
-          <Text variant="bodyMedium">{booking.drop_address}</Text>
-        </View>
-        <View style={styles.facts}>
-          <Fact label={t('fact_pickup_date')} value={formatDay(booking.pickup_date)} />
-          <Fact label={t('fact_weight')} value={`${formatNumber(Number(booking.weight_kg))} kg`} />
-          <Fact label={t('fact_load')} value={booking.load_type === 'part' ? t('load_part') : t('load_full')} />
-          <Fact
-            label={t('fact_price')}
-            value={booking.quoted_price != null ? formatINR(booking.quoted_price) : t('fact_price_tbc')}
-          />
-          {booking.tracking_id ? <Fact label={t('fact_tracking')} value={booking.tracking_id} mono /> : null}
-        </View>
-      </Card>
-
-      {deliveryFailed(booking) ? <Banner tone="warning" icon="alert-triangle" message={t('delivery_failed_note')} /> : null}
-
-      {cancelled ? (
-        <Banner tone="neutral" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />
-      ) : (
         <Card style={styles.card}>
-          <Text variant="title" accessibilityRole="header">
-            {t('progress')}
-          </Text>
-          {BOOKING_STEPS.map((step, index) => {
-            const done = index <= reached;
-            const time = times[step.status];
-            return (
-              <View key={step.status} style={styles.step} accessible accessibilityLabel={`${t(step.label)}${done ? ', ' + t('step_done') : ', ' + t('step_not_yet')}${time ? `, ${formatDateTime(time)}` : ''}`}>
-                <View style={[styles.stepDot, done && styles.stepDotDone]}>
-                  {done ? <Feather name="check" size={size.icon.sm} color={colors.onAccentFill} /> : null}
-                </View>
-                <View style={styles.flex}>
-                  <Text variant="bodyMedium" color={done ? 'text' : 'textMuted'}>
-                    {t(step.label)}
-                  </Text>
-                  {time && done ? (
-                    <Text variant="caption" color="textMuted">
-                      {formatDateTime(time)}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
+          <StatusPill label={t(status.label)} tone={status.tone} />
+          <View style={styles.place}>
+            <Text variant="caption" color="textMuted">
+              {t('pickup')}
+            </Text>
+            <Text variant="bodyMedium">{booking.pickup_address}</Text>
+          </View>
+          <View style={styles.place}>
+            <Text variant="caption" color="textMuted">
+              {t('dropoff')}
+            </Text>
+            <Text variant="bodyMedium">{booking.drop_address}</Text>
+          </View>
+          <View style={styles.facts}>
+            <Fact label={t('fact_pickup_date')} value={formatDay(booking.pickup_date)} />
+            <Fact label={t('fact_weight')} value={`${formatNumber(Number(booking.weight_kg))} kg`} />
+            <Fact label={t('fact_load')} value={booking.load_type === 'part' ? t('load_part') : t('load_full')} />
+            <Fact
+              label={t('fact_price')}
+              value={booking.quoted_price != null ? formatINR(booking.quoted_price) : t('fact_price_tbc')}
+            />
+            {booking.tracking_id ? <Fact label={t('fact_tracking')} value={booking.tracking_id} mono /> : null}
+            {where?.pieces.total != null ? <Fact label={t('fact_pieces')} value={formatNumber(where.pieces.total)} /> : null}
+          </View>
         </Card>
-      )}
 
-      {tracking && !cancelled && booking.status !== 'delivered' ? (
-        <View style={styles.live}>
-          <Text variant="title" accessibilityRole="header">
-            {t('live_tracking')}
-          </Text>
-          <TrackingMap
-            pickup={{ latitude: booking.pickup_lat, longitude: booking.pickup_lng }}
-            drop={{ latitude: booking.drop_lat, longitude: booking.drop_lng }}
-            vehicle={vehiclePoint}
-            vehicleLabel={vehicle?.plate_number ?? undefined}
-          />
-          {vehicle ? (
-            <Text variant="bodySmall" color="textMuted">
-              {vehicle.plate_number ? `${t('vehicle')} ${vehicle.plate_number}. ` : ''}
-              {vehiclePoint
-                ? tracking.eta_minutes != null
-                  ? t('eta_text', { time: formatMinutes(tracking.eta_minutes, t) })
-                  : t('position_shown')
-                : t('position_unavailable')}
-            </Text>
-          ) : (
-            <Text variant="bodySmall" color="textMuted">
-              {t('no_vehicle_yet')}
-            </Text>
-          )}
-        </View>
-      ) : null}
+        {deliveryFailed(booking) ? <Banner tone="warning" icon="alert-triangle" message={t('delivery_failed_note')} /> : null}
 
-      {canCancel(booking.status) ? (
-        <View style={styles.live}>
-          {cancelError ? <ErrorBanner message={cancelError} /> : null}
-          <Button
-            title={t('cancel_booking')}
-            variant="danger"
-            loading={cancelling}
-            accessibilityHint={t('cancel_hint')}
-            onPress={askCancel}
+        {notices.map((notice, index) => (
+          <Banner
+            key={notice.id ?? `notice-${index}`}
+            tone="warning"
+            icon="alert-triangle"
+            message={notice.revised_eta ? `${notice.message} ${t('new_eta', { time: formatDateTime(notice.revised_eta) })}` : notice.message}
           />
-          <Text variant="caption" color="textMuted" align="center">
-            {t('cancel_until')}
-          </Text>
-        </View>
-      ) : null}
-    </ScrollView>
+        ))}
+
+        {cargoError ? <ErrorBanner message={cargoError} action={{ label: t('try_again'), onPress: retryCargo }} /> : null}
+
+        {!cancelled && shipment.shipment_status === 'out_for_delivery' ? (
+          <DeliveryOtpCard
+            bookingId={booking.id}
+            trackingId={booking.tracking_id}
+            shipmentId={shipmentId}
+            sentAt={cargo?.delivery_otp?.sent_at ?? null}
+            refreshKey={refreshKey}
+            onOpenNotifications={() => navigation.navigate('Main', { screen: 'Notifications' })}
+          />
+        ) : null}
+
+        {cancelled ? (
+          <Banner tone="neutral" icon="x-circle" message={booking.cancel_reason ? t('cancelled_reason', { reason: booking.cancel_reason }) : t('cancelled')} />
+        ) : (
+          <Card style={styles.card}>
+            <Text variant="title" accessibilityRole="header">
+              {t('progress')}
+            </Text>
+            {BOOKING_STEPS.map((step, index) => {
+              const done = index <= reached;
+              const time = times[step.status];
+              return (
+                <View key={step.status} style={styles.step} accessible accessibilityLabel={`${t(step.label)}${done ? ', ' + t('step_done') : ', ' + t('step_not_yet')}${time ? `, ${formatDateTime(time)}` : ''}`}>
+                  <View style={[styles.stepDot, done && styles.stepDotDone]}>
+                    {done ? <Feather name="check" size={size.icon.sm} color={colors.onAccentFill} /> : null}
+                  </View>
+                  <View style={styles.flex}>
+                    <Text variant="bodyMedium" color={done ? 'text' : 'textMuted'}>
+                      {t(step.label)}
+                    </Text>
+                    {time && done ? (
+                      <Text variant="caption" color="textMuted">
+                        {formatDateTime(time)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </Card>
+        )}
+
+        {cargo ? <CustodyTimeline events={cargo.timeline} where={where} notices={notices} history={tracking?.history ?? []} /> : null}
+
+        {tracking && !cancelled && booking.status !== 'delivered' ? (
+          <View style={styles.live}>
+            <Text variant="title" accessibilityRole="header">
+              {t('live_tracking')}
+            </Text>
+            <TrackingMap
+              pickup={{ latitude: booking.pickup_lat, longitude: booking.pickup_lng }}
+              drop={{ latitude: booking.drop_lat, longitude: booking.drop_lng }}
+              vehicle={vehiclePoint}
+              vehicleLabel={vehicle?.plate_number ?? undefined}
+            />
+            {vehicle ? (
+              <Text variant="bodySmall" color="textMuted">
+                {vehicle.plate_number ? `${t('vehicle')} ${vehicle.plate_number}. ` : ''}
+                {vehiclePoint
+                  ? tracking.eta_minutes != null
+                    ? t('eta_text', { time: formatMinutes(tracking.eta_minutes, t) })
+                    : t('position_shown')
+                  : t('position_unavailable')}
+              </Text>
+            ) : (
+              <Text variant="bodySmall" color="textMuted">
+                {t('no_vehicle_yet')}
+              </Text>
+            )}
+          </View>
+        ) : null}
+
+        {cargo?.pod ? <ProofOfDeliveryCard pod={cargo.pod} /> : null}
+
+        {delivered && cargoSettled ? <ConfirmReceiptCard bookingId={booking.id} receipt={cargo?.receipt ?? null} onConfirmed={retryCargo} /> : null}
+
+        <ClaimsCard
+          claims={allClaims}
+          windowOpen={claimWindow}
+          closesAt={claimWindow ? claimClosesAt(handedOverAt) : null}
+          canRaise={!!shipmentId}
+          onRaise={() =>
+            navigation.navigate('Claim', { bookingId: booking.id, shipmentId, trackingId: booking.tracking_id })
+          }
+          error={claimsError}
+          onRetry={retryClaims}
+        />
+
+        {canCancel(booking.status) ? (
+          <View style={styles.live}>
+            {cancelError ? <ErrorBanner message={cancelError} /> : null}
+            <Button
+              title={t('cancel_booking')}
+              variant="danger"
+              loading={cancelling}
+              accessibilityHint={t('cancel_hint')}
+              onPress={askCancel}
+            />
+            <Text variant="caption" color="textMuted" align="center">
+              {t('cancel_until')}
+            </Text>
+          </View>
+        ) : null}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

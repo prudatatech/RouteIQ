@@ -2,7 +2,8 @@
  * Watches the offline action queue and sends it when the phone is back online:
  * on a timer while something is waiting, when the app comes to the foreground,
  * and on demand ("Waiting to send" pill). Tells the driver when the server
- * refuses a queued action for good, and refreshes the route after a send.
+ * refuses a queued action for good (dispatch is told by the queue), and
+ * refreshes the route after a send.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
@@ -23,7 +24,11 @@ export function useActionQueue(onSent: () => void) {
   useEffect(
     () =>
       actionQueue.onFailure(({ action, message }: FailedAction) => {
-        Alert.alert(t('queue_failed_title'), `${t(`queue_kind_${action.kind}`)}: ${message || t('queue_failed_desc')}`);
+        // The queue has also told dispatch (POST /cargo/driver/rejected-action)
+        Alert.alert(
+          t('queue_failed_title'),
+          `${t(`queue_kind_${action.kind}`)}: ${message || t('queue_failed_desc')}\n\n${t('queue_failed_dispatch_told')}`,
+        );
       }),
     [t],
   );
