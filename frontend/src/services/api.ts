@@ -596,8 +596,20 @@ export const financeAPI = {
     api.put('/finance/settings', { fuel_price_per_litre }).then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
 }
 
+/** Where to pay: the only part of the company settings a vendor or customer may read. */
+export interface PaymentDetails {
+  account_name: string | null
+  bank_name: string | null
+  bank_account_no: string | null
+  bank_ifsc: string | null
+  upi_id: string | null
+  payment_terms_days: number
+  available: boolean
+}
+
 /** One invoice: the document with its links, and its PDF. */
 export const invoicesAPI = {
+  paymentDetails: () => api.get('/invoices/payment-details').then(r => r.data as PaymentDetails),
   get: (id: string) => api.get(`/invoices/${id}`).then(r => r.data as InvoiceDetail),
   pdf: (id: string) => api.get(`/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
 }

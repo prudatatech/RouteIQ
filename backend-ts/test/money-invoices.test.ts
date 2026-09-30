@@ -254,6 +254,73 @@ describe('GET /invoices/:id/pdf', () => {
   });
 });
 
+describe('vendor invoice list and load', () => {
+  const late = () => new Date(Date.now() - 10 * DAY).toISOString();
+  beforeEach(() => {
+    world({
+      invoices: [
+        { id: 'v-late', invoice_number: 'INV-1', vendor_id: ID.vendor, manifest_id: ID.m1, vendor_request_id: ID.request1, amount: 1000, gst_rate: 0, gst_amount: 0, total: 1000, status: 'issued', issued_at: new Date(Date.now() - 30 * DAY).toISOString(), due_date: late() },
+        { id: 'v-old', invoice_number: 'INV-2', vendor_id: ID.vendor, shipment_id: ID.s1, amount: 500, gst_rate: 0, gst_amount: 0, total: 500, status: 'issued', issued_at: new Date(Date.now() - 20 * DAY).toISOString() },
+        { id: 'v-paid', invoice_number: 'INV-3', vendor_id: ID.vendor, manifest_id: ID.m1, amount: 700, gst_rate: 0, gst_amount: 0, total: 700, status: 'paid', issued_at: new Date(Date.now() - 40 * DAY).toISOString(), due_date: late(), paid_at: new Date().toISOString(), payment_method: 'upi', payment_reference: 'UTR 1' },
+      ],
+    });
+  });
+
+  it('returns due date, overdue and the payment fields on the vendor list', async () => {
+    const res = await request(app).get(api('/vendor/invoices')).set(auth.vendor());
+    expect(res.status).toBe(200);
+    const byId = (id: string) => res.body.find((i: any) => i.id === id);
+    expect(byId('v-late')).toMatchObject({ overdue: true, days_overdue: 10 });
+    // No saved due date: issue date plus the 15 day terms, so 5 days overdue
+    expect(byId('v-old')).toMatchObject({ overdue: true, days_overdue: 5 });
+    expect(byId('v-old').due_date).toBeTruthy();
+    expect(byId('v-paid')).toMatchObject({ overdue: false, days_overdue: 0, payment_method: 'upi', payment_reference: 'UTR 1' });
+  });
+
+  it('returns the same on the invoice of a load', async () => {
+    const res = await request(app).get(api(`/vendor/loads/${ID.request1}`)).set(auth.vendor());
+    expect(res.status).toBe(200);
+    expect(res.body.invoice).toHaveProperty('due_date');
+    expect(res.body.invoice).toHaveProperty('overdue');
+    expect(res.body.invoice).toHaveProperty('days_overdue');
+  });
+});
+
+describe('GET /invoices/payment-details', () => {
+  const get = (who?: object) => { const r = request(app).get(api('/invoices/payment-details')); return who ? r.set(who) : r; };
+
+  it('gives a vendor and a customer only where to pay', async () => {
+    world({ system_settings: [{ key: 'company_profile', value: { value: { ...COMPANY, upi_id: 'margix@hdfc', payment_terms_days: 30 } } }] });
+    for (const who of [auth.vendor(), auth.customer(), auth.admin()]) {
+      const res = await get(who);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        account_name: 'Margix Logistics Pvt Ltd', bank_name: 'HDFC Bank', bank_account_no: '50200012345678', bank_ifsc: 'HDFC0000123',
+        upi_id: 'margix@hdfc', payment_terms_days: 30, available: true,
+      });
+    }
+  });
+
+  it('never leaks the rest of the company settings', async () => {
+    world({ system_settings: [{ key: 'company_profile', value: { value: { ...COMPANY, pan: 'AAPFU0939F', phone: '+911', email: 'a@b.co', invoice_footer: 'secret footer' } } }] });
+    const text = JSON.stringify((await get(auth.vendor())).body);
+    for (const leak of [SELLER_GSTIN, 'AAPFU0939F', 'Bhiwandi', '996511', 'secret footer', 'a@b.co']) expect(text).not.toContain(leak);
+  });
+
+  it('says nothing is available when no bank or UPI details are saved', async () => {
+    world({ system_settings: [{ key: 'company_profile', value: { value: { legal_name: 'Margix' } } }] });
+    const res = await get(auth.customer());
+    expect(res.body).toMatchObject({ available: false, bank_account_no: null, upi_id: null, payment_terms_days: 15 });
+  });
+
+  it('is not for managers, drivers or anonymous callers', async () => {
+    world();
+    expect((await get(manager())).status).toBe(403);
+    expect((await get(auth.driver())).status).toBe(403);
+    expect((await get()).status).toBe(401);
+  });
+});
+
 describe('list, filters and totals', () => {
   beforeEach(() => {
     world({

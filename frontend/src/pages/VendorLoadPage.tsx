@@ -8,8 +8,9 @@ import { cargoKeys, custodyAPI } from '@/services/cargo'
 import { downloadInvoicePdf } from '@/services/vendorInvoicePdf'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import {
-  claimWindowText, nextAction, STAGE_LABELS, type LoadStage, type VendorLoadDetail,
+  claimWindowText, nextAction, overdueText, STAGE_LABELS, type LoadStage, type VendorLoadDetail,
 } from '@/components/vendor/loads'
+import HowToPay from '@/components/vendor/HowToPay'
 import { ActionCell, LoadFacts, ProblemPill, Route, TrackLink, TruckLine } from '@/components/vendor/LoadBits'
 import RaiseClaimModal from '@/components/vendor/RaiseClaimModal'
 import { CustodyTimeline } from '@/components/cargo/CustodyTimeline'
@@ -245,15 +246,18 @@ export default function VendorLoadPage() {
 
       <Section id="invoice" title="Invoice">
         {data.invoice ? (
-          <Card padded className="flex flex-col gap-3 !p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-3">
+            <Card padded className="flex flex-col gap-3 !p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 space-y-1">
               <p className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono font-medium text-text">{data.invoice.invoice_number}</span>
                 <StatusPill status={data.invoice.status} />
+                {data.invoice.status === 'issued' && overdueText(data.invoice) && <span className="text-xs font-medium text-danger">{overdueText(data.invoice)}</span>}
               </p>
               <p className="text-sm text-muted">
                 {data.invoice.total != null ? `${formatRupees(data.invoice.total)} in all` : ''}
                 {data.invoice.issued_at ? ` · issued ${formatDate(data.invoice.issued_at)}` : ''}
+                {data.invoice.status === 'issued' && data.invoice.due_date ? ` · due ${formatDate(data.invoice.due_date)}` : ''}
                 {data.invoice.paid_at ? ` · paid ${formatDate(data.invoice.paid_at)}` : ''}
               </p>
             </div>
@@ -261,7 +265,9 @@ export default function VendorLoadPage() {
               <Button variant="secondary" icon={<Download size={16} />} loading={downloading} onClick={downloadPdf}>Download PDF</Button>
               <Link to="/vendor/invoices" className={buttonClasses({ variant: 'ghost' })}>All invoices</Link>
             </div>
-          </Card>
+            </Card>
+            {data.invoice.status === 'issued' && <HowToPay invoiceNumber={data.invoice.invoice_number} />}
+          </div>
         ) : (
           <p className="text-sm text-muted">{finished ? 'MargixIndia has not issued the invoice yet. You will be told when it is ready.' : 'An invoice is issued once your load is delivered.'}</p>
         )}

@@ -35,7 +35,12 @@ export interface LoadInvoice {
   status: string
   total: number | null
   issued_at: string | null
+  due_date?: string | null
+  overdue?: boolean
+  days_overdue?: number
   paid_at: string | null
+  payment_method?: string | null
+  payment_reference?: string | null
 }
 
 export interface VendorLoad {
@@ -113,7 +118,12 @@ export interface VendorInvoice {
   total: number
   status: string
   issued_at: string
+  due_date?: string | null
+  overdue?: boolean
+  days_overdue?: number
   paid_at: string | null
+  payment_method?: string | null
+  payment_reference?: string | null
 }
 
 /** The page of one load. */
@@ -314,3 +324,10 @@ export function trackingPath(load: Pick<VendorLoad, 'tracking_id'>): string | nu
 /** Whether the truck can be followed: assigned or moving. */
 export const isTrackable = (load: Pick<VendorLoad, 'stage' | 'tracking_id'>) => !!load.tracking_id && (load.stage === 'assigned' || load.stage === 'on_the_way')
 
+
+/** "Overdue by 5 days", or null when the invoice is not overdue. */
+export function overdueText(i: { overdue?: boolean; days_overdue?: number }): string | null {
+  if (!i.overdue) return null
+  const n = i.days_overdue ?? 0
+  return `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`
+}

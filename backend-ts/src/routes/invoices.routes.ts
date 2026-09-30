@@ -1,6 +1,7 @@
 /**
  * margixindia — One invoice: its document with links, and its PDF.
  *
+ *   GET /invoices/payment-details  vendor, customer, admin: where to pay (bank, UPI, terms), nothing else
  *   GET /invoices/:id      admin, superadmin: the invoice, seller, buyer, lines, GST split and links
  *   GET /invoices/:id/pdf  admin, superadmin, and the vendor or customer the invoice is billed to
  *
@@ -11,10 +12,20 @@ import { Router, Request, Response } from 'express';
 import { requireAuth, requireRole } from '../core/auth';
 import { HttpError, sendError } from '../core/errors';
 import { buildInvoiceDetail, loadInvoiceFor } from '../services/invoice-detail.service';
+import { getPaymentDetails } from '../services/company.service';
 import { invoiceFileName, renderInvoicePdf } from '../services/invoice-pdf.service';
 
 const router = Router();
 router.use(requireAuth);
+
+router.get('/payment-details', requireRole('admin', 'vendor', 'customer'), async (req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(await getPaymentDetails());
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
 
 router.get('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   try {

@@ -39,6 +39,10 @@ Staff (admin, superadmin), under `/api/v1/finance`:
 - `POST /unpriced/price` with `{ kind: 'shipment'|'manifest', id, amount }` sets the price where the invoice service reads it (shipment `freight_charge`, a vendor load's request `cost`, or `freight_share` for a lot) and issues the invoice. 409 if the delivery already has an invoice or is priced by a won bid.
 - `GET` and `PUT /company` read and save the company details.
 
+### Where to pay, for vendors and customers
+
+`GET /api/v1/invoices/payment-details` (vendor, customer, admin, superadmin) returns only `account_name`, `bank_name`, `bank_account_no`, `bank_ifsc`, `upi_id`, `payment_terms_days` and `available` (true when a bank account or UPI id is saved). Nothing else from the company settings is returned. `GET /vendor/invoices` and the invoice on `GET /vendor/loads/:id` carry `due_date`, `overdue`, `days_overdue`, `paid_at`, `payment_method` and `payment_reference`.
+
 ### One invoice
 
 `GET /api/v1/invoices/:id` (admin, superadmin) returns the invoice with `seller`, `seller_gaps`, `buyer`, `lines`, `goods` (HSN lines), `tax` (`intra`, `inter`, `unknown` or `none`, with CGST, SGST and IGST), `total_in_words`, `overdue` and `links` (`shipment`, `request_id`, `requester`, `trip`).
