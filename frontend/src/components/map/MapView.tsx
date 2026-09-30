@@ -15,6 +15,7 @@ import {
   GEOFENCE_SOURCE_ID,
   ROUTE_SOURCE_ID,
   TRAIL_SOURCE_ID,
+  ROUTE_CONGESTION_SOURCE_ID,
   contentBounds,
   geofenceFeatures,
   geofenceFillLayer,
@@ -27,6 +28,8 @@ import {
   trailLineLayer,
   withValidPosition,
 } from './layers'
+import { congestionFeatures, congestionLineLayer } from './congestion'
+import TrafficLayers, { TrafficLegend } from './TrafficLayers'
 import { clusterVehicles, type VehicleCluster } from './cluster'
 import { ClusterMarker, PointMarker, StopMarker, VehicleMarker } from './markers'
 import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
@@ -96,6 +99,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     route = null,
     trails,
     baseStyle = 'streets',
+    traffic,
     clusters: clusteringOn = true,
     selectedId = null,
     onSelect,
@@ -302,6 +306,12 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const line = route ? routeFeature({ ...route, stops }) : null
   // A line built from stops alone is a straight-line estimate, so draw it dashed.
   const planned = Boolean(route?.planned) || (route?.coordinates.length ?? 0) < 2
+  // Coloured by congestion only for a driven road whose per-segment levels fit the line and say something
+  const congestionData = useMemo(() => {
+    const levels = route?.congestion
+    if (planned || !route || !levels || levels.length !== route.coordinates.length - 1 || levels.every((l) => l === 'unknown')) return null
+    return congestionFeatures(route.coordinates, levels)
+  }, [route, planned])
   const geofences = useMemo(() => geofenceFeatures(points), [points])
   const trailData = useMemo(() => trailFeatures(trails ?? []), [trails])
   const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
@@ -350,6 +360,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             </Source>
           )}
 
+          {traffic && (traffic.flow || traffic.incidents) && <TrafficLayers flow={traffic.flow} incidents={traffic.incidents} />}
+
           <Source id={INDIA_BORDERS_SOURCE_ID} type="geojson" data={INDIA_BORDERS_URL}>
             {indiaBordersLayers(baseStyle).map((layer) => <Layer key={`${layer.id}-${baseStyle}`} {...layer} />)}
           </Source>
@@ -371,7 +383,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
           {line && (
             <Source id={ROUTE_SOURCE_ID} type="geojson" data={line}>
               {!planned && <Layer {...routeCasingLayer} />}
-              <Layer {...routeLineLayer(planned)} />
+              {!congestionData && <Layer {...routeLineLayer(planned)} />}
+            </Source>
+          )}
+
+          {congestionData && (
+            <Source id={ROUTE_CONGESTION_SOURCE_ID} type="geojson" data={congestionData}>
+              <Layer {...congestionLineLayer} />
             </Source>
           )}
 
@@ -403,6 +421,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
       ) : null}
 
       {ready && showLegend && <StatusLegend vehicles={vehicles} />}
+      {ready && traffic?.flow && <TrafficLegend enabled stacked={showLegend && vehicles.length > 0} />}
       {children}
       {load.status === 'loading' && <MapLoading />}
       {load.status === 'error' && <MapError message={load.message} onRetry={load.canRetry ? retry : undefined} />}

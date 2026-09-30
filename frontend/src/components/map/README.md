@@ -25,6 +25,27 @@ No token is needed: streets and dark are Carto, satellite and terrain are Esri's
 for traffic incidents, route lines, the selected vehicle's trail (from `gps_points`) and clustering.
 A `flyTo` asked for before the style has loaded runs once the map is ready.
 
+### Live traffic
+
+`MapView` takes `traffic={{ flow, incidents }}` (staff only: the tiles and incidents need a signed-in staff user; off by default).
+
+- **Flow** (`flow`): TomTom traffic-flow raster tiles, green / amber / red / dark red, with a legend (Free flow, Slow, Queuing, Stopped).
+  The browser never sees the TomTom key. The tiles come from the backend, `GET /api/v1/traffic/tiles/flow/{z}/{x}/{y}.png?t=<token>`.
+  Map tiles cannot send the login header, so `useTrafficTileToken` fetches a 30-minute signed token from `GET /traffic/tile-token` and renews it early.
+  The backend caches a tile for 2 minutes and answers with a transparent tile when TomTom is not set up or fails, so the map never breaks.
+  The layer is added by `TrafficLayers.tsx`: over the roads, under the base map's labels, and under India's borders, geofences, trails and the route line
+  (`flowInsertBeforeId` in `trafficFlow.ts`; a new overlay layer of ours that must stay above the traffic goes in its `ABOVE_FLOW` list).
+- **Incidents** (`incidents`): accident, road works, closure, jam, flooding, weather, hazard and breakdown icons (lucide, same look as the point markers), grouped into counts below zoom 11.
+  A click opens a popup with the type, road, delay and how long ago it started. Data comes from `GET /traffic/incidents?bbox=minLng,minLat,maxLng,maxLat&refresh=1`:
+  stored incidents in view, and from zoom 9 the server also fetches fresh ones from TomTom when its data for the area is older than 5 minutes.
+- **Congestion-coloured route** (`route.congestion`): `fetchDrivingRoute` asks Mapbox for `annotations=congestion,duration,distance`. Give `route.congestion`
+  (one level per line segment) to `MapView` and the line is coloured by it (`congestion.ts`); without it, or without a token, the line is flat or dashed as before.
+- **Live ETA** (`useLiveEta`, `TripEtaCard`, `VehicleTripEta`): the vehicle's position through its remaining stops with Mapbox driving-traffic, against the same drive without traffic
+  (`fetchFreeFlowSeconds`) and the route's planned arrival (`route_stops.planned_arrival_at`). Asked at most every 2 minutes per vehicle; routes are cached for 3 minutes in `directions.ts`.
+  Used on the live map (selected-vehicle panel and route summary), the route details page and the shipment tracking map.
+
+`LiveMap` shows both as "Live traffic" and "Traffic incidents" in the layers menu (`layerPrefs.ts`: `flow` is on by default).
+
 ## Files
 
 | File | What |
@@ -34,7 +55,10 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 | `markers.tsx` | Vehicle, point and stop markers |
 | `layers.ts` | Route line, geofence circles, bounds helpers |
 | `overlays.tsx` | Recenter control, status legend, loading and error states |
-| `directions.ts` | `fetchDrivingRoute()` (Mapbox Directions, optional) |
+| `directions.ts` | `fetchDrivingRoute()` (Mapbox driving-traffic with congestion annotations, optional) and `fetchFreeFlowSeconds()` |
+| `TrafficLayers.tsx`, `trafficFlow.ts`, `trafficIncidents.ts` | Live traffic flow tiles, incident markers, and their pure helpers |
+| `congestion.ts` | Congestion levels, route segmenting and the colour-by-congestion layer |
+| `liveEta.ts`, `useLiveEta.ts`, `TripEta.tsx`, `VehicleTripEta.tsx`, `tripStops.ts` | Live ETA with traffic |
 | `useLiveVehiclePositions.ts` | Realtime GPS positions from Supabase with a 5 s poll fallback |
 | `LiveMap.tsx`, `DriverMap.tsx`, `InlineTrackingMap.tsx` | Existing components, now thin wrappers over `MapView` |
 | `config/mapConfig.ts` | Base map, default view, token, and the **only** status → colour/label maps |
@@ -45,7 +69,7 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 |------|------|---------|-------|
 | `mode` | `'fleet' \| 'route' \| 'incident' \| 'tracking' \| 'picker'` | `'fleet'` | Only picks defaults (below) |
 | `vehicles` | `MapVehicle[]` | `[]` | `{ id, position: {lat,lng}, status, label, heading? }`. Moves animate smoothly |
-| `route` | `MapRoute \| null` | `null` | `{ coordinates: [lng,lat][], stops?: MapRouteStop[], planned? }`. With no coordinates the stops are joined by a dashed line |
+| `route` | `MapRoute \| null` | `null` | `{ coordinates: [lng,lat][], stops?: MapRouteStop[], planned?, congestion? }`. With no coordinates the stops are joined by a dashed line |
 | `points` | `MapPoint[]` | `[]` | `{ id, kind, position, label, active?, radiusKm?, draggable? }`. Kinds: `pickup`, `drop`, `incident`, `hub`, `load`, `location` |
 | `selectedId` / `onSelect` | `string \| null` / `(id) => void` | | Ids of vehicles and points |
 | `fitTo` | `'initial' \| 'content' \| 'none'` | by mode | `initial`: fit once. `content`: refit when things are added/removed (not when a vehicle just moves) |
@@ -54,6 +78,7 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 | `follow` | `boolean \| string` | by mode | Keep a vehicle centred. `true` = selected vehicle, or the only one. Dragging pauses; recenter resumes |
 | `interactive` | `boolean` | `true` | `false` for static previews (no pan/zoom/controls) |
 | `controls` | `{ zoom?, fullscreen?, recenter? }` | by mode | Recenter refits the content, or goes back to the followed vehicle |
+| `traffic` | `{ flow?, incidents? }` | off | Live traffic, staff only (see Live traffic) |
 | `showLegend` | `boolean` | by mode | Status legend with counts (colour is never the only cue) |
 | `showLabels` | `boolean` | `false` | Always show plate + status under vehicles (otherwise only when selected) |
 | `onPick` | `(pos) => void` | | Click to pick a location; crosshair cursor |

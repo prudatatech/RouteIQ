@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { BaseStyleId } from '@/config/mapConfig'
+import type { CongestionLevel } from './congestion'
 
 /** A position on the map. */
 export interface LatLng {
@@ -40,6 +41,19 @@ export interface MapRoute {
   stops?: MapRouteStop[]
   /** Draw a dashed line: the path is a plan or a straight-line estimate, not a driven road. */
   planned?: boolean
+  /**
+   * Congestion of each segment of `coordinates` (one entry fewer than coordinates), from Mapbox
+   * driving-traffic. When set, the line is coloured by it instead of one flat colour.
+   */
+  congestion?: CongestionLevel[]
+}
+
+/** Live traffic drawn on the map. Staff only: both need a signed-in staff user. */
+export interface MapTraffic {
+  /** Colour-coded congestion on the roads, with a legend. Drawn over the base map, under everything else. */
+  flow?: boolean
+  /** Accidents, road works, closures and other incidents in view, grouped when zoomed out. */
+  incidents?: boolean
 }
 
 /** A driven path drawn as a line (a vehicle's trail from its GPS history). */
@@ -117,6 +131,8 @@ export interface MapViewProps {
   /** false turns off panning, zooming and clicking (for small previews). Default true. */
   interactive?: boolean
   controls?: MapControls
+  /** Live traffic: flow colours and incident icons. Off by default. */
+  traffic?: MapTraffic
   /** Base map (streets, satellite, terrain, dark). Default streets. */
   baseStyle?: BaseStyleId
   /** Group nearby vehicles into clusters when there are many. Default true. */

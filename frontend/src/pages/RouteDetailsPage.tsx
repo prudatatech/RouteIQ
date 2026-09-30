@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -7,13 +7,12 @@ import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
 import { Page, PageHeader, Card, Button, StatusPill, Stat, DetailList, Timeline, type TimelineEvent, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
-import { MapView, fetchDrivingRoute, type DrivingRoute, type LatLng, type MapPoint, type MapRouteStop, type MapVehicle } from '@/components/map'
+import { MapView, TripEtaCard, fetchDrivingRoute, remainingStops, useLiveEta, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatDateTime, formatMinutes, formatKm } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
-import { useRouteIncidents } from '@/components/traffic/hooks'
-import { describeIncident } from '@/utils/traffic'
+import { useAuthStore } from '@/store/authStore'
 import MessagesPanel from '@/components/messages/MessagesPanel'
 
 interface DeliveryPoint {
@@ -27,6 +26,7 @@ interface RouteStop {
   id: string
   sequence: number
   status?: string | null
+  planned_arrival_at?: string | null
   delivery_point_id?: string | null
   delivery_points?: DeliveryPoint | null
 }
@@ -48,6 +48,9 @@ interface RouteDetail extends RouteLike {
   route_stops?: RouteStop[] | null
 }
 
+/** Live traffic on the route map is refreshed this often while the route is active. */
+const TRAFFIC_REFRESH_MS = 3 * 60_000
+
 export default function RouteDetailsPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -59,9 +62,12 @@ export default function RouteDetailsPage() {
     queryKey: ['route', id],
     queryFn: () => routesAPI.get(id as string),
     enabled: !!id,
+    // The vehicle marker and the live ETA follow the truck while the route is running
+    refetchInterval: (query) => (query.state.data?.status === 'active' ? 20_000 : false),
   })
 
-  const incidents = useRouteIncidents(id)
+  const role = useAuthStore(s => s.role)
+  const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
 
   const updateStatusMutation = useMutation({
     mutationFn: (status: string) => routesAPI.updateStatus((route as RouteDetail).id, status),
@@ -92,8 +98,17 @@ export default function RouteDetailsPage() {
   // Real driving directions when a Mapbox token is configured; otherwise MapView
   // draws a dashed straight line through the stops.
   const [road, setRoad] = useState<DrivingRoute | null>(null)
+  const [trafficTick, setTrafficTick] = useState(0)
+  const routeActive = route?.status === 'active'
   useEffect(() => {
-    setRoad(null)
+    if (!routeActive) return
+    const timer = window.setInterval(() => setTrafficTick(n => n + 1), TRAFFIC_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [routeActive])
+  const roadFor = useRef('')
+  useEffect(() => {
+    // A refresh keeps the drawn road until the new one arrives; only another route clears it
+    if (roadFor.current !== `${route?.id}|${sortedStops.length}`) { roadFor.current = `${route?.id}|${sortedStops.length}`; setRoad(null) }
     if (!route) return
     const vehiclePos: LatLng | null = route.vehicles?.latitude && route.vehicles?.longitude
       ? { lat: route.vehicles.latitude, lng: route.vehicles.longitude } : null
@@ -109,7 +124,7 @@ export default function RouteDetailsPage() {
       .catch(() => { /* MapView falls back to a dashed line */ })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route?.id, sortedStops.length])
+  }, [route?.id, sortedStops.length, trafficTick])
 
   if (isLoading) return <Page><LoadingState label="Loading route…" /></Page>
   if (isError || !route) {
@@ -145,13 +160,6 @@ export default function RouteDetailsPage() {
       ? [{ id: s.id, sequence: i + 1, status: s.status ?? undefined, label: s.delivery_points.name ?? s.delivery_points.address ?? undefined, position: { lat: s.delivery_points.latitude, lng: s.delivery_points.longitude } }]
       : []
   ))
-
-  const incidentPoints: MapPoint[] = (incidents.data?.incidents ?? []).map(i => ({
-    id: `traffic-${i.id}`,
-    kind: 'incident',
-    position: { lat: i.lat, lng: i.lng },
-    label: `Traffic: ${describeIncident(i)}`,
-  }))
 
   const timeline: TimelineEvent[] = [
     { status: 'created', at: route.created_at },
@@ -231,9 +239,9 @@ export default function RouteDetailsPage() {
           <div className="h-96 lg:h-full">
             <MapView
               mode="route"
-              route={{ coordinates: road?.coordinates ?? [], stops: mapStops, planned: !road }}
+              route={{ coordinates: road?.coordinates ?? [], stops: mapStops, planned: !road, congestion: road?.congestion }}
               vehicles={mapVehicles}
-              points={incidentPoints}
+              traffic={isStaff ? { flow: true, incidents: true } : undefined}
               ariaLabel="Route map"
             />
           </div>
@@ -258,6 +266,8 @@ export default function RouteDetailsPage() {
               </ol>
             )}
           </Card>
+
+          {routeActive && <RouteLiveEta route={route} />}
 
           <RouteConditions routeId={route.id} />
 
@@ -308,5 +318,22 @@ export default function RouteDetailsPage() {
         </div>
       </div>
     </Page>
+  )
+}
+
+/** Live ETA for the vehicle on an active route: where it is now, through the stops it has not done yet. */
+function RouteLiveEta({ route }: { route: RouteDetail }) {
+  const stops = useMemo(() => remainingStops(route.route_stops), [route.route_stops])
+  const lat = route.vehicles?.latitude
+  const lng = route.vehicles?.longitude
+  const origin: LatLng | null = lat && lng ? { lat, lng } : null
+  const eta = useLiveEta({ origin, stops })
+  if (stops.length === 0) return null
+  return (
+    <TripEtaCard
+      eta={eta.data}
+      loading={eta.isLoading}
+      error={!origin ? 'The vehicle has no GPS position yet.' : eta.isError ? 'We could not work out the ETA. It will try again shortly.' : eta.isSuccess ? 'No driving route was found to the remaining stops.' : null}
+    />
   )
 }
