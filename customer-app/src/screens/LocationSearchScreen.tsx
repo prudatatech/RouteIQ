@@ -59,7 +59,8 @@ const PROBLEM_MESSAGES: Record<LocationProblem['kind'], string> = {
 
 export default function LocationSearchScreen({ navigation, route }: any) {
   const { t } = useTranslation();
-  const { type: locationType } = route.params || { type: 'pickup' }; // 'pickup' or 'dropoff'
+  // 'pickup' or 'dropoff'. `target` names who asked (one drop of a multi-drop booking) and is sent back with the answer.
+  const { type: locationType, target } = route.params || { type: 'pickup' };
   const isPickup = locationType === 'pickup';
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -271,6 +272,7 @@ export default function LocationSearchScreen({ navigation, route }: any) {
       selectedLocation: finalLocation,
       selectedCoord: selectedCoord,
       locationType,
+      ...(target ? { target } : {}),
     });
     navigation.goBack();
   };

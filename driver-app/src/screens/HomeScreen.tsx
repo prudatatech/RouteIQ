@@ -29,6 +29,7 @@ import { useParcelScan, type ScanOutcome } from '../hooks/useParcelScan';
 import { useCargoTransfers, useOnBoard } from '../hooks/useCargo';
 import { sendCustody, type CargoSendResult } from '../services/cargoActions';
 import { manifestRefOfStop } from '../services/cargo';
+import { dropLotsFor, type DropLot } from '../utils/dropLots';
 import { useActionQueue } from '../hooks/useActionQueue';
 import { useDispatchPhone } from '../hooks/useDispatchPhone';
 import { withQueuedStops } from '../utils/queuedStops';
@@ -128,6 +129,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const modal = useModalManager({ call: !!data.incomingCall, assignment: !!assignmentKind });
   const { open: openModal, close: closeModal } = modal;
 
+  // The lots to hand over where a stop is (set once the on-board list is known, below)
+  const lotsAtDrop = useRef<(stop: RouteStop) => DropLot[]>((stop) => dropLotsFor(stop, null, []));
   // Parcels scanned at the current pickup, waiting for their pickup details
   const [pickupItems, setPickupItems] = useState<PickupItem[]>([]);
   // A vendor load's pickup stop is a pickup, not a delivery: it opens the pickup details
@@ -140,11 +143,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         openModal({ kind: 'pickup' });
         return;
       }
-      openModal({ kind: 'pod', stop });
+      openModal({ kind: 'pod', stop, lots: lotsAtDrop.current(stop) });
     },
     [openModal],
   );
-  const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop }), [openModal]);
+  const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop, lots: lotsAtDrop.current(stop) }), [openModal]);
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
   const arrivedStops = useRef(new Set<string>());
@@ -167,6 +170,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const onBoard = useOnBoard(!!data.activeVehicleId);
   const cargoTransfers = useCargoTransfers(data.activeVehicleId);
   const { refetch: refetchOnBoard } = onBoard;
+  useEffect(() => {
+    lotsAtDrop.current = (stop: RouteStop) => dropLotsFor(stop, route, onBoard.items);
+  }, [route, onBoard.items]);
   const { refetch: refetchTransfers } = cargoTransfers;
 
   // A transfer planned or a case opened by dispatch: reload what is on board and the transfers
@@ -261,7 +267,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const afterPickup = useCallback(
     (items: PickupItem[], result: CargoSendResult) => {
       setPickupItems([]);
-      scans.markPickedUp(items.map((i) => i.code));
+      // A lot's master was what the driver scanned: it is no longer a pickup either
+      scans.markPickedUp([...new Set(items.flatMap((i) => (i.masterCode ? [i.code, i.masterCode] : [i.code])))]);
       closeModal();
       refetchOnBoard();
       const codes = result.exceptions.map((e) => e.code).join(', ');
@@ -488,14 +495,14 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
           <DeliveryScreen
             key={`${active.kind}-${active.stop.id}`}
             stop={active.stop}
+            lots={active.lots}
             initialKind={active.kind === 'issue' ? 'not_delivered' : 'full'}
-            parcelVerified={scans.verified.has(active.stop.id)}
-            onScanCode={(code, method) => scans.checkForStop(active.stop, code, method)}
+            isVerified={(stop) => scans.verified.has(stop.id)}
+            onScanCode={(stop, code, method) => scans.checkForStop(stop, code, method)}
             onClose={closeModal}
             headerRight={sosButton}
-            onSubmit={async (outcome, info) => {
-              await actions.deliver(active.stop, outcome, info);
-              closeModal();
+            onSubmit={async (outcome, entries, onSent) => {
+              await actions.deliverLots(entries, outcome, onSent);
               refetchOnBoard();
             }}
           />

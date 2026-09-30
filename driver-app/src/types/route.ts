@@ -9,6 +9,11 @@ export interface DeliveryPoint {
   latitude?: number | string | null;
   longitude?: number | string | null;
   demand_kg?: number | null;
+  /** Lots (docs/cargo-plan.md): a drop made for one lot carries its pieces and its own consignee. */
+  pieces?: number | string | null;
+  consignee_name?: string | null;
+  consignee_phone?: string | null;
+  lot_shipment_id?: string | null;
 }
 
 /**

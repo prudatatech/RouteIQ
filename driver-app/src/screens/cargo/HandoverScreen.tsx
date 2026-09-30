@@ -12,14 +12,15 @@ import React, { useState, type ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert, StyleSheet } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { VehicleTransfer } from '../../hooks/useCargo';
-import { refKey, type ConditionCode, type TransferItem } from '../../services/cargo';
+import { useLotFamily, type VehicleTransfer } from '../../hooks/useCargo';
+import { refKey, type ConditionCode, type LotFamily, type TransferItem } from '../../services/cargo';
 import { sendHandover } from '../../services/cargoActions';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
 import { formatDateTime } from '../../utils/format';
 import { openTurnByTurn } from '../../utils/navigation';
 import CargoScreen from '../../components/cargo/CargoScreen';
+import LotLine from '../../components/cargo/LotLine';
 import { ConditionPicker, DispatchNote, PhotoStrip, PieceCounter, SignatureBlock } from '../../components/cargo/CargoFields';
 import SignaturePad from '../../components/modals/SignaturePad';
 import { Banner, Button, Card, ErrorBanner, Text } from '../../components/ui';
@@ -195,7 +196,7 @@ export default function HandoverScreen({ vehicleTransfer, onDone, onClose, heade
             const exp = expected(item);
             return (
               <Card key={refKey(item.ref)} style={styles.card}>
-                <Text variant="monoMedium">{item.code}</Text>
+                <HandoverItemHead item={item} out={out} fromVehicleId={transfer.fromVehicleId} />
                 <PieceCounter
                   label={out ? t('cargo_count_out') : t('cargo_count_in')}
                   value={c.pieces}
@@ -224,6 +225,52 @@ export default function HandoverScreen({ vehicleTransfer, onDone, onClose, heade
       {blocked ? null : <DispatchNote reasons={notes} />}
       {error ? <ErrorBanner message={error} /> : null}
     </CargoScreen>
+  );
+}
+
+/**
+ * The pieces the handing-over vehicle held of this consignment before the split: the moving lot
+ * plus its sibling lots still on that vehicle. For a lot of a lot (`A1`), only the lots of the same
+ * letter count. Null when no sibling is on the vehicle (a whole consignment moves).
+ */
+function piecesBeforeSplit(item: TransferItem, family: LotFamily | null, fromVehicleId: string | null): number | null {
+  const moving = item.piecesPlanned;
+  if (!family || moving === null || !fromVehicleId) return null;
+  const letter = /^([A-Z])\d+$/.exec(item.lot.label ?? '')?.[1] ?? null;
+  const siblings = family.lots.filter(
+    (l) =>
+      l.code !== item.code &&
+      l.holder === 'vehicle' &&
+      l.vehicleId === fromVehicleId &&
+      (letter === null || (l.label ?? '').startsWith(letter)),
+  );
+  if (siblings.length === 0) return null;
+  return moving + siblings.reduce((sum, l) => sum + (l.pieces ?? 0), 0);
+}
+
+/**
+ * The item's code, lot and consignee, and for a partial transfer "Hand over 30 of 100 (lot C)":
+ * only the moving lot is counted. The receiving driver sees only the lot that comes to them.
+ */
+function HandoverItemHead({ item, out, fromVehicleId }: { item: TransferItem; out: boolean; fromVehicleId: string | null }) {
+  const { t } = useTranslation();
+  const { family } = useLotFamily(out && item.lot.label ? item.code : null);
+  const moving = out ? item.piecesPlanned : item.piecesOut ?? item.piecesPlanned;
+  const before = out ? piecesBeforeSplit(item, family, fromVehicleId) : null;
+  const label = item.lot.label;
+  const line =
+    moving === null || !label
+      ? null
+      : out
+        ? before !== null
+          ? fill(t('cargo_handover_part_of'), { n: moving, total: before, label })
+          : fill(t('cargo_handover_lot'), { n: moving, label })
+        : fill(t('cargo_receive_lot'), { n: moving, label });
+  return (
+    <>
+      <LotLine code={item.code} pieces={moving} lot={item.lot} />
+      {line ? <Text variant="bodyMedium">{line}</Text> : null}
+    </>
   );
 }
 

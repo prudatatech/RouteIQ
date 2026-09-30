@@ -7,20 +7,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import {
   cacheInfo,
   readCachedInfo,
   readConsignmentInfo,
+  readLotFamily,
   readOnBoard,
   readTransfers,
   type CargoTransfer,
   type ConsignmentInfo,
+  type LotFamily,
   type OnBoardItem,
 } from '../services/cargo';
 
-const ON_BOARD_KEY = 'cargo_on_board_v1';
-const TRANSFERS_KEY = 'cargo_transfers_v1';
+// v2: items carry their lot (label, master, consignee)
+const ON_BOARD_KEY = 'cargo_on_board_v2';
+const TRANSFERS_KEY = 'cargo_transfers_v2';
+const LOTS_KEY = 'cargo_lots_v1';
 
 async function readJson<T>(key: string): Promise<T | undefined> {
   try {
@@ -122,4 +126,63 @@ export function useConsignmentInfo(code: string | null | undefined) {
   }, [load]);
 
   return { info, loading, offline, reload: load };
+}
+
+/** Details of several consignments at once (the lots at one drop), each from the server or the phone's copy. */
+export function useConsignmentInfos(codes: string[]) {
+  const joined = codes.join('|');
+  const [infos, setInfos] = useState<Record<string, ConsignmentInfo | null>>({});
+  const [loading, setLoading] = useState(codes.length > 0);
+
+  useEffect(() => {
+    let alive = true;
+    const list = joined ? joined.split('|') : [];
+    setLoading(list.length > 0);
+    Promise.all(
+      list.map(async (code): Promise<[string, ConsignmentInfo | null]> => {
+        const cached = await readCachedInfo(code);
+        // The phone's copy shows at once; the server's answer replaces it when it comes
+        if (cached && alive) setInfos((cur) => (code in cur ? cur : { ...cur, [code]: cached }));
+        try {
+          const fresh = readConsignmentInfo(await api.getCargoWhere(code));
+          cacheInfo(code, fresh);
+          return [code, fresh];
+        } catch {
+          return [code, cached];
+        }
+      }),
+    ).then((entries) => {
+      if (!alive) return;
+      setInfos((cur) => ({ ...cur, ...Object.fromEntries(entries.filter(([, value]) => value !== null)) }));
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [joined]);
+
+  return { infos, loading };
+}
+
+/**
+ * The lots of a split consignment (GET /cargo/lots/:ref), by any lot's code or the master's. The
+ * last answer is kept on the phone per code. `family` is null for a consignment that was never
+ * split (the server answers no lots, or 404).
+ */
+export function useLotFamily(code: string | null | undefined) {
+  const result = useCachedQuery<LotFamily | null>(
+    `${LOTS_KEY}:${code ?? ''}`,
+    ['cargoLots', code],
+    async () => {
+      try {
+        return readLotFamily(await api.getCargoLots(code!));
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+    !!code,
+  );
+  const family = result.data && result.data.lots.length > 0 ? result.data : null;
+  return { ...result, family };
 }

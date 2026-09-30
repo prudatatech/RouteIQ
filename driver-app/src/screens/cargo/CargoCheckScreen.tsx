@@ -15,6 +15,7 @@ import type { LatLng } from '../../types/route';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
 import CargoScreen from '../../components/cargo/CargoScreen';
+import LotLine from '../../components/cargo/LotLine';
 import { ConditionPicker, DispatchNote, PhotoStrip, PieceCounter, YesNo } from '../../components/cargo/CargoFields';
 import { Banner, Button, Card, EmptyState, ErrorBanner, OfflineBanner, Text } from '../../components/ui';
 import { colors, space } from '../../theme';
@@ -150,7 +151,7 @@ export default function CargoCheckScreen({ currentLoc, onClose, headerRight }: C
             return (
               <Card key={refKey(item.ref)} style={styles.card}>
                 <View style={styles.head}>
-                  <Text variant="monoMedium">{item.code}</Text>
+                  <LotLine code={item.code} pieces={item.pieces} lot={item.lot} />
                   {item.stopName ? (
                     <Text variant="caption" color="textMuted">
                       {item.stopName}

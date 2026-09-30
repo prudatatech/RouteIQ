@@ -2,9 +2,15 @@
  * Hub drop-off: the driver leaves consignments at a hub (a depot). For each
  * one dropped, a `hub_in` custody event with the hub, the pieces and their
  * condition; photos and the hub staff member's name and signature go with it.
+ *
+ * Each consignment is a lot when it was split (its code, pieces and consignee
+ * are shown). When dispatch splits the goods at the hub into outbound lots,
+ * the screen shows, read only, which lots stay at the hub and which leave, on
+ * which truck or to which drop: before the drop for goods already split, and
+ * after it while dispatch makes the split.
  */
 import React, { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useOnBoard } from '../../hooks/useCargo';
@@ -15,6 +21,8 @@ import type { LatLng } from '../../types/route';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
 import CargoScreen from '../../components/cargo/CargoScreen';
+import LotLine from '../../components/cargo/LotLine';
+import LotPlan from '../../components/cargo/LotPlan';
 import { ConditionPicker, DispatchNote, PhotoStrip, PieceCounter, SignatureBlock } from '../../components/cargo/CargoFields';
 import SignaturePad from '../../components/modals/SignaturePad';
 import { Button, Card, Chip, EmptyState, ErrorBanner, OfflineBanner, Text, TextField } from '../../components/ui';
@@ -44,6 +52,7 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState<{ codes: string[]; queued: boolean; message: string } | null>(null);
 
   const formOf = (item: OnBoardItem): DropForm => forms[refKey(item.ref)] ?? { selected: true, pieces: item.pieces, condition: 'good' };
   const update = (item: OnBoardItem, patch: Partial<DropForm>) =>
@@ -87,9 +96,9 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
       });
       const codes = result.exceptions.map((e) => e.code).join(', ');
       const body = result.queued ? t('queue_saved_desc') : t('cargo_hub_saved');
-      Alert.alert(result.queued ? t('queue_saved_title') : t('cargo_saved_title'), codes ? `${body}\n\n${t('cargo_case_opened')} ${codes}` : body);
+      // The screen stays open on the onward plan: dispatch may split the goods into outbound lots now
+      setDone({ codes: chosen.map((i) => i.code), queued: result.queued, message: codes ? `${body}\n\n${t('cargo_case_opened')} ${codes}` : body });
       onBoard.refetch();
-      onClose();
     } catch (e) {
       setError(errorMessage(e, t('action_failed')));
     } finally {
@@ -109,6 +118,26 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
           }}
           onCancel={() => setSigning(false)}
         />
+      </CargoScreen>
+    );
+  }
+
+  if (done) {
+    return (
+      <CargoScreen title={t('cargo_hub_title')} onClose={onClose} headerRight={headerRight} footer={<Button title={t('close')} onPress={onClose} />}>
+        <Card style={styles.card}>
+          <Text variant="title">{done.queued ? t('queue_saved_title') : t('cargo_saved_title')}</Text>
+          <Text variant="body">{done.message}</Text>
+        </Card>
+        <Text variant="bodySmall" color="textMuted">
+          {t('cargo_plan_intro')}
+        </Text>
+        {done.codes.map((code) => (
+          <Card key={code} style={styles.card}>
+            <Text variant="monoMedium">{code}</Text>
+            <LotPlan code={code} hubId={hubId} refreshable />
+          </Card>
+        ))}
       </CargoScreen>
     );
   }
@@ -156,12 +185,14 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
           const f = formOf(item);
           return (
             <Card key={refKey(item.ref)} style={styles.card}>
-              <View style={styles.head}>
-                <Text variant="monoMedium" style={styles.flex}>
-                  {item.code}
-                </Text>
-                <Chip label={f.selected ? t('cargo_hub_dropping') : t('cargo_hub_keeping')} selected={f.selected} onPress={() => update(item, { selected: !f.selected })} />
-              </View>
+              <LotLine
+                code={item.code}
+                pieces={item.pieces}
+                lot={item.lot}
+                trailing={
+                  <Chip label={f.selected ? t('cargo_hub_dropping') : t('cargo_hub_keeping')} selected={f.selected} onPress={() => update(item, { selected: !f.selected })} />
+                }
+              />
               {f.selected ? (
                 <>
                   <PieceCounter
@@ -171,6 +202,7 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
                     hint={item.pieces !== null ? fill(t('cargo_pieces_expected'), { n: item.pieces }) : undefined}
                   />
                   <ConditionPicker value={f.condition} onChange={(condition) => update(item, { condition })} />
+                  {item.lot.label ? <LotPlan code={item.code} hubId={hubId} /> : null}
                 </>
               ) : null}
             </Card>
@@ -192,8 +224,6 @@ export default function HubDropScreen({ currentLoc, onClose, headerRight }: HubD
 
 const styles = StyleSheet.create({
   card: { gap: space[3] },
-  head: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  flex: { flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   action: { flex: 1 },
 });

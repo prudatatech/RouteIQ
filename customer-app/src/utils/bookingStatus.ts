@@ -38,6 +38,26 @@ export const bookingStatusInfo = (booking: Pick<Booking, 'status' | 'shipment_st
   return BOOKING_STATUS[booking.status];
 };
 
+/** One lot's status in plain words: waiting for pickup, on its way, delivered, or a detailed shipment status. */
+export function lotStatusInfo(status: string | null | undefined): { label: string; tone: Tone } {
+  switch (status) {
+    case 'created':
+    case 'assigned':
+      return { label: 'lot_status_waiting', tone: 'info' };
+    case 'picked_up':
+    case 'in_transit':
+      return BOOKING_STATUS.in_transit;
+    case 'delivered':
+      return BOOKING_STATUS.delivered;
+    case 'cancelled':
+      return BOOKING_STATUS.cancelled;
+    case 'exception':
+      return { label: 'status_delivery_failed', tone: 'danger' };
+    default:
+      return (status && SHIPMENT_STATUS[status]) || { label: 'lot_status_unknown', tone: 'neutral' };
+  }
+}
+
 /** The goods have reached the receiver, in full or in part. */
 export const isDelivered = (booking: Pick<Booking, 'status' | 'shipment_status'>) =>
   booking.status === 'delivered' || booking.shipment_status === 'delivered' || booking.shipment_status === 'partially_delivered';

@@ -65,6 +65,8 @@ export default function HomeScreen({ navigation }: any) {
   // Location picks come back through an event so navigation state is not wiped.
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener('locationSelected', (data) => {
+      // A place for one extra drop of a multi-drop booking belongs to the cargo screen
+      if (data.target) return;
       if (data.locationType === 'pickup') {
         setPickupLocation(data.selectedLocation);
         if (data.selectedCoord) setPickupCoord(data.selectedCoord);
