@@ -274,3 +274,86 @@ What the backend does where the contract above leaves a choice. These notes are 
   - the SOS and maintenance modals show the cargo on board and require a plan.
 - **Driver app:** a richer pickup (pieces, condition, seal, photos, signature); a delivery sheet (full / with remarks / partial / refused / not delivered + OTP); an on-board checklist after an accident or breakdown; handover out and in; hub drop; return pickup.
 - **Customer app:** the custody timeline in plain words, exception notices with the revised ETA, the delivery OTP, POD view, confirm receipt and rate, and raise and track a claim.
+
+## Lots: splitting one consignment across drops, trucks and hubs
+
+Real consignments are rarely one piece of goods going to one place on one truck. For example, a 100-carton lot goes 50 to consignee A, 25 to consignee B, and 25 to a hub for onward delivery. Or 30 of the 100 cartons move to a relief truck while 70 stay. Indian road freight handles this by splitting the consignment note (LR/bilty) into child consignments. Each child has its own pieces, weight, value, consignee, truck, POD, invoice and e-way bill, and all of them keep a link to the master.
+
+We model it the same way.
+
+### Model (migration `supabase/migrations/20260930014100_cargo_lots.sql`)
+
+**`shipments`** gains:
+- `parent_shipment_id` (uuid, FK `shipments_parent_shipment_id_fkey` → shipments). When embedding the parent, name that FK.
+- `lot_seq` (int; 1, 2, 3 …) and `lot_label` (e.g. `A`, `B`, `C`).
+- `is_master` (bool, default false).
+- `declared_value` (numeric), which the lots split between them.
+- `freight_share` (numeric), the part of the master's freight_charge that falls to this lot.
+- `consignee_name`, `consignee_phone`, `consignee_gstin` (a lot can have its own consignee).
+- `split_reason` (`multi_drop` | `partial_transfer` | `hub_crossdock` | `partial_delivery_remainder` | `manual`).
+
+A lot's tracking id is the master's with a suffix: `RTX-ABC123-A`, `-B`. Customers can track the master or any lot.
+
+**`cargo_manifest`** gets the same columns: `parent_manifest_id` (FK `cargo_manifest_parent_manifest_id_fkey`), `lot_seq`, `lot_label`, `is_master`, `declared_value`, `freight_share`, consignee fields and `split_reason`. Its lot codes are `CM-XXXXXXXX-A`.
+
+**`delivery_points`** gains `pieces` (int), `consignee_name`, `consignee_phone` and `lot_shipment_id`. With multi-drop at booking, each drop point becomes a lot.
+
+**New custody event kinds:** `split` (recorded on the master and on each lot) and `merge`.
+
+### Rules the backend enforces and tests
+
+- **Only the lots move.** A master holds no goods of its own. Once split, it can't be picked up, delivered or transferred. Its status, holder and pieces are **computed from its lots**, and that is what `GET /cargo/where/:ref` returns for a master.
+- **Status rollup:**
+  - `delivered` if every lot is delivered, and `partially_delivered` if some are delivered and some returned, lost or short.
+  - `in_transit` if any lot is on the move.
+  - `on_hold` or `exception` if any lot has an open case.
+  - `returned` if every lot is returned.
+- **Conservation:**
+  - The sum of the lots' `pieces_total` equals the pieces the master had undelivered at the moment of the split.
+  - Weight, declared value and freight are split across the lots. The default share is by pieces. The caller can give exact weights or values, but they must add up (within ±0.5 kg / ₹1 for rounding). The last lot takes the rounding remainder.
+- **Where you can split:** only pieces held by one holder in one place: all on one vehicle, all at one hub, or still with the consignor. Pieces already delivered stay with the master's record, and the lot is made from what is left.
+- **Lots of lots:** a lot can itself be split. Its lots point to the same master (`parent_shipment_id` = the master), so the tree stays flat. Their labels are `A1`, `A2`, …
+- **Merging:** allowed only for lots of the same master with the same holder, place, consignee and drop, and before any of them has left. The counts add back up.
+- **Everything else works per lot, unchanged:**
+  - transfers, hub in/out, delivery outcomes, OTP, RTO, cases and claims;
+  - invoices and e-way bills;
+  - route stops, since each lot to a new drop gets its own delivery point.
+
+### Where splits happen
+
+1. **Multi-drop booking.** `POST /shipments` (and customer booking) accepts `drops: [{ address, lat, lng, consignee_name, consignee_phone, consignee_gstin?, pieces, weight_kg? }]`. When there is more than one drop, the backend creates the master with one lot per drop, each with its own delivery point, and splits freight and value.
+2. **Partial transfer.** `POST /cargo/transfers` items accept `pieces` below what is on board (`pieces_planned < on board`). The backend first splits the consignment into a lot that moves and a lot that stays, then transfers the moving lot. The response returns both lot ids. Handover counts apply to the moving lot.
+3. **Hub cross-dock.** `POST /cargo/lots/split` at a hub splits the goods into outbound lots, each with its own next drop, vehicle or route.
+4. **Remainder after a partial delivery.** A remainder that goes to a *different* consignee or place can be split into a lot with a new drop. The same consignee's re-attempt needs no split.
+5. **Manual.** Staff can split any consignment whose goods are with one holder.
+
+### API
+
+- `POST /cargo/lots/split { ref, reason, lots: [{ pieces, weight_kg?, declared_value?, freight_share?, consignee_name?, consignee_phone?, consignee_gstin?, drop?: { address, lat, lng }, to_vehicle_id?, to_depot_id? }] }` → `{ master: {ref, code}, lots: [{ref, code, label, pieces, weight_kg}] }`.
+  - The lots' pieces must add up to the undelivered pieces held. If you give fewer, a remainder lot is made automatically for the rest (it stays where it is).
+  - A lot with `drop` gets a delivery point. A lot with `to_vehicle_id` or `to_depot_id` gets a planned transfer.
+- `POST /cargo/lots/merge { refs: [..] }` → `{ ref, code }`.
+- `GET /cargo/lots/:ref` → `{ master, lots: [{ ref, code, label, status, current_holder, vehicle, depot, pieces, drop, consignee, open_exceptions }], totals }`. `:ref` can be the master or any lot.
+- `GET /cargo/where/:ref` and `/timeline/:ref` for a master include the rolled-up totals and a `lots` array. The master's timeline merges the timelines of its lots, and each event is tagged with its lot label.
+- The customer booking cargo view (`GET /customer/bookings/:id/cargo`) returns the lots with plain wording, e.g. "Lot B (25 cartons): delivered to Sharma Traders, Patna".
+- Driver on-board lists **lots**, so the driver sees `RTX-ABC123-B · 25 pcs`.
+
+### Invoices and e-way bills
+
+- Every lot with its own consignee gets its own invoice line or invoice when it is delivered, for its `freight_share`. The master's invoice is not issued a second time.
+- Each lot carries its own e-way bill reference (`eway_bill_ref` on the lot). A partial transfer marks Part B as required for the moving lot only.
+
+### UI
+
+- **Web:**
+  - Shipment and load detail show a **Lots** panel: a tree with the master and each lot's status, holder, pieces, drop and consignee, plus the rolled-up progress bar ("60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234").
+  - "Split" action: a form with rows for pieces, weight, consignee and drop or vehicle or hub. It shows live totals and blocks you until they balance.
+  - "Merge".
+  - "Move part to another vehicle" (a transfer with pieces).
+  - The booking/create-shipment form supports multiple drops with a pieces split.
+  - The exception case items and claims show the lot code.
+- **Driver app:**
+  - On-board and the delivery sheet work per lot.
+  - A handover of a partial transfer shows "Hand over 30 of 100 (lot C)".
+  - Hub drop can split into outbound lots when hub staff tell the driver to.
+- **Customer app:** the booking shows the lots with their progress, and each lot has its own POD and claim.
