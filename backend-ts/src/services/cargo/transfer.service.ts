@@ -405,7 +405,9 @@ export async function getTransfer(id: string): Promise<any> {
   const { data: vehicles } = await supabase.from('vehicles').select('id, plate_number, driver_name, latitude, longitude, status').in('id', vehicleIds);
   const byId = new Map((vehicles ?? []).map((v: any) => [v.id, v]));
   let depot = null;
-  if (transfer.to_depot_id) depot = (await supabase.from('depots').select('id, name, address').eq('id', transfer.to_depot_id).maybeSingle()).data ?? null;
+  if (transfer.to_depot_id) depot = (await supabase.from('depots').select('id, name, address, latitude, longitude').eq('id', transfer.to_depot_id).maybeSingle()).data ?? null;
+  let exception = null;
+  if (transfer.exception_id) exception = (await supabase.from('cargo_exceptions').select('id, code, type, status').eq('id', transfer.exception_id).maybeSingle()).data ?? null;
   const itemViews = [];
   for (const i of items) {
     let code: string | null = null;
@@ -424,6 +426,7 @@ export async function getTransfer(id: string): Promise<any> {
     from_vehicle: byId.get(transfer.from_vehicle_id) ?? null,
     to_vehicle: transfer.to_vehicle_id ? byId.get(transfer.to_vehicle_id) ?? null : null,
     to_depot: depot,
+    exception,
     items: itemViews,
   };
 }

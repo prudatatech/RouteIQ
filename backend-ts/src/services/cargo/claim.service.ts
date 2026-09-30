@@ -19,6 +19,7 @@ import { settings } from '../../core/config';
 import { isStaff, canAccessManifest } from '../../core/ownership';
 import type { TokenData } from '../../core/auth';
 import { createKycUploadUrl, signedUrl } from '../pod.service';
+import { manifestParcelCode } from '../../core/parcelCode';
 import { RefSchema, customerOwnsShipment, manifestVendorId, refColumns, resolveRef, type Actor, type Consignment } from './consignment';
 import { insertWithCode } from './exception.service';
 import { notifyStaffSafe, notifyUserSafe } from './notify';
@@ -171,7 +172,15 @@ async function claimView(claim: any) {
     const url = await signedUrl(path);
     if (url) documents.push({ path, url });
   }
-  return { ...claim, documents };
+  return { ...claim, consignment_code: await consignmentCode(claim), documents };
+}
+
+/** The RTX- tracking id or CM- load code of the claimed goods, so lists can show them without another read. */
+async function consignmentCode(claim: { shipment_id?: string | null; manifest_id?: string | null }): Promise<string | null> {
+  if (claim.manifest_id) return manifestParcelCode(claim.manifest_id);
+  if (!claim.shipment_id) return null;
+  const { data } = await supabase.from('shipments').select('tracking_id').eq('id', claim.shipment_id).maybeSingle();
+  return data?.tracking_id ?? null;
 }
 
 async function loadClaim(id: string): Promise<any> {
