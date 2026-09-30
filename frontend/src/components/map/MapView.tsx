@@ -124,8 +124,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const follow = props.follow ?? defaults.follow
   const controls = props.controls ?? defaults.controls
   const showLegend = props.showLegend ?? defaults.showLegend
-  // Live traffic flow is on by default for every map except picker (address selection).
-  const traffic = props.traffic ?? (mode !== 'picker' ? { flow: true } : undefined)
+  // Traffic flow raster tiles are disabled until the backend is redeployed with
+  // the relative-delay tile style. Route-level congestion colouring still works.
+  const traffic = props.traffic ? { ...props.traffic, flow: false } : undefined
 
   const vehicles = useMemo(() => withValidPosition(props.vehicles), [props.vehicles])
   const points = useMemo(() => withValidPosition(props.points), [props.points])
