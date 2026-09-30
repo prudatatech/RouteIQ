@@ -4,6 +4,7 @@ import { StatusPill, humanize } from '@/components/ui'
 import { exceptionTypeLabel } from '@/components/cargo/logic'
 import { formatKm, formatRupees } from '@/utils/display'
 import { plateOf } from './format'
+import { requesterHref } from './requesterHref'
 import type { ShipmentOverview } from './types'
 
 const linkClass = 'font-medium text-brand hover:underline'
@@ -25,16 +26,6 @@ const REQUESTER_LABEL = {
 } as const
 
 const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Route planner', vendor_load: 'Vendor load', assigned: 'Picked by hand' } as const
-
-/** Where the requester's own page is: their booking, vendor load or bid. */
-function requesterHref(r: ShipmentOverview['requester']): string | null {
-  if (!r.id) return null
-  const id = encodeURIComponent(r.id)
-  if (r.kind === 'customer_booking') return `/requests?open=${id}&source=customer`
-  if (r.kind === 'vendor_load') return `/requests?open=${id}&source=vendor`
-  if (r.kind === 'vendor_bid') return `/bids?open=${id}`
-  return null
-}
 
 /** Everything this shipment touches, each one a link to its own page (docs/workflow-blueprint.html: everything links to what it touches). */
 export default function RelatedLinks({ overview: o }: { overview: ShipmentOverview }) {
@@ -139,7 +130,7 @@ export default function RelatedLinks({ overview: o }: { overview: ShipmentOvervi
               {o.invoice
                 ? (
                   <>
-                    <Link to="/finance" className={linkClass}>{o.invoice.invoice_number ?? 'Open invoices'}</Link>
+                    <Link to={`/money/invoices/${o.invoice.id}`} className={linkClass}>{o.invoice.invoice_number ?? 'Open invoice'}</Link>
                     <div className="text-xs text-muted">{o.invoice.total != null ? `${formatRupees(o.invoice.total)} · ` : ''}{humanize(o.invoice.status)}</div>
                   </>
                 )

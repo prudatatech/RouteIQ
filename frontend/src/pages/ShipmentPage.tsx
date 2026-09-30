@@ -115,7 +115,7 @@ export default function ShipmentPage() {
       case 'open_problem':
         return <Link to={`/cargo/exceptions/${a.problemId}`} className={buttonClasses({})}>{a.label}</Link>
       case 'open_invoice':
-        return <Link to="/finance" className={buttonClasses({})}>{a.label}</Link>
+        return <Link to={overview.invoice ? `/money/invoices/${overview.invoice.id}` : '/money?tab=to-price'} className={buttonClasses({})}>{a.label}</Link>
       case 'open_bids':
         return <Link to="/bids" className={buttonClasses({})}>{a.label}</Link>
       case 'open_cargo':

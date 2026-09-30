@@ -66,7 +66,7 @@ export function buildQueues(data: TodayResponse): Queue[] {
       hint: q.unpriced.no_price > 0
         ? `${plural(q.unpriced.no_price, 'has', 'have')} no price yet; the rest can be invoiced`
         : 'All have a price and can be invoiced',
-      to: '/finance?tab=invoices', cta: 'Price deliveries',
+      to: '/money?tab=to-price', cta: 'Price deliveries',
     })
   }
   list.push(

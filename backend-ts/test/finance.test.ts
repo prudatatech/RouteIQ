@@ -122,23 +122,23 @@ describe('invoice list and status', () => {
   });
 
   it('marks an issued invoice paid, once', async () => {
-    const res = await request(app).put('/api/v1/finance/invoices/i1/pay').set(admin());
+    const res = await request(app).put('/api/v1/finance/invoices/i1/pay').set(admin()).send({ method: 'bank' });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('invoices')[0]).toMatchObject({ status: 'paid' });
     expect(supabaseMock.rows('invoices')[0].paid_at).toBeTruthy();
-    expect((await request(app).put('/api/v1/finance/invoices/i1/pay').set(admin())).status).toBe(409);
+    expect((await request(app).put('/api/v1/finance/invoices/i1/pay').set(admin()).send({ method: 'bank' })).status).toBe(409);
   });
 
   it('voids an issued invoice but not a paid one', async () => {
-    expect((await request(app).put('/api/v1/finance/invoices/i1/void').set(admin())).status).toBe(200);
+    expect((await request(app).put('/api/v1/finance/invoices/i1/void').set(admin()).send({ reason: 'Wrong price' })).status).toBe(200);
     expect(supabaseMock.rows('invoices')[0].status).toBe('void');
-    const paid = await request(app).put('/api/v1/finance/invoices/i2/void').set(admin());
+    const paid = await request(app).put('/api/v1/finance/invoices/i2/void').set(admin()).send({ reason: 'Wrong price' });
     expect(paid.status).toBe(409);
     expect(paid.body.detail).toMatch(/already paid/);
   });
 
   it('answers 404 for an unknown invoice', async () => {
-    expect((await request(app).put('/api/v1/finance/invoices/nope/pay').set(admin())).status).toBe(404);
+    expect((await request(app).put('/api/v1/finance/invoices/nope/pay').set(admin()).send({ method: 'bank' })).status).toBe(404);
   });
 
   it('is staff only', async () => {

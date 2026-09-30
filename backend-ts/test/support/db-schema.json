@@ -192,7 +192,10 @@
     "total",
     "price_source",
     "voided_at",
-    "vendor_request_id"
+    "vendor_request_id",
+    "payment_method",
+    "payment_reference",
+    "void_reason"
   ],
   "kyc_profiles": [
     "id",

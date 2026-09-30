@@ -13,7 +13,7 @@ describe('the staff menu', () => {
   it('gives a manager the operations sections only', () => {
     expect(labels('manager')).toEqual(['Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People'])
     const links = menuFor('manager').flatMap(s => [s.to, ...s.children.map(c => c.to)])
-    for (const forbidden of ['/finance', '/admin/settings', '/admin/audit', '/admin/kyc', '/3pl-partners', '/bids', '/backhaul']) {
+    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/3pl-partners', '/bids', '/backhaul']) {
       expect(links).not.toContain(forbidden)
     }
   })
@@ -35,7 +35,7 @@ describe('the staff menu', () => {
     const links = new Set(navSections.flatMap(s => [s.to, ...s.children.map(c => c.to.split('?')[0])]))
     for (const page of [
       '/today', '/requests', '/bookings', '/vendor-requests', '/shipments', '/dispatch', '/routes', '/route-planner', '/optimize', '/live-map',
-      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/admin/kyc', '/backhaul', '/bids', '/3pl-partners', '/finance',
+      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/admin/kyc', '/backhaul', '/bids', '/3pl-partners', '/money',
       '/analytics', '/insights', '/admin/settings', '/admin/audit',
     ]) expect(links).toContain(page)
   })
@@ -68,7 +68,10 @@ describe('finding the open section', () => {
   })
 
   it('puts claims under Money and the other cargo tabs under On the road', () => {
-    expect(at('/cargo', '?tab=claims')).toEqual(['Money', 'Claims'])
+    expect(at('/money', '?tab=claims')).toEqual(['Money', 'Claims'])
+    expect(at('/money')).toEqual(['Money', 'Overview'])
+    expect(at('/money/invoices/i1')).toEqual(['Money', 'Overview'])
+    expect(at('/cargo', '?tab=claims')[0]).toBe('Money')
     expect(at('/cargo', '?tab=transfers')).toEqual(['On the road', 'Problems'])
   })
 

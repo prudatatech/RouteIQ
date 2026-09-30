@@ -13,7 +13,7 @@ import { EXPENSE_CATEGORIES, EXPENSE_CSV_COLUMNS, categoryLabel, expenseCsvRows,
 import ExpenseModal from './ExpenseModal'
 
 /** The expense log for the chosen dates: add, edit, delete, filter and export. */
-export default function ExpensesPanel({ range }: { range: DateRangeValue }) {
+export default function ExpensesTab({ range }: { range: DateRangeValue }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const [category, setCategory] = useState('')
