@@ -371,13 +371,16 @@ export class ShipmentService {
    * The one check every way of putting a shipment on a vehicle goes through: the vehicle
    * must be in service, be the type the load asks for, and have room for it.
    */
-  static async assertVehicleCanTake(vehicleId: string, weightKg: number, requiredType?: string | null, excludeShipmentId?: string): Promise<void> {
+  static async assertVehicleCanTake(vehicleId: string, weightKg: number, requiredType?: string | null, excludeShipmentId?: string, requireDriver = false): Promise<void> {
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id, status, vehicle_type, capacity_kg')
+      .select('id, status, plate_number, driver_id, vehicle_type, capacity_kg')
       .eq('id', vehicleId)
       .maybeSingle();
     if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    if (requireDriver && !vehicle.driver_id) {
+      throw new HttpError(409, `${vehicle.plate_number ?? 'That vehicle'} has no driver. Give it a driver before assigning a shipment.`);
+    }
     if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
       throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a shipment.`);
     }
@@ -691,6 +694,7 @@ export class ShipmentService {
       Number(shipment.total_weight_kg) || 0,
       (shipment as any).required_vehicle_type ?? null,
       shipmentId,
+      true,
     );
 
     // Clean up any existing route stops for these delivery points

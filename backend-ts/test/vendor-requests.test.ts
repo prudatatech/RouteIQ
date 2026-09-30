@@ -28,7 +28,7 @@ function reset(status: string) {
   supabaseMock.reset({
     users: [{ id: 'admin-1', role: 'admin', is_active: true }],
     vendor_shipment_requests: [vendorRequest(status)],
-    vehicles: [{ id: 'vehicle-1', driver_id: null, status: 'available', capacity_kg: 1000, current_load_kg: 0, available_capacity_kg: 1000 }],
+    vehicles: [{ id: 'vehicle-1', driver_id: 'driver-1', status: 'available', capacity_kg: 1000, current_load_kg: 0, available_capacity_kg: 1000 }],
     cargo_manifest: [],
     notifications: [],
   });
@@ -40,15 +40,47 @@ const put = (path: string, body?: Record<string, unknown>) =>
 describe('vendor shipment request decisions', () => {
   beforeEach(() => reset('pending'));
 
-  it('approves a new request', async () => {
+  it('accepts a new request at a price and tells the vendor', async () => {
+    const res = await put('approve', { cost: 12500 });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', cost: 12500 });
+    const note = supabaseMock.writes('notifications', 'POST').map(w => w.body).find(b => b.type === 'request_approved');
+    expect(note?.body).toBe("Accepted at ₹12,500. We'll assign a truck next.");
+    expect(note?.data).toMatchObject({ request_id: 'req-1', cost: 12500 });
+  });
+
+  it('turns a rate per km into the accepted price', async () => {
+    const res = await put('approve', { cost_per_km: 20 });
+    expect(res.status).toBe(200);
+    const stored = supabaseMock.rows('vendor_shipment_requests')[0];
+    expect(stored).toMatchObject({ status: 'approved', cost_per_km: 20 });
+    expect(stored.cost).toBeGreaterThan(2500);
+  });
+
+  it('needs a price to accept a request that has none', async () => {
+    const res = await put('approve');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/price/i);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('pending');
+  });
+
+  it('accepts without a new price when the request already carries one', async () => {
+    supabaseMock.rows('vendor_shipment_requests')[0].cost = 8000;
     const res = await put('approve');
     expect(res.status).toBe(200);
-    expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('approved');
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', cost: 8000 });
+  });
+
+  it('lets a manager accept a request', async () => {
+    supabaseMock.rows('users').push({ id: 'manager-1', role: 'manager', is_active: true });
+    const res = await request(app).put('/api/v1/vendor/shipment-request/req-1/approve')
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('manager-1')}`).send({ cost: 9000 });
+    expect(res.status).toBe(200);
   });
 
   it('refuses to approve a request that was already rejected', async () => {
     reset('rejected');
-    const res = await put('approve');
+    const res = await put('approve', { cost: 9000 });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/already rejected/);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('rejected');
@@ -77,7 +109,16 @@ describe('vendor shipment request decisions', () => {
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('assigned');
   });
 
+  it('refuses to assign a vehicle before the request is accepted with a price', async () => {
+    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/Accept the request with a price first/);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'pending', assigned_vehicle_id: null });
+    expect(supabaseMock.writes('cargo_manifest', 'POST')).toEqual([]);
+  });
+
   it('assigns a vehicle once and creates one manifest entry', async () => {
+    reset('approved');
     const first = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
     expect(first.status).toBe(200);
     expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'assigned', assigned_vehicle_id: 'vehicle-1' });
@@ -98,7 +139,7 @@ describe('vendor shipment request decisions', () => {
 
   it('returns 404 for an unknown request', async () => {
     supabaseMock.rows('vendor_shipment_requests').length = 0;
-    const res = await put('approve');
+    const res = await put('approve', { cost: 9000 });
     expect(res.status).toBe(404);
   });
 });
@@ -133,6 +174,15 @@ describe('assigning a vehicle', () => {
     const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
     expect(res.status).toBe(409);
     expect(supabaseMock.rows('vehicles')[0].status).toBe(status);
+  });
+
+  it('refuses a vehicle with no driver, without claiming the request', async () => {
+    supabaseMock.rows('vehicles')[0] = vehicle({ driver_id: null, plate_number: 'MH01AB1234' });
+    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/MH01AB1234 has no driver/);
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', assigned_vehicle_id: null });
+    expect(supabaseMock.writes('cargo_manifest', 'POST')).toEqual([]);
   });
 
   it('turns a rate per km into an amount using the road distance', async () => {

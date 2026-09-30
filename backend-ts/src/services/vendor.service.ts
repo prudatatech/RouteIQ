@@ -327,18 +327,47 @@ export const vendorService = {
   },
 
   /**
-   * Super admin approves a vendor shipment request
+   * Staff accept a vendor's load at a price. The price is required (a flat amount, or a rate per km that
+   * is turned into an amount on the road distance) unless the request already carries one. A vehicle can
+   * be assigned only after this.
    */
-  async approveRequest(requestId: string) {
-    const data = await transitionRequest(requestId, ['pending'], { status: 'approved' });
+  async approveRequest(requestId: string, cost?: number | null, costPerKm?: number | null) {
+    for (const [label, amount] of [['Price', cost], ['Rate per km', costPerKm]] as const) {
+      if (amount !== undefined && amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) {
+        throw new HttpError(400, `${label} must be a number between 0 and 10,000,000`);
+      }
+    }
+    const { data: before, error: beforeErr } = await supabase
+      .from('vendor_shipment_requests')
+      .select('status, cost, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .eq('id', requestId).maybeSingle();
+    if (beforeErr) throw new Error(beforeErr.message);
+    if (!before) throw new HttpError(404, 'Request not found');
+
+    const ratePerKm = costPerKm && costPerKm > 0 ? costPerKm : undefined;
+    let agreed: number | undefined = cost && cost > 0 ? cost : undefined;
+    if (agreed === undefined && ratePerKm !== undefined) {
+      const km = roadKm(toPoint(before.pickup_lat, before.pickup_lng), toPoint(before.drop_lat, before.drop_lng));
+      if (km === null || km <= 0) throw new HttpError(400, "This load has no usable pickup and drop-off coordinates, so a rate per km can't be turned into a price. Enter a flat price.");
+      agreed = Math.round(ratePerKm * km * 100) / 100;
+    }
+    const existing = Number(before.cost);
+    const price = agreed ?? (Number.isFinite(existing) && existing > 0 ? existing : undefined);
+    if (price === undefined) throw new HttpError(400, 'Enter a price (a flat amount, or a rate per km) to accept this load.');
+
+    const data = await transitionRequest(requestId, ['pending'], {
+      status: 'approved',
+      cost: price,
+      ...(ratePerKm !== undefined ? { cost_per_km: ratePerKm } : {}),
+    });
 
     // Notify the vendor
     await notificationService.sendNotification(
       data.vendor_id,
-      'Load approved',
-      `Your load from ${data.pickup_location} was approved.`,
+      'Load accepted',
+      `Accepted at ${formatINR(price)}. We'll assign a truck next.`,
       'request_approved',
-      { request_id: data.id }
+      { request_id: data.id, cost: price }
     );
 
     return data;
@@ -605,6 +634,7 @@ export const vendorService = {
       .from('vehicles').select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id').eq('id', vehicleId).maybeSingle();
     if (assigneeErr) throw new Error(assigneeErr.message);
     if (!assignee) throw new HttpError(404, 'Vehicle not found');
+    if (!assignee.driver_id) throw new HttpError(409, `${assignee.plate_number ?? 'This vehicle'} has no driver. Give it a driver before assigning a load.`);
     if (!isDispatchable(assignee)) {
       throw new HttpError(409, `This vehicle is ${assignee.status === 'maintenance' || assignee.status === 'archived' ? `in ${assignee.status}` : 'not ready for dispatch'} and can't take a load`);
     }
@@ -615,6 +645,7 @@ export const vendorService = {
       .eq('id', requestId).maybeSingle();
     if (beforeErr) throw new Error(beforeErr.message);
     if (!before) throw new HttpError(404, 'Request not found');
+    if (before.status === 'pending') throw new HttpError(409, 'Accept the request with a price first. A vehicle can be assigned after that.');
 
     // Free capacity: what the vehicle reports, else its rated capacity less what it already carries
     const required = Number(before.required_capacity_kg) || 0;

@@ -14,6 +14,7 @@ const BOOKING = '33333333-3333-4333-8333-333333333333';
 const VEHICLE = '44444444-4444-4444-8444-444444444444';
 const OTHER_VEHICLE = '55555555-5555-4555-8555-555555555555';
 const DRIVER = 'driver-1';
+const DRIVER_2 = 'driver-2';
 const SHIPMENT = 'ship-1';
 const DP1 = 'dp-1';
 const DP2 = 'dp-2';
@@ -43,13 +44,13 @@ function shipmentRow(over: Record<string, unknown> = {}) {
 
 function reset(extra: Record<string, any[]> = {}) {
   supabaseMock.reset({
-    users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: DRIVER, role: 'driver', is_active: true }],
+    users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: DRIVER, role: 'driver', is_active: true }, { id: DRIVER_2, role: 'driver', is_active: true }],
     customers: [{ id: CUSTOMER, phone: '+919800000001', full_name: 'Asha Rao', company_name: null }],
     customer_bookings: [],
     shipments: [], shipment_logs: [], delivery_points: [], parcels: [], route_stops: [], routes: [],
     vehicles: [
       { id: VEHICLE, plate_number: 'MH04AB1234', vehicle_type: 'truck', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: DRIVER },
-      { id: OTHER_VEHICLE, plate_number: 'MH04AB9999', vehicle_type: 'truck', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: null },
+      { id: OTHER_VEHICLE, plate_number: 'MH04AB9999', vehicle_type: 'truck', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: 'driver-2' },
     ],
     notifications: [], invoices: [], shipment_hsn: [], capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [],
     system_settings: [{ key: 'rate_per_km', value: { rate: 20 } }],
@@ -168,9 +169,9 @@ describe('assigning a shipment', () => {
   });
 
   it('refuses a vehicle that is in maintenance, too small, or the wrong class', async () => {
-    supabaseMock.rows('vehicles').push({ id: 'v-maint', plate_number: 'X1', vehicle_type: 'truck', capacity_kg: 5000, status: 'maintenance' });
-    supabaseMock.rows('vehicles').push({ id: 'v-small', plate_number: 'X2', vehicle_type: 'truck', capacity_kg: 100, status: 'available' });
-    supabaseMock.rows('vehicles').push({ id: 'v-bike', plate_number: 'X3', vehicle_type: 'bike', capacity_kg: 5000, status: 'available' });
+    supabaseMock.rows('vehicles').push({ id: 'v-maint', plate_number: 'X1', vehicle_type: 'truck', capacity_kg: 5000, status: 'maintenance', driver_id: DRIVER });
+    supabaseMock.rows('vehicles').push({ id: 'v-small', plate_number: 'X2', vehicle_type: 'truck', capacity_kg: 100, status: 'available', driver_id: DRIVER });
+    supabaseMock.rows('vehicles').push({ id: 'v-bike', plate_number: 'X3', vehicle_type: 'bike', capacity_kg: 5000, status: 'available', driver_id: DRIVER });
     expect((await post(`/shipments/${SHIPMENT}/assign`, { vehicle_id: 'v-maint' })).status).toBe(409);
     const small = await post(`/shipments/${SHIPMENT}/assign`, { vehicle_id: 'v-small' });
     expect(small.status).toBe(409);
@@ -180,9 +181,27 @@ describe('assigning a shipment', () => {
     expect(one('shipments', SHIPMENT).status).toBe('created');
   });
 
+  it('refuses a vehicle with no driver and leaves the shipment as it was', async () => {
+    supabaseMock.rows('vehicles').push({ id: 'v-nodriver', plate_number: 'MH04ZZ0001', vehicle_type: 'truck', capacity_kg: 5000, status: 'available', driver_id: null });
+    const res = await post(`/shipments/${SHIPMENT}/assign`, { vehicle_id: 'v-nodriver' });
+    expect(res.status).toBe(409);
+    expect(res.body.detail).toMatch(/MH04ZZ0001 has no driver/);
+    expect(one('shipments', SHIPMENT).status).toBe('created');
+    expect(supabaseMock.rows('routes')).toHaveLength(0);
+  });
+
+  it('refuses a booking\'s vehicle with no driver too', async () => {
+    const NODRIVER = '77777777-7777-4777-8777-777777777777';
+    supabaseMock.rows('vehicles').push({ id: NODRIVER, plate_number: 'MH04ZZ0002', vehicle_type: 'truck', capacity_kg: 5000, status: 'available', driver_id: null });
+    const res = await post(`/bookings/${BOOKING}/assign`, { vehicle_id: NODRIVER });
+    expect(res.status).toBe(409);
+    expect(res.body.detail).toMatch(/has no driver/);
+    expect(one('customer_bookings', BOOKING).status).toBe('confirmed');
+  });
+
   it('applies the same checks when a booking is assigned', async () => {
     const SMALL = '66666666-6666-4666-8666-666666666666';
-    supabaseMock.rows('vehicles').push({ id: SMALL, plate_number: 'X2', vehicle_type: 'truck', capacity_kg: 100, status: 'available' });
+    supabaseMock.rows('vehicles').push({ id: SMALL, plate_number: 'X2', vehicle_type: 'truck', capacity_kg: 100, status: 'available', driver_id: DRIVER });
     const res = await post(`/bookings/${BOOKING}/assign`, { vehicle_id: SMALL });
     expect(res.status).toBe(409);
     expect(one('customer_bookings', BOOKING).status).toBe('confirmed');

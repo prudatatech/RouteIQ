@@ -38,7 +38,7 @@ function reset(bookings: Record<string, unknown>[] = [], rate: number | null = 2
     system_settings: rate == null ? [] : [{ key: 'rate_per_km', value: { rate } }],
     customer_bookings: bookings,
     shipments: [], shipment_logs: [], delivery_points: [], parcels: [], route_stops: [], routes: [],
-    vehicles: [{ id: VEHICLE, plate_number: 'MH04AB1234', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available' }],
+    vehicles: [{ id: VEHICLE, plate_number: 'MH04AB1234', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: 'driver-1' }],
     notifications: [], invoices: [], shipment_hsn: [], capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [],
   });
 }
