@@ -7,14 +7,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Invoice } from '../components/modals/InvoiceDialog';
 import type { RouteStop } from '../types/route';
+import type { DropLot } from '../utils/dropLots';
 import type { VehicleTransfer } from './useCargo';
 
 export type DriverModal =
   | { kind: 'sos' }
   | { kind: 'sosCountdown' }
-  /** The delivery sheet, opened on "delivered" (pod) or on "not delivered" (issue). */
-  | { kind: 'pod'; stop: RouteStop }
-  | { kind: 'issue'; stop: RouteStop }
+  /**
+   * The delivery sheet, opened on "delivered" (pod) or on "not delivered" (issue), with the lots to
+   * hand over at that drop (fixed when it opens, so recording one lot does not reshuffle the list).
+   */
+  | { kind: 'pod'; stop: RouteStop; lots?: DropLot[] }
+  | { kind: 'issue'; stop: RouteStop; lots?: DropLot[] }
   | { kind: 'pickup' }
   | { kind: 'cargoCheck' }
   | { kind: 'handover'; transfer: VehicleTransfer }

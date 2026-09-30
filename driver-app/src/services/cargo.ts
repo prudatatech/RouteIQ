@@ -102,6 +102,19 @@ export interface OnBoardItem {
   stopName: string | null;
   otpRequired: boolean | null;
   exceptions: ExceptionNotice[];
+  /** The lot this is (docs/cargo-plan.md, "Lots"): label, master and its own consignee. */
+  lot: LotTag;
+}
+
+/**
+ * What marks a consignment as a lot of a split one: `RTX-ABC123-B` is lot B of `RTX-ABC123`.
+ * Every field is null for a consignment that was never split.
+ */
+export interface LotTag {
+  label: string | null;
+  masterCode: string | null;
+  consigneeName: string | null;
+  consigneePhone: string | null;
 }
 
 export interface TransferItem {
@@ -110,6 +123,7 @@ export interface TransferItem {
   piecesPlanned: number | null;
   piecesOut: number | null;
   piecesIn: number | null;
+  lot: LotTag;
 }
 
 export type TransferStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
@@ -131,6 +145,33 @@ export interface CargoTransfer {
   note: string | null;
   exceptionCode: string | null;
   items: TransferItem[];
+}
+
+/** One lot of a split consignment, as GET /cargo/lots/:ref lists it. */
+export interface LotRow {
+  ref: ConsignmentRef | null;
+  code: string;
+  label: string | null;
+  status: string | null;
+  holder: string | null;
+  vehicleId: string | null;
+  vehiclePlate: string | null;
+  depotId: string | null;
+  depotName: string | null;
+  pieces: number | null;
+  piecesDelivered: number | null;
+  dropName: string | null;
+  dropAddress: string | null;
+  consigneeName: string | null;
+  consigneePhone: string | null;
+  exceptions: ExceptionNotice[];
+}
+
+/** GET /cargo/lots/:ref: the master and all its lots. `:ref` may be the master or any lot. */
+export interface LotFamily {
+  masterCode: string | null;
+  masterPieces: number | null;
+  lots: LotRow[];
 }
 
 export interface Hub {
@@ -176,6 +217,70 @@ function readExceptions(raw: unknown): ExceptionNotice[] {
     .filter((e) => e.code);
 }
 
+/** A lot's code ends in its label: `RTX-ABC123-B`, `CM-1A2B3C4D-A2`. */
+const LOT_CODE = /^((?:RTX|CM)-[A-Z0-9]+)-([A-Z][0-9]*)$/i;
+
+/** The label and master of a lot code, from the code alone; nulls for any other code. */
+export function lotOfCode(code: string | null | undefined): { label: string; masterCode: string } | null {
+  const match = LOT_CODE.exec((code ?? '').trim());
+  return match ? { label: match[2].toUpperCase(), masterCode: match[1].toUpperCase() } : null;
+}
+
+/**
+ * The lot fields of a row, whichever way the server nests them (`lot_label` or `label`,
+ * `consignee: {name, phone}` or `consignee_name`), falling back to the code's suffix.
+ */
+export function readLotTag(raw: any, code: string | null): LotTag {
+  const fromCode = lotOfCode(code);
+  const consignee = raw?.consignee && typeof raw.consignee === 'object' ? raw.consignee : null;
+  return {
+    label: str(raw?.lot_label) ?? str(raw?.lot?.label) ?? str(raw?.label) ?? fromCode?.label ?? null,
+    masterCode: str(raw?.master?.code) ?? str(raw?.master_code) ?? str(raw?.lot?.master_code) ?? fromCode?.masterCode ?? null,
+    consigneeName: str(consignee?.name) ?? str(raw?.consignee_name) ?? (typeof raw?.consignee === 'string' ? str(raw.consignee) : null),
+    consigneePhone: str(consignee?.phone) ?? str(raw?.consignee_phone),
+  };
+}
+
+export const NO_LOT: LotTag = { label: null, masterCode: null, consigneeName: null, consigneePhone: null };
+
+/** A piece count that may come as a number or as `{ total, delivered, ... }`. */
+const piecesOf = (v: any): number | null => (v && typeof v === 'object' ? num(v.total ?? v.on_board) : num(v));
+
+function readLotRow(raw: any): LotRow | null {
+  const code = str(raw?.code) ?? str(raw?.tracking_id);
+  if (!code) return null;
+  const tag = readLotTag(raw, code);
+  const drop = raw?.drop && typeof raw.drop === 'object' ? raw.drop : null;
+  return {
+    ref: readRef(raw),
+    code,
+    label: tag.label,
+    status: str(raw?.status),
+    holder: str(raw?.current_holder),
+    vehicleId: str(raw?.vehicle?.id),
+    vehiclePlate: str(raw?.vehicle?.plate_number),
+    depotId: str(raw?.depot?.id),
+    depotName: str(raw?.depot?.name),
+    pieces: piecesOf(raw?.pieces),
+    piecesDelivered: raw?.pieces && typeof raw.pieces === 'object' ? num(raw.pieces.delivered) : null,
+    dropName: str(drop?.name),
+    dropAddress: str(drop?.address) ?? (typeof raw?.drop === 'string' ? str(raw.drop) : null),
+    consigneeName: tag.consigneeName,
+    consigneePhone: tag.consigneePhone,
+    exceptions: readExceptions(raw?.open_exceptions),
+  };
+}
+
+/** GET /cargo/lots/:ref answers `{ master, lots, totals }`. A consignment never split has no lots. */
+export function readLotFamily(raw: any): LotFamily {
+  const lots = (Array.isArray(raw?.lots) ? raw.lots : []).map(readLotRow).filter((l: LotRow | null): l is LotRow => !!l);
+  return {
+    masterCode: str(raw?.master?.code),
+    masterPieces: piecesOf(raw?.master?.pieces) ?? piecesOf(raw?.totals?.pieces) ?? num(raw?.totals?.pieces_total),
+    lots: lots.sort((a: LotRow, b: LotRow) => (a.label ?? a.code).localeCompare(b.label ?? b.code)),
+  };
+}
+
 /** Ids of the cases a custody answer says it opened (`exception_ids`). */
 export function exceptionIdsOf(response: any): string[] {
   return Array.isArray(response?.exception_ids) ? response.exception_ids.filter((id: unknown): id is string => typeof id === 'string') : [];
@@ -219,6 +324,7 @@ function readOnBoardItem(raw: any): OnBoardItem | null {
     stopName: str(raw?.next_stop?.name),
     otpRequired: null,
     exceptions: readExceptions(raw?.open_exceptions),
+    lot: readLotTag(raw, code),
   };
 }
 
@@ -242,6 +348,7 @@ export function readTransfer(raw: any): CargoTransfer | null {
       if (!ref) return null;
       return {
         ref,
+        lot: readLotTag(i, str(i.code)),
         code: str(i.code) ?? '',
         piecesPlanned: num(i.pieces_planned),
         piecesOut: num(i.pieces_out),

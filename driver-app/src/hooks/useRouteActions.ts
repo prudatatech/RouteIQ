@@ -16,6 +16,7 @@ import { manifestRefOfStop, type ConsignmentInfo, type ConsignmentRef } from '..
 import { openCaseCodes, sendCustody } from '../services/cargoActions';
 import type { DeliveryOutcome } from '../screens/cargo/DeliveryScreen';
 import { useTranslation } from './useTranslation';
+import { fill } from '../locales';
 
 interface Options {
   route: DriverRoute | undefined;
@@ -186,18 +187,38 @@ export function useRouteActions({
   );
 
   /**
-   * The delivery sheet's outcome, sent as one complete-stop with `outcome`: the server records the
-   * custody event (delivery, partial_delivery, refused) and settles the stop in the same call.
-   * "Not delivered" is the plain failed stop. The server keeps no photos on a failed stop, so the
-   * photos of refused goods follow as an `inspection` of those goods. Everything goes through the
-   * offline queue. Throws so the sheet can show an error.
+   * One lot's (or one plain consignment's) outcome, sent as one complete-stop with `outcome`: the
+   * server records the custody event (delivery, partial_delivery, refused) and settles the stop in
+   * the same call. "Not delivered" is the plain failed stop. The server keeps no photos on a failed
+   * stop, so the photos of refused goods follow as an `inspection` of those goods. Everything goes
+   * through the offline queue, each with its own idempotency key. Throws on a server error.
    */
-  const deliver = useCallback(
-    async (stop: RouteStop, outcome: DeliveryOutcome, info: ConsignmentInfo | null) => {
-      if (outcome.kind === 'not_delivered') return submitIssue(stop, outcome.reason, outcome.note);
-
+  const sendOutcome = useCallback(
+    async (
+      stop: RouteStop,
+      outcome: DeliveryOutcome,
+      info: ConsignmentInfo | null,
+    ): Promise<{ queued: boolean; routeCompleted: boolean; ref: ConsignmentRef | null }> => {
       const position = currentLoc ? { lat: currentLoc.lat, lng: currentLoc.lng } : {};
       const ref: ConsignmentRef | null = info?.ref ?? manifestRefOfStop(stop.id) ?? stop.parcel?.code ?? null;
+      const onError = async (e: unknown): Promise<never> => {
+        // Dispatch changed the stop (for example cancelled the delivery): show the route as it is now
+        if (e instanceof ApiError && e.status === 409) await refresh();
+        throw e;
+      };
+
+      if (outcome.kind === 'not_delivered') {
+        const failed = await actionQueue
+          .submit('fail_stop', {
+            stopId: stop.id,
+            reason: outcome.reason,
+            ...(outcome.note ? { note: outcome.note } : {}),
+            ...position,
+          })
+          .catch(onError);
+        return { queued: failed.status === 'queued', routeCompleted: false, ref };
+      }
+
       let payload: Payloads['complete_stop'];
       if (outcome.kind === 'refused') {
         payload = {
@@ -209,7 +230,9 @@ export function useRouteActions({
         };
       } else {
         const pod = outcome.pod;
-        const otp = outcome.otp ? { otp: outcome.otp } : {};
+        // Lots recorded together each have their own delivery code
+        const code = outcome.otps?.[stop.id] ?? outcome.otp;
+        const otp = code ? { otp: code } : {};
         payload = {
           stopId: stop.id,
           receiverName: pod.receiverName,
@@ -221,7 +244,8 @@ export function useRouteActions({
             : outcome.kind === 'remarks'
               ? {
                   outcome: 'delivered_with_remarks' as const,
-                  extraPhotoUris: outcome.damagePhotos,
+                  // A copy per lot: the queue swaps in its own copies of the files it keeps
+                  extraPhotoUris: [...outcome.damagePhotos],
                   details: { condition: outcome.condition, ...(outcome.note ? { note: outcome.note } : {}), ...otp },
                 }
               : {
@@ -237,18 +261,14 @@ export function useRouteActions({
         };
       }
 
-      const sent = await actionQueue.submit('complete_stop', payload).catch(async (e) => {
-        // Dispatch changed the stop (for example cancelled the delivery): show the route as it is now
-        if (e instanceof ApiError && e.status === 409) await refresh();
-        throw e;
-      });
+      const sent = await actionQueue.submit('complete_stop', payload).catch(onError);
       let queued = sent.status === 'queued';
 
       if (outcome.kind === 'refused' && outcome.photos.length && ref) {
         const onBoard = info?.piecesOnBoard;
         const photos = await sendCustody({
           label: 'refused_photos',
-          photoUris: outcome.photos,
+          photoUris: [...outcome.photos],
           events: [
             {
               ref,
@@ -268,26 +288,60 @@ export function useRouteActions({
         });
         if (photos?.queued) queued = true;
       }
+      return { queued, routeCompleted: sent.status === 'sent' && !!sent.result?.route_completed, ref };
+    },
+    [currentLoc, refresh, t],
+  );
+
+  /**
+   * The delivery sheet's outcome for one or more lots at the same drop (several lots for one
+   * consignee are recorded together with one proof of delivery). Each lot is its own stop and its
+   * own queued action; `onSent` hears of each one saved, so a retry after an error sends only the
+   * rest. The driver is told once, at the end. Throws so the sheet can show an error.
+   */
+  const deliverLots = useCallback(
+    async (entries: { stop: RouteStop; info: ConsignmentInfo | null }[], outcome: DeliveryOutcome, onSent?: (stopId: string) => void) => {
+      let queued = false;
+      let routeCompleted = false;
+      const refs: ConsignmentRef[] = [];
+      for (const { stop, info } of entries) {
+        const result = await sendOutcome(stop, outcome, info);
+        onSent?.(stop.id);
+        queued = queued || result.queued;
+        routeCompleted = routeCompleted || result.routeCompleted;
+        if (result.ref) refs.push(result.ref);
+      }
 
       if (queued) {
         Alert.alert(t('queue_saved_title'), t('queue_saved_desc'));
         return;
       }
       await refresh();
-      const cases = outcome.kind !== 'full' && ref ? await openCaseCodes([ref]) : [];
-      const codes = cases.map((c) => c.code).join(', ');
-      const title = outcome.kind === 'refused' ? t('alert_reported_title') : t('stop_completed_title');
-      const body = outcome.kind === 'refused' ? t('cargo_refusal_saved') : outcome.kind === 'partial' ? t('cargo_partial_saved') : t('stop_completed_desc');
-      if (outcome.kind === 'full' && sent.status === 'sent' && sent.result?.route_completed) {
+      if (outcome.kind === 'not_delivered') {
+        Alert.alert(t('alert_reported_title'), t('alert_reported_desc'));
+        return;
+      }
+      if (outcome.kind === 'full' && routeCompleted) {
         Alert.alert(t('alert_route_completed_title'), t('alert_route_completed_desc'), [
           { text: t('no'), style: 'cancel' },
           { text: t('yes_find_cargo'), onPress: findReturnLoad },
         ]);
         return;
       }
-      Alert.alert(title, codes ? `${body}\n\n${t('cargo_case_opened')} ${codes}` : body);
+      const cases = outcome.kind !== 'full' && refs.length ? await openCaseCodes(refs) : [];
+      const codes = cases.map((c) => c.code).join(', ');
+      const title = outcome.kind === 'refused' ? t('alert_reported_title') : t('stop_completed_title');
+      const body = outcome.kind === 'refused' ? t('cargo_refusal_saved') : outcome.kind === 'partial' ? t('cargo_partial_saved') : t('stop_completed_desc');
+      const lots = entries.length > 1 ? `${fill(t('cargo_lots_recorded_n'), { n: entries.length })}\n\n` : '';
+      Alert.alert(title, codes ? `${lots}${body}\n\n${t('cargo_case_opened')} ${codes}` : `${lots}${body}`);
     },
-    [submitIssue, currentLoc, refresh, findReturnLoad, t],
+    [sendOutcome, refresh, findReturnLoad, t],
+  );
+
+  /** One stop's delivery sheet outcome. */
+  const deliver = useCallback(
+    (stop: RouteStop, outcome: DeliveryOutcome, info: ConsignmentInfo | null) => deliverLots([{ stop, info }], outcome),
+    [deliverLots],
   );
 
   const declareCapacity = useCallback(
@@ -310,6 +364,7 @@ export function useRouteActions({
     findReturnLoad,
     completeStop,
     deliver,
+    deliverLots,
     declareCapacity,
   };
 }
