@@ -159,3 +159,8 @@ Container Apps restarts and revision swaps cause a brief overlap of two replicas
 - **Redis:** there is no Redis container. The backend's cache and rate limits use the Upstash REST client (`UPSTASH_REDIS_REST_URL/TOKEN` in `secrets.env`) and fall back to an in-memory cache when those are blank, which is fine with one api replica.
 - **ml cold start:** `ml` scales to zero, so the first optimizer call after idle waits for the container to start.
 - **Static Web App location:** SWA is not available in Central India, so `WEB_LOCATION` defaults to `eastasia`. It only stores metadata; the site is served from the global edge.
+
+
+## Filling secrets.env from files you already have
+
+`./infra/import-secrets.sh <file.env> [more.env ...]` copies every key that `secrets.env.example` lists from your existing .env files (for example the backend's `.env`, or the Railway variables pasted into a local file) into `infra/secrets.env`. It keeps keys you already set, prints key names only (never values), and lists what is still empty.
