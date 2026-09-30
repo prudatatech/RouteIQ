@@ -44,6 +44,7 @@ import publicRoutes from './public.routes';
 import driverRoutes from './driver.routes';
 import messagesRoutes from './messages.routes';
 import peopleRoutes from './people.routes';
+import opsRoutes from './ops.routes';
 
 const apiRouter = Router();
 
@@ -86,5 +87,6 @@ apiRouter.use('/public', publicRoutes);
 apiRouter.use('/driver', driverRoutes);
 apiRouter.use('/messages', messagesRoutes);
 apiRouter.use('/people', peopleRoutes);
+apiRouter.use('/ops', opsRoutes);
 
 export default apiRouter;

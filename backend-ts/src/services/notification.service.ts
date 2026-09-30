@@ -1,9 +1,12 @@
 import { supabase } from '../core/supabase';
 import { pushService } from './push.service';
 
-/** Notification types managers receive too: the day-to-day work they act on. */
+/**
+ * Notification types managers receive too: the day-to-day work they act on. Only types that open a page
+ * a manager may use are here (bids are decided by admin, so capacity_bid is not).
+ */
 export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
-  'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'capacity_bid', 'route_postponed', 'document_expiring', 'stop_prompts_released', 'vehicle_request',
+  'sos', 'stop_failed', 'fleet_alert', 'vendor_request', 'customer_booking', 'route_postponed', 'document_expiring', 'stop_prompts_released', 'vehicle_request',
   // Cargo cases, transfers, returns, hubs and claims (docs/cargo-plan.md); cargo_delivery_otp goes to customers only
   'cargo_exception_opened', 'cargo_exception_escalated', 'cargo_exception_resolved', 'cargo_transfer_planned', 'cargo_transfer_completed',
   'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update', 'driver_action_rejected',
@@ -81,12 +84,15 @@ export const notificationService = {
    * a vendor shipment request, a bid waiting for a decision, ...).
    *
    * Operational types (OPERATIONS_NOTIFICATION_TYPES) also reach managers,
-   * who can acknowledge and resolve them. Anything else (KYC, 3PL partner
-   * applications) goes to admin and superadmin only. Deactivated accounts
+   * who can acknowledge and resolve them. KYC goes to admin and superadmin;
+   * 3PL partner applications and orders (tpl_*) go to superadmin only. Deactivated accounts
    * are excluded.
    */
   async notifyStaff(title: string, body: string, type: string, data: any = {}) {
-    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
+    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type)
+      ? ['admin', 'superadmin', 'manager']
+      // 3PL partner work is a superadmin page, so admins are not sent what they cannot open
+      : type.startsWith('tpl_') ? ['superadmin'] : ['admin', 'superadmin'];
     const { data: staff, error } = await supabase
       .from('users')
       .select('id')

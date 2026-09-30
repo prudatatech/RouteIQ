@@ -426,7 +426,7 @@ export default function OptimizePage() {
   return (
     <Page>
       <PageHeader
-        title="Route optimization"
+        title="Optimize"
         description={routeIdToReoptimize
           ? `Re-optimizing route ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
           : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} pending shipments.`}

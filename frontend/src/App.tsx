@@ -15,13 +15,13 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
+  today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
   backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 
-const DashboardPage = dashboard.Component
+const TodayPage = today.Component
 const FleetPage = fleet.Component
 const VehicleDetailPage = fleetVehicle.Component
 const VehicleRequestsPage = vehicleRequests.Component
@@ -66,6 +66,11 @@ const VendorShipmentsPage = vendorShipments.Component
 const VendorCorridorPage = vendorCorridor.Component
 const RequestsPage = requests.Component
 
+/** Who may open which part of the console. Managers run operations only: no money, settings, audit, KYC or 3PL. */
+const OPERATIONS = ['superadmin', 'admin', 'manager']
+const ADMINS = ['superadmin', 'admin']
+const SUPERADMIN = ['superadmin']
+
 /** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
 function PageFallback() {
   return (
@@ -94,7 +99,7 @@ function MovedToRequests({ source }: { source: RequestSource }) {
 
 /** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
 function homeForRole(role: string | null): string | null {
-  if (role === 'admin' || role === 'superadmin') return '/dashboard'
+  if (role === 'admin' || role === 'superadmin' || role === 'manager') return '/today'
   if (role === 'driver') return '/driver'
   if (role === 'vendor') return '/vendor'
   return null
@@ -144,7 +149,7 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   // If this route is restricted to certain roles
   if (allowedRoles && (!role || !allowedRoles.includes(role))) {
     const home = homeForRole(role)
-    // Accounts with no area in the web app (no role, managers, customers) would
+    // Accounts with no area in the web app (no role, customers) would
     // otherwise bounce between redirects forever.
     if (!home || home === location.pathname) return <NoAccess />
     return <Navigate to={home} replace />
@@ -302,141 +307,143 @@ export default function App() {
               <AppLayout />
             </PrivateRoute>
           }>
-            <Route path="dashboard" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <DashboardPage />
+            <Route path="today" element={
+              <PrivateRoute allowedRoles={OPERATIONS}>
+                <TodayPage />
               </PrivateRoute>
             } />
+            {/* Today replaced the dashboard as the staff home page */}
+            <Route path="dashboard" element={<MovedTo to="/today" />} />
             <Route path="shipments" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <ShipmentsPage />
               </PrivateRoute>
             } />
             <Route path="shipments/:id/manifest" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <ShipmentManifestPage />
               </PrivateRoute>
             } />
             <Route path="cargo" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <CargoPage />
               </PrivateRoute>
             } />
             <Route path="cargo/exceptions/:id" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <ExceptionCasePage />
               </PrivateRoute>
             } />
             <Route path="cargo/transfers/:id" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <TransferPage />
               </PrivateRoute>
             } />
             <Route path="fleet" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <FleetPage />
               </PrivateRoute>
             } />
             <Route path="fleet/:vehicleId" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <VehicleDetailPage />
               </PrivateRoute>
             } />
             <Route path="vehicle-requests" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <VehicleRequestsPage />
               </PrivateRoute>
             } />
             <Route path="routes" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <RoutesPage />
               </PrivateRoute>
             } />
             <Route path="routes/:id" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <RouteDetailsPage />
               </PrivateRoute>
             } />
             <Route path="emergency" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <EmergencyPage />
               </PrivateRoute>
             } />
             <Route path="optimize" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <OptimizePage />
               </PrivateRoute>
             } />
             <Route path="route-planner" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <RoutePlannerPage />
               </PrivateRoute>
             } />
             <Route path="bids" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <BidsPage />
               </PrivateRoute>
             } />
             <Route path="analytics" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <AnalyticsPage />
               </PrivateRoute>
             } />
             <Route path="finance" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <FinancePage />
               </PrivateRoute>
             } />
             <Route path="admin/settings" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <SettingsPage />
               </PrivateRoute>
             } />
             <Route path="admin/users" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <UsersPage />
               </PrivateRoute>
             } />
             <Route path="admin/users/:id" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <PersonPage />
               </PrivateRoute>
             } />
             <Route path="admin/kyc" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <KycReviewPage />
               </PrivateRoute>
             } />
             <Route path="admin/audit" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
+              <PrivateRoute allowedRoles={SUPERADMIN}>
                 <AuditLogPage />
               </PrivateRoute>
             } />
             <Route path="3pl-partners" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
+              <PrivateRoute allowedRoles={SUPERADMIN}>
                 <TplPartnersPage />
               </PrivateRoute>
             } />
             <Route path="3pl-partners/verify" element={<TplVerifyRedirect />} />
             <Route path="3pl-partners/:id" element={
-              <PrivateRoute allowedRoles={['superadmin']}>
+              <PrivateRoute allowedRoles={SUPERADMIN}>
                 <TplPartnerDetailPage />
               </PrivateRoute>
             } />
             <Route path="insights" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <InsightsPage />
               </PrivateRoute>
             } />
             {/* AI Hub came back as Insights */}
             <Route path="ai-hub" element={<MovedTo to="/insights" />} />
             <Route path="backhaul" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <BackhaulPage />
               </PrivateRoute>
             } />
             <Route path="requests" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <RequestsPage />
               </PrivateRoute>
             } />
@@ -453,7 +460,7 @@ export default function App() {
             <Route path="admin/bids" element={<MovedTo to="/bids" />} />
             <Route path="admin/requests" element={<MovedToRequests source="vendor" />} />
             <Route path="live-map" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+              <PrivateRoute allowedRoles={OPERATIONS}>
                 <LiveMapPage />
               </PrivateRoute>
             } />

@@ -17,6 +17,8 @@ const router = Router();
 const staff = [requireAuth, requireRole(...STAFF_ROLES)];
 const partner = [requireAuth, requireRole('vendor')];
 const superadmin = [requireAuth, requireRole('superadmin')];
+// Marking a partner paid is money: admin and superadmin only
+const moneyStaff = [requireAuth, requireRole('admin')];
 
 const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
 
@@ -141,7 +143,7 @@ router.post('/orders/:id/rate', ...staff, async (req, res) => {
 });
 
 // POST /tpl-network/orders/:id/paid  { paid: boolean, reference? }
-router.post('/orders/:id/paid', ...staff, async (req, res) => {
+router.post('/orders/:id/paid', ...moneyStaff, async (req, res) => {
   try {
     if (typeof req.body?.paid !== 'boolean') throw new HttpError(400, 'paid must be true or false');
     res.json(await tplNetworkService.markPaid(req.params.id, req.body.paid, req.body.reference));

@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 export interface Account {
-  /** superadmin, admin, driver, vendor, or whatever public.users holds; null when there is no row. */
+  /** superadmin, admin, manager, driver, vendor, or whatever public.users holds; null when there is no row. */
   role: string | null
   hasVendorProfile: boolean
   tplPartnerId: string | null
@@ -25,7 +25,7 @@ export async function loadAccount(userId: string): Promise<Account> {
   const userRole: string | null = user.data?.role ?? null
   const hasVendorProfile = !!vendor.data
   const tplPartnerId: string | null = partner.data?.id ?? null
-  const isStaff = userRole === 'admin' || userRole === 'superadmin'
+  const isStaff = userRole === 'admin' || userRole === 'superadmin' || userRole === 'manager'
   const role = !isStaff && (hasVendorProfile || tplPartnerId) ? 'vendor' : userRole
   return { role, hasVendorProfile, tplPartnerId }
 }
@@ -35,7 +35,8 @@ export function homeFor(account: Account): string | null {
   switch (account.role) {
     case 'superadmin':
     case 'admin':
-      return '/dashboard'
+    case 'manager':
+      return '/today'
     case 'driver':
       return '/driver'
     case 'vendor':

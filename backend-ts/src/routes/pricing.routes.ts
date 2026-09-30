@@ -56,7 +56,7 @@ const SettingsSchema = z.object({
   settings: z.record(z.string(), z.number().finite().nullable()),
 });
 
-router.put('/settings', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.put('/settings', requireAuth, requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const parsed = SettingsSchema.safeParse(req.body);
     if (!parsed.success) {

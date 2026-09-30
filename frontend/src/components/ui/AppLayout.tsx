@@ -1,12 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase, openChannel } from '@/services/supabase'
-import { vehicleRequestsAPI, vendorAPI } from '@/services/api'
-import { fullBleedPaths, navSections, trackingPageLink, type NavBadge, type NavItem } from '@/config/navigation'
+import { opsAPI } from '@/services/api'
+import { activeNav, fullBleedPaths, menuFor, navBadgeCounts, trackingPageLink, type NavBadge, type NavSection } from '@/config/navigation'
 import { routePrefetch } from '@/config/lazyPages'
 import { useDraftStore } from '@/store/draftStore'
 import SOSListener from '@/components/SOSListener'
@@ -52,62 +52,47 @@ function prefetchRoute(to: string) {
   routePrefetch[to]?.().catch(() => { /* surfaced on navigation instead */ })
 }
 
-/** Counts for the navigation badges; each refreshes when its table changes. */
-function useNavBadges(enabled: boolean, isSuperadmin: boolean, reviewsVehicles: boolean) {
-  const [counts, setCounts] = useState<Record<NavBadge, number>>({ vendorRequests: 0, pendingPartners: 0, pendingKyc: 0, vehicleRequests: 0 })
+/** Tables whose changes can move a Today queue, so the menu counts follow them live. */
+const QUEUE_TABLES = [
+  'sos_alerts', 'cargo_exceptions', 'customer_bookings', 'vendor_shipment_requests', 'shipments', 'routes', 'vehicles',
+  'user_documents', 'vendor_profiles', 'capacity_bids', 'capacity_windows', 'invoices', 'notifications',
+]
 
-  const loadVendorRequests = useCallback(async () => {
-    try {
-      const data = await vendorAPI.pendingRequests()
-      setCounts(c => ({ ...c, vendorRequests: Array.isArray(data) ? data.length : 0 }))
-    } catch {
-      // Keep the previous count; the page itself reports load errors.
-    }
-  }, [])
-
-  const loadVehicleRequests = useCallback(async () => {
-    try {
-      const { pending } = await vehicleRequestsAPI.count()
-      setCounts(c => ({ ...c, vehicleRequests: pending }))
-    } catch {
-      // Keep the previous count; the page itself reports load errors.
-    }
-  }, [])
-
-  const loadPartners = useCallback(async () => {
-    const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-    if (!error) setCounts(c => ({ ...c, pendingPartners: count ?? 0 }))
-  }, [])
-
-  const loadKyc = useCallback(async () => {
-    const { count, error } = await supabase.from('vendor_profiles').select('id', { count: 'exact', head: true }).eq('kyc_status', 'submitted')
-    if (!error) setCounts(c => ({ ...c, pendingKyc: count ?? 0 }))
-  }, [])
+/** Counts for the menu badges: the same queues as Today, from one request, refreshed when their tables change. */
+function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
+  const queryClient = useQueryClient()
+  const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, enabled, refetchInterval: 30_000, retry: false })
+  const partners = useQuery({
+    queryKey: ['tpl-pending-partners'],
+    enabled: enabled && isSuperadmin,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      if (error) throw error
+      return count ?? 0
+    },
+  })
 
   useEffect(() => {
-    if (!enabled && !reviewsVehicles) return
+    if (!enabled) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['ops-today'] })
+        queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
+      }, 500)
+    }
     const channel = openChannel('nav_badges')
-    // Managers approve vehicles too, so they get that badge without the admin-only ones
-    if (reviewsVehicles) {
-      loadVehicleRequests()
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, loadVehicleRequests)
-    }
-    if (enabled) {
-      loadVendorRequests()
-      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_shipment_requests' }, loadVendorRequests)
-    }
-    if (enabled && isSuperadmin) {
-      loadPartners()
-      loadKyc()
-      channel
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tpl_partners' }, loadPartners)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_profiles' }, loadKyc)
-    }
+    for (const table of [...QUEUE_TABLES, 'tpl_partners']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh)
     channel.subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [enabled, reviewsVehicles, isSuperadmin, loadVendorRequests, loadVehicleRequests, loadPartners, loadKyc])
+    return () => {
+      clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [enabled, queryClient])
 
-  return counts
+  return navBadgeCounts(today.data?.queues, partners.data ?? 0)
 }
 
 /** Opens the search palette; shown in the sidebar (desktop) and the phone top bar. */
@@ -143,59 +128,89 @@ function Brand({ collapsed, bordered = true }: { collapsed: boolean; bordered?: 
   )
 }
 
-function NavList({ items, collapsed, badges, onNavigate }: {
-  items: { title: string; items: NavItem[] }[]
+/** The count pill of a menu link, or a dot when the sidebar is collapsed. */
+function CountBadge({ count, collapsed }: { count: number; collapsed?: boolean }) {
+  if (count <= 0) return null
+  if (collapsed) return <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand-fill" />
+  return (
+    <span className="min-w-5 shrink-0 rounded-full bg-brand-fill px-1.5 py-0.5 text-center text-xs font-medium text-on-brand tabular">
+      {count > 99 ? '99+' : count}
+      <span className="sr-only"> waiting</span>
+    </span>
+  )
+}
+
+/**
+ * The eleven sections. The section you are in opens to show its pages, so every page stays one
+ * click away without a long list; the others show just their name.
+ */
+function NavList({ sections, collapsed, badges, onNavigate }: {
+  sections: NavSection[]
   collapsed: boolean
   badges: Record<NavBadge, number>
   onNavigate?: () => void
 }) {
+  const location = useLocation()
+  const { section: current, child: currentChild } = activeNav(sections, location.pathname, location.search)
   return (
-    <nav aria-label="Main" className={clsx('flex-1 space-y-5 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')}>
-      {items.map(section => (
-        <div key={section.title}>
-          {collapsed
-            ? <div className="mx-auto mb-2 h-px w-6 bg-border" aria-hidden="true" />
-            : <p className="mb-1 px-3 text-xs font-medium text-muted">{section.title}</p>}
-          <ul className="space-y-0.5">
-            {section.items.map(({ to, label, icon: Icon, badge }) => {
-              const count = badge ? badges[badge] : 0
-              return (
-                <li key={to}>
-                  <NavLink
-                    to={to}
-                    onClick={onNavigate}
-                    onMouseEnter={() => prefetchRoute(to)}
-                    onFocus={() => prefetchRoute(to)}
-                    title={collapsed ? label : undefined}
-                    aria-label={collapsed ? (count ? `${label} (${count})` : label) : undefined}
-                    className={({ isActive }) => clsx(
-                      'relative flex h-10 items-center rounded-control text-sm transition-colors',
-                      collapsed ? 'justify-center' : 'gap-3 px-3',
-                      isActive ? 'bg-brand-soft font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
-                    )}
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <Icon size={18} aria-hidden="true" className={clsx('shrink-0', isActive && 'text-brand')} />
-                        {!collapsed && <span className="flex-1 truncate">{label}</span>}
-                        {count > 0 && (collapsed
-                          ? <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand-fill" />
-                          : (
-                            <span className="min-w-5 shrink-0 rounded-full bg-brand-fill px-1.5 py-0.5 text-center text-xs font-medium text-on-brand tabular">
-                              {count > 99 ? '99+' : count}
-                              <span className="sr-only"> waiting</span>
-                            </span>
-                          )
-                        )}
-                      </>
-                    )}
-                  </NavLink>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ))}
+    <nav aria-label="Main" className={clsx('flex-1 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')}>
+      <ul className="space-y-0.5">
+        {sections.map(section => {
+          const { to, label, icon: Icon, badge } = section
+          const isCurrent = current?.to === to
+          const count = badge ? badges[badge] : 0
+          const links = section.children.length > 1 ? section.children : []
+          return (
+            <li key={to}>
+              <Link
+                to={to}
+                onClick={onNavigate}
+                onMouseEnter={() => prefetchRoute(to)}
+                onFocus={() => prefetchRoute(to)}
+                title={collapsed ? label : undefined}
+                aria-label={collapsed ? (count ? `${label} (${count})` : label) : undefined}
+                aria-current={isCurrent && !currentChild ? 'page' : undefined}
+                className={clsx(
+                  'relative flex h-10 items-center rounded-control text-sm transition-colors',
+                  collapsed ? 'justify-center' : 'gap-3 px-3',
+                  isCurrent ? 'bg-brand-soft font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
+                )}
+              >
+                <Icon size={18} aria-hidden="true" className={clsx('shrink-0', isCurrent && 'text-brand')} />
+                {!collapsed && <span className="flex-1 truncate">{label}</span>}
+                {/* An open section shows its pages' counts on them, so it does not repeat the total */}
+                <CountBadge count={isCurrent && links.length > 0 && !collapsed ? 0 : count} collapsed={collapsed} />
+              </Link>
+              {isCurrent && !collapsed && links.length > 0 && (
+                <ul className="ml-[1.35rem] mt-0.5 space-y-0.5 border-l border-border pl-2">
+                  {links.map(child => {
+                    const childCount = child.badge ? badges[child.badge] : 0
+                    const active = currentChild?.to === child.to
+                    return (
+                      <li key={child.to}>
+                        <Link
+                          to={child.to}
+                          onClick={onNavigate}
+                          onMouseEnter={() => prefetchRoute(child.to.split('?')[0])}
+                          onFocus={() => prefetchRoute(child.to.split('?')[0])}
+                          aria-current={active ? 'page' : undefined}
+                          className={clsx(
+                            'flex h-9 items-center gap-2 rounded-control px-2.5 text-sm transition-colors',
+                            active ? 'bg-surface-subtle font-medium text-text' : 'text-muted hover:bg-surface-subtle hover:text-text',
+                          )}
+                        >
+                          <span className="flex-1 truncate">{child.label}</span>
+                          <CountBadge count={childCount} />
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </nav>
   )
 }
@@ -254,12 +269,11 @@ export default function AppLayout() {
   // The modal (and the map it pulls in) is only fetched once a "Create shipment" button opens it.
   const isShipmentModalOpen = useDraftStore(s => s.isModalOpen)
 
-  const isStaff = role === 'admin' || role === 'superadmin'
-  const badges = useNavBadges(isStaff, role === 'superadmin', isStaff || role === 'manager')
+  // Managers are staff too: they get search, notifications and the menu counts for their sections
+  const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
+  const badges = useNavBadges(isStaff, role === 'superadmin')
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
-  const sections = navSections
-    .map(s => ({ ...s, items: s.items.filter(i => role && (i.roles as string[]).includes(role)) }))
-    .filter(s => s.items.length > 0)
+  const sections = menuFor(role)
   const fullBleed = fullBleedPaths.some(p => location.pathname.startsWith(p))
 
   const toggleCollapsed = () => {
@@ -322,7 +336,7 @@ export default function AppLayout() {
             {isDesktop && <NotificationsBell />}
           </div>
         )}
-        <NavList items={sections} collapsed={collapsed} badges={badges} />
+        <NavList sections={sections} collapsed={collapsed} badges={badges} />
         <SidebarFooter collapsed={collapsed} onSignOut={signOut} onToggle={toggleCollapsed} />
       </aside>
 
@@ -348,7 +362,7 @@ export default function AppLayout() {
               <Brand collapsed={false} bordered={false} />
               <IconButton label="Close menu" icon={<X size={20} />} onClick={() => setMobileOpen(false)} />
             </div>
-            <NavList items={sections} collapsed={false} badges={badges} onNavigate={() => setMobileOpen(false)} />
+            <NavList sections={sections} collapsed={false} badges={badges} onNavigate={() => setMobileOpen(false)} />
             <SidebarFooter collapsed={false} onSignOut={signOut} />
           </div>
         </div>
