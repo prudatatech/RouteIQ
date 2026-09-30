@@ -4,9 +4,11 @@ import { Feather } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
 import BookingsScreen from '../screens/BookingsScreen';
+import InvoicesScreen from '../screens/InvoicesScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AccountScreen from '../screens/AccountScreen';
 import { api, NOTIFICATIONS_CHANGED_EVENT } from '../services/api';
+import { syncPushToken } from '../services/push';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, size, type } from '../theme';
 
@@ -34,6 +36,11 @@ export default function MainTabs() {
       });
   }, []);
 
+  // Keep this phone's push token saved for the signed-in customer (asks for nothing: see services/push.ts).
+  useEffect(() => {
+    void syncPushToken();
+  }, []);
+
   useEffect(() => {
     refreshUnread();
     const timer = setInterval(refreshUnread, BADGE_REFRESH_MS);
@@ -56,6 +63,7 @@ export default function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: t('tab_home'), tabBarIcon: icon('home') }} />
       <Tab.Screen name="Bookings" component={BookingsScreen} options={{ title: t('tab_bookings'), tabBarIcon: icon('package') }} />
+      <Tab.Screen name="Invoices" component={InvoicesScreen} options={{ title: t('tab_invoices'), tabBarIcon: icon('file-text') }} />
       <Tab.Screen
         name="Notifications"
         component={NotificationsScreen}

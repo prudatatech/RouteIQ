@@ -14,6 +14,9 @@ import CargoConfigScreen from './src/screens/CargoConfigScreen';
 import QuoteScreen from './src/screens/QuoteScreen';
 import BookingDetailScreen from './src/screens/BookingDetailScreen';
 import ClaimScreen from './src/screens/ClaimScreen';
+import InvoiceScreen from './src/screens/InvoiceScreen';
+import { configureNotifications } from './src/services/push';
+import { usePushNavigation } from './src/hooks/usePushNavigation';
 import { SESSION_EXPIRED_EVENT } from './src/services/api';
 import { TranslationProvider } from './src/hooks/useTranslation';
 import { themeFonts } from './src/theme/fonts';
@@ -21,6 +24,9 @@ import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
+
+// A push that arrives while the app is open still shows as a banner.
+configureNotifications();
 
 const navigationTheme: Theme = {
   ...DefaultTheme,
@@ -40,6 +46,9 @@ export default function App() {
   // fail to load the app still starts with the system font.
   const [fontsLoaded, fontError] = useFonts(themeFonts);
 
+  // Tapping a push opens the exact booking or invoice, like the in-app notification list.
+  const flushPushTap = usePushNavigation(navigationRef);
+
   // A sign-in that no longer works (expired or revoked) sends the customer back to the sign-in screen.
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(SESSION_EXPIRED_EVENT, () => {
@@ -55,7 +64,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <TranslationProvider>
-      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
+      <NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={flushPushTap} onStateChange={flushPushTap}>
         <StatusBar style="dark" />
         <Stack.Navigator
           initialRouteName="Splash"
@@ -71,6 +80,7 @@ export default function App() {
           <Stack.Screen name="CargoConfig" component={CargoConfigScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Quote" component={QuoteScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="BookingDetail" component={BookingDetailScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Invoice" component={InvoiceScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Claim" component={ClaimScreen} options={{ animation: 'slide_from_right' }} />
         </Stack.Navigator>
       </NavigationContainer>

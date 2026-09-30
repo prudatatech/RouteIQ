@@ -9,6 +9,8 @@ import { api, NOTIFICATIONS_CHANGED_EVENT, type NotificationItem } from '../serv
 import { useRemote } from '../hooks/useRemote';
 import { formatDateTime } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
+import { openTarget } from '../hooks/usePushNavigation';
+import { notificationTarget } from '../utils/notificationTarget';
 
 export default function NotificationsScreen({ navigation }: any) {
   const { t } = useTranslation();
@@ -35,13 +37,9 @@ export default function NotificationsScreen({ navigation }: any) {
 
   const openNotification = useCallback(
     async (item: NotificationItem) => {
-      // Cargo updates (delays, transfers, claims) open their booking too. The delivery code stays
-      // put: its text is what the customer reads out to the driver.
-      const opensBooking =
-        item.type === 'booking' || (item.type?.startsWith('cargo_') && item.type !== 'cargo_delivery_otp');
-      if (opensBooking && typeof item.data?.booking_id === 'string') {
-        navigation.navigate('BookingDetail', { id: item.data.booking_id });
-      }
+      // The same routing as a tapped push: the booking, the invoice, or (for the delivery code) the booking's code card.
+      const target = notificationTarget(item.type, item.data);
+      if (target) openTarget(navigation, target);
       if (item.is_read || readIds.has(item.id)) return;
       setReadIds((prev) => new Set(prev).add(item.id));
       try {

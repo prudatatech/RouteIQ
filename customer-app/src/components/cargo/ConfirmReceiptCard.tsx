@@ -13,7 +13,8 @@ interface Props {
   bookingId: string;
   /** Set when the server already has the customer's confirmation. */
   receipt: BookingCargo['receipt'];
-  onConfirmed: () => void;
+  /** Called once the confirmation is saved; `withIssue` says the customer reported a problem (the server opened a claim). */
+  onConfirmed: (withIssue: boolean) => void;
 }
 
 /**
@@ -79,12 +80,12 @@ export function ConfirmReceiptCard({ bookingId, receipt, onConfirmed }: Props) {
         idempotencyKey,
       );
       setSent({ issue: reporting });
-      onConfirmed();
+      onConfirmed(reporting);
     } catch (e: any) {
       // Rated already (from another phone, or a reply that was lost): show it as done
       if (typeof e?.message === 'string' && /already been rated/i.test(e.message)) {
         setAlreadyRated(true);
-        onConfirmed();
+        onConfirmed(false);
         return;
       }
       setError(e?.message || t('receipt_failed'));

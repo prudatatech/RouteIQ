@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, STORAGE_KEYS } from '../services/api';
+import { pushPermission, requestPushPermission, type PushPermission } from '../services/push';
 import { Button, Card, ScreenHeader, Text } from '../components/ui';
 import LanguagePicker from '../components/LanguagePicker';
 import { useTranslation } from '../hooks/useTranslation';
@@ -24,6 +26,15 @@ export default function AccountScreen({ navigation }: any) {
       .then((stored) => setInfo(stored ? JSON.parse(stored) : {}))
       .catch(() => setInfo({}));
   }, []);
+
+  // Notifications: on, off in the system settings, or never asked (the customer can turn them on here).
+  const [permission, setPermission] = useState<PushPermission | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      void pushPermission().then(setPermission);
+    }, []),
+  );
+  const turnOnNotifications = async () => setPermission(await requestPushPermission());
 
   const signOut = async () => {
     setSigningOut(true);
@@ -66,6 +77,19 @@ export default function AccountScreen({ navigation }: any) {
           </View>
         </Card>
 
+        {permission ? (
+          <Card style={styles.notifications}>
+            <View style={styles.notificationsHeader}>
+              <Feather name={permission === 'granted' ? 'bell' : 'bell-off'} size={size.icon.md} color={colors.accent} />
+              <Text variant="bodyMedium" style={styles.flex}>
+                {permission === 'granted' ? t('notif_status_on') : permission === 'denied' ? t('notif_status_off') : t('push_prompt_title')}
+              </Text>
+            </View>
+            {permission === 'undetermined' ? <Button title={t('notif_turn_on')} variant="secondary" onPress={turnOnNotifications} /> : null}
+            {permission === 'denied' ? <Button title={t('open_settings')} variant="secondary" onPress={() => void Linking.openSettings()} /> : null}
+          </Card>
+        ) : null}
+
         <Text variant="title" accessibilityRole="header">
           {t('language')}
         </Text>
@@ -89,6 +113,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: space[4], gap: space[4] },
   flex: { flex: 1 },
+  notifications: { gap: space[3] },
+  notificationsHeader: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   profile: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   avatar: {
     width: AVATAR,

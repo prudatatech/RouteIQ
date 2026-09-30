@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
+import { Directory, File, Paths } from 'expo-file-system';
 import { API_V1 } from '../config';
 import { secureStorage } from './secureStorage';
 import { translateNow } from '../locales';
@@ -192,7 +193,21 @@ class ApiClient {
   }
 
   async logout(): Promise<void> {
+    // Stop pushes for this customer on this phone before the session goes; a failure here must not block signing out.
+    await this.unregisterPushToken().catch(() => {});
     await this.clearTokens();
+  }
+
+  // ── Push notifications ─────────────────────────────────────
+
+  /** Saves this phone's Expo push token on the signed-in customer, so their notifications also arrive as pushes. */
+  async registerPushToken(token: string): Promise<void> {
+    await this.request('PUT', '/customer/push-token', { token });
+  }
+
+  async unregisterPushToken(): Promise<void> {
+    if (!this.accessToken) return;
+    await this.request('DELETE', '/customer/push-token');
   }
 
   // ── Notifications ──────────────────────────────────────────
@@ -248,6 +263,42 @@ class ApiClient {
 
   async cancelBooking(id: string, reason?: string): Promise<Booking> {
     return this.request('POST', `/customer/bookings/${id}/cancel`, reason ? { reason } : {});
+  }
+
+  // ── Invoices ───────────────────────────────────────────────
+
+  /** The customer's invoices (bookings and lots), newest first; void ones are not listed. */
+  async listInvoices(): Promise<Invoice[]> {
+    return this.request('GET', '/customer/invoices');
+  }
+
+  /** Where to pay: bank and UPI details from MargixIndia's settings. `available` is false until staff have saved some. */
+  async getPaymentDetails(): Promise<PaymentDetails> {
+    return this.request('GET', '/invoices/payment-details');
+  }
+
+  /**
+   * Saves the invoice PDF in the app's cache and returns its file URI. The endpoint is owner-only and
+   * needs the bearer token, so it is fetched with the session rather than opened as a link. A
+   * rejected token is refreshed once, like any other request.
+   */
+  async downloadInvoicePdf(invoiceId: string, invoiceNumber: string | null): Promise<string> {
+    const folder = new Directory(Paths.cache, 'invoices');
+    if (!folder.exists) folder.create({ intermediates: true });
+    const name = `${(invoiceNumber ?? invoiceId).replace(/[^A-Za-z0-9._-]+/g, '-')}.pdf`;
+    const target = new File(folder, name);
+    const fetchOnce = () =>
+      File.downloadFileAsync(`${API_V1}/invoices/${invoiceId}/pdf`, target, {
+        headers: { Authorization: `Bearer ${this.accessToken ?? ''}`, Accept: 'application/pdf' },
+        idempotent: true,
+      });
+    try {
+      return (await fetchOnce()).uri;
+    } catch (e: any) {
+      // A 401 means the access token ran out: refresh it once and try again
+      if (/\b401\b/.test(String(e?.message)) && (await this.refreshAccessToken())) return (await fetchOnce()).uri;
+      throw e;
+    }
   }
 
   // ── Cargo: where it is, proof of delivery, receipt and claims ──
@@ -377,6 +428,41 @@ export interface Booking {
   tracking_id: string | null;
   cancel_reason: string | null;
   created_at: string;
+  /** On the bookings list: the delivery has been rated (confirmed by the customer). */
+  rated?: boolean;
+}
+
+/** One of the customer's invoices (GET /customer/invoices). Amounts are in rupees; dates are ISO instants. */
+export interface Invoice {
+  id: string;
+  invoice_number: string | null;
+  status: 'issued' | 'paid' | (string & {});
+  total: number | null;
+  amount: number | null;
+  gst_amount: number | null;
+  issued_at: string | null;
+  due_date: string | null;
+  overdue: boolean;
+  days_overdue: number;
+  paid_at: string | null;
+  payment_method: 'bank' | 'upi' | 'cash' | 'cheque' | null;
+  payment_reference: string | null;
+  shipment_id: string;
+  booking_id: string;
+  tracking_id: string | null;
+  pickup_name: string;
+  drop_name: string;
+}
+
+/** GET /invoices/payment-details: nothing but where to pay. */
+export interface PaymentDetails {
+  account_name: string | null;
+  bank_name: string | null;
+  bank_account_no: string | null;
+  bank_ifsc: string | null;
+  upi_id: string | null;
+  payment_terms_days: number;
+  available: boolean;
 }
 
 /** What the public tracking endpoint returns for a shipment (no vendor or driver details). */
