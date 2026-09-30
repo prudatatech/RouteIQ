@@ -81,7 +81,7 @@ export default function InsightsPage() {
         />
         <InsightCard
           title="Reroute suggestions"
-          description="Better stop orders found for vehicles on the road. Apply them from Route optimization."
+          description="Better stop orders found for vehicles on the road. Apply them from Optimize."
           query={insights}
           items={byType.reroute_suggestion}
           empty="No reroute suggestions right now."

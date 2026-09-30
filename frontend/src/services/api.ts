@@ -172,6 +172,30 @@ export const dashboardAPI = {
   shipmentCounts: () => api.get('/dashboard/shipment-counts').then(r => r.data as { counts: Record<string, number>; total: number }),
 }
 
+/** GET /ops/today: the work queue counts and live strip of the Today page. A manager gets the operations queues only. */
+export interface TodayResponse {
+  scope: 'all' | 'operations'
+  generated_at: string
+  queues: {
+    sos: { count: number }
+    problems: { count: number; overdue: number }
+    requests: { count: number; bookings: number; vendor_loads: number }
+    needs_vehicle: { count: number; shipments: number; vendor_loads: number }
+    trips_to_send: { count: number }
+    vehicle_requests: { count: number }
+    documents: { count: number }
+    driver_actions: { count: number }
+    unpriced?: { count: number; no_price: number }
+    kyc?: { count: number }
+    bids?: { count: number }
+  }
+  live: { active_trips: number; vehicles_on_road: number; on_time_rate_pct: number | null }
+}
+
+export const opsAPI = {
+  today: () => api.get('/ops/today').then(r => r.data as TodayResponse),
+}
+
 export const usersAPI = {
   me: () => api.get('/users/me').then(r => r.data),
   list: () => api.get('/users/').then(r => r.data),

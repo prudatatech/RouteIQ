@@ -242,7 +242,7 @@ export default function RoutePlannerPage() {
   return (
     <Page>
       <PageHeader
-        title="Route planner"
+        title="Plan a trip"
         description="Plan a truck trip with live traffic, tolls and a fuel estimate. Compare routes, put the stops in the best order, then create the route."
       />
 

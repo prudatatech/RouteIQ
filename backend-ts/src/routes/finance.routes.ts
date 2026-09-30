@@ -19,7 +19,8 @@ import {
 } from '../services/finance.service';
 
 const router = Router();
-router.use(requireAuth, requireRole(...STAFF_ROLES));
+// Money is for admin and superadmin; managers run operations only
+router.use(requireAuth, requireRole('admin'));
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = (v: unknown): v is string => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(v));

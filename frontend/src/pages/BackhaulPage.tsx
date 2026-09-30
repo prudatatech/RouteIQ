@@ -35,10 +35,10 @@ export default function BackhaulPage() {
   return (
     <Page>
       <PageHeader
-        title="Backhaul pooling"
+        title="Return trips"
         description="Fill empty space on trucks: pool open loads onto one run, or add a load to a return trip."
       >
-        <Tabs tabs={tabs} value={tab} onChange={setTab} label="Backhaul pooling sections" />
+        <Tabs tabs={tabs} value={tab} onChange={setTab} label="Return trips sections" />
       </PageHeader>
       <TabPanel id={tab}>
         {tab === 'loads' && <OpenLoadsTab />}

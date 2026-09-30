@@ -313,7 +313,7 @@ export default function EmergencyPage() {
   return (
     <Page>
       <PageHeader
-        title="Emergencies"
+        title="SOS alerts"
         description={isLoading ? 'Driver SOS calls and where they are.' : activeAlerts.length === 0 ? 'No active SOS.' : `${activeAlerts.length.toLocaleString('en-IN')} active ${activeAlerts.length === 1 ? 'SOS' : 'SOS calls'}`}
       />
 

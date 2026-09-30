@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Check, Truck, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { bookingsAPI, type CustomerBooking } from '@/services/api'
@@ -70,6 +70,7 @@ export default function BookingsPage() {
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'new')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const bookings = useQuery({ queryKey: ['customer-bookings'], queryFn: bookingsAPI.list, refetchInterval: 30_000 })
   const refresh = () => {
@@ -114,6 +115,22 @@ export default function BookingsPage() {
   }, [all, tab, search])
 
   const selected = all.find(b => b.id === selectedId) ?? null
+
+  // Opened from a link (a notification, global search): ?open=<id> shows the tab the booking is under and
+  // opens its drawer, then the param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || bookings.isLoading) return
+    const match = all.find(b => b.id === openId)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      const t = match ? (Object.keys(tabStatuses) as Exclude<TabId, 'all'>[]).find(k => tabStatuses[k].includes(match.status)) : null
+      if (t) { if (t === 'new') next.delete('tab'); else next.set('tab', t) }
+      return next
+    }, { replace: true })
+    if (match) setSelectedId(match.id)
+  }, [searchParams, setSearchParams, all, bookings.isLoading])
 
   const askCancel = async (b: CustomerBooking) => {
     const reason = await prompt({

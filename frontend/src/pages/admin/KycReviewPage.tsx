@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, FileText, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, DataTable, DetailList, Drawer, IfscVerifiedHint, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
@@ -113,9 +114,12 @@ export default function KycReviewPage() {
   const [sortParam, setSortParam] = useUrlState('sort', { fallback: tab === 'submitted' ? 'updated:asc' : 'updated:desc' })
   const sort = parseSort(sortParam)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 3PL applications are decided on a page only superadmin can open
+  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
 
   const vendors = useQuery({ queryKey: ['kyc-vendors'], queryFn: loadVendors })
-  const partners = useQuery({ queryKey: ['tpl-partners-pending-count'], queryFn: countPendingPartners })
+  const partners = useQuery({ queryKey: ['tpl-partners-pending-count'], queryFn: countPendingPartners, enabled: isSuperadmin })
   useRealtimeRefresh('kyc_review_page', ['vendor_profiles'], [['kyc-vendors']])
   useRealtimeRefresh('kyc_review_page_partners', ['tpl_partners'], [['tpl-partners-pending-count']])
 
@@ -148,6 +152,21 @@ export default function KycReviewPage() {
   }, [all, tab, search])
 
   const selected = all.find(v => v.id === selectedId) ?? null
+
+  // Opened from a link (a notification, global search): ?open=<id> shows the tab the vendor is under and
+  // opens its drawer, then the param is dropped from the URL.
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId || vendors.isLoading) return
+    const match = all.find(v => v.id === openId)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      if (match) { if (match.kyc_status === 'submitted') next.delete('tab'); else next.set('tab', match.kyc_status) }
+      return next
+    }, { replace: true })
+    if (match) setSelectedId(match.id)
+  }, [searchParams, setSearchParams, all, vendors.isLoading])
 
   const decide = async (v: VendorKyc, status: 'approved' | 'rejected') => {
     if (status === 'rejected') {
@@ -223,7 +242,7 @@ export default function KycReviewPage() {
     all: 'No vendors yet',
   }
 
-  const pendingPartners = partners.data ?? 0
+  const pendingPartners = isSuperadmin ? (partners.data ?? 0) : 0
 
   return (
     <Page>

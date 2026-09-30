@@ -1,80 +1,214 @@
 import {
-  BarChart3, Banknote, Boxes, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned, Milestone,
-  Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
+  BarChart3, Banknote, CalendarCheck, Inbox, MapPinned, Package, Route, Settings, Truck, Users, Waypoints, type LucideIcon,
+  ClipboardList,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin' | 'manager'
 
-/** Counters shown next to a navigation item. Loaded by the app shell. */
-export type NavBadge = 'vendorRequests' | 'pendingPartners' | 'pendingKyc' | 'vehicleRequests'
+/** The counts the menu shows: what needs someone, per section and per sub-link. */
+export type NavBadge =
+  | 'today' | 'requests' | 'bookings' | 'vendorLoads'
+  | 'dispatch' | 'needsVehicle' | 'tripsToSend'
+  | 'onTheRoad' | 'problems' | 'sos'
+  | 'fleet' | 'vehicleRequests'
+  | 'people' | 'documents' | 'kyc'
+  | 'returnTrips' | 'bids' | 'pendingPartners'
+  | 'money'
 
-export interface NavItem {
+export interface NavChild {
+  /** Path, with the query string when the link opens a filtered view (`/routes?status=active`). */
   to: string
   label: string
-  icon: LucideIcon
   roles: StaffRole[]
   badge?: NavBadge
 }
 
 export interface NavSection {
-  title: string
-  items: NavItem[]
+  /** The section's landing page. */
+  to: string
+  label: string
+  icon: LucideIcon
+  roles: StaffRole[]
+  badge?: NavBadge
+  /** Extra paths that belong to the section but are not one of its links (detail pages). */
+  also?: string[]
+  /** The pages of the section, shown under it while it is open. */
+  children: NavChild[]
 }
 
-const staff: StaffRole[] = ['admin', 'superadmin']
+const admins: StaffRole[] = ['admin', 'superadmin']
 const superadmin: StaffRole[] = ['superadmin']
-const staffAndManagers: StaffRole[] = ['admin', 'superadmin', 'manager']
+const everyone: StaffRole[] = ['admin', 'superadmin', 'manager']
 
-/** The console navigation, grouped by what operators do each day. */
+/**
+ * The staff menu: eleven sections in the order the work happens (docs/workflow-blueprint.html).
+ * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL.
+ */
 export const navSections: NavSection[] = [
   {
-    title: 'Operations',
-    items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: staff },
-      { to: '/live-map', label: 'Live map', icon: MapPinned, roles: staff },
-      { to: '/shipments', label: 'Shipments', icon: Package, roles: staff },
-      { to: '/cargo', label: 'Cargo', icon: Boxes, roles: staff },
-      { to: '/fleet', label: 'Fleet', icon: Truck, roles: staff },
-      { to: '/vehicle-requests', label: 'Vehicle requests', icon: ClipboardCheck, roles: staffAndManagers, badge: 'vehicleRequests' },
-      { to: '/emergency', label: 'Emergencies', icon: ShieldAlert, roles: staffAndManagers },
+    to: '/today', label: 'Today', icon: CalendarCheck, roles: everyone, badge: 'today',
+    children: [],
+  },
+  {
+    to: '/requests', label: 'Requests', icon: Inbox, roles: everyone, badge: 'requests',
+    children: [
+      { to: '/bookings', label: 'Customer bookings', roles: everyone, badge: 'bookings' },
+      { to: '/vendor-requests', label: 'Vendor loads', roles: everyone, badge: 'vendorLoads' },
+    ],
+  },
+  { to: '/shipments', label: 'Shipments', icon: Package, roles: everyone, children: [] },
+  {
+    to: '/dispatch', label: 'Dispatch', icon: Route, roles: everyone, badge: 'dispatch',
+    children: [
+      { to: '/dispatch?tab=needs-vehicle', label: 'Needs a vehicle', roles: everyone, badge: 'needsVehicle' },
+      { to: '/routes?status=pending', label: 'Trips to send', roles: everyone, badge: 'tripsToSend' },
+      { to: '/routes', label: 'All trips', roles: everyone },
+      { to: '/route-planner', label: 'Plan a trip', roles: everyone },
+      { to: '/optimize', label: 'Optimize', roles: everyone },
     ],
   },
   {
-    title: 'Planning',
-    items: [
-      { to: '/routes', label: 'Routes', icon: Map, roles: staff },
-      { to: '/route-planner', label: 'Route planner', icon: Milestone, roles: staff },
-      { to: '/optimize', label: 'Route optimization', icon: Route, roles: staff },
-      { to: '/backhaul', label: 'Backhaul pooling', icon: Waypoints, roles: staff },
+    to: '/live-map', label: 'On the road', icon: MapPinned, roles: everyone, badge: 'onTheRoad',
+    children: [
+      { to: '/live-map', label: 'Live map', roles: everyone },
+      { to: '/routes?status=active', label: 'Active trips', roles: everyone },
+      { to: '/cargo', label: 'Problems', roles: everyone, badge: 'problems' },
+      { to: '/emergency', label: 'SOS alerts', roles: everyone, badge: 'sos' },
     ],
   },
   {
-    title: 'Marketplace',
-    items: [
-      { to: '/bids', label: 'Bids', icon: Briefcase, roles: staff },
-      { to: '/bookings', label: 'Customer bookings', icon: Smartphone, roles: staff },
-      { to: '/vendor-requests', label: 'Vendor loads', icon: Inbox, roles: staff, badge: 'vendorRequests' },
-      { to: '/3pl-partners', label: '3PL partners', icon: Building2, roles: superadmin, badge: 'pendingPartners' },
+    to: '/fleet', label: 'Fleet', icon: Truck, roles: everyone, badge: 'fleet',
+    children: [
+      { to: '/fleet', label: 'Vehicles', roles: everyone },
+      { to: '/vehicle-requests', label: 'Vehicle requests', roles: everyone, badge: 'vehicleRequests' },
     ],
   },
   {
-    title: 'Insights',
-    items: [
-      { to: '/insights', label: 'Insights', icon: Lightbulb, roles: staff },
-      { to: '/analytics', label: 'Analytics', icon: BarChart3, roles: staff },
-      { to: '/finance', label: 'Finance', icon: Banknote, roles: staff },
+    to: '/admin/users', label: 'People', icon: Users, roles: everyone, badge: 'people',
+    children: [
+      { to: '/admin/users', label: 'People', roles: everyone, badge: 'documents' },
+      { to: '/admin/kyc', label: 'KYC review', roles: admins, badge: 'kyc' },
     ],
   },
   {
-    title: 'Admin',
-    items: [
-      { to: '/admin/users', label: 'People', icon: Users, roles: staffAndManagers },
-      { to: '/admin/kyc', label: 'KYC review', icon: FileCheck2, roles: superadmin, badge: 'pendingKyc' },
-      { to: '/admin/audit', label: 'Audit log', icon: History, roles: superadmin },
-      { to: '/admin/settings', label: 'Settings', icon: Settings, roles: staff },
+    to: '/backhaul', label: 'Return trips & 3PL', icon: Waypoints, roles: admins, badge: 'returnTrips',
+    children: [
+      { to: '/backhaul', label: 'Return trips', roles: admins },
+      { to: '/bids', label: 'Bids', roles: admins, badge: 'bids' },
+      { to: '/3pl-partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
+    ],
+  },
+  {
+    to: '/finance', label: 'Money', icon: Banknote, roles: admins, badge: 'money',
+    children: [
+      { to: '/finance', label: 'Finance', roles: admins, badge: 'money' },
+      { to: '/cargo?tab=claims', label: 'Claims', roles: admins },
+    ],
+  },
+  {
+    to: '/analytics', label: 'Reports', icon: BarChart3, roles: admins,
+    children: [
+      { to: '/analytics', label: 'Analytics', roles: admins },
+      { to: '/insights', label: 'Insights', roles: admins },
+    ],
+  },
+  {
+    to: '/admin/settings', label: 'Settings', icon: Settings, roles: admins,
+    children: [
+      { to: '/admin/settings', label: 'Settings', roles: admins },
+      { to: '/admin/audit', label: 'Audit log', roles: superadmin },
     ],
   },
 ]
+
+/** Sections and links this role may see. A section left with no page of its own is dropped. */
+export function menuFor(role: string | null | undefined): NavSection[] {
+  if (!role) return []
+  const allowed = (roles: StaffRole[]) => (roles as string[]).includes(role)
+  return navSections
+    .filter(s => allowed(s.roles))
+    .map(s => ({ ...s, children: s.children.filter(c => allowed(c.roles)) }))
+}
+
+const splitLink = (link: string) => {
+  const [path, query = ''] = link.split('?')
+  return { path, params: new URLSearchParams(query) }
+}
+
+/** How well a link fits the current address; -1 when it does not. A link with a query needs every part of it. */
+function matchScore(link: string, pathname: string, search: string): number {
+  const { path, params } = splitLink(link)
+  if (pathname !== path && !pathname.startsWith(`${path}/`)) return -1
+  const current = new URLSearchParams(search)
+  for (const [key, value] of params) if (current.get(key) !== value) return -1
+  return path.length + params.size * 1000
+}
+
+/** The section the current address belongs to, and the link inside it that fits best (if any). */
+export function activeNav(sections: NavSection[], pathname: string, search: string): { section: NavSection | null; child: NavChild | null } {
+  let best: { section: NavSection; child: NavChild | null; score: number } | null = null
+  for (const section of sections) {
+    const candidates: { link: string; child: NavChild | null }[] = [
+      { link: section.to, child: null },
+      ...section.children.map(child => ({ link: child.to, child })),
+      ...(section.also ?? []).map(link => ({ link, child: null })),
+    ]
+    for (const { link, child } of candidates) {
+      const score = matchScore(link, pathname, search)
+      // A page's own link wins a tie with its section's landing link
+      if (score >= 0 && score >= (best?.score ?? -1)) best = { section, child, score }
+    }
+  }
+  return best ? { section: best.section, child: best.child } : { section: null, child: null }
+}
+
+/** The queue counts Today returns (GET /ops/today), as far as the menu needs them. */
+export interface QueueCounts {
+  sos?: { count: number }
+  problems?: { count: number; overdue: number }
+  requests?: { count: number; bookings: number; vendor_loads: number }
+  needs_vehicle?: { count: number }
+  trips_to_send?: { count: number }
+  vehicle_requests?: { count: number }
+  documents?: { count: number }
+  kyc?: { count: number }
+  bids?: { count: number }
+  unpriced?: { count: number }
+}
+
+/** Menu badge counts from the Today queues (plus 3PL applications, which have no queue on Today). */
+export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners: number): Record<NavBadge, number> {
+  const n = (q?: { count: number }) => q?.count ?? 0
+  const sos = n(queues?.sos)
+  const problems = n(queues?.problems)
+  const needsVehicle = n(queues?.needs_vehicle)
+  const tripsToSend = n(queues?.trips_to_send)
+  const vehicleRequests = n(queues?.vehicle_requests)
+  const documents = n(queues?.documents)
+  const kyc = n(queues?.kyc)
+  const bids = n(queues?.bids)
+  return {
+    today: sos + (queues?.problems?.overdue ?? 0),
+    requests: n(queues?.requests),
+    bookings: queues?.requests?.bookings ?? 0,
+    vendorLoads: queues?.requests?.vendor_loads ?? 0,
+    dispatch: needsVehicle + tripsToSend,
+    needsVehicle,
+    tripsToSend,
+    onTheRoad: sos + problems,
+    problems,
+    sos,
+    fleet: vehicleRequests,
+    vehicleRequests,
+    people: documents + kyc,
+    documents,
+    kyc,
+    returnTrips: bids + pendingPartners,
+    bids,
+    pendingPartners,
+    money: n(queues?.unpriced),
+  }
+}
 
 /** Pages that draw edge to edge (maps) instead of inside the standard content width. */
 export const fullBleedPaths = ['/live-map']

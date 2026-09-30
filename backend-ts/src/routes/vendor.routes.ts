@@ -140,8 +140,8 @@ router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), a
   }
 });
 
-// Approve shipment request (Admin/Super Admin)
-router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Approve shipment request (Admin/Super Admin/Manager)
+router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: any, res: any) => {
   try {
     const request = await vendorService.approveRequest(req.params.id);
     res.json(request);
@@ -150,8 +150,8 @@ router.put('/shipment-request/:id/approve', requireAuth, requireRole('superadmin
   }
 });
 
-// Reject shipment request (Admin/Super Admin)
-router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Reject shipment request (Admin/Super Admin/Manager)
+router.put('/shipment-request/:id/reject', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: any, res: any) => {
   try {
     const reason = parseRejectionReason(req.body?.reason);
     const request = await vendorService.rejectRequest(req.params.id, reason);
@@ -182,8 +182,8 @@ router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), a
   }
 });
 
-// Assign vehicle to shipment request (Admin/Super Admin)
-router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Assign vehicle to shipment request (Admin/Super Admin/Manager)
+router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: any, res: any) => {
   try {
     const { vehicle_id, cost, cost_per_km } = req.body ?? {};
     if (typeof vehicle_id !== 'string' || !vehicle_id) throw new HttpError(400, 'vehicle_id is required');

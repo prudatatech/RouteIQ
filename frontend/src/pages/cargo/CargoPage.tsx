@@ -16,7 +16,7 @@ export default function CargoPage() {
   const [raising, setRaising] = useState(false)
 
   const tabs: TabItem<TabId>[] = [
-    { id: 'exceptions', label: 'Exceptions' },
+    { id: 'exceptions', label: 'Problems' },
     { id: 'transfers', label: 'Transfers' },
     { id: 'hubs', label: 'Hubs' },
     { id: 'claims', label: 'Claims' },
@@ -25,11 +25,11 @@ export default function CargoPage() {
   return (
     <Page>
       <PageHeader
-        title="Cargo"
+        title="Problems"
         description="Where goods are, who holds them, and every problem as a case with an owner and a deadline."
-        actions={<Button icon={<Plus size={16} />} onClick={() => setRaising(true)}>Raise exception</Button>}
+        actions={<Button icon={<Plus size={16} />} onClick={() => setRaising(true)}>Raise a problem</Button>}
       >
-        <Tabs tabs={tabs} value={tab} onChange={setTab} label="Cargo sections" />
+        <Tabs tabs={tabs} value={tab} onChange={setTab} label="Problems sections" />
       </PageHeader>
       <TabPanel id={tab}>
         {tab === 'exceptions' && <ExceptionsTab />}

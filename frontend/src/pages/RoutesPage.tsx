@@ -189,13 +189,13 @@ export default function RoutesPage() {
   return (
     <Page>
       <PageHeader
-        title="Routes"
-        description="Every planned route and where it stands."
+        title="Trips"
+        description="Every planned trip and where it stands."
         actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
         <div className="space-y-4">
-          <Tabs label="Filter routes by status" tabs={tabs} value={status} onChange={setStatus} />
-          <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or route ID" className="max-w-sm" />
+          <Tabs label="Filter trips by status" tabs={tabs} value={status} onChange={setStatus} />
+          <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or trip ID" className="max-w-sm" />
         </div>
       </PageHeader>
 

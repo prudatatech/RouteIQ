@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -35,6 +35,12 @@ const isPending = (p: TplPartner) => p.status === 'pending'
  */
 export default function TplPartnersPage() {
   const navigate = useNavigate()
+  // Opened from a link (a notification, global search): ?open=<partner id> goes straight to the partner
+  const [searchParams] = useSearchParams()
+  const openId = searchParams.get('open')
+  useEffect(() => {
+    if (openId) navigate(`/3pl-partners/${encodeURIComponent(openId)}`, { replace: true })
+  }, [openId, navigate])
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
   const [tab, setTab] = useTabParam<StatusTab>(TABS, 'pending')

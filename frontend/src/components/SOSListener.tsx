@@ -157,7 +157,7 @@ export default function SOSListener() {
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       toast.success('SOS acknowledged')
     } catch (err) {
-      toast.error(apiErrorMessage(err, 'We could not acknowledge this SOS. Open Emergencies to check it.'))
+      toast.error(apiErrorMessage(err, 'We could not acknowledge this SOS. Open SOS alerts to check it.'))
     } finally {
       setAcknowledging(false)
     }

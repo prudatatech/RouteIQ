@@ -14,7 +14,7 @@ function page(importer: PageImporter) {
 }
 
 // Console (behind AppLayout)
-export const dashboard = page(() => import('@/pages/DashboardPage'))
+export const today = page(() => import('@/pages/TodayPage'))
 export const fleet = page(() => import('@/pages/FleetPage'))
 export const fleetVehicle = page(() => import('@/pages/fleet/VehicleDetailPage'))
 export const vehicleRequests = page(() => import('@/pages/VehicleRequestsPage'))
@@ -70,7 +70,7 @@ export const tplDashboard = page(() => import('@/pages/TplDashboardPage'))
  * `VendorLayout`'s `links`, plus a few routes reached from within a page.
  */
 export const routePrefetch: Record<string, PageImporter> = {
-  '/dashboard': dashboard.preload,
+  '/today': today.preload,
   '/fleet': fleet.preload,
   '/vehicle-requests': vehicleRequests.preload,
   '/routes': routes.preload,
