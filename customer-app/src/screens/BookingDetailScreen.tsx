@@ -19,6 +19,7 @@ import { DeliveryOtpCard } from '../components/cargo/DeliveryOtpCard';
 import { ProofOfDeliveryCard } from '../components/cargo/ProofOfDeliveryCard';
 import { ConfirmReceiptCard } from '../components/cargo/ConfirmReceiptCard';
 import { ClaimsCard } from '../components/cargo/ClaimsCard';
+import { LotsCard } from '../components/cargo/LotsCard';
 import { colors, fontFamily, radius, size, space } from '../theme';
 import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail, type Claim } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
@@ -58,9 +59,16 @@ export default function BookingDetailScreen({ navigation, route }: any) {
     `cargo:${id}:${hasShipment}`,
     t('cargo_load_failed'),
   );
+  // A booking split into lots: claims are raised per lot, so each lot's claims are listed too.
+  const lotCodes = (cargo.data?.lots ?? []).map((l) => l.code).join(',');
   const claims = useRemote(
-    () => (hasShipment && trackingId ? api.listClaims(trackingId) : Promise.resolve([] as Claim[])),
-    `claims:${hasShipment ? trackingId : ''}`,
+    async () => {
+      if (!hasShipment || !trackingId) return [] as Claim[];
+      const refs = [trackingId, ...(lotCodes ? lotCodes.split(',') : [])];
+      const lists = await Promise.all(refs.map((ref) => api.listClaims(ref)));
+      return mergeClaims(lists.flat(), undefined);
+    },
+    `claims:${hasShipment ? trackingId : ''}:${lotCodes}`,
     t('claims_load_failed'),
   );
   const { reload: reloadCargo } = cargo;
@@ -216,6 +224,12 @@ function Details({
   const shipmentId = where?.shipment_id ?? null;
   // The receipt form waits for the cargo data, which says whether the customer already confirmed.
   const cargoSettled = cargo !== undefined || !!cargoError;
+  // A master (split into lots): the lots carry the delivery codes, proofs and claims
+  const lots = cargo?.lots ?? [];
+  const split = lots.length > 0;
+  const lotClaim = (c: Claim) =>
+    lots.some((l) => (c.consignment_code && c.consignment_code === l.code) || (!!l.shipment_id && c.shipment_id === l.shipment_id));
+  const bookingClaims = split ? allClaims.filter((c) => !lotClaim(c)) : allClaims;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -267,7 +281,7 @@ function Details({
 
         {cargoError ? <ErrorBanner message={cargoError} action={{ label: t('try_again'), onPress: retryCargo }} /> : null}
 
-        {!cancelled && shipment.shipment_status === 'out_for_delivery' ? (
+        {!cancelled && !split && shipment.shipment_status === 'out_for_delivery' ? (
           <DeliveryOtpCard
             bookingId={booking.id}
             trackingId={booking.tracking_id}
@@ -309,6 +323,20 @@ function Details({
           </Card>
         )}
 
+        {split ? (
+          <LotsCard
+            bookingId={booking.id}
+            lots={lots}
+            totals={cargo?.lot_totals ?? null}
+            claims={allClaims}
+            refreshKey={refreshKey}
+            onOpenNotifications={() => navigation.navigate('Main', { screen: 'Notifications' })}
+            onRaiseClaim={(lot) =>
+              navigation.navigate('Claim', { bookingId: booking.id, shipmentId: lot.shipment_id, trackingId: lot.code, lotLabel: lot.label })
+            }
+          />
+        ) : null}
+
         {cargo ? <CustodyTimeline events={cargo.timeline} where={where} notices={notices} history={tracking?.history ?? []} /> : null}
 
         {tracking && !cancelled && booking.status !== 'delivered' ? (
@@ -344,10 +372,10 @@ function Details({
         {delivered && cargoSettled ? <ConfirmReceiptCard bookingId={booking.id} receipt={cargo?.receipt ?? null} onConfirmed={retryCargo} /> : null}
 
         <ClaimsCard
-          claims={allClaims}
-          windowOpen={claimWindow}
+          claims={bookingClaims}
+          windowOpen={split ? null : claimWindow}
           closesAt={claimWindow ? claimClosesAt(handedOverAt) : null}
-          canRaise={!!shipmentId}
+          canRaise={!!shipmentId && !split}
           onRaise={() =>
             navigation.navigate('Claim', { bookingId: booking.id, shipmentId, trackingId: booking.tracking_id })
           }

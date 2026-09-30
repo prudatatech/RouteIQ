@@ -7,14 +7,14 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { formatDateTime } from '../../utils/format';
 
 /** The delivery photo and signature (short-lived signed URLs), who received the goods and when. */
-export function ProofOfDeliveryCard({ pod }: { pod: ProofOfDelivery }) {
+export function ProofOfDeliveryCard({ pod, title }: { pod: ProofOfDelivery; title?: string }) {
   const { t } = useTranslation();
   if (!pod.photo_url && !pod.signature_url && !pod.receiver_name && !pod.delivered_at) return null;
 
   return (
     <Card style={styles.card}>
       <Text variant="title" accessibilityRole="header">
-        {t('pod_title')}
+        {title ?? t('pod_title')}
       </Text>
       {pod.receiver_name ? <Row label={t('pod_received_by')} value={pod.receiver_name} /> : null}
       {pod.delivered_at ? <Row label={t('pod_delivered_at')} value={formatDateTime(pod.delivered_at)} /> : null}

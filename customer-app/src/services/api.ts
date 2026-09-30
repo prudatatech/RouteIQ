@@ -260,6 +260,18 @@ class ApiClient {
     return normaliseBookingCargo(await this.request('GET', `/customer/bookings/${bookingId}/cargo`));
   }
 
+  /**
+   * One lot's own timeline (the customer's redacted view, oldest first), for the lot's proof of
+   * delivery when the booking's cargo view does not carry it. `ref` is the lot's tracking ID.
+   */
+  async getCargoTimeline(ref: string): Promise<CustodyEvent[]> {
+    const data = await this.request('GET', `/cargo/timeline/${encodeURIComponent(ref)}`);
+    return asArray(asObject(data)?.events)
+      .map(normaliseEvent)
+      .filter((e): e is CustodyEvent => e !== null)
+      .sort((a, b) => timeOf(a) - timeOf(b));
+  }
+
   /** The same key on a resend makes the server apply the confirmation once. A delivery is rated once (409 after that). */
   async confirmReceipt(bookingId: string, input: ConfirmReceiptInput, idempotencyKey?: string): Promise<Record<string, unknown>> {
     return this.request('POST', `/customer/bookings/${bookingId}/confirm-receipt`, input, true, false, idempotencyHeader(idempotencyKey));
@@ -294,9 +306,25 @@ export function newIdempotencyKey(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+/**
+ * One drop of a multi-drop booking (docs/cargo-plan.md, "Where splits happen"): the backend makes
+ * one lot per drop, with its own consignee and pieces, and splits the freight and value by pieces.
+ */
+export interface BookingDrop {
+  address: string;
+  lat: number;
+  lng: number;
+  consignee_name: string;
+  consignee_phone: string;
+  consignee_gstin?: string;
+  pieces: number;
+  weight_kg?: number;
+}
+
 export interface QuoteRequest {
   pickup_lat: number;
   pickup_lng: number;
+  /** With several drops: the last one. */
   drop_lat: number;
   drop_lng: number;
   weight_kg: number;
@@ -304,6 +332,8 @@ export interface QuoteRequest {
   load_type: 'full' | 'part';
   /** Pickup day, YYYY-MM-DD (India). */
   date: string;
+  /** Only for a booking to more than one drop; a single drop sends none. */
+  drops?: BookingDrop[];
 }
 
 export interface BookingRequest extends QuoteRequest {
@@ -418,6 +448,8 @@ export type CustodyKind =
   | 'hold'
   | 'release_hold'
   | 'lost'
+  | 'split'
+  | 'merge'
   | (string & {});
 
 export type ConditionCode = 'good' | 'damaged_packaging' | 'damaged_goods' | 'wet' | 'seal_tampered' | 'shortage' | 'excess' | (string & {});
@@ -439,6 +471,8 @@ export interface CustodyEvent {
   receiver_name: string | null;
   photo_urls: string[];
   signature_url: string | null;
+  /** On a split consignment's merged timeline: the lot the event belongs to (`B`). */
+  lot_label: string | null;
 }
 
 export interface CargoPieces {
@@ -497,6 +531,39 @@ export interface Claim {
   created_at: string | null;
   updated_at: string | null;
   settled_at: string | null;
+  /** The consignment (or lot) the claim is on. */
+  shipment_id: string | null;
+  /** Its RTX- code; a lot's ends in the lot label (`RTX-ABC123-B`). */
+  consignment_code: string | null;
+}
+
+/** One lot of a booking split across drops, trucks or hubs, in the customer's words. */
+export interface CargoLot {
+  shipment_id: string | null;
+  /** The lot's tracking ID, e.g. `RTX-ABC123-B`. */
+  code: string;
+  label: string | null;
+  status: ShipmentStatus | null;
+  pieces: number | null;
+  pieces_delivered: number | null;
+  consignee_name: string | null;
+  consignee_phone: string | null;
+  drop_name: string | null;
+  drop_address: string | null;
+  /** The server's plain sentence, e.g. "Lot B (25 cartons): delivered to Sharma Traders, Patna". */
+  summary: string | null;
+  delivery_otp_required: boolean;
+  /** When the lot carries its own proof of delivery. */
+  pod: ProofOfDelivery | null;
+  delivered_at: string | null;
+}
+
+/** "60 of 100 delivered": the lots added up. */
+export interface LotTotals {
+  pieces: number;
+  delivered: number;
+  lots: number;
+  lots_delivered: number;
 }
 
 export interface BookingCargo {
@@ -510,6 +577,9 @@ export interface BookingCargo {
   delivery_otp: { required: boolean; sent_at: string | null } | null;
   /** Set once the delivery was rated (`rating: { rating }`); it can be rated only once. */
   receipt: { rating: number | null; confirmed_at: string | null } | null;
+  /** The lots, when the booking was split (a master); empty otherwise. */
+  lots: CargoLot[];
+  lot_totals: LotTotals | null;
 }
 
 export interface ConfirmReceiptInput {
@@ -561,6 +631,7 @@ function normaliseEvent(raw: unknown, index: number): CustodyEvent | null {
       .map(asString)
       .filter((u): u is string => u !== null),
     signature_url: asString(e.signature_url),
+    lot_label: asString(e.lot_label) ?? asString(asObject(e.lot)?.label),
   };
 }
 
@@ -615,6 +686,69 @@ function normaliseClaim(raw: unknown): Claim | null {
     created_at: asString(c.created_at),
     updated_at: asString(c.updated_at),
     settled_at: asString(c.settled_at),
+    shipment_id: asString(c.shipment_id) ?? asString(asObject(c.ref)?.shipment_id),
+    consignment_code: asString(c.consignment_code),
+  };
+}
+
+/** A proof of delivery `{ received_by, photo_url, signature_url }`, or null when it has nothing. */
+function normalisePod(raw: unknown, deliveredAt: string | null): ProofOfDelivery | null {
+  const pod = asObject(raw);
+  if (!pod) return null;
+  return {
+    photo_url: asString(pod.photo_url),
+    signature_url: asString(pod.signature_url),
+    receiver_name: asString(pod.received_by) ?? asString(pod.receiver_name),
+    delivered_at: asString(pod.delivered_at) ?? deliveredAt,
+  };
+}
+
+/**
+ * One lot of `lots` in the booking cargo view (or `where.lots`). The contract names the fields
+ * of GET /cargo/lots/:ref (`ref, code, label, status, pieces, drop, consignee`); the reader also
+ * takes the flat forms (`tracking_id`, `lot_label`, `consignee_name`, `drop_address`).
+ */
+function normaliseLot(raw: unknown): CargoLot | null {
+  const l = asObject(raw);
+  const code = asString(l?.code) ?? asString(l?.tracking_id);
+  if (!l || !code) return null;
+  const pieces = asObject(l.pieces);
+  const consignee = asObject(l.consignee);
+  const drop = asObject(l.drop);
+  const deliveredAt = asString(l.delivered_at);
+  return {
+    shipment_id: asString(asObject(l.ref)?.shipment_id) ?? asString(l.shipment_id) ?? asString(l.id),
+    code,
+    label: asString(l.label) ?? asString(l.lot_label) ?? /-([A-Z][0-9]*)$/i.exec(code)?.[1]?.toUpperCase() ?? null,
+    status: asString(l.status),
+    pieces: pieces ? asNumber(pieces.total) : asNumber(l.pieces ?? l.pieces_total),
+    pieces_delivered: pieces ? asNumber(pieces.delivered) : asNumber(l.pieces_delivered),
+    consignee_name: asString(consignee?.name) ?? asString(l.consignee_name) ?? (typeof l.consignee === 'string' ? asString(l.consignee) : null),
+    consignee_phone: asString(consignee?.phone) ?? asString(l.consignee_phone),
+    drop_name: asString(drop?.name) ?? asString(l.drop_name),
+    drop_address: asString(drop?.address) ?? asString(l.drop_address) ?? (typeof l.drop === 'string' ? asString(l.drop) : null),
+    summary: asString(l.summary) ?? asString(l.message) ?? asString(l.text),
+    delivery_otp_required: l.delivery_otp_required === true,
+    pod: normalisePod(l.pod, deliveredAt),
+    delivered_at: deliveredAt,
+  };
+}
+
+/** Pieces of a lot counted as delivered: its own count, or all of it once delivered. */
+export const lotDelivered = (lot: CargoLot): number =>
+  lot.pieces_delivered ?? (lot.status === 'delivered' ? lot.pieces ?? 0 : 0);
+
+/** The rollup: the server's `totals` when it sends them, else the lots added up. */
+function lotTotals(raw: unknown, lots: CargoLot[]): LotTotals | null {
+  if (lots.length === 0) return null;
+  const t = asObject(raw);
+  const pieces = asNumber(t?.pieces) ?? asNumber(asObject(t?.pieces)?.total) ?? asNumber(t?.pieces_total) ?? asNumber(t?.total);
+  const delivered = asNumber(t?.delivered) ?? asNumber(asObject(t?.pieces)?.delivered) ?? asNumber(t?.pieces_delivered);
+  return {
+    pieces: pieces ?? lots.reduce((sum, l) => sum + (l.pieces ?? 0), 0),
+    delivered: delivered ?? lots.reduce((sum, l) => sum + lotDelivered(l), 0),
+    lots: lots.length,
+    lots_delivered: lots.filter((l) => l.status === 'delivered').length,
   };
 }
 
@@ -645,22 +779,19 @@ export function normaliseBookingCargo(raw: unknown): BookingCargo {
     .filter((e): e is CustodyEvent => e !== null)
     // Sorted here (stable, so equal times keep the server's order) so the screen never depends on it.
     .sort((a, b) => timeOf(a) - timeOf(b));
-  const pod = asObject(d.pod);
   const rating = asNumber(asObject(d.rating)?.rating);
   const where = normaliseWhere(d.where);
   if (where && !where.shipment_id) where.shipment_id = asString(d.shipment_id);
   const delivery = [...timeline].reverse().find((e) => e.kind === 'delivery' || e.kind === 'partial_delivery');
+  // A master's lots: in the cargo view itself, or inside `where` (GET /cargo/where of a master)
+  const lots = (asArray(d.lots).length ? asArray(d.lots) : asArray(asObject(d.where)?.lots))
+    .map(normaliseLot)
+    .filter((l): l is CargoLot => l !== null)
+    .sort((a, b) => (a.label ?? a.code).localeCompare(b.label ?? b.code));
   return {
     where,
     timeline,
-    pod: pod
-      ? {
-          photo_url: asString(pod.photo_url),
-          signature_url: asString(pod.signature_url),
-          receiver_name: asString(pod.received_by),
-          delivered_at: delivery?.recorded_at ?? null,
-        }
-      : null,
+    pod: normalisePod(d.pod, delivery?.recorded_at ?? null),
     exceptions: asArray(d.exceptions)
       .map(normaliseNotice)
       .filter((n): n is CargoNotice => n !== null),
@@ -669,6 +800,8 @@ export function normaliseBookingCargo(raw: unknown): BookingCargo {
       .filter((c): c is Claim => c !== null),
     delivery_otp: where?.delivery_otp_required ? { required: true, sent_at: null } : null,
     receipt: rating != null ? { rating, confirmed_at: null } : null,
+    lots,
+    lot_totals: lotTotals(d.totals ?? asObject(d.where)?.totals ?? asObject(d.where)?.pieces, lots),
   };
 }
 
