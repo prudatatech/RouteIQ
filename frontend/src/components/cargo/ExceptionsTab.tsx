@@ -113,7 +113,7 @@ export default function ExceptionsTab() {
     },
     {
       key: 'goods',
-      header: 'Consignments',
+      header: 'Shipments',
       hideBelow: 'lg',
       cell: e => e.items.length === 0 ? <span className="text-muted">None</span> : (
         <div className="flex flex-col items-end gap-0.5 md:items-start">
@@ -196,7 +196,7 @@ export default function ExceptionsTab() {
 
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_400px]">
         <DataTable
-          caption="Cargo exception cases"
+          caption="Problem cases"
           columns={columns}
           rows={rows}
           rowKey={e => e.id}

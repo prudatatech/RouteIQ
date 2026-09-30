@@ -116,7 +116,7 @@ function ClaimForm({ claim }: { claim: CargoClaim }) {
       <Steps steps={claimSteps(claim.status)} label="Claim progress" />
 
       {claim.exception_id && (
-        <p className="text-sm">Raised from <Link to={`/cargo/exceptions/${claim.exception_id}`} className="text-brand hover:underline">the exception case</Link>.</p>
+        <p className="text-sm">Raised from <Link to={`/cargo/exceptions/${claim.exception_id}`} className="text-brand hover:underline">the problem case</Link>.</p>
       )}
 
       <section className="space-y-3" aria-label="Amounts">

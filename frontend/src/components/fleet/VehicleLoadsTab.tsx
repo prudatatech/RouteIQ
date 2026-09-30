@@ -80,23 +80,23 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
         </CardBody>
       </Card>
       <OnBoardCard vehicleId={vehicle.id} />
-      <section className="space-y-3" aria-label="Routes">
-        <SectionHeader title="Routes" description="Routes given to this vehicle, newest first" />
+      <section className="space-y-3" aria-label="Trips">
+        <SectionHeader title="Trips" description="Trips given to this vehicle, newest first" />
         <DataTable
-          caption={`Routes of ${vehicle.plate_number}`}
+          caption={`Trips of ${vehicle.plate_number}`}
           columns={routeColumns}
           rows={routes.data ?? []}
           rowKey={r => r.id}
           loading={routes.isLoading}
-          error={routes.isError ? 'We could not load the routes.' : undefined}
+          error={routes.isError ? 'We could not load the trips.' : undefined}
           onRetry={() => routes.refetch()}
           initialSort={{ key: 'created', direction: 'desc' }}
           pageSize={8}
-          empty={{ icon: <RouteIcon size={22} />, title: 'No routes yet', description: 'Routes assigned to this vehicle are listed here.' }}
+          empty={{ icon: <RouteIcon size={22} />, title: 'No trips yet', description: 'Trips assigned to this vehicle are listed here.' }}
         />
       </section>
       <section className="space-y-3" aria-label="Vendor loads">
-        <SectionHeader title="Vendor loads" description="Cargo manifests a vendor has assigned to this vehicle" />
+        <SectionHeader title="Vendor loads" description="Loads a vendor has assigned to this vehicle" />
         <DataTable
           caption={`Vendor loads of ${vehicle.plate_number}`}
           columns={manifestColumns}

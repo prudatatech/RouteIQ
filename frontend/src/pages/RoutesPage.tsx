@@ -175,7 +175,7 @@ export default function RoutesPage() {
         updated_at: r.updated_at ?? r.created_at ?? '',
       }
     }), [
-      { key: 'route_id', header: 'Route' },
+      { key: 'route_id', header: 'Trip' },
       { key: 'vehicle', header: 'Vehicle' },
       { key: 'status', header: 'Status' },
       { key: 'stops', header: 'Stops' },
@@ -201,16 +201,16 @@ export default function RoutesPage() {
 
       <TabPanel id={status}>
         <DataTable
-          caption="Routes"
+          caption="Trips"
           columns={columns}
           rows={rows}
           rowKey={r => r.id}
           loading={isLoading}
-          error={isError ? 'We could not load routes. Check your connection and try again.' : undefined}
+          error={isError ? 'We could not load trips. Check your connection and try again.' : undefined}
           onRetry={refetch}
           empty={{
-            title: q || status !== 'all' ? 'No routes match your filters' : 'No routes yet',
-            description: q || status !== 'all' ? undefined : 'Routes appear once route optimization plans them.',
+            title: q || status !== 'all' ? 'No trips match your filters' : 'No trips yet',
+            description: q || status !== 'all' ? undefined : 'Trips appear once trip optimization plans them.',
           }}
           onRowClick={r => navigate(`/routes/${r.id}`)}
           sort={sort}

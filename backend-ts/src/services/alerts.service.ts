@@ -223,8 +223,8 @@ export async function runAlertSweep(nowMs: number = Date.now()): Promise<{ gpsLo
       await raiseAlert({
         vehicleId: v.id, plate, type: 'gps_lost', source: 'rule',
         description: lastPing
-          ? `${plate ?? 'The vehicle'} is on an active route but has sent no location for ${minutes} minutes.`
-          : `${plate ?? 'The vehicle'} is on an active route but has never sent a location.`,
+          ? `${plate ?? 'The vehicle'} is on an active trip but has sent no location for ${minutes} minutes.`
+          : `${plate ?? 'The vehicle'} is on an active trip but has never sent a location.`,
         details: { last_ping_at: lastPing ? new Date(lastPing).toISOString() : null, limit_minutes: limits.gps_lost_minutes },
       });
       result.gpsLost++;
@@ -255,7 +255,7 @@ export async function runAlertSweep(nowMs: number = Date.now()): Promise<{ gpsLo
     if (covers && stationary) {
       await raiseAlert({
         vehicleId: v.id, plate, type: 'long_idle', source: 'rule',
-        description: `${plate ?? 'The vehicle'} has not moved for at least ${limits.idle_minutes} minutes during an active route.`,
+        description: `${plate ?? 'The vehicle'} has not moved for at least ${limits.idle_minutes} minutes during an active trip.`,
         details: { limit_minutes: limits.idle_minutes, latitude: anchor.lat, longitude: anchor.lng },
       });
       result.idle++;

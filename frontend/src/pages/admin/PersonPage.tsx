@@ -114,7 +114,7 @@ function PersonView({ detail }: { detail: PersonDetail }) {
   const askAnonymise = async () => {
     const ok = await confirm({
       title: `Anonymise ${personName(user)}?`,
-      message: 'This removes their name, contact details, documents, bank details and emergency contacts for good. Routes, shipments and invoices keep working. This cannot be undone.',
+      message: 'This removes their name, contact details, documents, bank details and emergency contacts for good. Trips, shipments and invoices keep working. This cannot be undone.',
       confirmLabel: 'Continue', tone: 'danger',
     })
     if (!ok) return

@@ -75,7 +75,7 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
     mutationFn: () => fleetAPI.syncOdometer(vehicleId) as Promise<OdometerSyncResult>,
     onSuccess: r => {
       if (r.changed) {
-        const from = r.source === 'routes' ? 'completed routes' : 'GPS'
+        const from = r.source === 'routes' ? 'completed trips' : 'GPS'
         toast.success(`Added ${r.added_km.toLocaleString('en-IN')} km from ${from}. Odometer is now ${formatOdometer(r.after_km)}.`)
       } else {
         toast(r.message)

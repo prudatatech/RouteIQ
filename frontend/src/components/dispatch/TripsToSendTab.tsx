@@ -130,7 +130,7 @@ export default function TripsToSendTab({ rows, loading, error, onRetry }: {
       error={error ? 'We could not load trips. Check your connection and try again.' : undefined}
       onRetry={onRetry}
       onRowClick={t => navigate(`/routes/${t.id}`)}
-      empty={{ title: 'No trips waiting', description: 'Trips from the optimizer and the route planner wait here until you send them to the driver.' }}
+      empty={{ title: 'No trips waiting', description: 'Trips from the optimizer and the trip planner wait here until you send them to the driver.' }}
     />
   )
 }

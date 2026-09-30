@@ -53,8 +53,8 @@ describe('what the vehicle is doing', () => {
     expect(routeText(null, 'Surat')).toBe('To Surat')
     expect(routeText(null, null)).toBeNull()
     const route = { kind: 'route' as const, id: 'r', status: 'active', from: 'Pune Hub', to: 'Surat', next_stop: 'Surat', stops_total: 2, stops_done: 1, weight_kg: null, tracking_ids: [], started_at: null }
-    expect(jobText(route)).toBe('Route, Pune Hub to Surat, 1 of 2 stops done')
-    expect(jobText({ ...route, kind: 'manifest', stops_total: null, stops_done: null, weight_kg: 250 })).toBe('Manifest, Pune Hub to Surat, 250 kg')
+    expect(jobText(route)).toBe('Trip, Pune Hub to Surat, 1 of 2 stops done')
+    expect(jobText({ ...route, kind: 'manifest', stops_total: null, stops_done: null, weight_kg: 250 })).toBe('Shipment, Pune Hub to Surat, 250 kg')
   })
 
   it('says how full the vehicle is', () => {

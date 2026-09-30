@@ -65,13 +65,13 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
           </Alert>
         ) : (
           <Alert tone="info" title="Booked through a vendor bid">
-            This load comes from a cargo manifest. Its status and vehicle are managed from{' '}
+            This load comes from a vendor bid. Its status and vehicle are managed from{' '}
             <Link to="/bids" className="font-medium underline">Bids</Link>.
           </Alert>
         )
       )}
 
-      <Section title="Route">
+      <Section title="Trip">
         <DetailList
           columns={1}
           items={[
@@ -205,7 +205,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
   const unassignShipment = async () => {
     const ok = await confirm({
       title: `Take ${s.tracking_id} off its vehicle?`,
-      message: 'The shipment goes back to created, its stop leaves the route and the driver is told. You can assign it again.',
+      message: 'The shipment goes back to created, its stop leaves the trip and the driver is told. You can assign it again.',
       confirmLabel: 'Take off vehicle',
     })
     if (ok) statusMutation.mutate({ id: s.id, status: 'created' })
@@ -232,7 +232,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
       )}
 
       {bid && (
-        <Section title={bid.capacity_windows?.trigger_type === 'end_of_route' ? 'Vendor backhaul bid' : 'Vendor bid'}>
+        <Section title={bid.capacity_windows?.trigger_type === 'end_of_route' ? 'Vendor return trip bid' : 'Vendor bid'}>
           <DetailList
             items={[
               { label: 'Vendor', value: bid.vendor_profiles?.company_name },

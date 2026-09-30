@@ -25,7 +25,7 @@ const REQUESTER_LABEL = {
   staff: 'Created by',
 } as const
 
-const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Route planner', vendor_load: 'Vendor load', assigned: 'Picked by hand' } as const
+const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Trip planner', vendor_load: 'Vendor load', assigned: 'Picked by hand' } as const
 
 /** Everything this shipment touches, each one a link to its own page (docs/workflow-blueprint.html: everything links to what it touches). */
 export default function RelatedLinks({ overview: o }: { overview: ShipmentOverview }) {

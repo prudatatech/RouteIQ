@@ -254,7 +254,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
       )}
 
       {routingUnavailable && (
-        <Alert tone="danger" title="Route planning is not set up">{statusQ.data?.message}</Alert>
+        <Alert tone="danger" title="Trip planning is not set up">{statusQ.data?.message}</Alert>
       )}
       {statusQ.data?.available && !statusQ.data.truck_routing && (
         <Alert tone="warning" title="Truck restrictions will not be considered">{statusQ.data.message}</Alert>
@@ -277,7 +277,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
           </div>
 
           <Results
-            plan={plan.isPending} planError={plan.isError ? routingErrorMessage(plan.error, 'Could not plan the route. Try again in a moment.') : null}
+            plan={plan.isPending} planError={plan.isError ? routingErrorMessage(plan.error, 'Could not plan the trip. Try again in a moment.') : null}
             onRetry={runPlan} hasRequest={!!request} stale={stale}
             fresh={fresh}
             tags={tags}
@@ -319,12 +319,12 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
         {/* Form */}
         <div className="space-y-4 lg:col-start-1 lg:row-start-1">
           <Card>
-            <CardHeader title="Vehicle" description="Its weight, size and fuel use go into the route and the fuel estimate." />
+            <CardHeader title="Vehicle" description="Its weight, size and fuel use go into the trip and the fuel estimate." />
             <CardBody className="space-y-4">
               {vehiclesQ.isLoading ? <LoadingState label="Loading vehicles" className="py-6" /> : vehiclesQ.isError ? (
                 <ErrorState compact title="Could not load vehicles" onRetry={() => vehiclesQ.refetch()} />
               ) : vehicles.length === 0 ? (
-                <EmptyState compact icon={<Truck size={22} />} title="No vehicles yet" description="Add a vehicle in Fleet to plan a route for it." />
+                <EmptyState compact icon={<Truck size={22} />} title="No vehicles yet" description="Add a vehicle in Fleet to plan a trip for it." />
               ) : (
                 <>
                   <Select
@@ -422,7 +422,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
           <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button size="lg" className="flex-1" icon={<Navigation size={18} />} loading={plan.isPending} disabled={!canPlan || optimize.isPending} onClick={runPlan}>
-                {result ? 'Plan again' : 'Plan route'}
+                {result ? 'Plan again' : 'Plan trip'}
               </Button>
               <Button
                 size="lg" variant="secondary" className="flex-1" icon={<Sparkles size={18} />} loading={optimize.isPending}
@@ -432,7 +432,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
                 Best stop order
               </Button>
             </div>
-            {!request && <p className="text-xs text-muted">Choose a start and an end to plan the route.</p>}
+            {!request && <p className="text-xs text-muted">Choose a start and an end to plan the trip.</p>}
             {request && stops.length < 2 && <p className="text-xs text-muted">Add at least two stops to look for a better order.</p>}
             {statusQ.data?.truck_routing === false && statusQ.data.available && <p className="text-xs text-muted">Ordering stops needs TomTom, which is not set up.</p>}
             {optimize.isError && <p role="alert" className="text-sm text-danger">{routingErrorMessage(optimize.error, 'Could not find a better order. Try again.')}</p>}
@@ -525,7 +525,7 @@ function Results({ plan, planError, onRetry, hasRequest, stale, fresh, tags, sel
   onZoomTo: (pos: { lat: number; lng: number }) => void
 }) {
   if (plan) return <Card><LoadingState label="Finding the best routes" /></Card>
-  if (planError) return <Card><ErrorState title="Could not plan the route" description={planError} onRetry={hasRequest ? onRetry : undefined} /></Card>
+  if (planError) return <Card><ErrorState title="Could not plan the trip" description={planError} onRetry={hasRequest ? onRetry : undefined} /></Card>
 
   if (stale) {
     return <Alert tone="info" title="You changed the trip">Press Plan again to update the routes. The map shows your places in the order you set.</Alert>
@@ -536,8 +536,8 @@ function Results({ plan, planError, onRetry, hasRequest, stale, fresh, tags, sel
         <EmptyState
           compact
           icon={<Navigation size={22} />}
-          title="No route planned yet"
-          description="Choose a start and an end, add any stops, pick a vehicle, then press Plan route. You will see up to three routes to compare."
+          title="No trip planned yet"
+          description="Choose a start and an end, add any stops, pick a vehicle, then press Plan trip. You will see up to three routes to compare."
         />
       </Card>
     )

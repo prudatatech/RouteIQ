@@ -5,7 +5,7 @@
 
 export type OldReturnTripsPage = 'backhaul' | 'bids' | 'partners'
 
-/** Old Backhaul tab to the view inside Pool loads. */
+/** Old return-trip tab to the view inside Combine loads. */
 const POOL_VIEWS: Record<string, string> = { loads: 'loads', pool: 'plan', match: 'match', price: 'price', delivery: 'delivery' }
 const PARTNER_STATUSES = ['pending', 'active', 'paused', 'rejected', 'all']
 

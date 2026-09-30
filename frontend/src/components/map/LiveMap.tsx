@@ -336,13 +336,13 @@ export default function LiveMap({
               {!routeIncidents.configured
                 ? 'Traffic incidents are not set up yet.'
                 : routeIncidents.incidents.length === 0
-                  ? 'No traffic incidents on active routes.'
-                  : `${routeIncidents.incidents.length.toLocaleString('en-IN')} traffic ${routeIncidents.incidents.length === 1 ? 'incident' : 'incidents'} on active routes.`}
+                  ? 'No traffic incidents on active trips.'
+                  : `${routeIncidents.incidents.length.toLocaleString('en-IN')} traffic ${routeIncidents.incidents.length === 1 ? 'incident' : 'incidents'} on active trips.`}
             </p>
           )}
           {selectedId && activeRoute && (
             <section aria-label="Active route" className="rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
-              <p className="truncate font-medium text-text">{activeRoute.name || `Route ${activeRoute.id.slice(0, 8)}`}</p>
+              <p className="truncate font-medium text-text">{activeRoute.name || `Trip ${activeRoute.id.slice(0, 8)}`}</p>
               <p className="mt-1 text-xs text-muted">
                 {remainingStops} {remainingStops === 1 ? 'stop' : 'stops'} left · {activeRoute.status === 'active' ? 'Active' : 'Pending'}
               </p>

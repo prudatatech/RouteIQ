@@ -27,7 +27,7 @@ export function AutoEscalationSetting() {
         {settings.isLoading ? <Skeleton className="h-10 w-full" /> : (
           <Checkbox
             label="Offer hard-to-fill loads to 3PL partners automatically"
-            description="When no own vehicle or vendor is a good match, partners whose corridor covers the route get an offer."
+            description="When no own vehicle or vendor is a good match, partners whose corridor covers the trip get an offer."
             checked={settings.data?.auto_escalate ?? false}
             disabled={save.isPending || settings.isError}
             onChange={e => save.mutate(e.target.checked)}

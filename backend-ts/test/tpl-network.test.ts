@@ -161,11 +161,11 @@ describe('escalating a shipment', () => {
     expect(supabaseMock.rows('tpl_offers')[0]).toMatchObject({ source_type: 'shipment', shipment_id: SHIP });
   });
 
-  it('refuses a shipment that is already on a route', async () => {
+  it('refuses a shipment that is already on a trip', async () => {
     supabaseMock.reset(shipmentFixtures({ route_stops: [{ id: 'rs-1', delivery_point_id: 'dp-1' }] }));
     const res = await escalate({ shipment_id: SHIP });
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/already on a route/);
+    expect(res.body.error).toMatch(/already on a trip/);
   });
 
   it('refuses a shipment that has moved on', async () => {

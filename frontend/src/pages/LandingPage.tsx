@@ -21,7 +21,7 @@ const audiences: Audience[] = [
   {
     icon: LayoutDashboard,
     title: 'Operations teams',
-    description: 'Create shipments, assign vehicles, plan and optimize routes, follow the fleet on a live map and respond to driver SOS alerts.',
+    description: 'Create shipments, assign vehicles, plan and optimize trips, follow the fleet on a live map and respond to driver SOS alerts.',
     action: { to: '/login', label: 'Staff sign in' },
   },
   {
@@ -47,11 +47,11 @@ const audiences: Audience[] = [
 ]
 
 const features: { icon: LucideIcon; title: string; description: string }[] = [
-  { icon: Package, title: 'Shipments', description: 'Create shipments with route, cargo and vehicle, and see the status of every one.' },
+  { icon: Package, title: 'Shipments', description: 'Create shipments with trip, cargo and vehicle, and see the status of every one.' },
   { icon: MapPinned, title: 'Live map', description: 'See where each vehicle is, from the location its driver shares.' },
-  { icon: Route, title: 'Route optimization', description: 'Work out the best order of stops for a route before you dispatch it.' },
+  { icon: Route, title: 'Trip optimization', description: 'Work out the best order of stops for a trip before you dispatch it.' },
   { icon: Gavel, title: 'Bids', description: 'Offer spare truck capacity to vendors and approve the bids you accept.' },
-  { icon: Waypoints, title: 'Backhaul pooling', description: 'Fill empty return trips with loads going the same way.' },
+  { icon: Waypoints, title: 'Return trips', description: 'Fill empty return trips with loads going the same way.' },
   { icon: ShieldAlert, title: 'Emergencies', description: 'Driver SOS alerts arrive with the vehicle and its location.' },
   { icon: Truck, title: 'Driver app', description: 'Drivers get their trips, share their location and confirm delivery from their phone.' },
   { icon: BarChart3, title: 'Analytics', description: 'See how your fleet, drivers and vendors are performing.' },
@@ -111,7 +111,7 @@ export default function LandingPage() {
           <div className="max-w-3xl">
             <h1 className="text-3xl font-semibold text-text sm:text-5xl">Freight operations, capacity and tracking in one place</h1>
             <p className="mt-4 text-base text-muted sm:text-lg">
-              MargixIndia connects your operations team, vendors, 3PL partners and drivers. Plan shipments and routes, fill
+              MargixIndia connects your operations team, vendors, 3PL partners and drivers. Plan shipments and trips, fill
               trucks through bidding and partners, and let everyone see where a load is.
             </p>
           </div>

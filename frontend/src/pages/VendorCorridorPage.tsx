@@ -40,7 +40,7 @@ function TriggerBadge({ trigger }: { trigger: string | null }) {
   if (trigger === 'mid_route') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand">
-        <Zap size={11} /> Mid-route fill
+        <Zap size={11} /> Mid-trip fill
       </span>
     )
   }
@@ -218,14 +218,14 @@ export default function VendorCorridorPage() {
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 w-full" />)}
           </div>
         ) : passingRoutes.length === 0 ? (
-          <EmptyState compact title="No passing routes right now" description="We will show trucks passing near your locations here." />
+          <EmptyState compact title="No passing trips right now" description="We will show trucks passing near your locations here." />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {passingRoutes.map(pr => (
               <Card key={pr.id} padded className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand">
-                    <Zap size={11} /> Route match
+                    <Zap size={11} /> Trip match
                   </span>
                   <span className="text-xs text-muted">{pr.eta_minutes != null ? `${formatMinutes(pr.eta_minutes)} away` : 'Nearby'}</span>
                 </div>

@@ -83,7 +83,7 @@ async function requireThread(req: Request, source: Record<string, unknown>): Pro
   const routeId = asId(source.route_id);
   const shipmentId = asId(source.shipment_id);
   if (!routeId && !shipmentId) throw new HttpError(400, 'route_id or shipment_id is required');
-  if (routeId && !(await canAccessRoute(req.user!, routeId))) throw new HttpError(403, 'Not authorized for this route');
+  if (routeId && !(await canAccessRoute(req.user!, routeId))) throw new HttpError(403, 'Not authorized for this trip');
   if (shipmentId && !(await canAccessShipment(req.user!, shipmentId))) throw new HttpError(403, 'Not authorized for this shipment');
   return { routeId, shipmentId };
 }
@@ -194,8 +194,8 @@ router.post('/', async (req: Request, res: Response) => {
     const staffSender = isStaff(req.user);
     let routeId = thread.routeId;
     if (!routeId && thread.shipmentId) routeId = await currentRouteOfShipment(thread.shipmentId);
-    if (!routeId && !staffSender) throw new HttpError(409, 'This shipment is not on one of your routes');
-    if (!routeId) throw new HttpError(409, 'This shipment is not on a route yet, so there is no driver to message');
+    if (!routeId && !staffSender) throw new HttpError(409, 'This shipment is not on one of your trips');
+    if (!routeId) throw new HttpError(409, 'This shipment is not on a trip yet, so there is no driver to message');
 
     const { data: sender } = await supabase.from('users').select('full_name').eq('id', req.user!.user_id).maybeSingle();
     const { data: created, error } = await supabase

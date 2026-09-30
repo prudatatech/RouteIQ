@@ -159,13 +159,13 @@ export default function ExpenseModal({ open, expense, onClose }: {
         />
         {form.vehicle_id && (
           <Select
-            label="Route"
-            hint={routes.isError ? 'We could not load routes for this vehicle.' : 'Optional. Ties the cost to one trip.'}
+            label="Trip"
+            hint={routes.isError ? 'We could not load trips for this vehicle.' : 'Optional. Ties the cost to one trip.'}
             value={form.route_id}
             onChange={e => set('route_id', e.target.value)}
             disabled={routes.isLoading}
             options={[
-              { value: '', label: 'No route' },
+              { value: '', label: 'No trip' },
               ...(routes.data ?? []).map(r => ({
                 value: r.id,
                 label: `${formatDate(r.created_at)}${r.total_distance_km ? ` · ${Math.round(r.total_distance_km)} km` : ''} · ${humanize(r.status)}`,

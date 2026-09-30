@@ -114,7 +114,7 @@ export function assertPieces(p: Pieces): void {
     if (!Number.isInteger(p.total) || p.total < 0) throw new HttpError(409, 'The piece total can\'t be negative.');
     const accounted = p.delivered + p.short + p.returned;
     if (accounted > p.total) {
-      throw new HttpError(409, `That accounts for ${accounted} pieces, but this consignment has ${p.total}.`);
+      throw new HttpError(409, `That accounts for ${accounted} pieces, but this shipment has ${p.total}.`);
     }
   }
   if (p.damaged > p.delivered + p.returned) {
@@ -337,14 +337,14 @@ export async function resolveRef(ref: unknown): Promise<Consignment> {
   } else {
     throw new HttpError(400, 'ref is required');
   }
-  if (!found) throw new HttpError(404, 'Consignment not found');
+  if (!found) throw new HttpError(404, 'Shipment not found');
   return found;
 }
 
 /** Re-reads a consignment (after a write). */
 export async function reload(c: Consignment): Promise<Consignment> {
   const again = c.kind === 'shipment' ? await loadShipment({ column: 'id', value: c.id }) : await loadManifest(c.id);
-  if (!again) throw new HttpError(404, 'Consignment not found');
+  if (!again) throw new HttpError(404, 'Shipment not found');
   return again;
 }
 
@@ -396,7 +396,7 @@ export async function assertCanAct(user: TokenData, c: Consignment): Promise<voi
   if (user.role !== 'driver') throw new HttpError(403, 'Only drivers and staff record custody');
   const mine = await getDriverVehicleIds(user.user_id);
   const vehicle = await plannedVehicleOf(c);
-  if (!vehicle || !mine.includes(vehicle)) throw new HttpError(403, 'This consignment is not on your vehicle');
+  if (!vehicle || !mine.includes(vehicle)) throw new HttpError(403, 'This shipment is not on your vehicle');
 }
 
 /** Whether the customer booked this shipment, or the master it is a lot of. */
@@ -426,18 +426,18 @@ export async function assertCanView(user: TokenData, c: Consignment): Promise<{ 
   if (isStaff(user)) return { redacted: false };
   if (user.role === 'customer') {
     if (c.kind === 'shipment' && (await customerOwnsShipment(user.user_id, c.id))) return { redacted: true };
-    throw new HttpError(404, 'Consignment not found');
+    throw new HttpError(404, 'Shipment not found');
   }
   if (user.role === 'vendor') {
     const ok = c.kind === 'manifest' ? await canAccessManifest(user, c.id) : await canAccessShipment(user, c.id);
     if (ok) return { redacted: true };
-    throw new HttpError(404, 'Consignment not found');
+    throw new HttpError(404, 'Shipment not found');
   }
   if (user.role === 'driver') {
     const mine = await getDriverVehicleIds(user.user_id);
     const vehicle = await plannedVehicleOf(c);
     if (vehicle && mine.includes(vehicle)) return { redacted: true };
-    throw new HttpError(403, 'This consignment is not on your vehicle');
+    throw new HttpError(403, 'This shipment is not on your vehicle');
   }
   throw new HttpError(403, 'Not authorized');
 }
@@ -473,7 +473,7 @@ export async function writeConsignment(c: Consignment, patch: Record<string, unk
   if (Object.keys(body).length === 0) return stored;
   const { data, error } = await supabase.from(table).update(body).eq('id', c.id).eq('status', c.rawStatus).select('id').maybeSingle();
   if (error) throw new Error(`Failed to update the consignment: ${error.message}`);
-  if (!data) throw new HttpError(409, 'This consignment was just changed by someone else. Refresh and try again.');
+  if (!data) throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
   // The last lot of a vendor load on a vehicle delivered, returned or cancelled ends that vehicle's journey:
   // the driver earns it once, not per lot (never blocks the delivery)
   if (c.kind === 'manifest' && stored !== c.rawStatus && ['delivered', 'completed', 'returned', 'cancelled', 'lost'].includes(stored)) {

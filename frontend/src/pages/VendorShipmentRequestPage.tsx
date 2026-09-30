@@ -30,7 +30,7 @@ const SPECIAL_HANDLING = [
   { id: 'highValue', label: 'High value' },
 ] as const
 
-const STEPS = ['Route', 'Cargo', 'Review'] as const
+const STEPS = ['Trip', 'Cargo', 'Review'] as const
 
 interface VendorProfileLite {
   company_name?: string
@@ -276,7 +276,7 @@ export default function VendorShipmentRequestPage() {
     <Page>
       <PageHeader
         title="Post a load"
-        description="Tell us the route and cargo — we'll match it with available capacity."
+        description="Tell us the trip and cargo — we'll match it with available capacity."
         back={{ to: '/vendor/loads', label: 'My loads' }}
       />
 
@@ -423,7 +423,7 @@ export default function VendorShipmentRequestPage() {
 
           {step === 2 && (
             <div className="space-y-4">
-              <ReviewSection title="Route" rows={[
+              <ReviewSection title="Trip" rows={[
                 ['Pickup', pickup?.address ?? '—'],
                 ['Drop', drop?.address ?? '—'],
               ]} />

@@ -119,7 +119,7 @@ export default function SettingsPage() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardHeader title="Fuel price" description="Used to estimate fuel cost on completed routes that have no fuel expense recorded." />
+            <CardHeader title="Fuel price" description="Used to estimate fuel cost on completed trips that have no fuel expense recorded." />
             <CardBody>
               {settings.isLoading ? <Skeleton className="h-16 w-full" /> : (
                 <form onSubmit={submit} noValidate className="flex flex-col gap-4 sm:flex-row sm:items-end">

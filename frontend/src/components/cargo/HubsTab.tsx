@@ -27,7 +27,7 @@ function HubCard({ hub, selected, now, onSelect }: { hub: HubSummary; selected: 
       <p className="font-medium text-text break-words">{hub.name}</p>
       {hub.address && <p className="mt-0.5 text-sm text-muted break-words">{hub.address}</p>}
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <div><dt className="text-xs text-muted">Consignments</dt><dd className="tabular font-medium">{hub.consignments}</dd></div>
+        <div><dt className="text-xs text-muted">Shipments</dt><dd className="tabular font-medium">{hub.consignments}</dd></div>
         <div><dt className="text-xs text-muted">Pieces</dt><dd className="tabular font-medium">{hub.pieces}</dd></div>
         <div>
           <dt className="text-xs text-muted">Oldest waiting</dt>
@@ -46,7 +46,7 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
   const inv = useQuery({ queryKey: cargoKeys.hubInventory(hub.id), queryFn: () => hubsAPI.inventory(hub.id), refetchInterval: 60_000 })
 
   const columns: Column<HubInventoryRow>[] = [
-    { key: 'consignment', header: 'Consignment', sortValue: r => consignmentCode(r), cell: r => <ConsignmentLink c={r} /> },
+    { key: 'consignment', header: 'Shipment', sortValue: r => consignmentCode(r), cell: r => <ConsignmentLink c={r} /> },
     { key: 'status', header: 'Status', hideBelow: 'md', sortValue: r => r.status, cell: r => <StatusPill status={r.status} kind="cargo" /> },
     { key: 'pieces', header: 'Pieces', align: 'right', sortValue: r => r.pieces ?? 0, cell: r => <span className="tabular">{r.pieces ?? '—'}</span> },
     { key: 'weight', header: 'Weight', align: 'right', hideBelow: 'lg', sortValue: r => r.weight_kg ?? 0, cell: r => (r.weight_kg != null ? formatKg(r.weight_kg) : '—') },
@@ -68,7 +68,7 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
       },
     },
     {
-      key: 'exceptions', header: 'Open exceptions',
+      key: 'exceptions', header: 'Open problems',
       cell: r => (r.open_exceptions?.length
         ? (
           <span className="flex flex-col gap-0.5">
@@ -85,16 +85,16 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
 
   return (
     <DataTable
-      caption={`Consignments at ${hub.name}`}
+      caption={`Shipments at ${hub.name}`}
       columns={columns}
       rows={inv.data ?? []}
       rowKey={rowKey}
       loading={inv.isLoading}
-      error={inv.isError ? 'We could not load the consignments at this hub.' : undefined}
+      error={inv.isError ? 'We could not load the shipments at this hub.' : undefined}
       onRetry={() => inv.refetch()}
       initialSort={{ key: 'ageing', direction: 'desc' }}
       pageSize={10}
-      empty={{ icon: <Package size={22} />, title: 'Nothing at this hub', description: 'Consignments appear here after they are checked in at the hub.' }}
+      empty={{ icon: <Package size={22} />, title: 'Nothing at this hub', description: 'Shipments appear here after they are checked in at the hub.' }}
     />
   )
 }
@@ -130,8 +130,8 @@ export default function HubsTab() {
         {list.map(h => <HubCard key={h.id} hub={h} now={now} selected={h.id === selected?.id} onSelect={() => setHubId(h.id)} />)}
       </div>
       {selected && (
-        <section className="space-y-3" aria-label={`Consignments at ${selected.name}`}>
-          <Card><CardHeader title={selected.name} description="Consignments waiting here, longest first. Over a day is amber, over three days is red." /></Card>
+        <section className="space-y-3" aria-label={`Shipments at ${selected.name}`}>
+          <Card><CardHeader title={selected.name} description="Shipments waiting here, longest first. Over a day is amber, over three days is red." /></Card>
           <Inventory hub={selected} now={now} />
         </section>
       )}

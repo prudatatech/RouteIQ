@@ -14,7 +14,7 @@ function monthLabel(month: string) {
 }
 
 const columns: Column<TplOrder>[] = [
-  { key: 'route', header: 'Route', cell: o => <span>{shortPlace(o.pickup_location)} to {shortPlace(o.drop_location)}</span> },
+  { key: 'route', header: 'Trip', cell: o => <span>{shortPlace(o.pickup_location)} to {shortPlace(o.drop_location)}</span> },
   { key: 'status', header: 'Order', hideBelow: 'md', cell: o => <StatusPill status={o.status} /> },
   {
     key: 'when', header: 'Date', hideBelow: 'md',

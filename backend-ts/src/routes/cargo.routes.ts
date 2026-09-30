@@ -240,7 +240,7 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
     }
 
     const depot = await getReferenceDepot();
-    if (!depot) throw new HttpError(422, 'No depot is set up, so a pooled route cannot be planned.');
+    if (!depot) throw new HttpError(422, 'No depot is set up, so a pooled trip cannot be planned.');
 
     // Stop order from the ML optimiser
     let stopIds: string[] | null = null;
@@ -267,7 +267,7 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       stopIds = local?.order ?? null;
     }
     if (!stopIds || stopIds.length !== loads.length) {
-      res.status(502).json({ detail: 'The route optimiser is not available right now. Try again shortly.' });
+      res.status(502).json({ detail: 'The trip optimiser is not available right now. Try again shortly.' });
       return;
     }
 

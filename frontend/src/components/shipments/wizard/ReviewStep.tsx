@@ -31,7 +31,7 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
 
   return (
     <div className="space-y-4">
-      <ReviewSection title="Route" onEdit={() => goTo('route')}>
+      <ReviewSection title="Trip" onEdit={() => goTo('route')}>
         <DetailList
           columns={1}
           items={[

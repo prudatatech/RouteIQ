@@ -40,7 +40,7 @@ export function useRouteStatusActions() {
   const dispatch = async (route: RouteStatusLike) => {
     const ok = await confirm({
       title: 'Send this trip to the driver?',
-      message: 'The trip becomes active, the vehicle is marked on route and its driver is told, with a link to the trip.',
+      message: 'The trip becomes active, the vehicle is marked on trip and its driver is told, with a link to the trip.',
       confirmLabel: 'Send to driver',
     })
     if (ok) await mutation.mutateAsync({ id: route.id, status: 'active' }).then(() => toast.success('Trip sent to the driver')).catch(() => undefined)

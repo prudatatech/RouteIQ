@@ -14,7 +14,7 @@ const DEBOUNCE_MS = 200
 
 const GROUPS: { key: keyof SearchResults; label: string }[] = [
   { key: 'shipments', label: 'Shipments' },
-  { key: 'cargo_manifests', label: 'Cargo manifests' },
+  { key: 'cargo_manifests', label: 'Vendor loads' },
   { key: 'vehicles', label: 'Vehicles' },
   { key: 'vendors', label: 'Vendors' },
   { key: 'partners', label: '3PL partners' },

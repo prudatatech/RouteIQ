@@ -29,6 +29,8 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run check:queries
+      - name: No retired words in user-visible text
+        run: npm run check:vocabulary
 
   frontend:
     runs-on: ubuntu-latest
@@ -49,6 +51,8 @@ jobs:
         run: node ../design/check-contrast.mjs
       - run: npx tsc --noEmit
       - run: npm run lint
+      - name: No retired words in user-visible text
+        run: npm run check:vocabulary
       - run: npm run build
 
   mobile-apps:

@@ -72,7 +72,7 @@ describe('odometerNote', () => {
   const rel = (v: string) => `<${v}>`
   it('says how the reading was last updated', () => {
     expect(odometerNote({ odometer_updated_at: 'a', odometer_synced_at: 'b', odometer_source: 'gps' }, rel)).toBe('Auto-synced <b> from GPS')
-    expect(odometerNote({ odometer_updated_at: 'a', odometer_synced_at: 'b', odometer_source: 'routes' }, rel)).toBe('Auto-synced <b> from completed routes')
+    expect(odometerNote({ odometer_updated_at: 'a', odometer_synced_at: 'b', odometer_source: 'routes' }, rel)).toBe('Auto-synced <b> from completed trips')
     expect(odometerNote({ odometer_updated_at: 'a', odometer_synced_at: 'b', odometer_source: 'manual' }, rel)).toBe('Entered by hand <a>')
     expect(odometerNote({ odometer_updated_at: 'a', odometer_synced_at: null, odometer_source: null }, rel)).toBe('Counted from GPS distance, updated <a>')
     expect(odometerNote({ odometer_updated_at: null, odometer_synced_at: null, odometer_source: null }, rel)).toMatch(/Not synced yet/)

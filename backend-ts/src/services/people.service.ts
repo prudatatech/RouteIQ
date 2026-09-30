@@ -578,7 +578,7 @@ async function checkDriverBusy(subject: PersonRow, verb: string): Promise<Releas
   const active = (routes ?? []).find(r => r.status === 'active');
   if (active) {
     const plate = list.find(v => v.id === active.vehicle_id)?.plate_number ?? 'their vehicle';
-    throw new HttpError(409, `${subject.full_name ?? 'This driver'} is on an active route (${String(active.id).slice(0, 8)} on ${plate}). Finish or reassign it before you ${verb}`, { code: 'active_route', route_id: active.id });
+    throw new HttpError(409, `${subject.full_name ?? 'This driver'} is on an active trip (${String(active.id).slice(0, 8)} on ${plate}). Finish or reassign it before you ${verb}`, { code: 'active_route', route_id: active.id });
   }
   return { vehicleIds: ids, plates: list.map(v => v.plate_number as string), pendingRoutes: (routes ?? []).filter(r => r.status === 'pending').length };
 }
@@ -658,7 +658,7 @@ export async function changeStatus(actor: Actor, id: string, body: Record<string
       const busy = await checkDriverBusy(subject, status === 'inactive' ? 'deactivate them' : 'suspend them');
       if (busy.vehicleIds.length > 0) {
         if (body.confirm_release !== true) {
-          throw new HttpError(409, `${subject.full_name ?? 'This driver'} is assigned to ${busy.plates.join(', ')}${busy.pendingRoutes ? ` and has ${busy.pendingRoutes} pending route(s)` : ''}. Confirm to release the vehicle${busy.plates.length > 1 ? 's' : ''}`, {
+          throw new HttpError(409, `${subject.full_name ?? 'This driver'} is assigned to ${busy.plates.join(', ')}${busy.pendingRoutes ? ` and has ${busy.pendingRoutes} pending trip(s)` : ''}. Confirm to release the vehicle${busy.plates.length > 1 ? 's' : ''}`, {
             code: 'confirm_release', requires_confirmation: true, vehicles: busy.plates, pending_routes: busy.pendingRoutes,
           });
         }

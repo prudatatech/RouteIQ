@@ -312,7 +312,7 @@ export const routeService = {
       .eq('id', routeId)
       .maybeSingle();
     if (error) throw new Error(`Failed to load route: ${error.message}`);
-    if (!route) throw new HttpError(404, 'Route not found');
+    if (!route) throw new HttpError(404, 'Trip not found');
 
     const { data: vehicle, error: vehicleErr } = await supabase
       .from('vehicles')
@@ -327,7 +327,7 @@ export const routeService = {
 
     const starting = next === 'active';
     if (starting && vehicle && !(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(vehicle.status)) {
-      throw new HttpError(409, `This route's vehicle is in ${vehicle.status} and can't be dispatched.`);
+      throw new HttpError(409, `This trip's vehicle is in ${vehicle.status} and can't be dispatched.`);
     }
 
     // A route is finished by its stops; it cannot be closed with deliveries still to make
@@ -337,7 +337,7 @@ export const routeService = {
       if (pendingErr) throw new Error(`Failed to check the route's stops: ${pendingErr.message}`);
       if (pending && pending.length > 0) {
         const n = pending.length;
-        throw new HttpError(409, `${n} ${n === 1 ? 'stop is' : 'stops are'} still pending. Complete or fail ${n === 1 ? 'it' : 'them'} first, or cancel the route instead.`);
+        throw new HttpError(409, `${n} ${n === 1 ? 'stop is' : 'stops are'} still pending. Complete or fail ${n === 1 ? 'it' : 'them'} first, or cancel the trip instead.`);
       }
     }
 
@@ -355,7 +355,7 @@ export const routeService = {
     if (firstStart) update = update.is('started_at', null);
     const { data: updated, error: updateErr } = await update.select('id').maybeSingle();
     if (updateErr) throw new Error(`Failed to update route: ${updateErr.message}`);
-    if (!updated) throw new HttpError(409, 'This route was just changed by someone else. Refresh and try again.');
+    if (!updated) throw new HttpError(409, 'This trip was just changed by someone else. Refresh and try again.');
 
     if (starting) {
       await setOperatingVehicleStatus(route.vehicle_id, 'on_route');
@@ -370,8 +370,8 @@ export const routeService = {
           try {
             await notificationService.sendNotification(
               vehicle.driver_id,
-              'Route cancelled',
-              'Dispatch cancelled your current route. Open the app to see what is next.',
+              'Trip cancelled',
+              'Dispatch cancelled your current trip. Open the app to see what is next.',
               'route_cancelled',
               { route_id: route.id },
             );
@@ -447,7 +447,7 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
   if (vErr) throw new Error(vErr.message);
   if (!vehicle) throw new HttpError(404, 'Vehicle not found');
   if (!isDispatchable(vehicle as { status?: string | null; plate_number?: string | null })) {
-    throw new HttpError(409, `That vehicle is ${String((vehicle as any).status).replace('_', ' ')} and can't take a route.`);
+    throw new HttpError(409, `That vehicle is ${String((vehicle as any).status).replace('_', ' ')} and can't take a trip.`);
   }
 
   const reuseIds = input.stops.map(s => s.delivery_point_id).filter((id): id is string => !!id);

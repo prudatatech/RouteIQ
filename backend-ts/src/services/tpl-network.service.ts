@@ -123,7 +123,7 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
       .select('id')
       .in('delivery_point_id', stops.map(p => p.id));
     if (rErr) dbError('Failed to check routes', rErr);
-    if ((onRoute ?? []).length > 0) throw new HttpError(409, 'This shipment is already on a route');
+    if ((onRoute ?? []).length > 0) throw new HttpError(409, 'This shipment is already on a trip');
   }
   const { data: live, error: lErr } = await supabase
     .from('tpl_orders').select('id').eq('shipment_id', id).neq('status', 'cancelled');

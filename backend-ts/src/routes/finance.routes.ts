@@ -147,7 +147,7 @@ router.post('/invoices', async (req: Request, res: Response) => {
   try {
     const { shipment_id: shipmentId, manifest_id: manifestId } = req.body ?? {};
     if ((typeof shipmentId === 'string') === (typeof manifestId === 'string')) {
-      throw new HttpError(400, 'Give either a shipment or a manifest');
+      throw new HttpError(400, 'Give either a shipment or a load');
     }
     const { data: delivered } = typeof shipmentId === 'string'
       ? await supabase.from('shipments').select('status').eq('id', shipmentId).maybeSingle()
@@ -304,7 +304,7 @@ async function parseExpense(body: any, partial: boolean): Promise<Partial<Expens
     else if (typeof body.receipt_path === 'string' && /^expenses\/[\w-]+\/[\w.-]+$/.test(body.receipt_path)) out.receipt_path = body.receipt_path;
     else throw new HttpError(400, 'Receipt was not uploaded correctly. Upload it again.');
   }
-  for (const [key, table, label] of [['vehicle_id', 'vehicles', 'Vehicle'], ['route_id', 'routes', 'Route']] as const) {
+  for (const [key, table, label] of [['vehicle_id', 'vehicles', 'Vehicle'], ['route_id', 'routes', 'Trip']] as const) {
     if (!has(key)) continue;
     const id = body[key];
     if (id === null || id === '') { out[key] = null; continue; }

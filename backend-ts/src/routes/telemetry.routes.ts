@@ -718,7 +718,7 @@ async function routeConsignments(routeId: string): Promise<({ shipment_id: strin
 router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
-      res.status(403).json({ detail: 'Only drivers accept routes' });
+      res.status(403).json({ detail: 'Only drivers accept trips' });
       return;
     }
     const { route_id } = req.body ?? {};
@@ -727,7 +727,7 @@ router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route')
       return;
     }
     if (!(await canAccessRoute(req.user!, route_id))) {
-      res.status(403).json({ detail: 'Not authorized for this route' });
+      res.status(403).json({ detail: 'Not authorized for this trip' });
       return;
     }
     const actor = { id: req.user!.user_id, role: req.user!.role };
@@ -752,7 +752,7 @@ router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route')
 router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
-      res.status(403).json({ detail: 'Only drivers can start routes' });
+      res.status(403).json({ detail: 'Only drivers can start trips' });
       return;
     }
 
@@ -762,7 +762,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       return;
     }
     if (!(await canAccessRoute(req.user!, route_id))) {
-      res.status(403).json({ detail: 'Not authorized for this route' });
+      res.status(403).json({ detail: 'Not authorized for this trip' });
       return;
     }
 
@@ -945,7 +945,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       }
 
       const { data: manifest } = await supabase.from('cargo_manifest').select('*').eq('id', manifestId).single();
-      if (!manifest) { res.status(404).json({ detail: 'Manifest not found' }); return; }
+      if (!manifest) { res.status(404).json({ detail: 'Shipment not found' }); return; }
 
       if (status === 'failed') {
         // A failed drop is an undelivered attempt: the load goes to exception and its case tells the vendor
@@ -1025,7 +1025,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
     const routeInfo = Array.isArray(routeRaw) ? routeRaw[0] : routeRaw;
     const routeStatus = routeInfo?.status;
     if (routeStatus && !['pending', 'active'].includes(routeStatus)) {
-      throw new HttpError(409, `This route is ${routeStatus.replace('_', ' ')}, so its stops can't be changed.`);
+      throw new HttpError(409, `This trip is ${routeStatus.replace('_', ' ')}, so its stops can't be changed.`);
     }
     // Dispatch may have cancelled this delivery: nothing is recorded for it, and the stop is closed
     // so the route is not held open by a delivery that will never happen
@@ -1179,7 +1179,7 @@ router.get('/driver-ping/my-status', requireAuth, async (req: Request, res: Resp
 router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
-      res.status(403).json({ detail: 'Only drivers can fetch their route' });
+      res.status(403).json({ detail: 'Only drivers can fetch their trip' });
       return;
     }
 
@@ -1290,7 +1290,7 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
           return;
         }
 
-        res.json({ active: false, message: 'No active route assigned' });
+        res.json({ active: false, message: 'No active trip assigned' });
         return;
       }
 

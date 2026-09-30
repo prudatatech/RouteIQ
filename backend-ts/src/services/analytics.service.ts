@@ -215,7 +215,7 @@ export class AnalyticsService {
           insights.push({
             id: `backhaul_${route.vehicle_id}`,
             type: 'backhaul_opportunity',
-            title: `Backhaul Opportunity: ${plate}`,
+            title: `Return trip opportunity: ${plate}`,
             insight: `Truck ${plate} is likely to return empty. Open bidding for available capacity?`,
             vehicle_id: route.vehicle_id,
             plate_number: plate,
@@ -261,7 +261,7 @@ export class AnalyticsService {
         title: fromTraffic ? `Traffic ahead: ${s.trigger}` : `Reroute: ${s.vehicle_id.substring(0, 8)}`,
         insight: saved !== null
           ? `Better path found! ${s.trigger}. Potential savings: ${saved} mins.`
-          : `${s.trigger}. Open the route to check for a better order.`,
+          : `${s.trigger}. Open the trip to check for a better order.`,
         vehicle_id: s.vehicle_id,
         route_id: s.route_id,
         new_sequence: s.new_stop_sequence,

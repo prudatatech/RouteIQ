@@ -299,7 +299,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       algorithm: solution.algorithm ?? mlPayload.algorithm,
       // Where the weather effect came from: live OpenWeather, a manual value, or none
       weather: weatherInfo,
-      message: `Optimized ${routeResponses.length} routes in ${(solution.solve_time_seconds || 0).toFixed(2)}s`,
+      message: `Optimized ${routeResponses.length} trips in ${(solution.solve_time_seconds || 0).toFixed(2)}s`,
     });
   } catch (e: any) {
     sendError(req, res, e);
@@ -362,7 +362,7 @@ router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), a
     res.json({
       status: 'checked',
       engine: decision?.engine ?? null,
-      message: 'No better route found at this time. Current path is already optimized based on live traffic.',
+      message: 'No better trip found at this time. Current path is already optimized based on live traffic.',
     });
   } catch (e: any) {
     sendError(req, res, e);
@@ -389,7 +389,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
       }
     }
     if (!route || !['active', 'pending'].includes(route.status)) {
-      res.status(400).json({ detail: 'Route not found or not in an optimizable state' });
+      res.status(400).json({ detail: 'Trip not found or not in an optimizable state' });
       return;
     }
 
@@ -459,7 +459,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
 
         res.json({
           status: 'success',
-          message: `Route re-optimized successfully. Saved ${decision.saved_minutes} minutes.`,
+          message: `Trip re-optimized successfully. Saved ${decision.saved_minutes} minutes.`,
           engine: decision.engine,
           estimated: decision.estimated ?? null,
           saved_minutes: decision.saved_minutes,
@@ -477,7 +477,7 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
     res.json({
       status: 'no_change',
       engine: decision?.engine ?? null,
-      message: decision?.message || 'Route is already fully optimized.',
+      message: decision?.message || 'Trip is already fully optimized.',
     });
   } catch (e: any) {
     sendError(req, res, e);

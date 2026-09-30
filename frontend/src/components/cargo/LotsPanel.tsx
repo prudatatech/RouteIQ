@@ -162,7 +162,7 @@ export function LotsTree({ view, currentKey }: { view: LotsView; currentKey?: st
         <LotsProgress totals={view.totals} />
       </div>
 
-      <ul className="space-y-0 border-l border-border pl-3" aria-label="Lots of this consignment">
+      <ul className="space-y-0 border-l border-border pl-3" aria-label="Lots of this shipment">
         {lots.map(l => {
           const key = lotKey(l)
           const why = check.perLot[key]

@@ -27,7 +27,7 @@ interface DriverRow {
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
   { value: 'available', label: 'Available' },
-  { value: 'on_route', label: 'On route' },
+  { value: 'on_route', label: 'On trip' },
   { value: 'idle', label: 'Idle' },
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'offline', label: 'Offline' },
@@ -47,7 +47,7 @@ const columns: Column<DriverRow>[] = [
     cell: r => (r.vehicle_type ? humanize(r.vehicle_type) : '—'),
   },
   {
-    key: 'completed', header: 'Routes completed', align: 'right', sortValue: r => r.completed_routes,
+    key: 'completed', header: 'Trips completed', align: 'right', sortValue: r => r.completed_routes,
     cell: r => <span className="tabular">{formatNumber(r.completed_routes)}</span>,
   },
   {
@@ -124,7 +124,7 @@ export default function DriversTab() {
           icon={<Clock size={18} />}
           loading={isLoading}
           value={isError ? '—' : totals.onTimePct == null ? 'No data yet' : formatPercent(totals.onTimePct)}
-          hint={totals.onTimePct == null ? 'Shown once routes with planned arrival times are delivered' : `${formatNumber(totals.timed)} stops with a planned arrival time`}
+          hint={totals.onTimePct == null ? 'Shown once trips with planned arrival times are delivered' : `${formatNumber(totals.timed)} stops with a planned arrival time`}
         />
         <Stat
           label="Average rating"
@@ -133,25 +133,25 @@ export default function DriversTab() {
           value={isError ? '—' : totals.avgRating == null ? 'Not rated yet' : `${totals.avgRating.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} of 5`}
           hint={totals.avgRating == null ? 'Rate a delivery from its shipment page' : `${formatNumber(totals.ratings)} rated deliveries`}
         />
-        <Stat label="Distance driven" icon={<Gauge size={18} />} loading={isLoading} value={isError ? '—' : `${formatNumber(totals.distance)} km`} hint="On completed routes" />
+        <Stat label="Distance driven" icon={<Gauge size={18} />} loading={isLoading} value={isError ? '—' : `${formatNumber(totals.distance)} km`} hint="On completed trips" />
       </section>
 
       <ChartCard
-        title="Most routes completed"
-        description="Top eight drivers or vehicles by completed routes"
+        title="Most trips completed"
+        description="Top eight drivers or vehicles by completed trips"
         loading={isLoading}
         error={isError}
         onRetry={() => refetch()}
         empty={top.length === 0}
-        emptyTitle="No completed routes yet"
-        emptyDescription="Drivers appear here once they complete a route."
+        emptyTitle="No completed trips yet"
+        emptyDescription="Drivers appear here once they complete a trip."
       >
         <SimpleBarChart
           data={top}
           categoryKey="name"
           horizontal
-          series={[{ key: 'trips', label: 'Routes completed' }]}
-          label={`Completed routes for the top ${top.length} drivers.`}
+          series={[{ key: 'trips', label: 'Trips completed' }]}
+          label={`Completed trips for the top ${top.length} drivers.`}
         />
       </ChartCard>
 

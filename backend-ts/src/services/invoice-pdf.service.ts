@@ -78,7 +78,7 @@ export function renderInvoicePdf(inv: InvoiceDetail): Promise<Buffer> {
       ['Due date', inv.due_date ? formatISTDate(inv.due_date) : '-'],
       ['Currency', 'INR'],
     ];
-    if (inv.links.shipment) facts.push(['Consignment', inv.links.shipment.code]);
+    if (inv.links.shipment) facts.push(['Shipment', inv.links.shipment.code]);
     if (inv.buyer.state) facts.push(['Place of supply', `${inv.buyer.state} (${inv.buyer.state_code})`]);
     let fy = y;
     for (const [k, v] of facts) {

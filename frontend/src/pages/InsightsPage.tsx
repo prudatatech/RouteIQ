@@ -85,7 +85,7 @@ export default function InsightsPage() {
           query={insights}
           items={byType.reroute_suggestion}
           empty="No reroute suggestions right now."
-          action={() => ({ label: 'Open Route optimization', to: '/optimize' })}
+          action={() => ({ label: 'Open Trip optimization', to: '/optimize' })}
         />
         <InsightCard
           title="Empty return trips"
@@ -213,7 +213,7 @@ function DemandSection({ query }: { query: { data?: Demand; isLoading: boolean; 
           empty={{ title: 'Not enough history to forecast', description: 'Forecasts appear once a corridor has at least 3 loads in the last 28 days.' }}
         />
         <p className="text-sm text-muted">
-          Want to plan against this? <Link to="/optimize" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>Open Route optimization</Link>
+          Want to plan against this? <Link to="/optimize" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>Open Trip optimization</Link>
         </p>
       </section>
     </div>
@@ -236,11 +236,11 @@ function TrafficIncidentsCard() {
         compact
         icon={<CloudOff size={22} />}
         title="Traffic data not configured"
-        description="Add a TomTom key on the server to see accidents and closures on active routes."
+        description="Add a TomTom key on the server to see accidents and closures on active trips."
       />
     )
   } else if (list.length === 0) {
-    body = <EmptyState compact icon={<RouteIcon size={22} />} title="No incidents on active routes" description="Checked on the latest traffic refresh." />
+    body = <EmptyState compact icon={<RouteIcon size={22} />} title="No problems on active trips" description="Checked on the latest traffic refresh." />
   } else {
     body = (
       <ul className="divide-y divide-border">

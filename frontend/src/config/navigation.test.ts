@@ -79,7 +79,7 @@ describe('finding the open section', () => {
   it('opens the right Return trips link for each tab, and keeps a partner page in the section', () => {
     expect(at('/return-trips')).toEqual(['Return trips & 3PL', 'Open return trips'])
     expect(at('/return-trips', '?tab=bids')).toEqual(['Return trips & 3PL', 'Bids to decide'])
-    expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips & 3PL', 'Pool loads'])
+    expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips & 3PL', 'Combine loads'])
     expect(at('/return-trips', '?tab=partners&status=active')).toEqual(['Return trips & 3PL', '3PL partners'])
     expect(at('/3pl-partners/p1')).toEqual(['Return trips & 3PL', null])
   })

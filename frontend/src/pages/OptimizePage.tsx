@@ -274,7 +274,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
     },
     onSuccess: (data) => {
       if (routeIdToReoptimize) {
-        toast.success(data.message || 'Route re-optimized')
+        toast.success(data.message || 'Trip re-optimized')
         queryClient.invalidateQueries({ queryKey: ['route', routeIdToReoptimize] })
       } else {
         toast.success(`Planned ${data.routes?.length ?? 0} ${data.routes?.length === 1 ? 'trip' : 'trips'} in ${(data.solve_time_seconds || 0).toFixed(1)}s. Send them from Trips to send.`)
@@ -414,7 +414,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
       const v = route?.vehicles
       const plan = plansFromReorder({
         key: `reopt-${result.reorder.routeId}`,
-        label: v?.plate_number || 'Route',
+        label: v?.plate_number || 'Trip',
         vehicleId: route?.vehicle_id ?? null,
         origin: vehiclePosition(v),
         // The stops as they were driven before the change, then the new order
@@ -479,7 +479,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
               <div className="border-t border-border pt-4">
                 <Select
                   label="Solve time"
-                  hint="Longer searches can find shorter routes but take more time."
+                  hint="Longer searches can find shorter trips but take more time."
                   value={String(solveTime)}
                   onChange={e => setSolveTime(Number(e.target.value))}
                   options={[
@@ -565,7 +565,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
             disabled={!canOptimize}
             onClick={() => { reset(); runOptimization() }}
           >
-            {isPending ? 'Optimizing…' : routeIdToReoptimize ? 'Re-optimize route' : 'Run optimization'}
+            {isPending ? 'Optimizing…' : routeIdToReoptimize ? 'Re-optimize trip' : 'Run optimization'}
           </Button>
           {routeIdToReoptimize && (
             <Button variant="ghost" fullWidth onClick={() => navigate('/optimize', { replace: true })}>
@@ -602,7 +602,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
               {isPending ? (
                 <LoadingState label="Running the solver…" />
               ) : !result ? (
-                <EmptyState compact title="No result yet" description="Run an optimization to see routes here." />
+                <EmptyState compact title="No result yet" description="Run an optimization to see trips here." />
               ) : (
                 <div className="space-y-6">
                   <EngineBanner engine={result.engine} matrixSource={result.matrix_source} note={result.engine_note} />
@@ -644,7 +644,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
                         <div key={r.id ?? i} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
                           <RouteSummaryLine
                             color={resultPlans.find(p => p.key === (r.id ?? `route-${i}`))?.color ?? 'transparent'}
-                            label={vehicle || `Route ${i + 1}`}
+                            label={vehicle || `Trip ${i + 1}`}
                             stops={stopCount}
                             km={r.total_distance_km}
                             minutes={r.total_duration_minutes}
@@ -692,7 +692,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
               {insightsLoading ? (
                 <LoadingState label="Checking for suggestions…" />
               ) : suggestions.length === 0 ? (
-                <EmptyState compact title="No suggestions right now" description="Nothing better than the current routes was found." />
+                <EmptyState compact title="No suggestions right now" description="Nothing better than the current trips was found." />
               ) : (
                 <ul className="space-y-2">
                   {suggestions.map(s => {
@@ -741,7 +741,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
                               icon={<RotateCw size={14} />}
                               onClick={() => { reset(); navigate('/optimize', { state: { routeId: s.route_id } }) }}
                             >
-                              Re-optimize route
+                              Re-optimize trip
                             </Button>
                           )}
                         </div>

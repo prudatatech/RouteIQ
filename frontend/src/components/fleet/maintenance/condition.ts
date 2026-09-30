@@ -119,7 +119,7 @@ export function odometerNote(
 ): string {
   if (v.odometer_source === 'manual' && v.odometer_updated_at) return `Entered by hand ${relative(v.odometer_updated_at)}`
   if (v.odometer_synced_at) {
-    const from = v.odometer_source === 'routes' ? ' from completed routes' : v.odometer_source === 'gps' ? ' from GPS' : ''
+    const from = v.odometer_source === 'routes' ? ' from completed trips' : v.odometer_source === 'gps' ? ' from GPS' : ''
     return `Auto-synced ${relative(v.odometer_synced_at)}${from}`
   }
   if (v.odometer_updated_at) return `Counted from GPS distance, updated ${relative(v.odometer_updated_at)}`

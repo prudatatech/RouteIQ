@@ -40,7 +40,7 @@ const VIEW_IDS = ['vehicles', 'analytics', 'alerts', 'service'] as const
 const STATUS_FILTERS = ['all', 'on_route', 'idle', 'maintenance', 'offline', 'archived', 'drafts'] as const
 type StatusFilter = (typeof STATUS_FILTERS)[number]
 const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
-  all: 'All', on_route: 'On route', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived', drafts: 'Drafts',
+  all: 'All', on_route: 'On trip', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived', drafts: 'Drafts',
 }
 
 function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
@@ -364,7 +364,7 @@ export default function FleetPage() {
             <>
               <IconButton label={`Edit ${v.plate_number}`} icon={<Pencil size={16} />} size="sm" onClick={e => { e.stopPropagation(); setEditingVehicle(v) }} />
               <IconButton
-                label={v.status === 'on_route' ? `${v.plate_number} is on a route and can't be deleted` : `Delete ${v.plate_number}`}
+                label={v.status === 'on_route' ? `${v.plate_number} is on a trip and can't be deleted` : `Delete ${v.plate_number}`}
                 icon={<Trash2 size={16} />}
                 size="sm"
                 disabled={v.status === 'on_route'}

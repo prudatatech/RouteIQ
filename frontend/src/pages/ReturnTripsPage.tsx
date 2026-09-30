@@ -74,7 +74,7 @@ export default function ReturnTripsPage() {
   const tabs: TabItem<ReturnTripTab>[] = [
     { id: 'open', label: 'Open return trips', count: counts.open },
     { id: 'bids', label: 'Bids to decide', count: counts.bids },
-    { id: 'pool', label: 'Pool loads' },
+    { id: 'pool', label: 'Combine loads' },
     { id: 'partners', label: '3PL partners' },
   ]
 

@@ -112,7 +112,7 @@ const UploadSchema = z.object({
   kind: z.enum(['photo', 'signature']),
   content_type: z.string().max(60),
   size: z.number().int().positive(),
-}).refine(v => !!v.ref !== !!v.transfer_id, { message: 'Name either the consignment (ref) or the transfer (transfer_id)' });
+}).refine(v => !!v.ref !== !!v.transfer_id, { message: 'Name either the shipment (ref) or the transfer (transfer_id)' });
 
 // A signed upload URL for custody photos and signatures (in the consignment's or transfer's folder)
 router.post('/custody/upload-url', requireAuth, requireRole('driver', ...STAFF_ROLES), async (req: Request, res: Response) => {

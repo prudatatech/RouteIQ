@@ -25,12 +25,12 @@ export default function CargoExceptionsCard() {
       <div className="flex items-center gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand" aria-hidden="true"><PackageX size={18} /></span>
         <div>
-          <p className="text-sm font-medium text-text">Cargo exceptions</p>
+          <p className="text-sm font-medium text-text">Problems</p>
           {q.isLoading ? (
             <Skeleton className="mt-1 h-4 w-32" />
           ) : q.isError ? (
             <p className="text-xs text-danger" role="alert">
-              We could not load cargo exceptions.{' '}
+              We could not load problems.{' '}
               <button type="button" onClick={() => q.refetch()} className="underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Try again</button>
             </p>
           ) : (

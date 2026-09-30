@@ -35,7 +35,7 @@ export default function LanesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Lanes"
-        description="The routes dispatch can offer you loads on."
+        description="The trips dispatch can offer you loads on."
         actions={<Link to={`/3pl-portal/${id}/settings`} className={buttonClasses({ variant: 'secondary' })}>Request changes</Link>}
       />
       {partner.pending_updates && (
@@ -54,7 +54,7 @@ export default function LanesPage() {
             ? { title: 'No lanes match your search' }
             : {
                 title: 'No lanes yet',
-                description: 'Add the routes you serve so dispatch can offer you loads.',
+                description: 'Add the trips you serve so dispatch can offer you loads.',
                 action: <Link to={`/3pl-portal/${id}/settings`}><Button>Add lanes</Button></Link>,
               }}
         />

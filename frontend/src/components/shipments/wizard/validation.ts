@@ -2,7 +2,7 @@ import type { DraftShipmentData } from '@/store/draftStore'
 import { dropsBalance, gstinError, phoneError } from '@/components/cargo/lots'
 
 export const STEPS = [
-  { id: 'route', label: 'Route' },
+  { id: 'route', label: 'Trip' },
   { id: 'cargo', label: 'Cargo' },
   { id: 'vehicle', label: 'Vehicle' },
   { id: 'review', label: 'Review' },

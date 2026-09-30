@@ -78,7 +78,7 @@ function requestStep(f: NextStepFacts): NextStep {
   const priced = f.price != null && f.price > 0
   switch (f.status) {
     case 'pending':
-      return step({ stage: 'request', tone: 'warning', headline: 'New vendor request', detail: 'Accept it with a price, or reject it.', action: { kind: 'open_request', label: 'Review request' } })
+      return step({ stage: 'request', tone: 'warning', headline: 'New request', detail: 'Accept it with a price, or reject it.', action: { kind: 'open_request', label: 'Review request' } })
     case 'approved':
       return priced
         ? step({ stage: 'dispatch', tone: 'warning', headline: 'Needs a vehicle', detail: `Accepted at ${money(f.price!)}.`, action: { kind: 'open_request', label: 'Assign vehicle' } })

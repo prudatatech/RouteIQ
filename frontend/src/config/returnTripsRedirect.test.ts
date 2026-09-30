@@ -15,7 +15,7 @@ describe('old Bids address', () => {
 })
 
 describe('old Backhaul address', () => {
-  it('goes to Pool loads', () => {
+  it('goes to Combine loads', () => {
     expect(returnTripsLink('backhaul', '')).toBe('/return-trips?tab=pool')
   })
 

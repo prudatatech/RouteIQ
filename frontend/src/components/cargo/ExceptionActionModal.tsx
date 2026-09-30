@@ -129,7 +129,7 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
       body = <Input label="Repair expected by" type="datetime-local" value={values.expected_at ?? ''} onChange={set('expected_at')} error={errors.expected_at} hint="The goods stay on the vehicle, on hold, until then." required />
       break
     case 'continue_after_repair':
-      body = <p className="text-sm text-text">The hold is released and the vehicle carries on with its route and the same goods. Only do this once the vehicle is safe to drive.</p>
+      body = <p className="text-sm text-text">The hold is released and the vehicle carries on with its trip and the same goods. Only do this once the vehicle is safe to drive.</p>
       break
     case 'return_to_origin':
       body = <p className="text-sm text-text">Goods on a working vehicle start back to the sender now; goods on a broken vehicle or at a hub are flagged for return and go back after their transfer or hub departure. The sender is told. Add a note to the case first if you want to record why.</p>
@@ -155,7 +155,7 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
             <Input label="Pieces damaged" type="number" inputMode="numeric" min={0} value={values.pieces_damaged ?? ''} onChange={set('pieces_damaged')} hint="Optional" />
           </div>
           <Input label="Delivery OTP" value={values.otp ?? ''} onChange={set('otp')} inputMode="numeric" maxLength={6} autoComplete="one-time-code" hint="Needed when the shipment asks for the delivery code" />
-          <p className="text-sm text-muted">Every consignment of the case still waiting to be delivered is recorded as delivered, and the case is resolved.</p>
+          <p className="text-sm text-muted">Every shipment of the case still waiting to be delivered is recorded as delivered, and the case is resolved.</p>
         </>
       )
       break
@@ -165,14 +165,14 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
           {needsRef && <ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} error={errors.ref} />}
           <Input label="Pieces to write off" type="number" inputMode="numeric" min={1} max={maxPieces} value={values.pieces ?? ''} onChange={set('pieces')} error={errors.pieces} hint={maxPieces ? `Up to ${maxPieces.toLocaleString('en-IN')}` : undefined} required />
           <Textarea label="Reason" value={values.note ?? ''} onChange={set('note')} error={errors.note} maxLength={500} required />
-          <Alert tone="warning">Written-off pieces are marked lost or damaged and leave the consignment’s count. This cannot be undone here.</Alert>
+          <Alert tone="warning">Written-off pieces are marked lost or damaged and leave the shipment’s count. This cannot be undone here.</Alert>
         </>
       )
       break
     case 'raise_claim':
       body = (
         <div className="grid gap-4 sm:grid-cols-2">
-          {needsRef && <div className="sm:col-span-2"><ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} hint="Leave empty to claim for the first consignment of the case." /></div>}
+          {needsRef && <div className="sm:col-span-2"><ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} hint="Leave empty to claim for the first shipment of the case." /></div>}
           <Select label="Claim for" value={values.claim_type ?? ''} onChange={set('claim_type')} placeholder="Choose" options={CLAIM_TYPES.map(t => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} error={errors.claim_type} required />
           <Input label="Amount claimed" type="number" inputMode="decimal" min={0} step="0.01" leading="₹" value={values.claimed_amount ?? ''} onChange={set('claimed_amount')} error={errors.claimed_amount} hint="The declared value is filled in from the invoice" required />
         </div>
@@ -225,7 +225,7 @@ function ConsignmentPicker({ kase, value, onChange, error, hint }: {
 }) {
   return (
     <Select
-      label="Consignment"
+      label="Shipment"
       value={value}
       onChange={onChange}
       placeholder="Choose"

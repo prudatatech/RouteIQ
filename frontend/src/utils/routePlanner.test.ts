@@ -188,7 +188,7 @@ describe('plan text', () => {
       fuel: { litres: 30.1, cost: 2769.2 }, provider: 'tomtom', truckAware: true, mapsUrl: 'https://maps.example/x',
     })
     expect(text).toBe([
-      'Route plan: Mumbai to Pune',
+      'Trip plan: Mumbai to Pune',
       'Vehicle: MH01AB1234',
       'Leaves: 1 Oct 2026, 9:00 am',
       '',

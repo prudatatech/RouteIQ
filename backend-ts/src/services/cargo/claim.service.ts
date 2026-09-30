@@ -156,7 +156,7 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
   const c = await resolveRef(body.ref);
 
   if (role === 'customer') {
-    if (c.kind !== 'shipment' || !(await customerOwnsShipment(actor.id, c.id))) throw new HttpError(404, 'Consignment not found');
+    if (c.kind !== 'shipment' || !(await customerOwnsShipment(actor.id, c.id))) throw new HttpError(404, 'Shipment not found');
     if (!CUSTOMER_CLAIMABLE.includes(c.status)) throw new HttpError(409, 'A claim can be raised once your goods are delivered or returned.');
     const at = await deliveredAt(c);
     if (at && Date.now() - Date.parse(at) > CUSTOMER_CLAIM_DAYS * 86_400_000) {
@@ -164,14 +164,14 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
     }
   }
   if (role === 'vendor') {
-    if (c.kind !== 'manifest' || !(await canAccessManifest({ user_id: actor.id, role: 'vendor' } as TokenData, c.id))) throw new HttpError(404, 'Consignment not found');
+    if (c.kind !== 'manifest' || !(await canAccessManifest({ user_id: actor.id, role: 'vendor' } as TokenData, c.id))) throw new HttpError(404, 'Shipment not found');
     const window = await vendorClaimWindow(c);
     if (!window.allowed) throw new HttpError(409, window.reason ?? 'A claim can not be raised on this load.');
   }
   if (body.exception_id) {
     const { data: item } = await supabase
       .from('cargo_exception_items').select('id').eq('exception_id', body.exception_id).eq(c.kind === 'shipment' ? 'shipment_id' : 'manifest_id', c.id).limit(1);
-    if (!item || item.length === 0) throw new HttpError(400, 'That case does not include this consignment');
+    if (!item || item.length === 0) throw new HttpError(400, 'That case does not include this shipment');
   }
 
   // One open claim of a type per consignment

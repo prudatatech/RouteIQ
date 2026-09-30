@@ -268,7 +268,7 @@ export default function ShipmentManifestPage() {
             columns={1}
             items={[{ label: 'Pickup address', value: text(shipment.pickup_location?.address ?? shipment.origin_address) }]}
           />
-          {editing && <p className="mt-3 text-xs text-muted">The pickup comes from the shipment's route and cannot be changed here.</p>}
+          {editing && <p className="mt-3 text-xs text-muted">The pickup comes from the shipment's trip and cannot be changed here.</p>}
         </ManifestCard>
         <ManifestCard title="Consignee">
           <div className="space-y-4">
@@ -281,7 +281,7 @@ export default function ShipmentManifestPage() {
         </ManifestCard>
       </div>
 
-      <ManifestCard title="Route" description={editing ? undefined : 'Arrival and distance are estimates unless entered on the manifest.'}>
+      <ManifestCard title="Trip" description={editing ? undefined : 'Arrival and distance are estimates unless entered on the manifest.'}>
         {renderFields(trip, 2)}
       </ManifestCard>
 

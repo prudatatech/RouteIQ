@@ -259,7 +259,7 @@ export default function RouteDetailsPage() {
               route={{ coordinates: road?.coordinates ?? [], stops: mapStops, planned: !road, congestion: road?.congestion }}
               vehicles={mapVehicles}
               traffic={isStaff ? { flow: true, incidents: true } : undefined}
-              ariaLabel="Route map"
+              ariaLabel="Trip map"
             />
           </div>
         </Card>
@@ -332,8 +332,8 @@ export default function RouteDetailsPage() {
                   <Link to={`/shipments/${route.id}`} className={buttonClasses({ variant: 'secondary' })}>
                     <ExternalLink size={16} aria-hidden="true" /> Open shipment
                   </Link>
-                  <Button variant="secondary" icon={<Edit2 size={16} />} onClick={handleEdit}>Edit manifest</Button>
-                  <Button variant="secondary" icon={<Copy size={16} />} onClick={handleDuplicate}>Duplicate to backhaul</Button>
+                  <Button variant="secondary" icon={<Edit2 size={16} />} onClick={handleEdit}>Edit shipment</Button>
+                  <Button variant="secondary" icon={<Copy size={16} />} onClick={handleDuplicate}>Duplicate to return trip</Button>
                 </>
               )}
               <Button
