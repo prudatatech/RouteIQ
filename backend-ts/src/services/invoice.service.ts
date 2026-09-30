@@ -13,6 +13,7 @@
  *     master's price that falls to it; a master is billed only for the part it kept (its own
  *     freight_share, the pieces delivered before the split), so the master's price is never
  *     billed twice
+ * Every invoice is issued with a due date: the payment terms in Settings (company profile), 15 days by default.
  * With no price no invoice is written; the delivery shows up under "unpriced
  * deliveries" in Finance instead. Money is rupees; the amount is before GST.
  */
@@ -21,6 +22,7 @@ import { haversineKm, isValidPoint, ROAD_FACTOR } from './geo';
 import { formatINR } from '../core/format';
 import { notificationService } from './notification.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
+import { paymentTermsDays } from './company.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRICE_SOURCE_BID = 'bid';
@@ -132,6 +134,7 @@ export async function announceInvoice(invoiceId: string, event: 'issued' | 'paid
 async function insertInvoice(input: NewInvoice): Promise<string> {
   const amount = round2(input.amount);
   const gstAmount = round2((amount * input.gst_rate) / 100);
+  const termsDays = await paymentTermsDays();
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = new Date();
     const { data, error } = await supabase
@@ -145,6 +148,7 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
         currency: 'INR',
         status: 'issued',
         issued_at: now.toISOString(),
+        due_date: new Date(now.getTime() + termsDays * 86_400_000).toISOString(),
       })
       .select('id')
       .single();

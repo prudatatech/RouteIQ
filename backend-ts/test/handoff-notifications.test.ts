@@ -194,7 +194,7 @@ describe('invoices', () => {
     expect((await InvoiceService.createForShipment(ID.s1)).status).toBe('exists');
     expect(of('invoice_issued')).toHaveLength(1);
 
-    const pay = () => request(app).put(api(`/finance/invoices/${invoice.id}/pay`)).set(auth.admin());
+    const pay = () => request(app).put(api(`/finance/invoices/${invoice.id}/pay`)).set(auth.admin()).send({ method: 'upi', reference: 'UTR1' });
     expect((await pay()).status).toBe(200);
     expect(of('invoice_paid').map(n => n.user_id)).toEqual([ID.customer]);
     expect(of('invoice_paid')[0].data).toMatchObject({ invoice_id: invoice.id, shipment_id: ID.s1, booking_id: ID.booking1 });
@@ -209,7 +209,7 @@ describe('invoices', () => {
     const issued = of('invoice_issued');
     expect(issued.map(n => n.user_id)).toEqual([ID.vendor]);
     expect(issued[0].data).toMatchObject({ invoice_id: invoice.id, manifest_id: ID.m1, request_id: ID.request1 });
-    await request(app).put(api(`/finance/invoices/${invoice.id}/pay`)).set(auth.admin());
+    await request(app).put(api(`/finance/invoices/${invoice.id}/pay`)).set(auth.admin()).send({ method: 'upi', reference: 'UTR1' });
     expect(of('invoice_paid', ID.vendor)[0].data).toMatchObject({ invoice_id: invoice.id, request_id: ID.request1 });
   });
 
