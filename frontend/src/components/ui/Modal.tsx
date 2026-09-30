@@ -97,6 +97,7 @@ const drawerSizes = {
   md: 'sm:max-w-md',
   lg: 'sm:max-w-xl',
   xl: 'sm:max-w-3xl',
+  full: 'max-w-full',
 }
 
 export interface DrawerProps extends Omit<ModalProps, 'size' | 'onSubmit'> {

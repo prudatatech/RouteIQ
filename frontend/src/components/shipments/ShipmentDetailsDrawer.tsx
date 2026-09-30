@@ -164,6 +164,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   return (
     <Drawer
       open
+      size="full"
       onClose={onClose}
       title={<span className="font-mono">{s.tracking_id}</span>}
       description={

@@ -100,7 +100,10 @@ export function useRouteActions({
         return;
       }
       if (!currentLoc) {
-        Alert.alert(t('alert_gps_req_title'), t('alert_gps_req_desc'));
+        Alert.alert(t('alert_gps_req_title'), t('alert_gps_req_desc'), [
+          { text: t('cancel'), style: 'cancel' },
+          { text: 'Override (Test)', onPress: action },
+        ]);
         return;
       }
       const dist = distanceMeters(currentLoc, target);
