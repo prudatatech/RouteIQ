@@ -1,39 +1,47 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Button, Card, ErrorBanner, StatusPill, Text } from '../ui';
+import { Card, StatusPill, Text } from '../ui';
 import { colors, fontFamily, radius, size, space } from '../../theme';
-import { api, type CargoLot, type Claim, type LotTotals, type ProofOfDelivery } from '../../services/api';
+import type { CargoLot, Claim, LotTotals, ProofOfDelivery } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
 import { lotStatusInfo } from '../../utils/bookingStatus';
 import { claimClosesAt, claimWindowOpen, piecesText } from '../../utils/cargo';
-import { formatDateTime, formatNumber } from '../../utils/format';
+import { formatNumber } from '../../utils/format';
 import { DeliveryOtpCard } from './DeliveryOtpCard';
 import { ProofOfDeliveryCard } from './ProofOfDeliveryCard';
 import { ClaimsCard } from './ClaimsCard';
 
-/** A lot whose goods have reached a final state a claim can be about. */
+/** Lot statuses the server takes a customer's claim on (its CUSTOMER_CLAIMABLE). */
 const CLAIMABLE = new Set(['delivered', 'partially_delivered', 'lost', 'returned']);
 
 interface Props {
   bookingId: string;
   lots: CargoLot[];
+  /** The master's `where.totals`. */
   totals: LotTotals | null;
+  /** Claims listed by each lot's tracking ID (the cargo view's `claims` are the booking's own). */
   claims: Claim[];
   refreshKey: number;
   onOpenNotifications: () => void;
   onRaiseClaim: (lot: CargoLot) => void;
 }
 
+/** A claim on this lot: it names the lot's shipment, and the list gives the lot's tracking ID. */
+export const isLotClaim = (claim: Claim, lot: CargoLot) =>
+  (!!lot.shipment_id && claim.shipment_id === lot.shipment_id) || claim.consignment_code === lot.code;
+
 /**
  * A booking split into lots (several drops, part of the goods on another truck, or a hub split):
- * the progress of all lots together, then each lot with its pieces, consignee, drop and status in
- * plain words, its own delivery code, proof of delivery and claims.
+ * the progress of all lots together, then each lot with its pieces and the server's plain line
+ * about it, its own delivery code, proof of delivery and claims.
  */
 export function LotsCard({ bookingId, lots, totals, claims, refreshKey, onOpenNotifications, onRaiseClaim }: Props) {
   const { t } = useTranslation();
   const [now] = useState(() => Date.now());
-  const share = totals && totals.pieces > 0 ? Math.min(1, totals.delivered / totals.pieces) : 0;
+  const total = totals?.pieces_total ?? null;
+  const share = totals && total ? Math.min(1, totals.delivered / total) : 0;
+  const lotsDelivered = lots.filter((l) => l.status === 'delivered').length;
 
   return (
     <Card style={styles.card}>
@@ -44,14 +52,20 @@ export function LotsCard({ bookingId, lots, totals, claims, refreshKey, onOpenNo
         {t('lots_intro', { n: lots.length })}
       </Text>
 
-      {totals ? (
-        <View style={styles.progress} accessible accessibilityLabel={t('lots_progress', { n: formatNumber(totals.delivered), total: formatNumber(totals.pieces) })}>
-          <Text variant="bodyMedium">{t('lots_progress', { n: formatNumber(totals.delivered), total: formatNumber(totals.pieces) })}</Text>
+      {totals && total ? (
+        <View style={styles.progress} accessible accessibilityLabel={t('lots_progress', { n: formatNumber(totals.delivered), total: formatNumber(total) })}>
+          <Text variant="bodyMedium">{t('lots_progress', { n: formatNumber(totals.delivered), total: formatNumber(total) })}</Text>
           <View style={styles.track}>
             <View style={[styles.fill, { width: `${Math.round(share * 100)}%` }]} />
           </View>
+          {/* The server's line says where the rest is: "25 at Patna hub · 15 on HR55AB1234" */}
+          {totals.progress_text ? (
+            <Text variant="bodySmall" color="textMuted">
+              {totals.progress_text}
+            </Text>
+          ) : null}
           <Text variant="caption" color="textMuted">
-            {t('lots_progress_lots', { n: totals.lots_delivered, total: totals.lots })}
+            {t('lots_progress_lots', { n: lotsDelivered, total: lots.length })}
           </Text>
         </View>
       ) : null}
@@ -61,7 +75,7 @@ export function LotsCard({ bookingId, lots, totals, claims, refreshKey, onOpenNo
           key={lot.code}
           bookingId={bookingId}
           lot={lot}
-          claims={claims.filter((c) => (c.consignment_code && c.consignment_code === lot.code) || (!!lot.shipment_id && c.shipment_id === lot.shipment_id))}
+          claims={claims.filter((c) => isLotClaim(c, lot))}
           now={now}
           refreshKey={refreshKey}
           onOpenNotifications={onOpenNotifications}
@@ -93,8 +107,8 @@ function LotRow({
   const [open, setOpen] = useState(false);
   const status = lotStatusInfo(lot.status);
   const label = lot.label ? t('lot_label', { label: lot.label }) : lot.code;
-  const drop = [lot.drop_name, lot.drop_address].filter(Boolean).join(', ');
-  const consignee = [lot.consignee_name, lot.consignee_phone].filter(Boolean).join(' · ');
+  const pieces = lot.pieces.total;
+  const drop = [lot.drop?.name, lot.drop?.address].filter(Boolean).join(', ');
   const claimable = !!lot.status && CLAIMABLE.has(lot.status);
   const windowOpen = claimable ? (claimWindowOpen(lot.delivered_at, now) ?? true) : null;
 
@@ -104,16 +118,16 @@ function LotRow({
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={[label, t(status.label), lot.pieces != null ? piecesText(lot.pieces, t) : null, consignee || null].filter(Boolean).join(', ')}
+        accessibilityLabel={[label, t(status.label), pieces != null ? piecesText(pieces, t) : null, lot.consignee_name].filter(Boolean).join(', ')}
         accessibilityHint={t('lot_open_hint')}
         style={({ pressed }) => [styles.lotHead, pressed && styles.pressed]}
       >
         <View style={styles.flex}>
           <View style={styles.row}>
             <Text variant="bodyMedium">{label}</Text>
-            {lot.pieces != null ? (
+            {pieces != null ? (
               <Text variant="bodySmall" color="textMuted">
-                {piecesText(lot.pieces, t)}
+                {piecesText(pieces, t)}
               </Text>
             ) : null}
           </View>
@@ -125,9 +139,15 @@ function LotRow({
         <Feather name={open ? 'chevron-up' : 'chevron-down'} size={size.icon.md} color={colors.textMuted} />
       </Pressable>
 
-      {consignee ? <Line label={t('lot_consignee')} value={consignee} /> : null}
-      {drop ? <Line label={t('lot_drop')} value={drop} /> : null}
-      {lot.summary ? <Text variant="bodySmall">{lot.summary}</Text> : null}
+      {/* The server's line already names the consignee and the drop; without it they are listed as they are. */}
+      {lot.text ? (
+        <Text variant="bodySmall">{lot.text}</Text>
+      ) : (
+        <>
+          {lot.consignee_name ? <Line label={t('lot_consignee')} value={lot.consignee_name} /> : null}
+          {drop ? <Line label={t('lot_drop')} value={drop} /> : null}
+        </>
+      )}
 
       {open ? (
         <View style={styles.details}>
@@ -173,66 +193,18 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * The lot's own proof of delivery: from the cargo view when it carries one, otherwise read from the
- * lot's timeline (its last delivery event) when the customer asks for it.
- */
+/** The lot's own proof of delivery, else the photo and signature of its delivery on the timeline. */
 function LotProof({ lot }: { lot: CargoLot }) {
   const { t } = useTranslation();
-  const [pod, setPod] = useState<ProofOfDelivery | null>(lot.pod);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [none, setNone] = useState(false);
   const title = lot.label ? t('lot_pod_title', { label: lot.label }) : t('pod_title');
-
+  const e = lot.delivery;
+  const pod: ProofOfDelivery | null =
+    lot.pod ?? (e ? { photo_url: e.photo_urls[0] ?? null, signature_url: e.signature_url, receiver_name: e.receiver_name, delivered_at: e.recorded_at } : null);
   if (pod) return <ProofOfDeliveryCard pod={pod} title={title} />;
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const events = await api.getCargoTimeline(lot.code);
-      const delivery = [...events].reverse().find((e) => e.kind === 'delivery' || e.kind === 'partial_delivery');
-      if (!delivery) {
-        setNone(true);
-        return;
-      }
-      setPod({
-        photo_url: delivery.photo_urls[0] ?? null,
-        signature_url: delivery.signature_url,
-        receiver_name: delivery.receiver_name,
-        delivered_at: delivery.recorded_at,
-      });
-    } catch (e: any) {
-      setError(e?.message || t('lot_pod_failed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <View style={styles.details}>
-      {error ? <ErrorBanner message={error} action={{ label: t('try_again'), onPress: load }} /> : null}
-      {none ? (
-        <Text variant="bodySmall" color="textMuted">
-          {t('lot_pod_none')}
-        </Text>
-      ) : loading ? (
-        <ActivityIndicator color={colors.accent} />
-      ) : (
-        <Button
-          title={t('lot_pod_show')}
-          variant="secondary"
-          icon={(color) => <Feather name="image" size={size.icon.md} color={color} />}
-          onPress={load}
-        />
-      )}
-      {lot.delivered_at ? (
-        <Text variant="caption" color="textMuted">
-          {t('pod_delivered_at')}: {formatDateTime(lot.delivered_at)}
-        </Text>
-      ) : null}
-    </View>
+    <Text variant="bodySmall" color="textMuted">
+      {t('lot_pod_none')}
+    </Text>
   );
 }
 

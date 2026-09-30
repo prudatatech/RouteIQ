@@ -19,7 +19,7 @@ import { DeliveryOtpCard } from '../components/cargo/DeliveryOtpCard';
 import { ProofOfDeliveryCard } from '../components/cargo/ProofOfDeliveryCard';
 import { ConfirmReceiptCard } from '../components/cargo/ConfirmReceiptCard';
 import { ClaimsCard } from '../components/cargo/ClaimsCard';
-import { LotsCard } from '../components/cargo/LotsCard';
+import { LotsCard, isLotClaim } from '../components/cargo/LotsCard';
 import { colors, fontFamily, radius, size, space } from '../theme';
 import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail, type Claim } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
@@ -227,9 +227,7 @@ function Details({
   // A master (split into lots): the lots carry the delivery codes, proofs and claims
   const lots = cargo?.lots ?? [];
   const split = lots.length > 0;
-  const lotClaim = (c: Claim) =>
-    lots.some((l) => (c.consignment_code && c.consignment_code === l.code) || (!!l.shipment_id && c.shipment_id === l.shipment_id));
-  const bookingClaims = split ? allClaims.filter((c) => !lotClaim(c)) : allClaims;
+  const bookingClaims = split ? allClaims.filter((c) => !lots.some((l) => isLotClaim(c, l))) : allClaims;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -327,7 +325,7 @@ function Details({
           <LotsCard
             bookingId={booking.id}
             lots={lots}
-            totals={cargo?.lot_totals ?? null}
+            totals={where?.totals ?? null}
             claims={allClaims}
             refreshKey={refreshKey}
             onOpenNotifications={() => navigation.navigate('Main', { screen: 'Notifications' })}

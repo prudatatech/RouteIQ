@@ -107,8 +107,9 @@ export function buildTimeline(
 
   events.forEach((e, index) => {
     // A completed transfer has both halves, one after the other; the receiving one says it better.
-    if (e.kind === 'handover_out' && events.slice(index + 1).some((n) => n.kind === 'handover_in')) return;
-    const text = describe(e, total, cause, t);
+    if (e.kind === 'handover_out' && events.slice(index + 1).some((n) => n.kind === 'handover_in' && n.lot?.code === e.lot?.code)) return;
+    // A lot's partial delivery is out of the lot's pieces, not the whole booking's
+    const text = describe(e, e.lot ? null : total, cause, t);
     if (!text) return;
     const details: string[] = [];
     if (e.condition && (e.kind === 'inspection' || e.condition !== 'good')) details.push(conditionText(e.condition, t));
@@ -116,7 +117,9 @@ export function buildTimeline(
       details.push(t('tl_received_by', { name: e.receiver_name }));
     }
     // A split booking's timeline merges its lots' events, each tagged with its lot
-    const title = e.lot_label ? t('tl_lot_prefix', { label: e.lot_label, title: text.title }) : text.title;
+    const title = e.lot?.label ? t('tl_lot_prefix', { label: e.lot.label, title: text.title }) : text.title;
+    // The server writes split and merge notes in plain words ("Split into lots A (50), B (25)")
+    if ((e.kind === 'split' || e.kind === 'merge') && e.summary) details.push(e.summary);
     items.push({ key: e.id, icon: text.icon, title, details, at: e.recorded_at });
   });
 

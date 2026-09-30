@@ -18,13 +18,13 @@ type DayChoice = 'today' | 'tomorrow' | 'other';
 export default function QuoteScreen({ navigation, route }: any) {
   const { t } = useTranslation();
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType, weightKg, vehicleType } = route.params || {};
-  // Several drops (each becomes a lot); the route ends at the last one. None for a single drop.
+  // Several drops (each becomes a lot; the drops editor keeps them to MAX_DROPS); none for a single drop.
   const drops: BookingDrop[] | undefined = route.params?.drops?.length > 1 ? route.params.drops : undefined;
-  const lastDrop = drops ? drops[drops.length - 1] : null;
-  const dropLat: number = lastDrop ? lastDrop.lat : dropoffCoord.latitude;
-  const dropLng: number = lastDrop ? lastDrop.lng : dropoffCoord.longitude;
-  const dropAddress: string = lastDrop ? lastDrop.address : dropoffLocation;
-  const dropsKey = drops ? drops.map((d) => `${d.lat},${d.lng},${d.pieces}`).join(';') : '';
+  // The price is quoted to one drop: the farthest from the pickup, which the booking sends as drop_*.
+  const priced = drops ? farthestDrop(drops, pickupCoord.latitude, pickupCoord.longitude) : null;
+  const dropLat: number = priced ? priced.lat : dropoffCoord.latitude;
+  const dropLng: number = priced ? priced.lng : dropoffCoord.longitude;
+  const dropAddress: string = priced ? priced.address : dropoffLocation;
 
   const today = dayKey(0);
   const tomorrow = dayKey(1);
@@ -44,9 +44,8 @@ export default function QuoteScreen({ navigation, route }: any) {
         vehicle_type: vehicleType,
         load_type: loadType,
         date,
-        ...(drops ? { drops } : {}),
       }),
-    `${weightKg}|${loadType}|${vehicleType}|${date}|${dropsKey}`,
+    `${weightKg}|${loadType}|${vehicleType}|${date}|${dropLat},${dropLng}`,
     t('quote_failed'),
   );
 
@@ -155,7 +154,7 @@ export default function QuoteScreen({ navigation, route }: any) {
                     {drop.address}
                   </Text>
                   <Text variant="bodySmall" color="textMuted">
-                    {t('drops_quote_line', { name: drop.consignee_name, phone: drop.consignee_phone, pieces: formatNumber(drop.pieces) })}
+                    {t('drops_quote_line', { name: drop.consignee_name, phone: drop.consignee_phone ?? '', pieces: formatNumber(drop.pieces) })}
                   </Text>
                 </View>
               ))}
@@ -297,6 +296,16 @@ export default function QuoteScreen({ navigation, route }: any) {
 
 /** The first part of an address, used as the place's short name. */
 const placeName = (address: string) => address.split(',')[0].trim() || address;
+
+/** The drop farthest from the pickup, in a straight line (the booking's drop_* and the price's). */
+function farthestDrop(drops: BookingDrop[], lat: number, lng: number): BookingDrop {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const distance = (d: BookingDrop) => {
+    const a = Math.sin(rad(d.lat - lat) / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(d.lat)) * Math.sin(rad(d.lng - lng) / 2) ** 2;
+    return 2 * Math.asin(Math.sqrt(a));
+  };
+  return drops.reduce((far, d) => (distance(d) > distance(far) ? d : far));
+}
 
 function priceLabel(quote: Quote, t: TranslateFn): string {
   if (quote.low != null && quote.high != null && quote.low !== quote.high) {
