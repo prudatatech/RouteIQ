@@ -12,6 +12,7 @@ import { canAccessManifest, canAccessRouteStop } from '../core/ownership';
 import { consumeRateLimit } from '../core/rate-limit';
 import { scanParcel } from '../services/parcel.service';
 import { createPodUploadUrl } from '../services/pod.service';
+import { getDriverPay } from '../services/driver-pay.service';
 
 const router = Router();
 
@@ -20,6 +21,15 @@ const router = Router();
 router.post('/scan', requireAuth, requireRole('driver'), idempotent('scan'), async (req: Request, res: Response) => {
   try {
     res.json(await scanParcel(req.user!.user_id, req.body ?? {}));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /driver/pay — the driver's own pay: totals, trips and payouts ──
+router.get('/pay', requireAuth, requireRole('driver'), async (req: Request, res: Response) => {
+  try {
+    res.json(await getDriverPay(req.user!.user_id));
   } catch (e) {
     sendError(req, res, e);
   }

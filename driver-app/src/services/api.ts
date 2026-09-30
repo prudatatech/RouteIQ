@@ -6,9 +6,45 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_V1 } from '../config';
 import { supabase } from './supabase';
-import type { Invoice } from '../components/modals/InvoiceDialog';
 import { translateNow } from '../locales';
 import type { ConditionCode, ConsignmentRef, CustodyBody, DeliveryReason } from './cargo';
+
+export type PayStatus = 'earned' | 'approved' | 'paid';
+
+/** One finished trip and what it pays: a fixed amount plus a rate per km, set for the vehicle type. */
+export interface PayTrip {
+  id: string;
+  date: string;
+  trip_ref: string;
+  trip_type: 'route' | 'load';
+  km: number;
+  km_source: 'gps' | 'planned' | 'estimated' | 'none';
+  per_trip_amount: number;
+  per_km_amount: number;
+  adjustment_total: number;
+  amount: number;
+  status: PayStatus;
+  rate_missing: boolean;
+  paid_at: string | null;
+}
+
+export interface PayPayout {
+  id: string;
+  amount: number;
+  method: 'cash' | 'bank' | 'upi';
+  reference: string | null;
+  paid_at: string;
+}
+
+export interface DriverPay {
+  totals: { earned: number; pending: number; approved: number; paid: number };
+  this_trip: PayTrip | null;
+  this_week: { total: number; trips: number; from: string };
+  this_month: { total: number; trips: number; from: string };
+  trips: PayTrip[];
+  payouts: PayPayout[];
+}
+
 
 const STORAGE_KEYS = {
   DRIVER_INFO: 'margixindia_driver_info',
@@ -375,25 +411,9 @@ class ApiClient {
     return this.request('PUT', `/vehicles/${encodeURIComponent(vehicleId)}/photos/${slot}`, { file_path: filePath });
   }
 
-  async getDriverEarnings(): Promise<any> {
-    return this.request('GET', '/auth/driver/earnings', undefined, true);
-  }
-
-  async getDriverEarningsHistory(params: { limit?: number; offset?: number; from?: string; to?: string } = {}): Promise<{
-    invoices: Invoice[];
-    total: number;
-    total_earnings: number;
-    limit: number;
-    offset: number;
-    has_more: boolean;
-  }> {
-    const query = new URLSearchParams();
-    if (params.limit != null) query.set('limit', String(params.limit));
-    if (params.offset != null) query.set('offset', String(params.offset));
-    if (params.from) query.set('from', params.from);
-    if (params.to) query.set('to', params.to);
-    const qs = query.toString();
-    return this.request('GET', `/auth/driver/earnings/history${qs ? `?${qs}` : ''}`, undefined, true);
+  /** The driver's own pay: totals by state, this trip, week and month, trips with their amounts, and payouts. */
+  async getDriverPay(): Promise<DriverPay> {
+    return this.request('GET', '/driver/pay', undefined, true);
   }
 
   // ── Driver GPS Ping ────────────────────────────────────────

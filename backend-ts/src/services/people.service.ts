@@ -23,7 +23,7 @@ import { normalizePhone } from '../utils/phone';
 import { selectIn } from './finance.service';
 import { notificationService } from './notification.service';
 import { signedUrl } from './pod.service';
-import { buildEarnings } from '../routes/auth.routes';
+import { buildEarnings } from './driver-pay.service';
 import { driverWindows, getDriverStats } from './driver-assignments.service';
 import {
   Actor, DRIVER_EMAIL_DOMAIN, PERSON_COLUMNS, PERSON_ROLES, PERSON_STATUSES, PersonRole, PersonRow, PersonStatus,

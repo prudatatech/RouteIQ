@@ -1,73 +1,36 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { api } from '../../services/api';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { api, type PayPayout, type PayTrip } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
-import type { Invoice } from '../../components/modals/InvoiceDialog';
+import { fill } from '../../locales';
 import { Card, EmptyState, ErrorBanner, StatusPill, Text } from '../../components/ui';
+import type { Tone } from '../../components/ui/StatusPill';
 import { colors, size, space } from '../../theme';
 import { formatDate, formatINR, formatNumber } from '../../utils/format';
 
-interface WalletTabProps {
-  onOpenInvoice: (invoice: Invoice) => void;
+/** How a trip's pay stands: waiting for approval, approved and to be paid, or paid on a date. */
+function tripStatus(trip: PayTrip, t: (key: string) => string): { label: string; tone: Tone } {
+  if (trip.rate_missing) return { label: t('pay_status_no_rate'), tone: 'neutral' };
+  if (trip.status === 'paid') {
+    return { label: trip.paid_at ? fill(t('pay_status_paid_on'), { date: formatDate(trip.paid_at) }) : t('paid'), tone: 'success' };
+  }
+  if (trip.status === 'approved') return { label: t('pay_status_approved'), tone: 'info' };
+  return { label: t('pay_status_pending'), tone: 'warning' };
 }
 
-type HistoryFilter = 'this_month' | 'last_month' | 'all';
-
-const HISTORY_PAGE_SIZE = 20;
-
-/** [from, to) ISO bounds in Asia/Kolkata month terms, or undefined for "all". */
-function filterRange(filter: HistoryFilter): { from?: string; to?: string } {
-  if (filter === 'all') return {};
-  const now = new Date();
-  // Approximate month boundaries in UTC; good enough for a client-side quick filter.
-  const monthsAgo = filter === 'last_month' ? 1 : 0;
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsAgo, 1));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsAgo + 1, 1));
-  return { from: start.toISOString(), to: end.toISOString() };
-}
-
-function monthLabel(dateStr: string): string {
-  return formatDate(dateStr, { day: undefined, month: 'long' });
-}
-
-/** Earnings total, completed trips and a filterable, infinite-scroll trip history. */
-export default function WalletTab({ onOpenInvoice }: WalletTabProps) {
+/** Real driver pay: a fixed amount per trip plus a rate per km. It is never the customer's invoice. */
+export default function WalletTab() {
   const { t } = useTranslation();
-  const [filter, setFilter] = useState<HistoryFilter>('all');
-
-  const earnings = useQuery({
-    queryKey: ['earnings'],
-    queryFn: () => api.getDriverEarnings(),
+  const pay = useQuery({
+    queryKey: ['driver-pay'],
+    queryFn: () => api.getDriverPay(),
     refetchInterval: 60000,
     staleTime: 30000,
   });
-  const summary = earnings.data as { total_earnings?: number; completed_trips?: number } | undefined;
 
-  const { from, to } = useMemo(() => filterRange(filter), [filter]);
-  const history = useInfiniteQuery({
-    queryKey: ['earnings-history', filter],
-    queryFn: ({ pageParam }) => api.getDriverEarningsHistory({ limit: HISTORY_PAGE_SIZE, offset: pageParam, from, to }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.offset + lastPage.limit : undefined),
-  });
-
-  const invoices: Invoice[] = history.data?.pages.flatMap((p) => p.invoices) ?? [];
-
-  // Group into { month label -> invoices }, preserving the newest-first order the API returns.
-  const groups = useMemo(() => {
-    const out: { label: string; invoices: Invoice[] }[] = [];
-    for (const inv of invoices) {
-      const label = monthLabel(inv.date);
-      const last = out[out.length - 1];
-      if (last && last.label === label) last.invoices.push(inv);
-      else out.push({ label, invoices: [inv] });
-    }
-    return out;
-  }, [invoices]);
-
-  if (earnings.isLoading) {
+  if (pay.isLoading) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.accent} accessibilityLabel={t('loading')} />
@@ -75,117 +38,166 @@ export default function WalletTab({ onOpenInvoice }: WalletTabProps) {
     );
   }
 
+  const data = pay.data;
   return (
     <View style={styles.container}>
-      {earnings.isError ? (
-        <ErrorBanner
-          message={t('earnings_load_failed')}
-          action={{ label: t('retry'), onPress: () => earnings.refetch() }}
-        />
+      {pay.isError ? (
+        <ErrorBanner message={t('pay_load_failed')} action={{ label: t('retry'), onPress: () => pay.refetch() }} />
       ) : null}
 
-      {summary ? (
-        <Card style={styles.summary}>
-          <Text variant="bodySmall" color="textMuted">
-            {t('total_earnings')}
-          </Text>
-          <Text variant="display">{formatINR(summary.total_earnings ?? 0)}</Text>
-          <View style={styles.divider} />
-          <Text variant="bodySmall" color="textMuted">
-            {t('trips_completed')}
-          </Text>
-          <Text variant="title">{formatNumber(summary.completed_trips ?? 0)}</Text>
-        </Card>
-      ) : null}
-
-      <View style={styles.historyHeader}>
-        <Text variant="title" accessibilityRole="header">
-          {t('earnings_history_title')}
-        </Text>
-        <View style={styles.filters}>
-          {(['this_month', 'last_month', 'all'] as const).map((f) => (
-            <StatusPill
-              key={f}
-              label={t(`history_filter_${f}`)}
-              tone={filter === f ? 'accent' : 'neutral'}
-              onPress={() => setFilter(f)}
-            />
-          ))}
-        </View>
-      </View>
-
-      {history.isLoading ? (
-        <View style={styles.loadingInline}>
-          <ActivityIndicator color={colors.accent} accessibilityLabel={t('loading')} />
-        </View>
-      ) : history.isError ? (
-        <ErrorBanner message={t('history_error')} action={{ label: t('retry'), onPress: () => history.refetch() }} />
-      ) : invoices.length > 0 ? (
+      {data ? (
         <>
-          {groups.map((group) => (
-            <View key={group.label} style={styles.group}>
-              <Text variant="captionMedium" color="textMuted" style={styles.groupLabel}>
-                {group.label}
-              </Text>
-              <Card padded={false}>
-                {group.invoices.map((inv, idx) => (
-                  <Pressable
-                    key={inv.id}
-                    onPress={() => onOpenInvoice(inv)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${inv.pickup ?? ''} → ${inv.drop ?? ''}, ${formatINR(inv.total_payout ?? 0)}`}
-                    accessibilityHint={t('open_invoice_hint')}
-                    style={({ pressed }) => [styles.invoice, idx > 0 && styles.invoiceBorder, pressed && styles.pressed]}
-                  >
-                    <View style={styles.flex}>
-                      <Text variant="caption" color="textMuted">
-                        {inv.cargo_type ? `${formatDate(inv.date)} · ${inv.cargo_type}` : formatDate(inv.date)}
-                      </Text>
-                      <Text variant="bodyMedium" numberOfLines={1}>
-                        {`${inv.pickup ?? '—'} → ${inv.drop ?? '—'}`}
-                      </Text>
-                    </View>
-                    <View style={styles.amount}>
-                      <Text variant="bodyMedium">{formatINR(inv.total_payout ?? 0)}</Text>
-                      <StatusPill
-                        tone={inv.status === 'paid' ? 'success' : 'warning'}
-                        label={inv.status === 'paid' ? t('paid') : t('status_pending')}
-                      />
-                    </View>
-                    <Ionicons name="chevron-forward" size={size.icon.sm} color={colors.textMuted} />
-                  </Pressable>
-                ))}
-              </Card>
-            </View>
-          ))}
+          <Card style={styles.summary}>
+            <Text variant="bodySmall" color="textMuted">
+              {t('pay_total_earned')}
+            </Text>
+            <Text variant="display">{formatINR(data.totals.earned)}</Text>
+            <View style={styles.divider} />
+            <Row label={t('pay_pending_approval')} value={formatINR(data.totals.pending)} />
+            <Row label={t('pay_approved_unpaid')} value={formatINR(data.totals.approved)} />
+            <Row label={t('pay_paid_total')} value={formatINR(data.totals.paid)} strong />
+          </Card>
 
-          {history.hasNextPage ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('history_load_more')}
-              onPress={() => history.fetchNextPage()}
-              disabled={history.isFetchingNextPage}
-              style={({ pressed }) => [styles.loadMore, pressed ? styles.pressed : null]}
-            >
-              {history.isFetchingNextPage ? (
-                <ActivityIndicator color={colors.accent} />
-              ) : (
-                <Text variant="bodyMedium" color="accent">
-                  {t('history_load_more')}
-                </Text>
-              )}
-            </Pressable>
-          ) : null}
+          <View style={styles.periods}>
+            <Period
+              label={t('pay_this_trip')}
+              value={data.this_trip ? formatINR(data.this_trip.amount) : '—'}
+              note={data.this_trip ? tripStatus(data.this_trip, t).label : undefined}
+            />
+            <Period label={t('pay_this_week')} value={formatINR(data.this_week.total)} note={fill(t('pay_trips_n'), { n: formatNumber(data.this_week.trips) })} />
+            <Period label={t('pay_this_month')} value={formatINR(data.this_month.total)} note={fill(t('pay_trips_n'), { n: formatNumber(data.this_month.trips) })} />
+          </View>
+
+          <Text variant="caption" color="textMuted" style={styles.how}>
+            {t('pay_how')}
+          </Text>
+
+          <Text variant="title" accessibilityRole="header">
+            {t('pay_trips_title')}
+          </Text>
+          {data.trips.length > 0 ? (
+            <Card padded={false}>
+              {data.trips.map((trip, idx) => (
+                <TripLine key={trip.id} trip={trip} first={idx === 0} />
+              ))}
+            </Card>
+          ) : (
+            <Card>
+              <EmptyState
+                icon={<Ionicons name="wallet-outline" size={size.icon.xl} color={colors.textMuted} />}
+                title={t('pay_empty_title')}
+                message={t('pay_empty_desc')}
+              />
+            </Card>
+          )}
+
+          <Text variant="title" accessibilityRole="header">
+            {t('pay_payouts_title')}
+          </Text>
+          {data.payouts.length > 0 ? (
+            <Card padded={false}>
+              {data.payouts.map((p, idx) => (
+                <PayoutLine key={p.id} payout={p} first={idx === 0} />
+              ))}
+            </Card>
+          ) : (
+            <Card>
+              <Text variant="bodySmall" color="textMuted">
+                {t('pay_no_payouts')}
+              </Text>
+            </Card>
+          )}
         </>
-      ) : (
-        <Card>
-          <EmptyState
-            icon={<Ionicons name="receipt-outline" size={size.icon.xl} color={colors.textMuted} />}
-            title={t('no_earnings_yet')}
-            message={filter === 'all' ? t('no_earnings_desc') : t('history_empty')}
-          />
-        </Card>
-      )}
+      ) : null}
+    </View>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <View style={styles.row} accessible accessibilityLabel={`${label}: ${value}`}>
+      <Text variant="bodySmall" color="textMuted" style={styles.flex}>
+        {label}
+      </Text>
+      <Text variant={strong ? 'bodyMedium' : 'bodySmall'}>{value}</Text>
+    </View>
+  );
+}
+
+function Period({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <Card style={styles.period}>
+      <Text variant="caption" color="textMuted" numberOfLines={1}>
+        {label}
+      </Text>
+      <Text variant="title">{value}</Text>
+      {note ? (
+        <Text variant="caption" color="textMuted" numberOfLines={2}>
+          {note}
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
+function TripLine({ trip, first }: { trip: PayTrip; first: boolean }) {
+  const { t } = useTranslation();
+  const status = tripStatus(trip, t);
+  const source = trip.km_source === 'none' ? null : t(`pay_source_${trip.km_source}`);
+  const detail = [fill(t('pay_km'), { km: formatNumber(trip.km, { maximumFractionDigits: 1 }) }), source].filter(Boolean).join(' · ');
+  return (
+    <View
+      style={[styles.line, !first && styles.lineBorder]}
+      accessible
+      accessibilityLabel={`${formatDate(trip.date)}, ${trip.trip_ref}, ${formatINR(trip.amount)}, ${status.label}`}
+    >
+      <View style={styles.flex}>
+        <Text variant="caption" color="textMuted">
+          {`${formatDate(trip.date)} · ${trip.trip_ref}`}
+        </Text>
+        {trip.km_source !== 'none' ? <Text variant="bodySmall">{detail}</Text> : null}
+        {!trip.rate_missing ? (
+          <Text variant="caption" color="textMuted">
+            {fill(t('pay_breakdown'), { trip: formatINR(trip.per_trip_amount), perKm: formatINR(trip.per_km_amount) })}
+          </Text>
+        ) : null}
+        {trip.adjustment_total !== 0 ? (
+          <Text variant="caption" color="textMuted">
+            {fill(t('pay_adjusted'), { amount: formatINR(trip.adjustment_total) })}
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.amount}>
+        <Text variant="bodyMedium">{formatINR(trip.amount)}</Text>
+        <StatusPill tone={status.tone} label={status.label} />
+      </View>
+    </View>
+  );
+}
+
+function PayoutLine({ payout, first }: { payout: PayPayout; first: boolean }) {
+  const { t } = useTranslation();
+  const method = t(`pay_method_${payout.method}`);
+  return (
+    <View
+      style={[styles.line, !first && styles.lineBorder]}
+      accessible
+      accessibilityLabel={`${formatDate(payout.paid_at)}, ${formatINR(payout.amount)}, ${method}`}
+    >
+      <View style={styles.flex}>
+        <Text variant="caption" color="textMuted">
+          {formatDate(payout.paid_at)}
+        </Text>
+        <Text variant="bodySmall">{method}</Text>
+        {payout.reference ? (
+          <Text variant="caption" color="textMuted">
+            {fill(t('pay_reference'), { ref: payout.reference })}
+          </Text>
+        ) : null}
+      </View>
+      <Text variant="bodyMedium" color="success">
+        {formatINR(payout.amount)}
+      </Text>
     </View>
   );
 }
@@ -193,15 +205,14 @@ export default function WalletTab({ onOpenInvoice }: WalletTabProps) {
 const styles = StyleSheet.create({
   container: { gap: space[4] },
   loading: { paddingVertical: space[16], alignItems: 'center' },
-  loadingInline: { paddingVertical: space[6], alignItems: 'center' },
   summary: { gap: space[1] },
   divider: { height: size.border, backgroundColor: colors.border, marginVertical: space[3] },
-  historyHeader: { gap: space[2] },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  group: { gap: space[2] },
-  groupLabel: { paddingHorizontal: space[1] },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[1] },
+  periods: { flexDirection: 'row', gap: space[2] },
+  period: { flex: 1, gap: space[1] },
+  how: { paddingHorizontal: space[1] },
   flex: { flex: 1, gap: 2 },
-  invoice: {
+  line: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[3],
@@ -209,13 +220,6 @@ const styles = StyleSheet.create({
     paddingVertical: space[3],
     minHeight: size.control + space[4],
   },
-  invoiceBorder: { borderTopWidth: size.border, borderTopColor: colors.border },
-  pressed: { opacity: 0.7 },
+  lineBorder: { borderTopWidth: size.border, borderTopColor: colors.border },
   amount: { alignItems: 'flex-end', gap: space[1] },
-  loadMore: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: size.control,
-    paddingVertical: space[3],
-  },
 });

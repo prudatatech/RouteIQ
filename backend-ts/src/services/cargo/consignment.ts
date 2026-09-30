@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { supabase } from '../../core/supabase';
 import { HttpError } from '../../core/errors';
 import { manifestParcelCode } from '../../core/parcelCode';
+import { recordTripPaySafe } from '../driver-pay.service';
 import { getDriverVehicleIds, isStaff, canAccessManifest, canAccessShipment } from '../../core/ownership';
 import type { TokenData } from '../../core/auth';
 import {
@@ -473,6 +474,11 @@ export async function writeConsignment(c: Consignment, patch: Record<string, unk
   const { data, error } = await supabase.from(table).update(body).eq('id', c.id).eq('status', c.rawStatus).select('id').maybeSingle();
   if (error) throw new Error(`Failed to update the consignment: ${error.message}`);
   if (!data) throw new HttpError(409, 'This consignment was just changed by someone else. Refresh and try again.');
+  // The last lot of a vendor load on a vehicle delivered, returned or cancelled ends that vehicle's journey:
+  // the driver earns it once, not per lot (never blocks the delivery)
+  if (c.kind === 'manifest' && stored !== c.rawStatus && ['delivered', 'completed', 'returned', 'cancelled', 'lost'].includes(stored)) {
+    await recordTripPaySafe({ manifest_id: c.id });
+  }
   // A lot moved: its master's status and holder are worked out again from its lots
   if (c.parentId) {
     const { rollupMaster } = await import('./lots.service');

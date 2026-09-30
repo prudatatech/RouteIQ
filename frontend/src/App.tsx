@@ -16,7 +16,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
-  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, vendorInvoices,
+  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, driverPay, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -37,6 +37,7 @@ const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
+const DriverPayPage = driverPay.Component
 const SettingsPage = adminSettings.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const BackhaulPage = backhaul.Component
@@ -414,6 +415,11 @@ export default function App() {
             } />
             {/* Finance became Money; keep old links and bookmarks (and their ?tab=) working */}
             <Route path="finance" element={<MovedTo to="/money" />} />
+            <Route path="money/driver-pay" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <DriverPayPage />
+              </PrivateRoute>
+            } />
             <Route path="admin/settings" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <SettingsPage />

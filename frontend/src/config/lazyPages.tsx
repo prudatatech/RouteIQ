@@ -23,6 +23,7 @@ export const routeDetails = page(() => import('@/pages/RouteDetailsPage'))
 export const analytics = page(() => import('@/pages/AnalyticsPage'))
 export const money = page(() => import('@/pages/MoneyPage'))
 export const invoicePage = page(() => import('@/pages/InvoicePage'))
+export const driverPay = page(() => import('@/pages/DriverPayPage'))
 export const insights = page(() => import('@/pages/InsightsPage'))
 export const optimize = page(() => import('@/pages/OptimizePage'))
 export const routePlanner = page(() => import('@/pages/RoutePlannerPage'))
@@ -89,6 +90,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/3pl-partners': tplPartners.preload,
   '/analytics': analytics.preload,
   '/money': money.preload,
+  '/money/driver-pay': driverPay.preload,
   '/insights': insights.preload,
   '/admin/users': adminUsers.preload,
   '/admin/kyc': adminKyc.preload,
