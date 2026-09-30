@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS public.driver_pay_entries (
   driver_id uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
   vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
   vehicle_type text,
-  -- The trip: a route, or a vendor load (cargo manifest). Never both.
+  -- The trip: a route, or a vendor load (the master cargo manifest, or a standalone one). Never both.
   route_id uuid REFERENCES public.routes(id) ON DELETE SET NULL,
   manifest_id uuid REFERENCES public.cargo_manifest(id) ON DELETE SET NULL,
   trip_date date NOT NULL,
@@ -87,9 +87,11 @@ CREATE TABLE IF NOT EXISTS public.driver_pay_entries (
   CONSTRAINT driver_pay_entries_paid_has_payout CHECK (status <> 'paid' OR payout_id IS NOT NULL)
 );
 
--- A trip is paid once: the backend creates the entry when the trip finishes and a retry finds it
+-- A trip is paid once: the backend creates the entry when the trip finishes and a retry finds it (a route: one entry)
 CREATE UNIQUE INDEX IF NOT EXISTS driver_pay_entries_route_unique ON public.driver_pay_entries (route_id) WHERE route_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS driver_pay_entries_manifest_unique ON public.driver_pay_entries (manifest_id) WHERE manifest_id IS NOT NULL;
+-- A vendor load is paid per vehicle journey, not per lot: manifest_id is the master (or the standalone load),
+-- and one entry exists per master and vehicle. A partial transfer gives the other vehicle's driver their own.
+CREATE UNIQUE INDEX IF NOT EXISTS driver_pay_entries_manifest_vehicle_unique ON public.driver_pay_entries (manifest_id, vehicle_id) WHERE manifest_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_driver_pay_entries_driver ON public.driver_pay_entries (driver_id, trip_date DESC);
 CREATE INDEX IF NOT EXISTS idx_driver_pay_entries_status ON public.driver_pay_entries (status, trip_date DESC);
 CREATE INDEX IF NOT EXISTS idx_driver_pay_entries_payout ON public.driver_pay_entries (payout_id) WHERE payout_id IS NOT NULL;

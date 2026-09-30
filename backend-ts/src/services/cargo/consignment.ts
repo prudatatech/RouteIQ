@@ -474,8 +474,9 @@ export async function writeConsignment(c: Consignment, patch: Record<string, unk
   const { data, error } = await supabase.from(table).update(body).eq('id', c.id).eq('status', c.rawStatus).select('id').maybeSingle();
   if (error) throw new Error(`Failed to update the consignment: ${error.message}`);
   if (!data) throw new HttpError(409, 'This consignment was just changed by someone else. Refresh and try again.');
-  // A vendor load delivered is a finished trip: the driver earns it (once; never blocks the delivery)
-  if (c.kind === 'manifest' && stored !== c.rawStatus && (stored === 'delivered' || stored === 'completed')) {
+  // The last lot of a vendor load on a vehicle delivered, returned or cancelled ends that vehicle's journey:
+  // the driver earns it once, not per lot (never blocks the delivery)
+  if (c.kind === 'manifest' && stored !== c.rawStatus && ['delivered', 'completed', 'returned', 'cancelled', 'lost'].includes(stored)) {
     await recordTripPaySafe({ manifest_id: c.id });
   }
   // A lot moved: its master's status and holder are worked out again from its lots

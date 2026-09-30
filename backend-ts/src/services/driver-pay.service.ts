@@ -215,57 +215,66 @@ async function routeKm(route: any, stops: any[]): Promise<TripKm> {
   return km > 0 ? { km: roundKm(km), source: 'estimated' } : { km: 0, source: 'none' };
 }
 
-const manifestKm = (m: any): TripKm => {
-  if ([m.pickup_lat, m.pickup_lng, m.drop_lat, m.drop_lng].some(v => v == null)) return { km: 0, source: 'none' };
-  const km = haversineKm({ lat: Number(m.pickup_lat), lng: Number(m.pickup_lng) }, { lat: Number(m.drop_lat), lng: Number(m.drop_lng) });
-  return Number.isFinite(km) && km > 0 ? { km: roundKm(km), source: 'estimated' } : { km: 0, source: 'none' };
-};
-
-export type TripRef = { route_id: string; manifest_id?: never } | { manifest_id: string; route_id?: never };
+// A vendor load is paid per vehicle journey, not per lot: lots of one master that travel together on
+// one vehicle make one entry (the per-trip amount once, the journey km once), keyed master + vehicle.
+// A standalone load (no lots) is its own master.
+export type TripRef = { route_id: string; manifest_id?: never; vehicle_id?: never } | { manifest_id: string; vehicle_id?: string; route_id?: never };
 
 const ENTRY_COLUMNS = 'id, driver_id, vehicle_id, vehicle_type, route_id, manifest_id, trip_date, km, km_source, rate_id, per_trip_amount, per_km_amount, adjustments, amount, rate_missing, status, approved_at, approved_by, void_reason, voided_at, payout_id, created_at, updated_at';
 
-/**
- * Create the pay entry of a finished trip. Safe to call twice: the trip is paid once, and the
- * second call returns the entry that exists. Uses the rate in force on the trip date. With no
- * rate for the vehicle type the entry is 0 and flagged `rate_missing`, and staff are told once.
- * Returns null when there is nobody to pay (the vehicle has no driver) or the trip is not finished.
- */
-export async function recordTripPay(trip: TripRef): Promise<{ entry: any; created: boolean } | null> {
-  const key = trip.route_id ? 'route_id' : 'manifest_id';
-  const tripId = (trip.route_id ?? trip.manifest_id)!;
-  const { data: existing, error: existingErr } = await supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq(key, tripId).maybeSingle();
-  if (existingErr) throw new Error(`Failed to read the trip's pay: ${existingErr.message}`);
-  if (existing) return { entry: existing, created: false };
+/** Lot statuses after which a lot needs its vehicle no more. */
+const LOT_DONE = ['delivered', 'completed', 'returned', 'cancelled', 'lost'];
+/** The ones that mean the vehicle really carried goods (a journey of only cancelled lots pays nothing). */
+const LOT_CARRIED = ['delivered', 'completed', 'returned'];
+/** How far from the moment of a handover a GPS ping still counts as the handover point. */
+const HANDOVER_WINDOW_MS = 30 * 60_000;
 
-  let vehicleId: string | null;
-  let finishedAt: string;
-  let distance: TripKm;
-  if (trip.route_id) {
-    const { data: route, error } = await supabase.from('routes')
-      .select('id, vehicle_id, status, total_distance_km, started_at, completed_at, updated_at, route_stops(sequence, delivery_points(latitude, longitude))').eq('id', tripId).maybeSingle();
-    if (error) throw new Error(`Failed to read the route: ${error.message}`);
-    if (!route || route.status !== 'completed') return null;
-    vehicleId = route.vehicle_id;
-    finishedAt = route.completed_at ?? route.updated_at ?? new Date().toISOString();
-    distance = await routeKm(route, (route as any).route_stops ?? []);
-  } else {
-    const { data: manifest, error } = await supabase.from('cargo_manifest')
-      .select('id, vehicle_id, status, is_master, pickup_lat, pickup_lng, drop_lat, drop_lng, updated_at').eq('id', tripId).maybeSingle();
-    if (error) throw new Error(`Failed to read the load: ${error.message}`);
-    // A master holds no goods of its own; its lots are the trips
-    if (!manifest || !['delivered', 'completed'].includes(String(manifest.status)) || manifest.is_master) return null;
-    vehicleId = manifest.vehicle_id;
-    finishedAt = manifest.updated_at ?? new Date().toISOString();
-    distance = manifestKm(manifest);
+interface Pt { lat: number; lng: number }
+const pt = (lat: unknown, lng: unknown): Pt | null => (lat == null || lng == null || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng)) ? null : { lat: Number(lat), lng: Number(lng) });
+
+/** Where the goods changed vehicles: the from-vehicle's GPS ping nearest the handover, else the transfer's meet point. */
+async function handoverPoint(transfer: any): Promise<Pt | null> {
+  if (transfer.completed_at && transfer.from_vehicle_id) {
+    const at = Date.parse(transfer.completed_at);
+    const { data } = await supabase.from('gps_points').select('latitude, longitude, recorded_at').eq('vehicle_id', transfer.from_vehicle_id)
+      .gte('recorded_at', new Date(at - HANDOVER_WINDOW_MS).toISOString()).lte('recorded_at', new Date(at + HANDOVER_WINDOW_MS).toISOString());
+    const nearest = (data ?? []).map((p: any) => ({ p, d: Math.abs(Date.parse(p.recorded_at) - at) })).filter(x => Number.isFinite(x.d)).sort((a, b) => a.d - b.d)[0];
+    const found = nearest ? pt(nearest.p.latitude, nearest.p.longitude) : null;
+    if (found) return found;
   }
-  if (!vehicleId) return null;
+  return pt(transfer.meet_lat, transfer.meet_lng);
+}
 
-  const { data: vehicle, error: vehicleErr } = await supabase.from('vehicles').select('id, driver_id, vehicle_type').eq('id', vehicleId).maybeSingle();
+/** GPS distance of a window on a vehicle, or null with fewer than MIN_GPS_POINTS usable pings. */
+async function gpsKm(vehicleId: string, from: string, to: string): Promise<number | null> {
+  const { data } = await supabase.from('gps_points').select('latitude, longitude, accuracy, recorded_at')
+    .eq('vehicle_id', vehicleId).gte('recorded_at', from).lte('recorded_at', to).order('recorded_at', { ascending: true }).limit(MAX_GPS_POINTS);
+  const points = (data ?? [])
+    .filter((p: any) => p.latitude != null && p.longitude != null && (p.accuracy == null || Number(p.accuracy) <= 100))
+    .map((p: any) => ({ lat: Number(p.latitude), lng: Number(p.longitude), at: p.recorded_at as string }));
+  if (points.length < MIN_GPS_POINTS) return null;
+  const km = cleanPathKm(null, points).km;
+  return km > 0 ? roundKm(km) : null;
+}
+
+/** Without GPS: from the start to the farthest place the vehicle went; with no start, the legs between the drops in order. */
+export function journeyEstimateKm(start: Pt | null, ends: Pt[]): TripKm {
+  if (ends.length === 0) return { km: 0, source: 'none' };
+  let km = 0;
+  if (start) km = Math.max(...ends.map(e => haversineKm(start, e)));
+  else for (let i = 0; i + 1 < ends.length; i++) km += haversineKm(ends[i], ends[i + 1]);
+  return Number.isFinite(km) && km > 0 ? { km: roundKm(km), source: 'estimated' } : { km: 0, source: 'none' };
+}
+
+interface PayTarget { key: 'route_id' | 'manifest_id'; tripId: string; vehicleId: string; finishedAt: string; distance: TripKm }
+
+/** Price a finished journey and save its entry (once), and tell staff once when the type has no rate. */
+async function saveEntry(t: PayTarget): Promise<{ entry: any; created: boolean } | null> {
+  const { data: vehicle, error: vehicleErr } = await supabase.from('vehicles').select('id, driver_id, vehicle_type').eq('id', t.vehicleId).maybeSingle();
   if (vehicleErr) throw new Error(`Failed to read the vehicle: ${vehicleErr.message}`);
   if (!vehicle?.driver_id) return null;
 
-  const tripDate = indianDateKey(new Date(finishedAt));
+  const tripDate = indianDateKey(new Date(t.finishedAt));
   const rate = pickRate(await loadRates(vehicle.vehicle_type), vehicle.vehicle_type, tripDate);
   const perTrip = rate?.per_trip_amount ?? 0;
   const perKm = rate?.per_km_amount ?? 0;
@@ -273,16 +282,16 @@ export async function recordTripPay(trip: TripRef): Promise<{ entry: any; create
     driver_id: vehicle.driver_id,
     vehicle_id: vehicle.id,
     vehicle_type: vehicle.vehicle_type ?? null,
-    route_id: trip.route_id ?? null,
-    manifest_id: trip.manifest_id ?? null,
+    route_id: t.key === 'route_id' ? t.tripId : null,
+    manifest_id: t.key === 'manifest_id' ? t.tripId : null,
     trip_date: tripDate,
-    km: distance.km,
-    km_source: distance.source,
+    km: t.distance.km,
+    km_source: t.distance.source,
     rate_id: rate?.id ?? null,
     per_trip_amount: perTrip,
     per_km_amount: perKm,
     adjustments: [],
-    amount: payAmount(perTrip, perKm, distance.km),
+    amount: payAmount(perTrip, perKm, t.distance.km),
     rate_missing: !rate,
     status: 'earned' as PayStatus,
   };
@@ -290,7 +299,7 @@ export async function recordTripPay(trip: TripRef): Promise<{ entry: any; create
   if (insertErr) {
     // Two completions racing: the other one won, and its entry is the answer
     if ((insertErr as any).code === '23505') {
-      const { data: winner } = await supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq(key, tripId).maybeSingle();
+      const winner = await existingEntry(t.key, t.tripId, t.key === 'manifest_id' ? t.vehicleId : undefined);
       if (winner) return { entry: winner, created: false };
     }
     throw new Error(`Failed to save the trip's pay: ${insertErr.message}`);
@@ -310,12 +319,113 @@ export async function recordTripPay(trip: TripRef): Promise<{ entry: any; create
   return { entry: created, created: true };
 }
 
+async function existingEntry(key: 'route_id' | 'manifest_id', tripId: string, vehicleId?: string) {
+  let q = supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq(key, tripId);
+  if (vehicleId) q = q.eq('vehicle_id', vehicleId);
+  const { data, error } = await q.maybeSingle();
+  if (error) throw new Error(`Failed to read the trip's pay: ${error.message}`);
+  return data;
+}
+
+/**
+ * The pay of one vehicle's journey with a vendor load and its lots. Made when the last lot on that
+ * vehicle is delivered, returned or cancelled (not on the first), or when the last lot leaves it
+ * in a transfer. A lot moved to another vehicle in a transfer pays that vehicle's driver for their
+ * own leg (from the handover point), and the first driver keeps the journey up to the handover.
+ */
+async function recordJourneyPay(masterId: string, vehicleId: string): Promise<{ entry: any; created: boolean } | null> {
+  const existing = await existingEntry('manifest_id', masterId, vehicleId);
+  if (existing) return { entry: existing, created: false };
+
+  const { data: rows, error } = await supabase.from('cargo_manifest')
+    .select('id, vehicle_id, status, is_master, parent_manifest_id, lot_seq, pickup_lat, pickup_lng, drop_lat, drop_lng, updated_at')
+    .or(`id.eq.${masterId},parent_manifest_id.eq.${masterId}`);
+  if (error) throw new Error(`Failed to read the load: ${error.message}`);
+  const lots = (rows ?? []).filter((l: any) => !l.is_master).sort((a: any, b: any) => num(a.lot_seq) - num(b.lot_seq));
+  const onVehicle = lots.filter((l: any) => l.vehicle_id === vehicleId);
+
+  // Transfers of these lots that were completed: out of this vehicle, and into it
+  const items = await selectIn<any>('cargo_transfer_items', 'manifest_id', lots.map((l: any) => l.id), 'transfer_id, manifest_id');
+  const transfers = (await selectIn<any>('cargo_transfers', 'id', items.map(i => i.transfer_id), 'id, from_vehicle_id, to_vehicle_id, status, meet_lat, meet_lng, completed_at'))
+    .filter(tr => tr.status === 'completed');
+  const out = transfers.filter(tr => tr.from_vehicle_id === vehicleId && tr.to_vehicle_id !== vehicleId);
+  const into = transfers.filter(tr => tr.to_vehicle_id === vehicleId);
+
+  if (onVehicle.some((l: any) => !LOT_DONE.includes(String(l.status)))) return null;
+  if (!onVehicle.some((l: any) => LOT_CARRIED.includes(String(l.status))) && out.length === 0) return null;
+
+  const times = [...onVehicle.map((l: any) => l.updated_at), ...out.map(tr => tr.completed_at)].filter(Boolean) as string[];
+  const finishedAt = times.sort().at(-1) ?? new Date().toISOString();
+
+  // GPS from when the goods came aboard to when the journey ended
+  const { data: events } = await supabase.from('cargo_custody_events').select('to_vehicle_id, recorded_at')
+    .in('manifest_id', lots.map((l: any) => l.id)).eq('to_vehicle_id', vehicleId);
+  const boarded = (events ?? []).map((e: any) => e.recorded_at as string).filter(Boolean).sort()[0];
+  const gps = boarded ? await gpsKm(vehicleId, boarded, finishedAt) : null;
+
+  let distance: TripKm;
+  if (gps != null) {
+    distance = { km: gps, source: 'gps' };
+  } else {
+    const handoversIn = await Promise.all(into.map(handoverPoint));
+    const handoversOut = await Promise.all(out.map(handoverPoint));
+    // A driver who took goods over starts at the handover; the first driver starts at the pickup
+    const first = onVehicle.find((l: any) => pt(l.pickup_lat, l.pickup_lng)) ?? lots.find((l: any) => pt(l.pickup_lat, l.pickup_lng));
+    const start = handoversIn.find(Boolean) ?? (first ? pt(first.pickup_lat, first.pickup_lng) : null);
+    const ends = [
+      ...onVehicle.filter((l: any) => LOT_CARRIED.includes(String(l.status))).map((l: any) => pt(l.drop_lat, l.drop_lng)),
+      ...handoversOut,
+    ].filter((p): p is Pt => !!p);
+    distance = journeyEstimateKm(start, ends);
+  }
+  return saveEntry({ key: 'manifest_id', tripId: masterId, vehicleId, finishedAt, distance });
+}
+
+/**
+ * Create the pay entry of a finished trip. Safe to call twice: a trip or journey is paid once, and
+ * the second call returns the entry that exists. Uses the rate in force on the trip date. With no
+ * rate for the vehicle type the entry is 0 and flagged `rate_missing`, and staff are told once.
+ * Returns null when there is nobody to pay, or the trip is not finished (for a vendor load: while
+ * a lot is still on the vehicle).
+ */
+export async function recordTripPay(trip: TripRef): Promise<{ entry: any; created: boolean } | null> {
+  if (trip.route_id) {
+    const existing = await existingEntry('route_id', trip.route_id);
+    if (existing) return { entry: existing, created: false };
+    const { data: route, error } = await supabase.from('routes')
+      .select('id, vehicle_id, status, total_distance_km, started_at, completed_at, updated_at, route_stops(sequence, delivery_points(latitude, longitude))').eq('id', trip.route_id).maybeSingle();
+    if (error) throw new Error(`Failed to read the route: ${error.message}`);
+    if (!route || route.status !== 'completed' || !route.vehicle_id) return null;
+    return saveEntry({
+      key: 'route_id', tripId: route.id, vehicleId: route.vehicle_id, finishedAt: route.completed_at ?? route.updated_at ?? new Date().toISOString(),
+      distance: await routeKm(route, (route as any).route_stops ?? []),
+    });
+  }
+
+  const { data: manifest, error } = await supabase.from('cargo_manifest').select('id, vehicle_id, is_master, parent_manifest_id').eq('id', trip.manifest_id).maybeSingle();
+  if (error) throw new Error(`Failed to read the load: ${error.message}`);
+  // A master holds no goods of its own; its lots are what travels
+  if (!manifest || manifest.is_master) return null;
+  const vehicleId = trip.vehicle_id ?? manifest.vehicle_id;
+  if (!vehicleId) return null;
+  return recordJourneyPay(manifest.parent_manifest_id ?? manifest.id, vehicleId);
+}
+
 /** The hook the trip code calls: never throws, so a pay problem cannot stop a trip from finishing. */
 export async function recordTripPaySafe(trip: TripRef): Promise<void> {
   try {
     await recordTripPay(trip);
   } catch (e) {
     console.error('[driver-pay] Could not record the trip pay:', e);
+  }
+}
+
+/** A transfer took lots off a vehicle: that vehicle's journey may now be over. Never throws. */
+export async function recordJourneyAfterTransferSafe(masterId: string, fromVehicleId: string): Promise<void> {
+  try {
+    await recordJourneyPay(masterId, fromVehicleId);
+  } catch (e) {
+    console.error('[driver-pay] Could not record the journey pay after a transfer:', e);
   }
 }
 

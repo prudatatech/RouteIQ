@@ -10,7 +10,8 @@ import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 import { invalidateDriverVehicles } from '../src/core/ownership';
 import { routeService } from '../src/services/route.service';
-import { adjustmentTotal, payAmount, pickRate, recordTripPay, weekStartKey } from '../src/services/driver-pay.service';
+import { adjustmentTotal, journeyEstimateKm, payAmount, pickRate, recordJourneyAfterTransferSafe, recordTripPay, weekStartKey } from '../src/services/driver-pay.service';
+import { haversineKm } from '../src/services/odometer';
 
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
@@ -51,6 +52,7 @@ function reset(over: Record<string, unknown[]> = {}) {
       { id: 'veh-2', driver_id: 'driver-2', vehicle_type: 'van', status: 'available', plate_number: 'MH12AB9999' },
     ],
     routes: [], route_stops: [], cargo_manifest: [], gps_points: [], invoices: [],
+    cargo_transfers: [], cargo_transfer_items: [], cargo_custody_events: [],
     driver_pay_rates: [], driver_pay_entries: [], driver_payouts: [], notifications: [], ai_agent_logs: [],
     ...over,
   });
@@ -218,6 +220,118 @@ describe('a trip finishes', () => {
     expect(res.status).toBe(201);
     expect(res.body.repriced_entries).toBe(1);
     expect(entries()[0]).toMatchObject({ rate_missing: false, per_trip_amount: 400, amount: 400 + 5 * 120 });
+  });
+});
+
+const PUNE = { lat: 18.52, lng: 73.85 };
+const MUMBAI = { lat: 19.07, lng: 72.87 };
+const NASHIK = { lat: 20.0, lng: 73.79 };
+const LONAVALA = { lat: 18.75, lng: 73.4 };
+const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.round(haversineKm(a, b) * 10) / 10;
+const master = (over: Record<string, unknown> = {}) => load({ id: 'M', is_master: true, status: 'delivered', vehicle_id: 'veh-1', ...over });
+const lot = (id: string, drop: { lat: number; lng: number }, over: Record<string, unknown> = {}) => load({
+  id, parent_manifest_id: 'M', lot_seq: Number(id.slice(-1)) || 1, is_master: false, vehicle_id: 'veh-1', status: 'delivered',
+  pickup_lat: PUNE.lat, pickup_lng: PUNE.lng, drop_lat: drop.lat, drop_lng: drop.lng, ...over,
+});
+
+describe('vendor loads are paid per vehicle journey, not per lot', () => {
+  it('pays 3 lots on 1 truck once: one per-trip amount and the journey km, when the last lot is done', async () => {
+    reset({
+      cargo_manifest: [master(), lot('L1', MUMBAI), lot('L2', NASHIK), lot('L3', LONAVALA, { status: 'in_transit' })],
+      driver_pay_rates: [rate()],
+    });
+    // the first lots delivered while one is still on the truck: no pay yet
+    expect(await recordTripPay({ manifest_id: 'L1' })).toBeNull();
+    expect(await recordTripPay({ manifest_id: 'L2' })).toBeNull();
+    expect(entries()).toHaveLength(0);
+
+    supabaseMock.rows('cargo_manifest').find(m => m.id === 'L3')!.status = 'delivered';
+    for (const id of ['L3', 'L1', 'L2']) await recordTripPay({ manifest_id: id });
+    expect(entries()).toHaveLength(1);
+    const journey = km(PUNE, NASHIK); // the farthest drop, counted once
+    expect(entries()[0]).toMatchObject({ manifest_id: 'M', vehicle_id: 'veh-1', driver_id: 'driver-1', per_trip_amount: 500, km_source: 'estimated', km: journey });
+    expect(entries()[0].amount).toBeCloseTo(500 + 10 * journey, 1);
+  });
+
+  it('counts a cancelled last lot as the end of the journey, and pays nothing for all-cancelled lots', async () => {
+    reset({ cargo_manifest: [master(), lot('L1', MUMBAI), lot('L2', NASHIK, { status: 'cancelled' })], driver_pay_rates: [rate()] });
+    await recordTripPay({ manifest_id: 'L2' });
+    expect(entries()).toHaveLength(1);
+    expect(entries()[0].km).toBe(km(PUNE, MUMBAI)); // a cancelled lot's drop is not driven to
+
+    reset({ cargo_manifest: [master({ status: 'cancelled' }), lot('L1', MUMBAI, { status: 'cancelled' }), lot('L2', NASHIK, { status: 'cancelled' })], driver_pay_rates: [rate()] });
+    expect(await recordTripPay({ manifest_id: 'L1' })).toBeNull();
+    expect(entries()).toHaveLength(0);
+  });
+
+  it('is idempotent when delivery events repeat', async () => {
+    reset({ cargo_manifest: [master(), lot('L1', MUMBAI), lot('L2', NASHIK)], driver_pay_rates: [rate()] });
+    const first = await recordTripPay({ manifest_id: 'L1' });
+    for (let i = 0; i < 2; i++) for (const id of ['L1', 'L2', 'L1']) await recordTripPay({ manifest_id: id });
+    expect(first?.created).toBe(true);
+    expect(entries()).toHaveLength(1);
+    expect((await recordTripPay({ manifest_id: 'L2' }))?.created).toBe(false);
+  });
+
+  it('walks the drops in order when the start is unknown', () => {
+    const legs = journeyEstimateKm(null, [PUNE, LONAVALA, NASHIK]);
+    expect(legs.source).toBe('estimated');
+    expect(legs.km).toBeCloseTo(km(PUNE, LONAVALA) + km(LONAVALA, NASHIK), 0);
+    expect(journeyEstimateKm(PUNE, [])).toEqual({ km: 0, source: 'none' });
+  });
+
+  it('a partial transfer pays two drivers, one each: km to the handover, then from it', async () => {
+    const meet = { lat: 18.75, lng: 73.4 }; // Lonavala
+    reset({
+      // L1 stays on veh-1 and is delivered in Mumbai; L2 moved to veh-2 (the vehicle_id follows the goods) and went to Nashik
+      cargo_manifest: [master(), lot('L1', MUMBAI), lot('L2', NASHIK, { vehicle_id: 'veh-2' })],
+      cargo_transfers: [{ id: 't1', from_vehicle_id: 'veh-1', to_vehicle_id: 'veh-2', status: 'completed', meet_lat: meet.lat, meet_lng: meet.lng, completed_at: '2026-09-10T08:00:00Z' }],
+      cargo_transfer_items: [{ id: 'i1', transfer_id: 't1', manifest_id: 'L2' }],
+      driver_pay_rates: [rate(), rate({ vehicle_type: 'van', per_trip_amount: 300, per_km_amount: 8 })],
+    });
+    await recordTripPay({ manifest_id: 'L1' });
+    await recordTripPay({ manifest_id: 'L2' });
+    expect(entries()).toHaveLength(2);
+    const first = entries().find(e => e.driver_id === 'driver-1')!;
+    const second = entries().find(e => e.driver_id === 'driver-2')!;
+    // the first driver: pickup to the farthest of their own drop (Mumbai) and the handover
+    expect(first).toMatchObject({ manifest_id: 'M', vehicle_id: 'veh-1', per_trip_amount: 500, km: Math.max(km(PUNE, MUMBAI), km(PUNE, meet)) });
+    // the second driver: from the handover to the drop, at the van's rate
+    expect(second).toMatchObject({ manifest_id: 'M', vehicle_id: 'veh-2', per_trip_amount: 300, per_km_amount: 8, km: km(meet, NASHIK) });
+    expect(second.amount).toBeCloseTo(300 + 8 * km(meet, NASHIK), 1);
+  });
+
+  it('pays the first driver when their last lot leaves in a transfer, using the handover ping', async () => {
+    const ping = { lat: 18.6, lng: 73.7 };
+    reset({
+      cargo_manifest: [master(), lot('L1', NASHIK, { vehicle_id: 'veh-2', status: 'in_transit' })],
+      cargo_transfers: [{ id: 't1', from_vehicle_id: 'veh-1', to_vehicle_id: 'veh-2', status: 'completed', meet_lat: 19.9, meet_lng: 73.0, completed_at: '2026-09-10T08:00:00Z' }],
+      cargo_transfer_items: [{ id: 'i1', transfer_id: 't1', manifest_id: 'L1' }],
+      // one ping near the handover beats the (far) meet point on the transfer
+      gps_points: [{ id: 'g1', vehicle_id: 'veh-1', latitude: ping.lat, longitude: ping.lng, accuracy: 5, recorded_at: '2026-09-10T08:05:00Z' }],
+      driver_pay_rates: [rate()],
+    });
+    await recordJourneyAfterTransferSafe('M', 'veh-1');
+    expect(entries()).toHaveLength(1);
+    expect(entries()[0]).toMatchObject({ driver_id: 'driver-1', vehicle_id: 'veh-1', km: km(PUNE, ping) });
+    // the receiving truck's lot is still on the road: no entry for its driver yet
+    expect(await recordTripPay({ manifest_id: 'L1' })).toBeNull();
+    await recordJourneyAfterTransferSafe('M', 'veh-1');
+    expect(entries()).toHaveLength(1);
+  });
+
+  it('pays a route carrying 3 shipment lots once', async () => {
+    const stops = ['S1', 'S2', 'S3'].map((s, i) => ({ sequence: i + 1, status: 'completed', delivery_points: { latitude: 18.5 + i * 0.2, longitude: 73.8, shipment_id: s } }));
+    reset({
+      routes: [route({ status: 'active', completed_at: null, total_distance_km: 90, route_stops: stops })],
+      route_stops: stops.map((s, i) => ({ id: `rs${i}`, route_id: 'route-1', status: 'completed' })),
+      driver_pay_rates: [rate()],
+    });
+    await routeService.changeStatus('route-1', 'completed');
+    await routeService.changeStatus('route-1', 'completed');
+    await recordTripPay({ route_id: 'route-1' });
+    expect(entries()).toHaveLength(1);
+    expect(entries()[0]).toMatchObject({ route_id: 'route-1', per_trip_amount: 500, km: 90, amount: 500 + 10 * 90 });
   });
 });
 
