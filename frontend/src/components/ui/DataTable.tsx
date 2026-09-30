@@ -48,6 +48,8 @@ export interface DataTableProps<T> {
   sort?: { key: string; direction: 'asc' | 'desc' } | null
   onSortChange?: (sort: { key: string; direction: 'asc' | 'desc' } | null) => void
   selectedKey?: string | null
+  /** Extra classes for a row, to flag it (e.g. an overdue case). Pair with text in a cell: colour is never the only cue. */
+  rowClassName?: (row: T) => string | undefined
   /** Adds a checkbox column with select-all-on-page. Omit for tables without bulk actions. */
   selection?: DataTableSelection<T>
   className?: string
@@ -66,7 +68,7 @@ function isEmptyConfig(value: unknown): value is { title: ReactNode; description
  */
 export function DataTable<T>({
   columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort,
-  sort: controlledSort, onSortChange, selectedKey, selection, className,
+  sort: controlledSort, onSortChange, selectedKey, rowClassName, selection, className,
 }: DataTableProps<T>) {
   const isControlled = controlledSort !== undefined && onSortChange !== undefined
   const [internalSort, setInternalSort] = useState(initialSort ?? null)
@@ -201,6 +203,7 @@ export function DataTable<T>({
                     'border-b border-border last:border-b-0',
                     onRowClick && 'cursor-pointer hover:bg-surface-subtle focus:outline-none focus-visible:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
                     selectedKey === key && 'bg-brand-soft hover:bg-brand-soft',
+                    rowClassName?.(row),
                   )}
                 >
                   {selection && (
@@ -250,7 +253,7 @@ export function DataTable<T>({
                 <li
                   key={key}
                   {...rowProps(row)}
-                  className={clsx('space-y-1.5 px-4 py-3', onRowClick && 'cursor-pointer active:bg-surface-subtle focus-visible:bg-surface-subtle', selectedKey === key && 'bg-brand-soft')}
+                  className={clsx('space-y-1.5 px-4 py-3', onRowClick && 'cursor-pointer active:bg-surface-subtle focus-visible:bg-surface-subtle', selectedKey === key && 'bg-brand-soft', rowClassName?.(row))}
                 >
                   {selection && selectable && (
                     <div className="flex justify-end" onClick={e => e.stopPropagation()}>

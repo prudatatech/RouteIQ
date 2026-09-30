@@ -32,6 +32,9 @@ const statusTone: Record<string, Tone> = {
   // Neutral
   taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', offline: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
   unknown: 'neutral', cancelled: 'neutral', void: 'neutral', optimizing: 'info', issued: 'info', low: 'info', won: 'success', lost: 'neutral',
+  // Cargo custody (shipments and vendor loads), exception cases, transfers and claims
+  at_hub: 'info', partially_delivered: 'warning', returning: 'warning', returned: 'neutral',
+  investigating: 'warning', action_planned: 'info', filed: 'info', surveyed: 'info', settled: 'success',
 }
 
 const statusLabel: Record<string, string> = {
@@ -65,6 +68,11 @@ const statusLabel: Record<string, string> = {
   low: 'Low',
   fulfilled: 'Completed',
   cancelled: 'Cancelled',
+  at_hub: 'At hub',
+  partially_delivered: 'Partly delivered',
+  returning: 'Returning to sender',
+  returned: 'Returned to sender',
+  action_planned: 'Action planned',
 }
 
 /**
@@ -72,7 +80,7 @@ const statusLabel: Record<string, string> = {
  * "active" partner, "pending" route vs "pending" vendor load). Pass `kind` to pick the
  * reading that fits the record.
  */
-export type StatusKind = 'route' | 'booking' | 'request' | 'bid' | 'kyc' | 'window'
+export type StatusKind = 'route' | 'booking' | 'request' | 'bid' | 'kyc' | 'window' | 'cargo' | 'case'
 
 const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: string }>> = {
   route: {
@@ -111,6 +119,20 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
     awarded: { tone: 'success', label: 'Awarded' },
     closed: { tone: 'neutral', label: 'Closed' },
     cancelled: { tone: 'neutral', label: 'Cancelled' },
+  },
+  // A shipment or vendor load in the cargo custody flow. "lost" is lost goods here, not a lost bid.
+  cargo: {
+    lost: { tone: 'danger', label: 'Lost' },
+    exception: { tone: 'danger', label: 'Exception' },
+    on_hold: { tone: 'warning', label: 'On hold' },
+  },
+  // A cargo exception case: an open case needs someone, so it is amber rather than blue.
+  case: {
+    open: { tone: 'warning', label: 'Open' },
+    investigating: { tone: 'warning', label: 'Investigating' },
+    action_planned: { tone: 'info', label: 'Action planned' },
+    resolved: { tone: 'success', label: 'Resolved' },
+    closed: { tone: 'neutral', label: 'Closed' },
   },
 }
 

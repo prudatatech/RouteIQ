@@ -26,6 +26,10 @@ const partnerPage = (tab: string, openKey?: string): Resolver => data => {
   return withOpen(`/3pl-portal/${partnerId}?tab=${tab}`, openKey ? data[openKey] : null)
 }
 
+/** A cargo notification opens its case, else its transfer or claim, else the consignment (docs/cargo-plan.md). */
+const cargoCase = (fallback: Resolver): Resolver => d => (str(d.exception_id) ? `/cargo/exceptions/${str(d.exception_id)}` : fallback(d))
+const cargoConsignment: Resolver = d => withOpen('/shipments', d.shipment_id ?? d.manifest_id)
+
 const STAFF: Record<string, Resolver> = {
   sos: d => withOpen('/emergency', d.alert_id),
   vendor_request: d => withOpen('/vendor-requests', d.request_id),
@@ -45,6 +49,18 @@ const STAFF: Record<string, Resolver> = {
   vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),
   document_expiring: d => (str(d.user_id) ? `/admin/users/${str(d.user_id)}?tab=documents` : '/admin/users?tab=attention'),
+  // Cargo custody
+  cargo_exception_opened: cargoCase(() => '/cargo'),
+  cargo_exception_escalated: cargoCase(() => '/cargo?overdue=1'),
+  cargo_exception_resolved: cargoCase(() => '/cargo'),
+  cargo_transfer_planned: d => (str(d.transfer_id) ? `/cargo/transfers/${str(d.transfer_id)}` : '/cargo?tab=transfers'),
+  cargo_transfer_completed: d => (str(d.transfer_id) ? `/cargo/transfers/${str(d.transfer_id)}` : '/cargo?tab=transfers'),
+  cargo_partial_delivery: cargoCase(cargoConsignment),
+  cargo_rto_started: cargoCase(cargoConsignment),
+  cargo_at_hub: d => (str(d.depot_id) ? `/cargo?tab=hubs&hub=${encodeURIComponent(str(d.depot_id)!)}` : cargoConsignment(d)),
+  cargo_delivery_otp: cargoConsignment,
+  cargo_claim_update: d => withOpen('/cargo?tab=claims', d.claim_id),
+  driver_action_rejected: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : cargoConsignment(d)),
 }
 
 const VENDOR: Record<string, Resolver> = {
@@ -67,6 +83,14 @@ const VENDOR: Record<string, Resolver> = {
   bid_expired: d => withOpen('/vendor/shipments', d.bid_id),
   bid_reopened: d => withOpen('/vendor/shipments', d.bid_id),
   passing_route: () => '/vendor/corridor',
+  // Their goods: moved, at a hub, partly delivered, returning, or a claim update
+  cargo_exception_opened: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_exception_resolved: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_transfer_completed: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_partial_delivery: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_rto_started: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_at_hub: d => withOpen('/vendor/shipments', d.request_id),
+  cargo_claim_update: d => withOpen('/vendor/shipments', d.request_id),
   // 3PL partner
   tpl_offer: partnerPage('orders', 'offer_id'),
   tpl_offer_taken: partnerPage('orders'),

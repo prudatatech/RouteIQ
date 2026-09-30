@@ -19,6 +19,12 @@ describe('vendor notifications', () => {
     expect(at(type, { bid_id: 'b1' }, 'vendor')).toBe('/vendor/shipments?open=b1')
   })
 
+  it.each(['cargo_exception_opened', 'cargo_transfer_completed', 'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update'])(
+    '%s opens the load on My shipments', type => {
+      expect(at(type, { request_id: 'r1' }, 'vendor')).toBe('/vendor/shipments?open=r1')
+    },
+  )
+
   it('opens the corridors page for a passing truck', () => {
     expect(at('passing_route', { route_id: 'r1' }, 'vendor')).toBe('/vendor/corridor')
   })
@@ -66,6 +72,21 @@ describe('staff notifications', () => {
     ['vehicle_request', { vehicle_id: 'v1' }, '/vehicle-requests?open=v1'],
     ['document_expiring', { user_id: 'u1' }, '/admin/users/u1?tab=documents'],
     ['document_expiring', {}, '/admin/users?tab=attention'],
+    ['cargo_exception_opened', { exception_id: 'x1' }, '/cargo/exceptions/x1'],
+    ['cargo_exception_opened', {}, '/cargo'],
+    ['cargo_exception_escalated', { exception_id: 'x1' }, '/cargo/exceptions/x1'],
+    ['cargo_exception_escalated', {}, '/cargo?overdue=1'],
+    ['cargo_exception_resolved', { exception_id: 'x1' }, '/cargo/exceptions/x1'],
+    ['cargo_transfer_planned', { transfer_id: 't1' }, '/cargo/transfers/t1'],
+    ['cargo_transfer_completed', {}, '/cargo?tab=transfers'],
+    ['cargo_partial_delivery', { exception_id: 'x1', shipment_id: 's1' }, '/cargo/exceptions/x1'],
+    ['cargo_rto_started', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_at_hub', { depot_id: 'd1', shipment_id: 's1' }, '/cargo?tab=hubs&hub=d1'],
+    ['cargo_at_hub', { manifest_id: 'm1' }, '/shipments?open=m1'],
+    ['cargo_delivery_otp', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_claim_update', { claim_id: 'c1' }, '/cargo?tab=claims&open=c1'],
+    ['driver_action_rejected', { route_id: 'r1' }, '/routes/r1'],
+    ['driver_action_rejected', { shipment_id: 's1' }, '/shipments?open=s1'],
   ])('%s goes to %s', (type, data, path) => {
     expect(at(type, data, 'staff')).toBe(path)
   })
