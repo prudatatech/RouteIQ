@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { EmptyState, ErrorState, Skeleton } from './States'
@@ -52,6 +52,11 @@ export interface DataTableProps<T> {
   rowClassName?: (row: T) => string | undefined
   /** Adds a checkbox column with select-all-on-page. Omit for tables without bulk actions. */
   selection?: DataTableSelection<T>
+  /**
+   * Content shown under a row across the full width (e.g. a master's lots), or null for none.
+   * It stays with its row when sorting and paging; clicks inside it do not open the row.
+   */
+  renderExpanded?: (row: T) => ReactNode
   className?: string
 }
 
@@ -68,7 +73,7 @@ function isEmptyConfig(value: unknown): value is { title: ReactNode; description
  */
 export function DataTable<T>({
   columns, rows, rowKey, loading, error, onRetry, empty, onRowClick, caption, pageSize = 20, initialSort,
-  sort: controlledSort, onSortChange, selectedKey, rowClassName, selection, className,
+  sort: controlledSort, onSortChange, selectedKey, rowClassName, selection, renderExpanded, className,
 }: DataTableProps<T>) {
   const isControlled = controlledSort !== undefined && onSortChange !== undefined
   const [internalSort, setInternalSort] = useState(initialSort ?? null)
@@ -195,42 +200,49 @@ export function DataTable<T>({
             {!error && visible.map(row => {
               const key = rowKey(row)
               const selectable = selection?.isRowSelectable?.(row) ?? true
+              const expanded = renderExpanded?.(row)
               return (
-                <tr
-                  key={key}
-                  {...rowProps(row)}
-                  className={clsx(
-                    'border-b border-border last:border-b-0',
-                    onRowClick && 'cursor-pointer hover:bg-surface-subtle focus:outline-none focus-visible:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
-                    selectedKey === key && 'bg-brand-soft hover:bg-brand-soft',
-                    rowClassName?.(row),
+                <Fragment key={key}>
+                  <tr
+                    {...rowProps(row)}
+                    className={clsx(
+                      'border-b border-border last:border-b-0',
+                      onRowClick && 'cursor-pointer hover:bg-surface-subtle focus:outline-none focus-visible:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+                      selectedKey === key && 'bg-brand-soft hover:bg-brand-soft',
+                      rowClassName?.(row),
+                    )}
+                  >
+                    {selection && (
+                      <td className="px-4 py-3 align-middle" onClick={e => e.stopPropagation()}>
+                        {selectable && (
+                          <input
+                            type="checkbox"
+                            aria-label="Select row"
+                            className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
+                            checked={selection.selectedKeys.has(key)}
+                            onChange={() => selection.onToggleRow(key, row)}
+                          />
+                        )}
+                      </td>
+                    )}
+                    {columns.map(col => (
+                      <td
+                        key={col.key}
+                        className={clsx(
+                          'break-words px-4 py-3 align-middle text-text',
+                          alignClass[col.align ?? 'left'], col.hideBelow && hideClass[col.hideBelow], col.className,
+                        )}
+                      >
+                        {col.cell(row)}
+                      </td>
+                    ))}
+                  </tr>
+                  {expanded != null && expanded !== false && (
+                    <tr className="border-b border-border last:border-b-0">
+                      <td colSpan={columns.length + (selection ? 1 : 0)} className="bg-surface-subtle p-0">{expanded}</td>
+                    </tr>
                   )}
-                >
-                  {selection && (
-                    <td className="px-4 py-3 align-middle" onClick={e => e.stopPropagation()}>
-                      {selectable && (
-                        <input
-                          type="checkbox"
-                          aria-label="Select row"
-                          className="h-4 w-4 rounded border-border-strong accent-brand cursor-pointer"
-                          checked={selection.selectedKeys.has(key)}
-                          onChange={() => selection.onToggleRow(key, row)}
-                        />
-                      )}
-                    </td>
-                  )}
-                  {columns.map(col => (
-                    <td
-                      key={col.key}
-                      className={clsx(
-                        'break-words px-4 py-3 align-middle text-text',
-                        alignClass[col.align ?? 'left'], col.hideBelow && hideClass[col.hideBelow], col.className,
-                      )}
-                    >
-                      {col.cell(row)}
-                    </td>
-                  ))}
-                </tr>
+                </Fragment>
               )
             })}
           </tbody>
@@ -272,6 +284,12 @@ export function DataTable<T>({
                       <span className={clsx('min-w-0 break-words text-text', i > 0 && 'text-right')}>{col.cell(row)}</span>
                     </div>
                   ))}
+                  {(() => {
+                    const expanded = renderExpanded?.(row)
+                    return expanded != null && expanded !== false
+                      ? <div className="-mx-4 !mt-3 -mb-3 cursor-default border-t border-border bg-surface-subtle" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>{expanded}</div>
+                      : null
+                  })()}
                 </li>
               )
             })}

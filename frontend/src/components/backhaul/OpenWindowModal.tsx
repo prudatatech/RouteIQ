@@ -4,9 +4,10 @@ import toast from 'react-hot-toast'
 import { capacityAPI, shipmentsAPI, vehiclesAPI } from '@/services/api'
 import { Button, Input, Modal, Select } from '@/components/ui'
 import { errorMessage, formatKg } from '@/utils/display'
+import { isMasterRow } from '@/components/cargo/lots'
 
 interface VehicleOption { id: string; plate_number: string; available_capacity_kg: number | null }
-interface ShipmentOption { id: string; tracking_id: string; status: string; origin_name: string | null }
+interface ShipmentOption { id: string; tracking_id: string; status: string; origin_name: string | null; is_master?: boolean | null }
 
 const DURATIONS = [
   { value: '15', label: '15 minutes' },
@@ -140,7 +141,8 @@ export default function OpenWindowModal({ open, onClose, initial }: {
           onChange={e => set('shipment_id', e.target.value)}
           options={[
             { value: '', label: 'No shipment' },
-            ...(shipments.data ?? []).filter(s => !FINISHED.has(s.status)).map(s => ({
+            // A split master carries no goods of its own; its lots are offered instead
+            ...(shipments.data ?? []).filter(s => !FINISHED.has(s.status) && !isMasterRow(s)).map(s => ({
               value: s.id,
               label: `${s.tracking_id}${s.origin_name ? ` · ${s.origin_name}` : ''}`,
             })),
