@@ -188,7 +188,9 @@ if [[ $SKIP_WEB -eq 0 ]]; then
   # The token is fetched now and handed over through the environment: never written to disk.
   SWA_CLI_DEPLOYMENT_TOKEN="$(az staticwebapp secrets list --name "$WEB_APP" --resource-group "$RG" --query properties.apiKey -o tsv)"
   export SWA_CLI_DEPLOYMENT_TOKEN
-  ( cd "$ROOT_DIR/frontend" && npx --yes @azure/static-web-apps-cli deploy ./dist --env production )
+  # Run the uploader from an empty temp folder with a pinned version: inside frontend/ npx resolved
+  # the package against the project on GitHub's runners and failed (ENOENT frontend/margix).
+  ( cd "$TMP_DIR" && npx --yes @azure/static-web-apps-cli@2.0.10 deploy "$ROOT_DIR/frontend/dist" --env production )
   unset SWA_CLI_DEPLOYMENT_TOKEN
 fi
 
