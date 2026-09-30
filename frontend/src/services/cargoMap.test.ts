@@ -4,8 +4,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  labelOf, listOf, mapCaseTimeline, mapClaim, mapClaimSummary, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow,
-  mapOnBoard, mapRelief, mapTransfer, mapWhere,
+  labelOf, listOf, lotLabelFromCode, mapCaseTimeline, mapClaim, mapClaimSummary, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow,
+  mapLots, mapMergeResult, mapOnBoard, mapRelief, mapSplitResult, mapTransfer, mapWhere, masterCodeOf, toShipmentDrops,
 } from './cargoMap'
 
 const S1 = '51000000-0000-4000-8000-000000000001'
@@ -193,5 +193,67 @@ describe('relief, hubs and on board', () => {
     }, 'v1')
     expect(b.vehicle?.plate_number).toBe('MH12AB0001')
     expect(b.items[0]).toMatchObject({ shipment_id: S1, tracking_id: 'RTX-0001', pieces_on_board: 10, next_stop: { name: 'Hinjewadi warehouse', address: 'Hinjewadi' } })
+  })
+})
+
+describe('lots', () => {
+  const S2 = '51000000-0000-4000-8000-000000000002'
+  it('reads the lot label from a lot code', () => {
+    expect(lotLabelFromCode('RTX-ABC123-B')).toBe('B')
+    expect(lotLabelFromCode('CM-AA110000-A2')).toBe('A2')
+    expect(lotLabelFromCode('RTX-ABC123')).toBeNull()
+    expect(masterCodeOf('RTX-ABC123-A1')).toBe('RTX-ABC123')
+    expect(masterCodeOf('RTX-ABC123')).toBeNull()
+  })
+  it('labels every consignment row that is a lot, wherever it appears', () => {
+    expect(labelOf({ ref: { shipment_id: S2 }, code: 'RTX-ABC123-B' })).toMatchObject({ tracking_id: 'RTX-ABC123-B', lot_label: 'B' })
+    const onBoard = mapOnBoard({ items: [{ ref: { shipment_id: S2 }, code: 'RTX-ABC123-C', pieces_on_board: 30 }] }, 'v1')
+    expect(onBoard.items[0]).toMatchObject({ tracking_id: 'RTX-ABC123-C', lot_label: 'C' })
+    expect(mapHubInventoryRow({ ref: { shipment_id: S2 }, code: 'RTX-ABC123-B', pieces: 25 }).lot_label).toBe('B')
+  })
+  it('maps GET /cargo/lots/:ref: the master and its lots in label order', () => {
+    const v = mapLots({
+      master: { ref: { shipment_id: S1 }, code: 'RTX-ABC123', status: 'in_transit', pieces: { total: 100, delivered: 60, damaged: 0, short: 0, returned: 0, on_board: 15 }, weight_kg: 500, declared_value: 100000, freight_charge: 9000 },
+      lots: [
+        { ref: { shipment_id: S2 }, code: 'RTX-ABC123-B', label: 'B', status: 'at_hub', current_holder: 'hub', vehicle: null, depot: { id: 'd1', name: 'Patna' }, pieces: { total: 25, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: 0 }, drop: { address: 'Boring Road, Patna', lat: 25.6, lng: 85.1 }, consignee: { name: 'Sharma Traders', phone: '9876543210' }, open_exceptions: [], split_reason: 'hub_crossdock' },
+        { ref: { shipment_id: S1 + 'a' }, code: 'RTX-ABC123-A', status: 'delivered', current_holder: 'consignee', pieces: 60 },
+      ],
+      totals: { total: 100, delivered: 60, damaged: 0, short: 0, returned: 0, on_board: 15 },
+    })
+    expect(v.master).toMatchObject({ shipment_id: S1, tracking_id: 'RTX-ABC123', status: 'in_transit', weight_kg: 500, declared_value: 100000, freight: 9000, lot_label: null })
+    expect(v.lots.map(l => l.label)).toEqual(['A', 'B'])
+    expect(v.lots[0].pieces.total).toBe(60)
+    expect(v.lots[1]).toMatchObject({
+      depot: { id: 'd1', name: 'Patna' }, drop: { address: 'Boring Road, Patna', lat: 25.6, lng: 85.1 },
+      consignee: { name: 'Sharma Traders', phone: '9876543210', gstin: null }, split_reason: 'hub_crossdock',
+    })
+    expect(v.totals.delivered).toBe(60)
+  })
+  it('maps the split and merge answers', () => {
+    const r = mapSplitResult({ master: { ref: { shipment_id: S1 }, code: 'RTX-ABC123' }, lots: [{ ref: { shipment_id: S2 }, code: 'RTX-ABC123-C', label: 'C', pieces: 30, weight_kg: 150 }] })
+    expect(r.master.tracking_id).toBe('RTX-ABC123')
+    expect(r.lots[0]).toMatchObject({ shipment_id: S2, tracking_id: 'RTX-ABC123-C', label: 'C', pieces: 30, weight_kg: 150 })
+    expect(mapMergeResult({ ref: { shipment_id: S2 }, code: 'RTX-ABC123-B' })).toMatchObject({ shipment_id: S2, lot_label: 'B' })
+  })
+  it('marks a master on where, and tags master timeline events with their lot', () => {
+    expect(mapWhere({ ref: { shipment_id: S1 }, code: 'RTX-ABC123', status: 'in_transit', current_holder: 'vehicle', lots: [{}] }).is_master).toBe(true)
+    expect(mapWhere({ ref: { shipment_id: S2 }, code: 'RTX-ABC123-B', status: 'at_hub', master: { ref: { shipment_id: S1 }, code: 'RTX-ABC123' } }))
+      .toMatchObject({ is_master: false, lot_label: 'B', master: { shipment_id: S1, tracking_id: 'RTX-ABC123' } })
+    expect(mapCustodyEvent({ id: 'e', kind: 'split', recorded_at: 'x', lot: { label: 'B', code: 'RTX-ABC123-B' } })).toMatchObject({ kind: 'split', lot_label: 'B', lot_code: 'RTX-ABC123-B' })
+    expect(mapCustodyEvent({ id: 'e', kind: 'pickup', recorded_at: 'x', lot_code: 'RTX-ABC123-C' }).lot_label).toBe('C')
+  })
+  it('reads the two lots of a partial transfer', () => {
+    const t = mapTransfer({ id: 't1', items: [], lots: { moving: { ref: { shipment_id: S2 }, code: 'RTX-ABC123-C' }, staying: { ref: { shipment_id: S1 }, code: 'RTX-ABC123-D' } } })
+    expect(t.split_lots).toMatchObject({ moving: { tracking_id: 'RTX-ABC123-C' }, staying: { tracking_id: 'RTX-ABC123-D' } })
+    expect(mapTransfer({ id: 't2', items: [] }).split_lots).toBeNull()
+  })
+  it('sends multi-drop rows as drops[], leaving out empty optional fields', () => {
+    expect(toShipmentDrops([
+      { address: 'A', lat: 1, lng: 2, consignee_name: ' Sharma ', consignee_phone: '9876543210', consignee_gstin: ' 10abcde1234f1z5', pieces: 50, weight_kg: 250, declared_value: null },
+      { address: 'B', lat: 3, lng: 4, consignee_name: 'Gupta', consignee_phone: '9000000000', consignee_gstin: '', pieces: 50 },
+    ])).toEqual([
+      { address: 'A', lat: 1, lng: 2, consignee_name: 'Sharma', consignee_phone: '9876543210', consignee_gstin: '10ABCDE1234F1Z5', pieces: 50, weight_kg: 250 },
+      { address: 'B', lat: 3, lng: 4, consignee_name: 'Gupta', consignee_phone: '9000000000', pieces: 50 },
+    ])
   })
 })

@@ -8,11 +8,14 @@
  *   `shipment_id` / `manifest_id` / `tracking_id` (ConsignmentLabel);
  * - timeline events embed `from_vehicle`, `to_depot`, `recorded_by` as objects;
  * - the case timeline has `{ at, source: 'case' | 'custody' | 'sos' | 'maintenance', kind, text, by, by_name, role }`;
- * - claims carry `consignment_code`; hub and on-board rows carry `next_leg` / `next_stop` by name and address.
+ * - claims carry `consignment_code`; hub and on-board rows carry `next_leg` / `next_stop` by name and address;
+ * - lots (docs/cargo-plan.md "Lots") carry `label` and embedded `vehicle`, `depot`, `drop`, `consignee`;
+ *   a lot's code is the master's with a suffix (`RTX-ABC123-B`), which also gives its label when none is sent.
  */
 import type {
   CargoClaim, CargoException, CargoTransfer, CargoVehicle, CaseTimelineEntry, ClaimSummary, ConsignmentLabel, CustodyEvent, ExceptionDetail,
-  ExceptionItem, HubInventoryRow, HubSummary, OnBoard, OnBoardItem, Pieces, ReliefVehicle, TransferItem, WhereIsIt,
+  ExceptionItem, HubInventoryRow, HubSummary, Lot, LotsView, OnBoard, OnBoardItem, Pieces, ReliefVehicle, ShipmentDropInput, SplitResult,
+  TransferItem, WhereIsIt,
 } from './cargo'
 
 type Raw = Record<string, unknown>
@@ -32,20 +35,37 @@ export function listOf<T>(data: unknown, key: string): T[] {
 }
 
 /**
+ * The lot label in a lot code: `RTX-ABC123-B` → `B`, `CM-AA110000-A2` → `A2`. Null for a
+ * master or an unsplit consignment (`RTX-ABC123`).
+ */
+export function lotLabelFromCode(code: string | null | undefined): string | null {
+  const m = typeof code === 'string' ? /^(?:RTX|CM)-[A-Z0-9]+-([A-Z][0-9]*)$/i.exec(code.trim()) : null
+  return m ? m[1].toUpperCase() : null
+}
+
+/** The master's code of a lot code: `RTX-ABC123-B` → `RTX-ABC123`. Null when it is not a lot code. */
+export function masterCodeOf(code: string | null | undefined): string | null {
+  return lotLabelFromCode(code) ? String(code).trim().replace(/-[A-Z][0-9]*$/i, '') : null
+}
+
+/**
  * `{ ref: { shipment_id } | { manifest_id }, code, status }` (or flat ids, or `consignment_code`)
- * as the flat identity the screens show and link.
+ * as the flat identity the screens show and link. A lot also gets its label.
  */
 export function labelOf(row: unknown): ConsignmentLabel {
   const r = obj(row) ?? {}
   const ref = obj(r.ref)
   const shipmentId = str(ref?.shipment_id) ?? str(r.shipment_id)
   const manifestId = str(ref?.manifest_id) ?? str(r.manifest_id)
+  // `code` names the goods only next to a `ref`; on a claim row it is the claim's own CLM- code
+  const trackingId = str(r.consignment_code) ?? str(r.tracking_id) ?? (ref ? str(r.code) : null)
+  const lotLabel = str(r.lot_label) ?? lotLabelFromCode(trackingId)
   return {
     shipment_id: shipmentId,
     manifest_id: manifestId,
-    // `code` names the goods only next to a `ref`; on a claim row it is the claim's own CLM- code
-    tracking_id: str(r.consignment_code) ?? str(r.tracking_id) ?? (ref ? str(r.code) : null),
+    tracking_id: trackingId,
     status: str(r.status),
+    ...(lotLabel ? { lot_label: lotLabel } : {}),
   }
 }
 
@@ -104,6 +124,9 @@ export function mapWhere(raw: unknown): WhereIsIt {
     delivery_otp_required: w.delivery_otp_required === true,
     rto: w.rto === true,
     on_hold_reason: str(w.on_hold_reason),
+    is_master: w.is_master === true || arr(w.lots).length > 0,
+    lot_label: label.lot_label ?? null,
+    master: obj(w.master) ? labelOf(w.master) : null,
   }
 }
 
@@ -116,6 +139,7 @@ export function mapCustodyEvent(raw: unknown): CustodyEvent {
   const toDepot = obj(e.to_depot)
   const recorder = obj(e.recorded_by)
   const driver = obj(e.driver)
+  const lot = obj(e.lot)
   return {
     id: String(e.id),
     kind: e.kind as CustodyEvent['kind'],
@@ -149,6 +173,8 @@ export function mapCustodyEvent(raw: unknown): CustodyEvent {
     recorded_by: str(recorder?.id) ?? str(e.recorded_by),
     recorded_by_name: str(recorder?.name),
     recorded_role: str(e.recorded_role) ?? str(recorder?.role),
+    lot_label: str(e.lot_label) ?? str(lot?.label) ?? lotLabelFromCode(str(e.lot_code) ?? str(lot?.code)),
+    lot_code: str(e.lot_code) ?? str(lot?.code),
   }
 }
 
@@ -260,7 +286,20 @@ export function mapTransfer(raw: unknown): CargoTransfer {
       ? { id: String(depot.id), name: str(depot.name) ?? 'Hub', address: str(depot.address), latitude: num(depot.latitude), longitude: num(depot.longitude) }
       : null,
     exception: exc && str(exc.id) ? { id: String(exc.id), code: String(exc.code ?? ''), type: exc.type as CargoException['type'], status: exc.status as CargoException['status'] } : null,
+    split_lots: mapTransferLots(t),
   }
+}
+
+/**
+ * The two lots a partial transfer made. Read from `lots: { moving, staying }` (or `moving_lot` /
+ * `staying_lot`), each `{ ref, code }`. Null for a whole-consignment transfer.
+ */
+function mapTransferLots(t: Raw): CargoTransfer['split_lots'] {
+  const lots = obj(t.lots)
+  const moving = obj(lots?.moving) ?? obj(t.moving_lot)
+  const staying = obj(lots?.staying) ?? obj(t.staying_lot)
+  if (!moving && !staying) return null
+  return { moving: moving ? labelOf(moving) : null, staying: staying ? labelOf(staying) : null }
 }
 
 /** A claim (GET /cargo/claims, /cargo/claims/:id, PATCH answers). */
@@ -369,4 +408,103 @@ export function mapOnBoardItem(raw: unknown): OnBoardItem {
 export function mapOnBoard(raw: unknown, vehicleId: string): OnBoard {
   const d = obj(raw) ?? {}
   return { vehicle_id: vehicleId, vehicle: mapVehicle(d.vehicle), items: listOf<unknown>(raw, 'items').map(mapOnBoardItem) }
+}
+
+// ── Lots ───────────────────────────────────────────────────────────────────
+
+/** A lot's pieces: the full counts object, or a bare number (its total). */
+function mapLotPieces(raw: unknown): Pieces {
+  const n = num(raw)
+  if (n != null) return { total: n, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: null }
+  return mapPieces(raw)
+}
+
+/** One lot of GET /cargo/lots/:ref. */
+export function mapLot(raw: unknown): Lot {
+  const l = obj(raw) ?? {}
+  const label = labelOf(l)
+  const depot = obj(l.depot)
+  const drop = obj(l.drop)
+  const consignee = obj(l.consignee)
+  const consigneeName = str(consignee?.name) ?? str(l.consignee_name)
+  const consigneePhone = str(consignee?.phone) ?? str(l.consignee_phone)
+  const consigneeGstin = str(consignee?.gstin) ?? str(l.consignee_gstin)
+  const lotLabel = str(l.label) ?? label.lot_label ?? null
+  return {
+    ...label,
+    label: lotLabel,
+    lot_label: lotLabel,
+    status: String(l.status ?? ''),
+    current_holder: (str(l.current_holder) ?? 'consignor') as Lot['current_holder'],
+    vehicle: mapVehicle(l.vehicle),
+    depot: depot && str(depot.id)
+      ? { id: String(depot.id), name: str(depot.name) ?? 'Hub', address: str(depot.address), latitude: num(depot.latitude), longitude: num(depot.longitude) }
+      : null,
+    pieces: mapLotPieces(l.pieces),
+    weight_kg: num(l.weight_kg),
+    declared_value: num(l.declared_value),
+    freight_share: num(l.freight_share),
+    drop: drop && (str(drop.address) || str(drop.name))
+      ? { name: str(drop.name), address: str(drop.address), lat: num(drop.lat) ?? num(drop.latitude), lng: num(drop.lng) ?? num(drop.longitude) }
+      : null,
+    consignee: consigneeName || consigneePhone || consigneeGstin ? { name: consigneeName, phone: consigneePhone, gstin: consigneeGstin } : null,
+    split_reason: (str(l.split_reason) as Lot['split_reason']) ?? null,
+    open_exceptions: arr(l.open_exceptions).map(mapBrief),
+  }
+}
+
+/** GET /cargo/lots/:ref → `{ master, lots, totals }`, lots in label order (A, B, … A1, A2). */
+export function mapLots(raw: unknown): LotsView {
+  const d = obj(raw) ?? {}
+  const m = obj(d.master) ?? {}
+  const lots = arr(d.lots).map(mapLot).sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '', undefined, { numeric: true }))
+  const totalsRaw = obj(d.totals)
+  const totals = totalsRaw && obj(totalsRaw.pieces) ? mapPieces(totalsRaw.pieces) : totalsRaw ? mapPieces(totalsRaw) : mapLotPieces(m.pieces)
+  return {
+    master: {
+      ...labelOf(m),
+      lot_label: null,
+      status: String(m.status ?? ''),
+      pieces: mapLotPieces(m.pieces),
+      weight_kg: num(m.weight_kg) ?? num(totalsRaw?.weight_kg),
+      declared_value: num(m.declared_value) ?? num(totalsRaw?.declared_value),
+      freight: num(m.freight_charge) ?? num(m.freight) ?? num(totalsRaw?.freight),
+    },
+    lots,
+    totals,
+  }
+}
+
+/** POST /cargo/lots/split → `{ master: {ref, code}, lots: [{ref, code, label, pieces, weight_kg}] }`. */
+export function mapSplitResult(raw: unknown): SplitResult {
+  const d = obj(raw) ?? {}
+  return {
+    master: labelOf(d.master),
+    lots: arr(d.lots).map(x => {
+      const l = obj(x) ?? {}
+      const label = labelOf(l)
+      return { ...label, label: str(l.label) ?? label.lot_label ?? null, pieces: num(l.pieces), weight_kg: num(l.weight_kg) }
+    }),
+  }
+}
+
+/** POST /cargo/lots/merge → `{ ref, code }`: the lot the others were merged into. */
+export const mapMergeResult = (raw: unknown): ConsignmentLabel => labelOf(raw)
+
+/** The multi-drop form's rows as POST /shipments `drops[]`; optional fields are left out when empty. */
+export function toShipmentDrops(rows: {
+  address: string; lat: number; lng: number; consignee_name: string; consignee_phone: string; consignee_gstin?: string | null
+  pieces: number; weight_kg?: number | null; declared_value?: number | null
+}[]): ShipmentDropInput[] {
+  return rows.map(r => ({
+    address: r.address,
+    lat: r.lat,
+    lng: r.lng,
+    consignee_name: r.consignee_name.trim(),
+    consignee_phone: r.consignee_phone.trim(),
+    ...(r.consignee_gstin?.trim() ? { consignee_gstin: r.consignee_gstin.trim().toUpperCase() } : {}),
+    pieces: r.pieces,
+    ...(r.weight_kg != null ? { weight_kg: r.weight_kg } : {}),
+    ...(r.declared_value != null ? { declared_value: r.declared_value } : {}),
+  }))
 }
