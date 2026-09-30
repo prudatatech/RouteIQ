@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
+import { listVendorLoads, vendorLoadDetail } from '../services/vendor-loads.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
@@ -105,6 +106,25 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
           ? manifestParcelCode(String(r.manifest_id))
           : `REQ-${String(r.vendor_request_id).slice(0, 8).toUpperCase()}`,
     })));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The vendor's own loads with stage, price, truck, invoice and open problems (the "My loads" board)
+router.get('/loads', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await listVendorLoads(req.user.user_id));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// One of the vendor's loads: where it is, its lots, proof of delivery, problems, claims and invoice
+router.get('/loads/:id', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) throw new HttpError(404, 'Load not found');
+    res.json(await vendorLoadDetail(req.user.user_id, req.params.id));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

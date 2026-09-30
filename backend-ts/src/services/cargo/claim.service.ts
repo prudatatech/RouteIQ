@@ -7,8 +7,8 @@
  *   withdrawn from draft, filed or surveyed
  *
  * Staff raise claims on any consignment (as a draft); a customer on their own delivered or
- * returned shipment within CUSTOMER_CLAIM_DAYS of delivery, and a vendor on their own load, file
- * them directly. The declared value comes from shipment_hsn (or the vendor's declared value).
+ * returned shipment, and a vendor on their own delivered, partly delivered, returned or lost load,
+ * both within CUSTOMER_CLAIM_DAYS of delivery, file them directly. The declared value comes from shipment_hsn (or the vendor's declared value).
  * Documents are uploaded straight to private storage with signed URLs, like proof of delivery.
  */
 import crypto from 'crypto';
@@ -108,6 +108,37 @@ export async function deliveredAt(c: Consignment): Promise<string | null> {
   return c.row.updated_at ?? null;
 }
 
+/** Custody events that mean the goods reached the end of their trip, wholly or in part, or were lost. */
+const CLAIMABLE_EVENTS = ['delivery', 'partial_delivery', 'return_delivery', 'lost'];
+
+export interface ClaimWindow {
+  allowed: boolean;
+  /** Why not, in words for the vendor. Null when allowed. */
+  reason: string | null;
+  /** The last moment a claim can be raised (CUSTOMER_CLAIM_DAYS after delivery), or null before delivery. */
+  until: string | null;
+}
+
+/**
+ * Whether a vendor can raise a claim on one of their loads now: it must be delivered, partly
+ * delivered, returned or lost (a status, or a delivery, return or loss on its custody record), and
+ * within CUSTOMER_CLAIM_DAYS of that. A load still on the road can not be claimed on.
+ */
+export async function vendorClaimWindow(c: Consignment): Promise<ClaimWindow> {
+  const column = c.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
+  const { data: events } = await supabase.from('cargo_custody_events').select('kind').eq(column, c.id).in('kind', CLAIMABLE_EVENTS).limit(1);
+  const reached = CUSTOMER_CLAIMABLE.includes(c.status) || (events ?? []).length > 0;
+  if (!reached) {
+    return { allowed: false, reason: 'A claim can be raised once your load is delivered, partly delivered or lost.', until: null };
+  }
+  const at = await deliveredAt(c);
+  const until = at ? new Date(Date.parse(at) + CUSTOMER_CLAIM_DAYS * 86_400_000).toISOString() : null;
+  if (until && Date.now() > Date.parse(until)) {
+    return { allowed: false, reason: `Claims can be raised within ${CUSTOMER_CLAIM_DAYS} days of delivery. Please contact support.`, until };
+  }
+  return { allowed: true, reason: null, until };
+}
+
 /** Whether the caller may see or add to a claim. */
 async function assertClaimAccess(user: TokenData, claim: any): Promise<void> {
   if (isStaff(user)) return;
@@ -134,6 +165,8 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
   }
   if (role === 'vendor') {
     if (c.kind !== 'manifest' || !(await canAccessManifest({ user_id: actor.id, role: 'vendor' } as TokenData, c.id))) throw new HttpError(404, 'Consignment not found');
+    const window = await vendorClaimWindow(c);
+    if (!window.allowed) throw new HttpError(409, window.reason ?? 'A claim can not be raised on this load.');
   }
   if (body.exception_id) {
     const { data: item } = await supabase

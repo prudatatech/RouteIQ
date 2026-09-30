@@ -36,16 +36,16 @@ Principle (workflow blueprint, principle 7): every handoff notifies and deep-lin
 
 | Type | Trigger | Data ids | Opens |
 | --- | --- | --- | --- |
-| `return_trip_opened` | A bidding window opens (driver toggle, "open backhaul", the return-trip screen, staff console or wizard) and the truck is within 50 km by road or in the vendor's city. Approved-KYC vendors with a location only. Never includes the plate. Once per vendor per window (`window_id`). When the driver's matching toggle runs with the truck position known, `passing_route` is sent instead of this, so a vendor is not told twice | `window_id`, `closes_at`, `trigger_type` | `/vendor/corridor` |
-| `passing_route` | Route-corridor match for a truck passing the vendor | `route_id` | `/vendor/corridor` |
-| `vendor_profile_incomplete` | A bid can't be awarded because the vendor's profile has no pickup location. Once per bid (`bid_id`) | `bid_id`, `window_id`, `missing` (`location`) | `/vendor/documents` |
-| `invoice_issued` | An invoice is created (delivery of a shipment, a vendor load, or a load a 3PL partner delivered). Once per invoice | `invoice_id`, `invoice_number`, plus below | `/vendor/invoices` |
-| `invoice_paid` | Staff mark an invoice paid. Once per invoice | same | `/vendor/invoices` |
-| `request_approved`, `request_rejected`, `vehicle_assigned`, `request_escalated`, `request_assigned_partner`, `request_completed`, `load_picked_up`, `load_in_transit` | Their posted load moves | `request_id` (`vehicle_assigned` also `vehicle_id`, `cost`) | `/vendor/shipments?open=:request_id` |
-| `bid_accepted`, `bid_lost`, `bid_rejected`, `bid_expired`, `bid_reopened` | Their bid | `bid_id` (`bid_accepted` also `shipment_id`, `window_id`) | `/vendor/shipments?open=:bid_id` |
-| `kyc_approved`, `kyc_rejected` | KYC decision | `vendor_id` | `/vendor/documents` |
-| `cargo_exception_opened`, `cargo_exception_resolved`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub` | Their goods | `request_id`, `manifest_id`, `code`, plus `exception_id`, `transfer_id`, `depot_id`, `route_id` where they apply | `/vendor/shipments?open=:request_id` |
-| `cargo_claim_update` | Their claim changes status | `request_id`, `manifest_id`, `claim_id`, `code` (claim), `consignment_code` (load), `status` | `/vendor/shipments?open=:request_id` |
+| `return_trip_opened` | A bidding window opens (driver toggle, "open backhaul", the return-trip screen, staff console or wizard) and the truck is within 50 km by road or in the vendor's city. Approved-KYC vendors with a location only. Never includes the plate. Once per vendor per window (`window_id`). When the driver's matching toggle runs with the truck position known, `passing_route` is sent instead of this, so a vendor is not told twice | `window_id`, `closes_at`, `trigger_type` | `/vendor/return-trips?window=:window_id` |
+| `passing_route` | Route-corridor match for a truck passing the vendor | `route_id` | `/vendor/return-trips` |
+| `vendor_profile_incomplete` | A bid can't be awarded because the vendor's profile has no pickup location. Once per bid (`bid_id`) | `bid_id`, `window_id`, `missing` (`location`) | `/vendor/company` |
+| `invoice_issued` | An invoice is created (delivery of a shipment, a vendor load, or a load a 3PL partner delivered). Once per invoice | `invoice_id`, `invoice_number`, plus below | `/vendor/invoices?open=:invoice_id` |
+| `invoice_paid` | Staff mark an invoice paid. Once per invoice | same | `/vendor/invoices?open=:invoice_id` |
+| `request_approved`, `request_rejected`, `vehicle_assigned`, `request_escalated`, `request_assigned_partner`, `request_completed`, `load_picked_up`, `load_in_transit` | Their posted load moves | `request_id` (`vehicle_assigned` also `vehicle_id`, `cost`) | `/vendor/loads/:request_id` |
+| `bid_accepted`, `bid_lost`, `bid_rejected`, `bid_expired`, `bid_reopened` | Their bid | `bid_id` (`bid_accepted` also `shipment_id`, `window_id`) | `bid_accepted`: the load it created, `/vendor/loads/:shipment_id`; the others: `/vendor/return-trips?bid=:bid_id` |
+| `kyc_approved`, `kyc_rejected` | KYC decision | `vendor_id` | `/vendor/company` |
+| `cargo_exception_opened`, `cargo_exception_resolved`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub` | Their goods | `request_id`, `manifest_id`, `code`, plus `exception_id`, `transfer_id`, `depot_id`, `route_id` where they apply | `/vendor/loads/:request_id` |
+| `cargo_claim_update` | Their claim changes status | `request_id`, `manifest_id`, `claim_id`, `code` (claim), `consignment_code` (load), `status` | `/vendor/claims?open=:claim_id` |
 | `tpl_offer`, `tpl_offer_taken`, `tpl_offer_withdrawn`, `tpl_order_paid`, `tpl_approved`, `tpl_paused`, `tpl_resumed`, `tpl_rejected` | 3PL partner events (a partner is paid for an order with `tpl_order_paid`; a partner has no invoice) | `partner_id`, `offer_id`, `order_id` | `/3pl-portal/:partner_id?tab=...` |
 
 Invoice ids by recipient: a vendor load carries `manifest_id` and `request_id` (also for a 3PL-delivered load); space a vendor won carries `shipment_id` and `bid_id`.

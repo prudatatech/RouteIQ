@@ -7,39 +7,63 @@ describe('vendor notifications', () => {
   it.each([
     'request_approved', 'request_rejected', 'vehicle_assigned', 'request_escalated', 'request_assigned_partner',
     'request_completed', 'load_picked_up', 'load_in_transit',
-  ])('%s opens the posted load on My shipments', type => {
-    expect(at(type, { request_id: 'r1' }, 'vendor')).toBe('/vendor/shipments?open=r1')
+  ])('%s opens the posted load', type => {
+    expect(at(type, { request_id: 'r1' }, 'vendor')).toBe('/vendor/loads/r1')
   })
 
-  it.each(['kyc_approved', 'kyc_rejected'])('%s opens Company & KYC', type => {
-    expect(at(type, { vendor_id: 'v1' }, 'vendor')).toBe('/vendor/documents')
+  it.each(['kyc_approved', 'kyc_rejected'])('%s opens Company', type => {
+    expect(at(type, { vendor_id: 'v1' }, 'vendor')).toBe('/vendor/company')
   })
 
-  it.each(['bid_accepted', 'bid_lost', 'bid_rejected', 'bid_expired', 'bid_reopened'])('%s opens the bid on My shipments', type => {
-    expect(at(type, { bid_id: 'b1' }, 'vendor')).toBe('/vendor/shipments?open=b1')
+  it.each(['bid_lost', 'bid_rejected', 'bid_expired', 'bid_reopened'])('%s opens the bid on Return trips', type => {
+    expect(at(type, { bid_id: 'b1' }, 'vendor')).toBe('/vendor/return-trips?bid=b1')
   })
 
-  it.each(['cargo_exception_opened', 'cargo_transfer_completed', 'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update'])(
-    '%s opens the load on My shipments', type => {
-      expect(at(type, { request_id: 'r1' }, 'vendor')).toBe('/vendor/shipments?open=r1')
+  it('opens the load a won bid created, else the bid', () => {
+    expect(at('bid_accepted', { bid_id: 'b1', shipment_id: 's1', window_id: 'w1' }, 'vendor')).toBe('/vendor/loads/s1')
+    expect(at('bid_accepted', { bid_id: 'b1' }, 'vendor')).toBe('/vendor/return-trips?bid=b1')
+    expect(at('bid_lost', {}, 'vendor')).toBe('/vendor/return-trips')
+  })
+
+  it.each(['cargo_exception_opened', 'cargo_exception_resolved', 'cargo_transfer_completed', 'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub'])(
+    '%s opens the load', type => {
+      expect(at(type, { request_id: 'r1', manifest_id: 'm1' }, 'vendor')).toBe('/vendor/loads/r1')
     },
   )
 
-  it.each(['passing_route', 'return_trip_opened'])('%s opens the corridors page', type => {
-    expect(at(type, { route_id: 'r1', window_id: 'w1' }, 'vendor')).toBe('/vendor/corridor')
+  it('opens the claim that changed, else its load, else the claims list', () => {
+    expect(at('cargo_claim_update', { request_id: 'r1', manifest_id: 'm1', claim_id: 'c1', code: 'CLM-1' }, 'vendor')).toBe('/vendor/claims?open=c1')
+    expect(at('cargo_claim_update', { request_id: 'r1' }, 'vendor')).toBe('/vendor/loads/r1')
+    expect(at('cargo_claim_update', {}, 'vendor')).toBe('/vendor/claims')
   })
 
-  it('asks the vendor to fix the profile on Company & KYC', () => {
-    expect(at('vendor_profile_incomplete', { bid_id: 'b1' }, 'vendor')).toBe('/vendor/documents')
+  it('opens the return trip window that opened', () => {
+    expect(at('return_trip_opened', { window_id: 'w1', closes_at: '2026-10-01T10:00:00Z' }, 'vendor')).toBe('/vendor/return-trips?window=w1')
+    expect(at('return_trip_opened', {}, 'vendor')).toBe('/vendor/return-trips')
+    expect(at('passing_route', { route_id: 'r1' }, 'vendor')).toBe('/vendor/return-trips')
   })
 
-  it.each(['invoice_issued', 'invoice_paid'])('%s opens Invoices', type => {
-    expect(at(type, { invoice_id: 'i1', request_id: 'r1' }, 'vendor')).toBe('/vendor/invoices')
+  it('asks the vendor to add the pickup location on Company', () => {
+    expect(at('vendor_profile_incomplete', { bid_id: 'b1', window_id: 'w1', missing: 'location' }, 'vendor')).toBe('/vendor/company')
   })
 
-  it('still goes to the page when the id is missing', () => {
-    expect(at('request_approved', {}, 'vendor')).toBe('/vendor/shipments')
-    expect(at('request_approved', null, 'vendor')).toBe('/vendor/shipments')
+  it.each(['invoice_issued', 'invoice_paid'])('%s opens that invoice on Invoices & proofs', type => {
+    expect(at(type, { invoice_id: 'i1', request_id: 'r1' }, 'vendor')).toBe('/vendor/invoices?open=i1')
+    expect(at(type, {}, 'vendor')).toBe('/vendor/invoices')
+  })
+
+  it('still goes to My loads when the id is missing', () => {
+    expect(at('request_approved', {}, 'vendor')).toBe('/vendor/loads')
+    expect(at('request_approved', null, 'vendor')).toBe('/vendor/loads')
+  })
+
+  it('has a page for every vendor type the backend sends', () => {
+    for (const type of [
+      'request_approved', 'request_rejected', 'vehicle_assigned', 'request_escalated', 'request_assigned_partner', 'request_completed', 'load_picked_up', 'load_in_transit',
+      'bid_accepted', 'bid_lost', 'bid_rejected', 'bid_expired', 'bid_reopened', 'kyc_approved', 'kyc_rejected', 'return_trip_opened', 'passing_route',
+      'vendor_profile_incomplete', 'invoice_issued', 'invoice_paid', 'cargo_exception_opened', 'cargo_exception_resolved', 'cargo_transfer_completed',
+      'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update',
+    ]) expect(at(type, {}, 'vendor'), type).toMatch(/^\/vendor\//)
   })
 })
 

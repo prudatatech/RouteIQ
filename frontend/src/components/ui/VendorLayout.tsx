@@ -20,13 +20,14 @@ function prefetchRoute(to: string) {
   routePrefetch[to]?.().catch(() => { /* surfaced on navigation instead */ })
 }
 
+/** The vendor's menu, in the order the work happens. */
 const links = [
-  { to: '/vendor', label: 'Find capacity', end: true, requiresSignIn: false },
-  { to: '/vendor/corridor', label: 'Corridors', requiresSignIn: false },
-  { to: '/vendor/shipments', label: 'My shipments', requiresSignIn: true },
-  { to: '/vendor/invoices', label: 'Invoices', requiresSignIn: true },
-  { to: '/vendor/tracking', label: 'Tracking', requiresSignIn: true },
-  { to: '/vendor/documents', label: 'Company & KYC', requiresSignIn: true },
+  { to: '/vendor/loads', label: 'My loads', requiresSignIn: true },
+  { to: '/vendor/request', label: 'Post a load', requiresSignIn: true },
+  { to: '/vendor/return-trips', label: 'Return trips', requiresSignIn: false },
+  { to: '/vendor/invoices', label: 'Invoices & proofs', requiresSignIn: true },
+  { to: '/vendor/claims', label: 'Claims', requiresSignIn: true },
+  { to: '/vendor/company', label: 'Company', requiresSignIn: true },
 ]
 
 export default function VendorLayout() {
@@ -49,7 +50,7 @@ export default function VendorLayout() {
     setProfileLoading(true)
     const { data, error } = await supabase
       .from('vendor_profiles')
-      .select('id, company_name, city, company_logo, kyc_status')
+      .select('id, company_name, city, company_logo, kyc_status, kyc_rejection_reason, latitude, longitude')
       .eq('id', userId)
       .maybeSingle()
     setProfileLoading(false)
@@ -68,6 +69,8 @@ export default function VendorLayout() {
       city: data.city,
       company_logo: data.company_logo,
       kycStatus: KYC_STATUSES.includes(status) ? status : 'pending',
+      kycRejectionReason: data.kyc_rejection_reason ?? null,
+      hasLocation: data.latitude != null && data.longitude != null,
     })
   }, [userId])
 
@@ -119,13 +122,13 @@ export default function VendorLayout() {
 
   const isVendor = !!session && role === 'vendor'
   const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, isVendor, refreshProfile: loadProfile }
-  const needsKyc = isVendor && vendorProfile?.kycStatus !== 'approved'
+  // The company page needs the vendor when the KYC is not approved, or the profile has no pickup location
+  const needsKyc = isVendor && (vendorProfile ? vendorProfile.kycStatus !== 'approved' || !vendorProfile.hasLocation : !profileLoading)
 
   const navLinks = (vertical: boolean) => links.map(link => (
     <NavLink
       key={link.to}
       to={target(link)}
-      end={link.end}
       onMouseEnter={() => prefetchRoute(link.to)}
       onFocus={() => prefetchRoute(link.to)}
       className={({ isActive }) => clsx(
@@ -135,7 +138,7 @@ export default function VendorLayout() {
       )}
     >
       {link.label}
-      {link.to === '/vendor/documents' && needsKyc && (
+      {link.to === '/vendor/company' && needsKyc && (
         <span role="img" className="ml-2 h-2 w-2 rounded-full bg-warning" aria-label="Action needed" />
       )}
     </NavLink>
@@ -170,7 +173,7 @@ export default function VendorLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4 xl:gap-6">
-            <NavLink to="/vendor" className="flex items-center gap-2.5">
+            <NavLink to="/vendor/loads" className="flex items-center gap-2.5">
               <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
               <span className="text-lg font-semibold text-text">MargixIndia</span>
               <span className="hidden text-sm text-muted xl:inline">for vendors</span>

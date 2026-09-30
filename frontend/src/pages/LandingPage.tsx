@@ -27,8 +27,8 @@ const audiences: Audience[] = [
   {
     icon: Package,
     title: 'Vendors',
-    description: 'Search open truck capacity, bid on corridors or post a load, then track your shipments until they are delivered.',
-    action: { to: '/vendor', label: 'Find capacity' },
+    description: 'Post a load or bid on spare truck space on return trips, then follow your loads until they are delivered.',
+    action: { to: '/vendor/loads', label: 'Open the vendor portal' },
     secondary: { to: '/login?as=vendor', label: 'Sign in or create an account' },
   },
   {

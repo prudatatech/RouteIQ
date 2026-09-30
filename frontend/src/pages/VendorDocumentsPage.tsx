@@ -94,7 +94,7 @@ const ACCOUNT_PATTERN = /^\d{9,18}$/
 
 /**
  * The company & KYC wizard, shared by the first-time setup flow (/vendor/onboarding)
- * and the ongoing "Company & KYC" page (/vendor/documents). Both routes render this
+ * and the ongoing Company page (/vendor/company). Both routes render this
  * component; `mode` only changes copy and where a first save sends the vendor.
  */
 export default function VendorDocumentsPage() {
@@ -102,7 +102,7 @@ export default function VendorDocumentsPage() {
   const navigate = useNavigate()
   const userId = useAuthStore(s => s.userId)
   const { confirm } = useConfirm()
-  const { refreshProfile } = useVendorContext()
+  const { refreshProfile, vendorProfile } = useVendorContext()
 
   const mode: 'onboarding' | 'documents' = location.pathname.startsWith('/vendor/onboarding') ? 'onboarding' : 'documents'
 
@@ -389,7 +389,7 @@ export default function VendorDocumentsPage() {
       setHasProfile(true)
       setIsEditingKyc(false)
       toast.success(mode === 'onboarding' ? 'Company profile created' : 'KYC submitted for review')
-      if (mode === 'onboarding') navigate('/vendor')
+      if (mode === 'onboarding') navigate('/vendor/loads')
       else window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
@@ -416,7 +416,7 @@ export default function VendorDocumentsPage() {
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
       toast.success('Company profile saved. Complete your KYC to post loads and bid.')
-      navigate('/vendor')
+      navigate('/vendor/loads')
     } catch (err) {
       console.error(err)
       toast.error(errorMessage(err, 'We could not save your details. Check your connection and try again.'))
@@ -430,7 +430,7 @@ export default function VendorDocumentsPage() {
   if (loading) {
     return (
       <Page>
-        <PageHeader title={mode === 'onboarding' ? 'Set up your company' : 'Company & KYC'} />
+        <PageHeader title={mode === 'onboarding' ? 'Set up your company' : 'Company'} />
         <div className="flex justify-center py-16"><Spinner size={28} /></div>
       </Page>
     )
@@ -439,7 +439,7 @@ export default function VendorDocumentsPage() {
   if (loadFailed && !hasProfile) {
     return (
       <Page>
-        <PageHeader title={mode === 'onboarding' ? 'Set up your company' : 'Company & KYC'} />
+        <PageHeader title={mode === 'onboarding' ? 'Set up your company' : 'Company'} />
         <ErrorState
           title="We could not load your company details"
           description="Check your connection and try again."
@@ -449,7 +449,7 @@ export default function VendorDocumentsPage() {
     )
   }
 
-  const title = mode === 'onboarding' ? 'Set up your company' : 'Company & KYC'
+  const title = mode === 'onboarding' ? 'Set up your company' : 'Company'
   const description = mode === 'onboarding'
     ? 'Tell us about your company so we can verify it and open up bidding and posting loads.'
     : 'Your company details and KYC documents. Changing them sends an approved company back for review.'
@@ -478,6 +478,15 @@ export default function VendorDocumentsPage() {
       {hasProfile && kycStatus === 'rejected' && (
         <Alert tone="danger" title="KYC rejected">
           {kycRejectionReason || 'Please review and correct your details below, then resubmit.'}
+        </Alert>
+      )}
+      {hasProfile && vendorProfile && !vendorProfile.hasLocation && (
+        <Alert
+          tone="warning"
+          title="Add your pickup location"
+          action={readOnly && !isEditing ? <Button variant="secondary" size="sm" onClick={() => { setIsEditingKyc(true); setStep(1) }}>Add location</Button> : undefined}
+        >
+          A bid cannot be awarded to you until your company has a pickup location. Set your operating base on the map under Contact &amp; address.
         </Alert>
       )}
 

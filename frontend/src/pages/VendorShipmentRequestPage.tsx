@@ -145,7 +145,7 @@ export default function VendorShipmentRequestPage() {
       setPickup({ address: vendorProfile.address, lat: vendorProfile.latitude, lng: vendorProfile.longitude })
       toast.success('Warehouse address selected')
     } else {
-      toast.error('No warehouse address on file yet. Add one under Company & KYC.')
+      toast.error('No warehouse address on file yet. Add one under Company.')
     }
   }
 
@@ -263,7 +263,7 @@ export default function VendorShipmentRequestPage() {
     try {
       await vendorAPI.createShipmentRequest(payload)
       toast.success('Load posted. Dispatch will assign a vehicle.')
-      navigate('/vendor/shipments')
+      navigate('/vendor/loads')
     } catch (err) {
       const message = errorMessage(err, 'Please try again.')
       toast.error(`We could not post your load. ${message}`)
@@ -277,7 +277,7 @@ export default function VendorShipmentRequestPage() {
       <PageHeader
         title="Post a load"
         description="Tell us the route and cargo — we'll match it with available capacity."
-        back={{ to: '/vendor', label: 'Back to find capacity' }}
+        back={{ to: '/vendor/loads', label: 'My loads' }}
       />
 
       {kycBlocked && (
@@ -285,8 +285,8 @@ export default function VendorShipmentRequestPage() {
           tone={kycProfile?.kycStatus === 'submitted' ? 'info' : 'warning'}
           title={kycProfile?.kycStatus === 'submitted' ? 'Your KYC is in review' : 'Finish your KYC to post a load'}
           action={kycProfile?.kycStatus === 'submitted' ? undefined : (
-            <Link to={kycProfile ? '/vendor/documents' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-              {kycProfile ? 'Open company & KYC' : 'Set up company'}
+            <Link to={kycProfile ? '/vendor/company' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+              {kycProfile ? 'Open company' : 'Set up company'}
             </Link>
           )}
         >

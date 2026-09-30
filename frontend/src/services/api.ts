@@ -452,6 +452,10 @@ export const vendorAPI = {
     api.put('/vendor/kyc/documents', data).then(r => r.data),
   /** The vendor's own invoices, newest first. */
   invoices: () => api.get('/vendor/invoices').then(r => ensureArray(r.data)),
+  /** The vendor's own loads (posted loads and return-trip space they won) with stage, price, truck, invoice and open problems. */
+  loads: () => api.get('/vendor/loads').then(r => ensureArray(r.data)),
+  /** One load with where it is, lots, proof of delivery, problems in plain words, claims and whether a claim can be raised. */
+  load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }

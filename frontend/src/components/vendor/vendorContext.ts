@@ -8,6 +8,10 @@ export interface VendorProfileSummary {
   city: string | null
   company_logo: string | null
   kycStatus: KycStatus
+  /** Why staff rejected the KYC, while it is rejected. */
+  kycRejectionReason: string | null
+  /** The company has a pickup location (latitude and longitude); a bid can not be awarded without one. */
+  hasLocation: boolean
 }
 
 export interface VendorOutletContext {

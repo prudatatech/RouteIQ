@@ -101,7 +101,41 @@ describe('claims', () => {
     expect(supabaseMock.rows('cargo_claims')).toHaveLength(0);
   });
 
-  it('lets a vendor claim on their own load only', async () => {
+  /** The vendor's load reached its drop `daysAgo` days ago. */
+  function loadDelivered(daysAgo: number) {
+    Object.assign(one('cargo_manifest', ID.m1), { status: 'delivered', current_holder: 'consignee', current_vehicle_id: null, pieces_delivered: 4 });
+    supabaseMock.rows('cargo_custody_events').push({
+      id: 'ev-load', manifest_id: ID.m1, kind: 'delivery', pieces: 4, photo_paths: [], recorded_role: 'driver',
+      recorded_at: new Date(Date.now() - daysAgo * DAY).toISOString(),
+    });
+  }
+
+  it('refuses a vendor before delivery and after 7 days, and allows a partly delivered or lost load', async () => {
+    const body = { ref: { manifest_id: ID.m1 }, claim_type: 'shortage', claimed_amount: 100 };
+    const early = await file(body, auth.vendor());
+    expect(early.status).toBe(409);
+    expect(early.body.detail).toMatch(/delivered, partly delivered or lost/);
+
+    loadDelivered(8);
+    const late = await file(body, auth.vendor());
+    expect(late.status).toBe(409);
+    expect(late.body.detail).toMatch(/within 7 days/);
+    expect(supabaseMock.rows('cargo_claims')).toHaveLength(0);
+
+    // Partly delivered: the stored status is still an exception, the custody record says it
+    supabaseMock.rows('cargo_custody_events').length = 0;
+    Object.assign(one('cargo_manifest', ID.m1), { status: 'exception' });
+    supabaseMock.rows('cargo_custody_events').push({ id: 'ev-part', manifest_id: ID.m1, kind: 'partial_delivery', pieces: 2, photo_paths: [], recorded_at: new Date().toISOString() });
+    expect((await file(body, auth.vendor())).status).toBe(201);
+
+    supabaseMock.rows('cargo_custody_events').length = 0;
+    supabaseMock.rows('cargo_custody_events').push({ id: 'ev-lost', manifest_id: ID.m1, kind: 'lost', photo_paths: [], recorded_at: new Date().toISOString() });
+    Object.assign(one('cargo_manifest', ID.m1), { status: 'cancelled' });
+    expect((await file({ ...body, claim_type: 'loss' }, auth.vendor())).status).toBe(201);
+  });
+
+  it('lets a vendor claim on their own delivered load only', async () => {
+    loadDelivered(1);
     const res = await file({ ref: { manifest_id: ID.m1 }, claim_type: 'shortage', claimed_amount: 3000 }, auth.vendor());
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ status: 'filed', raised_by_role: 'vendor', declared_value: 150000 });
@@ -144,6 +178,7 @@ describe('claims', () => {
 
   it('lists all claims for staff and only their own for a customer or vendor', async () => {
     delivered(1);
+    loadDelivered(1);
     await file({ ref: { shipment_id: ID.s1 }, claim_type: 'damage', claimed_amount: 500 });
     await file({ ref: { manifest_id: ID.m1 }, claim_type: 'shortage', claimed_amount: 100 }, auth.vendor());
     expect((await request(app).get(api('/cargo/claims')).set(auth.admin())).body.items).toHaveLength(2);
