@@ -19,6 +19,7 @@ import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert, useConfirm,
 } from '@/components/ui'
+import { isMasterRow } from '@/components/cargo/lots'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
@@ -57,6 +58,8 @@ interface Shipment {
   total_weight_kg?: number | null
   weight_kg?: number | null
   delivery_points?: DeliveryPoint[] | null
+  /** A split master is never dispatched; its lots are. */
+  is_master?: boolean | null
 }
 
 interface OptimizedRouteStop {
@@ -176,8 +179,9 @@ export default function OptimizePage() {
   const { data: pendingShipments = [], isLoading: shipmentsLoading } = useQuery<Shipment[]>({
     queryKey: ['shipments', 'pending'],
     queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: Shipment & { status: string; vehicle_id?: string | null }) =>
-      // New loads, and failed deliveries waiting for another attempt (the server plans both)
-      (s.status === 'created' && !s.vehicle_id) || s.status === 'exception',
+      // New loads, and failed deliveries waiting for another attempt (the server plans both).
+      // A split master holds no goods: its lots are dispatched, each under its own code.
+      !isMasterRow(s) && ((s.status === 'created' && !s.vehicle_id) || s.status === 'exception'),
     )),
   })
 

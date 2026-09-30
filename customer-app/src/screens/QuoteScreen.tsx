@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
-import { api, BOOKING_CREATED_EVENT, type Quote } from '../services/api';
+import { api, BOOKING_CREATED_EVENT, type BookingDrop, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
@@ -18,6 +18,13 @@ type DayChoice = 'today' | 'tomorrow' | 'other';
 export default function QuoteScreen({ navigation, route }: any) {
   const { t } = useTranslation();
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType, weightKg, vehicleType } = route.params || {};
+  // Several drops (each becomes a lot); the route ends at the last one. None for a single drop.
+  const drops: BookingDrop[] | undefined = route.params?.drops?.length > 1 ? route.params.drops : undefined;
+  const lastDrop = drops ? drops[drops.length - 1] : null;
+  const dropLat: number = lastDrop ? lastDrop.lat : dropoffCoord.latitude;
+  const dropLng: number = lastDrop ? lastDrop.lng : dropoffCoord.longitude;
+  const dropAddress: string = lastDrop ? lastDrop.address : dropoffLocation;
+  const dropsKey = drops ? drops.map((d) => `${d.lat},${d.lng},${d.pieces}`).join(';') : '';
 
   const today = dayKey(0);
   const tomorrow = dayKey(1);
@@ -31,14 +38,15 @@ export default function QuoteScreen({ navigation, route }: any) {
       api.getQuote({
         pickup_lat: pickupCoord.latitude,
         pickup_lng: pickupCoord.longitude,
-        drop_lat: dropoffCoord.latitude,
-        drop_lng: dropoffCoord.longitude,
+        drop_lat: dropLat,
+        drop_lng: dropLng,
         weight_kg: weightKg,
         vehicle_type: vehicleType,
         load_type: loadType,
         date,
+        ...(drops ? { drops } : {}),
       }),
-    `${weightKg}|${loadType}|${vehicleType}|${date}`,
+    `${weightKg}|${loadType}|${vehicleType}|${date}|${dropsKey}`,
     t('quote_failed'),
   );
 
@@ -61,16 +69,17 @@ export default function QuoteScreen({ navigation, route }: any) {
       const created = await api.createBooking({
         pickup_lat: pickupCoord.latitude,
         pickup_lng: pickupCoord.longitude,
-        drop_lat: dropoffCoord.latitude,
-        drop_lng: dropoffCoord.longitude,
+        drop_lat: dropLat,
+        drop_lng: dropLng,
         weight_kg: weightKg,
         vehicle_type: vehicleType,
         load_type: loadType,
         date,
         pickup_name: placeName(pickupLocation),
         pickup_address: pickupLocation,
-        drop_name: placeName(dropoffLocation),
-        drop_address: dropoffLocation,
+        drop_name: placeName(dropAddress),
+        drop_address: dropAddress,
+        ...(drops ? { drops } : {}),
       });
       setBookedId(created.id);
       DeviceEventEmitter.emit(BOOKING_CREATED_EVENT);
@@ -132,12 +141,35 @@ export default function QuoteScreen({ navigation, route }: any) {
           <Text variant="bodyMedium" numberOfLines={2}>
             {pickupLocation}
           </Text>
-          <Text variant="caption" color="textMuted">
-            {t('dropoff')}
-          </Text>
-          <Text variant="bodyMedium" numberOfLines={2}>
-            {dropoffLocation}
-          </Text>
+          {drops ? (
+            <>
+              <Text variant="caption" color="textMuted">
+                {t('drops_quote_title', { n: drops.length, pieces: formatNumber(drops.reduce((sum, d) => sum + d.pieces, 0)) })}
+              </Text>
+              {drops.map((drop, index) => (
+                <View key={`${drop.lat},${drop.lng},${index}`} style={styles.drop}>
+                  <Text variant="captionMedium" color="textMuted">
+                    {t('drops_drop_n', { n: index + 1 })}
+                  </Text>
+                  <Text variant="bodyMedium" numberOfLines={2}>
+                    {drop.address}
+                  </Text>
+                  <Text variant="bodySmall" color="textMuted">
+                    {t('drops_quote_line', { name: drop.consignee_name, phone: drop.consignee_phone, pieces: formatNumber(drop.pieces) })}
+                  </Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            <>
+              <Text variant="caption" color="textMuted">
+                {t('dropoff')}
+              </Text>
+              <Text variant="bodyMedium" numberOfLines={2}>
+                {dropoffLocation}
+              </Text>
+            </>
+          )}
         </Card>
 
         <View style={styles.section}>
@@ -307,6 +339,7 @@ const styles = StyleSheet.create({
   content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
   section: { gap: space[2] },
   routeCard: { gap: space[1] },
+  drop: { gap: space[1], paddingTop: space[2], borderTopWidth: size.border, borderTopColor: colors.border },
   pills: { flexDirection: 'row', gap: space[2], marginBottom: space[2] },
   dateRow: { flexDirection: 'row', gap: space[2], flexWrap: 'wrap' },
   chip: {

@@ -7,7 +7,8 @@
 import { api } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import {
-  listOf, mapClaim, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow, mapOnBoard, mapRelief, mapTransfer, mapWhere,
+  listOf, mapClaim, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow, mapLots, mapMergeResult, mapOnBoard, mapRelief,
+  mapSplitResult, mapTransfer, mapWhere,
 } from './cargoMap'
 
 // ── Vocabulary ─────────────────────────────────────────────────────────────
@@ -53,9 +54,13 @@ export type ClaimStatus = (typeof CLAIM_STATUSES)[number]
 export const CUSTODY_KINDS = [
   'booked', 'accepted', 'arrived_pickup', 'pickup', 'departed', 'arrived_drop', 'delivery', 'partial_delivery', 'refused',
   'undelivered', 'handover_out', 'handover_in', 'hub_in', 'hub_out', 'return_pickup', 'return_delivery', 'inspection', 'hold',
-  'release_hold', 'lost',
+  'release_hold', 'lost', 'split', 'merge',
 ] as const
 export type CustodyKind = (typeof CUSTODY_KINDS)[number]
+
+/** Why a consignment was split into lots (`shipments.split_reason`). */
+export const SPLIT_REASONS = ['multi_drop', 'partial_transfer', 'hub_crossdock', 'partial_delivery_remainder', 'manual'] as const
+export type SplitReason = (typeof SPLIT_REASONS)[number]
 
 // ── Records (as the screens use them; cargoMap.ts maps the backend's answers to these) ──
 
@@ -98,6 +103,8 @@ export interface ConsignmentLabel {
   /** RTX-… for a shipment, CM-… for a vendor load (the backend's `code` or `consignment_code`). */
   tracking_id?: string | null
   status?: string | null
+  /** A lot's label (`A`, `B`, `A1`); set when the row is a lot of a split consignment (code `RTX-ABC123-B`). */
+  lot_label?: string | null
 }
 
 export interface ExceptionItem extends ConsignmentLabel {
@@ -198,6 +205,8 @@ export interface CargoTransfer {
   to_vehicle?: CargoVehicle | null
   to_depot?: CargoDepot | null
   exception?: Pick<CargoException, 'id' | 'code' | 'type' | 'status'> | null
+  /** A partial transfer (fewer pieces than on board): the lot that moves and the lot that stays. */
+  split_lots?: { moving: ConsignmentLabel | null; staying: ConsignmentLabel | null } | null
 }
 
 export interface ClaimDocument {
@@ -268,6 +277,11 @@ export interface WhereIsIt {
   delivery_otp_required: boolean
   rto: boolean
   on_hold_reason?: string | null
+  /** A master's status, holder and pieces are rolled up from its lots; a master holds no goods itself. */
+  is_master: boolean
+  /** Set on a lot: its label (`B`) and its master. */
+  lot_label?: string | null
+  master?: ConsignmentLabel | null
 }
 
 /** One event of GET /cargo/timeline/:ref, with the backend's embedded vehicles, depots and people flattened. */
@@ -307,6 +321,9 @@ export interface CustodyEvent {
   recorded_by?: string | null
   recorded_by_name?: string | null
   recorded_role?: string | null
+  /** On a master's merged timeline: the lot the event belongs to (`B`, and its code `RTX-ABC123-B`). */
+  lot_label?: string | null
+  lot_code?: string | null
 }
 
 export interface HubSummary extends CargoDepot {
@@ -350,6 +367,60 @@ export interface OnBoard {
   vehicle_id: string
   vehicle?: CargoVehicle | null
   items: OnBoardItem[]
+}
+
+export interface LotDrop {
+  name: string | null
+  address: string | null
+  lat: number | null
+  lng: number | null
+}
+
+export interface LotConsignee {
+  name: string | null
+  phone: string | null
+  gstin: string | null
+}
+
+/** One lot of a split consignment (GET /cargo/lots/:ref). */
+export interface Lot extends ConsignmentLabel {
+  /** `A`, `B`, `A1` … */
+  label: string | null
+  status: string
+  current_holder: Holder
+  vehicle: CargoVehicle | null
+  depot: CargoDepot | null
+  pieces: Pieces
+  weight_kg: number | null
+  declared_value: number | null
+  freight_share: number | null
+  drop: LotDrop | null
+  consignee: LotConsignee | null
+  split_reason: SplitReason | null
+  open_exceptions: Pick<CargoException, 'id' | 'code' | 'type' | 'severity' | 'status' | 'sla_due_at'>[]
+}
+
+export interface LotsMaster extends ConsignmentLabel {
+  status: string
+  pieces: Pieces
+  weight_kg: number | null
+  declared_value: number | null
+  /** The master's whole freight_charge. */
+  freight: number | null
+}
+
+/** GET /cargo/lots/:ref: the master and every lot, whichever of them was asked for. */
+export interface LotsView {
+  master: LotsMaster
+  lots: Lot[]
+  /** The rolled-up pieces of all lots. */
+  totals: Pieces
+}
+
+/** What the split answers: the master and the lots made (a remainder lot included). */
+export interface SplitResult {
+  master: ConsignmentLabel
+  lots: (ConsignmentLabel & { label: string | null; pieces: number | null; weight_kg: number | null })[]
 }
 
 // ── Request bodies ─────────────────────────────────────────────────────────
@@ -425,12 +496,51 @@ export interface CreateTransferBody {
   from_vehicle_id: string
   to_vehicle_id?: string
   to_depot_id?: string
-  /** A transfer moves whole consignments: `pieces` is what is on board. */
+  /**
+   * `pieces` is what moves. Below what is on board, the backend first splits the consignment into
+   * a lot that moves and a lot that stays (split_reason `partial_transfer`) and transfers the moving lot.
+   */
   items: { ref: CargoRef; pieces: number }[]
   meet_lat?: number
   meet_lng?: number
   meet_address?: string
   note?: string
+}
+
+/** One lot asked for in POST /cargo/lots/split. Give one destination at most: a drop, a vehicle or a hub. */
+export interface SplitLotInput {
+  pieces: number
+  weight_kg?: number
+  declared_value?: number
+  freight_share?: number
+  consignee_name?: string
+  consignee_phone?: string
+  consignee_gstin?: string
+  drop?: { address: string; lat: number; lng: number }
+  to_vehicle_id?: string
+  to_depot_id?: string
+}
+
+/** POST /cargo/lots/split. Pieces below what is held leave a remainder lot where the goods are. */
+export interface SplitBody {
+  ref: CargoRef
+  reason: SplitReason
+  lots: SplitLotInput[]
+  /** Free text for the record (sent as `note`; the contract's `reason` is the split_reason code). */
+  note?: string
+}
+
+/** One drop of a multi-drop booking (`drops[]` on POST /shipments); each becomes a lot. */
+export interface ShipmentDropInput {
+  address: string
+  lat: number
+  lng: number
+  consignee_name: string
+  consignee_phone: string
+  consignee_gstin?: string
+  pieces: number
+  weight_kg?: number
+  declared_value?: number
 }
 
 /** PATCH /cargo/claims/:id (staff). Documents are added with uploadDocument, not here. */
@@ -532,6 +642,19 @@ export const transfersAPI = {
   recordEway: (id: string, eway_part_b_ref: string) => post<unknown>(`/cargo/transfers/${enc(id)}/eway`, { eway_part_b_ref }).then(mapTransfer),
 }
 
+export const lotsAPI = {
+  /** The master and its lots; `ref` may be the master or any lot. Null when the consignment was never split. */
+  get: (ref: string) => api.get(`/cargo/lots/${enc(ref)}`)
+    .then(r => mapLots(r.data))
+    .catch((err: { response?: { status?: number } }) => {
+      if (err?.response?.status === 404) return null
+      throw err
+    }),
+  split: (body: SplitBody) => post<unknown>('/cargo/lots/split', body).then(mapSplitResult),
+  /** Answers the lot the others were merged into. */
+  merge: (refs: CargoRef[]) => post<unknown>('/cargo/lots/merge', { refs }).then(mapMergeResult),
+}
+
 export const hubsAPI = {
   list: () => api.get('/cargo/hubs').then(r => listOf<unknown>(r.data, 'hubs').map(mapHub)),
   /** The answer is `{ depot, items }`. */
@@ -560,6 +683,7 @@ export const claimsAPI = {
 export const cargoKeys = {
   all: ['cargo'] as const,
   where: (ref: string) => ['cargo', 'where', ref] as const,
+  lots: (ref: string) => ['cargo', 'lots', ref] as const,
   timeline: (ref: string) => ['cargo', 'timeline', ref] as const,
   onBoard: (vehicleId: string) => ['cargo', 'on-board', vehicleId] as const,
   exceptions: (filters: ExceptionFilters = {}) => ['cargo', 'exceptions', filters] as const,

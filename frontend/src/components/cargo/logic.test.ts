@@ -172,6 +172,7 @@ const where = (over: Partial<WhereIsIt> = {}): WhereIsIt => ({
   max_delivery_attempts: 3,
   delivery_otp_required: false,
   rto: false,
+  is_master: false,
   ...over,
 })
 

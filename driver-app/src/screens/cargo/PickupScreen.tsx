@@ -4,30 +4,54 @@
  * and the consignor's signature. Each consignment is recorded as a `pickup`
  * custody event. Fewer pieces than booked, or a condition other than good,
  * makes the server open a case for dispatch, and the driver is told so here.
+ *
+ * Lots: a consignment booked to several drops is split into lots at booking,
+ * and only the lots are picked up. Scanning the master's code lists its lots
+ * (each with its code, pieces and consignee) and records a pickup per lot.
  */
 import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useConsignmentInfo } from '../../hooks/useCargo';
+import { useConsignmentInfo, useLotFamily } from '../../hooks/useCargo';
 import type { ScanOutcome } from '../../hooks/useParcelScan';
-import type { ConditionCode, ConsignmentInfo, ConsignmentRef } from '../../services/cargo';
+import { normalizeParcelCode } from '../../utils/parcel';
+import type { ConditionCode, ConsignmentInfo, ConsignmentRef, LotFamily, LotTag } from '../../services/cargo';
 import { sendCustody, type CargoSendResult } from '../../services/cargoActions';
 import type { LatLng } from '../../types/route';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
 import CargoScreen from '../../components/cargo/CargoScreen';
+import LotLine from '../../components/cargo/LotLine';
 import { ConditionPicker, DispatchNote, PhotoStrip, PieceCounter, SignatureBlock } from '../../components/cargo/CargoFields';
 import ParcelScanner, { type ScanMethod } from '../../components/scan/ParcelScanner';
 import SignaturePad from '../../components/modals/SignaturePad';
 import { Banner, Button, Card, ErrorBanner, IconButton, Text, TextField } from '../../components/ui';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, size, space } from '../../theme';
+import { size, space } from '../../theme';
 
 /** A consignment scanned at this pickup. */
 export interface PickupItem {
   code: string;
   /** The vendor load, or the tracking ID (the server takes either). */
   ref: ConsignmentRef;
+  /** For a lot listed from its master's scan: the master's code (what the driver scanned). */
+  masterCode?: string;
+  lot?: LotTag;
+}
+
+/** Lots still with the sender are the ones to pick up. */
+const AT_SENDER = new Set(['created', 'assigned', 'scheduled']);
+
+/** A master's lots to pick up here, as pickup items. */
+function lotItems(masterCode: string, family: LotFamily): PickupItem[] {
+  return family.lots
+    .filter((l) => (l.holder ? l.holder === 'consignor' : !l.status || AT_SENDER.has(l.status)))
+    .map((l) => ({
+      code: l.code,
+      ref: l.ref ?? l.code,
+      masterCode,
+      lot: { label: l.label, masterCode, consigneeName: l.consigneeName, consigneePhone: l.consigneePhone },
+    }));
 }
 
 interface ItemForm {
@@ -64,6 +88,20 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // A scanned master whose lots are picked up instead: master code → its lots
+  const [expanded, setExpanded] = useState<Record<string, PickupItem[]>>({});
+  const onLots = useCallback((masterCode: string, lots: PickupItem[]) => {
+    setExpanded((cur) => (cur[masterCode] ? cur : { ...cur, [masterCode]: lots }));
+  }, []);
+  // What is recorded: each scanned consignment, or its lots
+  const picked = useMemo(() => items.flatMap((i) => expanded[i.code] ?? [i]), [items, expanded]);
+
+  const removeItem = (item: PickupItem) => {
+    if (!item.masterCode) return onRemove(item.code);
+    const rest = (expanded[item.masterCode] ?? []).filter((l) => l.code !== item.code);
+    if (rest.length === 0) onRemove(item.masterCode);
+    setExpanded((cur) => ({ ...cur, [item.masterCode!]: rest }));
+  };
 
   const formOf = (code: string) => forms[code] ?? BLANK;
   const update = (code: string, patch: Partial<ItemForm>) => setForms((cur) => ({ ...cur, [code]: { ...(cur[code] ?? BLANK), ...patch } }));
@@ -81,7 +119,7 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
 
   const notes = useMemo(() => {
     const reasons: string[] = [];
-    for (const item of items) {
+    for (const item of picked) {
       const form = forms[item.code] ?? BLANK;
       const total = booked[item.code]?.piecesTotal;
       if (form.pieces !== null && total && form.pieces < total) {
@@ -90,7 +128,7 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
       if (form.condition !== 'good') reasons.push(`${item.code}: ${t(`cargo_condition_${form.condition}`)}`);
     }
     return reasons;
-  }, [items, forms, booked, t]);
+  }, [picked, forms, booked, t]);
 
   const scan = async (code: string, method: ScanMethod) => {
     setScanBusy(true);
@@ -108,7 +146,7 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
 
   const submit = async () => {
     const found: Record<string, string> = {};
-    for (const item of items) {
+    for (const item of picked) {
       const form = formOf(item.code);
       if (!form.pieces || form.pieces < 1) found[item.code] = t('cargo_pieces_required');
       else if (form.weight && !(Number(form.weight) > 0)) found[item.code] = t('cargo_weight_invalid');
@@ -134,7 +172,7 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
         label: 'pickup',
         photoUris: photos,
         signatureUri: signature,
-        events: items.map((item) => {
+        events: picked.map((item) => {
           const form = formOf(item.code);
           return {
             ref: item.ref,
@@ -150,7 +188,7 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
           };
         }),
       });
-      onDone(items, result);
+      onDone(picked, result);
     } catch (e) {
       setError(errorMessage(e, t('action_failed')));
     } finally {
@@ -177,13 +215,13 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
   return (
     <CargoScreen
       title={t('cargo_pickup_title')}
-      subtitle={fill(t('cargo_n_consignments'), { n: items.length })}
+      subtitle={fill(t('cargo_n_consignments'), { n: picked.length })}
       onClose={onClose}
       headerRight={headerRight}
       footer={
         <>
           <Button title={t('cancel')} variant="secondary" block={false} style={styles.action} onPress={onClose} disabled={saving} />
-          <Button title={t('cargo_pickup_save')} block={false} style={styles.action} onPress={submit} loading={saving} disabled={items.length === 0} />
+          <Button title={t('cargo_pickup_save')} block={false} style={styles.action} onPress={submit} loading={saving} disabled={picked.length === 0} />
         </>
       }
     >
@@ -191,9 +229,15 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
         {t('cargo_pickup_intro')}
       </Text>
 
-      {items.length === 0 ? <Banner tone="info" message={t('cargo_pickup_empty')} /> : null}
+      {picked.length === 0 ? <Banner tone="info" message={t('cargo_pickup_empty')} /> : null}
 
-      {items.map((item) => (
+      {Object.entries(expanded)
+        .filter(([master, lots]) => lots.length > 0 && items.some((i) => i.code === master))
+        .map(([master, lots]) => (
+          <Banner key={master} tone="info" icon="git-branch-outline" message={fill(t('cargo_pickup_master_lots'), { code: master, n: lots.length })} />
+        ))}
+
+      {picked.map((item) => (
         <PickupItemCard
           key={item.code}
           item={item}
@@ -201,8 +245,9 @@ export default function PickupScreen({ items, currentLoc, onScan, onRemove, onDo
           info={booked[item.code] ?? null}
           error={errors[item.code]}
           onInfo={onInfo}
+          onLots={onLots}
           onChange={(patch) => update(item.code, patch)}
-          onRemove={() => onRemove(item.code)}
+          onRemove={() => removeItem(item)}
           disabled={saving}
         />
       ))}
@@ -244,6 +289,7 @@ function PickupItemCard({
   info,
   error,
   onInfo,
+  onLots,
   onChange,
   onRemove,
   disabled,
@@ -253,6 +299,7 @@ function PickupItemCard({
   info: ConsignmentInfo | null;
   error?: string;
   onInfo: (code: string, info: ConsignmentInfo | null) => void;
+  onLots: (masterCode: string, lots: PickupItem[]) => void;
   onChange: (patch: Partial<ItemForm>) => void;
   onRemove: () => void;
   disabled: boolean;
@@ -263,13 +310,27 @@ function PickupItemCard({
     if (!loading) onInfo(item.code, loaded);
   }, [loaded, loading, item.code, onInfo]);
 
+  // Lots of a split consignment: a master's scan turns into its lots; a lot shows its consignee
+  const { family } = useLotFamily(item.masterCode ? null : item.code);
+  const isMaster = !!family?.masterCode && normalizeParcelCode(family.masterCode) === normalizeParcelCode(item.code);
+  useEffect(() => {
+    if (family && isMaster) {
+      const lots = lotItems(item.code, family);
+      if (lots.length) onLots(item.code, lots);
+    }
+  }, [family, isMaster, item.code, onLots]);
+  const row = family?.lots.find((l) => normalizeParcelCode(l.code) === normalizeParcelCode(item.code));
+  const lot: LotTag | null =
+    item.lot ??
+    (row ? { label: row.label, masterCode: family?.masterCode ?? null, consigneeName: row.consigneeName, consigneePhone: row.consigneePhone } : null);
+
   const total = info?.piecesTotal;
   return (
     <Card style={styles.card}>
       <View style={styles.itemHead}>
-        <Text variant="monoMedium" style={styles.flex}>
-          {item.code}
-        </Text>
+        <View style={styles.flex}>
+          <LotLine code={item.code} pieces={total ?? null} lot={lot} />
+        </View>
         <IconButton
           accessibilityLabel={`${t('cargo_remove_item')} ${item.code}`}
           onPress={onRemove}
@@ -307,6 +368,6 @@ function PickupItemCard({
 const styles = StyleSheet.create({
   card: { gap: space[3] },
   itemHead: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  flex: { flex: 1, color: colors.text },
+  flex: { flex: 1 },
   action: { flex: 1 },
 });

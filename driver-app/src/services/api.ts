@@ -603,6 +603,14 @@ class ApiClient {
     return this.request('POST', '/cargo/custody', body, true, idempotencyHeader(idempotencyKey));
   }
 
+  /**
+   * A split consignment: `{ master, lots, totals }`, each lot with its label, status, holder,
+   * vehicle, hub, pieces, drop and consignee. `ref` is the master or any of its lots.
+   */
+  async getCargoLots(ref: string): Promise<any> {
+    return this.request('GET', `/cargo/lots/${encodeURIComponent(ref)}`);
+  }
+
   /** What is on the driver's vehicle now: `{ vehicle, totals, items }`. */
   async getCargoOnBoard(): Promise<any> {
     return this.request('GET', '/cargo/driver/on-board');

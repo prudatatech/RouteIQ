@@ -5,6 +5,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import type { VehicleTransfer } from '../../hooks/useCargo';
 import { fill } from '../../locales';
 import { Button, Card, StatusPill, Text } from '../ui';
+import LotLine from '../cargo/LotLine';
 import { colors, size, space } from '../../theme';
 
 interface CargoTransfersCardProps {
@@ -51,9 +52,20 @@ export default function CargoTransfersCard({ transfers, onOpen }: CargoTransfers
                 {transfer.meetAddress}
               </Text>
             ) : null}
-            <Text variant="bodySmall" color="textMuted">
-              {fill(t('cargo_n_consignments'), { n: transfer.items.length })}
-            </Text>
+            {transfer.items.length > 0 ? (
+              transfer.items.map((item) => (
+                <LotLine
+                  key={item.code}
+                  code={item.code}
+                  pieces={out ? item.piecesPlanned : item.piecesOut ?? item.piecesPlanned}
+                  lot={item.lot}
+                />
+              ))
+            ) : (
+              <Text variant="bodySmall" color="textMuted">
+                {fill(t('cargo_n_consignments'), { n: transfer.items.length })}
+              </Text>
+            )}
             <Button
               title={out ? t('cargo_handover_title') : t('cargo_receive_title')}
               variant={ready ? 'primary' : 'secondary'}

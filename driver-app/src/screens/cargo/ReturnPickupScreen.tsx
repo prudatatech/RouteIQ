@@ -7,14 +7,15 @@
 import React, { useState, type ReactNode } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useConsignmentInfo } from '../../hooks/useCargo';
-import { manifestRefOfStop, type ConditionCode } from '../../services/cargo';
+import { useConsignmentInfo, useLotFamily } from '../../hooks/useCargo';
+import { lotOfCode, manifestRefOfStop, type ConditionCode } from '../../services/cargo';
 import { sendCustody } from '../../services/cargoActions';
 import type { DriverRoute, LatLng } from '../../types/route';
 import { fill } from '../../locales';
 import { errorMessage } from '../../utils/errors';
 import { normalizeParcelCode, stopsForCode } from '../../utils/parcel';
 import CargoScreen from '../../components/cargo/CargoScreen';
+import LotLine from '../../components/cargo/LotLine';
 import { ConditionPicker, DispatchNote, PhotoStrip, PieceCounter, SignatureBlock } from '../../components/cargo/CargoFields';
 import ParcelScanner, { type ScanMethod } from '../../components/scan/ParcelScanner';
 import SignaturePad from '../../components/modals/SignaturePad';
@@ -42,6 +43,13 @@ export default function ReturnPickupScreen({ route, currentLoc, onClose, headerR
   const [saving, setSaving] = useState(false);
 
   const stop = code ? stopsForCode(route, code)[0] ?? null : null;
+  // A lot of a split consignment: its label and consignee
+  const { family } = useLotFamily(code && lotOfCode(code) ? code : null);
+  const lotRow = family?.lots.find((l) => l.code.toUpperCase() === code?.toUpperCase()) ?? null;
+  const lotCode = lotOfCode(code);
+  const lot = lotCode
+    ? { label: lotRow?.label ?? lotCode.label, masterCode: lotCode.masterCode, consigneeName: lotRow?.consigneeName ?? null, consigneePhone: lotRow?.consigneePhone ?? null }
+    : null;
   const expected = info?.piecesTotal ?? null;
   const shownPieces = pieces ?? expected;
   const notes = [
@@ -126,7 +134,7 @@ export default function ReturnPickupScreen({ route, currentLoc, onClose, headerR
       <Card style={styles.card}>
         {code ? (
           <View style={styles.head}>
-            <Text variant="monoMedium">{code}</Text>
+            <LotLine code={code} pieces={info?.piecesTotal ?? null} lot={lot} />
             {info?.rto ? <StatusPill label={t('cargo_return_rto')} tone="warning" /> : null}
             <Button title={t('scan_another')} variant="ghost" onPress={() => setCode(null)} disabled={saving} />
           </View>
@@ -164,6 +172,6 @@ export default function ReturnPickupScreen({ route, currentLoc, onClose, headerR
 
 const styles = StyleSheet.create({
   card: { gap: space[3] },
-  head: { gap: space[2], alignItems: 'flex-start' },
+  head: { gap: space[2], alignSelf: 'stretch' },
   action: { flex: 1 },
 });

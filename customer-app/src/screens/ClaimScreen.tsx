@@ -33,7 +33,9 @@ const toPhoto = (asset: ImagePicker.ImagePickerAsset, index: number): ClaimPhoto
 
 export default function ClaimScreen({ navigation, route }: any) {
   const { t } = useTranslation();
-  const { shipmentId } = route.params as { bookingId: string; shipmentId: string; trackingId: string | null };
+  // A claim on one lot of a split booking references that lot's shipment
+  const { shipmentId, trackingId, lotLabel } = route.params as { bookingId: string; shipmentId: string; trackingId: string | null; lotLabel?: string | null };
+  const subtitle = lotLabel ? t('lot_claim_subtitle', { label: lotLabel, code: trackingId ?? '' }) : undefined;
 
   const [claimType, setClaimType] = useState<ClaimType | null>(null);
   const [amount, setAmount] = useState('');
@@ -132,7 +134,7 @@ export default function ClaimScreen({ navigation, route }: any) {
     const code = filed.claim.code ?? '';
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <ScreenHeader title={t('claim_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
+        <ScreenHeader title={t('claim_title')} subtitle={subtitle} onBack={() => navigation.goBack()} backLabel={t('back')} />
         <ScrollView contentContainerStyle={styles.content}>
           <Banner tone="info" icon="check-circle" message={code ? t('claim_filed_code', { code }) : t('claim_filed')} />
           {filed.failed.length > 0 ? (
@@ -149,7 +151,7 @@ export default function ClaimScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScreenHeader title={t('claim_title')} onBack={() => navigation.goBack()} backLabel={t('back')} />
+      <ScreenHeader title={t('claim_title')} subtitle={subtitle} onBack={() => navigation.goBack()} backLabel={t('back')} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="bodySmall" color="textMuted">

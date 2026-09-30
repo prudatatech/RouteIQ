@@ -19,12 +19,14 @@ interface Props {
   /** Changes on every refresh of the booking, so a code sent meanwhile is picked up. */
   refreshKey: number;
   onOpenNotifications: () => void;
+  /** For one lot of a split booking: its label, and the code is matched to the lot only (not the whole booking). */
+  lotLabel?: string | null;
 }
 
 const isForThisShipment = (n: NotificationItem, p: Props) => {
   const d = n.data ?? {};
   return (
-    (d.booking_id != null && d.booking_id === p.bookingId) ||
+    (!p.lotLabel && d.booking_id != null && d.booking_id === p.bookingId) ||
     (p.trackingId != null && d.tracking_id === p.trackingId) ||
     (p.shipmentId != null && (d.shipment_id === p.shipmentId || d.ref?.shipment_id === p.shipmentId))
   );
@@ -40,7 +42,7 @@ export function DeliveryOtpCard(props: Props) {
   const { sentAt, bookingId, refreshKey } = props;
   const { data } = useRemote(
     () => (sentAt ? Promise.resolve(null) : api.getNotifications({ limit: 50 })),
-    `otp:${bookingId}:${sentAt ? 'sent' : refreshKey}`,
+    `otp:${bookingId}:${props.trackingId ?? ''}:${sentAt ? 'sent' : refreshKey}`,
   );
   const sent = !!sentAt || !!data?.notifications.some((n) => n.type === OTP_NOTIFICATION && isForThisShipment(n, props));
   if (!sent) return null;
@@ -50,7 +52,7 @@ export function DeliveryOtpCard(props: Props) {
       <View style={styles.header}>
         <Feather name="key" size={size.icon.md} color={colors.accent} />
         <Text variant="title" accessibilityRole="header" style={styles.flex}>
-          {t('otp_title')}
+          {props.lotLabel ? t('lot_otp_title', { label: props.lotLabel }) : t('otp_title')}
         </Text>
       </View>
       <Text variant="bodySmall" color="textMuted">

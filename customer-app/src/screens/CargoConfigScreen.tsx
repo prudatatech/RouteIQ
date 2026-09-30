@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
+  DeviceEventEmitter,
   Pressable,
   ScrollView,
   PanResponder,
@@ -14,6 +15,10 @@ import { Button, Card, ScreenHeader, StatusPill, Text, TextField } from '../comp
 import { colors, radius, size, space } from '../theme';
 import { formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
+import { DropsEditor, checkDrops, newDropId, toBookingDrops, type DropDraft } from '../components/booking/DropsEditor';
+
+/** The place search tags its answer with this prefix and the drop's id, so the home screen ignores it. */
+const DROP_TARGET = 'drop:';
 
 /** Weight presets with the vehicle class usually used for them in India. */
 const TRUCK_TIERS = [
@@ -62,6 +67,38 @@ export default function CargoConfigScreen({ navigation, route }: any) {
   const { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType } = route.params || {};
 
   const [selectedWeight, setSelectedWeight] = useState(TRUCK_TIERS[0].weight);
+
+  // More than one drop: each with its consignee and pieces (null keeps the single-drop booking as it was)
+  const [drops, setDrops] = useState<DropDraft[] | null>(null);
+  const [totalPieces, setTotalPieces] = useState('');
+  const [showDropErrors, setShowDropErrors] = useState(false);
+  const firstDrop = (): DropDraft => ({
+    id: newDropId(),
+    address: dropoffLocation ?? null,
+    coord: dropoffCoord ?? null,
+    consigneeName: '',
+    consigneePhone: '',
+    pieces: '',
+  });
+  const blankDrop = (): DropDraft => ({ id: newDropId(), address: null, coord: null, consigneeName: '', consigneePhone: '', pieces: '' });
+  const addDrop = () => setDrops((cur) => [...(cur ?? [firstDrop()]), blankDrop()]);
+  const updateDrop = (id: string, patch: Partial<DropDraft>) => setDrops((cur) => cur && cur.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  const removeDrop = (id: string) =>
+    setDrops((cur) => {
+      const rest = (cur ?? []).filter((d) => d.id !== id);
+      return rest.length > 1 ? rest : null;
+    });
+  const pickDropPlace = (id: string) => navigation.navigate('LocationSearch', { type: 'dropoff', target: `${DROP_TARGET}${id}` });
+
+  // A place chosen for one of the extra drops
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('locationSelected', (data) => {
+      if (typeof data?.target !== 'string' || !data.target.startsWith(DROP_TARGET)) return;
+      const id = data.target.slice(DROP_TARGET.length);
+      setDrops((cur) => cur && cur.map((d) => (d.id === id ? { ...d, address: data.selectedLocation || null, coord: data.selectedCoord ?? null } : d)));
+    });
+    return () => sub.remove();
+  }, []);
   const [unit, setUnit] = useState<'t' | 'kg'>('t');
   // What the customer is typing; null means show the slider's weight.
   const [draft, setDraft] = useState<string | null>(null);
@@ -175,6 +212,11 @@ export default function CargoConfigScreen({ navigation, route }: any) {
               <Text variant="bodyMedium" numberOfLines={2}>
                 {dropoffLocation || t('not_selected')}
               </Text>
+              {drops ? (
+                <Text variant="caption" color="textMuted">
+                  {t('drops_more_n', { n: drops.length })}
+                </Text>
+              ) : null}
             </View>
           </View>
         </Card>
@@ -313,6 +355,33 @@ export default function CargoConfigScreen({ navigation, route }: any) {
             </Text>
           </View>
         </Card>
+
+        {/* DROPS */}
+        {drops ? (
+          <DropsEditor
+            drops={drops}
+            totalPieces={totalPieces}
+            onTotalPieces={setTotalPieces}
+            onChange={updateDrop}
+            onPickPlace={pickDropPlace}
+            onAdd={addDrop}
+            onRemove={removeDrop}
+            showErrors={showDropErrors}
+          />
+        ) : (
+          <Card style={styles.multiDrop}>
+            <Text variant="bodyMedium">{t('drops_offer_title')}</Text>
+            <Text variant="bodySmall" color="textMuted">
+              {t('drops_offer_body')}
+            </Text>
+            <Button
+              title={t('drops_add')}
+              variant="secondary"
+              onPress={addDrop}
+              icon={(color) => <Feather name="plus" size={size.icon.md} color={color} />}
+            />
+          </Card>
+        )}
       </ScrollView>
 
       {/* NEXT */}
@@ -321,7 +390,11 @@ export default function CargoConfigScreen({ navigation, route }: any) {
           title={t('cargo_see_price')}
           accessibilityHint={t('cargo_see_price_hint')}
           disabled={draftInvalid}
-          onPress={() =>
+          onPress={() => {
+            if (drops && !checkDrops(drops, totalPieces).ok) {
+              setShowDropErrors(true);
+              return;
+            }
             navigation.navigate('Quote', {
               pickupLocation,
               dropoffLocation,
@@ -330,8 +403,9 @@ export default function CargoConfigScreen({ navigation, route }: any) {
               loadType: loadType ?? 'full',
               weightKg: Math.round(selectedWeight * 1000),
               vehicleType: suggestedTruck ?? null,
-            })
-          }
+              ...(drops ? { drops: toBookingDrops(drops) } : {}),
+            });
+          }}
           icon={(color) => <Feather name="arrow-right" size={size.icon.md} color={color} />}
         />
       </SafeAreaView>
@@ -348,6 +422,7 @@ const styles = StyleSheet.create({
   content: { padding: space[4], gap: space[4], paddingBottom: space[8] },
   flex: { flex: 1 },
   section: { gap: space[1] },
+  multiDrop: { gap: space[2] },
   routeCard: { gap: space[2] },
   routeRow: { flexDirection: 'row', gap: space[3] },
   timeline: { width: DOT, alignItems: 'center', paddingTop: space[1] },

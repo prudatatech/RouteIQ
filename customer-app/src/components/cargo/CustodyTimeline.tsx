@@ -80,6 +80,10 @@ function describe(e: CustodyEvent, total: number | null, cause: string | null, t
       return { icon: 'play-circle', title: t('tl_release_hold') };
     case 'lost':
       return { icon: 'alert-octagon', title: t('tl_lost') };
+    case 'split':
+      return { icon: 'git-branch', title: t('tl_split') };
+    case 'merge':
+      return { icon: 'git-merge', title: t('tl_merge') };
     default:
       return null;
   }
@@ -111,7 +115,9 @@ export function buildTimeline(
     if (e.receiver_name && (e.kind === 'delivery' || e.kind === 'partial_delivery')) {
       details.push(t('tl_received_by', { name: e.receiver_name }));
     }
-    items.push({ key: e.id, icon: text.icon, title: text.title, details, at: e.recorded_at });
+    // A split booking's timeline merges its lots' events, each tagged with its lot
+    const title = e.lot_label ? t('tl_lot_prefix', { label: e.lot_label, title: text.title }) : text.title;
+    items.push({ key: e.id, icon: text.icon, title, details, at: e.recorded_at });
   });
 
   // "Out for delivery" is a status change, not a custody event, so it comes from the shipment's history.

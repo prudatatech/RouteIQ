@@ -80,7 +80,7 @@ const statusLabel: Record<string, string> = {
  * "active" partner, "pending" route vs "pending" vendor load). Pass `kind` to pick the
  * reading that fits the record.
  */
-export type StatusKind = 'route' | 'booking' | 'request' | 'bid' | 'kyc' | 'window' | 'cargo' | 'case'
+export type StatusKind = 'route' | 'booking' | 'request' | 'bid' | 'kyc' | 'window' | 'cargo' | 'case' | 'split_reason' | 'custody'
 
 const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: string }>> = {
   route: {
@@ -125,6 +125,19 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
     lost: { tone: 'danger', label: 'Lost' },
     exception: { tone: 'danger', label: 'Exception' },
     on_hold: { tone: 'warning', label: 'On hold' },
+  },
+  // Why a consignment was split into lots (`split_reason` on a lot).
+  split_reason: {
+    multi_drop: { tone: 'info', label: 'Multi-drop booking' },
+    partial_transfer: { tone: 'info', label: 'Part moved to another vehicle' },
+    hub_crossdock: { tone: 'info', label: 'Cross-docked at a hub' },
+    partial_delivery_remainder: { tone: 'warning', label: 'Rest of a partial delivery' },
+    manual: { tone: 'neutral', label: 'Split by staff' },
+  },
+  // Custody event kinds that are not handovers: a consignment split into lots, or lots merged back.
+  custody: {
+    split: { tone: 'brand', label: 'Split into lots' },
+    merge: { tone: 'brand', label: 'Lots merged' },
   },
   // A cargo exception case: an open case needs someone, so it is amber rather than blue.
   case: {

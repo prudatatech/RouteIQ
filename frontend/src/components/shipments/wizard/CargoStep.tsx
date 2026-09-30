@@ -1,7 +1,8 @@
 import clsx from 'clsx'
 import { Input, Select } from '@/components/ui'
 import { PRIORITIES } from '../format'
-import { CARGO_TYPES, chargeableKg, volumetricKg } from './payload'
+import { CARGO_TYPES, chargeableKg, finalDropOf, volumetricKg } from './payload'
+import DropsSplit from './DropsSplit'
 import type { StepProps } from './stepProps'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import { usePriceQuote } from '@/components/pricing/usePriceQuote'
@@ -12,10 +13,11 @@ const toNumber = (value: string) => (value === '' ? 0 : Number(value))
 
 export default function CargoStep({ data, update, errors }: StepProps) {
   const weight = chargeableKg(data)
-  const quote = usePriceQuote(data.origin_lat && data.origin_lng && data.dest_lat && data.dest_lng && weight > 0
+  const final = finalDropOf(data)
+  const quote = usePriceQuote(data.origin_lat && data.origin_lng && final && weight > 0
     ? {
       pickup: { lat: data.origin_lat, lng: data.origin_lng, label: data.origin_name || null },
-      drop: { lat: data.dest_lat, lng: data.dest_lng, label: data.delivery_point_name || null },
+      drop: { lat: final.lat, lng: final.lng, label: final.name || null },
       weight_kg: weight,
       source: 'api',
     }
@@ -102,6 +104,22 @@ export default function CargoStep({ data, update, errors }: StepProps) {
           {numberField('height_cm', 'Height')}
         </div>
       </fieldset>
+
+      <Input
+        className="sm:max-w-xs"
+        label="Declared value (₹)"
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="1"
+        leading="₹"
+        value={data.declared_value ?? ''}
+        error={errors.declared_value}
+        hint={data.multi_drop ? 'Optional. Shared across the drops by pieces unless you set a drop’s value below.' : 'Optional. The value of the goods, for the e-way bill and claims.'}
+        onChange={e => update({ declared_value: e.target.value })}
+      />
+
+      {data.multi_drop && <DropsSplit data={data} update={update} errors={errors} />}
 
       <Input
         className="sm:max-w-xs"
