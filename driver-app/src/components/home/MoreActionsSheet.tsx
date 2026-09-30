@@ -18,15 +18,17 @@ export interface MoreAction {
 interface MoreActionsSheetProps {
   actions: MoreAction[];
   onClose: () => void;
+  /** Defaults to "More actions"; a stop's sheet names the stop. */
+  title?: string;
 }
 
 /** Less frequent actions, shown in a bottom sheet. */
-export default function MoreActionsSheet({ actions, onClose }: MoreActionsSheetProps) {
+export default function MoreActionsSheet({ actions, onClose, title }: MoreActionsSheetProps) {
   const { t } = useTranslation();
   return (
     <>
       <Text variant="title" accessibilityRole="header">
-        {t('more_actions')}
+        {title ?? t('more_actions')}
       </Text>
       <View style={styles.list}>
         {actions.map((action) => {

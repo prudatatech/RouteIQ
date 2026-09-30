@@ -843,6 +843,8 @@ export const translations = {
     notif_unread: 'Unread',
     notif_mark_failed: 'Could not mark them read. Try again.',
     doc_from_notification: 'From your notification',
+    na2_call_consignee: 'Call the consignee',
+    na2_call_failed: 'Could not open the phone dialler.',
   }, hi: {
     vehicle_reg_title: 'अपना वाहन रजिस्टर करें',
     vehicle_reg_intro: 'अपने वाहन की जानकारी भरें। काम मिलने से पहले डिस्पैच उसकी जांच करता है।',
@@ -1683,6 +1685,8 @@ export const translations = {
     notif_unread: 'अपठित',
     notif_mark_failed: 'पढ़ा हुआ नहीं कर सके। फिर कोशिश करें।',
     doc_from_notification: 'आपकी सूचना से',
+    na2_call_consignee: 'प्राप्तकर्ता को कॉल करें',
+    na2_call_failed: 'फ़ोन डायलर नहीं खुल सका।',
   }, mr: {
     vehicle_reg_title: 'तुमचे वाहन नोंदवा',
     vehicle_reg_intro: 'तुमच्या वाहनाची माहिती भरा. काम मिळण्यापूर्वी डिस्पॅच त्याची तपासणी करतो.',
@@ -2524,6 +2528,8 @@ export const translations = {
     notif_unread: 'न वाचलेले',
     notif_mark_failed: 'वाचलेले म्हणून चिन्हांकित करता आले नाही. पुन्हा प्रयत्न करा.',
     doc_from_notification: 'तुमच्या सूचनेवरून',
+    na2_call_consignee: 'माल घेणाऱ्याला कॉल करा',
+    na2_call_failed: 'फोन डायलर उघडता आला नाही.',
   }, te: {
     vehicle_reg_title: 'మీ వాహనాన్ని నమోదు చేయండి',
     vehicle_reg_intro: 'మీ వాహనం వివరాలు ఇవ్వండి. పని రావడానికి ముందు డిస్పాచ్ దానిని తనిఖీ చేస్తుంది.',
@@ -3365,6 +3371,8 @@ export const translations = {
     notif_unread: 'చదవనిది',
     notif_mark_failed: 'చదివినట్లు గుర్తించలేకపోయాము. మళ్లీ ప్రయత్నించండి.',
     doc_from_notification: 'మీ నోటిఫికేషన్ నుండి',
+    na2_call_consignee: 'స్వీకర్తకు కాల్ చేయండి',
+    na2_call_failed: 'ఫోన్ డయలర్ తెరవలేకపోయాము.',
   }, kn: {
     vehicle_reg_title: 'ನಿಮ್ಮ ವಾಹನವನ್ನು ನೋಂದಾಯಿಸಿ',
     vehicle_reg_intro: 'ನಿಮ್ಮ ವಾಹನದ ವಿವರಗಳನ್ನು ನೀಡಿ. ಕೆಲಸ ಸಿಗುವ ಮೊದಲು ಡಿಸ್ಪ್ಯಾಚ್ ಅದನ್ನು ಪರಿಶೀಲಿಸುತ್ತದೆ.',
@@ -4201,6 +4209,8 @@ export const translations = {
     notif_unread: 'ಓದದಿರುವುದು',
     notif_mark_failed: 'ಓದಿದೆ ಎಂದು ಗುರುತಿಸಲು ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
     doc_from_notification: 'ನಿಮ್ಮ ಅಧಿಸೂಚನೆಯಿಂದ',
+    na2_call_consignee: 'ಸ್ವೀಕರಿಸುವವರಿಗೆ ಕರೆ ಮಾಡಿ',
+    na2_call_failed: 'ಫೋನ್ ಡಯಲರ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ.',
   }, bn: {
     vehicle_reg_title: 'আপনার গাড়ি নিবন্ধন করুন',
     vehicle_reg_intro: 'আপনার গাড়ির তথ্য দিন। কাজ পাওয়ার আগে ডিসপ্যাচ তা যাচাই করে।',
@@ -5037,6 +5047,8 @@ export const translations = {
     notif_unread: 'না পড়া',
     notif_mark_failed: 'পড়া হয়েছে চিহ্নিত করা যায়নি। আবার চেষ্টা করুন।',
     doc_from_notification: 'আপনার বিজ্ঞপ্তি থেকে',
+    na2_call_consignee: 'গ্রাহককে কল করুন',
+    na2_call_failed: 'ফোন ডায়ালার খোলা যায়নি।',
   },
 };
 export type Language = 'en' | 'hi' | 'mr' | 'te' | 'kn' | 'bn';

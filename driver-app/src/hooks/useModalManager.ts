@@ -27,7 +27,9 @@ export type DriverModal =
   | { kind: 'returnTrip' }
   | { kind: 'fuel' }
   | { kind: 'moreActions' }
-  | { kind: 'notifications' };
+  | { kind: 'notifications' }
+  /** Actions for one pending stop, out of sequence or not. */
+  | { kind: 'stopActions'; stop: RouteStop };
 
 export type SystemModal = { kind: 'call' } | { kind: 'assignment' };
 

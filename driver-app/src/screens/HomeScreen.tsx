@@ -43,6 +43,8 @@ import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
 import type { View as RNView } from 'react-native';
 import { shortFeedback } from '../utils/feedback';
+import { dial } from '../utils/dial';
+import { isPickupStop } from '../utils/nextAction';
 import { formatTime } from '../utils/format';
 import { isRouteFinished, pendingStops, stopCounts } from '../utils/route';
 import { getNextAction, restOfStops, type AssignmentWaiting } from '../utils/nextAction';
@@ -91,6 +93,7 @@ interface HomeScreenProps {
 
 const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   moreActions: 'sheet',
+  stopActions: 'sheet',
   returnTrip: 'full',
   fuel: 'full',
   pod: 'full',
@@ -803,6 +806,49 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         );
       case 'moreActions':
         return <MoreActionsSheet actions={moreActions} onClose={closeModal} />;
+      case 'stopActions': {
+        const stop = active.stop;
+        const phone = stop.delivery_point?.consignee_phone;
+        const list: MoreAction[] = [
+          {
+            key: 'navigate',
+            icon: 'navigate-outline',
+            title: t('na_navigate'),
+            subtitle: stop.delivery_point?.address ?? undefined,
+            onPress: () => {
+              closeModal();
+              actions.navigateTo(stop);
+            },
+          },
+          {
+            key: 'complete',
+            icon: 'checkmark-circle-outline',
+            title: isPickupStop(stop) ? t('pickup_label') : t('deliver'),
+            // Any stop can be done in any order; the card recomputes and dispatch sees the real order
+            onPress: () => actions.confirmAtStop(stop),
+          },
+          {
+            key: 'issue',
+            icon: 'warning-outline',
+            tone: 'danger',
+            title: t('alert_report_issue_title'),
+            onPress: () => actions.failStop(stop),
+          },
+        ];
+        if (phone) {
+          list.push({
+            key: 'call',
+            icon: 'call-outline',
+            title: t('na2_call_consignee'),
+            subtitle: [stop.delivery_point?.consignee_name, phone].filter(Boolean).join(' · '),
+            onPress: () => {
+              closeModal();
+              dial(phone).then((ok) => ok || Alert.alert(t('error'), t('na2_call_failed')));
+            },
+          });
+        }
+        return <MoreActionsSheet title={stop.delivery_point?.name || `${t('stop')} ${stop.sequence}`} actions={list} onClose={closeModal} />;
+      }
       case 'notifications':
         return <NotificationsScreen onOpen={(n) => openNotification(n)} onClose={closeModal} headerRight={sosButton} />;
       case 'fuel':
@@ -897,6 +943,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               firstRestNumber={firstRestNumber}
               upcoming={status.upcoming}
               focusStopId={focusStopId}
+              onPressStop={routeActive ? (stop) => openModal({ kind: 'stopActions', stop }) : undefined}
               currentLoc={tracking.currentLoc}
               line={snapped.line}
               liveDistanceM={snapped.distanceM}

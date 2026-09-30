@@ -27,6 +27,7 @@ interface RouteTabProps {
   firstRestNumber: number;
   upcoming: UpcomingTrip[];
   focusStopId: string | null;
+  onPressStop?: (stop: RouteStop) => void;
   /** Transfers planned for this vehicle, other than the one on the card. */
   transfers: VehicleTransfer[];
   onOpenTransfer: (transfer: VehicleTransfer) => void;
@@ -49,7 +50,7 @@ export default function RouteTab(props: RouteTabProps) {
     <View style={styles.container}>
       <NextActionCard {...props.card} />
 
-      <RestStops stops={props.restStops} firstNumber={props.firstRestNumber} focusStopId={props.focusStopId} />
+      <RestStops stops={props.restStops} firstNumber={props.firstRestNumber} focusStopId={props.focusStopId} onPressStop={props.onPressStop} />
 
       <CargoTransfersCard transfers={props.transfers} onOpen={props.onOpenTransfer} />
 

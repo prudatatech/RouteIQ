@@ -180,6 +180,16 @@ test('a trip with no stops yet', () => {
   assert.equal(kind({ routeData: route([]) }), 'no_stops');
 });
 
+test('a stop done out of order: the card moves to the next pending stop and the count follows', () => {
+  const r = route([stop(1), stop(2, { status: 'completed' }), stop(3)]);
+  const first = getNextAction(base({ routeData: r, currentLoc: { lat: 10, lng: 70 } }));
+  assert.equal(first.kind === 'go_to_stop' && first.stop.id, 's1');
+  assert.equal(first.kind === 'go_to_stop' && first.index, 2);
+  const after = route([stop(1, { status: 'completed' }), stop(2, { status: 'completed' }), stop(3)]);
+  const next = getNextAction(base({ routeData: after, currentLoc: { lat: 10, lng: 70 } }));
+  assert.equal(next.kind === 'go_to_stop' && next.stop.id, 's3');
+});
+
 test('restOfStops leaves out the next stop and finished ones', () => {
   const r = route([stop(1, { status: 'completed' }), stop(2), stop(3), stop(4)]).route;
   assert.deepEqual(restOfStops(r).map((s) => s.id), ['s3', 's4']);
