@@ -5,7 +5,6 @@
  * An open SOS is never covered.
  */
 import { useCallback, useMemo, useState } from 'react';
-import type { Invoice } from '../components/modals/InvoiceDialog';
 import type { RouteStop } from '../types/route';
 import type { DropLot } from '../utils/dropLots';
 import type { VehicleTransfer } from './useCargo';
@@ -27,8 +26,7 @@ export type DriverModal =
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
   | { kind: 'fuel' }
-  | { kind: 'moreActions' }
-  | { kind: 'invoice'; invoice: Invoice };
+  | { kind: 'moreActions' };
 
 export type SystemModal = { kind: 'call' } | { kind: 'assignment' };
 

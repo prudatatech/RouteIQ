@@ -50,7 +50,6 @@ import SosDialog from '../components/modals/SosDialog';
 import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
 import IncomingCallDialog from '../components/modals/IncomingCallDialog';
-import InvoiceDialog from '../components/modals/InvoiceDialog';
 import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
 import ReturnTripScreen from './ReturnTripScreen';
 import FuelLogScreen from './FuelLogScreen';
@@ -572,8 +571,6 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         );
       case 'moreActions':
         return <MoreActionsSheet actions={moreActions} onClose={closeModal} />;
-      case 'invoice':
-        return <InvoiceDialog invoice={active.invoice} onClose={closeModal} />;
       case 'fuel':
         return data.activeVehicleId ? (
           <FuelLogScreen vehicleId={data.activeVehicleId} location={tracking.currentLoc} onClose={closeModal} headerRight={sosButton} />
@@ -695,7 +692,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               onCallDispatch={dispatch.callDispatch}
             />
           )}
-          {activeTab === 'wallet' && <WalletTab onOpenInvoice={(invoice) => openModal({ kind: 'invoice', invoice })} />}
+          {activeTab === 'wallet' && <WalletTab />}
           {activeTab === 'profile' && (
             <ProfileTab
               driverInfo={data.driverInfo}

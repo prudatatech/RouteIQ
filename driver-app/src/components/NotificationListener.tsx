@@ -25,12 +25,18 @@ export const CARGO_CHANGED_EVENT = 'driver:cargo-changed';
 
 const isCargoType = (type: unknown) => typeof type === 'string' && (type.startsWith('cargo_') || type === 'driver_action_rejected');
 
-/** Chat messages open the Messages tab; everything else (assignments, route changes) opens Home. */
+/** The tab a tapped notification opens: the wallet for a payment (`link: '/wallet'`), messages for chat, otherwise the route. */
+export function tabFor(type: string, link?: unknown): 'wallet' | 'messages' | 'route' {
+  if (type === 'payout_sent' || link === '/wallet') return 'wallet';
+  return /message|chat/i.test(type) ? 'messages' : 'route';
+}
+
+/** Tapping a notification opens the tab it is about (see tabFor). */
 function openTabFor(response: Notifications.NotificationResponse) {
   const content = response.notification.request.content;
   const type = String((content.data as { type?: unknown } | undefined)?.type ?? '');
   if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
-  DeviceEventEmitter.emit(OPEN_TAB_EVENT, /message|chat/i.test(type) ? 'messages' : 'route');
+  DeviceEventEmitter.emit(OPEN_TAB_EVENT, tabFor(type, (content.data as { link?: unknown } | undefined)?.link));
 }
 
 export const NotificationListener = () => {
