@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import clsx from 'clsx'
 import { MapPin, X } from 'lucide-react'
 import { Checkbox, IconButton, Input, PlaceSearch } from '@/components/ui'
 import { AddressPicker, MapView, type LatLng, type MapPoint } from '@/components/map'
 import { reversePlace, type ResolvedPlace } from '@/services/geocoding'
 import type { StepProps } from './stepProps'
 import { todayIso } from './validation'
+import DropsEditor from './DropsEditor'
 
 const nameOf = (place: ResolvedPlace) => place.address.split(', ')[0] || place.address
 /** Keeps the create-shipment wizard's recent addresses separate from other place pickers. */
@@ -30,6 +32,9 @@ export default function RouteStep({ data, update, errors }: StepProps) {
   // Remounts the stop search after each pick so it starts empty again.
   const [stopSearchKey, setStopSearchKey] = useState(0)
   const stops = data.stops || []
+  const multi = !!data.multi_drop
+  const drops = data.drops || []
+  const placedDrops = drops.filter(d => d.lat && d.lng)
 
   const origin = data.origin_lat && data.origin_lng
     ? { address: data.origin_address || data.origin_name, lat: data.origin_lat, lng: data.origin_lng }
@@ -50,8 +55,12 @@ export default function RouteStep({ data, update, errors }: StepProps) {
     (await reversePlace(position.lat, position.lng).catch(() => null))
       ?? { address: `Pinned location (${position.lat.toFixed(5)}, ${position.lng.toFixed(5)})`, lat: position.lat, lng: position.lng }
 
-  // Clicking the map fills the pickup first, then the destination.
+  // Clicking the map fills the pickup first, then the destination (drops are added by search).
   const onPick = async (position: LatLng) => {
+    if (multi) {
+      if (!origin) setOrigin(await placeAt(position))
+      return
+    }
     if (origin && destination) return
     const place = await placeAt(position)
     if (!origin) setOrigin(place)
@@ -62,6 +71,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
     const place = await placeAt(position)
     if (id === 'pickup') setOrigin(place)
     else if (id === 'drop') setDestination(place)
+    else if (drops.some(d => d.id === id)) update({ drops: drops.map(d => (d.id === id ? { ...d, name: nameOf(place), address: place.address, lat: place.lat, lng: place.lng } : d)) })
     else update({ stops: stops.map(s => (s.id === id ? { ...s, name: nameOf(place), address: place.address, lat: place.lat, lng: place.lng } : s)) })
   }
 
@@ -78,44 +88,88 @@ export default function RouteStep({ data, update, errors }: StepProps) {
         recentPlacesKey={RECENT_PLACES_KEY}
         onChange={setOrigin}
       />
-      <AddressPicker
-        label="Destination"
-        required
-        kind="drop"
-        showMap={false}
-        allowCurrentLocation={false}
-        placeholder="Where is it going?"
-        value={destination && { address: destination.address ?? '', lat: destination.lat, lng: destination.lng }}
-        error={errors.destination}
-        recentPlacesKey={RECENT_PLACES_KEY}
-        onChange={setDestination}
-      />
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium text-text">Deliver to</legend>
+        <div role="radiogroup" aria-label="Deliver to" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {([
+            { id: false, label: 'One destination', description: 'All the goods go to one place' },
+            { id: true, label: 'Several drops', description: 'Split across consignees; each drop is a lot' },
+          ] as const).map(option => (
+            <label
+              key={String(option.id)}
+              className={clsx(
+                'flex cursor-pointer items-start gap-3 rounded-control border p-3 transition-colors',
+                multi === option.id ? 'border-brand bg-brand-soft' : 'border-border-strong hover:bg-surface-subtle',
+              )}
+            >
+              <input
+                type="radio"
+                name="deliver_to"
+                checked={multi === option.id}
+                onChange={() => update(option.id ? { multi_drop: true, stops: [] } : { multi_drop: false })}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
+              />
+              <span className="text-sm">
+                <span className="block font-medium text-text">{option.label}</span>
+                <span className="block text-muted">{option.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {multi ? (
+        <DropsEditor drops={drops} onChange={next => update({ drops: next })} errors={errors} recentPlacesKey={RECENT_PLACES_KEY} />
+      ) : (
+        <AddressPicker
+          label="Destination"
+          required
+          kind="drop"
+          showMap={false}
+          allowCurrentLocation={false}
+          placeholder="Where is it going?"
+          value={destination && { address: destination.address ?? '', lat: destination.lat, lng: destination.lng }}
+          error={errors.destination}
+          recentPlacesKey={RECENT_PLACES_KEY}
+          onChange={setDestination}
+        />
+      )}
 
       <div>
         <div className="overflow-hidden rounded-card border border-border">
           <MapView
-            mode={origin && destination ? 'route' : 'picker'}
+            mode={multi ? (origin && placedDrops.length > 0 ? 'route' : 'picker') : origin && destination ? 'route' : 'picker'}
             height={260}
-            onPick={origin && destination ? undefined : onPick}
+            onPick={multi ? (origin ? undefined : onPick) : origin && destination ? undefined : onPick}
             onPointMove={onPointMove}
-            points={routePoints(origin, destination, stops)}
-            route={origin && destination
-              ? {
-                coordinates: [origin, ...stops.filter(s => s.lat && s.lng), destination].map(p => [p.lng, p.lat] as [number, number]),
-                planned: true,
-              }
-              : null}
+            points={multi
+              ? [
+                ...routePoints(origin, null, []),
+                ...placedDrops.map((d, i): MapPoint => ({
+                  id: d.id, kind: 'drop', label: `Drop ${i + 1}: ${d.consignee_name || d.name}`, position: { lat: d.lat, lng: d.lng }, draggable: true,
+                })),
+              ]
+              : routePoints(origin, destination, stops)}
+            route={multi
+              ? (origin && placedDrops.length > 0 ? { coordinates: [origin, ...placedDrops].map(p => [p.lng, p.lat] as [number, number]), planned: true } : null)
+              : origin && destination
+                ? {
+                  coordinates: [origin, ...stops.filter(s => s.lat && s.lng), destination].map(p => [p.lng, p.lat] as [number, number]),
+                  planned: true,
+                }
+                : null}
             ariaLabel="Map of the pickup, stops and destination. Click to place a pin, drag pins to adjust."
           />
         </div>
         <p className="mt-1.5 text-xs text-muted">
           {!origin ? 'Click the map to set the pickup, or search above.'
-            : !destination ? 'Click the map to set the destination, or search above.'
-              : 'Drag any pin to the exact gate or dock.'}
+            : multi ? (placedDrops.length === 0 ? 'Add the drops above; they appear on the map.' : 'Drag any pin to the exact gate or dock.')
+              : !destination ? 'Click the map to set the destination, or search above.'
+                : 'Drag any pin to the exact gate or dock.'}
         </p>
       </div>
 
-      <div className="space-y-2">
+      {!multi && <div className="space-y-2">
         <PlaceSearch
           key={stopSearchKey}
           label="Extra stops"
@@ -150,7 +204,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
             ))}
           </ul>
         )}
-      </div>
+      </div>}
 
       <div className="space-y-3 border-t border-border pt-5">
         <Checkbox

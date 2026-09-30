@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import { Check, Clock, X } from 'lucide-react'
 import { StatusPill, toneClasses } from '@/components/ui'
 import type { ConsignmentLabel, Pieces, Severity } from '@/services/cargo'
+import { masterCodeOf } from '@/services/cargoMap'
 import {
   CONDITION_TONES, SEVERITY_LABELS, SEVERITY_TONES, conditionLabel, consignmentCode, consignmentHref, pieceSummary, slaState, type StepState,
 } from './logic'
@@ -33,12 +34,14 @@ export function ConditionPill({ condition }: { condition: string | null | undefi
   return <StatusPill tone={CONDITION_TONES[condition as keyof typeof CONDITION_TONES] ?? 'neutral'} dot={false}>{conditionLabel(condition)}</StatusPill>
 }
 
-/** RTX-… / CM-… as a link to the consignment. */
+/** RTX-… / CM-… as a link to the consignment. A lot shows its own code (`RTX-ABC123-B`) and names its master on hover. */
 export function ConsignmentLink({ c, className }: { c: ConsignmentLabel; className?: string }) {
   const href = consignmentHref(c)
   const code = consignmentCode(c)
-  if (!href) return <span className={clsx('whitespace-nowrap font-mono', className)}>{code}</span>
-  return <Link to={href} className={clsx('whitespace-nowrap font-mono font-medium text-brand hover:underline', className)}>{code}</Link>
+  const master = masterCodeOf(code)
+  const title = c.lot_label && master ? `Lot ${c.lot_label} of ${master}` : undefined
+  if (!href) return <span title={title} className={clsx('whitespace-nowrap font-mono', className)}>{code}</span>
+  return <Link to={href} title={title} className={clsx('whitespace-nowrap font-mono font-medium text-brand hover:underline', className)}>{code}</Link>
 }
 
 const segmentFill: Record<string, string> = {
