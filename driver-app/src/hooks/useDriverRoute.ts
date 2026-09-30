@@ -62,6 +62,8 @@ export function useDriverRoute() {
   const [pendingRoute, setPendingRouteState] = useState<PendingRoute | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [noVehicle, setNoVehicle] = useState(false);
+  /** A route not accepted yet whose prompt is snoozed ("Not now"): the home card still asks for it. */
+  const [snoozedRoute, setSnoozedRoute] = useState<PendingRoute | null>(null);
   const pendingRouteRef = useRef<PendingRoute | null>(null);
 
   const setPendingRoute = (route: PendingRoute | null) => {
@@ -121,7 +123,12 @@ export function useDriverRoute() {
         const r = route.route;
         if (r && (r.status === 'active' || r.status === 'pending')) {
           const lastSeenId = await AsyncStorage.getItem(LAST_SEEN_ROUTE_KEY);
-          if (r.id !== lastSeenId && pendingRouteRef.current?.id !== r.id && !(await isSnoozed(r.id))) {
+          if (r.id === lastSeenId) {
+            setSnoozedRoute(null);
+          } else if (await isSnoozed(r.id)) {
+            setSnoozedRoute({ ...r, is_manifest: !!route.is_manifest });
+          } else if (pendingRouteRef.current?.id !== r.id) {
+            setSnoozedRoute(null);
             setPendingRoute({ ...r, is_manifest: !!route.is_manifest });
           }
         }
@@ -269,6 +276,7 @@ export function useDriverRoute() {
         actionQueue.submit('accept_route', { routeId: accepted.id }).catch((e) => console.warn('[home] accept-route failed:', e));
       }
       setPendingRoute(null);
+      setSnoozedRoute(null);
       loadData();
       return 'route';
     }
@@ -291,6 +299,7 @@ export function useDriverRoute() {
     const route = pendingRouteRef.current;
     setPendingRoute(null);
     if (!route) return;
+    setSnoozedRoute(route);
     try {
       const snoozes = await readSnoozes();
       const now = Date.now();
@@ -302,6 +311,18 @@ export function useDriverRoute() {
     }
     api.postponeRoute(route.id).catch((e) => console.warn('[home] postponeRoute failed:', e));
   }, []);
+
+  /**
+   * Brings the accept prompt back for a route that is not accepted yet (a tapped "New trip"
+   * notification, or the card's "Accept trip"). An accepted route is left alone.
+   */
+  const reopenAssignment = useCallback(async () => {
+    const snoozed = await readSnoozes();
+    const ids = Object.keys(snoozed);
+    if (ids.length > 0) await AsyncStorage.removeItem(SNOOZE_KEY).catch(() => {});
+    setSnoozedRoute(null);
+    await loadData();
+  }, [loadData]);
 
   const lastError = routeQuery.isError ? routeQuery.error : null;
   const syncState: SyncState =
@@ -315,6 +336,9 @@ export function useDriverRoute() {
     routeData,
     noVehicle,
     pendingRoute,
+    /** The route waiting for a yes: the open prompt, or the one snoozed with "Not now". */
+    assignmentRoute: pendingRoute ?? snoozedRoute,
+    reopenAssignment,
     pendingConfirmation,
     incomingCall,
     setIncomingCall,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert, Image, Pressable, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,7 +7,7 @@ import { api } from '../../services/api';
 import { useTranslation } from '../../hooks/useTranslation';
 import { INDIAN_VEHICLES } from '../../constants/profile';
 import LanguagePicker from '../../components/LanguagePicker';
-import DocumentsSection from '../../components/profile/DocumentsSection';
+import DocumentsSection, { type DocFocus } from '../../components/profile/DocumentsSection';
 import EmergencyContactsSection from '../../components/profile/EmergencyContactsSection';
 import { useMyPeople } from '../../hooks/useMyPeople';
 import { useVehicleGate } from '../VehicleGate';
@@ -23,12 +23,14 @@ interface ProfileTabProps {
   avatarUri: string | null;
   onAvatarChange: (uri: string) => void;
   onLogout: () => void;
+  /** The document a tapped notification is about. */
+  docFocus?: DocFocus | null;
 }
 
 const AVATAR = 96;
 const NAME_PATTERN = /^[\p{L}\s.-]+$/u;
 
-export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, onAvatarChange, onLogout }: ProfileTabProps) {
+export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, onAvatarChange, onLogout, docFocus }: ProfileTabProps) {
   const vehicleGate = useVehicleGate();
   const { t } = useTranslation();
   const [isEditingName, setIsEditingName] = useState(false);
@@ -38,6 +40,11 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
   const [savingVehicle, setSavingVehicle] = useState<string | null>(null);
 
   const people = useMyPeople();
+  const reloadPeople = people.reload;
+  // A document notification: the status may have just changed, so load the list again
+  useEffect(() => {
+    if (docFocus) reloadPeople();
+  }, [docFocus, reloadPeople]);
 
   const shortId =driverInfo?.id ? String(driverInfo.id).slice(0, 6).toUpperCase() : null;
 
@@ -233,6 +240,7 @@ export default function ProfileTab({ driverInfo, onDriverInfoChange, avatarUri, 
         error={people.error}
         onRetry={people.reload}
         onChanged={people.reload}
+        focus={docFocus}
       />
 
       <EmergencyContactsSection

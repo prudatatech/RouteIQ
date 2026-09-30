@@ -6,6 +6,7 @@ import { api, type DocType, type PersonDocument } from '../../services/api';
 import { actionQueue, type QueuedAction } from '../../services/actionQueue';
 import { compressDocument, MAX_DOCUMENT_FILES } from '../../services/documentUpload';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useScrollTo } from '../ScrollToContext';
 import type { Language } from '../../locales';
 import { Button, Card, Chip, ErrorBanner, StatusPill, Text, TextField } from '../ui';
 import { colors, radius, size, space } from '../../theme';
@@ -38,6 +39,15 @@ interface Props {
   onRetry: () => void;
   /** Called after an upload so the list reloads. */
   onChanged: () => void;
+  /** The document a notification opened: it is scrolled to and marked. */
+  focus?: DocFocus | null;
+}
+
+export interface DocFocus {
+  docId: string | null;
+  docType: string | null;
+  /** Changes on every tap, so tapping the same notification again scrolls again. */
+  at: number;
 }
 
 /** Strings hold `{n}`, `{date}` and `{reason}` markers. */
@@ -52,7 +62,7 @@ function waitingTypes(items: readonly QueuedAction[]): Set<DocType> {
 }
 
 /** "My documents": every document the driver needs, with its status, and upload or replace. */
-export default function DocumentsSection({ documents, consentMissing, loading, error, onRetry, onChanged }: Props) {
+export default function DocumentsSection({ documents, consentMissing, loading, error, onRetry, onChanged, focus }: Props) {
   const { t } = useTranslation();
   const [waiting, setWaiting] = useState(() => waitingTypes(actionQueue.getItems()));
   const waitingCount = useRef(waiting.size);
@@ -104,6 +114,7 @@ export default function DocumentsSection({ documents, consentMissing, loading, e
                 consentMissing={consentMissing}
                 first={idx === 0}
                 onChanged={onChanged}
+                focus={focusesRow(focus, slot, bestOf(current, slot.types)) ? focus : null}
               />
             ))}
           </Card>
@@ -111,6 +122,13 @@ export default function DocumentsSection({ documents, consentMissing, loading, e
       )}
     </View>
   );
+}
+
+/** A notification names a document by id, or (when that one was replaced since) by its type. */
+function focusesRow(focus: DocFocus | null | undefined, slot: DocSlot, doc: PersonDocument | undefined): boolean {
+  if (!focus) return false;
+  if (focus.docId && doc?.id === focus.docId) return true;
+  return !!focus.docType && slot.types.some((type) => type === focus.docType);
 }
 
 interface RowProps {
@@ -121,6 +139,7 @@ interface RowProps {
   consentMissing: boolean;
   first: boolean;
   onChanged: () => void;
+  focus?: DocFocus | null;
 }
 
 interface Draft {
@@ -133,8 +152,16 @@ interface Draft {
   licenceClass: string;
 }
 
-function DocumentRow({ slot, doc, required, waiting, consentMissing, first, onChanged }: RowProps) {
+function DocumentRow({ slot, doc, required, waiting, consentMissing, first, onChanged, focus }: RowProps) {
   const { t, lang } = useTranslation();
+  const scrollTo = useScrollTo();
+  const rowRef = useRef<View>(null);
+  // Once the list is on screen, bring the document a notification opened into view
+  useEffect(() => {
+    if (!focus) return;
+    const timer = setTimeout(() => scrollTo(rowRef.current), 150);
+    return () => clearTimeout(timer);
+  }, [focus, scrollTo, !!doc]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -244,7 +271,12 @@ function DocumentRow({ slot, doc, required, waiting, consentMissing, first, onCh
   const date = (value?: string | null) => formatDocDate(value, lang as Language);
 
   return (
-    <View style={[styles.row, !first && styles.rowBorder]}>
+    <View ref={rowRef} collapsable={false} style={[styles.row, !first && styles.rowBorder, focus && styles.focused]}>
+      {focus ? (
+        <Text variant="captionMedium" color="accent">
+          {t('doc_from_notification')}
+        </Text>
+      ) : null}
       <View style={styles.head}>
         <View style={styles.flex}>
           <Text variant="bodyMedium">{name}</Text>
@@ -490,6 +522,7 @@ const styles = StyleSheet.create({
   loading: { alignItems: 'center', paddingVertical: space[6] },
   row: { padding: space[4], gap: space[2] },
   rowBorder: { borderTopWidth: size.border, borderTopColor: colors.border },
+  focused: { backgroundColor: colors.accentSoft },
   head: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   expiry: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   actions: { flexDirection: 'row', gap: space[3], marginTop: space[1] },
