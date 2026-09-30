@@ -178,47 +178,120 @@ export interface Mutation {
 const IGNORED_PARAMS = new Set(['select', 'order', 'limit', 'offset', 'on_conflict', 'columns', 'or', 'and']);
 const SINGLE_OBJECT = 'application/vnd.pgrst.object+json';
 
+/** One PostgREST operator applied to a value: `eq`, `in`, `lt`, `is`, and `not.<op>`. */
+function opHolds(actual: unknown, op: string, value: string): boolean {
+  switch (op) {
+    case 'eq':
+      return actual != null && String(actual) === value;
+    case 'neq':
+      return !(actual != null && String(actual) === value);
+    case 'is':
+      return value === 'null' ? actual == null : String(actual) === value;
+    case 'in': {
+      const list = value.replace(/^\(|\)$/g, '').split(',').map(v => v.replace(/^"|"$/g, ''));
+      return actual != null && list.includes(String(actual));
+    }
+    case 'gte':
+    case 'gt':
+    case 'lte':
+    case 'lt': {
+      if (actual == null) return false;
+      const isStamp = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v);
+      const actualComparable = actual instanceof Date ? actual.getTime() : isStamp(actual) && isStamp(value) ? Date.parse(String(actual)) : (Number.isNaN(Number(actual)) ? actual : Number(actual));
+      const valueComparable = isStamp(actual) && isStamp(value) ? Date.parse(value) : Number.isNaN(Number(value)) ? value : Number(value);
+      if (op === 'gte') return actualComparable >= valueComparable;
+      if (op === 'gt') return actualComparable > valueComparable;
+      if (op === 'lte') return actualComparable <= valueComparable;
+      return actualComparable < valueComparable;
+    }
+    default:
+      // Operators the app does not rely on in tests (ilike, ...) do not filter
+      return true;
+  }
+}
+
+function filterHolds(actual: unknown, filter: string): boolean {
+  if (filter.startsWith('not.')) {
+    const rest = filter.slice(4);
+    const dot = rest.indexOf('.');
+    return !opHolds(actual, rest.slice(0, dot), rest.slice(dot + 1));
+  }
+  const dot = filter.indexOf('.');
+  return opHolds(actual, filter.slice(0, dot), filter.slice(dot + 1));
+}
+
+/** Splits `a,b(c,d),e` at the commas outside parentheses and quotes. */
+function splitOr(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let current = '';
+  for (const c of text) {
+    if (c === '"') quoted = !quoted;
+    if (!quoted && c === '(') depth++;
+    if (!quoted && c === ')') depth--;
+    if (!quoted && depth === 0 && c === ',') {
+      parts.push(current);
+      current = '';
+    } else current += c;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+/** A PostgREST logic tree: `or=(a.eq.1,and(b.lt.2,c.gt.3))`. */
+function treeHolds(row: Row, text: string, mode: 'or' | 'and'): boolean {
+  const results = splitOr(text).map(part => {
+    const nested = /^(or|and)\(([\s\S]*)\)$/.exec(part);
+    if (nested) return treeHolds(row, nested[2], nested[1] as 'or' | 'and');
+    const first = part.indexOf('.');
+    const column = part.slice(0, first);
+    return filterHolds(row[column], part.slice(first + 1).replace(/^(\w+\.)"(.*)"$/, '$1$2'));
+  });
+  return mode === 'or' ? results.some(Boolean) : results.every(Boolean);
+}
+
 function matches(row: Row, params: URLSearchParams): boolean {
   for (const [column, filter] of params) {
-    if (IGNORED_PARAMS.has(column) || column.includes('.')) continue;
-    const dot = filter.indexOf('.');
-    const op = filter.slice(0, dot);
-    const value = filter.slice(dot + 1);
-    const actual = row[column];
-    switch (op) {
-      case 'eq':
-        if (actual == null || String(actual) !== value) return false;
-        break;
-      case 'neq':
-        if (actual != null && String(actual) === value) return false;
-        break;
-      case 'is':
-        if (value === 'null' ? actual != null : String(actual) !== value) return false;
-        break;
-      case 'in': {
-        const list = value.replace(/^\(|\)$/g, '').split(',').map(v => v.replace(/^"|"$/g, ''));
-        if (actual == null || !list.includes(String(actual))) return false;
-        break;
-      }
-      case 'gte':
-      case 'gt':
-      case 'lte':
-      case 'lt': {
-        if (actual == null) return false;
-        const actualComparable = actual instanceof Date ? actual.getTime() : (Number.isNaN(Number(actual)) ? actual : Number(actual));
-        const valueComparable = Number.isNaN(Number(value)) ? value : Number(value);
-        if (op === 'gte' && !(actualComparable >= valueComparable)) return false;
-        if (op === 'gt' && !(actualComparable > valueComparable)) return false;
-        if (op === 'lte' && !(actualComparable <= valueComparable)) return false;
-        if (op === 'lt' && !(actualComparable < valueComparable)) return false;
-        break;
-      }
-      default:
-        // Operators the app does not rely on in tests (ilike, ...) do not filter
-        break;
+    if (column === 'or' || column === 'and') {
+      if (!treeHolds(row, filter.replace(/^\(|\)$/g, ''), column)) return false;
+      continue;
     }
+    if (IGNORED_PARAMS.has(column) || column.includes('.')) continue;
+    if (!filterHolds(row[column], filter)) return false;
   }
   return true;
+}
+
+/** `order=created_at.desc,id.desc`, `limit` and `offset` applied to the matching rows of a read. */
+function shape(rows: Row[], params: URLSearchParams): Row[] {
+  let out = rows;
+  const order = params.get('order');
+  if (order) {
+    const keys = order.split(',').map(part => {
+      const [column, dir] = part.split('.');
+      return { column, sign: dir === 'desc' ? -1 : 1 };
+    });
+    const cmp = (a: unknown, b: unknown) => {
+      if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+      const stamps = typeof a === 'string' && typeof b === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(a) && /^\d{4}-\d{2}-\d{2}T/.test(b);
+      const x: any = stamps ? Date.parse(a as string) : a;
+      const y: any = stamps ? Date.parse(b as string) : b;
+      return x < y ? -1 : x > y ? 1 : 0;
+    };
+    out = [...out].sort((r1, r2) => {
+      for (const k of keys) {
+        const c = cmp(r1[k.column], r2[k.column]);
+        if (c !== 0) return c * k.sign;
+      }
+      return 0;
+    });
+  }
+  const offset = Number(params.get('offset') ?? 0);
+  const limit = params.get('limit');
+  if (offset > 0) out = out.slice(offset);
+  if (limit != null && Number.isFinite(Number(limit))) out = out.slice(0, Number(limit));
+  return out;
 }
 
 class MockSupabase {
@@ -431,7 +504,7 @@ class MockSupabase {
       switch (req.method) {
         case 'GET':
         case 'HEAD':
-          result = matching;
+          result = shape(matching, url.searchParams);
           break;
         case 'POST': {
           const body = raw ? JSON.parse(raw) : {};

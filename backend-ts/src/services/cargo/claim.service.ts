@@ -168,13 +168,25 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
   return claimView(claim);
 }
 
-async function claimView(claim: any) {
+/** Claims in list form: the tracking ids of the shipments are read in one query, not one per claim. */
+async function claimViews(claims: any[]) {
+  const ids = [...new Set(claims.filter(c => !c.manifest_id && c.shipment_id).map(c => String(c.shipment_id)))];
+  const codes = new Map<string, string>();
+  for (const part of chunks(ids, ID_CHUNK)) {
+    const { data, error } = await supabase.from('shipments').select('id, tracking_id').in('id', part);
+    if (error) throw new Error(`Failed to read the shipments: ${error.message}`);
+    for (const r of data ?? []) codes.set(String(r.id), r.tracking_id);
+  }
+  return Promise.all(claims.map(c => claimView(c, c.manifest_id ? undefined : codes.get(String(c.shipment_id)) ?? null)));
+}
+
+async function claimView(claim: any, code?: string | null) {
   const documents = [];
   for (const path of (claim.document_paths ?? []) as string[]) {
     const url = await signedUrl(path);
     if (url) documents.push({ path, url });
   }
-  return { ...claim, consignment_code: await consignmentCode(claim), documents };
+  return { ...claim, consignment_code: code !== undefined ? code : await consignmentCode(claim), documents };
 }
 
 /** The RTX- tracking id or CM- load code of the claimed goods, so lists can show them without another read. */
@@ -261,30 +273,127 @@ export async function updateClaim(id: string, input: unknown): Promise<any> {
   return claimView(saved);
 }
 
-export async function listClaims(filters: { status?: string; ref?: string }, user: TokenData): Promise<any[]> {
-  let q = supabase.from('cargo_claims').select(CLAIM_COLUMNS).order('created_at', { ascending: false }).limit(300);
-  if (filters.status) {
-    if (!(CLAIM_STATUSES as readonly string[]).includes(filters.status)) throw new HttpError(400, `status must be one of: ${CLAIM_STATUSES.join(', ')}`);
-    q = q.eq('status', filters.status);
-  }
-  if (filters.ref) {
-    const c = await resolveRef(filters.ref);
-    q = q.eq(c.kind === 'shipment' ? 'shipment_id' : 'manifest_id', c.id);
-  }
-  const { data, error } = await q;
-  if (error) throw new Error(`Failed to list claims: ${error.message}`);
-  const out = [];
-  for (const claim of data ?? []) {
-    if (!isStaff(user)) {
-      try {
-        await assertClaimAccess(user, claim);
-      } catch {
-        continue;
-      }
-    }
-    out.push(await claimView(claim));
-  }
+export const CLAIM_PAGE_DEFAULT = 50;
+export const CLAIM_PAGE_MAX = 200;
+/** Ids per `in.(...)` filter: keeps each request URL well under the gateway's limit. */
+const ID_CHUNK = 100;
+const ROW_PAGE = 1000;
+
+export interface ClaimListFilters {
+  status?: string;
+  ref?: string;
+  limit?: string | number;
+  cursor?: string;
+}
+
+export interface ClaimPage {
+  items: any[];
+  next_cursor: string | null;
+}
+
+const chunks = <T>(list: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
   return out;
+};
+
+/** Every row of a query, read in pages so a long list is not cut at the API's row cap. */
+async function readAll(build: () => any, what: string): Promise<any[]> {
+  const rows: any[] = [];
+  for (let from = 0; ; from += ROW_PAGE) {
+    const { data, error } = await build().range(from, from + ROW_PAGE - 1);
+    if (error) throw new Error(`Failed to read ${what}: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < ROW_PAGE) return rows;
+  }
+}
+
+/** ids of `table` whose `column` is one of `values`, read in chunks. */
+async function idsWhereIn(table: string, column: string, values: string[], what: string): Promise<string[]> {
+  const found = await Promise.all(chunks(values, ID_CHUNK).map(part => readAll(() => supabase.from(table).select('id').in(column, part).order('id'), what)));
+  return found.flat().map(r => String(r.id));
+}
+
+/**
+ * The claims a customer or vendor may see, as PostgREST `or` filters (one per chunk of ids, so no
+ * request grows with the account). A customer: claims on their booked shipments and on those
+ * shipments' lots; a vendor: claims on their loads and those loads' lots. Both also see claims
+ * they raised themselves.
+ */
+async function claimScopes(user: TokenData): Promise<string[]> {
+  const own = `raised_by.eq.${user.user_id}`;
+  let column: 'shipment_id' | 'manifest_id';
+  let ids: string[];
+  if (user.role === 'customer') {
+    column = 'shipment_id';
+    const bookings = await readAll(() => supabase.from('customer_bookings').select('id, shipment_id').eq('customer_id', user.user_id).not('shipment_id', 'is', null).order('id'), 'the bookings');
+    const masters = bookings.map(b => String(b.shipment_id));
+    ids = [...new Set([...masters, ...(await idsWhereIn('shipments', 'parent_shipment_id', masters, 'the lots'))])];
+  } else if (user.role === 'vendor') {
+    column = 'manifest_id';
+    const requests = (await readAll(() => supabase.from('vendor_shipment_requests').select('id').eq('vendor_id', user.user_id).order('id'), 'the requests')).map(r => String(r.id));
+    const loads = await idsWhereIn('cargo_manifest', 'vendor_request_id', requests, 'the loads');
+    ids = [...new Set([...loads, ...(await idsWhereIn('cargo_manifest', 'parent_manifest_id', loads, 'the lots'))])];
+  } else {
+    throw new HttpError(403, 'Not authorized');
+  }
+  const scopes = chunks(ids, ID_CHUNK).map(part => `${column}.in.(${part.join(',')})`);
+  // The claims they raised themselves ride along with the first chunk
+  return scopes.length > 0 ? [`${own},${scopes[0]}`, ...scopes.slice(1)] : [own];
+}
+
+/** created_at as a sortable number, microseconds included (Postgres trims trailing zeros, so strings do not sort). */
+function stampOf(value: unknown): number {
+  const text = String(value);
+  const micros = /\.(\d+)/.exec(text)?.[1]?.padEnd(6, '0').slice(3, 6) ?? '0';
+  return Date.parse(text) * 1000 + Number(micros);
+}
+
+const newestFirst = (a: any, b: any) => stampOf(b.created_at) - stampOf(a.created_at) || String(b.id).localeCompare(String(a.id));
+
+export function encodeClaimCursor(row: { created_at: string; id: string }): string {
+  return Buffer.from(JSON.stringify([row.created_at, row.id])).toString('base64url');
+}
+
+function decodeClaimCursor(cursor: string): { created_at: string; id: string } {
+  try {
+    const [created_at, id] = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (typeof created_at === 'string' && Number.isFinite(Date.parse(created_at)) && typeof id === 'string' && z.string().uuid().safeParse(id).success) return { created_at, id };
+  } catch { /* falls through */ }
+  throw new HttpError(400, 'cursor is not valid');
+}
+
+/**
+ * One page of claims, newest first. Staff read every claim; a customer or vendor only their own,
+ * chosen in the database query. `next_cursor` (created_at, id) continues after the last item.
+ */
+export async function listClaims(filters: ClaimListFilters, user: TokenData): Promise<ClaimPage> {
+  const rawLimit = filters.limit == null || filters.limit === '' ? CLAIM_PAGE_DEFAULT : Number(filters.limit);
+  if (!Number.isInteger(rawLimit) || rawLimit < 1) throw new HttpError(400, 'limit must be a whole number of at least 1');
+  const limit = Math.min(rawLimit, CLAIM_PAGE_MAX);
+  if (filters.status && !(CLAIM_STATUSES as readonly string[]).includes(filters.status)) throw new HttpError(400, `status must be one of: ${CLAIM_STATUSES.join(', ')}`);
+  const cursor = filters.cursor ? decodeClaimCursor(filters.cursor) : null;
+  const ref = filters.ref ? await resolveRef(filters.ref) : null;
+  const scopes: Array<string | null> = isStaff(user) ? [null] : await claimScopes(user);
+
+  const pages = await Promise.all(scopes.map(async scope => {
+    let q = supabase.from('cargo_claims').select(CLAIM_COLUMNS);
+    if (scope) q = q.or(scope);
+    if (filters.status) q = q.eq('status', filters.status);
+    if (ref) q = q.eq(ref.kind === 'shipment' ? 'shipment_id' : 'manifest_id', ref.id);
+    if (cursor) q = q.or(`created_at.lt."${cursor.created_at}",and(created_at.eq."${cursor.created_at}",id.lt.${cursor.id})`);
+    const { data, error } = await q.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
+    if (error) throw new Error(`Failed to list claims: ${error.message}`);
+    return (data ?? []) as any[];
+  }));
+
+  const merged = [...new Map(pages.flat().map(c => [c.id, c])).values()].sort(newestFirst);
+  const more = merged.length > limit;
+  const rows = merged.slice(0, limit);
+  return {
+    items: await claimViews(rows),
+    next_cursor: more ? encodeClaimCursor(rows[rows.length - 1]) : null,
+  };
 }
 
 export async function getClaim(id: string, user: TokenData) {
@@ -293,10 +402,15 @@ export async function getClaim(id: string, user: TokenData) {
   return claimView(claim);
 }
 
-/** Claims on one consignment, in the short form the customer view shows. */
-export async function claimsFor(c: { kind: 'shipment' | 'manifest'; id: string }) {
-  const { data } = await supabase
-    .from('cargo_claims').select('id, code, claim_type, status, claimed_amount, approved_amount, settled_amount, created_at, settled_at')
-    .eq(c.kind === 'shipment' ? 'shipment_id' : 'manifest_id', c.id);
-  return data ?? [];
+/**
+ * Claims on a booking's master and on each of its lots, in the short form the customer view
+ * shows. Each carries `lot_code`: the lot's code, or null for a claim on the master itself.
+ */
+export async function claimsForBooking(master: { id: string }, lots: Array<{ id: string; code: string }>) {
+  const { data, error } = await supabase
+    .from('cargo_claims').select('id, code, shipment_id, claim_type, status, claimed_amount, approved_amount, settled_amount, created_at, updated_at, settled_at')
+    .in('shipment_id', [master.id, ...lots.map(l => l.id)]).order('created_at', { ascending: false }).order('id', { ascending: false });
+  if (error) throw new Error(`Failed to read the claims: ${error.message}`);
+  const codes = new Map(lots.map(l => [l.id, l.code]));
+  return ((data ?? []) as any[]).map(c => ({ ...c, lot_code: codes.get(c.shipment_id) ?? null }));
 }

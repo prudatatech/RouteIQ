@@ -157,7 +157,7 @@ describe('hubs, on board and claims', () => {
     const got = await request(app).get(api(`/cargo/claims/${created.body.id}`)).set(auth.admin());
     expect(got.body).toMatchObject({ id: created.body.id, consignment_code: one('shipments', ID.s1).tracking_id });
     const list = await request(app).get(api('/cargo/claims')).set(auth.admin());
-    expect(list.body[0]).toMatchObject({ consignment_code: one('shipments', ID.s1).tracking_id });
+    expect(list.body.items[0]).toMatchObject({ consignment_code: one('shipments', ID.s1).tracking_id });
   });
 });
 

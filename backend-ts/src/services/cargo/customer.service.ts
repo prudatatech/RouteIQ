@@ -13,7 +13,7 @@ import { getProofOfDelivery } from '../pod.service';
 import { resolveRef, type Consignment } from './consignment';
 import { openExceptionsFor, revisedEta, timelineOf, whereIs } from './custody.service';
 import { ownerNotice } from './exception.service';
-import { CLAIM_TYPES, claimsFor, createClaim } from './claim.service';
+import { CLAIM_TYPES, claimsForBooking, createClaim } from './claim.service';
 
 async function bookingShipment(customerId: string, bookingId: string): Promise<{ booking: any; c: Consignment }> {
   const { data: booking, error } = await supabase.from('customer_bookings').select('id, customer_id, shipment_id, status').eq('id', bookingId).maybeSingle();
@@ -25,11 +25,14 @@ async function bookingShipment(customerId: string, bookingId: string): Promise<{
 
 export async function customerCargo(customerId: string, bookingId: string) {
   const { booking, c } = await bookingShipment(customerId, bookingId);
+  const { customerLots, lotsOf } = await import('./lots.service');
+  // The claims of the master and of every lot (cancelled ones too), each tagged with its lot code
+  const allLots = c.isMaster ? await lotsOf(c.kind, c.id) : [];
   const [where, timeline, open, claims] = await Promise.all([
     whereIs(c, { redacted: true }),
     timelineOf(c, { redacted: true }),
     openExceptionsFor(c),
-    claimsFor(c),
+    claimsForBooking(c, allLots),
   ]);
   const eta = open.length > 0 ? await revisedEta(c) : null;
   const notices = open
@@ -40,7 +43,6 @@ export async function customerCargo(customerId: string, bookingId: string) {
     .filter(Boolean);
   const delivered = ['delivered', 'partially_delivered', 'returned'].includes(c.rawStatus);
   // A booking split into lots (several drops, or goods split on the way) shows each lot, with its own POD
-  const { customerLots } = await import('./lots.service');
   const lots = c.isMaster ? await customerLots(c) : [];
   return {
     booking_id: booking.id,

@@ -20,16 +20,16 @@ interface Props {
   lots: CargoLot[];
   /** The master's `where.totals`. */
   totals: LotTotals | null;
-  /** Claims listed by each lot's tracking ID (the cargo view's `claims` are the booking's own). */
+  /** The booking's claims, the lots' included; each is matched to its lot. */
   claims: Claim[];
   refreshKey: number;
   onOpenNotifications: () => void;
   onRaiseClaim: (lot: CargoLot) => void;
 }
 
-/** A claim on this lot: it names the lot's shipment, and the list gives the lot's tracking ID. */
+/** A claim on this lot: it names the lot's shipment and carries the lot's code. */
 export const isLotClaim = (claim: Claim, lot: CargoLot) =>
-  (!!lot.shipment_id && claim.shipment_id === lot.shipment_id) || claim.consignment_code === lot.code;
+  (!!lot.shipment_id && claim.shipment_id === lot.shipment_id) || claim.lot_code === lot.code || claim.consignment_code === lot.code;
 
 /**
  * A booking split into lots (several drops, part of the goods on another truck, or a hub split):
