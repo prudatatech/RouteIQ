@@ -9,13 +9,14 @@ import { Button, ConfirmProvider, EmptyState, LoadingState, Spinner } from '@/co
 import { Lock } from 'lucide-react'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
+import { inboxLink, type RequestSource } from '@/components/requests/model'
 import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
-  backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
+  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -63,8 +64,7 @@ const VendorOnboardingPage = vendorOnboarding.Component
 const VendorDocumentsPage = vendorDocuments.Component
 const VendorShipmentsPage = vendorShipments.Component
 const VendorCorridorPage = vendorCorridor.Component
-const VendorRequestsPage = vendorRequests.Component
-const BookingsPage = bookings.Component
+const RequestsPage = requests.Component
 
 /** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
 function PageFallback() {
@@ -84,6 +84,12 @@ function LazyRoute({ children }: { children: ReactNode }) {
 function MovedTo({ to }: { to: string }) {
   const location = useLocation()
   return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} state={location.state} replace />
+}
+
+/** Send an old bookings or vendor-loads address to the Requests inbox, with the source, tab and ?open= carried over. */
+function MovedToRequests({ source }: { source: RequestSource }) {
+  const location = useLocation()
+  return <Navigate to={inboxLink(source, location.search)} state={location.state} replace />
 }
 
 /** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
@@ -429,16 +435,14 @@ export default function App() {
                 <BackhaulPage />
               </PrivateRoute>
             } />
-            <Route path="vendor-requests" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <VendorRequestsPage />
+            <Route path="requests" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+                <RequestsPage />
               </PrivateRoute>
             } />
-            <Route path="bookings" element={
-              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
-                <BookingsPage />
-              </PrivateRoute>
-            } />
+            {/* Bookings and vendor loads are one inbox now; old links and notifications keep their filters and ?open= */}
+            <Route path="bookings" element={<MovedToRequests source="customer" />} />
+            <Route path="vendor-requests" element={<MovedToRequests source="vendor" />} />
             {/* Old addresses, kept so bookmarks and links in emails still work */}
             <Route path="capacity-bidding" element={<MovedTo to="/bids" />} />
             <Route path="cargo-network" element={<MovedTo to="/backhaul" />} />
@@ -447,7 +451,7 @@ export default function App() {
             <Route path="superadmin" element={<MovedTo to="/admin/users" />} />
             <Route path="admin" element={<MovedTo to="/admin/users" />} />
             <Route path="admin/bids" element={<MovedTo to="/bids" />} />
-            <Route path="admin/requests" element={<MovedTo to="/vendor-requests" />} />
+            <Route path="admin/requests" element={<MovedToRequests source="vendor" />} />
             <Route path="live-map" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <LiveMapPage />
