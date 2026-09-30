@@ -276,7 +276,7 @@ export function statusMoves(status: ExceptionStatus): ExceptionStatus[] {
 export type ActionValues = Record<string, string>
 
 /** Checks one action form. Returns field → message; empty when it can be sent. */
-export function validateAction(action: PanelAction, v: ActionValues, ctx: { maxPieces?: number; now?: number } = {}): Record<string, string> {
+export function validateAction(action: PanelAction, v: ActionValues, ctx: { maxPieces?: number; now?: number; needsRef?: boolean } = {}): Record<string, string> {
   const errors: Record<string, string> = {}
   const text = (k: string) => (v[k] ?? '').trim()
   const future = (k: string, message: string) => {
@@ -299,7 +299,14 @@ export function validateAction(action: PanelAction, v: ActionValues, ctx: { maxP
     case 'reattempt':
       future('scheduled_for', 'Say when to try again.')
       break
+    case 'deliver_with_remarks':
+      if (!text('receiver_name')) errors.receiver_name = 'Enter who received the goods.'
+      // The remarks are the logged reason that stands in for a photo when staff record the delivery
+      if (!text('note')) errors.note = 'Write the remarks for the proof of delivery.'
+      else if (text('note').length < 3) errors.note = 'Write at least a few words.'
+      break
     case 'write_off': {
+      if (ctx.needsRef && !text('ref')) errors.ref = 'Choose the consignment.'
       const n = Number(text('pieces'))
       if (!text('pieces')) errors.pieces = 'Enter how many pieces.'
       else if (!Number.isInteger(n) || n < 1) errors.pieces = 'Enter a whole number of 1 or more.'
@@ -327,11 +334,19 @@ export function validateAction(action: PanelAction, v: ActionValues, ctx: { maxP
   return errors
 }
 
+/** `shipment:<id>` / `manifest:<id>`, the value a consignment picker in an action form uses. */
+export const refKey = (c: ConsignmentLabel) => (c.shipment_id ? `shipment:${c.shipment_id}` : c.manifest_id ? `manifest:${c.manifest_id}` : '')
+function refFromKey(key: string): CargoRef | undefined {
+  const [kind, id] = key.split(':')
+  if (!id) return undefined
+  return kind === 'manifest' ? { manifest_id: id } : { shipment_id: id }
+}
+
 /** Turns a checked form into the request body for POST /cargo/exceptions/:id/actions. */
 export function buildAction(action: PanelAction, v: ActionValues): ExceptionAction {
   const text = (k: string) => (v[k] ?? '').trim()
-  const optional = (k: string) => text(k) || undefined
   const iso = (k: string) => new Date(text(k)).toISOString()
+  const ref = refFromKey(text('ref'))
   switch (action) {
     case 'transship': {
       const lat = Number(text('meet_lat'))
@@ -342,11 +357,21 @@ export function buildAction(action: PanelAction, v: ActionValues): ExceptionActi
     case 'move_to_hub': return { action, depot_id: text('depot_id') }
     case 'wait_for_repair': return { action, expected_at: iso('expected_at') }
     case 'continue_after_repair': return { action }
-    case 'return_to_origin': return { action, note: optional('note') }
+    case 'return_to_origin': return { action }
     case 'reattempt': return { action, scheduled_for: iso('scheduled_for') }
-    case 'deliver_with_remarks': return { action, note: optional('note') }
-    case 'write_off': return { action, pieces: Number(text('pieces')), note: text('note') }
-    case 'raise_claim': return { action, claim_type: text('claim_type') as ClaimType, claimed_amount: Number(text('claimed_amount')) }
+    case 'deliver_with_remarks': {
+      const damaged = Number(text('pieces_damaged'))
+      return {
+        action,
+        receiver_name: text('receiver_name'),
+        note: text('note'),
+        ...(text('condition') ? { condition: text('condition') as ConditionCode } : {}),
+        ...(text('pieces_damaged') && Number.isInteger(damaged) && damaged > 0 ? { pieces_damaged: damaged } : {}),
+        ...(text('otp') ? { otp: text('otp') } : {}),
+      }
+    }
+    case 'write_off': return { action, pieces: Number(text('pieces')), note: text('note'), ...(ref ? { ref } : {}) }
+    case 'raise_claim': return { action, claim_type: text('claim_type') as ClaimType, claimed_amount: Number(text('claimed_amount')), ...(ref ? { ref } : {}) }
     case 'resolve': return { action, resolution: text('resolution') as Resolution, note: text('note') }
     case 'add_note': return { action, note: text('note') }
   }
@@ -357,8 +382,18 @@ export function buildAction(action: PanelAction, v: ActionValues): ExceptionActi
 const TERMINAL_SHIPMENT = ['delivered', 'returned', 'lost', 'cancelled']
 const HUB_IN_FROM = ['picked_up', 'in_transit', 'out_for_delivery', 'returning', 'on_hold', 'exception']
 const NOT_YET_MOVING = ['created', 'assigned', 'scheduled']
+/** Statuses a pickup is recorded from (a vendor load's `scheduled` is created or assigned). */
+const PICKUP_FROM = ['created', 'assigned', 'scheduled', 'on_hold', 'exception']
+/** Statuses a delivery is recorded from (a vendor load on the road is `in_transit`). */
+const DELIVER_FROM = ['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered']
 
 export interface ConsignmentActions {
+  /** Record the pickup (custody `pickup`, counted) on the planned vehicle. */
+  pickup: boolean
+  /** The goods leave the pickup: custody `departed`, picked up → in transit. */
+  depart: boolean
+  /** Record a full delivery (custody `delivery`) with the receiver and proof. */
+  deliver: boolean
   raiseException: boolean
   moveToVehicle: boolean
   hold: boolean
@@ -378,6 +413,10 @@ export function consignmentActions(w: Pick<WhereIsIt, 'status' | 'current_holder
   const atHub = w.current_holder === 'hub'
   const reattemptCase = w.open_exceptions.find(e => (e.type === 'refused' || e.type === 'undeliverable') && isOpenException(e.status))
   return {
+    // Mirrors custody.service: a pickup needs goods still with the sender and a vehicle to put them on
+    pickup: !terminal && w.current_holder === 'consignor' && !!w.vehicle && PICKUP_FROM.includes(w.status),
+    depart: !terminal && onVehicle && w.status === 'picked_up',
+    deliver: !terminal && onVehicle && DELIVER_FROM.includes(w.status) && !w.rto && onBoardCount(w.pieces) > 0,
     raiseException: !terminal,
     moveToVehicle: !terminal && onVehicle && onBoardCount(w.pieces) > 0,
     hold: !terminal && w.status !== 'on_hold',
@@ -394,7 +433,7 @@ export function consignmentActions(w: Pick<WhereIsIt, 'status' | 'current_holder
 
 /** Pieces still on the vehicle; the backend's figure, else what is not yet accounted for. */
 export function onBoardCount(p: Pieces): number {
-  if (Number.isFinite(p.on_board)) return Math.max(0, p.on_board)
+  if (p.on_board != null && Number.isFinite(p.on_board)) return Math.max(0, p.on_board)
   return Math.max(0, (p.total ?? 0) - p.delivered - p.short - p.returned)
 }
 
@@ -536,4 +575,26 @@ export function hubAgeing(since: string | null | undefined, now: number): { hour
   const hours = ms / 3_600_000
   const tone: Tone = hours >= 72 ? 'danger' : hours >= 24 ? 'warning' : 'neutral'
   return { hours, label: formatDuration(ms), tone }
+}
+
+// ── The case holding a vehicle's goods ─────────────────────────────────────
+
+/** Case types and sources the backend uses for goods held on a vehicle that lost its work (exception.service openHoldCase). */
+const HOLD_CASE_TYPES: readonly string[] = ['vehicle_breakdown', 'vehicle_accident', 'other']
+const HOLD_CASE_SOURCES: readonly string[] = ['sos', 'maintenance', 'manual']
+
+/**
+ * The open case holding the goods on a vehicle, the way the backend picks it: one open case per
+ * vehicle (type breakdown, accident or other; source SOS, maintenance or a manual route or load
+ * cancel). A second trigger adds to that case, so the case of an SOS may carry another alert's id,
+ * or none: the one naming this alert or job comes first, then the newest hold case.
+ */
+export function holdCaseFor<T extends Pick<CargoException, 'id' | 'type' | 'source' | 'status' | 'sos_alert_id' | 'maintenance_job_id' | 'created_at'>>(
+  cases: T[],
+  link: { sosAlertId?: string | null; maintenanceJobId?: string | null } = {},
+): T | null {
+  const open = cases.filter(c => isOpenException(c.status) && HOLD_CASE_TYPES.includes(c.type) && HOLD_CASE_SOURCES.includes(c.source ?? ''))
+  const linked = open.find(c => (link.sosAlertId && c.sos_alert_id === link.sosAlertId) || (link.maintenanceJobId && c.maintenance_job_id === link.maintenanceJobId))
+  if (linked) return linked
+  return [...open].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null
 }

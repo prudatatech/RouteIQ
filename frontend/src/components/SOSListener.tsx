@@ -10,10 +10,10 @@ import { telemetryAPI } from '@/services/api'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { sosSeverityLabel, sosStatusOf, sosTypeLabel } from '@/utils/sos'
 import { formatTime } from '@/utils/display'
-import { cargoKeys, exceptionsAPI } from '@/services/cargo'
+import { OPEN_EXCEPTION_FILTER, cargoKeys, exceptionsAPI } from '@/services/cargo'
 import { OnBoardList } from '@/components/cargo/OnBoardList'
 import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
-import { isOpenException } from '@/components/cargo/logic'
+import { holdCaseFor } from '@/components/cargo/logic'
 
 interface SosAlert {
   id: string
@@ -76,15 +76,15 @@ const CARGO_ROWS = 4
 function SosCargo({ alert, onCase }: { alert: SosAlert; onCase: (id: string | null) => void }) {
   const onBoard = useOnBoard(alert.vehicle_id)
   const items = onBoard.data?.items ?? []
+  const filters = { vehicle_id: alert.vehicle_id ?? '', status: OPEN_EXCEPTION_FILTER }
   const cases = useQuery({
-    queryKey: cargoKeys.exceptions({ vehicle_id: alert.vehicle_id ?? '', status: '' }),
-    queryFn: () => exceptionsAPI.list({ vehicle_id: alert.vehicle_id!, status: '' }),
+    queryKey: cargoKeys.exceptions(filters),
+    queryFn: () => exceptionsAPI.list(filters),
     enabled: !!alert.vehicle_id && items.length > 0,
     refetchInterval: 15_000,
   })
-  const open = (cases.data ?? []).filter(c => isOpenException(c.status))
-  const newest = (list: typeof open) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-  const caseId = (newest(open.filter(c => c.sos_alert_id === alert.id)) ?? newest(open))?.id ?? null
+  // The backend keeps one hold case per vehicle; a serious SOS opens it or joins the one already open
+  const caseId = holdCaseFor(cases.data ?? [], { sosAlertId: alert.id })?.id ?? null
   useEffect(() => { onCase(caseId) }, [caseId, onCase])
 
   if (!alert.vehicle_id || onBoard.isLoading || onBoard.isError || items.length === 0) return null

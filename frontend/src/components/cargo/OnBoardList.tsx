@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { PackageOpen } from 'lucide-react'
 import { Card, CardHeader, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
-import { formatDateTime, formatKg } from '@/utils/display'
+import { formatKg } from '@/utils/display'
 import type { OnBoardItem } from '@/services/cargo'
 import { onBoardTotals, useOnBoard } from './useOnBoard'
 import { ConsignmentLink } from './CargoBits'
@@ -23,11 +23,10 @@ export function OnBoardList({ items, compact, className }: { items: OnBoardItem[
               </div>
               {!compact && item.next_stop && (item.next_stop.name || item.next_stop.address) && (
                 <p className="text-xs text-muted">
-                  Next stop {item.next_stop.name || item.next_stop.address}
-                  {item.next_stop.eta ? `, due ${formatDateTime(item.next_stop.eta)}` : ''}
+                  {item.rto ? 'Going back to' : 'Next stop'} {item.next_stop.name || item.next_stop.address}
                 </p>
               )}
-              {!compact && item.consignee_name && <p className="text-xs text-muted">For {item.consignee_name}</p>}
+              {!compact && item.on_hold_reason && item.status === 'on_hold' && <p className="text-xs text-warning">On hold: {item.on_hold_reason}</p>}
               {(item.open_exceptions?.length ?? 0) > 0 && (
                 <p className="flex flex-wrap gap-1.5 pt-0.5">
                   {item.open_exceptions!.map(x => (

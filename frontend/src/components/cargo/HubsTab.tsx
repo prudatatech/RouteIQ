@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { Building2, Package } from 'lucide-react'
 import { Card, CardHeader, DataTable, EmptyState, ErrorState, Skeleton, StatusPill, useUrlState, type Column } from '@/components/ui'
-import { formatDateTime, formatKg } from '@/utils/display'
+import { formatKg } from '@/utils/display'
 import { cargoKeys, hubsAPI, type HubInventoryRow, type HubSummary } from '@/services/cargo'
 import { ConsignmentLink } from './CargoBits'
 import { useNow } from './useNow'
@@ -34,8 +34,8 @@ function HubCard({ hub, selected, now, onSelect }: { hub: HubSummary; selected: 
           <dd>{hub.oldest_since ? <StatusPill tone={age.tone} dot={false}>{age.label}</StatusPill> : '—'}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">Open exceptions</dt>
-          <dd className="tabular font-medium">{hub.open_exceptions ?? 0}</dd>
+          <dt className="text-xs text-muted">Weight</dt>
+          <dd className="tabular font-medium">{formatKg(hub.weight_kg)}</dd>
         </div>
       </dl>
     </button>
@@ -50,7 +50,6 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
     { key: 'status', header: 'Status', hideBelow: 'md', sortValue: r => r.status, cell: r => <StatusPill status={r.status} kind="cargo" /> },
     { key: 'pieces', header: 'Pieces', align: 'right', sortValue: r => r.pieces ?? 0, cell: r => <span className="tabular">{r.pieces ?? '—'}</span> },
     { key: 'weight', header: 'Weight', align: 'right', hideBelow: 'lg', sortValue: r => r.weight_kg ?? 0, cell: r => (r.weight_kg != null ? formatKg(r.weight_kg) : '—') },
-    { key: 'destination', header: 'Destination', hideBelow: 'lg', sortValue: r => r.destination ?? '', cell: r => <span className="break-words">{r.destination ?? '—'}</span> },
     {
       key: 'ageing', header: 'At hub for', sortValue: r => hubAgeing(r.since, now).hours,
       cell: r => { const a = hubAgeing(r.since, now); return <StatusPill tone={a.tone} dot={false}>{a.label}</StatusPill> },
@@ -59,11 +58,11 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
       key: 'next', header: 'Next leg', hideBelow: 'md',
       cell: r => {
         const leg = r.next_leg
-        if (!leg || (!leg.label && !leg.vehicle_plate && !leg.scheduled_for)) return <span className="text-muted">Not planned</span>
+        if (!leg || !leg.label) return <span className="text-muted">Not planned</span>
         return (
           <span className="break-words">
-            {[leg.label, leg.vehicle_plate].filter(Boolean).join(' · ')}
-            {leg.scheduled_for && <span className="block text-xs text-muted">{formatDateTime(leg.scheduled_for)}</span>}
+            {r.rto ? `Back to ${leg.label}` : leg.label}
+            {leg.address && leg.address !== leg.label && <span className="block text-xs text-muted">{leg.address}</span>}
           </span>
         )
       },

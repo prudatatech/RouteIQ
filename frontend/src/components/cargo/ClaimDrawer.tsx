@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Button, Alert, Drawer, Input, StatusPill, Textarea, statusToLabel, useConfirm } from '@/components/ui'
@@ -173,6 +173,19 @@ function ClaimForm({ claim }: { claim: CargoClaim }) {
       </section>
     </div>
   )
+}
+
+/** A claim known only by id (a case page lists claims in short form): loads it, then shows the drawer. */
+export function ClaimDrawerById({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const claim = useQuery({ queryKey: cargoKeys.claim(id ?? ''), queryFn: () => claimsAPI.get(id!), enabled: !!id })
+  if (id && claim.isError) {
+    return (
+      <Drawer open onClose={onClose} title="Claim">
+        <Alert tone="danger" title="We could not load this claim">{errorMessage(claim.error, 'Check your connection and try again.')}</Alert>
+      </Drawer>
+    )
+  }
+  return <ClaimDrawer claim={id ? claim.data ?? null : null} onClose={onClose} />
 }
 
 /** One claim: progress, amounts, insurance details, status moves and documents. */

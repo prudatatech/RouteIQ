@@ -289,7 +289,12 @@ export const cargoAPI = {
     api.post('/cargo/optimize-pooling', { shipment_ids: shipmentIds, vehicle_id: vehicleId }, { timeout: OPTIMIZER_TIMEOUT_MS }).then(r => r.data),
   backhaulMatch: (opportunityId: string, availableCapacityKg: number) =>
     api.post('/cargo/backhaul-match', { opportunity_id: opportunityId, available_capacity_kg: availableCapacityKg }).then(r => r.data),
-  verifyPod: (data: { tracking_id: string, recipient_name: string }) =>
+  /**
+   * Staff confirm a delivery (recorded as a custody delivery). Needs evidence: a photo uploaded for
+   * this shipment (cargoAPI photo upload, `cargo/<shipment id>/`), the delivery OTP, or a reason of
+   * at least 3 characters that is logged.
+   */
+  verifyPod: (data: { tracking_id: string, recipient_name: string, photo_paths?: string[], otp?: string, reason?: string }) =>
     api.post('/cargo/verify-pod', data).then(r => r.data),
 }
 
@@ -485,6 +490,15 @@ export const telemetryAPI = {
   /** Driver raises an SOS for their assigned vehicle. */
   triggerSos: (data: { lat?: number, lng?: number, alert_type?: 'panic_button' | 'accident' | 'breakdown' | 'medical' | 'theft' | 'other' }) =>
     api.post('/telemetry/sos/trigger', data).then(r => r.data),
+  /**
+   * Driver completes a route stop. The backend records it as a custody delivery (or a failed
+   * attempt), with an implied pickup when none was recorded. Without `outcome` the older evidence
+   * rules apply: the receiver's name and a drawn signature are enough.
+   */
+  completeStop: (data: { stop_id: string, status: 'completed' | 'failed', received_by?: string, signature_data?: string, lat?: number, lng?: number }) =>
+    api.post('/telemetry/driver-ping/complete-stop', data, {
+      headers: { 'Idempotency-Key': `complete-stop-${data.stop_id}-${data.status}` },
+    }).then(r => r.data),
 }
 
 export const analyticsAPI = {

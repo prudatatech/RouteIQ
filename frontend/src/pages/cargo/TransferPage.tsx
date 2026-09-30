@@ -196,9 +196,9 @@ export default function TransferPage() {
               <DetailList
                 columns={3}
                 items={[
-                  { label: 'Planned for', value: t.planned_at ? formatDateTime(t.planned_at) : 'Not set' },
+                  { label: 'Planned', value: t.planned_at ? formatDateTime(t.planned_at) : 'Not set' },
                   { label: 'Started', value: t.started_at ? formatDateTime(t.started_at) : 'Not yet' },
-                  { label: t.status === 'cancelled' ? 'Cancelled' : 'Completed', value: t.completed_at ? formatDateTime(t.completed_at) : 'Not yet' },
+                  ...(t.status === 'cancelled' ? [] : [{ label: 'Completed', value: t.completed_at ? formatDateTime(t.completed_at) : 'Not yet' }]),
                 ]}
               />
             </CardBody>
@@ -289,8 +289,7 @@ export default function TransferPage() {
                   { label: 'From vehicle', value: vehicleText(t.from_vehicle) },
                   { label: t.to_depot && !t.to_vehicle ? 'To hub' : 'To vehicle', value: t.to_vehicle ? vehicleText(t.to_vehicle) : (t.to_depot?.name ?? '—') },
                   { label: 'Note', value: t.note || 'No note' },
-                  { label: 'Created', value: t.created_at ? formatDateTime(t.created_at) : '—' },
-                  { label: 'Planned for', value: t.planned_at ? formatDateTime(t.planned_at) : 'Not set' },
+                  { label: 'Planned', value: t.planned_at ? formatDateTime(t.planned_at) : '—' },
                   {
                     label: 'New route',
                     value: t.new_route_id ? <Link to={`/routes/${t.new_route_id}`} className="text-brand hover:underline">Open the new route</Link> : 'None',
