@@ -890,6 +890,9 @@ export interface WhereView {
   seal_number: string | null;
   open_exceptions: { id: string; code: string; type: string; severity: string; status: string; sla_due_at: string | null }[];
   delivery_attempts: number;
+  max_delivery_attempts: number;
+  /** A shipment needs the delivery OTP at delivery (always false for a vendor load). */
+  delivery_otp_required: boolean;
   rto: boolean;
   on_hold_reason: string | null;
 }
@@ -937,6 +940,8 @@ export async function whereIs(c: Consignment, opts: { redacted?: boolean } = {})
     seal_number: opts.redacted ? null : c.seal,
     open_exceptions: open.map(e => ({ id: e.id, code: e.code, type: e.type, severity: e.severity, status: e.status, sla_due_at: e.sla_due_at ?? null })),
     delivery_attempts: c.attempts,
+    max_delivery_attempts: c.maxAttempts,
+    delivery_otp_required: c.kind === 'shipment' && c.row.delivery_otp_required === true,
     rto: c.rto,
     on_hold_reason: opts.redacted ? null : c.onHoldReason,
   };

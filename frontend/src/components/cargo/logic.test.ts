@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAction, claimMoveErrors, claimMoves, claimSteps, compareBySla, consignmentActions, consignmentCode, exceptionActions, formatDuration,
-  hubAgeing, pieceSummary, refOfShipmentRow, slaState, statusMoves, transferItemCount, transferSteps, validateAction,
+  holdCaseFor, hubAgeing, pieceSummary, refKey, refOfShipmentRow, slaState, statusMoves, transferItemCount, transferSteps, validateAction,
 } from './logic'
 import type { CargoException, ExceptionItem, WhereIsIt } from '@/services/cargo'
 
@@ -130,6 +130,22 @@ describe('validateAction and buildAction', () => {
     expect(validateAction('write_off', { pieces: '3', note: '' }, { maxPieces: 4 })).toEqual({ note: 'Say why the pieces are written off.' })
     expect(buildAction('write_off', { pieces: '3', note: ' Crushed ' })).toEqual({ action: 'write_off', pieces: 3, note: 'Crushed' })
   })
+  it('names the consignment of a write-off or claim when the case has several', () => {
+    expect(validateAction('write_off', { pieces: '1', note: 'x' }, { needsRef: true }).ref).toBe('Choose the consignment.')
+    expect(buildAction('write_off', { pieces: '1', note: 'x', ref: 'manifest:m1' })).toEqual({ action: 'write_off', pieces: 1, note: 'x', ref: { manifest_id: 'm1' } })
+    expect(buildAction('raise_claim', { claim_type: 'loss', claimed_amount: '10', ref: 'shipment:s1' })).toMatchObject({ ref: { shipment_id: 's1' } })
+    expect(refKey({ shipment_id: 's1' })).toBe('shipment:s1')
+  })
+  it('sends the receiver and the remarks for a delivery with remarks', () => {
+    expect(validateAction('deliver_with_remarks', { receiver_name: '', note: '' })).toEqual({
+      receiver_name: 'Enter who received the goods.', note: 'Write the remarks for the proof of delivery.',
+    })
+    expect(buildAction('deliver_with_remarks', { receiver_name: ' Anil ', note: '2 cartons crushed', condition: 'damaged_packaging', pieces_damaged: '2', otp: '' }))
+      .toEqual({ action: 'deliver_with_remarks', receiver_name: 'Anil', note: '2 cartons crushed', condition: 'damaged_packaging', pieces_damaged: 2 })
+  })
+  it('sends no note with a return to origin (the action takes none)', () => {
+    expect(buildAction('return_to_origin', { note: 'x' })).toEqual({ action: 'return_to_origin' })
+  })
   it('needs a positive amount for a claim', () => {
     expect(validateAction('raise_claim', { claim_type: 'damage', claimed_amount: '-5' }).claimed_amount).toBe('Enter an amount above ₹0.')
     expect(buildAction('raise_claim', { claim_type: 'damage', claimed_amount: '12500' })).toEqual({ action: 'raise_claim', claim_type: 'damage', claimed_amount: 12500 })
@@ -144,6 +160,7 @@ describe('validateAction and buildAction', () => {
 
 const where = (over: Partial<WhereIsIt> = {}): WhereIsIt => ({
   ref: { shipment_id: 's1' },
+  code: 'RTX-00000001',
   status: 'in_transit',
   current_holder: 'vehicle',
   vehicle: { id: 'v1', plate_number: 'BR01AB1234', lat: 25.6, lng: 85.1 },
@@ -152,6 +169,8 @@ const where = (over: Partial<WhereIsIt> = {}): WhereIsIt => ({
   seal_number: null,
   open_exceptions: [],
   delivery_attempts: 0,
+  max_delivery_attempts: 3,
+  delivery_otp_required: false,
   rto: false,
   ...over,
 })
@@ -159,8 +178,22 @@ const where = (over: Partial<WhereIsIt> = {}): WhereIsIt => ({
 describe('consignmentActions', () => {
   it('lets goods on a moving vehicle be moved, held, taken to a hub or returned', () => {
     expect(consignmentActions(where())).toEqual({
+      pickup: false, depart: false, deliver: true,
       raiseException: true, moveToVehicle: true, hold: true, release: false, reattemptOn: null, startReturn: true, hubIn: true, hubOut: false, sendOtp: false,
     })
+  })
+  it('offers a counted pickup only while the goods are with the sender and a vehicle is planned', () => {
+    const planned = where({ status: 'assigned', current_holder: 'consignor', pieces: { total: 10, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: 0 } })
+    expect(consignmentActions(planned)).toMatchObject({ pickup: true, depart: false, deliver: false })
+    expect(consignmentActions({ ...planned, vehicle: null }).pickup).toBe(false)
+    expect(consignmentActions(where({ status: 'scheduled', current_holder: 'consignor' })).pickup).toBe(true)
+  })
+  it('marks picked-up goods in transit, and delivers only what is still on board and not on a return', () => {
+    expect(consignmentActions(where({ status: 'picked_up' }))).toMatchObject({ depart: true, deliver: true })
+    expect(consignmentActions(where({ status: 'exception' })).deliver).toBe(true)
+    expect(consignmentActions(where({ status: 'returning', rto: true })).deliver).toBe(false)
+    expect(consignmentActions(where({ status: 'on_hold' })).deliver).toBe(false)
+    expect(consignmentActions(where({ status: 'at_hub', current_holder: 'hub', vehicle: null })).deliver).toBe(false)
   })
   it('offers release and not hold when on hold', () => {
     const a = consignmentActions(where({ status: 'on_hold' }))
@@ -274,5 +307,34 @@ describe('consignment identity', () => {
   it('turns a shipments-list row into a ref', () => {
     expect(refOfShipmentRow({ id: 'm1', tracking_id: 'CM-M1' })).toEqual({ manifest_id: 'm1' })
     expect(refOfShipmentRow({ id: 's1', tracking_id: 'RTX-1' })).toEqual({ shipment_id: 's1' })
+  })
+})
+
+describe('holdCaseFor', () => {
+  const kase = (id: string, over: Partial<CargoException> = {}) => ({
+    id, type: 'vehicle_breakdown' as CargoException['type'], source: 'sos' as CargoException['source'], status: 'open' as CargoException['status'],
+    sos_alert_id: null as string | null, maintenance_job_id: null as string | null, created_at: '2026-09-30T10:00:00Z', ...over,
+  })
+  it('prefers the case that names this alert or job, even when it is not the newest', () => {
+    const cases = [
+      kase('newer', { created_at: '2026-09-30T12:00:00Z', source: 'maintenance', maintenance_job_id: 'job-2' }),
+      kase('mine', { sos_alert_id: 'sos-1' }),
+    ]
+    expect(holdCaseFor(cases, { sosAlertId: 'sos-1' })?.id).toBe('mine')
+    expect(holdCaseFor(cases, { maintenanceJobId: 'job-2' })?.id).toBe('newer')
+  })
+  it('falls back to the newest open hold case: a second trigger joins the vehicle\'s one case', () => {
+    const cases = [kase('route-cancel', { type: 'other', source: 'manual', created_at: '2026-09-30T09:00:00Z' }), kase('sos', { sos_alert_id: 'sos-9' })]
+    expect(holdCaseFor(cases, { sosAlertId: 'sos-1' })?.id).toBe('sos')
+  })
+  it('ignores closed cases and cases that do not hold goods on the vehicle', () => {
+    const cases = [
+      kase('resolved', { status: 'resolved', sos_alert_id: 'sos-1' }),
+      kase('damage', { type: 'damage', source: 'custody' }),
+      kase('driver', { source: 'driver' }),
+      kase('late', { type: 'delay', source: 'eta' }),
+    ]
+    expect(holdCaseFor(cases, { sosAlertId: 'sos-1' })).toBeNull()
+    expect(holdCaseFor([...cases, kase('planned', { status: 'action_planned', type: 'vehicle_accident' })])?.id).toBe('planned')
   })
 })

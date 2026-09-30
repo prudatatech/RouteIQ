@@ -16,7 +16,7 @@ import { orderDropsInProcess } from '../services/optimizer/pooling';
 import { MapplsService } from '../services/mappls.service';
 import { resolveAlert } from '../services/alerts.service';
 import { idempotent } from '../core/idempotency';
-import { recordCustody } from '../services/cargo/custody.service';
+import { cargoFolder, isPathIn, recordCustody } from '../services/cargo/custody.service';
 
 const router = Router();
 
@@ -433,6 +433,11 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent(
     }
     if (shipment.status === 'delivered' || shipment.status === 'cancelled') {
       res.status(409).json({ detail: `Shipment is already ${shipment.status}` });
+      return;
+    }
+    // Photos must be this shipment's own uploads (POST /cargo/custody/upload-url with its ref)
+    if (photoPaths.length > 10 || photoPaths.some((p: unknown) => !isPathIn(p, [cargoFolder(shipment.id)]))) {
+      res.status(400).json({ detail: 'photo_paths must be uploads for this shipment (at most 10)' });
       return;
     }
 

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, PackageX } from 'lucide-react'
 import { Button, Card, Skeleton } from '@/components/ui'
-import { cargoKeys, exceptionsAPI } from '@/services/cargo'
+import { OPEN_EXCEPTION_FILTER, cargoKeys, exceptionsAPI } from '@/services/cargo'
 import { useNow } from './useNow'
 import { isOpenException, slaState } from './logic'
 
@@ -10,9 +10,11 @@ import { isOpenException, slaState } from './logic'
 export default function CargoExceptionsCard() {
   const navigate = useNavigate()
   const now = useNow()
+  // Open cases only: the list is capped at 300 newest, which closed cases would crowd out
+  const filters = { status: OPEN_EXCEPTION_FILTER }
   const q = useQuery({
-    queryKey: cargoKeys.exceptions({}),
-    queryFn: () => exceptionsAPI.list({}),
+    queryKey: cargoKeys.exceptions(filters),
+    queryFn: () => exceptionsAPI.list(filters),
     refetchInterval: 60_000,
   })
   const open = (q.data ?? []).filter(e => isOpenException(e.status))

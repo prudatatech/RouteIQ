@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { depotsAPI, fleetAPI } from '@/services/api'
-import { cargoKeys, exceptionsAPI, type CargoException } from '@/services/cargo'
+import { OPEN_EXCEPTION_FILTER, cargoKeys, exceptionsAPI } from '@/services/cargo'
+import { holdCaseFor } from '@/components/cargo/logic'
 import { OnBoardList } from '@/components/cargo/OnBoardList'
 import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
 import { formatKg } from '@/utils/display'
@@ -21,11 +22,18 @@ const PLAN_OPTIONS: { value: CargoPlan; label: string; description: string }[] =
   { value: 'hold', label: 'Hold with the vehicle', description: 'The goods stay on the vehicle, on hold under the case that opens.' },
 ]
 
-/** The case the backend opened for the goods: the newest open breakdown or accident on this vehicle, else the newest open case. */
-async function findMaintenanceCase(vehicleId: string): Promise<CargoException | null> {
-  const cases = await exceptionsAPI.list({ vehicle_id: vehicleId, status: 'open' })
-  const newest = (list: CargoException[]) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null
-  return newest(cases.filter(c => c.type === 'vehicle_breakdown' || c.type === 'vehicle_accident')) ?? newest(cases)
+/** What POST /fleet/vehicles/:id/maintenance answers that the cargo plan needs. */
+interface OpenedJob { id: string; released_work?: { cargo_exception_id?: string | null } | null }
+
+/**
+ * The case holding the goods after the move. Releasing the work holds them on one case per
+ * vehicle (a breakdown, accident or, for a scheduled service, `other`), which may be the case an
+ * SOS already opened: the job answers its id; otherwise the hold case linked to the job is found.
+ */
+async function findHoldCase(vehicleId: string, job: OpenedJob | undefined): Promise<{ id: string; code: string } | null> {
+  const cases = await exceptionsAPI.list({ vehicle_id: vehicleId, status: OPEN_EXCEPTION_FILTER })
+  const byId = job?.released_work?.cargo_exception_id ? cases.find(c => c.id === job.released_work!.cargo_exception_id) : undefined
+  return byId ?? holdCaseFor(cases, { maintenanceJobId: job?.id ?? null })
 }
 
 /**
@@ -72,9 +80,9 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   const needsRelease = !!work?.blocking && (!hasCargo || (work.routes.length > 0 || work.manifests.length > 0))
 
   /** The move went through and goods were on board: carry out the plan on the case the backend opened. */
-  const planCargo = async () => {
+  const planCargo = async (job: OpenedJob | undefined) => {
     try {
-      const found = await findMaintenanceCase(vehicleId)
+      const found = await findHoldCase(vehicleId, job)
       if (!found) {
         toast('The goods on board are on hold. Open Cargo, then Exceptions, to plan them.', { duration: 8000 })
       } else if (plan === 'transship') {
@@ -93,15 +101,15 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
   }
 
   const save = useMutation({
-    mutationFn: (body: object) => fleetAPI.openMaintenance(vehicleId, body),
-    onSuccess: async () => {
+    mutationFn: (body: object) => fleetAPI.openMaintenance(vehicleId, body) as Promise<OpenedJob>,
+    onSuccess: async job => {
       toast.success(`${plate} moved to maintenance`)
       refresh()
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['sos-alerts'] })
       onClose()
-      if (hasCargo) await planCargo()
+      if (hasCargo) await planCargo(job)
     },
     onError: err => {
       setError(apiErrorMessage(err, 'We could not move the vehicle to maintenance. Try again.'))

@@ -12,13 +12,13 @@ import { usersAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import {
-  cargoKeys, exceptionsAPI, type CargoClaim, type ExceptionDetail, type ExceptionItem, type ExceptionStatus,
+  cargoKeys, exceptionsAPI, type ClaimSummary, type ExceptionDetail, type ExceptionItem, type ExceptionStatus,
 } from '@/services/cargo'
 import { ConditionPill, ConsignmentLink, SeverityPill, SlaBadge } from '@/components/cargo/CargoBits'
 import { useNow } from '@/components/cargo/useNow'
 import { CaseTimeline } from '@/components/cargo/CustodyTimeline'
 import ExceptionActionModal from '@/components/cargo/ExceptionActionModal'
-import ClaimDrawer from '@/components/cargo/ClaimDrawer'
+import { ClaimDrawerById } from '@/components/cargo/ClaimDrawer'
 import {
   ACTION_META, PANEL_ACTIONS, claimTypeLabel, exceptionActions, exceptionTypeLabel, isActiveTransfer, positionOf, resolutionLabel,
   slaState, sourceLabel, statusMoves, type ActionValues, type PanelAction,
@@ -133,7 +133,6 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
   const casePos = kase.lat != null && kase.lng != null && !(kase.lat === 0 && kase.lng === 0) ? { lat: kase.lat, lng: kase.lng } : null
   const totalPieces = kase.items.reduce((n, i) => n + (i.pieces_affected ?? 0), 0)
   const totalKg = kase.items.reduce((n, i) => n + (Number(i.weight_affected_kg) || 0), 0)
-  const openClaim = kase.claims.find(c => c.id === openClaimId) ?? null
 
   const mapVehicles: MapVehicle[] = useMemo(() => {
     const list: MapVehicle[] = []
@@ -312,7 +311,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
               <EmptyState compact icon={<FileText size={22} />} title="No claims" description={actions.includes('raise_claim') ? 'Raise one if goods were lost or damaged.' : undefined} />
             ) : (
               <ul className="divide-y divide-border">
-                {kase.claims.map((c: CargoClaim) => (
+                {kase.claims.map((c: ClaimSummary) => (
                   <li key={c.id}>
                     <button type="button" onClick={() => setOpenClaimId(c.id)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-surface-subtle sm:px-6">
                       <span className="min-w-0">
@@ -415,7 +414,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
         />
       )}
       {assigning && <AssignOwnerModal kase={kase} onClose={() => setAssigning(false)} />}
-      <ClaimDrawer claim={openClaim} onClose={() => setOpenClaimId(null)} />
+      <ClaimDrawerById id={openClaimId} onClose={() => setOpenClaimId(null)} />
     </Page>
   )
 }

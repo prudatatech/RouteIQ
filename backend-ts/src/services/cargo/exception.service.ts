@@ -390,6 +390,7 @@ async function itemViews(items: any[]) {
       current_vehicle_id: c?.vehicleId ?? null,
       current_depot_id: c?.depotId ?? null,
       pieces_held: c ? piecesHeld(c.pieces) : null,
+      pieces_total: c ? c.pieces.total : null,
       pieces_affected: i.pieces_affected,
       weight_affected_kg: i.weight_affected_kg != null ? Number(i.weight_affected_kg) : null,
       condition: i.condition,
@@ -446,15 +447,37 @@ export async function listExceptions(filters: ExceptionFilters) {
     itemsBy.set(item.exception_id, list);
   });
   const vehicleIds = [...new Set(rows.map(r => r.vehicle_id).filter(Boolean))];
-  const plates = new Map<string, string>();
+  const vehicles = new Map<string, any>();
   if (vehicleIds.length) {
-    const { data: v } = await supabase.from('vehicles').select('id, plate_number').in('id', vehicleIds);
-    for (const row of v ?? []) plates.set(row.id, row.plate_number);
+    const { data: v } = await supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).in('id', vehicleIds);
+    for (const row of (v ?? []) as any[]) vehicles.set(row.id, row);
   }
+  const owners = await ownerNames(rows.map(r => r.owner_id));
   return rows.map(r => {
     const { notes: _notes, ...rest } = r;
-    return { ...rest, plate_number: r.vehicle_id ? plates.get(r.vehicle_id) ?? null : null, items: itemsBy.get(r.id) ?? [], sla: slaView(r, now) };
+    const vehicle = r.vehicle_id ? vehicles.get(r.vehicle_id) ?? null : null;
+    return {
+      ...rest,
+      plate_number: vehicle?.plate_number ?? null,
+      vehicle,
+      owner: r.owner_id ? { id: r.owner_id, full_name: owners.get(r.owner_id) ?? null } : null,
+      items: itemsBy.get(r.id) ?? [],
+      sla: slaView(r, now),
+    };
   });
+}
+
+/** The vehicle of a case, as the queue and the case page show it (plate, driver and position for the map). */
+const CASE_VEHICLE_COLUMNS = 'id, plate_number, status, vehicle_type, latitude, longitude, driver_name';
+
+/** Full names of staff (case owners, people who acted on a case), by id. */
+async function ownerNames(ids: (string | null | undefined)[]): Promise<Map<string, string | null>> {
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  const out = new Map<string, string | null>();
+  if (unique.length === 0) return out;
+  const { data } = await supabase.from('users').select('id, full_name').in('id', unique);
+  for (const u of (data ?? []) as any[]) out.set(u.id, u.full_name ?? null);
+  return out;
 }
 
 /** The case with its items, merged timeline (custody, SOS, maintenance, notes), transfers and claims. */
@@ -502,17 +525,37 @@ export async function getException(id: string) {
   }
   timeline.sort((a, b) => String(a.at).localeCompare(String(b.at)));
 
-  const [{ data: transfers }, { data: claims }] = await Promise.all([
-    supabase.from('cargo_transfers').select('*').eq('exception_id', id),
+  const [{ data: transferRows }, { data: claims }] = await Promise.all([
+    supabase.from('cargo_transfers').select('id, planned_at').eq('exception_id', id),
     supabase.from('cargo_claims').select('id, code, claim_type, status, claimed_amount, approved_amount, settled_amount, shipment_id, manifest_id, created_at').eq('exception_id', id),
   ]);
+  // Transfers as GET /cargo/transfers/:id shows them: vehicles, hub and items with their codes
+  const { getTransfer } = await import('./transfer.service');
+  const transfers = [];
+  for (const t of [...((transferRows ?? []) as any[])].sort((a, b) => String(a.planned_at).localeCompare(String(b.planned_at)))) {
+    transfers.push(await getTransfer(t.id));
+  }
   let vehicle = null;
   if (row.vehicle_id) {
-    const { data } = await supabase.from('vehicles').select('id, plate_number, status, latitude, longitude, driver_name').eq('id', row.vehicle_id).maybeSingle();
+    const { data } = await supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).eq('id', row.vehicle_id).maybeSingle();
     vehicle = data ?? null;
   }
+  // Names for the owner and for whoever acted on the case (the timeline's `by` ids)
+  const names = await ownerNames([row.owner_id, ...timeline.map(t => t.by)]);
+  const named = timeline.map(t => (t.by ? { ...t, by_name: names.get(t.by) ?? null } : { ...t, by_name: null }));
   const { notes: _notes, ...rest } = row;
-  return { ...rest, sla: slaView(row), vehicle, items: views, timeline, sos_alert: sos, maintenance_job: job, transfers: transfers ?? [], claims: claims ?? [] };
+  return {
+    ...rest,
+    sla: slaView(row),
+    vehicle,
+    owner: row.owner_id ? { id: row.owner_id, full_name: names.get(row.owner_id) ?? null } : null,
+    items: views,
+    timeline: named,
+    sos_alert: sos,
+    maintenance_job: job,
+    transfers,
+    claims: claims ?? [],
+  };
 }
 
 // ── Relief vehicles ─────────────────────────────────────────

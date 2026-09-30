@@ -1,9 +1,14 @@
 /**
  * Cargo custody, exceptions, transfers, hubs and claims: the typed client for
- * `/api/v1/cargo` (docs/cargo-plan.md is the contract). Every POST sends an
- * `Idempotency-Key`, so a retried request is applied once.
+ * `/api/v1/cargo` (docs/cargo-plan.md is the contract). Every POST that changes state sends an
+ * `Idempotency-Key`, so a retried request is applied once. The backend's answers are mapped to
+ * the shapes below by cargoMap.ts.
  */
 import { api } from '@/services/api'
+import { supabase } from '@/services/supabase'
+import {
+  listOf, mapClaim, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow, mapOnBoard, mapRelief, mapTransfer, mapWhere,
+} from './cargoMap'
 
 // ── Vocabulary ─────────────────────────────────────────────────────────────
 
@@ -52,14 +57,13 @@ export const CUSTODY_KINDS = [
 ] as const
 export type CustodyKind = (typeof CUSTODY_KINDS)[number]
 
-// ── Records ────────────────────────────────────────────────────────────────
+// ── Records (as the screens use them; cargoMap.ts maps the backend's answers to these) ──
 
-/** A vehicle as the cargo endpoints embed it. Position fields may come as lat/lng or latitude/longitude. */
+/** A vehicle as the cargo endpoints embed it. `where` gives lat/lng, the other answers latitude/longitude. */
 export interface CargoVehicle {
   id: string
   plate_number: string
   driver_name?: string | null
-  driver_phone?: string | null
   vehicle_type?: string | null
   status?: string | null
   lat?: number | null
@@ -83,14 +87,15 @@ export interface Pieces {
   damaged: number
   short: number
   returned: number
-  on_board: number
+  /** Pieces still on the vehicle; 0 when the goods are elsewhere, null when the count is unknown. */
+  on_board: number | null
 }
 
 /** Short consignment identity that list rows carry so they can be shown without another fetch. */
 export interface ConsignmentLabel {
   shipment_id?: string | null
   manifest_id?: string | null
-  /** RTX-… for a shipment, CM-… for a vendor load. */
+  /** RTX-… for a shipment, CM-… for a vendor load (the backend's `code` or `consignment_code`). */
   tracking_id?: string | null
   status?: string | null
 }
@@ -102,8 +107,11 @@ export interface ExceptionItem extends ConsignmentLabel {
   weight_affected_kg: number | null
   condition: ConditionCode | null
   note: string | null
-  /** Pieces the consignment has in all, when the backend adds it. */
+  /** Pieces the consignment has in all. */
   pieces_total?: number | null
+  /** Pieces its current holder has now. */
+  pieces_held?: number | null
+  current_holder?: Holder | null
 }
 
 export interface CargoException {
@@ -146,6 +154,11 @@ export interface CaseTimelineEntry {
   note?: string | null
   actor_name?: string | null
   actor_role?: string | null
+  /** The consignment of a custody entry. */
+  ref?: ConsignmentLabel | null
+  pieces?: number | null
+  condition?: string | null
+  transfer_id?: string | null
   photo_urls?: string[] | null
   signature_url?: string | null
 }
@@ -170,6 +183,7 @@ export interface CargoTransfer {
   meet_lat: number | null
   meet_lng: number | null
   meet_address: string | null
+  /** When the transfer was planned, which is also when it was created. */
   planned_at: string | null
   started_at: string | null
   completed_at: string | null
@@ -179,7 +193,6 @@ export interface CargoTransfer {
   eway_part_b_ref: string | null
   created_by: string | null
   note: string | null
-  created_at?: string
   items: TransferItem[]
   from_vehicle?: CargoVehicle | null
   to_vehicle?: CargoVehicle | null
@@ -189,7 +202,7 @@ export interface CargoTransfer {
 
 export interface ClaimDocument {
   path: string
-  /** Short-lived signed link, when the backend adds one. */
+  /** Short-lived signed link. */
   url?: string | null
 }
 
@@ -218,110 +231,130 @@ export interface CargoClaim extends ConsignmentLabel {
   settled_at: string | null
 }
 
+/** The short form of a claim on a case page; the claim drawer loads the whole claim. */
+export type ClaimSummary = Pick<CargoClaim, 'id' | 'code' | 'claim_type' | 'status' | 'claimed_amount' | 'approved_amount' | 'settled_amount' | 'created_at'> & ConsignmentLabel
+
 export interface ExceptionDetail extends CargoException {
   timeline: CaseTimelineEntry[]
   transfers: CargoTransfer[]
-  claims: CargoClaim[]
+  claims: ClaimSummary[]
 }
 
 export interface ReliefVehicle {
-  vehicle: CargoVehicle & { capacity_kg?: number | null; cargo_types?: string[] | null }
+  vehicle: CargoVehicle & { cargo_types?: string[] | null }
   distance_km: number
   free_kg: number
   eta_minutes?: number | null
+  /** Free capacity covers the weight of the goods. */
+  fits: boolean
+  /** Carries the cargo types the goods need. */
+  cargo_match: boolean
 }
 
 /** GET /cargo/where/:ref */
 export interface WhereIsIt {
   ref: CargoRef & { tracking_id?: string | null }
+  /** RTX-… or CM-… */
+  code: string | null
   status: string
   current_holder: Holder
-  vehicle: (CargoVehicle & { lat: number | null; lng: number | null }) | null
+  vehicle: (CargoVehicle & { lat?: number | null; lng?: number | null }) | null
   depot: CargoDepot | null
   pieces: Pieces
   seal_number: string | null
   open_exceptions: Pick<CargoException, 'id' | 'code' | 'type' | 'severity' | 'status' | 'sla_due_at'>[]
   delivery_attempts: number
-  max_delivery_attempts?: number | null
-  delivery_otp_required?: boolean | null
+  max_delivery_attempts: number | null
+  delivery_otp_required: boolean
   rto: boolean
   on_hold_reason?: string | null
 }
 
+/** One event of GET /cargo/timeline/:ref, with the backend's embedded vehicles, depots and people flattened. */
 export interface CustodyEvent {
   id: string
-  shipment_id: string | null
-  manifest_id: string | null
   kind: CustodyKind
-  from_holder: Holder | null
-  from_vehicle_id: string | null
-  from_depot_id: string | null
-  to_holder: Holder | null
-  to_vehicle_id: string | null
-  to_depot_id: string | null
-  driver_id: string | null
-  pieces: number | null
-  weight_kg: number | null
-  condition: ConditionCode | null
-  seal_number: string | null
-  seal_ok: boolean | null
-  photo_paths: string[] | null
-  /** Signed links for photo_paths, same order. */
-  photo_urls?: string[] | null
-  signature_path: string | null
-  signature_url?: string | null
-  otp_verified: boolean | null
-  receiver_name: string | null
-  lat: number | null
-  lng: number | null
-  notes: string | null
-  exception_id: string | null
-  transfer_id: string | null
-  recorded_by: string | null
-  recorded_role: string | null
-  recorded_by_name?: string | null
+  /** The plain-words line the backend writes for the event. */
+  summary?: string | null
   recorded_at: string
-  /** Names the backend may join in for display. */
+  from_holder: Holder | null
+  to_holder: Holder | null
+  from_vehicle_id: string | null
+  to_vehicle_id: string | null
+  from_depot_id: string | null
+  to_depot_id: string | null
   from_vehicle_plate?: string | null
   to_vehicle_plate?: string | null
   from_depot_name?: string | null
   to_depot_name?: string | null
+  pieces: number | null
+  weight_kg?: number | null
+  condition: ConditionCode | null
+  seal_number?: string | null
+  seal_ok?: boolean | null
+  receiver_name: string | null
+  otp_verified: boolean | null
+  /** Signed links to the photos. */
+  photo_urls: string[]
+  signature_url: string | null
+  lat: number | null
+  lng: number | null
+  notes?: string | null
+  exception_id?: string | null
+  transfer_id?: string | null
+  driver_name?: string | null
+  /** Id of who recorded it (staff views only). */
+  recorded_by?: string | null
+  recorded_by_name?: string | null
+  recorded_role?: string | null
 }
 
 export interface HubSummary extends CargoDepot {
   consignments: number
   pieces: number
+  weight_kg: number
   /** When the longest-waiting consignment arrived. */
-  oldest_since?: string | null
-  open_exceptions?: number
+  oldest_since: string | null
+  oldest_age_hours: number | null
 }
 
 export interface HubInventoryRow extends ConsignmentLabel {
   pieces: number | null
-  weight_kg?: number | null
-  /** When it arrived at the hub; ageing is counted from here. */
-  since: string
-  next_leg?: { label?: string | null; vehicle_plate?: string | null; scheduled_for?: string | null } | null
-  open_exceptions?: Pick<CargoException, 'id' | 'code' | 'type' | 'severity'>[]
-  destination?: string | null
+  pieces_total?: number | null
+  weight_kg: number | null
+  /** When it arrived at the hub; ageing is counted from here. Null when no arrival was recorded. */
+  since: string | null
+  age_hours?: number | null
+  rto?: boolean
+  on_hold_reason?: string | null
+  /** Where it goes next: the next drop (or the return point) by name and address. */
+  next_leg: { label: string | null; address: string | null } | null
+  open_exceptions: Pick<CargoException, 'id' | 'code' | 'type' | 'severity' | 'status'>[]
+  destination: string | null
 }
 
 export interface OnBoardItem extends ConsignmentLabel {
   pieces_on_board: number
   pieces_total?: number | null
   weight_kg: number | null
-  next_stop?: { name?: string | null; address?: string | null; eta?: string | null } | null
-  consignee_name?: string | null
+  seal_number?: string | null
+  /** The condition last recorded (good when none was). */
+  condition?: ConditionCode | null
+  rto?: boolean
+  on_hold_reason?: string | null
+  next_stop?: { name: string | null; address: string | null } | null
   open_exceptions?: Pick<CargoException, 'id' | 'code' | 'type' | 'severity'>[]
 }
 
 export interface OnBoard {
   vehicle_id: string
+  vehicle?: CargoVehicle | null
   items: OnBoardItem[]
 }
 
 // ── Request bodies ─────────────────────────────────────────────────────────
 
+/** POST /cargo/custody (the backend's CustodySchema). */
 export interface CustodyBody {
   ref: CargoRef
   kind: CustodyKind
@@ -336,9 +369,27 @@ export interface CustodyBody {
   lat?: number
   lng?: number
   notes?: string
+  pieces_refused?: number
+  pieces_short?: number
+  pieces_damaged?: number
+  /** hold: why; a staff delivery: a logged reason instead of a photo; refused / undelivered: the reason code. */
   reason?: string
-  to_depot_id?: string
-  from_depot_id?: string
+  /** hub_in: the hub reached; hub_out: the hub left. */
+  depot_id?: string
+  /** Staff naming the vehicle of a pickup, hub departure or return pickup. */
+  vehicle_id?: string
+  /** hub_out: where the goods go next. */
+  next_status?: 'in_transit' | 'out_for_delivery'
+}
+
+/** What POST /cargo/custody answers. */
+export interface CustodyResult {
+  event: { id: string; kind: CustodyKind } | null
+  ref: CargoRef
+  status: string
+  current_holder: Holder
+  pieces: Pieces
+  exception_ids: string[]
 }
 
 export interface RaiseExceptionBody {
@@ -351,18 +402,19 @@ export interface RaiseExceptionBody {
   lng?: number
 }
 
+/** POST /cargo/exceptions/:id/actions (exception.service exceptionAction). */
 export type ExceptionAction =
   | { action: 'assign_owner'; owner_id: string }
   | { action: 'set_status'; status: ExceptionStatus }
-  | { action: 'transship'; to_vehicle_id: string; meet_lat?: number; meet_lng?: number; meet_address?: string }
-  | { action: 'move_to_hub'; depot_id: string }
+  | { action: 'transship'; to_vehicle_id: string; meet_lat?: number; meet_lng?: number; meet_address?: string; note?: string }
+  | { action: 'move_to_hub'; depot_id: string; note?: string }
   | { action: 'wait_for_repair'; expected_at: string }
-  | { action: 'continue_after_repair' }
-  | { action: 'return_to_origin'; note?: string }
+  | { action: 'continue_after_repair'; note?: string }
+  | { action: 'return_to_origin' }
   | { action: 'reattempt'; scheduled_for: string }
-  | { action: 'deliver_with_remarks'; note?: string }
-  | { action: 'write_off'; pieces: number; note: string }
-  | { action: 'raise_claim'; claim_type: ClaimType; claimed_amount: number }
+  | { action: 'deliver_with_remarks'; receiver_name: string; note: string; condition?: ConditionCode; pieces_damaged?: number; photo_paths?: string[]; otp?: string }
+  | { action: 'write_off'; pieces: number; note: string; ref?: CargoRef }
+  | { action: 'raise_claim'; claim_type: ClaimType; claimed_amount: number; ref?: CargoRef; note?: string }
   | { action: 'resolve'; resolution: Resolution; note: string }
   | { action: 'add_note'; note: string }
 
@@ -373,12 +425,15 @@ export interface CreateTransferBody {
   from_vehicle_id: string
   to_vehicle_id?: string
   to_depot_id?: string
+  /** A transfer moves whole consignments: `pieces` is what is on board. */
   items: { ref: CargoRef; pieces: number }[]
   meet_lat?: number
   meet_lng?: number
   meet_address?: string
+  note?: string
 }
 
+/** PATCH /cargo/claims/:id (staff). Documents are added with uploadDocument, not here. */
 export interface ClaimPatch {
   status?: ClaimStatus
   insurer?: string | null
@@ -390,10 +445,10 @@ export interface ClaimPatch {
   approved_amount?: number | null
   settled_amount?: number | null
   notes?: string | null
-  document_paths?: string[]
 }
 
 export interface ExceptionFilters {
+  /** One status, or several separated by commas. */
   status?: string
   type?: string
   severity?: string
@@ -401,6 +456,11 @@ export interface ExceptionFilters {
   ref?: string
   overdue?: boolean
 }
+
+/** Every open case state, as one status filter. */
+export const OPEN_EXCEPTION_FILTER = 'open,investigating,action_planned'
+
+export interface SignedUpload { path: string; token: string; bucket: string; signed_url?: string }
 
 // ── Client ─────────────────────────────────────────────────────────────────
 
@@ -413,79 +473,87 @@ function post<T>(url: string, body: object = {}): Promise<T> {
   return api.post(url, body, { headers: { 'Idempotency-Key': newKey() } }).then(r => r.data as T)
 }
 
-/** A list endpoint may answer with an array or with `{ items }` / `{ <name> }`. */
-function listOf<T>(data: unknown, key: string): T[] {
-  if (Array.isArray(data)) return data as T[]
-  if (data && typeof data === 'object') {
-    const d = data as Record<string, unknown>
-    if (Array.isArray(d[key])) return d[key] as T[]
-    if (Array.isArray(d.items)) return d.items as T[]
-  }
-  return []
-}
-
 const enc = encodeURIComponent
+
+/** Uploads one file to a signed URL the backend handed out; gives back its storage path. */
+async function uploadToSigned(signed: SignedUpload, file: File): Promise<string> {
+  const { error } = await supabase.storage.from(signed.bucket).uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type })
+  if (error) throw error
+  return signed.path
+}
 
 export const custodyAPI = {
   /** `ref` is a shipment uuid, a tracking id (RTX-…) or a manifest code (CM-…). */
-  where: (ref: string) => api.get(`/cargo/where/${enc(ref)}`).then(r => r.data as WhereIsIt),
-  timeline: (ref: string) => api.get(`/cargo/timeline/${enc(ref)}`).then(r => listOf<CustodyEvent>(r.data, 'events')),
-  record: (body: CustodyBody) => post<{ event?: CustodyEvent }>('/cargo/custody', body),
-  sendOtp: (ref: CargoRef) => post<{ expires_at?: string }>('/cargo/otp/send', { ref }),
-  onBoard: (vehicleId: string) => api.get(`/cargo/vehicles/${enc(vehicleId)}/on-board`).then(r => ({
-    vehicle_id: vehicleId,
-    items: listOf<OnBoardItem>(r.data, 'items'),
-  }) as OnBoard),
+  where: (ref: string) => api.get(`/cargo/where/${enc(ref)}`).then(r => mapWhere(r.data)),
+  timeline: (ref: string) => api.get(`/cargo/timeline/${enc(ref)}`).then(r => listOf<unknown>(r.data, 'events').map(mapCustodyEvent)),
+  record: (body: CustodyBody) => post<CustodyResult>('/cargo/custody', body),
+  /** A signed URL into `cargo/<consignment id>/` for a custody photo or signature (JPG or PNG). */
+  uploadUrl: (ref: CargoRef | string, file: { kind: 'photo' | 'signature'; content_type: string; size: number }) =>
+    api.post('/cargo/custody/upload-url', { ref, ...file }).then(r => r.data as SignedUpload),
+  /** Uploads a custody photo of a consignment and gives back its path, for `photo_paths`. */
+  uploadPhoto: async (ref: CargoRef | string, file: File) =>
+    uploadToSigned(await custodyAPI.uploadUrl(ref, { kind: 'photo', content_type: file.type, size: file.size }), file),
+  sendOtp: (ref: CargoRef) => post<{ expires_at: string; notified: { in_app: boolean; sms: boolean } }>('/cargo/otp/send', { ref }),
+  /** The answer is `{ vehicle, totals, items }`. */
+  onBoard: (vehicleId: string) => api.get(`/cargo/vehicles/${enc(vehicleId)}/on-board`).then(r => mapOnBoard(r.data, vehicleId)),
+}
+
+/** An action answers the case; transship and move_to_hub add the transfer, raise_claim the claim. */
+export interface ExceptionActionResult {
+  exception: ExceptionDetail
+  transfer?: CargoTransfer
+  claim?: CargoClaim
 }
 
 export const exceptionsAPI = {
   list: (filters: ExceptionFilters = {}) => api.get('/cargo/exceptions', {
     params: Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined && v !== '' && v !== false)),
-  }).then(r => listOf<CargoException>(r.data, 'exceptions')),
-  get: (id: string) => api.get(`/cargo/exceptions/${enc(id)}`).then(r => {
-    const d = r.data as Partial<ExceptionDetail> & { exception?: CargoException }
-    // Accept the case at the top level or under `exception`, with its lists beside it
-    const base = (d.exception ?? d) as CargoException
-    return {
-      ...base,
-      items: d.items ?? base.items ?? [],
-      timeline: d.timeline ?? [],
-      transfers: d.transfers ?? [],
-      claims: d.claims ?? [],
-    } as ExceptionDetail
-  }),
-  raise: (body: RaiseExceptionBody) => post<CargoException>('/cargo/exceptions', body),
-  act: (id: string, body: ExceptionAction) => post<unknown>(`/cargo/exceptions/${enc(id)}/actions`, body),
-  reliefVehicles: (id: string) => api.get(`/cargo/exceptions/${enc(id)}/relief-vehicles`).then(r => listOf<ReliefVehicle>(r.data, 'vehicles')),
+  }).then(r => listOf<unknown>(r.data, 'exceptions').map(mapException)),
+  get: (id: string) => api.get(`/cargo/exceptions/${enc(id)}`).then(r => mapExceptionDetail(r.data)),
+  raise: (body: RaiseExceptionBody) => post<unknown>('/cargo/exceptions', body).then(mapExceptionDetail),
+  act: (id: string, body: ExceptionAction) => post<Record<string, unknown>>(`/cargo/exceptions/${enc(id)}/actions`, body)
+    .then((d): ExceptionActionResult => (d && typeof d === 'object' && 'exception' in d
+      ? {
+        exception: mapExceptionDetail(d.exception),
+        ...(d.transfer ? { transfer: mapTransfer(d.transfer) } : {}),
+        ...(d.claim ? { claim: mapClaim(d.claim) } : {}),
+      }
+      : { exception: mapExceptionDetail(d) })),
+  /** Ranked relief vehicles; the answer is `{ affected_kg, origin, vehicles }`. */
+  reliefVehicles: (id: string) => api.get(`/cargo/exceptions/${enc(id)}/relief-vehicles`).then(r => listOf<unknown>(r.data, 'vehicles').map(mapRelief)),
 }
 
 export const transfersAPI = {
   list: (status?: TransferStatus) => api.get('/cargo/transfers', { params: status ? { status } : undefined })
-    .then(r => listOf<CargoTransfer>(r.data, 'transfers')),
-  get: (id: string) => api.get(`/cargo/transfers/${enc(id)}`).then(r => {
-    const d = r.data as CargoTransfer & { transfer?: CargoTransfer }
-    const base = d.transfer ?? d
-    return { ...base, items: d.items ?? base.items ?? [] } as CargoTransfer
-  }),
-  create: (body: CreateTransferBody) => post<CargoTransfer>('/cargo/transfers', body),
-  cancel: (id: string, note?: string) => post<CargoTransfer>(`/cargo/transfers/${enc(id)}/cancel`, note ? { note } : {}),
-  recordEway: (id: string, eway_part_b_ref: string) => post<CargoTransfer>(`/cargo/transfers/${enc(id)}/eway`, { eway_part_b_ref }),
+    .then(r => listOf<unknown>(r.data, 'transfers').map(mapTransfer)),
+  get: (id: string) => api.get(`/cargo/transfers/${enc(id)}`).then(r => mapTransfer(r.data)),
+  create: (body: CreateTransferBody) => post<unknown>('/cargo/transfers', body).then(mapTransfer),
+  cancel: (id: string, reason?: string) => post<unknown>(`/cargo/transfers/${enc(id)}/cancel`, reason ? { reason } : {}).then(mapTransfer),
+  recordEway: (id: string, eway_part_b_ref: string) => post<unknown>(`/cargo/transfers/${enc(id)}/eway`, { eway_part_b_ref }).then(mapTransfer),
 }
 
 export const hubsAPI = {
-  list: () => api.get('/cargo/hubs').then(r => listOf<HubSummary>(r.data, 'hubs')),
-  inventory: (depotId: string) => api.get(`/cargo/hubs/${enc(depotId)}/inventory`).then(r => listOf<HubInventoryRow>(r.data, 'items')),
+  list: () => api.get('/cargo/hubs').then(r => listOf<unknown>(r.data, 'hubs').map(mapHub)),
+  /** The answer is `{ depot, items }`. */
+  inventory: (depotId: string) => api.get(`/cargo/hubs/${enc(depotId)}/inventory`).then(r => listOf<unknown>(r.data, 'items').map(mapHubInventoryRow)),
 }
 
 export const claimsAPI = {
   list: (params: { status?: string; ref?: string } = {}) => api.get('/cargo/claims', {
     params: Object.fromEntries(Object.entries(params).filter(([, v]) => v)),
-  }).then(r => listOf<CargoClaim>(r.data, 'claims')),
-  create: (body: { exception_id?: string; ref: CargoRef; claim_type: ClaimType; claimed_amount: number; notes?: string }) =>
-    post<CargoClaim>('/cargo/claims', body),
-  update: (id: string, patch: ClaimPatch) => api.patch(`/cargo/claims/${enc(id)}`, patch).then(r => r.data as CargoClaim),
-  documentUploadUrl: (id: string, file: { file_name: string; content_type: string; size: number }) =>
-    post<{ path: string; token: string; bucket: string; signed_url?: string }>(`/cargo/claims/${enc(id)}/documents-upload-url`, file),
+  }).then(r => listOf<unknown>(r.data, 'claims').map(mapClaim)),
+  get: (id: string) => api.get(`/cargo/claims/${enc(id)}`).then(r => mapClaim(r.data)),
+  create: (body: { exception_id?: string; ref: CargoRef; claim_type: ClaimType; claimed_amount?: number; notes?: string }) =>
+    post<unknown>('/cargo/claims', body).then(mapClaim),
+  update: (id: string, patch: ClaimPatch) => api.patch(`/cargo/claims/${enc(id)}`, patch).then(r => mapClaim(r.data)),
+  /**
+   * A signed upload URL for one document (JPG, PNG or PDF). The backend adds the path to the claim
+   * when it hands out the URL, so nothing is sent after the upload.
+   */
+  documentUploadUrl: (id: string, file: { content_type: string; size: number }) =>
+    api.post(`/cargo/claims/${enc(id)}/documents-upload-url`, file).then(r => r.data as SignedUpload),
+  uploadDocument: async (id: string, file: File) =>
+    uploadToSigned(await claimsAPI.documentUploadUrl(id, { content_type: file.type, size: file.size }), file),
 }
 
 /** React Query keys, so every screen invalidates the same caches. */
@@ -502,4 +570,5 @@ export const cargoKeys = {
   hubs: ['cargo', 'hubs'] as const,
   hubInventory: (id: string) => ['cargo', 'hub', id] as const,
   claims: (params: object = {}) => ['cargo', 'claims', params] as const,
+  claim: (id: string) => ['cargo', 'claim', id] as const,
 }

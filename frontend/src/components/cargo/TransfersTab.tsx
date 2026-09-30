@@ -18,7 +18,7 @@ const FILTERS = [
 const pieces = (t: CargoTransfer) => t.items.reduce((total, i) => total + i.pieces_planned, 0)
 const hasMismatch = (t: CargoTransfer) => t.items.some(i => transferItemCount(i).mismatch)
 const partBDue = (t: CargoTransfer) => t.eway_part_b_required && !t.eway_part_b_ref
-const stamp = (t: CargoTransfer) => t.created_at ?? t.planned_at ?? ''
+const stamp = (t: CargoTransfer) => t.planned_at ?? ''
 
 export default function TransfersTab() {
   const navigate = useNavigate()

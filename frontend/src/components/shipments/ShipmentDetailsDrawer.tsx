@@ -21,12 +21,13 @@ import ConsignmentCargo from '@/components/cargo/ConsignmentCargo'
 import { refOfShipmentRow } from '@/components/cargo/logic'
 import { formatDate, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 
-const FORWARD_STATUSES = ['picked_up', 'in_transit', 'delivered'] as const
-const statusAction: Record<(typeof FORWARD_STATUSES)[number], string> = {
-  picked_up: 'Mark picked up',
-  in_transit: 'Mark in transit',
-  delivered: 'Mark delivered',
-}
+/**
+ * The only statuses the web still sets with PATCH /shipments/:id: back to `created` (off its
+ * vehicle) and `cancelled`, both before pickup. Pickup, in transit, delivery and every later state
+ * are custody events with counts and proof, recorded from the Cargo section of this drawer
+ * (the backend refuses a raw PATCH to them: 409 with `use: 'cargo_custody'`).
+ */
+type PatchStatus = 'created' | 'cancelled'
 
 /** Mirrors the backend rule in ShipmentService.deleteShipment: once a shipment
  * has moved, deleting it would erase real history. Cancel it instead. */
@@ -57,12 +58,13 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   useEffect(() => { setShowMap(false) }, [shipment?.id])
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => shipmentsAPI.updateStatus(id, status),
+    mutationFn: ({ id, status }: { id: string; status: PatchStatus }) => shipmentsAPI.updateStatus(id, status),
     onSuccess: (_data, { id, status }) => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipment-history', id] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['cargo'] })
       toast.success(`Status changed to ${shipmentStatusLabel(status).toLowerCase()}`)
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not change the status. Try again.')),
@@ -103,15 +105,15 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   const stops = deliveryPointsOf(s).length
   const plate = plateOf(s)
   const closed = ['delivered', 'cancelled', 'returned', 'lost'].includes(s.status ?? '')
-  // Mirrors the backend rule (SHIPMENT_TRANSITIONS): a shipment only moves forward, and can be
-  // cancelled only before it is picked up. Cargo states (at a hub, on hold, returning…) move only
-  // through the custody and exception actions in the Cargo section, not by a plain status change.
+  // Mirrors the backend rule (SHIPMENT_TRANSITIONS): cancelled only before pickup. Everything the
+  // goods do after that (pickup, in transit, hubs, delivery, holds, returns) is a custody event or
+  // a case action in the Cargo section, not a plain status change.
   const beforePickup = s.status === 'created' || s.status === 'assigned'
-  const currentStep = FORWARD_STATUSES.indexOf(s.status as (typeof FORWARD_STATUSES)[number])
-  const nextStatuses = beforePickup || currentStep >= 0 ? FORWARD_STATUSES.filter((_, i) => i > currentStep) : []
   const canCancel = beforePickup
-  // Dispatch can (re)assign a load that is waiting, already assigned, or whose delivery failed
-  const canAssign = ['created', 'assigned', 'exception'].includes(s.status ?? '')
+  // A vehicle can be (re)assigned while the goods are still with the sender. Goods on a vehicle
+  // (a failed delivery included) move by a transfer or a re-attempt; assignDriver refuses them.
+  const withSender = !s.current_holder || s.current_holder === 'consignor'
+  const canAssign = beforePickup || (s.status === 'exception' && withSender)
   const assignLabel = s.status === 'exception' ? 'Assign again' : s.status === 'assigned' ? 'Change vehicle' : 'Assign vehicle'
   const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
@@ -149,17 +151,6 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
     if (ok) statusMutation.mutate({ id: s.id, status: 'created' })
   }
 
-  const changeStatus = async (status: (typeof FORWARD_STATUSES)[number]) => {
-    if (status === 'delivered') {
-      const ok = await confirm({
-        title: `Mark ${s.tracking_id} as delivered?`,
-        message: 'A delivered shipment cannot be changed back or cancelled.',
-        confirmLabel: 'Mark delivered',
-      })
-      if (!ok) return
-    }
-    statusMutation.mutate({ id: s.id, status })
-  }
 
   const manifestLink = (
     <Link to={`/shipments/${s.id}/manifest`} className={buttonClasses({ variant: 'secondary' })}>
@@ -230,7 +221,9 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           />
           {s.status === 'exception' && (
             <Alert tone="danger" title="A problem is open on this shipment">
-              Work it from its case under Cargo below, or assign a vehicle again to try another delivery.
+              {withSender
+                ? 'Work it from its case under Cargo below, or assign a vehicle again.'
+                : 'The goods are still on the vehicle. Work it from its case under Cargo below: re-attempt, move to another vehicle or a hub, or return.'}
             </Alert>
           )}
           {!manifestOnly && !closed && canAssign && (s.status !== 'created' || !s.vehicle_id) && (
@@ -292,21 +285,10 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {!manifestOnly && !closed && (nextStatuses.length > 0 || canCancel || s.status === 'assigned') && (
+        {!manifestOnly && !closed && canCancel && (
           <Section title="Update status">
+            <p className="text-sm text-muted">Record the pickup, the move and the delivery under Cargo above, with the pieces and proof.</p>
             <div className="flex flex-wrap gap-2">
-              {nextStatuses.map(st => (
-                <Button
-                  key={st}
-                  variant="secondary"
-                  size="sm"
-                  disabled={statusMutation.isPending}
-                  loading={statusMutation.isPending && statusMutation.variables?.status === st}
-                  onClick={() => changeStatus(st)}
-                >
-                  {statusAction[st]}
-                </Button>
-              ))}
               {s.status === 'assigned' && (
                 <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={unassignShipment}>
                   Take off vehicle

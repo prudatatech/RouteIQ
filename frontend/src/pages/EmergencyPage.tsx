@@ -9,12 +9,12 @@ import toast from 'react-hot-toast'
 import {
   Page, PageHeader, Button, StatusPill, EmptyState, ErrorState, Skeleton, Card, CardHeader, useConfirm, buttonClasses,
 } from '@/components/ui'
-import { cargoKeys, exceptionsAPI, type CargoException } from '@/services/cargo'
+import { OPEN_EXCEPTION_FILTER, cargoKeys, exceptionsAPI } from '@/services/cargo'
 import { OnBoardList } from '@/components/cargo/OnBoardList'
 import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
 import { SlaBadge } from '@/components/cargo/CargoBits'
 import { useNow } from '@/components/cargo/useNow'
-import { exceptionTypeLabel, isOpenException } from '@/components/cargo/logic'
+import { exceptionTypeLabel, holdCaseFor } from '@/components/cargo/logic'
 import { MapView, type MapPoint } from '@/components/map'
 import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
 import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
@@ -53,12 +53,6 @@ async function attachDetails(alert: SosAlert): Promise<SosAlert> {
   return { ...alert, driver, vehicle }
 }
 
-/** The case opened for this SOS, else the newest open case on the vehicle. */
-function caseForSos(cases: CargoException[], sosId: string): CargoException | null {
-  const open = cases.filter(c => isOpenException(c.status))
-  const byAge = (list: CargoException[]) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null
-  return byAge(open.filter(c => c.sos_alert_id === sosId)) ?? byAge(open)
-}
 
 /** What the SOS vehicle is carrying, the case opened for it, and the way into planning the goods. Nothing when it is empty. */
 function SosCargoCard({ alert }: { alert: SosAlert }) {
@@ -66,9 +60,10 @@ function SosCargoCard({ alert }: { alert: SosAlert }) {
   const now = useNow()
   const onBoard = useOnBoard(vehicleId, { refetchInterval: 60_000 })
   const items = onBoard.data?.items ?? []
+  const filters = { vehicle_id: vehicleId ?? '', status: OPEN_EXCEPTION_FILTER }
   const cases = useQuery({
-    queryKey: cargoKeys.exceptions({ vehicle_id: vehicleId ?? '', status: '' }),
-    queryFn: () => exceptionsAPI.list({ vehicle_id: vehicleId!, status: '' }),
+    queryKey: cargoKeys.exceptions(filters),
+    queryFn: () => exceptionsAPI.list(filters),
     enabled: !!vehicleId && items.length > 0,
     refetchInterval: 60_000,
   })
@@ -80,7 +75,8 @@ function SosCargoCard({ alert }: { alert: SosAlert }) {
   }
   if (items.length === 0) return null
   const totals = onBoardTotals(items)
-  const linked = caseForSos(cases.data ?? [], alert.id)
+  // The vehicle's hold case: the one naming this alert, else the case the SOS joined (one per vehicle)
+  const linked = holdCaseFor(cases.data ?? [], { sosAlertId: alert.id })
   return (
     <Card>
       <CardHeader

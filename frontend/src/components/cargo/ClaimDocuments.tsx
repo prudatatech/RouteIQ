@@ -3,7 +3,6 @@ import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { FileText, Upload } from 'lucide-react'
 import { FileButton } from '@/components/ui'
-import { supabase } from '@/services/supabase'
 import { claimsAPI, type CargoClaim } from '@/services/cargo'
 import { errorMessage } from '@/utils/display'
 
@@ -15,17 +14,13 @@ const fileName = (path: string) => path.split('/').pop() || path
 /** Claim documents (invoice, photos, FIR copy): the list and a signed upload. */
 export default function ClaimDocuments({ claim, readOnly, onSaved }: { claim: CargoClaim; readOnly: boolean; onSaved: () => void }) {
   const [busy, setBusy] = useState(false)
-  const docs = claim.documents?.length
-    ? claim.documents
-    : claim.document_paths.map(path => ({ path, url: null as string | null }))
+  // Every recorded path, with its signed link when the file is there (a path whose upload did not finish has none)
+  const links = new Map((claim.documents ?? []).map(d => [d.path, d.url ?? null]))
+  const docs = claim.document_paths.map(path => ({ path, url: links.get(path) ?? null }))
 
+  // The backend adds the path to the claim when it hands out the upload URL; nothing is sent afterwards
   const upload = useMutation({
-    mutationFn: async (file: File) => {
-      const signed = await claimsAPI.documentUploadUrl(claim.id, { file_name: file.name, content_type: file.type, size: file.size })
-      const { error } = await supabase.storage.from(signed.bucket).uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type })
-      if (error) throw error
-      return claimsAPI.update(claim.id, { document_paths: [...claim.document_paths, signed.path] })
-    },
+    mutationFn: (file: File) => claimsAPI.uploadDocument(claim.id, file),
     onSuccess: () => { toast.success('Document added.'); onSaved() },
     onError: err => toast.error(errorMessage(err, 'We could not upload the document.')),
     onSettled: () => setBusy(false),
@@ -49,7 +44,7 @@ export default function ClaimDocuments({ claim, readOnly, onSaved }: { claim: Ca
                 <FileText size={16} aria-hidden="true" className="shrink-0 text-muted" />
                 {d.url
                   ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all text-brand hover:underline">{fileName(d.path)}</a>
-                  : <span className="min-w-0 break-all">{fileName(d.path)}</span>}
+                  : <span className="min-w-0 break-all">{fileName(d.path)} <span className="text-muted">(not available)</span></span>}
               </li>
             ))}
           </ul>

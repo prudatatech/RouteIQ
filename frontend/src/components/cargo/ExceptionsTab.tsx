@@ -9,7 +9,7 @@ import {
 import { MapView, type MapPoint } from '@/components/map'
 import { formatRelative } from '@/utils/display'
 import {
-  EXCEPTION_STATUSES, EXCEPTION_TYPES, SEVERITIES, cargoKeys, exceptionsAPI, type CargoException, type ExceptionFilters,
+  EXCEPTION_STATUSES, EXCEPTION_TYPES, OPEN_EXCEPTION_FILTER, SEVERITIES, cargoKeys, exceptionsAPI, type CargoException, type ExceptionFilters,
 } from '@/services/cargo'
 import { ConsignmentLink, SeverityPill, SlaBadge } from './CargoBits'
 import { useNow } from './useNow'
@@ -17,7 +17,7 @@ import {
   EXCEPTION_TYPE_LABELS, SEVERITY_LABELS, compareBySla, consignmentCode, exceptionTypeLabel, isOpenException, positionOf, slaState,
 } from './logic'
 
-/** "active" is every open state; the API filters one status at a time, so it is filtered here. */
+/** "active" is every open state, sent to the API as one comma-separated status filter. */
 const ACTIVE = 'active'
 
 function casePosition(e: CargoException) {
@@ -38,7 +38,7 @@ export default function ExceptionsTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const filters: ExceptionFilters = {
-    status: status === ACTIVE ? undefined : status,
+    status: status === ACTIVE ? OPEN_EXCEPTION_FILTER : status === 'all' ? undefined : status,
     type: type || undefined,
     severity: severity || undefined,
     vehicle_id: vehicleId || undefined,

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  AlertTriangle, ArrowRightLeft, Building2, Hand, KeyRound, LogIn, LogOut, PackageCheck, RotateCcw, Truck, Undo2, User, Warehouse,
+  AlertTriangle, ArrowRightLeft, Building2, Hand, KeyRound, LogIn, LogOut, PackageCheck, PackagePlus, Play, RotateCcw, Truck, Undo2, User, Warehouse,
 } from 'lucide-react'
 import { Button, DetailList, ErrorState, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import { errorMessage, formatRelative } from '@/utils/display'
@@ -12,7 +12,9 @@ import { PiecesBar, SlaBadge } from './CargoBits'
 import { useNow } from './useNow'
 import { CustodyTimeline } from './CustodyTimeline'
 import RaiseExceptionModal from './RaiseExceptionModal'
-import { HoldModal, HubModal, MoveToVehicleModal, ReattemptModal, StartReturnModal, type ConsignmentModal } from './ConsignmentActionModals'
+import {
+  DeliveryModal, HoldModal, HubModal, MoveToVehicleModal, PickupModal, ReattemptModal, StartReturnModal, type ConsignmentModal,
+} from './ConsignmentActionModals'
 import { consignmentActions, exceptionTypeLabel, holderLabel } from './logic'
 
 const HOLDER_ICON = { consignor: User, vehicle: Truck, hub: Warehouse, consignee: PackageCheck } as const
@@ -98,7 +100,7 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
     onSuccess: (_d, body) => {
       queryClient.invalidateQueries({ queryKey: cargoKeys.all })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
-      toast.success(body.kind === 'release_hold' ? `${code} released from hold` : 'Saved')
+      toast.success(body.kind === 'release_hold' ? `${code} released from hold` : body.kind === 'departed' ? `${code} is in transit` : 'Saved')
     },
     onError: err => toast.error(errorMessage(err, 'We could not save that. Try again.')),
   })
@@ -131,6 +133,10 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
     const ok = await confirm({ title: `Release the hold on ${code}?`, message: 'The goods can move again as planned.', confirmLabel: 'Release hold' })
     if (ok) custody.mutate({ ref: cargoRef, kind: 'release_hold' })
   }
+  const depart = async () => {
+    const ok = await confirm({ title: `Mark ${code} in transit?`, message: `The goods have left the pickup on ${w.vehicle?.plate_number ?? 'the vehicle'}.`, confirmLabel: 'Mark in transit' })
+    if (ok) custody.mutate({ ref: cargoRef, kind: 'departed' })
+  }
   const sendOtp = async () => {
     const ok = await confirm({
       title: `Send a delivery OTP for ${code}?`,
@@ -140,14 +146,18 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
     if (ok) otp.mutate()
   }
 
+  // Movement goes through custody events with counts and proof, never a raw status change
   const buttons = [
+    can.pickup && <Button key="pickup" size="sm" icon={<PackagePlus size={14} />} onClick={() => setModal('pickup')}>Record pickup</Button>,
+    can.depart && <Button key="depart" size="sm" variant="secondary" icon={<Play size={14} />} loading={custody.isPending && custody.variables?.kind === 'departed'} onClick={depart}>Mark in transit</Button>,
+    can.deliver && <Button key="deliver" size="sm" icon={<PackageCheck size={14} />} onClick={() => setModal('deliver')}>Record delivery</Button>,
     can.moveToVehicle && <Button key="move" size="sm" variant="secondary" icon={<ArrowRightLeft size={14} />} onClick={() => setModal('move')}>Move to another vehicle</Button>,
     can.hubIn && <Button key="hub_in" size="sm" variant="secondary" icon={<LogIn size={14} />} onClick={() => setModal('hub_in')}>Hub in</Button>,
     can.hubOut && <Button key="hub_out" size="sm" variant="secondary" icon={<LogOut size={14} />} onClick={() => setModal('hub_out')}>Hub out</Button>,
     can.reattemptOn && <Button key="reattempt" size="sm" variant="secondary" icon={<RotateCcw size={14} />} onClick={() => setModal('reattempt')}>Re-attempt</Button>,
     can.sendOtp && <Button key="otp" size="sm" variant="secondary" icon={<KeyRound size={14} />} loading={otp.isPending} onClick={sendOtp}>Send delivery OTP</Button>,
     can.hold && <Button key="hold" size="sm" variant="secondary" icon={<Hand size={14} />} onClick={() => setModal('hold')}>Hold</Button>,
-    can.release && <Button key="release" size="sm" variant="secondary" icon={<Hand size={14} />} loading={custody.isPending} onClick={release}>Release hold</Button>,
+    can.release && <Button key="release" size="sm" variant="secondary" icon={<Hand size={14} />} loading={custody.isPending && custody.variables?.kind === 'release_hold'} onClick={release}>Release hold</Button>,
     can.startReturn && <Button key="return" size="sm" variant="secondary" icon={<Undo2 size={14} />} onClick={() => setModal('return')}>Start return</Button>,
     can.raiseException && <Button key="raise" size="sm" variant="ghost" icon={<AlertTriangle size={14} />} onClick={() => setModal('raise')}>Raise exception</Button>,
   ].filter(Boolean)
@@ -182,6 +192,8 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
       {modal === 'hub_out' && <HubModal {...common} direction="out" />}
       {modal === 'reattempt' && can.reattemptOn && <ReattemptModal {...common} caseId={can.reattemptOn} />}
       {modal === 'return' && <StartReturnModal {...common} />}
+      {modal === 'pickup' && <PickupModal {...common} />}
+      {modal === 'deliver' && <DeliveryModal {...common} />}
     </div>
   )
 }

@@ -7,10 +7,10 @@ import { Alert, Button, Checkbox, EmptyState, ErrorState, Input, Modal, Select, 
 import { depotsAPI } from '@/services/api'
 import { errorMessage, formatKg, formatKm, formatMinutes } from '@/utils/display'
 import {
-  CLAIM_TYPES, RESOLUTIONS, cargoKeys, exceptionsAPI, type ClaimType, type ExceptionDetail, type ExceptionType, type ReliefVehicle,
+  CLAIM_TYPES, CONDITION_CODES, RESOLUTIONS, cargoKeys, exceptionsAPI, type ClaimType, type ExceptionDetail, type ExceptionType, type ReliefVehicle,
 } from '@/services/cargo'
 import {
-  ACTION_META, CLAIM_TYPE_LABELS, RESOLUTION_LABELS, buildAction, validateAction, type ActionValues, type PanelAction,
+  ACTION_META, CLAIM_TYPE_LABELS, CONDITION_LABELS, RESOLUTION_LABELS, buildAction, consignmentCode, refKey, validateAction, type ActionValues, type PanelAction,
 } from './logic'
 
 /** The claim type a case suggests. */
@@ -28,7 +28,9 @@ function localInput(hoursFromNow: number): string {
 function initialValues(action: PanelAction, kase: ExceptionDetail, preset: ActionValues): ActionValues {
   const base: ActionValues = {}
   if (action === 'raise_claim') base.claim_type = CLAIM_FOR[kase.type] ?? ''
-  if (action === 'write_off') base.pieces = String(kase.items.reduce((n, i) => n + (i.pieces_affected ?? 0), 0) || '')
+  if ((action === 'write_off' || action === 'raise_claim') && kase.items.length === 1) base.ref = refKey(kase.items[0])
+  if (action === 'write_off') base.pieces = String((kase.items.length === 1 ? kase.items[0].pieces_affected : null) ?? '')
+  if (action === 'deliver_with_remarks') base.condition = kase.items.find(i => i.condition && i.condition !== 'good')?.condition ?? ''
   if (action === 'wait_for_repair') base.expected_at = localInput(4)
   if (action === 'reattempt') base.scheduled_for = localInput(24)
   if (action === 'transship' && kase.lat != null && kase.lng != null) {
@@ -55,7 +57,10 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
   const [serverError, setServerError] = useState('')
   const [meetAtVehicle, setMeetAtVehicle] = useState(kase.lat != null && kase.lng != null)
   const set = (key: string) => (e: { target: { value: string } }) => setValues(v => ({ ...v, [key]: e.target.value }))
-  const maxPieces = kase.items.reduce((n, i) => n + (i.pieces_affected ?? 0), 0) || undefined
+  // write_off and raise_claim act on one consignment: the backend needs `ref` when the case has more than one
+  const needsRef = kase.items.length > 1
+  const picked = kase.items.find(i => refKey(i) === values.ref) ?? (kase.items.length === 1 ? kase.items[0] : undefined)
+  const maxPieces = (picked ? picked.pieces_held ?? picked.pieces_affected : null) ?? undefined
 
   const depots = useQuery({ queryKey: ['depots'], queryFn: depotsAPI.list, enabled: action === 'move_to_hub' })
 
@@ -73,7 +78,7 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
   })
 
   const submit = () => {
-    const next = validateAction(action, values, { maxPieces })
+    const next = validateAction(action, values, { maxPieces, needsRef })
     setErrors(next)
     if (Object.keys(next).length > 0) return
     setServerError('')
@@ -127,17 +132,37 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
       body = <p className="text-sm text-text">The hold is released and the vehicle carries on with its route and the same goods. Only do this once the vehicle is safe to drive.</p>
       break
     case 'return_to_origin':
-      body = <Textarea label="Note" value={values.note ?? ''} onChange={set('note')} maxLength={500} hint="Optional. Why the goods go back. A return leg is added and the sender is told." />
+      body = <p className="text-sm text-text">Goods on a working vehicle start back to the sender now; goods on a broken vehicle or at a hub are flagged for return and go back after their transfer or hub departure. The sender is told. Add a note to the case first if you want to record why.</p>
       break
     case 'reattempt':
       body = <Input label="Try again at" type="datetime-local" value={values.scheduled_for ?? ''} onChange={set('scheduled_for')} error={errors.scheduled_for} required />
       break
     case 'deliver_with_remarks':
-      body = <Textarea label="Remarks for the proof of delivery" value={values.note ?? ''} onChange={set('note')} maxLength={500} hint="Optional. For example: 2 cartons with crushed corners, accepted by the receiver." />
+      body = (
+        <>
+          <Input label="Received by" value={values.receiver_name ?? ''} onChange={set('receiver_name')} error={errors.receiver_name} maxLength={200} required data-autofocus />
+          <Textarea
+            label="Remarks for the proof of delivery"
+            value={values.note ?? ''}
+            onChange={set('note')}
+            error={errors.note}
+            maxLength={500}
+            hint="For example: 2 cartons with crushed corners, accepted by the receiver. Logged as the proof in place of a photo."
+            required
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select label="Condition" value={values.condition ?? ''} onChange={set('condition')} placeholder="As recorded" options={CONDITION_CODES.map(c => ({ value: c, label: CONDITION_LABELS[c] }))} />
+            <Input label="Pieces damaged" type="number" inputMode="numeric" min={0} value={values.pieces_damaged ?? ''} onChange={set('pieces_damaged')} hint="Optional" />
+          </div>
+          <Input label="Delivery OTP" value={values.otp ?? ''} onChange={set('otp')} inputMode="numeric" maxLength={6} autoComplete="one-time-code" hint="Needed when the shipment asks for the delivery code" />
+          <p className="text-sm text-muted">Every consignment of the case still waiting to be delivered is recorded as delivered, and the case is resolved.</p>
+        </>
+      )
       break
     case 'write_off':
       body = (
         <>
+          {needsRef && <ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} error={errors.ref} />}
           <Input label="Pieces to write off" type="number" inputMode="numeric" min={1} max={maxPieces} value={values.pieces ?? ''} onChange={set('pieces')} error={errors.pieces} hint={maxPieces ? `Up to ${maxPieces.toLocaleString('en-IN')}` : undefined} required />
           <Textarea label="Reason" value={values.note ?? ''} onChange={set('note')} error={errors.note} maxLength={500} required />
           <Alert tone="warning">Written-off pieces are marked lost or damaged and leave the consignment’s count. This cannot be undone here.</Alert>
@@ -147,6 +172,7 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
     case 'raise_claim':
       body = (
         <div className="grid gap-4 sm:grid-cols-2">
+          {needsRef && <div className="sm:col-span-2"><ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} hint="Leave empty to claim for the first consignment of the case." /></div>}
           <Select label="Claim for" value={values.claim_type ?? ''} onChange={set('claim_type')} placeholder="Choose" options={CLAIM_TYPES.map(t => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} error={errors.claim_type} required />
           <Input label="Amount claimed" type="number" inputMode="decimal" min={0} step="0.01" leading="₹" value={values.claimed_amount ?? ''} onChange={set('claimed_amount')} error={errors.claimed_amount} hint="The declared value is filled in from the invoice" required />
         </div>
@@ -189,6 +215,28 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
   )
 }
 
+/** Which consignment of a case an action is for. */
+function ConsignmentPicker({ kase, value, onChange, error, hint }: {
+  kase: ExceptionDetail
+  value: string
+  onChange: (e: { target: { value: string } }) => void
+  error?: string
+  hint?: string
+}) {
+  return (
+    <Select
+      label="Consignment"
+      value={value}
+      onChange={onChange}
+      placeholder="Choose"
+      options={kase.items.map(i => ({ value: refKey(i), label: `${consignmentCode(i)}${i.pieces_held != null ? ` · ${i.pieces_held.toLocaleString('en-IN')} pcs held` : ''}` }))}
+      error={error}
+      hint={hint}
+      required={!hint}
+    />
+  )
+}
+
 /** Relief vehicles ranked by the server (distance, then free space, then cargo types), as radio cards. */
 function ReliefPicker({ relief, value, onChange, error }: {
   relief?: { data?: ReliefVehicle[]; isLoading: boolean; isError: boolean; refetch: () => void }
@@ -200,7 +248,7 @@ function ReliefPicker({ relief, value, onChange, error }: {
   if (relief.isError) return <ErrorState compact title="We could not load relief vehicles" onRetry={relief.refetch} />
   const list = relief.data ?? []
   if (list.length === 0) {
-    return <EmptyState compact icon={<Truck size={22} />} title="No relief vehicle found" description="No operating, approved vehicle has enough free space. Move the goods to a hub instead, or wait for the repair." />
+    return <EmptyState compact icon={<Truck size={22} />} title="No relief vehicle found" description="No operating, approved vehicle with a known position was found. Move the goods to a hub instead, or wait for the repair." />
   }
   return (
     <fieldset aria-describedby={error ? 'relief-error' : undefined}>
@@ -218,10 +266,13 @@ function ReliefPicker({ relief, value, onChange, error }: {
             <span className="min-w-0 flex-1">
               <span className="block font-mono text-sm font-medium text-text">{i + 1}. {r.vehicle.plate_number}</span>
               <span className="block text-xs text-muted">
-                {[`${formatKm(r.distance_km)} away`, r.eta_minutes ? `about ${formatMinutes(r.eta_minutes)}` : null, r.vehicle.driver_name].filter(Boolean).join(' · ')}
+                {[`${formatKm(r.distance_km)} away`, r.eta_minutes ? `about ${formatMinutes(r.eta_minutes)}` : null, r.vehicle.driver_name, r.cargo_match ? null : 'different cargo type'].filter(Boolean).join(' · ')}
               </span>
             </span>
-            <span className="shrink-0 text-right text-sm tabular text-text">{formatKg(r.free_kg)} free</span>
+            <span className={clsx('shrink-0 text-right text-sm tabular', r.fits ? 'text-text' : 'text-warning')}>
+              {formatKg(r.free_kg)} free
+              {!r.fits && <span className="block text-xs">Not enough space</span>}
+            </span>
           </label>
         ))}
       </div>

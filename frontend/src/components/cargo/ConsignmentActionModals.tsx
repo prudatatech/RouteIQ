@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Alert, Button, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Alert, Button, FileButton, Input, Modal, Select, Textarea } from '@/components/ui'
 import { depotsAPI, vehiclesAPI } from '@/services/api'
 import { errorMessage, formatKg } from '@/utils/display'
 import {
@@ -15,7 +15,7 @@ import {
 } from '@/services/cargo'
 import { CONDITION_LABELS, EXCEPTION_TYPE_LABELS, exceptionTypeLabel, isOpenException, onBoardCount, positionOf } from './logic'
 
-export type ConsignmentModal = 'move' | 'hold' | 'hub_in' | 'hub_out' | 'reattempt' | 'return'
+export type ConsignmentModal = 'move' | 'hold' | 'hub_in' | 'hub_out' | 'reattempt' | 'return' | 'pickup' | 'deliver'
 
 interface Common {
   cargoRef: CargoRef
@@ -53,23 +53,29 @@ function Footer({ onClose, busy, label, danger }: { onClose: () => void; busy: b
 
 interface VehicleRow { id: string; plate_number: string; status?: string | null; available_capacity_kg?: number | null; vehicle_type?: string | null }
 
-/** Move the goods to another vehicle: plans a transfer (POST /cargo/transfers) and opens it. */
-export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
-  const navigate = useNavigate()
-  const done = useDone(onClose)
-  const onBoard = onBoardCount(where.pieces)
-  const [vehicleId, setVehicleId] = useState('')
-  const [pieces, setPieces] = useState(String(onBoard || ''))
-  const [meet, setMeet] = useState('')
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [serverError, setServerError] = useState('')
-
-  const vehicles = useQuery({
+/** Vehicles in service, for a transfer or a hub departure. */
+function useOperatingVehicles(enabled = true) {
+  return useQuery({
     queryKey: ['vehicles', 'transfer-targets'],
     queryFn: async () => ((await vehiclesAPI.list()) as VehicleRow[])
       .filter(v => ['available', 'idle', 'on_route'].includes(v.status ?? ''))
       .sort((a, b) => a.plate_number.localeCompare(b.plate_number)),
+    enabled,
   })
+}
+
+/** Move the goods to another vehicle: plans a transfer (POST /cargo/transfers) and opens it. */
+export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
+  const navigate = useNavigate()
+  const done = useDone(onClose)
+  // A transfer moves the whole consignment: every piece on board goes (the backend refuses a split)
+  const onBoard = onBoardCount(where.pieces)
+  const [vehicleId, setVehicleId] = useState('')
+  const [meet, setMeet] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [serverError, setServerError] = useState('')
+
+  const vehicles = useOperatingVehicles()
   const options = (vehicles.data ?? []).filter(v => v.id !== where.vehicle?.id)
 
   const create = useMutation({
@@ -78,7 +84,7 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
       return transfersAPI.create({
         from_vehicle_id: where.vehicle!.id,
         to_vehicle_id: vehicleId,
-        items: [{ ref: cargoRef, pieces: Number(pieces) }],
+        items: [{ ref: cargoRef, pieces: onBoard }],
         meet_address: meet.trim(),
         ...(pos ? { meet_lat: pos.lat, meet_lng: pos.lng } : {}),
       })
@@ -93,8 +99,7 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
   const submit = () => {
     const next: Record<string, string> = {}
     if (!vehicleId) next.vehicle = 'Choose the vehicle that takes the goods.'
-    const pe = wholeNumber(pieces, onBoard || null)
-    if (pe) next.pieces = pe
+    if (onBoard < 1) next.vehicle = 'No pieces are on board to move.'
     if (!meet.trim()) next.meet = 'Say where the vehicles meet.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
@@ -127,7 +132,7 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
           hint="The server checks the vehicle has room for the goods."
           required
         />
-        <Input label="Pieces to move" type="number" inputMode="numeric" min={1} max={onBoard || undefined} value={pieces} onChange={e => setPieces(e.target.value)} error={errors.pieces} hint={onBoard ? `${onBoard.toLocaleString('en-IN')} on board` : undefined} required />
+        <p className="text-sm text-text">All <span className="tabular font-medium">{onBoard.toLocaleString('en-IN')}</span> {onBoard === 1 ? 'piece' : 'pieces'} on board move together.</p>
         <Input label="Meeting place" value={meet} onChange={e => setMeet(e.target.value)} error={errors.meet} maxLength={200} hint="Where the two drivers meet" required />
         {serverError && <Alert tone="danger">{serverError}</Alert>}
       </div>
@@ -164,12 +169,16 @@ export function HubModal({ cargoRef, code, where, onClose, direction }: Common &
   const done = useDone(onClose)
   const available = direction === 'in' ? onBoardCount(where.pieces) : (where.pieces.total ?? 0) - where.pieces.delivered - where.pieces.short - where.pieces.returned
   const [depotId, setDepotId] = useState('')
+  const [vehicleId, setVehicleId] = useState('')
+  const [nextStatus, setNextStatus] = useState<'in_transit' | 'out_for_delivery'>('in_transit')
   const [pieces, setPieces] = useState(available > 0 ? String(available) : '')
   const [condition, setCondition] = useState<ConditionCode>('good')
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState('')
   const depots = useQuery({ queryKey: ['depots'], queryFn: depotsAPI.list, enabled: direction === 'in' })
+  // Leaving a hub: the vehicle that collects the goods (the backend puts the remaining drops on its route)
+  const vehicles = useOperatingVehicles(direction === 'out')
 
   const save = useMutation({
     mutationFn: () => {
@@ -179,7 +188,9 @@ export function HubModal({ cargoRef, code, where, onClose, direction }: Common &
         pieces: Number(pieces),
         condition,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
-        ...(direction === 'in' ? { to_depot_id: depotId } : { from_depot_id: where.depot!.id }),
+        ...(direction === 'in'
+          ? { depot_id: depotId }
+          : { depot_id: where.depot?.id, vehicle_id: vehicleId, ...(where.rto ? {} : { next_status: nextStatus }) }),
       }
       return custodyAPI.record(body)
     },
@@ -190,6 +201,7 @@ export function HubModal({ cargoRef, code, where, onClose, direction }: Common &
   const submit = () => {
     const next: Record<string, string> = {}
     if (direction === 'in' && !depotId) next.depot = 'Choose the hub.'
+    if (direction === 'out' && !vehicleId) next.vehicle = 'Choose the vehicle collecting the goods.'
     const pe = wholeNumber(pieces, available > 0 ? available : null)
     if (pe) next.pieces = pe
     if (condition !== 'good' && !notes.trim()) next.notes = 'Describe the problem; a case opens for it.'
@@ -222,6 +234,30 @@ export function HubModal({ cargoRef, code, where, onClose, direction }: Common &
             error={errors.depot ?? (depots.isError ? 'We could not load the hubs. Close and try again.' : undefined)}
             required
           />
+        )}
+        {direction === 'out' && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Collecting vehicle"
+              value={vehicleId}
+              onChange={e => setVehicleId(e.target.value)}
+              placeholder={vehicles.isLoading ? 'Loading vehicles…' : 'Choose a vehicle'}
+              disabled={vehicles.isLoading}
+              options={(vehicles.data ?? []).map(v => ({ value: v.id, label: `${v.plate_number}${v.available_capacity_kg != null ? ` · ${formatKg(v.available_capacity_kg)} free` : ''}` }))}
+              error={errors.vehicle ?? (vehicles.isError ? 'We could not load vehicles. Close and try again.' : undefined)}
+              required
+            />
+            {where.rto
+              ? <p className="self-end text-sm text-muted">These goods are on a return, so they leave as returning.</p>
+              : (
+                <Select
+                  label="Next"
+                  value={nextStatus}
+                  onChange={e => setNextStatus(e.target.value as 'in_transit' | 'out_for_delivery')}
+                  options={[{ value: 'in_transit', label: 'In transit' }, { value: 'out_for_delivery', label: 'Out for delivery' }]}
+                />
+              )}
+          </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Input label="Pieces counted" type="number" inputMode="numeric" min={1} value={pieces} onChange={e => setPieces(e.target.value)} error={errors.pieces} hint={available > 0 ? `${available.toLocaleString('en-IN')} expected` : undefined} required />
@@ -302,7 +338,9 @@ export function StartReturnModal({ cargoRef, code, where, onClose }: Common) {
         })
         target = created.id
       }
-      await exceptionsAPI.act(target, { action: 'return_to_origin', note: note.trim() || undefined })
+      // The action takes no note: a note on an existing case goes on the case log first
+      if (caseId && note.trim()) await exceptionsAPI.act(target, { action: 'add_note', note: note.trim() })
+      await exceptionsAPI.act(target, { action: 'return_to_origin' })
     },
     onSuccess: () => done(`Return started for ${code}. The sender is told.`),
     onError: err => setServerError(errorMessage(err, 'We could not start the return. Try again.')),
@@ -355,6 +393,188 @@ export function StartReturnModal({ cargoRef, code, where, onClose }: Common) {
           />
         )}
         <Textarea label={caseId ? 'Note' : 'Details'} value={note} onChange={e => setNote(e.target.value)} error={errors.note} maxLength={500} required={!caseId} hint={caseId ? 'Optional' : undefined} />
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * Record the pickup from the control room (custody `pickup`): the pieces are counted onto the
+ * planned vehicle. A count below the booking, or a condition other than good, opens a case.
+ */
+export function PickupModal({ cargoRef, code, where, onClose }: Common) {
+  const done = useDone(onClose)
+  const booked = where.pieces.total
+  const [pieces, setPieces] = useState(booked != null ? String(booked) : '')
+  const [condition, setCondition] = useState<ConditionCode>('good')
+  const [seal, setSeal] = useState('')
+  const [notes, setNotes] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [serverError, setServerError] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => custodyAPI.record({
+      ref: cargoRef,
+      kind: 'pickup',
+      pieces: Number(pieces),
+      condition,
+      ...(where.vehicle?.id ? { vehicle_id: where.vehicle.id } : {}),
+      ...(seal.trim() ? { seal_number: seal.trim() } : {}),
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
+    }),
+    onSuccess: res => done(res.exception_ids.length > 0 ? `${code} picked up. A case was opened for what was found.` : `${code} picked up`),
+    onError: err => setServerError(errorMessage(err, 'We could not record the pickup. Try again.')),
+  })
+
+  const submit = () => {
+    const next: Record<string, string> = {}
+    const pe = wholeNumber(pieces, null)
+    if (pe) next.pieces = pe
+    if (condition !== 'good' && !notes.trim()) next.notes = 'Describe the problem; a case opens for it.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
+    setServerError('')
+    save.mutate()
+  }
+
+  const counted = Number(pieces)
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      onSubmit={submit}
+      title={`Record pickup: ${code}`}
+      description={`Count the pieces as they go onto ${where.vehicle?.plate_number ?? 'the vehicle'}.`}
+      footer={<Footer onClose={onClose} busy={save.isPending} label="Record pickup" />}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Pieces counted" type="number" inputMode="numeric" min={1} value={pieces} onChange={e => setPieces(e.target.value)} error={errors.pieces} hint={booked != null ? `${booked.toLocaleString('en-IN')} booked` : 'Not counted at booking'} required />
+          <Select label="Condition" value={condition} onChange={e => setCondition(e.target.value as ConditionCode)} options={CONDITION_CODES.map(c => ({ value: c, label: CONDITION_LABELS[c] }))} required />
+        </div>
+        {booked != null && Number.isInteger(counted) && counted > 0 && counted !== booked && (
+          <Alert tone="warning">{counted < booked ? `${booked - counted} short of the booking: a shortage case opens.` : `${counted - booked} more than booked: an excess case opens.`}</Alert>
+        )}
+        <Input label="Seal number" value={seal} onChange={e => setSeal(e.target.value)} maxLength={60} hint="Optional. It is checked again at delivery." inputClassName="font-mono" />
+        <Textarea label="Notes" value={notes} onChange={e => setNotes(e.target.value)} error={errors.notes} maxLength={500} hint={condition === 'good' ? 'Optional' : 'Required when the condition is not good'} />
+        {serverError && <Alert tone="danger">{serverError}</Alert>}
+      </div>
+    </Modal>
+  )
+}
+
+const PHOTO_TYPES = ['image/jpeg', 'image/png']
+
+/**
+ * Record a full delivery from the control room (custody `delivery`). The backend wants who
+ * received it and proof: a photo, the delivery OTP, or (staff only) a reason that is logged.
+ * A partial delivery or a refusal is recorded by the driver, or through the case.
+ */
+export function DeliveryModal({ cargoRef, code, where, onClose }: Common) {
+  const done = useDone(onClose)
+  const onBoard = onBoardCount(where.pieces)
+  const [receiver, setReceiver] = useState('')
+  const [condition, setCondition] = useState<ConditionCode>('good')
+  const [damaged, setDamaged] = useState('')
+  const [otp, setOtp] = useState('')
+  const [reason, setReason] = useState('')
+  const [photo, setPhoto] = useState<{ path: string; name: string } | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [serverError, setServerError] = useState('')
+
+  const upload = async (file: File) => {
+    if (!PHOTO_TYPES.includes(file.type)) { setErrors(e => ({ ...e, proof: 'Upload a JPG or PNG photo.' })); return }
+    setUploading(true)
+    try {
+      const path = await custodyAPI.uploadPhoto(cargoRef, file)
+      setPhoto({ path, name: file.name })
+      setErrors(e => { const next = { ...e }; delete next.proof; return next })
+    } catch (err) {
+      setErrors(e => ({ ...e, proof: errorMessage(err, 'We could not upload the photo. Try again.') }))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const save = useMutation({
+    mutationFn: () => {
+      const d = Number(damaged)
+      return custodyAPI.record({
+        ref: cargoRef,
+        kind: 'delivery',
+        pieces: onBoard,
+        receiver_name: receiver.trim(),
+        condition,
+        ...(damaged.trim() && d > 0 ? { pieces_damaged: d } : {}),
+        ...(photo ? { photo_paths: [photo.path] } : {}),
+        ...(otp.trim() ? { otp: otp.trim() } : {}),
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      })
+    },
+    onSuccess: res => done(res.exception_ids.length > 0 ? `${code} delivered. A case was opened for the remarks.` : `${code} delivered`),
+    onError: err => setServerError(errorMessage(err, 'We could not record the delivery. Try again.')),
+  })
+
+  const submit = () => {
+    const next: Record<string, string> = {}
+    if (!receiver.trim()) next.receiver = 'Enter who received the goods.'
+    if (where.delivery_otp_required && !otp.trim()) next.otp = 'This shipment needs the delivery code the receiver was sent.'
+    if (!photo && !otp.trim() && reason.trim().length < 3) next.proof = 'Add a delivery photo or the delivery code, or say why there is neither.'
+    if (damaged.trim()) {
+      const n = Number(damaged)
+      if (!Number.isInteger(n) || n < 0) next.damaged = 'Enter a whole number.'
+      else if (n > onBoard) next.damaged = `Only ${onBoard.toLocaleString('en-IN')} pieces are delivered.`
+    }
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
+    setServerError('')
+    save.mutate()
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      onSubmit={submit}
+      closeOnBackdrop={false}
+      title={`Record delivery: ${code}`}
+      description={`All ${onBoard.toLocaleString('en-IN')} ${onBoard === 1 ? 'piece' : 'pieces'} on ${where.vehicle?.plate_number ?? 'the vehicle'} are delivered. The driver records partial deliveries and refusals in the app.`}
+      footer={<Footer onClose={onClose} busy={save.isPending} label="Record delivery" />}
+    >
+      <div className="space-y-4">
+        <Input label="Received by" value={receiver} onChange={e => setReceiver(e.target.value)} error={errors.receiver} maxLength={200} required data-autofocus />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select label="Condition" value={condition} onChange={e => setCondition(e.target.value as ConditionCode)} options={CONDITION_CODES.map(c => ({ value: c, label: CONDITION_LABELS[c] }))} required />
+          <Input label="Pieces damaged" type="number" inputMode="numeric" min={0} value={damaged} onChange={e => setDamaged(e.target.value)} error={errors.damaged} hint="Optional. A damage case opens." />
+        </div>
+        <Input
+          label="Delivery OTP"
+          value={otp}
+          onChange={e => setOtp(e.target.value)}
+          error={errors.otp}
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="one-time-code"
+          hint={where.delivery_otp_required ? 'Required: the code the receiver was sent' : 'Optional'}
+          required={where.delivery_otp_required}
+        />
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-text">Proof of delivery</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <FileButton accept="image/jpeg,image/png" loading={uploading} onFile={upload}>{photo ? 'Replace photo' : 'Add a photo'}</FileButton>
+            {photo && <span className="min-w-0 break-all text-sm text-muted">{photo.name}</span>}
+          </div>
+          <Textarea
+            label="Reason, when there is no photo or code"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            maxLength={300}
+            hint="Logged with the delivery, for example: the receiver confirmed by phone."
+          />
+          {errors.proof && <p className="text-xs text-danger" role="alert">{errors.proof}</p>}
+        </div>
         {serverError && <Alert tone="danger">{serverError}</Alert>}
       </div>
     </Modal>
