@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Truck, Clock, Plus, AlertCircle, WifiOff, Package, Activity, ChevronRight, Inbox, Route as RouteIcon, FileWarning } from 'lucide-react'
 import { dashboardAPI, vehiclesAPI, vehicleRequestsAPI, shipmentsAPI, analyticsAPI, vendorAPI, fleetAPI, peopleAPI } from '@/services/api'
 import { Page, PageHeader, Button, Card, CardHeader, Stat, DataTable, StatusPill, EmptyState, type Column } from '@/components/ui'
+import CargoExceptionsCard from '@/components/cargo/CargoExceptionsCard'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
@@ -338,6 +339,8 @@ export default function DashboardPage() {
         </div>
         <Button variant="secondary" size="sm" icon={<ChevronRight size={16} />} onClick={() => navigate('/vendor-requests')}>Open vendor loads</Button>
       </Card>
+
+      <CargoExceptionsCard />
 
       <Card>
         <CardHeader

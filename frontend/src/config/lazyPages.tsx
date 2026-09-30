@@ -28,6 +28,9 @@ export const routePlanner = page(() => import('@/pages/RoutePlannerPage'))
 export const shipments = page(() => import('@/pages/ShipmentsPage'))
 export const shipmentManifest = page(() => import('@/pages/ShipmentManifestPage'))
 export const emergency = page(() => import('@/pages/EmergencyPage'))
+export const cargo = page(() => import('@/pages/cargo/CargoPage'))
+export const cargoException = page(() => import('@/pages/cargo/ExceptionCasePage'))
+export const cargoTransfer = page(() => import('@/pages/cargo/TransferPage'))
 export const bids = page(() => import('@/pages/BidsPage'))
 export const backhaul = page(() => import('@/pages/BackhaulPage'))
 export const bookings = page(() => import('@/pages/BookingsPage'))
@@ -74,6 +77,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/live-map': liveMap.preload,
   '/shipments': shipments.preload,
   '/emergency': emergency.preload,
+  '/cargo': cargo.preload,
   '/optimize': optimize.preload,
   '/route-planner': routePlanner.preload,
   '/backhaul': backhaul.preload,

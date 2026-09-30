@@ -13,18 +13,23 @@ export const priorityTone: Record<string, Tone> = {
 }
 
 /** Every status a shipment can have (the database enum), in the order a load moves through them. */
-export const SHIPMENT_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'exception', 'delivered', 'cancelled'] as const
+export const SHIPMENT_STATUSES = [
+  'created', 'assigned', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery', 'on_hold', 'exception', 'partially_delivered',
+  'returning', 'delivered', 'returned', 'lost', 'cancelled',
+] as const
 
 /** What dispatch sees for a status; a failed delivery (`exception`) is named for what happened. */
 export function shipmentStatusLabel(status?: string | null): string {
-  return status === 'exception' ? 'Delivery failed' : statusToLabel(status)
+  return status === 'exception' ? 'Delivery failed' : statusToLabel(status, 'cargo')
 }
 
 /**
  * Statuses that mean the shipment is still on its way rather than finished.
  * The single source of truth for "active" so the Dashboard and Shipments tabs agree.
  */
-export const ACTIVE_SHIPMENT_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'exception'] as const
+export const ACTIVE_SHIPMENT_STATUSES = [
+  'created', 'assigned', 'picked_up', 'in_transit', 'at_hub', 'out_for_delivery', 'on_hold', 'exception', 'partially_delivered', 'returning',
+] as const
 
 export function isActiveShipmentStatus(status?: string | null): boolean {
   return !!status && (ACTIVE_SHIPMENT_STATUSES as readonly string[]).includes(status)

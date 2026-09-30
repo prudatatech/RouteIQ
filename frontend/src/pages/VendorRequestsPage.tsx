@@ -12,6 +12,7 @@ import {
   Skeleton, StatusPill, Tabs, TabPanel, humanize, statusToLabel, parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
+import VendorLoadCargo from '@/components/cargo/VendorLoadCargo'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees, formatKm } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -658,6 +659,8 @@ function RequestDrawer({ request, onClose, approving, rejecting, onApprove, onRe
               ...(request.cost ? [{ label: 'Agreed price', value: <span className="tabular">{formatRupees(request.cost)}{request.cost_per_km ? ` (${formatRupees(request.cost_per_km)} per km)` : ''}</span> }] : []),
             ]}
           />
+
+          {request.assigned_vehicle_id && <VendorLoadCargo key={request.id} requestId={request.id} />}
 
           {showPartners && request && (
             <EscalationPanel key={request.id} source={{ request_id: request.id }} canEscalate={canAssign || request.status === 'escalated'} vendorPrice={request.cost} />

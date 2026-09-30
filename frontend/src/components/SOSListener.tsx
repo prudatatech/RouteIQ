@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, MapPin } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Button, Modal } from '@/components/ui'
 import { telemetryAPI } from '@/services/api'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { sosSeverityLabel, sosStatusOf, sosTypeLabel } from '@/utils/sos'
 import { formatTime } from '@/utils/display'
+import { cargoKeys, exceptionsAPI } from '@/services/cargo'
+import { OnBoardList } from '@/components/cargo/OnBoardList'
+import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
+import { isOpenException } from '@/components/cargo/logic'
 
 interface SosAlert {
   id: string
@@ -66,6 +70,36 @@ function createAlarm() {
   }
 }
 
+const CARGO_ROWS = 4
+
+/** What the SOS vehicle carries, and the case opened for it. `onCase` receives the case id so the modal can offer "Plan the cargo". */
+function SosCargo({ alert, onCase }: { alert: SosAlert; onCase: (id: string | null) => void }) {
+  const onBoard = useOnBoard(alert.vehicle_id)
+  const items = onBoard.data?.items ?? []
+  const cases = useQuery({
+    queryKey: cargoKeys.exceptions({ vehicle_id: alert.vehicle_id ?? '', status: '' }),
+    queryFn: () => exceptionsAPI.list({ vehicle_id: alert.vehicle_id!, status: '' }),
+    enabled: !!alert.vehicle_id && items.length > 0,
+    refetchInterval: 15_000,
+  })
+  const open = (cases.data ?? []).filter(c => isOpenException(c.status))
+  const newest = (list: typeof open) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const caseId = (newest(open.filter(c => c.sos_alert_id === alert.id)) ?? newest(open))?.id ?? null
+  useEffect(() => { onCase(caseId) }, [caseId, onCase])
+
+  if (!alert.vehicle_id || onBoard.isLoading || onBoard.isError || items.length === 0) return null
+  const totals = onBoardTotals(items)
+  return (
+    <div className="space-y-1 border-t border-border pt-3">
+      <p className="font-medium text-text">
+        On board: {totals.consignments.toLocaleString('en-IN')} {totals.consignments === 1 ? 'consignment' : 'consignments'}, {totals.pieces.toLocaleString('en-IN')} pieces
+      </p>
+      <OnBoardList items={items.slice(0, CARGO_ROWS)} compact />
+      {items.length > CARGO_ROWS && <p className="text-xs text-muted">+{(items.length - CARGO_ROWS).toLocaleString('en-IN')} more</p>}
+    </div>
+  )
+}
+
 /** Raises new driver SOS alerts to staff anywhere in the console, with an alarm. */
 export default function SOSListener() {
   const role = useAuthStore(s => s.role)
@@ -73,6 +107,7 @@ export default function SOSListener() {
   const queryClient = useQueryClient()
   const [alerts, setAlerts] = useState<SosAlert[]>([])
   const [acknowledging, setAcknowledging] = useState(false)
+  const [caseId, setCaseId] = useState<string | null>(null)
   const alarm = useRef(createAlarm())
   const alertsRef = useRef(alerts)
   alertsRef.current = alerts
@@ -132,6 +167,11 @@ export default function SOSListener() {
     setAlerts([])
     navigate(`/emergency?open=${current.id}`)
   }
+  const planCargo = () => {
+    if (!caseId) return
+    setAlerts([])
+    navigate(`/cargo/exceptions/${caseId}?action=transship`)
+  }
   const title = !current.alert_type || current.alert_type === 'panic_button' ? 'SOS from a driver' : sosTypeLabel(current.alert_type)
   const note = current.description && !DEFAULT_DESCRIPTIONS.has(current.description) ? current.description : null
 
@@ -144,11 +184,12 @@ export default function SOSListener() {
       title={<span className="inline-flex items-center gap-2 text-danger"><AlertTriangle size={20} aria-hidden="true" /> {title}</span>}
       description={`${current.plate ? `Vehicle ${current.plate}` : 'A driver'} · ${formatTime(current.created_at)}`}
       footer={
-        <>
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="secondary" disabled={acknowledging} onClick={dismiss}>{alerts.length > 1 ? `Dismiss (${alerts.length - 1} more)` : 'Dismiss'}</Button>
           <Button variant="secondary" loading={acknowledging} onClick={acknowledge}>Acknowledge</Button>
+          {caseId && <Button variant="secondary" disabled={acknowledging} onClick={planCargo}>Plan the cargo</Button>}
           <Button variant="danger" disabled={acknowledging} onClick={open}>Open emergencies</Button>
-        </>
+        </div>
       }
     >
       <div role="alert" className="space-y-3 text-sm">
@@ -164,6 +205,7 @@ export default function SOSListener() {
         ) : (
           <p className="text-muted">No location was sent with this alert.</p>
         )}
+        <SosCargo key={current.id} alert={current} onCase={setCaseId} />
       </div>
     </Modal>
   )

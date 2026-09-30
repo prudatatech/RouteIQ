@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, bids,
+  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
   backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
@@ -41,6 +41,9 @@ const BackhaulPage = backhaul.Component
 const ShipmentsPage = shipments.Component
 const ShipmentManifestPage = shipmentManifest.Component
 const EmergencyPage = emergency.Component
+const CargoPage = cargo.Component
+const ExceptionCasePage = cargoException.Component
+const TransferPage = cargoTransfer.Component
 const DriverPage = driver.Component
 const CustomerTrackingPage = customerTracking.Component
 const TplPartnersPage = tplPartners.Component
@@ -306,6 +309,21 @@ export default function App() {
             <Route path="shipments/:id/manifest" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <ShipmentManifestPage />
+              </PrivateRoute>
+            } />
+            <Route path="cargo" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <CargoPage />
+              </PrivateRoute>
+            } />
+            <Route path="cargo/exceptions/:id" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <ExceptionCasePage />
+              </PrivateRoute>
+            } />
+            <Route path="cargo/transfers/:id" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin']}>
+                <TransferPage />
               </PrivateRoute>
             } />
             <Route path="fleet" element={

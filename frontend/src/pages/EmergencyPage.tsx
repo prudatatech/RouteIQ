@@ -4,11 +4,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User, Wrench } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
-import { formatDateTime } from '@/utils/display'
+import { formatDateTime, formatKg } from '@/utils/display'
 import toast from 'react-hot-toast'
 import {
-  Page, PageHeader, Button, StatusPill, EmptyState, ErrorState, Skeleton, useConfirm, buttonClasses,
+  Page, PageHeader, Button, StatusPill, EmptyState, ErrorState, Skeleton, Card, CardHeader, useConfirm, buttonClasses,
 } from '@/components/ui'
+import { cargoKeys, exceptionsAPI, type CargoException } from '@/services/cargo'
+import { OnBoardList } from '@/components/cargo/OnBoardList'
+import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
+import { SlaBadge } from '@/components/cargo/CargoBits'
+import { useNow } from '@/components/cargo/useNow'
+import { exceptionTypeLabel, isOpenException } from '@/components/cargo/logic'
 import { MapView, type MapPoint } from '@/components/map'
 import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
 import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
@@ -45,6 +51,67 @@ async function attachDetails(alert: SosAlert): Promise<SosAlert> {
     if (data) vehicle = data
   }
   return { ...alert, driver, vehicle }
+}
+
+/** The case opened for this SOS, else the newest open case on the vehicle. */
+function caseForSos(cases: CargoException[], sosId: string): CargoException | null {
+  const open = cases.filter(c => isOpenException(c.status))
+  const byAge = (list: CargoException[]) => [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] ?? null
+  return byAge(open.filter(c => c.sos_alert_id === sosId)) ?? byAge(open)
+}
+
+/** What the SOS vehicle is carrying, the case opened for it, and the way into planning the goods. Nothing when it is empty. */
+function SosCargoCard({ alert }: { alert: SosAlert }) {
+  const vehicleId = alert.vehicle_id
+  const now = useNow()
+  const onBoard = useOnBoard(vehicleId, { refetchInterval: 60_000 })
+  const items = onBoard.data?.items ?? []
+  const cases = useQuery({
+    queryKey: cargoKeys.exceptions({ vehicle_id: vehicleId ?? '', status: '' }),
+    queryFn: () => exceptionsAPI.list({ vehicle_id: vehicleId!, status: '' }),
+    enabled: !!vehicleId && items.length > 0,
+    refetchInterval: 60_000,
+  })
+  if (!vehicleId) return null
+  const plate = alert.vehicle?.plate_number ?? 'vehicle'
+  if (onBoard.isLoading) return <Skeleton className="h-20 w-full" />
+  if (onBoard.isError) {
+    return <ErrorState compact title="We could not load the cargo on board" onRetry={() => onBoard.refetch()} />
+  }
+  if (items.length === 0) return null
+  const totals = onBoardTotals(items)
+  const linked = caseForSos(cases.data ?? [], alert.id)
+  return (
+    <Card>
+      <CardHeader
+        title={`Cargo on ${plate}`}
+        description={`${totals.consignments.toLocaleString('en-IN')} ${totals.consignments === 1 ? 'consignment' : 'consignments'}, ${totals.pieces.toLocaleString('en-IN')} pieces, ${formatKg(totals.weightKg)}`}
+        actions={(
+          <Link
+            to={linked ? `/cargo/exceptions/${linked.id}?action=transship` : `/cargo?vehicle=${vehicleId}`}
+            className={buttonClasses({ variant: 'primary', size: 'sm' })}
+          >
+            Plan the cargo
+          </Link>
+        )}
+      />
+      <div className="px-4 sm:px-6">
+        {cases.isLoading ? (
+          <Skeleton className="my-3 h-5 w-48" />
+        ) : cases.isError ? (
+          <p className="py-3 text-sm text-danger" role="alert">We could not load the cargo case for this SOS.</p>
+        ) : linked ? (
+          <p className="flex flex-wrap items-center gap-2 py-3 text-sm">
+            <Link to={`/cargo/exceptions/${linked.id}`} className="font-medium text-brand hover:underline">{linked.code} · {exceptionTypeLabel(linked.type)}</Link>
+            <SlaBadge dueAt={linked.sla_due_at} status={linked.status} now={now} />
+          </p>
+        ) : (
+          <p className="py-3 text-sm text-muted">No cargo case is open for this vehicle yet.</p>
+        )}
+        <OnBoardList items={items} className="border-t border-border" />
+      </div>
+    </Card>
+  )
 }
 
 export default function EmergencyPage() {
@@ -393,6 +460,7 @@ export default function EmergencyPage() {
           </MapView>
         </div>
       </div>
+      {selected?.vehicle_id && <SosCargoCard key={selected.id} alert={selected} />}
       {maintenanceAlert?.vehicle_id && (
         <MoveToMaintenanceModal
           open

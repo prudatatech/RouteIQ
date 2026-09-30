@@ -1,5 +1,5 @@
 import {
-  BarChart3, Banknote, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned, Milestone,
+  BarChart3, Banknote, Boxes, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned, Milestone,
   Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
@@ -33,6 +33,7 @@ export const navSections: NavSection[] = [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: staff },
       { to: '/live-map', label: 'Live map', icon: MapPinned, roles: staff },
       { to: '/shipments', label: 'Shipments', icon: Package, roles: staff },
+      { to: '/cargo', label: 'Cargo', icon: Boxes, roles: staff },
       { to: '/fleet', label: 'Fleet', icon: Truck, roles: staff },
       { to: '/vehicle-requests', label: 'Vehicle requests', icon: ClipboardCheck, roles: staffAndManagers, badge: 'vehicleRequests' },
       { to: '/emergency', label: 'Emergencies', icon: ShieldAlert, roles: staffAndManagers },
