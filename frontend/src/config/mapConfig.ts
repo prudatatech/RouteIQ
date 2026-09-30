@@ -115,11 +115,36 @@ export const MAP_TONES: Record<MapTone, ToneStyle> = {
   brand: { bg: 'bg-brand', color: c.accent },
 }
 
-/** Colours for GL layers (route line, geofences). */
+/**
+ * Colours of the route lines on one base map. The casing is the thin outline that separates a line
+ * from the map under it, so it is the opposite tone of the base map: light on the light maps, dark
+ * on the dark and satellite maps. The line itself is chosen to stand out on that base.
+ */
+export interface RoutePalette {
+  /** The selected route, and the trail of a driven path. */
+  line: string
+  /** Outline of every route line. */
+  casing: string
+  /** Other route options: secondary, but never near-white. */
+  alternative: string
+  /** The dashed straight line drawn when there is no road route. */
+  planned: string
+  /** A stretch of a congestion-coloured route with no traffic data (must not look like a traffic level). */
+  unknown: string
+}
+
+const ON_LIGHT: RoutePalette = { line: c.info, casing: c.surface, alternative: c.neutral, planned: c.neutral, unknown: c.info }
+const ON_DARK: RoutePalette = { line: c.accentFill, casing: c.text, alternative: c.textDisabled, planned: c.textDisabled, unknown: c.textDisabled }
+
+export const ROUTE_PALETTES: Record<BaseStyleId, RoutePalette> = {
+  streets: ON_LIGHT,
+  terrain: ON_LIGHT,
+  dark: ON_DARK,
+  satellite: ON_DARK,
+}
+
+/** Colours for GL layers other than routes. */
 export const MAP_COLORS = {
-  route: c.info,
-  routeCasing: c.surface,
-  plannedRoute: c.neutral,
   trail: c.info,
 }
 

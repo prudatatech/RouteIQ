@@ -280,3 +280,8 @@ corridor, or `points` of kind `hub` for origins/destinations. Nothing to migrate
 
 - `ShipmentsPage`, `CargoNetworkPage`, `OptimizePage`, `AddShipmentModal`: `LiveMap` works as before, and two maps on one page now both render (see bugs fixed).
 - `DriverPage`: `DriverMap` unchanged API.
+
+## Route line colours and layer order
+
+- Colours come from `ROUTE_PALETTES` in `config/mapConfig.ts`, per base map: the casing is light on streets and terrain and dark on dark and satellite; the selected route is the theme blue (amber on the dark maps); alternatives and the dashed plan are neutral greys, never near-white.
+- The route's casing and line layers are always mounted, casing first, and only their visibility changes. maplibre stacks layers in the order they were added, so mounting the casing later (a dashed plan replaced by a road route) put it above the line and drew the route as a white stripe. Alternative routes use `beforeId` so they stay under the route when the choice changes.

@@ -1,7 +1,7 @@
 import { circle } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, Polygon } from 'geojson'
 import type { LayerProps } from 'react-map-gl/maplibre'
-import { MAP_COLORS, MAP_TONES, type MapTone } from '@/config/mapConfig'
+import { MAP_COLORS, MAP_TONES, type MapTone, type RoutePalette } from '@/config/mapConfig'
 import type { LatLng, MapPoint, MapPointKind, MapRoute, MapTrail, MapVehicle } from './types'
 
 /** Colour role of each point kind. Shared by markers and their geofence circles. */
@@ -18,6 +18,7 @@ export const POINT_TONES: Record<MapPointKind, MapTone> = {
 
 export const ROUTE_SOURCE_ID = 'mapview-route'
 export const ROUTE_CONGESTION_SOURCE_ID = 'mapview-route-congestion'
+export const ROUTE_CASING_LAYER_ID = 'mapview-route-casing'
 
 export function routeFeature(route: MapRoute): Feature<LineString> | null {
   const coords = route.coordinates.length > 1
@@ -30,22 +31,30 @@ export function routeFeature(route: MapRoute): Feature<LineString> | null {
   return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }
 }
 
-/** A white casing under the line keeps it readable on any base map. */
-export const routeCasingLayer: LayerProps = {
-  id: 'mapview-route-casing',
-  type: 'line',
-  layout: { 'line-join': 'round', 'line-cap': 'round' },
-  paint: { 'line-color': MAP_COLORS.routeCasing, 'line-width': 7 },
+/**
+ * Layer order is part of the route's look: maplibre stacks layers in the order they were added, and a
+ * layer that is only mounted later goes on TOP. The casing and the line are therefore always both
+ * mounted, casing first, and only their visibility changes (a dashed plan has no casing; a
+ * congestion-coloured route hides the flat line). Without that, a plan replaced by a road route
+ * added the casing above the line and the route showed as a thick white stripe.
+ */
+export function routeCasingLayer(palette: RoutePalette, visible: boolean): LayerProps {
+  return {
+    id: ROUTE_CASING_LAYER_ID,
+    type: 'line',
+    layout: { 'line-join': 'round', 'line-cap': 'round', visibility: visible ? 'visible' : 'none' },
+    paint: { 'line-color': palette.casing, 'line-width': 6.5 },
+  }
 }
 
-export function routeLineLayer(planned: boolean): LayerProps {
+export function routeLineLayer(planned: boolean, palette: RoutePalette, visible: boolean = true): LayerProps {
   return {
     id: 'mapview-route-line',
     type: 'line',
-    layout: { 'line-join': 'round', 'line-cap': planned ? 'butt' : 'round' },
+    layout: { 'line-join': 'round', 'line-cap': planned ? 'butt' : 'round', visibility: visible ? 'visible' : 'none' },
     paint: planned
-      ? { 'line-color': MAP_COLORS.plannedRoute, 'line-width': 3, 'line-dasharray': [2, 2] }
-      : { 'line-color': MAP_COLORS.route, 'line-width': 4 },
+      ? { 'line-color': palette.planned, 'line-width': 3, 'line-dasharray': [2, 2] }
+      : { 'line-color': palette.line, 'line-width': 4, 'line-dasharray': [1, 0] },
   }
 }
 
@@ -62,11 +71,13 @@ export function trailFeatures(trails: MapTrail[]): FeatureCollection<LineString>
   }
 }
 
-export const trailCasingLayer: LayerProps = {
-  id: 'mapview-trail-casing',
-  type: 'line',
-  layout: { 'line-join': 'round', 'line-cap': 'round' },
-  paint: { 'line-color': MAP_COLORS.routeCasing, 'line-width': 6, 'line-opacity': 0.8 },
+export function trailCasingLayer(palette: RoutePalette): LayerProps {
+  return {
+    id: 'mapview-trail-casing',
+    type: 'line',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': palette.casing, 'line-width': 6, 'line-opacity': 0.8 },
+  }
 }
 
 export const trailLineLayer: LayerProps = {
