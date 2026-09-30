@@ -123,3 +123,29 @@ export function companyGaps(c: CompanyProfile): string[] {
   if (!c.sac_code) gaps.push('SAC code');
   return gaps;
 }
+
+/** The only part of the company profile a vendor or customer may see: where to pay. */
+export interface PaymentDetails {
+  account_name: string | null;
+  bank_name: string | null;
+  bank_account_no: string | null;
+  bank_ifsc: string | null;
+  upi_id: string | null;
+  payment_terms_days: number;
+  /** True when there is a bank account or a UPI id to pay into. */
+  available: boolean;
+}
+
+export async function getPaymentDetails(): Promise<PaymentDetails> {
+  const c = await getCompanyProfile();
+  const bank = Boolean(c.bank_account_no && c.bank_ifsc);
+  return {
+    account_name: c.legal_name,
+    bank_name: c.bank_name,
+    bank_account_no: c.bank_account_no,
+    bank_ifsc: c.bank_ifsc,
+    upi_id: c.upi_id,
+    payment_terms_days: c.payment_terms_days,
+    available: bank || Boolean(c.upi_id),
+  };
+}

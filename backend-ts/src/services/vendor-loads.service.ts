@@ -16,6 +16,8 @@
  *   delivered   delivered, wholly or in part, until its invoice is paid
  *   closed      rejected, cancelled, returned, lost, or delivered and paid
  */
+import { paymentTermsDays } from './company.service';
+import { effectiveDueDate, overdueDays } from './invoice-detail.service';
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { manifestParcelCode } from '../core/parcelCode';
@@ -83,7 +85,12 @@ export interface LoadInvoice {
   status: string;
   total: number | null;
   issued_at: string | null;
+  due_date: string | null;
+  overdue: boolean;
+  days_overdue: number;
   paid_at: string | null;
+  payment_method: string | null;
+  payment_reference: string | null;
 }
 
 export interface VendorLoad {
@@ -148,11 +155,12 @@ async function assemble(requests: any[], shipments: any[], vendorId: string): Pr
   const parentOf = new Map<string, string>([...lotRows.map(l => [l.id, l.parent_manifest_id] as const), ...lotShipments.map(l => [l.id, l.parent_shipment_id] as const)]);
   const allIds = [...ownIds, ...parentOf.keys()];
 
+  const terms = await paymentTermsDays();
   const [events, itemsByManifest, itemsByShipment, invoices, vehicles] = await Promise.all([
     selectIn('cargo_custody_events', 'manifest_id', allIds, 'manifest_id, shipment_id, kind, recorded_at', q => q.in('kind', CLAIM_EVENT_KINDS)),
     selectIn('cargo_exception_items', 'manifest_id', allIds, 'exception_id, manifest_id'),
     selectIn('cargo_exception_items', 'shipment_id', allIds, 'exception_id, shipment_id'),
-    supabase.from('invoices').select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, status, total, amount, gst_amount, issued_at, paid_at')
+    supabase.from('invoices').select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, status, total, amount, gst_amount, issued_at, due_date, paid_at, payment_method, payment_reference')
       .eq('vendor_id', vendorId).neq('status', 'void').order('issued_at', { ascending: false }).then(r => {
         if (r.error) throw new Error(`Failed to read invoices: ${r.error.message}`);
         return (r.data ?? []) as any[];
@@ -191,7 +199,14 @@ async function assemble(requests: any[], shipments: any[], vendorId: string): Pr
   const plate = new Map(vehicles.map(v => [v.id, v]));
   const invoiceFor = (keys: { request?: string; manifest?: string; shipment?: string }): LoadInvoice | null => {
     const row = invoices.find(i => (keys.manifest && i.manifest_id === keys.manifest) || (keys.request && i.vendor_request_id === keys.request) || (keys.shipment && i.shipment_id === keys.shipment));
-    return row ? { id: row.id, invoice_number: row.invoice_number, status: row.status, total: num(row.total) ?? num(row.amount), issued_at: row.issued_at ?? null, paid_at: row.paid_at ?? null } : null;
+    if (!row) return null;
+    const due = effectiveDueDate(row, terms);
+    const late = overdueDays(row, due);
+    return {
+      id: row.id, invoice_number: row.invoice_number, status: row.status, total: num(row.total) ?? num(row.amount),
+      issued_at: row.issued_at ?? null, due_date: due, overdue: late > 0, days_overdue: late,
+      paid_at: row.paid_at ?? null, payment_method: row.payment_method ?? null, payment_reference: row.payment_reference ?? null,
+    };
   };
 
   const posted: VendorLoad[] = requests.map(r => {

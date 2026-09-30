@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { listVendorLoads, vendorLoadDetail } from '../services/vendor-loads.service';
+import { getCompanyProfile } from '../services/company.service';
+import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
@@ -87,12 +89,18 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
   try {
     const { data, error } = await supabase
       .from('invoices')
-      .select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, amount, gst_rate, gst_amount, total, status, issued_at, paid_at')
+      .select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, payment_method, payment_reference')
       .eq('vendor_id', req.user.user_id)
       .neq('status', 'void')
       .order('issued_at', { ascending: false });
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
-    const rows = data ?? [];
+    const terms = (await getCompanyProfile()).payment_terms_days;
+    const now = new Date();
+    const rows = (data ?? []).map((r: any) => {
+      const due = effectiveDueDate(r, terms);
+      const late = overdueDays(r, due, now);
+      return { ...r, due_date: due, overdue: late > 0, days_overdue: late };
+    });
     const ids = rows.map((r: any) => r.shipment_id).filter(Boolean);
     const { data: shipments } = ids.length
       ? await supabase.from('shipments').select('id, tracking_id').in('id', ids)
