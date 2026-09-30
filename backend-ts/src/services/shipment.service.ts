@@ -980,13 +980,16 @@ export class ShipmentService {
     return shipment;
   }
 
+  /** The columns of a shipment row as the list and the shipment page read it. */
+  private static readonly LIST_SHIPMENT_SELECT = '*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))';
+
   /**
    * List shipments with relations.
    */
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))')
+      .select(ShipmentService.LIST_SHIPMENT_SELECT)
       .order('created_at', { ascending: false })
       .range(skip, skip + limit - 1);
 
@@ -994,6 +997,54 @@ export class ShipmentService {
     if (error) throw error;
     if (!data) return [];
 
+    const mappedShipments = await ShipmentService.mapShipmentRows(data);
+
+    // Fetch Cargo Manifests to show them in the unified list
+    const { data: manifests, error: manifestError } = await supabase
+      .from('cargo_manifest')
+      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (manifestError) throw manifestError;
+
+    const mappedManifests = await ShipmentService.mapManifestRows(manifests || []);
+
+    // Combine and re-sort by created_at descending
+    const combined = [...mappedShipments, ...mappedManifests].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return combined;
+  }
+
+  /**
+   * One shipment or vendor load shaped exactly like a row of the list (vehicle, driver, lots
+   * summary, bidding), for the shipment page. Null when there is none.
+   */
+  static async getListRow(kind: 'shipment' | 'manifest', id: string): Promise<any | null> {
+    if (kind === 'shipment') {
+      const { data, error } = await supabase.from('shipments').select(ShipmentService.LIST_SHIPMENT_SELECT).eq('id', id).maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const [row] = await ShipmentService.mapShipmentRows([data]);
+      // A lot's row names its master, like the list does when both are on the page
+      if (row.parent_shipment_id) {
+        const { data: master } = await supabase.from('shipments').select('tracking_id').eq('id', row.parent_shipment_id).maybeSingle();
+        row.master_tracking_id = master?.tracking_id ?? null;
+      }
+      return row;
+    }
+    const { data, error } = await supabase
+      .from('cargo_manifest')
+      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return (await ShipmentService.mapManifestRows([data]))[0];
+  }
+
+  private static async mapShipmentRows(data: any[]): Promise<any[]> {
     // A shipment opened for vendor bidding has a capacity window pointing back at it
     // (see createShipment -> openBackhaulWindow). shipments has no bidding columns.
     const biddingByShipment = new Map<string, any>();
@@ -1052,16 +1103,13 @@ export class ShipmentService {
       if (row.parent_shipment_id) row.master_tracking_id = trackingById.get(row.parent_shipment_id) ?? null;
     }
 
-    // Fetch Cargo Manifests to show them in the unified list
-    const { data: manifests, error: manifestError } = await supabase
-      .from('cargo_manifest')
-      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (manifestError) throw manifestError;
+    return mappedShipments;
+  }
 
-    const manifestLots = await lotsSummaries('manifest', (manifests || []).filter((m: any) => m.is_master).map((m: any) => m.id));
-    const mappedManifests = (manifests || []).map((m: any) => ({
+  private static async mapManifestRows(manifests: any[]): Promise<any[]> {
+    const { lotsSummaries } = await import('./cargo/lots.service');
+    const manifestLots = await lotsSummaries('manifest', manifests.filter((m: any) => m.is_master).map((m: any) => m.id));
+    const mappedManifests = manifests.map((m: any) => ({
       id: m.id,
       tracking_id: m.parent_manifest_id && m.lot_label ? `${manifestParcelCode(m.parent_manifest_id)}-${m.lot_label}` : manifestParcelCode(m.id),
       is_master: m.is_master === true,
@@ -1097,13 +1145,7 @@ export class ShipmentService {
       created_at: m.created_at,
       updated_at: m.created_at,
     }));
-
-    // Combine and re-sort by created_at descending
-    const combined = [...mappedShipments, ...mappedManifests].sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-
-    return combined;
+    return mappedManifests;
   }
 
   /**

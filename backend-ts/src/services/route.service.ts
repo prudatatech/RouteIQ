@@ -386,18 +386,22 @@ export const routeService = {
       }
     }
 
-    // Tell the driver a route is now theirs to run. Informative only.
+    // The trip is sent: this is the one moment the driver hears about it, with a link to open it.
     if (firstStart && vehicle?.driver_id) {
       try {
+        const { data: stopRows } = await supabase.from('route_stops').select('id').eq('route_id', route.id);
+        const stops = stopRows?.length ?? 0;
         await notificationService.sendNotification(
           vehicle.driver_id,
-          'Route ready',
-          'Your route has been activated. Open the app to start your journey.',
+          'New trip',
+          stops > 0
+            ? `Dispatch sent you a trip with ${stops} ${stops === 1 ? 'stop' : 'stops'}. Open the app to start your journey.`
+            : 'Dispatch sent you a trip. Open the app to start your journey.',
           'route_activated',
-          { route_id: route.id },
+          { route_id: route.id, link: `/routes/${route.id}` },
         );
       } catch (notifErr) {
-        console.warn('Failed to send route activation notification:', notifErr);
+        console.warn('Failed to send the trip notification:', notifErr);
       }
     }
 
@@ -492,18 +496,7 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
     throw new Error(stopsErr.message);
   }
 
-  if ((vehicle as any).driver_id) {
-    try {
-      await notificationService.sendNotification(
-        (vehicle as any).driver_id,
-        'New route assigned',
-        `A new route with ${stopRows.length} stops has been assigned to you.`,
-        'route_assigned',
-        { route_id: route.id },
-      );
-    } catch (notifErr) {
-      console.warn('Failed to send route assignment notification:', notifErr);
-    }
-  }
+  // No driver notification here: the trip waits in Dispatch under "Trips to send" and the driver is
+  // told when it is sent (changeStatus to active).
   return { id: route.id, vehicle_id: route.vehicle_id, status: route.status, stops: stopRows.map(s => ({ delivery_point_id: s.delivery_point_id, sequence: s.sequence })) };
 }
