@@ -9,7 +9,8 @@ import Map, {
   type MapRef,
 } from 'react-map-gl/maplibre'
 import clsx from 'clsx'
-import { BASE_STYLES, MAP_DEFAULTS, TERRAIN_HILLSHADE } from '@/config/mapConfig'
+import type { FeatureCollection, LineString } from 'geojson'
+import { BASE_STYLES, MAP_DEFAULTS, ROUTE_PALETTES, TERRAIN_HILLSHADE } from '@/config/mapConfig'
 import { INDIA_BORDERS_SOURCE_ID, INDIA_BORDERS_URL, hideCountryBorders, indiaBordersLayers } from './indiaBorders'
 import {
   GEOFENCE_SOURCE_ID,
@@ -52,6 +53,9 @@ const MODE_DEFAULTS: Record<MapMode, ModeDefaults> = {
   tracking: { fitTo: 'initial', flyToSelected: false, follow: true, controls: { zoom: true, recenter: true }, showLegend: false },
   picker: { fitTo: 'content', flyToSelected: false, follow: false, controls: { zoom: true }, showLegend: false },
 }
+
+/** The route source before there is a route: the route layers stay mounted (and in order) with nothing to draw. */
+const EMPTY_LINE: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] }
 
 /** Zoom used when there is a single thing to show, or when flying to a selection. */
 const FOCUS_ZOOM = 14
@@ -119,6 +123,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     children,
   } = props
   const defaults = MODE_DEFAULTS[mode]
+  const palette = ROUTE_PALETTES[baseStyle]
   const fitTo = props.fitTo ?? defaults.fitTo
   const flyToSelected = props.flyToSelected ?? defaults.flyToSelected
   const follow = props.follow ?? defaults.follow
@@ -382,32 +387,31 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             </Source>
           )}
 
+          {/* Always mounted, before trails, alternatives and the congestion line, so the route's layers keep a fixed place in the stack (see routeCasingLayer) */}
+          <Source id={ROUTE_SOURCE_ID} type="geojson" data={line ?? EMPTY_LINE}>
+            <Layer {...routeCasingLayer(palette, Boolean(line) && !planned)} />
+            <Layer {...routeLineLayer(planned, palette, Boolean(line) && !congestionData)} />
+          </Source>
+
           {trailData.features.length > 0 && (
             <Source id={TRAIL_SOURCE_ID} type="geojson" data={trailData}>
-              <Layer {...trailCasingLayer} />
+              <Layer {...trailCasingLayer(palette)} />
               <Layer {...trailLineLayer} />
             </Source>
           )}
 
-          <AltRoutes routes={props.altRoutes} onSelect={props.onAltRouteSelect} />
+          <AltRoutes routes={props.altRoutes} onSelect={props.onAltRouteSelect} palette={palette} />
           {lineData.features.length > 0 && (
             <Source id={LINES_SOURCE_ID} type="geojson" data={lineData}>
-              <Layer {...linesCasingLayer} />
+              <Layer {...linesCasingLayer(palette)} />
               <Layer {...linesDashedLayer} />
               <Layer {...linesSolidLayer} />
             </Source>
           )}
 
-          {line && (
-            <Source id={ROUTE_SOURCE_ID} type="geojson" data={line}>
-              {!planned && <Layer {...routeCasingLayer} />}
-              {!congestionData && <Layer {...routeLineLayer(planned)} />}
-            </Source>
-          )}
-
           {congestionData && (
             <Source id={ROUTE_CONGESTION_SOURCE_ID} type="geojson" data={congestionData}>
-              <Layer {...congestionLineLayer} />
+              <Layer {...congestionLineLayer(palette)} />
             </Source>
           )}
 

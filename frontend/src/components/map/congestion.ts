@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import type { LayerProps } from 'react-map-gl/maplibre'
-import { MAP_COLORS, TRAFFIC_COLORS } from '@/config/mapConfig'
+import { TRAFFIC_COLORS, type RoutePalette } from '@/config/mapConfig'
 
 /**
  * Congestion of one stretch of a route, as Mapbox reports it for driving-traffic.
@@ -64,22 +64,24 @@ export function congestionFeatures(coordinates: [number, number][], congestion: 
   }
 }
 
-/** The route line coloured by congestion. Sits on the same casing as the flat line. */
-export const congestionLineLayer: LayerProps = {
-  id: 'mapview-route-congestion',
-  type: 'line',
-  layout: { 'line-join': 'round', 'line-cap': 'round' },
-  paint: {
-    'line-width': 4.5,
-    'line-color': [
-      'match', ['get', 'level'],
-      'low', TRAFFIC_COLORS.low,
-      'moderate', TRAFFIC_COLORS.moderate,
-      'heavy', TRAFFIC_COLORS.heavy,
-      'severe', TRAFFIC_COLORS.severe,
-      MAP_COLORS.route,
-    ],
-  },
+/** The route line coloured by congestion. Sits on the same casing as the flat line; stretches with no data take a neutral colour of the palette. */
+export function congestionLineLayer(palette: RoutePalette): LayerProps {
+  return {
+    id: 'mapview-route-congestion',
+    type: 'line',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-width': 4.5,
+      'line-color': [
+        'match', ['get', 'level'],
+        'low', TRAFFIC_COLORS.low,
+        'moderate', TRAFFIC_COLORS.moderate,
+        'heavy', TRAFFIC_COLORS.heavy,
+        'severe', TRAFFIC_COLORS.severe,
+        palette.unknown,
+      ],
+    },
+  }
 }
 
 export interface CongestionSummary {
