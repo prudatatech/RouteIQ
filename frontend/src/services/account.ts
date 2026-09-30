@@ -41,7 +41,7 @@ export function homeFor(account: Account): string | null {
       return '/driver'
     case 'vendor':
       if (account.tplPartnerId) return `/3pl-portal/${account.tplPartnerId}`
-      return account.hasVendorProfile ? '/vendor' : '/vendor/onboarding'
+      return account.hasVendorProfile ? '/vendor/loads' : '/vendor/onboarding'
     default:
       return null
   }

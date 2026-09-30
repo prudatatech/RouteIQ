@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Clock, ShieldCheck, TrendingUp, Zap } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { capacityAPI, vendorAPI } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import PlaceBidModal from '@/components/vendor/PlaceBidModal'
+import MyBids, { type VendorBid } from '@/components/vendor/MyBids'
+import type { VendorLoad } from '@/components/vendor/loads'
 import { Alert, Button, buttonClasses, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/components/ui'
 import { formatRupees, formatMinutes } from '@/utils/display'
 
@@ -74,7 +77,7 @@ function ClosesIn({ until }: { until: string }) {
 export default function VendorCorridorPage() {
   const [windows, setWindows] = useState<OpenWindow[]>([])
   const [passingRoutes, setPassingRoutes] = useState<PassingRoute[]>([])
-  const [myBidWindowIds, setMyBidWindowIds] = useState<Set<string>>(new Set())
+  const [bids, setBids] = useState<VendorBid[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [biddingWindow, setBiddingWindow] = useState<OpenWindow | null>(null)
@@ -85,22 +88,31 @@ export default function VendorCorridorPage() {
   const navigate = useNavigate()
   const { vendorProfile, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
+  const [params, setParams] = useSearchParams()
+  const windowId = params.get('window')
+  const bidId = params.get('bid')
+  const scrolled = useRef<string | null>(null)
+
+  // Only a bid still being considered (or won) blocks another; after a rejected, lost or expired bid the vendor can bid again
+  const myBidWindowIds = useMemo(() => new Set(bids.filter(r => r.status === 'pending' || r.status === 'won').map(r => r.window_id)), [bids])
+
+  // The load a won bid created, so its outcome can open it
+  const loads = useQuery<VendorLoad[]>({ queryKey: ['vendor', 'loads'], queryFn: () => vendorAPI.loads() as Promise<VendorLoad[]>, enabled: isVendor })
+  const loadOfBid = useMemo(() => new Map((loads.data ?? []).filter(l => l.bid_id).map(l => [l.bid_id as string, l.id])), [loads.data])
 
   const fetchData = async () => {
     try {
       const [w, p, b] = await Promise.all([
         session ? capacityAPI.openWindows() : Promise.resolve([]),
         session ? vendorAPI.passingRoutes().catch(() => []) : Promise.resolve([]),
-        userId ? supabase.from('capacity_bids').select('window_id, status').eq('vendor_id', userId) : Promise.resolve({ data: [] as { window_id: string; status: string }[] }),
+        session ? capacityAPI.myBids().catch(() => []) : Promise.resolve([]),
       ])
       setWindows(w as OpenWindow[])
       setPassingRoutes(p as PassingRoute[])
-      const bidRows = (b as { data: { window_id: string; status: string }[] | null }).data ?? []
-      // Only a bid still being considered (or won) blocks another; after a rejected, lost or expired bid the vendor can bid again
-      setMyBidWindowIds(new Set(bidRows.filter(r => r.status === 'pending' || r.status === 'won').map(r => r.window_id)))
+      setBids(b as VendorBid[])
       setError(null)
     } catch {
-      setError('We could not load corridors. Check your connection and try again.')
+      setError('We could not load return trips. Check your connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -114,6 +126,14 @@ export default function VendorCorridorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, session])
 
+  // A notification opens ?window=<id> (a return trip that just opened) or ?bid=<id> (a bid's outcome)
+  useEffect(() => {
+    const target = !loading ? (windowId && windows.some(w => w.id === windowId) ? `window-${windowId}` : bidId ? `bid-${bidId}` : null) : null
+    if (!target || scrolled.current === target) return
+    scrolled.current = target
+    setTimeout(() => document.getElementById(target)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0)
+  }, [loading, windowId, bidId, windows, bids])
+
   /** Send the vendor to post-a-load with the passing truck's current position pre-set as the drop point. */
   // Opens post-a-load with the city the truck passes already placed on the map.
   // The truck's own position stays private; the city is resolved by place search.
@@ -124,7 +144,7 @@ export default function VendorCorridorPage() {
     }
     if (!kycApproved) {
       toast('Finish your company KYC first. It only takes a few minutes.')
-      navigate(vendorProfile ? '/vendor/documents' : '/vendor/onboarding')
+      navigate(vendorProfile ? '/vendor/company' : '/vendor/onboarding')
       return
     }
     const city = pr.city?.trim()
@@ -143,12 +163,12 @@ export default function VendorCorridorPage() {
 
   const handlePlaceBid = (w: OpenWindow) => {
     if (!session) {
-      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/corridor')}`)
+      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/return-trips')}`)
       return
     }
     if (!kycApproved) {
       toast('Finish your company KYC first. It only takes a few minutes.')
-      navigate(vendorProfile ? '/vendor/documents' : '/vendor/onboarding')
+      navigate(vendorProfile ? '/vendor/company' : '/vendor/onboarding')
       return
     }
     setBiddingWindow(w)
@@ -157,12 +177,12 @@ export default function VendorCorridorPage() {
   if (!session) {
     return (
       <Page>
-        <PageHeader title="Corridors" description="Open capacity windows and passing trucks near you, updated live." />
+        <PageHeader title="Return trips" description="Spare space on trucks heading back near you. Bid to fill it with your load, updated live." />
         <EmptyState
-          title="Sign in to see live capacity"
-          description="Open capacity windows and passing trucks are shown to signed-in vendors."
+          title="Sign in to see return trips"
+          description="Return trips and passing trucks are shown to signed-in vendors."
           action={(
-            <Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/corridor')}`} className={buttonClasses({ variant: 'primary' })}>
+            <Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/return-trips')}`} className={buttonClasses({ variant: 'primary' })}>
               Sign in
             </Link>
           )}
@@ -173,15 +193,15 @@ export default function VendorCorridorPage() {
 
   return (
     <Page>
-      <PageHeader title="Corridors" description="Open capacity windows and passing trucks near you, updated live." />
+      <PageHeader title="Return trips" description="Spare space on trucks heading back near you. Bid to fill it with your load, updated live." />
 
       {isVendor && !kycApproved && (
         <Alert
           tone={vendorProfile?.kycStatus === 'submitted' ? 'info' : 'warning'}
           title={vendorProfile?.kycStatus === 'submitted' ? 'Your KYC is in review' : 'Finish your KYC to bid'}
           action={vendorProfile?.kycStatus === 'submitted' ? undefined : (
-            <Link to={vendorProfile ? '/vendor/documents' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-              {vendorProfile ? 'Open company & KYC' : 'Set up company'}
+            <Link to={vendorProfile ? '/vendor/company' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+              {vendorProfile ? 'Open company' : 'Set up company'}
             </Link>
           )}
         >
@@ -192,7 +212,7 @@ export default function VendorCorridorPage() {
       )}
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-text">Live capacity near you</h2>
+        <h2 className="text-lg font-semibold text-text">Trucks passing near you</h2>
         {loading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 w-full" />)}
@@ -220,7 +240,7 @@ export default function VendorCorridorPage() {
                   disabled={claiming !== null}
                   onClick={() => claimCapacity(pr)}
                 >
-                  Claim capacity
+                  Post a load for this truck
                 </Button>
               </Card>
             ))}
@@ -228,22 +248,32 @@ export default function VendorCorridorPage() {
         )}
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-text">Open capacity windows</h2>
+      {windowId && !loading && !error && !windows.some(w => w.id === windowId) && (
+        <Alert
+          tone="info"
+          title="That return trip is no longer open"
+          action={<Button variant="secondary" size="sm" onClick={() => setParams(prev => { const next = new URLSearchParams(prev); next.delete('window'); return next }, { replace: true })}>Dismiss</Button>}
+        >
+          Another vendor may have won it, or its bidding time ended. Trucks with space near you appear below as they open.
+        </Alert>
+      )}
+
+      <section id="open-return-trips" className="scroll-mt-20 space-y-4">
+        <h2 className="text-lg font-semibold text-text">Open return trips</h2>
         {error ? (
-          <ErrorState compact title="We could not load corridors" description="Check your connection and try again." onRetry={() => { setLoading(true); fetchData() }} />
+          <ErrorState compact title="We could not load return trips" description="Check your connection and try again." onRetry={() => { setLoading(true); fetchData() }} />
         ) : loading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
           </div>
         ) : windows.length === 0 ? (
-          <EmptyState compact title="No open windows near you right now" description="Trucks with free space near your pickup location appear here as soon as a window opens. Keep your company address up to date under Company &amp; KYC." />
+          <EmptyState compact title="No open return trips near you right now" description="Trucks with free space near your pickup location appear here as soon as a return trip opens. Keep your company address up to date under Company." />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {windows.map(w => {
               const alreadyBid = myBidWindowIds.has(w.id)
               return (
-                <Card key={w.id} padded className="flex min-h-[220px] flex-col gap-3">
+                <Card key={w.id} id={`window-${w.id}`} padded className={`flex min-h-[220px] scroll-mt-24 flex-col gap-3${w.id === windowId ? ' ring-2 ring-brand' : ''}`}>
                   <div className="flex items-start justify-between gap-2">
                     <TriggerBadge trigger={w.trigger_type} />
                     <div className="flex items-center gap-1 text-xs">
@@ -282,6 +312,11 @@ export default function VendorCorridorPage() {
             })}
           </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-text">My bids</h2>
+        <MyBids bids={bids} loading={loading} focusId={bidId} loadOfBid={loadOfBid} />
       </section>
 
       {biddingWindow && (

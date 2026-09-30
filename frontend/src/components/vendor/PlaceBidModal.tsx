@@ -171,7 +171,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
         <div className="space-y-2 rounded-control border border-border p-3">
           <p className="text-sm font-medium text-text">Suggested price</p>
           {profile.isSuccess && !pickupPoint ? (
-            <p className="text-sm text-muted">Add your warehouse address under Company &amp; KYC to see a suggested price. The truck collects from that address.</p>
+            <p className="text-sm text-muted">Add your warehouse address under Company to see a suggested price. The truck collects from that address.</p>
           ) : (
             <PriceSuggestion
               query={quote}
@@ -192,7 +192,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
         </div>
 
         {!ewayClean && (
-          <p className="text-xs text-muted">Bids without an e-way bill are flagged for the dispatcher; consignments above ₹50,000 need one before pickup.</p>
+          <p className="text-xs text-muted">Bids without an e-way bill are flagged for the dispatcher; loads above ₹50,000 need one before pickup.</p>
         )}
       </div>
     </Modal>

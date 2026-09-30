@@ -46,14 +46,14 @@ export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
 export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
 
 // Behind VendorLayout
-export const vendorPortal = page(() => import('@/pages/VendorPortalPage'))
+export const vendorLoads = page(() => import('@/pages/VendorLoadsPage'))
+export const vendorLoad = page(() => import('@/pages/VendorLoadPage'))
+export const vendorClaims = page(() => import('@/pages/VendorClaimsPage'))
 export const vendorCorridor = page(() => import('@/pages/VendorCorridorPage'))
 export const vendorOnboarding = page(() => import('@/pages/VendorOnboardingPage'))
 export const vendorDocuments = page(() => import('@/pages/VendorDocumentsPage'))
-export const vendorShipments = page(() => import('@/pages/VendorShipmentsPage'))
 export const vendorInvoices = page(() => import('@/pages/VendorInvoicesPage'))
 export const vendorShipmentRequest = page(() => import('@/pages/VendorShipmentRequestPage'))
-export const vendorTracking = page(() => import('@/pages/VendorTrackingPage'))
 
 // No shell (their own top-level route)
 export const driver = page(() => import('@/pages/DriverPage'))
@@ -94,10 +94,10 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/admin/audit': adminAudit.preload,
   '/admin/settings': adminSettings.preload,
   '/track': customerTracking.preload,
-  '/vendor': vendorPortal.preload,
-  '/vendor/corridor': vendorCorridor.preload,
-  '/vendor/shipments': vendorShipments.preload,
+  '/vendor/loads': vendorLoads.preload,
+  '/vendor/request': vendorShipmentRequest.preload,
+  '/vendor/return-trips': vendorCorridor.preload,
   '/vendor/invoices': vendorInvoices.preload,
-  '/vendor/tracking': vendorTracking.preload,
-  '/vendor/documents': vendorDocuments.preload,
+  '/vendor/claims': vendorClaims.preload,
+  '/vendor/company': vendorDocuments.preload,
 }

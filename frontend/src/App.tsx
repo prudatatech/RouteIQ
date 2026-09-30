@@ -17,7 +17,7 @@ import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
   backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
-  vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
+  vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 
@@ -59,12 +59,12 @@ const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
 const VehicleSharePage = vehicleShare.Component
 const BidsPage = bids.Component
-const VendorPortalPage = vendorPortal.Component
-const VendorTrackingPage = vendorTracking.Component
+const VendorLoadsPage = vendorLoads.Component
+const VendorLoadPage = vendorLoad.Component
+const VendorClaimsPage = vendorClaims.Component
 const VendorShipmentRequestPage = vendorShipmentRequest.Component
 const VendorOnboardingPage = vendorOnboarding.Component
 const VendorDocumentsPage = vendorDocuments.Component
-const VendorShipmentsPage = vendorShipments.Component
 const VendorCorridorPage = vendorCorridor.Component
 const RequestsPage = requests.Component
 
@@ -99,11 +99,24 @@ function MovedToRequests({ source }: { source: RequestSource }) {
   return <Navigate to={inboxLink(source, location.search)} state={location.state} replace />
 }
 
+/** An old vendor address to its new page, with the query kept. */
+function KeepQuery({ to }: { to: string }) {
+  const location = useLocation()
+  return <Navigate to={`${to}${location.search}`} replace />
+}
+
+/** The old My shipments page: `?open=` was a posted load or a bid. The load page sends a bid on to Return trips. */
+function OldShipmentsLink() {
+  const location = useLocation()
+  const open = new URLSearchParams(location.search).get('open')
+  return <Navigate to={open ? `/vendor/loads/${encodeURIComponent(open)}` : '/vendor/loads'} replace />
+}
+
 /** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
 function homeForRole(role: string | null): string | null {
   if (role === 'admin' || role === 'superadmin' || role === 'manager') return '/today'
   if (role === 'driver') return '/driver'
-  if (role === 'vendor') return '/vendor'
+  if (role === 'vendor') return '/vendor/loads'
   return null
 }
 
@@ -250,30 +263,14 @@ export default function App() {
               <DriverPage />
             </PrivateRoute></LazyRoute>
           } />
-          {/* Vendor Portal — home/discover and corridors are intentionally public (browsable
-              before login; corridor bidding itself redirects to sign-in when there's no
-              session). Everything that needs a vendor account is gated below. */}
+          {/* Vendor Portal. Return trips is public (browsable before login; bidding itself redirects to
+              sign-in when there's no session). Everything that needs a vendor account is gated below. */}
           <Route path="/vendor" element={<VendorLayout />}>
-            <Route index element={<VendorPortalPage />} />
-            <Route path="corridor" element={<VendorCorridorPage />} />
-            <Route path="onboarding" element={
+            <Route index element={<Navigate to="/vendor/loads" replace />} />
+            <Route path="loads" element={<VendorLoadsPage />} />
+            <Route path="loads/:id" element={
               <PrivateRoute allowedRoles={['vendor']}>
-                <VendorOnboardingPage />
-              </PrivateRoute>
-            } />
-            <Route path="documents" element={
-              <PrivateRoute allowedRoles={['vendor']}>
-                <VendorDocumentsPage />
-              </PrivateRoute>
-            } />
-            <Route path="shipments" element={
-              <PrivateRoute allowedRoles={['vendor']}>
-                <VendorShipmentsPage />
-              </PrivateRoute>
-            } />
-            <Route path="invoices" element={
-              <PrivateRoute allowedRoles={['vendor']}>
-                <VendorInvoicesPage />
+                <VendorLoadPage />
               </PrivateRoute>
             } />
             <Route path="request" element={
@@ -281,11 +278,32 @@ export default function App() {
                 <VendorShipmentRequestPage />
               </PrivateRoute>
             } />
-            <Route path="tracking" element={
+            <Route path="return-trips" element={<VendorCorridorPage />} />
+            <Route path="invoices" element={
               <PrivateRoute allowedRoles={['vendor']}>
-                <VendorTrackingPage />
+                <VendorInvoicesPage />
               </PrivateRoute>
             } />
+            <Route path="claims" element={
+              <PrivateRoute allowedRoles={['vendor']}>
+                <VendorClaimsPage />
+              </PrivateRoute>
+            } />
+            <Route path="company" element={
+              <PrivateRoute allowedRoles={['vendor']}>
+                <VendorDocumentsPage />
+              </PrivateRoute>
+            } />
+            <Route path="onboarding" element={
+              <PrivateRoute allowedRoles={['vendor']}>
+                <VendorOnboardingPage />
+              </PrivateRoute>
+            } />
+            {/* Old addresses keep working: bookmarks and notifications sent before the portal was rebuilt */}
+            <Route path="corridor" element={<KeepQuery to="/vendor/return-trips" />} />
+            <Route path="shipments" element={<OldShipmentsLink />} />
+            <Route path="documents" element={<KeepQuery to="/vendor/company" />} />
+            <Route path="tracking" element={<KeepQuery to="/vendor/loads" />} />
           </Route>
 
           <Route path="/vendor/login" element={<VendorLoginRedirect />} />

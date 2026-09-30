@@ -87,39 +87,46 @@ const STAFF: Record<string, Resolver> = {
   driver_action_rejected: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : cargoConsignment(d)),
 }
 
+/** A vendor's load has its own page; without the id the board (My loads) is the place to look. */
+const vendorLoad: Resolver = d => (str(d.request_id) ? `/vendor/loads/${encodeURIComponent(str(d.request_id)!)}` : '/vendor/loads')
+/** A bid's outcome opens the bid on Return trips. */
+const vendorBid: Resolver = d => (str(d.bid_id) ? `/vendor/return-trips?bid=${encodeURIComponent(str(d.bid_id)!)}` : '/vendor/return-trips')
+
 const VENDOR: Record<string, Resolver> = {
   // Loads they posted
-  request_approved: d => withOpen('/vendor/shipments', d.request_id),
-  request_rejected: d => withOpen('/vendor/shipments', d.request_id),
-  vehicle_assigned: d => withOpen('/vendor/shipments', d.request_id),
-  request_escalated: d => withOpen('/vendor/shipments', d.request_id),
-  request_assigned_partner: d => withOpen('/vendor/shipments', d.request_id),
-  request_completed: d => withOpen('/vendor/shipments', d.request_id),
-  load_picked_up: d => withOpen('/vendor/shipments', d.request_id),
-  load_in_transit: d => withOpen('/vendor/shipments', d.request_id),
+  request_approved: vendorLoad,
+  request_rejected: vendorLoad,
+  vehicle_assigned: vendorLoad,
+  request_escalated: vendorLoad,
+  request_assigned_partner: vendorLoad,
+  request_completed: vendorLoad,
+  load_picked_up: vendorLoad,
+  load_in_transit: vendorLoad,
   // KYC
-  kyc_approved: () => '/vendor/documents',
-  kyc_rejected: () => '/vendor/documents',
-  // Capacity bids
-  bid_accepted: d => withOpen('/vendor/shipments', d.bid_id),
-  bid_lost: d => withOpen('/vendor/shipments', d.bid_id),
-  bid_rejected: d => withOpen('/vendor/shipments', d.bid_id),
-  bid_expired: d => withOpen('/vendor/shipments', d.bid_id),
-  bid_reopened: d => withOpen('/vendor/shipments', d.bid_id),
-  passing_route: () => '/vendor/corridor',
-  return_trip_opened: () => '/vendor/corridor',
-  vendor_profile_incomplete: () => '/vendor/documents',
+  kyc_approved: () => '/vendor/company',
+  kyc_rejected: () => '/vendor/company',
+  // Return trips and bids. Winning a bid creates a load: open it, else the bid
+  bid_accepted: d => (str(d.shipment_id) ? `/vendor/loads/${encodeURIComponent(str(d.shipment_id)!)}` : vendorBid(d)),
+  bid_lost: vendorBid,
+  bid_rejected: vendorBid,
+  bid_expired: vendorBid,
+  bid_reopened: vendorBid,
+  passing_route: () => '/vendor/return-trips',
+  return_trip_opened: d => (str(d.window_id) ? `/vendor/return-trips?window=${encodeURIComponent(str(d.window_id)!)}` : '/vendor/return-trips'),
+  // A bid can't be awarded without a pickup location: it is set on the company page
+  vendor_profile_incomplete: () => '/vendor/company',
   // Money
-  invoice_issued: () => '/vendor/invoices',
-  invoice_paid: () => '/vendor/invoices',
-  // Their goods: moved, at a hub, partly delivered, returning, or a claim update
-  cargo_exception_opened: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_exception_resolved: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_transfer_completed: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_partial_delivery: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_rto_started: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_at_hub: d => withOpen('/vendor/shipments', d.request_id),
-  cargo_claim_update: d => withOpen('/vendor/shipments', d.request_id),
+  invoice_issued: d => withOpen('/vendor/invoices', d.invoice_id),
+  invoice_paid: d => withOpen('/vendor/invoices', d.invoice_id),
+  // Their goods: moved, at a hub, partly delivered, returning
+  cargo_exception_opened: vendorLoad,
+  cargo_exception_resolved: vendorLoad,
+  cargo_transfer_completed: vendorLoad,
+  cargo_partial_delivery: vendorLoad,
+  cargo_rto_started: vendorLoad,
+  cargo_at_hub: vendorLoad,
+  // A claim update opens that claim, else the load it is on
+  cargo_claim_update: d => (str(d.claim_id) ? withOpen('/vendor/claims', d.claim_id) : str(d.request_id) ? vendorLoad(d) : '/vendor/claims'),
   // 3PL partner
   tpl_offer: partnerPage('orders', 'offer_id'),
   tpl_offer_taken: partnerPage('orders'),

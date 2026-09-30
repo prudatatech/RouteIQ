@@ -388,7 +388,7 @@ export default function LoginPage() {
       <>New vendor? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create an account</button></>,
       <>Approved 3PL partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
       <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
-      <>Just looking? <Link className={linkClass} to="/vendor">Browse capacity without signing in</Link></>,
+      <>Just looking? <Link className={linkClass} to="/vendor/return-trips">Look at return trips without signing in</Link></>,
     )
   } else if (mode === 'sign-in') {
     otherOptions.push(
