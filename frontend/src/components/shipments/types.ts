@@ -5,7 +5,7 @@ export interface DeliveryPoint {
   address?: string | null
   latitude?: number | null
   longitude?: number | null
-  route_stops?: { routes?: { vehicle_id?: string | null; vehicles?: { plate_number?: string | null } | null } | null }[]
+  route_stops?: { routes?: { vehicle_id?: string | null; status?: string | null; vehicles?: { plate_number?: string | null } | null } | null }[]
 }
 
 export interface CapacityBidInfo {
@@ -78,6 +78,7 @@ export interface ShipmentRow {
   current_vehicle_id?: string | null
   eway_bill_ref?: string | null
   eway_part_b_required?: boolean | null
+  on_hold_reason?: string | null
 }
 
 /** A master's `lots_summary` in GET /shipments. */
@@ -122,4 +123,30 @@ export interface VehicleOption {
   distance_km?: number | null
   /** State of the assigned driver's licence: valid, expiring, expired or missing. */
   driver_licence_status?: 'valid' | 'expiring' | 'expired' | 'missing' | null
+}
+
+/** GET /shipments/:ref/overview: the shipment page's one read (backend-ts shipment-overview.service). */
+export interface ShipmentOverview {
+  /** `request` is a vendor's load request that has no load yet. */
+  kind: 'shipment' | 'manifest' | 'request'
+  code: string
+  shipment: ShipmentRow
+  requester: { kind: 'customer_booking' | 'vendor_load' | 'vendor_bid' | 'staff'; id: string | null; name: string | null; status: string | null }
+  trip: {
+    id: string
+    status: string
+    source: 'optimizer' | 'planner' | 'vendor_load' | 'assigned'
+    distance_km: number | null
+    stop_count: number
+    stops_done: number
+    this_stop: { position: number; status: string } | null
+  } | null
+  vehicle: { id: string; plate_number: string | null } | null
+  driver: { id: string; name: string | null } | null
+  master: { id: string; tracking_id: string } | null
+  problems: { id: string; code: string; type: string; status: string; open: boolean; sla_due_at: string | null }[]
+  transfers: { id: string; code: string; status: string }[]
+  claims: { id: string; code: string; status: string; claim_type: string | null }[]
+  invoice: { id: string; invoice_number: string | null; status: string; total: number | null } | null
+  price: number | null
 }

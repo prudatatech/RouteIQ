@@ -19,7 +19,7 @@ export const canCompleteRoute = (r: RouteStatusLike) => !r.is_manifest && r.stat
 export function completeBlockedReason(r: RouteStatusLike): string | null {
   const pending = (r.route_stops ?? []).filter(s => (s as { status?: string | null }).status === 'pending').length
   if (pending === 0) return null
-  return `${pending} ${pending === 1 ? 'stop is' : 'stops are'} still pending. Complete or fail ${pending === 1 ? 'it' : 'them'} first, or cancel the route.`
+  return `${pending} ${pending === 1 ? 'stop is' : 'stops are'} still pending. Complete or fail ${pending === 1 ? 'it' : 'them'} first, or cancel the trip.`
 }
 
 /** Dispatch (pending → active) and mark completed, each behind a confirmation. */
@@ -34,27 +34,27 @@ export function useRouteStatusActions() {
       queryClient.invalidateQueries({ queryKey: ['route', id] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
     },
-    onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to update route status'),
+    onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to update trip status'),
   })
 
   const dispatch = async (route: RouteStatusLike) => {
     const ok = await confirm({
-      title: 'Dispatch this route?',
-      message: 'The route becomes active, the vehicle is marked on route and its driver is notified.',
-      confirmLabel: 'Dispatch route',
+      title: 'Send this trip to the driver?',
+      message: 'The trip becomes active, the vehicle is marked on route and its driver is told, with a link to the trip.',
+      confirmLabel: 'Send to driver',
     })
-    if (ok) await mutation.mutateAsync({ id: route.id, status: 'active' }).then(() => toast.success('Route dispatched')).catch(() => undefined)
+    if (ok) await mutation.mutateAsync({ id: route.id, status: 'active' }).then(() => toast.success('Trip sent to the driver')).catch(() => undefined)
   }
 
   const complete = async (route: RouteStatusLike) => {
     const blocked = completeBlockedReason(route)
     if (blocked) { toast.error(blocked); return }
     const ok = await confirm({
-      title: 'Mark this route as completed?',
+      title: 'Mark this trip as completed?',
       message: 'The vehicle becomes available again.',
       confirmLabel: 'Mark completed',
     })
-    if (ok) await mutation.mutateAsync({ id: route.id, status: 'completed' }).then(() => toast.success('Route marked completed')).catch(() => undefined)
+    if (ok) await mutation.mutateAsync({ id: route.id, status: 'completed' }).then(() => toast.success('Trip marked completed')).catch(() => undefined)
   }
 
   return { dispatch, complete, isPending: mutation.isPending }

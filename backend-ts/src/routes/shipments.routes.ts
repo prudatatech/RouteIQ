@@ -17,6 +17,7 @@ import { sendError } from '../core/errors';
 import { rateDelivery } from '../services/driver-performance.service';
 import { getProofOfDelivery } from '../services/pod.service';
 import { isPlaceholderPlate } from '../core/vehicles';
+import { shipmentOverview } from '../services/shipment-overview.service';
 
 const router = Router();
 
@@ -107,6 +108,17 @@ router.get('/track/:tracking_id/route', requireAuth, rateLimitByUser('directions
     const geojsonCoords = decoded.map(coord => [coord[1], coord[0]]);
 
     res.json({ coordinates: geojsonCoords, raw_polyline: polyline, duration_seconds: durationSeconds });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /:ref/overview ─────────────────────────────────────
+// The shipment page: the shipment with its trip, vehicle, driver, requester, problems, transfers,
+// claims and invoice. `ref` is an id, a tracking id (RTX-…) or a load code (CM-…).
+router.get('/:ref/overview', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    res.json(await shipmentOverview(req.params.ref));
   } catch (e: any) {
     sendError(req, res, e);
   }

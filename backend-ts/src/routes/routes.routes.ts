@@ -107,6 +107,22 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
+    // Each stop names the shipment it delivers (its lot, when the drop belongs to one), so the trip page can link to it
+    const shipmentIds = new Set<string>();
+    const targetOf = (dp: any): string | null => dp?.lot_shipment_id ?? dp?.shipment_id ?? null;
+    for (const stop of (route as any).route_stops ?? []) {
+      const id = targetOf(stop.delivery_points);
+      if (id) shipmentIds.add(id);
+    }
+    if (shipmentIds.size > 0) {
+      const { data: shipments } = await supabase.from('shipments').select('id, tracking_id').in('id', [...shipmentIds]);
+      const byId = new Map((shipments ?? []).map((sh: any) => [sh.id, sh]));
+      for (const stop of (route as any).route_stops ?? []) {
+        const sh = byId.get(targetOf(stop.delivery_points) ?? '');
+        stop.shipment = sh ? { id: sh.id, tracking_id: sh.tracking_id } : null;
+      }
+    }
+
     res.json(route);
   } catch (e: any) {
     sendError(req, res, e);

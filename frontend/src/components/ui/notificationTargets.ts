@@ -28,9 +28,9 @@ const partnerPage = (tab: string, openKey?: string): Resolver => data => {
 
 /** A cargo notification opens its case, else its transfer or claim, else the consignment (docs/cargo-plan.md). */
 const cargoCase = (fallback: Resolver): Resolver => d => (str(d.exception_id) ? `/cargo/exceptions/${str(d.exception_id)}` : fallback(d))
-/** A shipment has its own page; a vendor load (manifest) opens in the shipments list. */
-const shipmentPage: Resolver = d => (str(d.shipment_id) ? `/shipments/${encodeURIComponent(str(d.shipment_id)!)}` : null)
-const cargoConsignment: Resolver = d => shipmentPage(d) ?? withOpen('/shipments', d.manifest_id)
+/** A shipment, lot or vendor load (manifest id or CM- code) has its own page. */
+const shipmentPath = (id: unknown) => (str(id) ? `/shipments/${encodeURIComponent(str(id)!)}` : '/shipments')
+const cargoConsignment: Resolver = d => shipmentPath(d.shipment_id ?? d.manifest_id)
 /** A person's page (People), optionally on a tab. */
 const personPage = (tab?: string): Resolver => d => {
   const id = str(d.user_id) ?? str(d.driver_id)
@@ -56,7 +56,7 @@ const STAFF: Record<string, Resolver> = {
   tpl_order_status: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
   tpl_order_accepted: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
   tpl_offer_declined: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
-  stop_failed: d => withOpen('/shipments', d.manifest_id),
+  stop_failed: d => shipmentPath(d.manifest_id),
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
   vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),
@@ -71,7 +71,7 @@ const STAFF: Record<string, Resolver> = {
     return ids.length === 1 ? `/admin/users/${encodeURIComponent(ids[0])}` : '/admin/users'
   },
   // A rated delivery opens its shipment
-  delivery_rated: d => shipmentPage(d) ?? '/shipments',
+  delivery_rated: d => shipmentPath(d.shipment_id),
   document_expiring: d => (str(d.user_id) ? `/admin/users/${str(d.user_id)}?tab=documents` : '/admin/users?tab=attention'),
   // Cargo custody
   cargo_exception_opened: cargoCase(() => '/cargo'),

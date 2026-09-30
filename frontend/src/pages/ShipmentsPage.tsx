@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Download, Plus } from 'lucide-react'
@@ -89,27 +89,19 @@ export default function ShipmentsPage() {
   const [editing, setEditing] = useState<ShipmentRow | null>(null)
   const [assigning, setAssigning] = useState<ShipmentRow | null>(null)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   const { data: shipments = [], isLoading, isError, refetch } = useQuery<ShipmentRow[]>({
     queryKey: ['shipments'],
     queryFn: () => shipmentsAPI.list() as Promise<ShipmentRow[]>,
   })
 
-  // Opened from a link elsewhere (e.g. global search or a notification): ?open=<id>
-  // selects the matching row and opens its drawer, then the param is dropped from the URL.
+  // Old links (?open=<id>) now go to the shipment's own page.
+  const openId = searchParams.get('open')
   useEffect(() => {
-    const openId = searchParams.get('open')
-    if (!openId || isLoading) return
-    const target = shipments.find(s => s.id === openId)
-    if (target) {
-      setSelectedId(openId)
-      // A lot opens with its master's lots showing
-      const parent = target.parent_shipment_id ?? target.parent_manifest_id
-      if (parent) setExpanded(prev => new Set(prev).add(parent))
-    }
-    setSearchParams(params => { params.delete('open'); return params }, { replace: true })
-  }, [searchParams, setSearchParams, shipments, isLoading])
+    if (openId) navigate(`/shipments/${encodeURIComponent(openId)}`, { replace: true })
+  }, [openId, navigate])
 
   // Keep the list current when shipments or cargo manifests change anywhere.
   useEffect(() => {

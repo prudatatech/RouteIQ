@@ -26,7 +26,7 @@ const LIST_LIMIT = 20
 const MESSAGE_THREADS_SHOWN = 5
 
 /** Where an unread thread takes staff: the route page, or the shipment's drawer. */
-const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : `/shipments?open=${t.shipment_id}`)
+const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : `/shipments/${encodeURIComponent(String(t.shipment_id))}`)
 
 /** Bell with an unread count and a realtime feed of the signed-in user's own notifications. Staff get
  * SOS, vendor requests, bids, KYC and 3PL activity (see docs/ux-plan-2.md, D2) and drivers' messages;

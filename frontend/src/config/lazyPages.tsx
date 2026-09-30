@@ -26,6 +26,8 @@ export const insights = page(() => import('@/pages/InsightsPage'))
 export const optimize = page(() => import('@/pages/OptimizePage'))
 export const routePlanner = page(() => import('@/pages/RoutePlannerPage'))
 export const shipments = page(() => import('@/pages/ShipmentsPage'))
+export const shipmentPage = page(() => import('@/pages/ShipmentPage'))
+export const dispatchWorkspace = page(() => import('@/pages/DispatchPage'))
 export const shipmentManifest = page(() => import('@/pages/ShipmentManifestPage'))
 export const emergency = page(() => import('@/pages/EmergencyPage'))
 export const cargo = page(() => import('@/pages/cargo/CargoPage'))
@@ -75,6 +77,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/routes': routes.preload,
   '/live-map': liveMap.preload,
   '/shipments': shipments.preload,
+  '/dispatch': dispatchWorkspace.preload,
   '/emergency': emergency.preload,
   '/cargo': cargo.preload,
   '/optimize': optimize.preload,

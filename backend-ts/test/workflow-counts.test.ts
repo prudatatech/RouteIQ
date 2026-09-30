@@ -152,11 +152,13 @@ describe('the optimizer', () => {
     expect(res.body.routes[0].status).toBe('pending');
     expect(supabaseMock.rows('vehicles')[0].status).toBe('available');
     expect(supabaseMock.rows('route_stops').map(s => s.sequence)).toEqual([1, 2]);
-    expect(supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1')).toHaveLength(1);
+    // The driver is told when the trip is sent, not when it is planned
+    expect(supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1')).toHaveLength(0);
     // Dispatching it later is the route service's job
     const { routeService } = await import('../src/services/route.service');
     await routeService.changeStatus(supabaseMock.rows('routes')[0].id, 'active');
     expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
+    expect(supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1').map(n => n.type)).toEqual(['route_activated']);
   });
 
   it('ignores a shipment that is already assigned', async () => {
