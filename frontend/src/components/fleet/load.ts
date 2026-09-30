@@ -24,7 +24,7 @@ export interface VehicleLoad {
   barPct: number
   band: LoadBand
   /** Which field the load came from; null when none did. */
-  source: 'weight' | 'declared' | 'free_space' | null
+  source: 'allocated' | 'weight' | 'declared' | 'free_space' | null
   /** Kilograms over capacity; 0 unless overloaded. */
   overKg: number
 }
@@ -34,6 +34,7 @@ interface LoadFields {
   current_load_kg?: number | null
   declared_load_percentage?: number | null
   available_capacity_kg?: number | null
+  allocated_load_kg?: number | null
 }
 
 export function bandFor(pct: number, known: boolean): LoadBand {
@@ -49,7 +50,10 @@ export function vehicleLoad(v: LoadFields): VehicleLoad {
   const capacityKg = Math.max(0, Number(v.capacity_kg ?? 0))
   let loadKg = 0
   let source: VehicleLoad['source'] = null
-  if (v.current_load_kg != null) {
+  if (v.allocated_load_kg != null) {
+    loadKg = Number(v.allocated_load_kg)
+    source = 'allocated'
+  } else if (v.current_load_kg != null) {
     loadKg = Number(v.current_load_kg)
     source = 'weight'
   } else if (v.declared_load_percentage != null) {
@@ -87,6 +91,7 @@ export const LOAD_BANDS: Record<LoadBand, { label: string; fill: string; text: s
 }
 
 export const SOURCE_LABELS: Record<NonNullable<VehicleLoad['source']>, string> = {
+  allocated: 'Assigned shipments',
   weight: 'Weight on board',
   declared: 'Declared by the driver',
   free_space: 'From free space',

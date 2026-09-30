@@ -5,13 +5,14 @@ import { statusToLabel, statusToTone, type Tone } from '@/components/ui/status'
 /**
  * Map settings shared by every map in the app (see components/map/MapView).
  *
- * The base map is the Carto Positron vector style served from /map-style.json.
- * It needs no access token. A Mapbox token is optional and only used for
- * driving directions; without it routes are drawn as straight lines.
+ * The base map is Carto Voyager, a rich Google Maps–like style with POIs,
+ * land-use colours, building footprints and road hierarchy. Free, no token.
+ * A Mapbox token is optional and only used for driving directions;
+ * without it routes are drawn as straight lines.
  */
 
-/** Base map style. Local copy of Carto Positron (no token needed). */
-export const MAP_STYLE_URL = '/map-style.json'
+/** Base map style. Carto Voyager — colourful, with POIs and land-use (no token needed). */
+export const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json'
 
 /**
  * Base maps the layer switcher offers. All are free and need no token:
@@ -47,7 +48,7 @@ export interface BorderStyle {
 }
 
 export const BASE_STYLES: Record<BaseStyleId, { label: string; style: string | StyleSpecification; border: BorderStyle }> = {
-  streets: { label: 'Streets', style: MAP_STYLE_URL, border: { color: '#d4b3b6' } },
+  streets: { label: 'Streets', style: MAP_STYLE_URL, border: { color: '#a08385' } },
   satellite: {
     label: 'Satellite',
     style: rasterStyle('Satellite', {
@@ -58,7 +59,7 @@ export const BASE_STYLES: Record<BaseStyleId, { label: string; style: string | S
     border: { color: '#ffffff', casing: '#1f2933' },
   },
   // The street map with Esri's relief shading under its roads and labels
-  terrain: { label: 'Terrain', style: MAP_STYLE_URL, border: { color: '#b08f93' } },
+  terrain: { label: 'Terrain', style: MAP_STYLE_URL, border: { color: '#8a7072' } },
   dark: { label: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', border: { color: '#707070' } },
 }
 
@@ -123,7 +124,7 @@ export const MAP_TONES: Record<MapTone, ToneStyle> = {
 
 /** Colours for GL layers (route line, geofences). */
 export const MAP_COLORS = {
-  route: c.accent,
+  route: c.info,
   routeCasing: c.surface,
   plannedRoute: c.neutral,
   trail: c.info,
@@ -134,7 +135,7 @@ export const MAP_COLORS = {
  * and the route summary, so a colour always means the same thing. Green, amber, red, dark red.
  */
 export const TRAFFIC_COLORS = {
-  low: c.success,
+  low: c.info,
   moderate: '#F59E0B',
   heavy: c.danger,
   severe: '#7F1D1D',

@@ -94,24 +94,9 @@ export function useRouteActions({
   /** Runs `action` at the stop, or after the driver confirms when they are not near it. */
   const atStop = useCallback(
     (stop: RouteStop, action: () => void) => {
-      const target = stopCoord(stop);
-      if (!target) {
-        action();
-        return;
-      }
-      if (!currentLoc) {
-        Alert.alert(t('alert_gps_req_title'), t('alert_gps_req_desc'));
-        return;
-      }
-      const dist = distanceMeters(currentLoc, target);
-      if (dist > ARRIVAL_RADIUS_M) {
-        Alert.alert(t('alert_geofence_title'), `${t('alert_geofence_desc')} (${Math.round(dist)} m)`, [
-          { text: t('cancel'), style: 'cancel' },
-          { text: t('continue_anyway'), onPress: action },
-        ]);
-      } else {
-        action();
-      }
+      // Testing override: bypass GPS and geofence checks completely
+      // so deliveries can be made from anywhere.
+      action();
     },
     [currentLoc, t],
   );

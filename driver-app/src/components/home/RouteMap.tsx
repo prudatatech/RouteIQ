@@ -100,7 +100,7 @@ export default function RouteMap({ route, currentLoc, line }: RouteMapProps) {
         initialRegion={initialRegion}
         accessibilityLabel={t('map_label')}
       >
-        {line.length > 1 && <Polyline coordinates={line} strokeColor={colors.accent} strokeWidth={5} />}
+        {line.length > 1 && <Polyline coordinates={line} strokeColor={colors.info} strokeWidth={5} />}
         {sortedStops(route).map((stop) => {
           const c = stopCoord(stop);
           if (!c) return null;

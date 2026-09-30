@@ -102,7 +102,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     trails,
     lines,
     baseStyle = 'streets',
-    traffic,
     clusters: clusteringOn = true,
     selectedId = null,
     onSelect,
@@ -125,6 +124,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const follow = props.follow ?? defaults.follow
   const controls = props.controls ?? defaults.controls
   const showLegend = props.showLegend ?? defaults.showLegend
+  // Traffic flow raster tiles are disabled until the backend is redeployed with
+  // the relative-delay tile style. Route-level congestion colouring still works.
+  const traffic = props.traffic ? { ...props.traffic, flow: false } : undefined
 
   const vehicles = useMemo(() => withValidPosition(props.vehicles), [props.vehicles])
   const points = useMemo(() => withValidPosition(props.points), [props.points])

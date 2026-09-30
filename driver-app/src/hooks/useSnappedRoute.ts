@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { LatLng, MyRouteResponse } from '../types/route';
-import { pendingStops, stopCoord } from '../utils/route';
+import { pendingStops, stopCoord, sortedStops } from '../utils/route';
 
 export interface MapPoint {
   latitude: number;
@@ -38,8 +38,9 @@ export function useSnappedRoute(routeData: MyRouteResponse | null, currentLoc: L
       .filter((c): c is LatLng => !!c)
       .map((c) => ({ latitude: c.lat, longitude: c.lng }));
 
+    const originLoc = currentLoc || stopCoord(sortedStops(route)[0]);
     const waypoints =
-      currentLoc && stops.length > 0 ? [{ latitude: currentLoc.lat, longitude: currentLoc.lng }, ...stops] : stops;
+      originLoc && stops.length > 0 ? [{ latitude: originLoc.lat, longitude: originLoc.lng }, ...stops] : stops;
 
     if (waypoints.length < 2) {
       setLine(waypoints);

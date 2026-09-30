@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin } from 'lucide-react'
-import { vehiclesAPI, telemetryWS } from '@/services/api'
+import { vehiclesAPI, telemetryWS, shipmentsAPI } from '@/services/api'
 import { formatRelative } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput,
@@ -117,11 +117,29 @@ export default function FleetPage() {
 
   // Every vehicle is loaded once and the filter tabs are applied here (matchesFilter), so the
   // tab counts, the rows and the summary all follow one rule.
-  const { data: vehicles = [], isLoading, error, refetch } = useQuery<Vehicle[]>({
+  const { data: rawVehicles = [], isLoading, error, refetch } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'fleet'],
     queryFn: fetchAllVehicles,
     refetchInterval: 15_000,
   })
+
+  const { data: shipments = [] } = useQuery({
+    queryKey: ['shipments'],
+    queryFn: () => shipmentsAPI.list() as Promise<any[]>,
+  })
+
+  const vehicles = useMemo(() => {
+    const allocated = new Map<string, number>()
+    for (const s of shipments) {
+      if (s.vehicle_id && ['assigned', 'picked_up', 'in_transit'].includes(s.status)) {
+        allocated.set(s.vehicle_id, (allocated.get(s.vehicle_id) || 0) + (s.total_weight_kg || 0))
+      }
+    }
+    return rawVehicles.map(v => ({
+      ...v,
+      allocated_load_kg: allocated.has(v.id) ? allocated.get(v.id) : null
+    }))
+  }, [rawVehicles, shipments])
 
   const { data: summary } = useQuery({
     queryKey: ['fleet-summary'],
@@ -307,8 +325,20 @@ export default function FleetPage() {
       sortValue: v => lastSeenAt(v)?.getTime() ?? 0,
       cell: v => {
         const pingAt = lastSeenAt(v)
-        if (isVehicleLive(v, liveMinutes, now)) return <StatusPill tone="success">Live</StatusPill>
-        return <span className="text-sm text-muted">{pingAt ? formatRelative(pingAt, now) : 'No GPS data'}</span>
+        const isLive = isVehicleLive(v, liveMinutes, now)
+        return (
+          <div className="space-y-1">
+            <div>
+              {isLive ? <StatusPill tone="success">Live</StatusPill> : <span className="text-sm text-muted">{pingAt ? formatRelative(pingAt, now) : 'No GPS data'}</span>}
+            </div>
+            {v.current_location_name && (
+              <div className="flex items-start gap-1 text-xs text-text" title={v.current_location_name}>
+                <MapPin size={12} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
+                <span className="line-clamp-2">{v.current_location_name}</span>
+              </div>
+            )}
+          </div>
+        )
       },
     },
     {
