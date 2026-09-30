@@ -6,7 +6,8 @@ import { Download } from 'lucide-react'
 import { vendorAPI } from '@/services/api'
 import { downloadInvoicePdf } from '@/services/vendorInvoicePdf'
 import { useVendorContext } from '@/components/vendor/vendorContext'
-import { daysSince, invoiceLoadId, loadPath, type VendorInvoice } from '@/components/vendor/loads'
+import HowToPay from '@/components/vendor/HowToPay'
+import { daysSince, invoiceLoadId, loadPath, overdueText, type VendorInvoice } from '@/components/vendor/loads'
 import {
   Alert, Button, buttonClasses, DataTable, EmptyState, Page, PageHeader, SearchInput, Stat, StatusPill, Tabs, useTabParam, type Column, type TabItem,
 } from '@/components/ui'
@@ -76,16 +77,13 @@ export default function VendorInvoicesPage() {
       },
     },
     {
-      key: 'issued', header: 'Issued', hideOnMobile: true, sortValue: i => i.issued_at,
-      cell: i => {
-        const age = isUnpaid(i) ? daysSince(i.issued_at, now) : null
-        return (
-          <span className="block">
-            {formatDate(i.issued_at)}
-            {age !== null && age > 0 && <span className="block text-xs text-warning">Unpaid for {age} {age === 1 ? 'day' : 'days'}</span>}
-          </span>
-        )
-      },
+      key: 'issued', header: 'Issued / due', hideOnMobile: true, sortValue: i => i.issued_at,
+      cell: i => (
+        <span className="block">
+          {formatDate(i.issued_at)}
+          {isUnpaid(i) && i.due_date && <span className="block text-xs text-muted">Due {formatDate(i.due_date)}</span>}
+        </span>
+      ),
     },
     {
       key: 'gst', header: 'GST', align: 'right', hideBelow: 'lg', sortValue: i => i.gst_amount,
@@ -97,6 +95,7 @@ export default function VendorInvoicesPage() {
       cell: i => (
         <span className="block">
           <StatusPill status={i.status} />
+          {isUnpaid(i) && overdueText(i) && <span className="mt-0.5 block text-xs font-medium text-danger">{overdueText(i)}</span>}
           {i.paid_at && <span className="mt-0.5 block text-xs text-muted">Paid {formatDate(i.paid_at)}</span>}
         </span>
       ),
@@ -150,6 +149,8 @@ export default function VendorInvoicesPage() {
           MargixIndia marks an invoice as paid once your payment is received. Quote the invoice number when you pay.
         </Alert>
       )}
+
+      {unpaid.length > 0 && <HowToPay invoiceNumber={unpaid.length === 1 ? unpaid[0].invoice_number : undefined} />}
 
       <Tabs tabs={tabs} value={filter} onChange={setFilter} label="Filter invoices" />
       <DataTable
