@@ -35,7 +35,7 @@ New `shipments.status` values, added with `ALTER TYPE … ADD VALUE IF NOT EXIST
 
 ### `cargo_manifest`
 
-The same holder, pieces and seal columns. Its status check is extended with `exception`, `on_hold`, `returning` and `returned`.
+The same holder, pieces and seal columns, plus `delivery_attempts`, `max_delivery_attempts`, `rto` and `on_hold_reason` (a vendor load can be refused and returned too). Its status check is extended with `exception`, `on_hold`, `returning` and `returned`. `cargo_manifest.current_vehicle_id` has no foreign key: the table already points at `vehicles` through `vehicle_id`, and a second key would make the existing `vehicles(...)` embeds ambiguous. The backend keeps the two in step.
 
 ### New tables
 
@@ -59,6 +59,7 @@ All new tables have RLS on. Staff (`public.is_staff()`) get full access. Reads f
 - owner_id, sla_due_at, escalation_count, last_escalated_at.
 - `resolution`: `transshipped`, `repaired_continue`, `moved_to_hub`, `returned`, `delivered_with_remarks`, `redelivered`, `written_off`, `claim_settled`, `no_action`.
 - resolution_note, resolved_by, resolved_at, created_by, created_at, updated_at.
+- `notes` jsonb, the case log: `[{at, by, role, kind: 'note'|'action', text}]`, written by `add_note` and by every action.
 
 **`cargo_exception_items`**: exception_id, shipment_id or manifest_id, pieces_affected, weight_affected_kg, condition, note.
 
@@ -95,8 +96,8 @@ out_for_delivery  → delivered, partially_delivered, exception, on_hold, return
 at_hub            → in_transit, out_for_delivery, on_hold, exception, returning, lost
 on_hold           → in_transit, at_hub, out_for_delivery, returning, exception, lost, (assigned|created if never picked up)
 exception         → assigned, picked_up, in_transit, out_for_delivery, at_hub, on_hold, returning, delivered, partially_delivered, cancelled (only if never picked up), lost
-partially_delivered → returning, out_for_delivery (re-attempt for the rest), delivered (rest accepted later)
-returning         → returned, at_hub, exception, lost
+partially_delivered → returning, out_for_delivery (re-attempt for the rest), delivered (rest accepted later), on_hold
+returning         → returned, at_hub, exception, lost, on_hold
 delivered, returned, lost, cancelled → (terminal)
 ```
 
@@ -106,7 +107,8 @@ delivered, returned, lost, cancelled → (terminal)
 
 Invariants, which the backend enforces and tests:
 - `pieces_delivered + pieces_short + pieces_returned ≤ pieces_total`. Damaged pieces are counted within delivered or returned.
-- The goods are on a vehicle (`current_holder = 'vehicle'`) exactly when the status is picked_up, in_transit, out_for_delivery, returning or on_hold-on-vehicle.
+- The goods are on a vehicle (`current_holder = 'vehicle'`) exactly when the status is picked_up, in_transit, out_for_delivery, returning, on_hold-on-vehicle, exception-on-vehicle (a failed delivery) or partially_delivered with pieces still on board. `lost` keeps the last known holder and vehicle for the investigation.
+- `partially_delivered → on_hold` and `returning → on_hold` are allowed, so goods on a vehicle that breaks down on those legs are held like any other.
 - **Never strand cargo.** Cancelling a route, releasing a vehicle's work (maintenance or SOS) or cancelling a manifest must not leave goods that are on the truck without a plan. The goods move to `on_hold` with an open `cargo_exceptions` case (type vehicle_breakdown or vehicle_accident), and `current_vehicle_id` stays set until a transfer, hub drop or repair-continue resolves the case.
 
 ## Backend API
@@ -121,23 +123,28 @@ The ref for a consignment is `{ shipment_id }` or `{ manifest_id }`.
 - Customers (for their own booking), vendors (for their own loads) and drivers (for their current vehicle) get a redacted version: no internal notes, no staff names.
 
 ### Custody events: driver and staff
-`POST /cargo/custody`, with body `{ ref, kind, pieces?, weight_kg?, condition?, seal_number?, photo_paths?, signature_path?, receiver_name?, otp?, lat?, lng?, notes?, pieces_refused?, pieces_short?, pieces_damaged?, reason? }`. What each kind does:
+`POST /cargo/custody`, with body `{ ref, kind, pieces?, weight_kg?, condition?, seal_number?, photo_paths?, signature_path?, receiver_name?, otp?, lat?, lng?, notes?, pieces_refused?, pieces_short?, pieces_damaged?, reason?, depot_id?, vehicle_id?, next_status? }`. `depot_id` is for hub_in and hub_out, `vehicle_id` lets staff name the vehicle of a pickup, hub departure or return pickup, and `next_status` (`in_transit` | `out_for_delivery`) is for hub_out. It answers 201 with `{ event, ref, status, current_holder, pieces: {total, delivered, damaged, short, returned, on_board}, exception_ids }`. Photos and signatures are uploaded first with `POST /cargo/custody/upload-url { ref | transfer_id, kind: photo|signature, content_type, size }`, which gives a signed URL into `cargo/<consignment or transfer id>/`. A route stop's own `pod/<stop_id>/` uploads are accepted too. What each kind does:
 - **pickup:** needs pieces, and sets pieces_total if it is empty. It sets holder=vehicle and status picked_up. A condition other than good, or pieces below what was booked, opens an exception.
-- **departed:** status in_transit.
+- **departed:** status in_transit. From exception or partially_delivered (goods on the vehicle) it is the re-attempt: status out_for_delivery.
 - **arrived_drop:** geofence distance in notes. This is informational and changes no status.
 - **delivery:** the full delivery. Needs receiver_name and a photo or signature, plus the OTP if `delivery_otp_required`. Sets status delivered and holder consignee.
 - **partial_delivery:** needs pieces (accepted), and pieces_refused and/or pieces_short. It sets status partially_delivered, updates the counters and opens a `shortage` or `refused` exception. The rest stays on the vehicle.
 - **refused / undelivered:** needs a reason (the existing complete-stop reasons plus `damaged_refused`). `delivery_attempts++`. At `max_delivery_attempts` it sets `rto=true`, status returning, and creates a return leg. Otherwise it opens an `undeliverable` exception with a re-attempt action.
-- **hub_in / hub_out:** needs depot_id (in `to_depot_id` / `from_depot_id`). Status at_hub, then in_transit or out_for_delivery.
+- **hub_in / hub_out:** needs depot_id (in `to_depot_id` / `from_depot_id`). Status at_hub, then in_transit or out_for_delivery (`next_status`), or returning for goods on a return. hub_out puts the remaining drops on the collecting vehicle's route.
 - **handover_out / handover_in:** only through a transfer (see below).
 - **inspection:** records a condition, photos and pieces, and opens damage, shortage or seal exceptions.
 - **hold / release_hold:** staff only.
 
-Drivers may post only for consignments on their current vehicle. `complete-stop` (the driver app today) keeps working: it calls the same service (completed = delivery, failed = undelivered).
+Drivers may post only for consignments on their current vehicle (before pickup: the vehicle planned to carry them). `complete-stop` (the driver app today) keeps working: it calls the same service (completed = delivery, failed = undelivered).
+- It also accepts the delivery sheet's optional `outcome` (`delivered` | `delivered_with_remarks` | `partial` | `refused` | `not_delivered`), `pieces`, `pieces_refused`, `pieces_short`, `pieces_damaged`, `condition`, `otp` and `photo_paths` (inside the stop's `pod/<stop_id>/` folder). With an outcome, the delivery evidence rules apply. Without one, the older shape keeps its rules (the receiver name and photo stay optional). The OTP is always checked when it is required.
+- Completing the return stop of goods being returned records the `return_delivery`.
+- complete-stop, verify-pod and 3PL order updates record the pickup first when the goods were never picked up (an implied pickup, noted on the event).
+- Staff may record a delivery with a verified OTP or a logged `reason` instead of a photo or signature.
 
 ### Delivery OTP
 - `POST /cargo/otp/send { ref }`, for staff or automatically at out_for_delivery when required. It generates a 6-digit code, stores the hash with a 24 h expiry, and notifies the consignee (in-app notification to the customer user, plus SMS if an SMS provider is configured). Rate limited.
-- The OTP is checked inside the `delivery` / `partial_delivery` custody events. After 5 wrong tries it is locked for 15 minutes.
+- The OTP is checked inside the `delivery` / `partial_delivery` custody events. After 5 wrong tries it is locked for 15 minutes. A wrong try answers 400 with `tries_left`, the lock 429, and an expired or missing code 409.
+- `otp/send` answers `{ expires_at, notified: { in_app, sms } }`. The code goes to the customer who booked. At most 5 codes per shipment an hour. Shipments only.
 
 ### Exceptions
 - `GET /cargo/exceptions?status=&type=&severity=&vehicle_id=&ref=&overdue=` lists cases with items and SLA.
@@ -157,7 +164,7 @@ Drivers may post only for consignments on their current vehicle. `complete-stop`
   - `raise_claim {claim_type, claimed_amount}`
   - `resolve {resolution, note}`
   - `add_note {note}`
-- `GET /cargo/exceptions/:id/relief-vehicles` returns candidate vehicles ranked by straight-line distance, then free capacity ≥ affected weight, then matching cargo types. Only operating and approved vehicles are included. Each has `{vehicle, distance_km, free_kg, eta_minutes?}`.
+- `GET /cargo/exceptions/:id/relief-vehicles` returns candidate vehicles ranked by straight-line distance, then free capacity ≥ affected weight, then matching cargo types. Only operating and approved vehicles are included. Each has `{vehicle, distance_km, free_kg, eta_minutes?}`, plus `fits` and `cargo_match`. The answer is `{ affected_kg, origin, vehicles }`, with distances rounded to 0.1 km and at most 25 vehicles.
 - Automatic creation happens from:
   - a serious accident or breakdown SOS on a vehicle holding cargo (`holdVehicleAfterSos`);
   - a failed stop;
@@ -191,7 +198,7 @@ Drivers may post only for consignments on their current vehicle. `complete-stop`
 
 ### Customer
 - `GET /customer/bookings/:id/cargo` returns where + timeline (redacted), the POD (signed URLs), open exception notices (type, a plain message, revised ETA) and the claim status.
-- `POST /customer/bookings/:id/confirm-receipt { rating (1–5), comment?, issue? }`. The rating goes to the existing shipment rating columns. `issue` opens a claim or dispute.
+- `POST /customer/bookings/:id/confirm-receipt { rating (1–5), comment?, issue? }`. The rating goes to the existing shipment rating columns. `issue` opens a claim or dispute. `issue` is `{ type: damage|shortage|loss|theft|delay, description, claimed_amount? }`. A delivery is rated once, and a customer rating leaves `driver_rated_by` empty (customers are not staff users).
 
 ### Driver
 - `GET /cargo/driver/on-board` returns what is on the driver's vehicle, with pieces and expected condition.
@@ -203,6 +210,48 @@ Drivers may post only for consignments on their current vehicle. `complete-stop`
 `cargo_exception_opened`, `cargo_exception_escalated`, `cargo_exception_resolved`, `cargo_transfer_planned`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub`, `cargo_delivery_otp`, `cargo_claim_update`, `driver_action_rejected`.
 
 Customers and vendors get plain-language messages, for example "Your goods were moved to another truck after a breakdown. New ETA 6:40 pm."
+
+## Backend implementation notes
+
+What the backend does where the contract above leaves a choice. These notes are part of the contract.
+
+- **Where the code is.** `backend-ts/src/services/cargo/` (consignment, custody, exception, transfer, hub, claim, otp, onboard, customer, replan, notify) and `routes/cargo-custody.routes.ts`, mounted under `/api/v1/cargo` next to `cargo.routes.ts`.
+- **Vendor loads.** In shipment terms, a load's `scheduled` is created or assigned, and `in_transit` covers picked up, in transit and out for delivery. `at_hub` is stored as `on_hold` with `current_holder = 'hub'`, `partially_delivered` as `exception`, and `lost` as `cancelled`. Loads have no `shipment_logs` (that table belongs to shipments), so their custody events are their record.
+- **Status PATCH.** `PATCH /shipments/:id` accepts `created`, `picked_up` (recorded as a custody pickup) and `cancelled`. A driver asking for anything else gets 403. Staff asking for a custody status get 409 with `use: 'cargo_custody'`.
+- **Stranding.**
+  - Goods on a vehicle that loses its work go `on_hold` on one open case per vehicle. A second trigger (the SOS, then the maintenance job) adds to that case and links the SOS alert and the job.
+  - The case type is `vehicle_accident` for an accident, `vehicle_breakdown` for a breakdown or tyre job, and `other` for a plain route or load cancel and a scheduled service.
+  - A case cannot be resolved while any of its goods is still on hold, and `release_hold` refuses goods on a vehicle that is not in service.
+  - A vendor load still with the consignor is cancelled as before.
+- **Transfers** move whole consignments: the pieces of each item equal what is on board.
+  - Shortage on completion is `pieces_planned − pieces_in`. Fewer out than planned, or fewer in than out, each open a shortage case.
+  - Completing a transfer of a case's goods resolves that case (`transshipped` or `moved_to_hub`).
+  - A driver sees the transfers of their own vehicle (`GET /cargo/transfers`, `GET /cargo/transfers/:id`).
+- **Refused or not delivered.** Each failed attempt sets `exception` and opens an `undeliverable` (or `refused`) case. The attempt that reaches `max_delivery_attempts` creates the return leg instead of a case:
+  - it sets `rto` and moves to `returning` (through `exception` when there is no direct move);
+  - the return leg is a delivery point of the shipment named "Return to …" at its origin, with a stop on the vehicle's open route. It becomes the shipment's final point.
+- **Case actions.**
+  - `transship` and `move_to_hub` take the goods of the case still on its vehicle, and answer `{ exception, transfer }`.
+  - `wait_for_repair` moves the SLA to `expected_at`.
+  - `reattempt` puts the failed drop back on the same vehicle's route and records `departed`.
+  - `deliver_with_remarks { receiver_name, note, condition?, pieces_damaged?, photo_paths?, otp? }` records the delivery and resolves the case.
+  - `write_off { pieces, note, ref? }` records `lost` pieces. The whole consignment becomes `lost` when nothing is left and nothing was delivered.
+  - `raise_claim { claim_type, claimed_amount, ref? }` answers `{ exception, claim }`.
+  - Every other action answers the case.
+- **SLA escalation** reminds staff when the SLA passes, then every 60 minutes, at most 6 times. **Delay cases** compare the straight-line ETA from the vehicle's position (40 km/h, road factor 1.3) with the stop's planned arrival.
+- **Claims.**
+  - A customer may also claim on a `partially_delivered` or `lost` shipment within the 7 days, and may leave `claimed_amount` for later.
+  - Staff claims start as `draft`; customer and vendor claims as `filed`. One open claim per type per consignment.
+  - A survey needs a surveyor, an approval an approved amount, and a settlement a settled amount.
+  - `GET /cargo/claims/:id` returns one claim with signed document links.
+- **Responses.**
+  - `where` also carries `code` and `on_hold_reason`. Every timeline event has a plain-words `summary`.
+  - The redacted view (customers, vendors, drivers) leaves out notes, the seal, who recorded it, the driver, the case id and the driver's name on the vehicle.
+  - `POST /telemetry/driver-ping/accept-route` answers `{ route_id, accepted }` and records `accepted` once per driver and consignment. `POST /cargo/driver/rejected-action` answers 201 `{ reported: true }`.
+  - `GET /customer/bookings/:id/cargo` answers 409 while the booking has no shipment. Its shape is `{ booking_id, shipment_id, tracking_id, where, timeline, pod, exceptions: [{id, type, title, message, opened_at, revised_eta}], claims, rating }`.
+  - `GET /cargo/hubs` lists depots with `consignments`, `pieces`, `weight_kg`, `oldest_since` and `oldest_age_hours`. Inventory items carry `pieces`, `since`, `age_hours`, `next_leg`, `rto` and `open_exceptions`.
+- **Bookings and dashboard.** A booking shows `in_transit` while its shipment is out for delivery, at a hub or returning. `GET /dashboard/shipment-counts` counts every status.
+- **Relationship names.** `db-ambiguous-relations.json` was extended by hand for the new keys. Regenerate it after applying the migration.
 
 ## UI surfaces
 
