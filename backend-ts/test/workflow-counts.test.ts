@@ -29,7 +29,10 @@ describe('shipment counts and deliveries include vendor loads', () => {
 
   it('counts scheduled loads as created and delivered or completed ones as delivered', async () => {
     const res = await request(app).get('/api/v1/dashboard/shipment-counts').set(admin());
-    expect(res.body.counts).toEqual({ created: 2, assigned: 1, picked_up: 0, in_transit: 1, delivered: 3, cancelled: 0, exception: 0 });
+    expect(res.body.counts).toEqual({
+      created: 2, assigned: 1, picked_up: 0, in_transit: 1, delivered: 3, cancelled: 0, exception: 0,
+      out_for_delivery: 0, at_hub: 0, partially_delivered: 0, on_hold: 0, returning: 0, returned: 0, lost: 0,
+    });
     expect(res.body.total).toBe(7);
   });
 

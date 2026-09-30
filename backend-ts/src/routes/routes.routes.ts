@@ -147,13 +147,13 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       if (newStatus !== 'cancelled') {
         throw new HttpError(409, 'A vendor load is started and delivered by its driver. From here it can only be cancelled.');
       }
-      const cancelled = await cancelManifest(manifest.id);
+      const cancelled = await cancelManifest(manifest.id, undefined, { id: req.user!.user_id, role: req.user!.role });
       const { data: veh } = manifest.vehicle_id ? await supabase.from('vehicles').select('status').eq('id', manifest.vehicle_id).maybeSingle() : { data: null };
-      res.json({ id: cancelled.id, status: cancelled.status, vehicle_status: veh?.status ?? null });
+      res.json({ id: cancelled.id, status: cancelled.status, vehicle_status: veh?.status ?? null, ...(cancelled.exception_id ? { exception_id: cancelled.exception_id } : {}) });
       return;
     }
 
-    const result = await routeService.changeStatus(req.params.route_id, newStatus);
+    const result = await routeService.changeStatus(req.params.route_id, newStatus, { actor: { id: req.user!.user_id, role: req.user!.role } });
     res.json({ id: result.id, status: result.status, vehicle_status: result.vehicle_status });
   } catch (e: any) {
     sendError(req, res, e);

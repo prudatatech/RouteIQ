@@ -14,11 +14,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
-import { InvoiceService } from '../services/invoice.service';
 import { notificationService } from '../services/notification.service';
 import {
   routeService, setOperatingVehicleStatus, holdVehicleAfterSos, manifestRouteStops, operatingStatusFor,
-  releaseVehicleLoad, vehicleHasOpenWork, OPEN_MANIFEST_STATUSES,
+  releaseVehicleLoad, OPEN_MANIFEST_STATUSES,
 } from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
 import { parseCoordinate } from '../core/validate';
@@ -30,7 +29,8 @@ import { transitionSos } from '../services/sos.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
 import { manifestParcelCode } from '../core/parcelCode';
-import { vendorService } from '../services/vendor.service';
+import { recordCustody, DELIVERY_FAILURE_REASONS, type CustodyInput } from '../services/cargo/custody.service';
+import { CONDITIONS, resolveRef } from '../services/cargo/consignment';
 
 const router = Router();
 
@@ -244,7 +244,7 @@ router.patch('/sos/:id/details', requireAuth, idempotent('sos-details'), async (
     }
     // A serious breakdown or accident takes the vehicle out of dispatch; it keeps reporting its position.
     const [alert] = data as any[];
-    await holdVehicleAfterSos(alert.vehicle_id, update.alert_type ?? alert.alert_type, update.severity ?? alert.severity);
+    await holdVehicleAfterSos(alert.vehicle_id, update.alert_type ?? alert.alert_type, update.severity ?? alert.severity, alert.id, { id: req.user!.user_id, role: req.user!.role });
     res.json({ success: true, id: req.params.id });
   } catch (e: any) {
     sendError(req, res, e);
@@ -701,6 +701,53 @@ router.post('/driver-ping/break', requireAuth, async (req: Request, res: Respons
   }
 });
 
+/** The consignments a route carries: its shipments (through its stops), or the vendor load itself. */
+async function routeConsignments(routeId: string): Promise<({ shipment_id: string } | { manifest_id: string })[]> {
+  const { data: manifest } = await supabase.from('cargo_manifest').select('id').eq('id', routeId).maybeSingle();
+  if (manifest) return [{ manifest_id: manifest.id }];
+  const { data: stops } = await supabase.from('route_stops').select('delivery_point_id').eq('route_id', routeId);
+  const pointIds = [...new Set((stops ?? []).map((s: any) => s.delivery_point_id).filter(Boolean))];
+  if (pointIds.length === 0) return [];
+  const { data: points } = await supabase.from('delivery_points').select('shipment_id').in('id', pointIds);
+  return [...new Set((points ?? []).map((p: any) => p.shipment_id).filter(Boolean))].map(id => ({ shipment_id: id as string }));
+}
+
+// ── POST /driver-ping/accept-route — the driver accepts a job ──
+// The server record of acceptance: an `accepted` custody event for each consignment on the route
+// (once per driver and consignment, so a resend from the offline queue records nothing new).
+router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route'), async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== 'driver') {
+      res.status(403).json({ detail: 'Only drivers accept routes' });
+      return;
+    }
+    const { route_id } = req.body ?? {};
+    if (typeof route_id !== 'string' || !route_id) {
+      res.status(400).json({ detail: 'route_id is required' });
+      return;
+    }
+    if (!(await canAccessRoute(req.user!, route_id))) {
+      res.status(403).json({ detail: 'Not authorized for this route' });
+      return;
+    }
+    const actor = { id: req.user!.user_id, role: req.user!.role };
+    let accepted = 0;
+    for (const ref of await routeConsignments(route_id)) {
+      const c = await resolveRef(ref);
+      if (['delivered', 'returned', 'lost', 'cancelled', 'completed'].includes(c.rawStatus)) continue;
+      const column = c.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
+      const { data: already } = await supabase
+        .from('cargo_custody_events').select('id').eq(column, c.id).eq('kind', 'accepted').eq('driver_id', actor.id).limit(1);
+      if (already && already.length > 0) continue;
+      await recordCustody(c, { kind: 'accepted', notes: `Accepted route ${route_id}` }, actor, { via: 'accept_route' });
+      accepted++;
+    }
+    res.json({ route_id, accepted });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
 // ── POST /driver-ping/start-route — Driver starts journey ──
 router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -731,6 +778,19 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       await routeService.changeStatus(route_id, 'active');
     }
 
+    // Goods already on board set off with the route: they are in transit from here
+    const actor = { id: req.user!.user_id, role: req.user!.role };
+    for (const ref of await routeConsignments(route_id)) {
+      try {
+        const c = await resolveRef(ref);
+        if (c.kind === 'shipment' && c.holder === 'vehicle' && c.status === 'picked_up') {
+          await recordCustody(c, { kind: 'departed', notes: 'Route started' }, actor, { via: 'start_route' });
+        }
+      } catch (e) {
+        console.error(`[telemetry] Departure of ${JSON.stringify(ref)} was not recorded:`, e);
+      }
+    }
+
     res.json({ success: true, status: 'active' });
   } catch (e: any) {
     sendError(req, res, e);
@@ -738,7 +798,6 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
 });
 
 // ── POST /driver-ping/complete-stop — Driver marks delivery complete ──
-const STOP_FAILURE_REASONS = ['customer_unavailable', 'address_unreachable', 'customer_refused', 'premises_closed', 'other'];
 const MAX_SIGNATURE_CHARS = 400_000;
 
 /**
@@ -764,6 +823,28 @@ async function completeRouteAfterLastStop(routeId: string): Promise<void> {
 /** The message a driver sees for a delivery dispatch has cancelled. */
 const CANCELLED_BY_DISPATCH = 'This delivery was cancelled by dispatch.';
 
+/**
+ * What a completed or failed stop means for the goods. The older request shape (status
+ * completed or failed) still works; the delivery sheet adds `outcome` and the counts.
+ */
+const STOP_OUTCOMES = ['delivered', 'delivered_with_remarks', 'partial', 'refused', 'not_delivered'] as const;
+type StopOutcome = typeof STOP_OUTCOMES[number];
+
+function outcomeKind(outcome: StopOutcome | undefined, status: 'completed' | 'failed'): 'delivery' | 'partial_delivery' | 'refused' | 'undelivered' {
+  if (outcome === 'partial') return 'partial_delivery';
+  if (outcome === 'refused') return 'refused';
+  if (outcome === 'not_delivered') return 'undelivered';
+  if (outcome === 'delivered' || outcome === 'delivered_with_remarks') return 'delivery';
+  return status === 'completed' ? 'delivery' : 'undelivered';
+}
+
+/** A whole number from the body, or undefined; a 400 for anything else. */
+function optionalCount(value: unknown, label: string): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100_000) throw new HttpError(400, `${label} must be a whole number`);
+  return value;
+}
+
 router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop'), async (req: Request, res: Response) => {
   try {
     if (req.user!.role !== 'driver') {
@@ -771,7 +852,16 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       return;
     }
 
-    const { stop_id, status = 'completed', photo_url, signature_url, signature_data, received_by } = req.body ?? {};
+    const { stop_id, photo_url, signature_url, signature_data, received_by } = req.body ?? {};
+    const outcome = req.body?.outcome as StopOutcome | undefined;
+    if (outcome !== undefined && !(STOP_OUTCOMES as readonly string[]).includes(outcome)) {
+      res.status(400).json({ detail: `outcome must be one of: ${STOP_OUTCOMES.join(', ')}` });
+      return;
+    }
+    // The outcome decides the stop's status when it is given; otherwise the older `status` field does
+    const status: 'completed' | 'failed' = outcome
+      ? (outcome === 'refused' || outcome === 'not_delivered' ? 'failed' : 'completed')
+      : (req.body?.status ?? 'completed');
     if (typeof stop_id !== 'string' || !stop_id) {
       res.status(400).json({ detail: 'stop_id is required' });
       return;
@@ -789,26 +879,61 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       return;
     }
     // Proof-of-delivery files must be ones this stop's signed upload URLs produced
-    for (const [field, value] of [['photo_url', photo_url], ['signature_url', signature_url]] as const) {
+    const photoPaths: string[] = Array.isArray(req.body?.photo_paths) ? req.body.photo_paths : [];
+    if (photoPaths.length > 10) {
+      res.status(400).json({ detail: 'At most 10 photos' });
+      return;
+    }
+    for (const [field, value] of [['photo_url', photo_url], ['signature_url', signature_url], ...photoPaths.map(p => ['photo_paths', p] as const)] as const) {
       if (value != null && !isPodPathFor(value, stop_id)) {
         res.status(400).json({ detail: `${field} is not an upload for this stop` });
         return;
       }
     }
-    const proofFiles = status === 'completed' ? { photo_url: photo_url ?? null, signature_url: signature_url ?? null } : {};
+    const allPhotos = [...(photo_url ? [photo_url as string] : []), ...photoPaths.filter(p => p !== photo_url)];
     const lat = parseCoordinate(req.body?.lat, 'lat', 90) ?? undefined;
     const lng = parseCoordinate(req.body?.lng, 'lng', 180) ?? undefined;
-    // Why a stop failed, kept in the shipment's tamper-evident log
+    // Why a stop failed, kept in the custody record and the shipment's tamper-evident log
     const { reason, note } = req.body;
-    if (reason !== undefined && !STOP_FAILURE_REASONS.includes(reason)) {
+    if (reason !== undefined && !(DELIVERY_FAILURE_REASONS as readonly string[]).includes(reason)) {
       res.status(400).json({ detail: 'Unknown reason' });
       return;
     }
-    const failureMetadata: Record<string, string | boolean> = {};
-    if (status === 'failed' && reason) {
-      failureMetadata.failure_reason = reason;
-      if (typeof note === 'string' && note.trim()) failureMetadata.failure_note = note.trim().slice(0, 300);
+    const condition = req.body?.condition ?? null;
+    if (condition !== null && !(CONDITIONS as readonly string[]).includes(condition)) {
+      res.status(400).json({ detail: `condition must be one of: ${CONDITIONS.join(', ')}` });
+      return;
     }
+    if (outcome === 'delivered_with_remarks' && (!condition || condition === 'good')) {
+      res.status(400).json({ detail: 'Choose the condition of the goods for a delivery with remarks' });
+      return;
+    }
+    const pieces = optionalCount(req.body?.pieces, 'pieces');
+    const piecesRefused = optionalCount(req.body?.pieces_refused, 'pieces_refused');
+    const piecesShort = optionalCount(req.body?.pieces_short, 'pieces_short');
+    const piecesDamaged = optionalCount(req.body?.pieces_damaged, 'pieces_damaged');
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp : null;
+    const noteText = typeof note === 'string' && note.trim() ? note.trim().slice(0, 300) : null;
+    const kind = outcomeKind(outcome, status);
+    const actor = { id: req.user!.user_id, role: req.user!.role };
+    const custodyInput: CustodyInput = {
+      kind,
+      pieces: pieces ?? null,
+      pieces_refused: piecesRefused ?? null,
+      pieces_short: piecesShort ?? null,
+      pieces_damaged: piecesDamaged ?? null,
+      condition,
+      otp,
+      photo_paths: status === 'completed' ? allPhotos : [],
+      signature_path: status === 'completed' ? signature_url ?? null : null,
+      receiver_name: received_by || null,
+      reason: kind === 'refused' || kind === 'undelivered' ? (reason ?? 'other') : (reason ?? null),
+      notes: noteText,
+      lat: lat ?? null,
+      lng: lng ?? null,
+    };
+    // The driver app's older shape (no outcome) keeps its evidence rules
+    const legacyEvidence = outcome === undefined;
 
     // Check for cargo manifest stops
     if (stop_id.endsWith('_pickup') || stop_id.endsWith('_drop')) {
@@ -822,8 +947,11 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       const { data: manifest } = await supabase.from('cargo_manifest').select('*').eq('id', manifestId).single();
       if (!manifest) { res.status(404).json({ detail: 'Manifest not found' }); return; }
 
-      // Vendor loads have no failed-stop state: dispatch decides what happens next
       if (status === 'failed') {
+        // A failed drop is an undelivered attempt: the load goes to exception and its case tells the vendor
+        if (!isPickup && ['in_transit', 'exception'].includes(manifest.status)) {
+          await recordCustody({ manifest_id: manifestId }, custodyInput, actor, { via: 'complete_stop', stopId: stop_id });
+        }
         await notificationService.notifyStaff(
           'Driver could not complete a stop',
           `A driver could not complete the ${isPickup ? 'pickup' : 'drop'} of a vendor load${reason ? ` (${String(reason).replace(/_/g, ' ')})` : ''}.`,
@@ -842,36 +970,14 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       let firstTime = false;
       if (manifest.status !== target) {
         if (!isPickup && manifest.status === 'scheduled') throw new HttpError(409, 'Complete the pickup before the drop.');
-        assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, target);
-        const { data: moved, error: moveErr } = await supabase
-          .from('cargo_manifest')
-          .update({
-            status: target,
-            ...(!isPickup && received_by ? { received_by } : {}),
-            ...(!isPickup && proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
-            ...(!isPickup && proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
-          })
-          .eq('id', manifestId)
-          .eq('status', manifest.status)
-          .select('id')
-          .maybeSingle();
-        if (moveErr) throw moveErr;
-        firstTime = Boolean(moved);
+        const result = await recordCustody(
+          { manifest_id: manifestId },
+          isPickup ? { kind: 'pickup', pieces: pieces ?? null, condition, seal_number: req.body?.seal_number ?? null, lat: lat ?? null, lng: lng ?? null, notes: noteText } : custodyInput,
+          actor,
+          { via: 'complete_stop', stopId: stop_id, legacyEvidence },
+        );
+        firstTime = !result.already;
       }
-
-      // The load's weight was put on the vehicle when the load was assigned to it, so the pickup
-      // moves nothing; the delivery takes it off again.
-      if (firstTime && !isPickup) {
-        await InvoiceService.onManifestDelivered(manifestId);
-        await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', manifest.vendor_request_id);
-        await releaseVehicleLoad(manifest.vehicle_id, Number(manifest.capacity_kg) || 0);
-        // Free the vehicle only if this was its last open load and it has no other active route
-        if (manifest.vehicle_id && !(await vehicleHasOpenWork(manifest.vehicle_id, { manifestId }))) {
-          await setOperatingVehicleStatus(manifest.vehicle_id, 'available');
-        }
-      }
-      // The vendor hears about their own load once per step (never throws)
-      if (firstTime) await vendorService.notifyVendorLoadEvent(manifestId, isPickup ? 'picked_up' : 'delivered');
 
       if (firstTime) {
         // Broadcast completion
@@ -943,6 +1049,45 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       throw new HttpError(409, `This stop is already ${current.status}.`);
     }
 
+    // If this delivery point is linked to a shipment, the goods are settled first (custody), so a
+    // delivery the rules refuse (a wrong OTP, a piece mismatch) leaves the stop untouched
+    const { data: dp } = await supabase
+      .from('delivery_points')
+      .select('shipment_id')
+      .eq('id', current.delivery_point_id)
+      .single();
+
+    if (!repeat && dp?.shipment_id) {
+      const parcelVerified = status === 'completed' ? await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id) : undefined;
+      const { data: goods } = await supabase.from('shipments').select('status').eq('id', dp.shipment_id).maybeSingle();
+      // Completing the return stop of goods being returned is the return delivery
+      const input: CustodyInput = goods?.status === 'returning' && status === 'completed'
+        ? { kind: 'return_delivery', pieces: pieces ?? null, receiver_name: received_by || null, photo_paths: allPhotos, signature_path: signature_url ?? null, lat: lat ?? null, lng: lng ?? null, notes: noteText }
+        : custodyInput;
+      try {
+        await recordCustody({ shipment_id: dp.shipment_id }, input, actor, {
+          via: 'complete_stop',
+          stopId: stop_id,
+          impliedPickup: true,
+          legacyEvidence,
+          logMetadata: {
+            ...(parcelVerified !== undefined ? { parcel_verified: parcelVerified } : {}),
+            ...(status === 'failed' && reason ? { failure_reason: reason } : {}),
+            ...(status === 'failed' && noteText ? { failure_note: noteText } : {}),
+            ...(status === 'completed' && signature_data ? { signature_captured: true } : {}),
+          },
+        });
+        if (status === 'completed' && typeof signature_data === 'string' && signature_data) {
+          await supabase.from('shipments').update({ signature_data }).eq('id', dp.shipment_id);
+        }
+      } catch (e) {
+        // The shipment was already settled another way (for example proof of delivery by
+        // dispatch); the stop itself is still recorded.
+        const settled = ['delivered', 'cancelled', 'returned', 'lost'].includes(String(goods?.status));
+        if (!(e instanceof HttpError && e.status === 409 && settled)) throw e;
+      }
+    }
+
     // Update route stop status, only while it is still pending
     let stop: { route_id: string; delivery_point_id: string } = current;
     if (!repeat) {
@@ -951,8 +1096,8 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         .update({
           status, // 'completed' or 'failed'
           ...(status === 'completed' ? { actual_arrival_at: new Date().toISOString() } : {}),
-          ...(proofFiles.photo_url ? { photo_url: proofFiles.photo_url } : {}),
-          ...(proofFiles.signature_url ? { signature_url: proofFiles.signature_url } : {}),
+          ...(status === 'completed' && allPhotos[0] ? { photo_url: allPhotos[0] } : {}),
+          ...(status === 'completed' && signature_url ? { signature_url } : {}),
         })
         .eq('id', stop_id)
         .eq('status', 'pending')
@@ -961,34 +1106,6 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       if (stopErr) throw stopErr;
       if (!claimed) throw new HttpError(409, 'This stop was just changed by someone else. Refresh and try again.');
       stop = claimed;
-    }
-
-    // If this delivery point is linked to a shipment, update the shipment too
-    const { data: dp } = await supabase
-      .from('delivery_points')
-      .select('shipment_id')
-      .eq('id', stop.delivery_point_id)
-      .single();
-
-    if (!repeat && dp?.shipment_id) {
-      if (status === 'completed') failureMetadata.parcel_verified = await wasDeliveryScanned(dp.shipment_id, req.user!.user_id, stop_id);
-      const { ShipmentService } = await import('../services/shipment.service');
-      try {
-        await ShipmentService.updateShipmentStatus(
-          dp.shipment_id,
-          status === 'completed' ? 'delivered' : 'exception',
-          lat, lng,
-          received_by || null,
-          signature_data || null,
-          { id: req.user!.user_id, role: req.user!.role },
-          failureMetadata,
-          proofFiles
-        );
-      } catch (e) {
-        // The shipment was already settled another way (for example proof of delivery by
-        // dispatch); the stop itself is still recorded.
-        if (!(e instanceof HttpError && e.status === 409)) throw e;
-      }
     }
 
     // Check if all stops on this route are now completed or failed
@@ -1002,9 +1119,11 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       // All stops done: the route completes through the shared status path
       if (!repeat) await completeRouteAfterLastStop(stop.route_id);
     } else if (!repeat && status === 'completed' && dp?.shipment_id && routeInfo?.vehicle_id) {
-      // Partial delivery: the delivered parcel comes off the truck (a failed one stays on it)
-      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg').eq('id', dp.shipment_id).maybeSingle();
-      await releaseVehicleLoad(routeInfo.vehicle_id, Number(shipment?.total_weight_kg) || 0);
+      // A delivery takes its goods off the truck (a failed or refused one stays on it)
+      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg, pieces_total, pieces_delivered').eq('id', dp.shipment_id).maybeSingle();
+      const weight = Number(shipment?.total_weight_kg) || 0;
+      const share = kind === 'partial_delivery' && Number(shipment?.pieces_total) > 0 ? (Number(shipment?.pieces_delivered) || 0) / Number(shipment!.pieces_total) : 1;
+      await releaseVehicleLoad(routeInfo.vehicle_id, Math.round(weight * share * 100) / 100);
     }
 
     // Tell dispatch a delivery failed, with what they need to follow it up

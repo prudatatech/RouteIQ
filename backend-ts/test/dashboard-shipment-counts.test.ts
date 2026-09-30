@@ -36,6 +36,7 @@ describe('GET /dashboard/shipment-counts', () => {
     expect(res.status).toBe(200);
     expect(res.body.counts).toEqual({
       created: 250, assigned: 0, picked_up: 1, in_transit: 2, delivered: 1, cancelled: 1, exception: 0,
+      out_for_delivery: 0, at_hub: 0, partially_delivered: 0, on_hold: 0, returning: 0, returned: 0, lost: 0,
     });
     expect(res.body.total).toBe(255);
   });

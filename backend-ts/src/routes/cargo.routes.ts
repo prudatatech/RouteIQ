@@ -11,11 +11,12 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { sendError, HttpError } from '../core/errors';
-import { ShipmentService } from '../services/shipment.service';
 import { logFallback, mlPost } from '../services/optimizer/ml-client';
 import { orderDropsInProcess } from '../services/optimizer/pooling';
 import { MapplsService } from '../services/mappls.service';
 import { resolveAlert } from '../services/alerts.service';
+import { idempotent } from '../core/idempotency';
+import { recordCustody } from '../services/cargo/custody.service';
 
 const router = Router();
 
@@ -402,12 +403,21 @@ router.post('/backhaul-match', requireAuth, requireRole(...STAFF_ROLES), async (
 });
 
 // ── POST /verify-pod — staff confirms a delivery ────────────
-router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+// Needs evidence: a photo (photo_paths, uploaded with /cargo/custody/upload-url), the delivery
+// OTP, or a written reason that is logged. Recorded as a custody delivery like any other.
+router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent('verify-pod'), async (req: Request, res: Response) => {
   try {
     const trackingId = typeof req.body.tracking_id === 'string' ? req.body.tracking_id.trim() : '';
     const recipientName = typeof req.body.recipient_name === 'string' ? req.body.recipient_name.trim() : '';
     if (!trackingId || !recipientName) {
       res.status(400).json({ detail: 'Tracking ID and recipient name are required' });
+      return;
+    }
+    const photoPaths = Array.isArray(req.body.photo_paths) ? req.body.photo_paths : [];
+    const otp = typeof req.body.otp === 'string' ? req.body.otp.trim() : '';
+    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+    if (photoPaths.length === 0 && !otp && reason.length < 3) {
+      res.status(400).json({ detail: 'Add evidence of the delivery: a photo, the delivery code, or a reason of at least 3 characters' });
       return;
     }
 
@@ -426,8 +436,15 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), async (req:
       return;
     }
 
-    const updated = await ShipmentService.updateShipmentStatus(shipment.id, 'delivered', null, null, recipientName);
-    if (!updated) throw new Error(`Failed to mark shipment ${shipment.id} delivered`);
+    await recordCustody(
+      { shipment_id: shipment.id },
+      {
+        kind: 'delivery', receiver_name: recipientName, photo_paths: photoPaths, otp: otp || null,
+        reason: reason || null, notes: reason ? `Proof of delivery confirmed by staff: ${reason}` : 'Proof of delivery confirmed by staff',
+      },
+      { id: req.user!.user_id, role: req.user!.role },
+      { via: 'verify_pod', impliedPickup: true },
+    );
 
     res.json({
       status: 'delivered',

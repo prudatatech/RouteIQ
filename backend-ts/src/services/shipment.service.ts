@@ -10,7 +10,7 @@ import { formatISTDate } from '../core/format';
 import { manifestParcelCode } from '../core/parcelCode';
 import { SecurityService } from './security.service';
 import { InvoiceService } from './invoice.service';
-import { OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertTransition } from '../core/transitions';
+import { OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertShipmentTransition, assertTransition } from '../core/transitions';
 import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { notificationService } from './notification.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
@@ -114,18 +114,17 @@ export async function markAssigned(
   route: { id: string },
   actor?: LogActor | null,
 ): Promise<void> {
-  if (shipment.status !== 'assigned') {
-    assertTransition(SHIPMENT_TRANSITIONS, 'shipment', shipment.status, 'assigned');
-    const { data: moved, error } = await supabase
-      .from('shipments')
-      .update({ status: 'assigned' })
-      .eq('id', shipment.id)
-      .eq('status', shipment.status)
-      .select('id')
-      .maybeSingle();
-    if (error) throw new Error(`Failed to assign shipment: ${error.message}`);
-    if (!moved) throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
-  }
+  if (shipment.status !== 'assigned') assertTransition(SHIPMENT_TRANSITIONS, 'shipment', shipment.status, 'assigned');
+  // The planned vehicle is the shipment's current vehicle (the goods stay with the consignor until pickup)
+  const { data: moved, error } = await supabase
+    .from('shipments')
+    .update({ status: 'assigned', current_vehicle_id: vehicle.id, current_depot_id: null })
+    .eq('id', shipment.id)
+    .eq('status', shipment.status)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to assign shipment: ${error.message}`);
+  if (!moved) throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
   await ShipmentService.recordShipmentLog(
     shipment.id, 'assigned', shipment.origin_lat, shipment.origin_lng,
     { vehicle_id: vehicle.id, route_id: route.id }, actor,
@@ -139,12 +138,26 @@ export async function markAssigned(
 }
 
 /**
+ * Why goods on a vehicle are being held: what took the vehicle's work away. Opens (or adds to)
+ * the cargo exception that holds them (exception.service holdCargoOnVehicle).
+ */
+export interface CargoHoldContext {
+  source: 'sos' | 'maintenance' | 'manual' | 'custody';
+  type: 'vehicle_breakdown' | 'vehicle_accident' | 'other';
+  reason: string;
+  sosAlertId?: string | null;
+  maintenanceJobId?: string | null;
+}
+
+/**
  * Called when a route is cancelled or deleted: its shipments that have not been picked up go
  * back to `created` (logged, the customer booking back to `confirmed`) and their stops on
- * that route are cancelled, so they can be assigned again. Shipments already picked up,
- * in transit, failed or delivered are left as they are. Returns the ids released.
+ * that route are cancelled, so they can be assigned again. Goods already on the vehicle are
+ * never stranded: they go on_hold with an open cargo exception and stay on the vehicle until a
+ * transfer, hub drop or repair resolves it (`hold` says why; a plain cancel by default).
+ * Failed-delivery and delivered shipments are otherwise left as they are. Returns the ids released.
  */
-export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActor | null): Promise<string[]> {
+export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActor | null, hold?: CargoHoldContext): Promise<string[]> {
   const { data: route } = await supabase.from('routes').select('vehicle_id').eq('id', routeId).maybeSingle();
   const { data: stops, error } = await supabase.from('route_stops').select('id, delivery_point_id, status').eq('route_id', routeId);
   if (error) throw new Error(`Failed to read the route's stops: ${error.message}`);
@@ -156,12 +169,22 @@ export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActo
   if (shipmentIds.length === 0) return [];
   const { data: shipments } = await supabase.from('shipments').select('id, status, origin_lat, origin_lng').in('id', shipmentIds);
 
+  if (route?.vehicle_id) {
+    const { holdCargoOnVehicle } = await import('./cargo/exception.service');
+    await holdCargoOnVehicle(
+      route.vehicle_id,
+      hold ?? { source: 'manual', type: 'other', reason: 'The route was cancelled while goods were on board.' },
+      actor ?? null,
+      { shipmentIds, manifestIds: [], routeId },
+    );
+  }
+
   const released: string[] = [];
   for (const shipment of shipments || []) {
     if (shipment.status !== 'assigned') continue;
     const { data: moved } = await supabase
       .from('shipments')
-      .update({ status: 'created' })
+      .update({ status: 'created', current_vehicle_id: null })
       .eq('id', shipment.id)
       .eq('status', 'assigned')
       .select('id')
@@ -290,7 +313,9 @@ export class ShipmentService {
   }
 
   /** Shipment statuses whose weight counts against the vehicle carrying them. */
-  static readonly LOAD_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'exception'] as const;
+  static readonly LOAD_STATUSES = [
+    'created', 'assigned', 'picked_up', 'in_transit', 'exception', 'out_for_delivery', 'on_hold', 'returning', 'partially_delivered',
+  ] as const;
 
   /**
    * Recalculates available capacity for a specific vehicle based on active shipments.
@@ -592,10 +617,22 @@ export class ShipmentService {
   static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new HttpError(404, 'Shipment not found');
-    if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new HttpError(400, 'Shipment has no delivery points');
-    if (['picked_up', 'in_transit', 'delivered', 'cancelled'].includes(String(shipment.status))) {
-      throw new HttpError(409, `This shipment is ${String(shipment.status).replace('_', ' ')} and can't be assigned to a vehicle.`);
+    const holder = (shipment as any).current_holder as string | undefined;
+    const status = String(shipment.status);
+    // Goods already on a vehicle or at a hub move by a custody action, never by re-assigning
+    if (holder === 'vehicle' || holder === 'hub' || ['picked_up', 'in_transit', 'out_for_delivery', 'returning', 'at_hub'].includes(status)) {
+      throw new HttpError(
+        409,
+        holder === 'hub' || status === 'at_hub'
+          ? 'These goods are at a hub. Send them on with a hub departure (hub out) on the vehicle that collects them.'
+          : 'These goods are already on a vehicle. To move them to another vehicle, plan a cargo transfer (Cargo, Transfers), or schedule a re-attempt from the cargo exception.',
+        { use: holder === 'hub' || status === 'at_hub' ? 'hub_out' : 'transfer' },
+      );
     }
+    if (['delivered', 'partially_delivered', 'returned', 'lost', 'cancelled'].includes(status)) {
+      throw new HttpError(409, `This shipment is ${status.replace(/_/g, ' ')} and can't be assigned to a vehicle.`);
+    }
+    if (!shipment.delivery_points || shipment.delivery_points.length === 0) throw new HttpError(400, 'Shipment has no delivery points');
     await ShipmentService.assertVehicleCanTake(
       vehicleId,
       Number(shipment.total_weight_kg) || 0,
@@ -1120,7 +1157,7 @@ export class ShipmentService {
   ): Promise<Shipment | null> {
     const { data: current, error: currentErr } = await supabase
       .from('shipments')
-      .select('status')
+      .select('status, current_holder')
       .eq('id', shipmentId)
       .maybeSingle();
     if (currentErr || !current) return null;
@@ -1128,9 +1165,12 @@ export class ShipmentService {
     // Asking for the status it already has succeeds without logging or billing twice;
     // anything else must follow the allowed transitions (delivered and cancelled are final).
     if (current.status === status) return ShipmentService.getShipment(shipmentId);
-    assertTransition(SHIPMENT_TRANSITIONS, 'shipment', String(current.status), status);
+    const holder = current.current_holder ?? (['picked_up', 'in_transit'].includes(String(current.status)) ? 'vehicle' : 'consignor');
+    assertShipmentTransition(String(current.status), status, { pickedUp: holder !== 'consignor' });
 
     const updateData: Record<string, any> = { status };
+    // Waiting for a vehicle again, or cancelled before pickup: no vehicle is planned any more
+    if (status === 'created' || status === 'cancelled') updateData.current_vehicle_id = null;
     if (receivedBy) updateData.received_by = receivedBy;
     if (signatureData) updateData.signature_data = signatureData;
     if (proofFiles?.photo_url) updateData.photo_url = proofFiles.photo_url;
@@ -1156,8 +1196,22 @@ export class ShipmentService {
       metadata.photo_captured = !!proofFiles?.photo_url;
     }
     await ShipmentService.recordShipmentLog(shipmentId, status, lat, lng, metadata, actor);
+    await ShipmentService.afterStatusChange(shipmentId, status, actor);
 
-    // Bill the delivery (complete-stop, status updates and verify-pod all end up here)
+    // Note: Automatic backhaul bidding was disabled in favor of Driver-triggered bidding.
+    // The driver will now trigger `openBackhaulWindow` from the driver app.
+
+    return ShipmentService.getShipment(shipmentId);
+  }
+
+  /**
+   * What follows any shipment status change, whichever path made it (a status update, a custody
+   * event): the delivery is billed, the customer's booking follows, and a cancelled, delivered or
+   * un-assigned shipment leaves its route (pending stops closed, the driver told) and the
+   * vehicles' free capacity is worked out again.
+   */
+  static async afterStatusChange(shipmentId: string, status: string, actor?: LogActor | null): Promise<void> {
+    // Bill the delivery (complete-stop, custody deliveries and verify-pod all end up here)
     if (status === 'delivered') await InvoiceService.onShipmentDelivered(shipmentId);
 
     // Keep a customer's booking (and their notifications) in step with the shipment
@@ -1168,18 +1222,11 @@ export class ShipmentService {
       console.error('Failed to update the customer booking:', e);
     }
 
-    // A cancelled, delivered or un-assigned shipment leaves its route: close its pending
-    // stops, tell the driver, and free the vehicle's capacity.
     const vehicles = await ShipmentService.closeRouteStops(shipmentId, status, actor);
     if (vehicles.size === 0) {
       for (const v of await vehiclesOnStopsOf(await ShipmentService.deliveryPointIds(shipmentId))) vehicles.add(v);
     }
     for (const vehicleId of vehicles) await ShipmentService.recalculateVehicleCapacity(vehicleId);
-
-    // Note: Automatic backhaul bidding was disabled in favor of Driver-triggered bidding.
-    // The driver will now trigger `openBackhaulWindow` from the driver app.
-
-    return ShipmentService.getShipment(shipmentId);
   }
 
   /**
@@ -1225,7 +1272,9 @@ export class ShipmentService {
   static readonly EDITABLE_FIELDS = ['priority', 'total_items', 'total_weight_kg', 'freight_charge'];
 
   /** Statuses past which a shipment has already moved and can no longer be deleted. */
-  private static readonly UNDELETABLE_STATUSES = ['picked_up', 'in_transit', 'delivered'];
+  private static readonly UNDELETABLE_STATUSES = [
+    'picked_up', 'in_transit', 'delivered', 'out_for_delivery', 'at_hub', 'partially_delivered', 'on_hold', 'returning', 'returned', 'lost',
+  ];
 
   /**
    * Delete a shipment and all related data.

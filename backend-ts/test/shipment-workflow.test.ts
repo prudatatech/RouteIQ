@@ -113,7 +113,8 @@ describe('confirming a customer booking', () => {
   it('invoices the delivery at the quoted price', async () => {
     await post(`/bookings/${BOOKING}/confirm`);
     const id = supabaseMock.rows('shipments')[0].id;
-    await ShipmentService.updateShipmentStatus(id, 'delivered', null, null, 'Ravi', null, { id: 'admin-1', role: 'admin' });
+    const { recordCustody } = await import('../src/services/cargo/custody.service');
+    await recordCustody({ shipment_id: id }, { kind: 'delivery', receiver_name: 'Ravi', reason: 'Confirmed on the phone' }, { id: 'admin-1', role: 'admin' }, { via: 'verify_pod', impliedPickup: true });
     expect(supabaseMock.rows('invoices')).toHaveLength(1);
     expect(supabaseMock.rows('invoices')[0]).toMatchObject({ shipment_id: id, amount: 2400, price_source: 'freight_charge' });
   });
@@ -280,11 +281,14 @@ describe('releaseShipmentsFromRoute', () => {
     customer_bookings: [bookingRow({ status: 'assigned', shipment_id: SHIPMENT, tracking_id: 'RTX-AAAA1111', vehicle_id: VEHICLE })],
   }));
 
-  it('sends assigned shipments back to created and leaves ones already moving alone', async () => {
+  it('sends assigned shipments back to created and holds goods already on board on a cargo case', async () => {
     const released = await releaseShipmentsFromRoute('route-1', { id: 'admin-1', role: 'admin' });
     expect(released).toEqual([SHIPMENT]);
     expect(one('shipments', SHIPMENT).status).toBe('created');
-    expect(one('shipments', 'ship-2').status).toBe('in_transit');
+    // Never stranded: the goods on the truck wait on hold, still on the vehicle, with an open case
+    expect(one('shipments', 'ship-2')).toMatchObject({ status: 'on_hold', current_holder: 'vehicle' });
+    expect(supabaseMock.rows('cargo_exceptions')).toHaveLength(1);
+    expect(supabaseMock.rows('cargo_exception_items')[0]).toMatchObject({ shipment_id: 'ship-2' });
     expect(supabaseMock.rows('shipment_logs').find(l => l.shipment_id === SHIPMENT && l.status === 'created')?.metadata_json).toMatchObject({ released_from_route: 'route-1' });
     expect(one('customer_bookings', BOOKING)).toMatchObject({ status: 'confirmed', vehicle_id: null });
     expect(notesFor(CUSTOMER).some(n => n.title === 'Finding you another vehicle')).toBe(true);
@@ -316,8 +320,8 @@ describe('staff cancel or deliver a shipment on a route', () => {
     expect(one('customer_bookings', BOOKING).status).toBe('cancelled');
   });
 
-  it('completes its stops when dispatch delivers it', async () => {
-    const res = await patch(`/shipments/${SHIPMENT}`, { status: 'delivered', received_by: 'Ravi' });
+  it('completes its stops when dispatch confirms the delivery', async () => {
+    const res = await post('/cargo/verify-pod', { tracking_id: 'RTX-AAAA1111', recipient_name: 'Ravi', reason: 'Confirmed on the phone' });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('route_stops').every(s => s.status === 'completed' && s.actual_arrival_at)).toBe(true);
     expect(one('routes', 'route-1').status).toBe('completed');

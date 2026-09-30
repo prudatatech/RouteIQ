@@ -127,6 +127,7 @@ describe('cancelling a vendor load', () => {
   });
 
   it('reopens the vendor request, restores the vehicle and tells the driver', async () => {
+    supabaseMock.rows('cargo_manifest')[0].status = 'scheduled';
     const res = await cancel();
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: 'm1', status: 'cancelled', vehicle_status: 'available' });
@@ -143,7 +144,23 @@ describe('cancelling a vendor load', () => {
     expect(vehicle().status).toBe('on_route');
   });
 
+  it('holds a load whose goods are on the truck on a cargo case instead of cancelling it', async () => {
+    const res = await cancel();
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: 'm1', status: 'on_hold' });
+    expect(res.body.exception_id).toBeTruthy();
+    expect(supabaseMock.rows('cargo_manifest')[0]).toMatchObject({ status: 'on_hold', current_holder: 'vehicle', current_vehicle_id: 'veh-1' });
+    // The request stays with this vehicle and the goods' weight stays on it until they are moved
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'assigned', assigned_vehicle_id: 'veh-1' });
+    expect(vehicle()).toMatchObject({ current_load_kg: 100 });
+    expect(supabaseMock.rows('cargo_exception_items')[0]).toMatchObject({ manifest_id: 'm1' });
+    // Asking again changes nothing
+    expect((await cancel()).body).toMatchObject({ status: 'on_hold' });
+    expect(supabaseMock.rows('cargo_exceptions')).toHaveLength(1);
+  });
+
   it('is repeatable, and a delivered load cannot be cancelled', async () => {
+    supabaseMock.rows('cargo_manifest')[0].status = 'scheduled';
     expect((await cancel()).status).toBe(200);
     expect((await cancel()).status).toBe(200);
     expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(1);

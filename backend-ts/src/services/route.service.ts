@@ -15,6 +15,7 @@ import { manifestParcelCode } from '../core/parcelCode';
 import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
 import { stampPlannedArrivals } from './driver-performance.service';
+import type { CargoHoldContext } from './shipment.service';
 
 /** Sets a vehicle's status unless it is in maintenance or archived (those are changed by staff only). */
 export async function setOperatingVehicleStatus(vehicleId: string | null | undefined, status: 'on_route' | 'available' | 'idle'): Promise<void> {
@@ -33,8 +34,16 @@ export const VEHICLE_DOWN_SOS_TYPES = ['breakdown', 'accident'] as const;
 /**
  * A serious breakdown or accident puts the vehicle in maintenance so it is not dispatched.
  * Position, heartbeat and telemetry from the driver keep being accepted (only the status is held).
+ * Goods on board are never stranded: they go on hold on a cargo case (vehicle_accident or
+ * vehicle_breakdown) linked to the SOS, and stay on the vehicle until staff plan them.
  */
-export async function holdVehicleAfterSos(vehicleId: string | null | undefined, alertType: unknown, severity: unknown): Promise<boolean> {
+export async function holdVehicleAfterSos(
+  vehicleId: string | null | undefined,
+  alertType: unknown,
+  severity: unknown,
+  sosAlertId?: string | null,
+  actor?: { id: string; role: string } | null,
+): Promise<boolean> {
   if (!vehicleId || severity !== 'serious' || !(VEHICLE_DOWN_SOS_TYPES as readonly string[]).includes(String(alertType))) return false;
   const { error } = await supabase
     .from('vehicles')
@@ -42,6 +51,13 @@ export async function holdVehicleAfterSos(vehicleId: string | null | undefined, 
     .eq('id', vehicleId)
     .in('status', [...OPERATING_VEHICLE_STATUSES]);
   if (error) throw new Error(`Failed to update vehicle: ${error.message}`);
+  const { holdCargoOnVehicle } = await import('./cargo/exception.service');
+  await holdCargoOnVehicle(vehicleId, {
+    source: 'sos',
+    type: alertType === 'accident' ? 'vehicle_accident' : 'vehicle_breakdown',
+    reason: `Serious ${String(alertType)} reported by SOS.`,
+    sosAlertId: sosAlertId ?? null,
+  }, actor ?? null);
   return true;
 }
 
@@ -158,6 +174,15 @@ export async function operatingStatusFor(vehicleId: string, current: string, opt
   return 'available';
 }
 
+/** True while goods are on the vehicle (held on a case, or waiting for a re-attempt). */
+export async function vehicleHoldsCargo(vehicleId: string): Promise<boolean> {
+  const [ships, loads] = await Promise.all([
+    supabase.from('shipments').select('id').eq('current_vehicle_id', vehicleId).eq('current_holder', 'vehicle').limit(1),
+    supabase.from('cargo_manifest').select('id').eq('current_vehicle_id', vehicleId).eq('current_holder', 'vehicle').limit(1),
+  ]);
+  return (ships.data?.length ?? 0) > 0 || (loads.data?.length ?? 0) > 0;
+}
+
 /** Empties a vehicle's recorded load. Only for a vehicle with no other work. */
 export async function resetVehicleLoad(vehicleId: string): Promise<void> {
   const { data: veh } = await supabase.from('vehicles').select('capacity_kg').eq('id', vehicleId).maybeSingle();
@@ -185,16 +210,39 @@ export async function releaseVehicleLoad(vehicleId: string | null | undefined, w
  * Dispatch cancels a vendor load. The vendor's request goes back to approved so it can be
  * assigned again, the vehicle gets its capacity back (and is freed if it has nothing else to
  * do) and the driver is told. Cancelling one already cancelled succeeds without doing anything.
+ *
+ * Goods already on the truck are never stranded by a cancel: the load goes on_hold on a cargo
+ * case instead (`hold` says why), keeps its vehicle, and staff plan a transfer, hub drop or
+ * return. Returns the status the load ended in and, then, the case.
  */
-export async function cancelManifest(manifestId: string): Promise<{ id: string; status: string; changed: boolean }> {
+export async function cancelManifest(
+  manifestId: string,
+  hold?: CargoHoldContext,
+  actor?: { id: string; role: string } | null,
+): Promise<{ id: string; status: string; changed: boolean; exception_id?: string }> {
   const { data: manifest, error } = await supabase
     .from('cargo_manifest')
-    .select('id, status, vehicle_id, vendor_request_id, capacity_kg, pickup_location, drop_location')
+    .select('id, status, vehicle_id, vendor_request_id, capacity_kg, pickup_location, drop_location, current_holder, current_vehicle_id')
     .eq('id', manifestId)
     .maybeSingle();
   if (error) throw new Error(`Failed to load the load: ${error.message}`);
   if (!manifest) throw new HttpError(404, 'Load not found');
   if (manifest.status === 'cancelled') return { id: manifest.id, status: 'cancelled', changed: false };
+
+  const onBoard = manifest.current_holder === 'vehicle' || (manifest.current_holder == null && manifest.status === 'in_transit');
+  if (onBoard) {
+    if (manifest.status === 'on_hold') return { id: manifest.id, status: 'on_hold', changed: false };
+    const vehicleId = manifest.current_vehicle_id ?? manifest.vehicle_id;
+    if (!vehicleId) throw new HttpError(409, 'This load is on a vehicle that is not recorded. Record where the goods are first.');
+    const { holdCargoOnVehicle } = await import('./cargo/exception.service');
+    const held = await holdCargoOnVehicle(
+      vehicleId,
+      hold ?? { source: 'manual', type: 'other', reason: `The load ${manifestParcelCode(manifest.id)} was cancelled while its goods were on board.` },
+      actor ?? null,
+      { shipmentIds: [], manifestIds: [manifest.id] },
+    );
+    return { id: manifest.id, status: 'on_hold', changed: true, exception_id: held?.exception_id };
+  }
   assertTransition(CARGO_MANIFEST_TRANSITIONS, 'load', manifest.status, 'cancelled');
 
   const { data: moved, error: moveErr } = await supabase
@@ -256,7 +304,7 @@ export const routeService = {
    * exception is a route that is active but was never started (it was created
    * that way): asking for active starts it.
    */
-  async changeStatus(routeId: string, next: string): Promise<RouteStatusChange> {
+  async changeStatus(routeId: string, next: string, opts: { cargoHold?: CargoHoldContext; actor?: { id: string; role: string } | null } = {}): Promise<RouteStatusChange> {
     const { data: route, error } = await supabase
       .from('routes')
       .select('id, status, vehicle_id, started_at')
@@ -316,7 +364,7 @@ export const routeService = {
       if (next === 'cancelled') {
         // Shipments not yet picked up go back to the queue so they can be planned again
         const { releaseShipmentsFromRoute } = await import('./shipment.service');
-        await releaseShipmentsFromRoute(route.id);
+        await releaseShipmentsFromRoute(route.id, opts.actor ?? null, opts.cargoHold);
         if (vehicle?.driver_id && route.status === 'active') {
           try {
             await notificationService.sendNotification(
@@ -331,8 +379,8 @@ export const routeService = {
           }
         }
       }
-      // Free the vehicle only when this was its last running route or load
-      if (!(await vehicleHasOpenWork(route.vehicle_id, { routeId: route.id }))) {
+      // Free the vehicle only when this was its last running route or load, and no goods wait on it
+      if (!(await vehicleHasOpenWork(route.vehicle_id, { routeId: route.id })) && !(await vehicleHoldsCargo(route.vehicle_id))) {
         await setOperatingVehicleStatus(route.vehicle_id, 'available');
         await resetVehicleLoad(route.vehicle_id);
       }

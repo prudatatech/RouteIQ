@@ -33,7 +33,9 @@ function baseFixtures(extra: Record<string, any[]> = {}) {
   };
 }
 
-const markDelivered = (id: string) => request(app).patch(`/api/v1/shipments/${id}`).set(admin()).send({ status: 'delivered', received_by: 'R. Sharma' });
+// Staff record a delivery as a custody event (a raw status PATCH to delivered is refused); a logged reason stands in for the photo
+const markDelivered = (id: string) => request(app).post('/api/v1/cargo/custody').set(admin())
+  .send({ ref: `RTX-${id.toUpperCase()}`, kind: 'delivery', receiver_name: 'R. Sharma', reason: 'Receiver confirmed on the phone' });
 
 describe('invoice on delivery', () => {
   beforeEach(() => {
@@ -49,7 +51,7 @@ describe('invoice on delivery', () => {
 
   it('creates an invoice from the accepted bid, with GST and a month-based number', async () => {
     const res = await markDelivered('s1');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const [inv] = supabaseMock.rows('invoices');
     expect(inv).toMatchObject({ shipment_id: 's1', vendor_id: 'vendor-1', amount: 12500, gst_rate: 12, gst_amount: 1500, total: 14000, status: 'issued', price_source: 'bid' });
     const month = TODAY.slice(0, 7).replace('-', '');
@@ -70,8 +72,8 @@ describe('invoice on delivery', () => {
   });
 
   it('creates no invoice when there is no price, and the delivery still succeeds', async () => {
-    expect((await markDelivered('s2')).status).toBe(200);
-    expect((await markDelivered('s3')).status).toBe(200);
+    expect((await markDelivered('s2')).status).toBe(201);
+    expect((await markDelivered('s3')).status).toBe(201);
     expect(supabaseMock.rows('invoices')).toHaveLength(0);
   });
 
@@ -93,7 +95,7 @@ describe('invoice on delivery', () => {
   });
 
   it('invoices through verify-pod', async () => {
-    const res = await request(app).post('/api/v1/cargo/verify-pod').set(admin()).send({ tracking_id: 'RTX-S1', recipient_name: 'R. Sharma' });
+    const res = await request(app).post('/api/v1/cargo/verify-pod').set(admin()).send({ tracking_id: 'RTX-S1', recipient_name: 'R. Sharma', reason: 'Receiver confirmed on the phone' });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('invoices')).toHaveLength(1);
   });
