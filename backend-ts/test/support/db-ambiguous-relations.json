@@ -1,7 +1,13 @@
 [
     "capacity_bids|capacity_windows",
+    "cargo_custody_events|depots",
+    "cargo_custody_events|users",
+    "cargo_custody_events|vehicles",
+    "cargo_exceptions|users",
+    "cargo_transfers|vehicles",
     "driver_vehicle_assignments|users",
     "shipments|users",
+    "shipments|vehicles",
     "user_activity|users",
     "user_documents|users",
     "user_notes|users",

@@ -200,7 +200,7 @@ export interface MaintenanceAlert {
 export interface Shipment {
   id: string;
   tracking_id: string;
-  status: 'created' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
+  status: 'created' | 'assigned' | 'picked_up' | 'in_transit' | 'out_for_delivery' | 'at_hub' | 'partially_delivered' | 'on_hold' | 'exception' | 'returning' | 'returned' | 'lost' | 'delivered' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'critical';
   origin_name: string | null;
   origin_address: string | null;

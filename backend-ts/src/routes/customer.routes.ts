@@ -8,6 +8,8 @@ import { HttpError, sendError } from '../core/errors';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { computeQuote, isTodayOrLater } from '../services/customer-booking.service';
 import { cancelBooking, createBooking, getCustomerBooking, listCustomerBookings } from '../services/customer-bookings.service';
+import { confirmReceipt, customerCargo } from '../services/cargo/customer.service';
+import { idempotent } from '../core/idempotency';
 
 const router = Router();
 router.use(requireAuth, requireRole('customer'));
@@ -85,6 +87,24 @@ router.get('/bookings', async (req: Request, res: Response) => {
 router.get('/bookings/:id', async (req: Request, res: Response) => {
   try {
     res.json(await getCustomerBooking(req.user!.user_id, bookingId(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /customer/bookings/:id/cargo — where the goods are, timeline, POD, notices, claims ──
+router.get('/bookings/:id/cargo', async (req: Request, res: Response) => {
+  try {
+    res.json(await customerCargo(req.user!.user_id, bookingId(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── POST /customer/bookings/:id/confirm-receipt — rate the delivery, optionally report a problem ──
+router.post('/bookings/:id/confirm-receipt', idempotent('customer-confirm-receipt'), async (req: Request, res: Response) => {
+  try {
+    res.json(await confirmReceipt(req.user!.user_id, bookingId(req), req.body ?? {}));
   } catch (e) {
     sendError(req, res, e);
   }

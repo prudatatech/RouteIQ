@@ -626,8 +626,21 @@ export const tplNetworkService = {
     // Keep the load in step
     try {
       if (order.source_type === 'shipment' && order.shipment_id) {
-        await ShipmentService.updateShipmentStatus(order.shipment_id, next, null, null, next === 'delivered' ? note : null, null,
-          { id: partner.id, role: 'vendor' }, { tpl_order_id: orderId, tpl_partner: partner.company_name });
+        // The partner's truck is not one of ours: the steps go through custody with the partner named
+        const { recordCustody } = await import('./cargo/custody.service');
+        const by = `3PL partner ${partner.company_name}`;
+        const log = { tpl_order_id: orderId, tpl_partner: partner.company_name };
+        const { data: goods } = await supabase.from('shipments').select('status, current_holder').eq('id', order.shipment_id).maybeSingle();
+        const pickedUp = !!goods && (goods.current_holder ? goods.current_holder !== 'consignor' : !['created', 'assigned'].includes(String(goods.status)));
+        if (!pickedUp) {
+          await recordCustody({ shipment_id: order.shipment_id }, { kind: 'pickup', notes: by }, null, { via: 'tpl', logMetadata: log });
+        }
+        if (next === 'in_transit') {
+          await recordCustody({ shipment_id: order.shipment_id }, { kind: 'departed', notes: by }, null, { via: 'tpl', logMetadata: log });
+        }
+        if (next === 'delivered') {
+          await recordCustody({ shipment_id: order.shipment_id }, { kind: 'delivery', receiver_name: note, notes: `${by}: ${note}` }, null, { via: 'tpl', legacyEvidence: true, logMetadata: log });
+        }
       }
       if (order.source_type === 'request' && order.request_id) {
         if (next === 'delivered') {

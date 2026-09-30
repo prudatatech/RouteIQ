@@ -320,11 +320,20 @@ describe('PATCH /shipments/:id', () => {
   const patch = (body: Record<string, unknown>, auth = staff()) =>
     request(app).patch('/api/v1/shipments/ship-1').set(auth).send(body);
 
-  it('follows the shipment lifecycle', async () => {
+  const custody = (body: Record<string, unknown>, auth = staff()) =>
+    request(app).post('/api/v1/cargo/custody').set(auth).send({ ref: 'RTX-AAAAAA', ...body });
+
+  it('picks up through PATCH, and leaves every later move to the custody events', async () => {
     expect((await patch({ status: 'picked_up' })).status).toBe(200);
-    expect((await patch({ status: 'in_transit' })).status).toBe(200);
-    expect((await patch({ status: 'delivered', received_by: 'R. Sharma' })).status).toBe(200);
-    expect(supabaseMock.rows('shipments')[0].status).toBe('delivered');
+    expect(supabaseMock.rows('shipments')[0]).toMatchObject({ status: 'picked_up', current_holder: 'vehicle', current_vehicle_id: 'veh-1' });
+    for (const status of ['in_transit', 'delivered', 'out_for_delivery', 'at_hub', 'on_hold', 'returned', 'lost']) {
+      const res = await patch({ status, received_by: 'R. Sharma' });
+      expect(res.status).toBe(409);
+      expect(res.body.use).toBe('cargo_custody');
+    }
+    expect((await custody({ kind: 'departed' })).status).toBe(201);
+    expect((await custody({ kind: 'delivery', receiver_name: 'R. Sharma', reason: 'Confirmed on the phone' })).status).toBe(201);
+    expect(supabaseMock.rows('shipments')[0]).toMatchObject({ status: 'delivered', current_holder: 'consignee', current_vehicle_id: null });
   });
 
   it('will not move a delivered or cancelled shipment', async () => {
@@ -341,11 +350,13 @@ describe('PATCH /shipments/:id', () => {
     expect((await patch({ status: 'cancelled' })).status).toBe(409);
   });
 
-  it('does not bill twice when a delivered shipment is marked delivered again', async () => {
-    await patch({ status: 'delivered', received_by: 'A' });
+  it('does not bill or log twice when a delivered shipment is delivered again', async () => {
+    reset({ shipments: [{ id: 'ship-1', status: 'in_transit', total_items: 1, total_weight_kg: 10, tracking_id: 'RTX-AAAAAA', freight_charge: 500 }] });
+    expect((await custody({ kind: 'delivery', receiver_name: 'A', reason: 'Confirmed on the phone' })).status).toBe(201);
     const logs = supabaseMock.writes('shipment_logs').length;
-    expect((await patch({ status: 'delivered', received_by: 'A' })).status).toBe(200);
+    expect((await custody({ kind: 'delivery', receiver_name: 'A', reason: 'Confirmed on the phone' })).status).toBe(409);
     expect(supabaseMock.writes('shipment_logs')).toHaveLength(logs);
+    expect(supabaseMock.rows('invoices')).toHaveLength(1);
   });
 
   it('refuses unknown statuses, vendors, and cancelling by a driver', async () => {
@@ -356,10 +367,13 @@ describe('PATCH /shipments/:id', () => {
     expect(supabaseMock.rows('shipments')[0].status).toBe('created');
   });
 
-  it('needs a receiver name when a driver marks it delivered', async () => {
-    reset({ shipments: [{ id: 'ship-1', status: 'in_transit' }] });
-    expect((await patch({ status: 'delivered' }, driverAuth())).status).toBe(400);
-    expect((await patch({ status: 'delivered', received_by: 'R. Sharma' }, driverAuth())).status).toBe(200);
+  it('sends a driver to the delivery sheet, which needs a receiver name and proof', async () => {
+    reset({ shipments: [{ id: 'ship-1', status: 'in_transit', total_items: 1, tracking_id: 'RTX-AAAAAA', current_holder: 'vehicle', current_vehicle_id: 'veh-1' }] });
+    expect((await patch({ status: 'delivered', received_by: 'R. Sharma' }, driverAuth())).status).toBe(403);
+    expect((await custody({ kind: 'delivery', photo_paths: ['cargo/ship-1/photo_a.jpg'] }, driverAuth())).status).toBe(400);
+    expect((await custody({ kind: 'delivery', receiver_name: 'R. Sharma' }, driverAuth())).status).toBe(400);
+    expect((await custody({ kind: 'delivery', receiver_name: 'R. Sharma', photo_paths: ['cargo/ship-1/photo_a.jpg'] }, driverAuth())).status).toBe(201);
+    expect(supabaseMock.rows('shipments')[0]).toMatchObject({ status: 'delivered', received_by: 'R. Sharma', photo_url: 'cargo/ship-1/photo_a.jpg' });
   });
 });
 

@@ -96,6 +96,10 @@ export const settings = {
   ODOMETER_SYNC_INTERVAL_MINUTES: envInt('ODOMETER_SYNC_INTERVAL_MINUTES', 30),
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
   POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
+  // Cargo claim documents (photos, PDFs) go in the same private bucket under claims/
+  CLAIM_DOCUMENT_MAX_BYTES: envInt('CLAIM_DOCUMENT_MAX_BYTES', 10 * 1024 * 1024),
+  // A delivery whose live ETA slips this many minutes past its planned arrival opens a delay case
+  CARGO_DELAY_EXCEPTION_MINUTES: envInt('CARGO_DELAY_EXCEPTION_MINUTES', 120),
   VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 5 * 1024 * 1024),
 
   // Secret for the keyed hash of identity numbers (Aadhaar, PAN, licence...) used to spot duplicates.

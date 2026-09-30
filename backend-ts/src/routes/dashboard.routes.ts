@@ -92,7 +92,10 @@ router.get('/people-attention', requireAuth, requireRole(...STAFF_ROLES), async 
 // ── GET /shipment-counts ───────────────────────────────────
 // Exact number of shipments per status. Counted in the database so it stays right on
 // fleets with more shipments than a list page can carry.
-export const SHIPMENT_STATUSES = ['created', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'exception'] as const;
+export const SHIPMENT_STATUSES = [
+  'created', 'assigned', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'exception',
+  'out_for_delivery', 'at_hub', 'partially_delivered', 'on_hold', 'returning', 'returned', 'lost',
+] as const;
 
 router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
@@ -108,9 +111,10 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
     );
     const counts = Object.fromEntries(results) as Record<(typeof SHIPMENT_STATUSES)[number], number>;
     // Vendor loads (cargo manifests) are part of the shipments list, so they are part of its counts:
-    // scheduled shows as created, delivered and completed as delivered.
+    // scheduled shows as created, delivered and completed as delivered; the rest keep their names.
     const manifestStatus: Record<string, (typeof SHIPMENT_STATUSES)[number]> = {
       scheduled: 'created', in_transit: 'in_transit', delivered: 'delivered', completed: 'delivered',
+      exception: 'exception', on_hold: 'on_hold', returning: 'returning', returned: 'returned',
     };
     const manifestCounts = await Promise.all(
       Object.keys(manifestStatus).map(async status => {

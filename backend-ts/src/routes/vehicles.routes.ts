@@ -636,7 +636,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
 
     // The alert itself signals the emergency; the vehicle keeps its status (and keeps
     // reporting its position) unless this is a serious breakdown or accident.
-    await holdVehicleAfterSos(req.params.vehicle_id, alertType, severity);
+    await holdVehicleAfterSos(req.params.vehicle_id, alertType, severity, alert.id, { id: req.user!.user_id, role: req.user!.role });
 
     // Notifications are informative; a failure must not undo the SOS report.
     notificationService

@@ -326,6 +326,11 @@ const SHIPMENT_TO_BOOKING: Record<string, BookingStatus> = {
   assigned: 'assigned',
   picked_up: 'in_transit',
   in_transit: 'in_transit',
+  // Still on its way: out for delivery, at a hub, or coming back. Holds, cases, partial
+  // deliveries, returns and losses keep the booking's status; the cargo notifications explain them.
+  out_for_delivery: 'in_transit',
+  at_hub: 'in_transit',
+  returning: 'in_transit',
   delivered: 'delivered',
   cancelled: 'cancelled',
 };

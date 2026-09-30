@@ -9,7 +9,6 @@ import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { getDriverVehicleIds } from '../core/ownership';
 import { manifestParcelCode, normalizeParcelCode } from '../core/parcelCode';
-import { ShipmentService } from './shipment.service';
 
 export type ScanPurpose = 'pickup' | 'delivery';
 export type ScanMethod = 'camera' | 'manual';
@@ -189,10 +188,17 @@ export async function scanParcel(driverId: string, input: ScanInput): Promise<Sc
     if (shipment.status === 'cancelled' || shipment.status === 'delivered') {
       throw new HttpError(409, `This shipment is already ${shipment.status}`);
     }
-    if (shipment.status !== 'created') {
+    // The scan is the custody pickup: the goods go on the driver's vehicle, counted from the booking
+    const { recordCustody } = await import('./cargo/custody.service');
+    const picked = await recordCustody(
+      { shipment_id: shipment.id },
+      { kind: 'pickup', lat, lng, notes: `Parcel scan (${method})` },
+      { id: driverId, role: 'driver' },
+      { via: 'parcel_scan', logMetadata: { via: 'parcel_scan', scan_method: method } },
+    );
+    if (picked.already) {
       return { ok: true, purpose, kind: 'shipment', shipment_id: shipment.id, manifest_id: null, tracking_id: shipment.tracking_id, stop_id: stopId, already: true, status: shipment.status };
     }
-    await ShipmentService.updateShipmentStatus(shipment.id, 'picked_up', lat, lng, null, null, { id: driverId, role: 'driver' }, { via: 'parcel_scan', scan_method: method });
     await recordScan({ shipment_id: shipment.id, stop_id: stopId, driver_id: driverId, purpose, method, lat, lng });
     return { ok: true, purpose, kind: 'shipment', shipment_id: shipment.id, manifest_id: null, tracking_id: shipment.tracking_id, stop_id: stopId, already: false, status: 'picked_up' };
   }

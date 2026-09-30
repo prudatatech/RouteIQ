@@ -20,6 +20,7 @@ import { changeVehicleStatus } from '../core/vehicles';
 import { cacheDeletePattern } from '../core/redis';
 import { invalidateDriverVehicles } from '../core/ownership';
 import { cancelManifest, routeService } from './route.service';
+import type { CargoHoldContext } from './shipment.service';
 import { notificationService } from './notification.service';
 import { setOdometerReading } from './odometer-sync.service';
 import {
@@ -90,6 +91,8 @@ export interface OpenWork {
   manifests: { id: string; status: string; pickup_location: string | null; drop_location: string | null }[];
   /** Shipments already picked up on the vehicle's active routes. Releasing does not undo a pickup. */
   shipments_on_board: number;
+  /** Consignments (shipments and vendor loads) whose goods are on the vehicle. Releasing holds them on a cargo case. */
+  cargo_on_board: number;
   /** True when there is anything that must be released first. */
   blocking: boolean;
   summary: string;
@@ -129,9 +132,12 @@ export async function getOpenWork(vehicleId: string): Promise<OpenWork> {
   if (active) parts.push(plural(active, 'active route'));
   if (planned) parts.push(plural(planned, 'planned route'));
   if (manifests.length) parts.push(plural(manifests.length, 'load'));
+  const { consignmentsOnVehicle } = await import('./cargo/exception.service');
+  const cargo = (await consignmentsOnVehicle(vehicleId)).length;
+  if (cargo && !routes.length && !manifests.length) parts.push(plural(cargo, 'consignment') + ' on board');
   let summary = parts.length ? parts.join(', ') : 'No routes or loads';
   if (onBoard) summary += `, ${plural(onBoard, 'shipment')} already on board`;
-  return { routes, manifests, shipments_on_board: onBoard, blocking: routes.length + manifests.length > 0, summary };
+  return { routes, manifests, shipments_on_board: onBoard, cargo_on_board: cargo, blocking: routes.length + manifests.length + cargo > 0, summary };
 }
 
 // ── Reading jobs ───────────────────────────────────────────
@@ -224,17 +230,30 @@ export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSc
     );
   }
 
-  // Release: cancel through the normal paths so shipments return to the queue and the driver hears about it
-  const released: { routes: string[]; manifests: string[] } = { routes: [], manifests: [] };
+  // Release: cancel through the normal paths so shipments return to the queue and the driver hears
+  // about it. Goods already on board are never stranded: they go on hold on one cargo case for the
+  // vehicle (linked to the job and any SOS), and stay on the vehicle until staff plan them.
+  const released: { routes: string[]; manifests: string[]; cargo_exception_id?: string } = { routes: [], manifests: [] };
+  let cargoCase: { exception_id: string } | null = null;
   if (work.blocking) {
+    const hold: CargoHoldContext = {
+      source: 'maintenance',
+      type: input.reason_type === 'accident' ? 'vehicle_accident' : input.reason_type === 'scheduled_service' || input.reason_type === 'other' ? 'other' : 'vehicle_breakdown',
+      reason: `${vehicle.plate_number} was moved to maintenance (${REASON_LABELS[input.reason_type].toLowerCase()}).`,
+      sosAlertId: input.sos_alert_id ?? null,
+    };
     for (const r of work.routes) {
-      await routeService.changeStatus(r.id, 'cancelled');
+      await routeService.changeStatus(r.id, 'cancelled', { cargoHold: hold, actor });
       released.routes.push(r.id);
     }
     for (const m of work.manifests) {
-      await cancelManifest(m.id);
+      await cancelManifest(m.id, hold, actor);
       released.manifests.push(m.id);
     }
+    // Anything else still on board (a failed delivery waiting for a re-attempt) joins the same case
+    const { holdCargoOnVehicle } = await import('./cargo/exception.service');
+    cargoCase = await holdCargoOnVehicle(vehicleId, hold, actor);
+    if (cargoCase) released.cargo_exception_id = cargoCase.exception_id;
   }
 
   const { data: job, error } = await supabase
@@ -266,6 +285,10 @@ export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSc
     throw e;
   }
   await afterVehicleChange();
+  if (cargoCase) {
+    const { linkMaintenanceJob } = await import('./cargo/exception.service');
+    await linkMaintenanceJob(cargoCase.exception_id, job.id);
+  }
 
   if (input.sos_alert_id) {
     await supabase.from('sos_alerts')

@@ -160,9 +160,12 @@ describe('staff handle bookings', () => {
   it('follows the shipment to in transit and delivered', async () => {
     await post(`/bookings/${BOOKING}/confirm`, admin());
     const shipmentId = supabaseMock.rows('shipments')[0].id;
-    await request(app).patch(`/api/v1/shipments/${shipmentId}`).set(admin()).send({ status: 'in_transit' });
+    // Pickup through the status PATCH, then departure and delivery as custody events
+    expect((await request(app).patch(`/api/v1/shipments/${shipmentId}`).set(admin()).send({ status: 'picked_up' })).status).toBe(200);
+    const custody = (body: object) => request(app).post('/api/v1/cargo/custody').set(admin()).send({ ref: { shipment_id: shipmentId }, ...body });
+    expect((await custody({ kind: 'departed' })).status).toBe(201);
     expect(supabaseMock.rows('customer_bookings')[0].status).toBe('in_transit');
-    await request(app).patch(`/api/v1/shipments/${shipmentId}`).set(admin()).send({ status: 'delivered', received_by: 'R. Sharma' });
+    expect((await custody({ kind: 'delivery', receiver_name: 'R. Sharma', reason: 'Receiver confirmed on the phone' })).status).toBe(201);
     expect(supabaseMock.rows('customer_bookings')[0].status).toBe('delivered');
     expect(notesFor(CUSTOMER).map((n) => n.title)).toEqual(expect.arrayContaining(['Your shipment is on its way', 'Your shipment was delivered']));
   });

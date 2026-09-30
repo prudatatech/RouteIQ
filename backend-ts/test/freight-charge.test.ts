@@ -49,8 +49,9 @@ describe('invoice from the freight charge', () => {
 
   it('is created when the shipment is marked delivered', async () => {
     reset([shipment('s1', { status: 'in_transit', freight_charge: 1800 })]);
-    const res = await request(app).patch('/api/v1/shipments/s1').set(admin()).send({ status: 'delivered', received_by: 'R. Sharma' });
-    expect(res.status).toBe(200);
+    const res = await request(app).post('/api/v1/cargo/custody').set(admin())
+      .send({ ref: 'RTX-S1', kind: 'delivery', receiver_name: 'R. Sharma', reason: 'Receiver confirmed on the phone' });
+    expect(res.status).toBe(201);
     expect(supabaseMock.rows('invoices')).toHaveLength(1);
   });
 

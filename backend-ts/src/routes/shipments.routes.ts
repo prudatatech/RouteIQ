@@ -8,7 +8,7 @@ import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessShipment, isStaff } from '../core/ownership';
 import { ShipmentCreateSchema, ShipmentEditSchema } from '../schemas';
-import { DRIVER_SHIPMENT_STATUSES, OPERATING_VEHICLE_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
+import { CUSTODY_ONLY_SHIPMENT_STATUSES, DRIVER_SHIPMENT_STATUSES, OPERATING_VEHICLE_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
 import { parseCoordinate, parseNumberInRange, parseOptionalText } from '../core/validate';
 import { rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { ShipmentService } from '../services/shipment.service';
@@ -175,21 +175,36 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
       return;
     }
 
-    if (!status || !(SHIPMENT_PATCH_STATUSES as readonly string[]).includes(status)) {
-      res.status(400).json({ detail: 'Invalid status value' });
-      return;
-    }
-    // Vendors follow their shipments but never move them; drivers move them forward, staff also cancel
+    // Vendors follow their shipments but never move them; drivers pick up, staff also cancel
     if (!isStaff(req.user) && req.user!.role !== 'driver') {
       res.status(403).json({ detail: 'Only drivers and dispatch can change a shipment\'s status' });
       return;
     }
-    if (req.user!.role === 'driver' && !(DRIVER_SHIPMENT_STATUSES as readonly string[]).includes(status)) {
-      res.status(403).json({ detail: 'Drivers can mark a shipment picked up, in transit or delivered' });
+    if (req.user!.role === 'driver' && status && !(DRIVER_SHIPMENT_STATUSES as readonly string[]).includes(status)) {
+      res.status(403).json({ detail: 'Drivers mark a pickup here; deliveries and the rest go through the cargo custody events', use: 'cargo_custody' });
       return;
     }
-    if (status === 'delivered' && req.user!.role === 'driver' && !receivedBy) {
-      res.status(400).json({ detail: 'Enter who received the delivery' });
+    // Movement after pickup is a custody event (with pieces, evidence and holder), never a raw status write
+    if ((CUSTODY_ONLY_SHIPMENT_STATUSES as readonly string[]).includes(status)) {
+      res.status(409).json({
+        detail: 'This status is recorded through a cargo custody event (POST /api/v1/cargo/custody) or a cargo case action, with the pieces and proof it needs.',
+        use: 'cargo_custody',
+      });
+      return;
+    }
+    if (!status || !(SHIPMENT_PATCH_STATUSES as readonly string[]).includes(status)) {
+      res.status(400).json({ detail: 'Invalid status value' });
+      return;
+    }
+
+    // A pickup is the custody pickup: the goods go on the vehicle, counted from the booking
+    if (status === 'picked_up') {
+      const { resolveRef, assertCanAct } = await import('../services/cargo/consignment');
+      const { recordCustody } = await import('../services/cargo/custody.service');
+      const c = await resolveRef({ shipment_id: req.params.shipment_id });
+      await assertCanAct(req.user!, c);
+      await recordCustody(c, { kind: 'pickup', lat: lat ?? null, lng: lng ?? null, notes: 'Marked picked up' }, { id: req.user!.user_id, role: req.user!.role }, { via: 'system' });
+      res.json(await ShipmentService.getShipment(req.params.shipment_id));
       return;
     }
 

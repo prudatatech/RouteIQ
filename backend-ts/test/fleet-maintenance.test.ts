@@ -249,17 +249,29 @@ describe('moving a vehicle to maintenance', () => {
       expect(supabaseMock.rows('routes')[0].status).toBe('active');
     });
 
-    it('releases the route and load, records what was released and notifies the driver', async () => {
+    it('releases the route, holds the load on board on a cargo case, and notifies the driver', async () => {
       const res = await open({ release_work: true });
       expect(res.status).toBe(201);
-      expect(res.body.released_work).toEqual({ routes: [ROUTE], manifests: ['cccccccc-0000-0000-0000-000000000001'] });
+      expect(res.body.released_work).toEqual({ routes: [ROUTE], manifests: ['cccccccc-0000-0000-0000-000000000001'], cargo_exception_id: expect.any(String) });
       expect(supabaseMock.rows('routes')[0].status).toBe('cancelled');
-      expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('cancelled');
+      // The load's goods are on the truck: never stranded, held on the vehicle with an open case linked to the job
+      expect(supabaseMock.rows('cargo_manifest')[0]).toMatchObject({ status: 'on_hold', current_holder: 'vehicle', current_vehicle_id: VEHICLE });
+      const [cargoCase] = supabaseMock.rows('cargo_exceptions');
+      expect(cargoCase).toMatchObject({ id: res.body.released_work.cargo_exception_id, source: 'maintenance', status: 'open', vehicle_id: VEHICLE, maintenance_job_id: res.body.id });
       expect(supabaseMock.rows('vehicles')[0].status).toBe('maintenance');
       const titles = supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1').map(n => n.title);
       expect(titles).toContain('Route cancelled');
-      expect(titles).toContain('Load cancelled');
+      expect(titles).not.toContain('Load cancelled');
       expect(titles).toContain('Vehicle moved to maintenance');
+    });
+
+    it('cancels a load that was not picked up yet', async () => {
+      supabaseMock.rows('cargo_manifest')[0].status = 'scheduled';
+      const res = await open({ release_work: true });
+      expect(res.status).toBe(201);
+      expect(res.body.released_work).toEqual({ routes: [ROUTE], manifests: ['cccccccc-0000-0000-0000-000000000001'] });
+      expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('cancelled');
+      expect(supabaseMock.rows('cargo_exceptions')).toHaveLength(0);
     });
 
     it('puts its unpicked shipments back in the queue when the route is released', async () => {
