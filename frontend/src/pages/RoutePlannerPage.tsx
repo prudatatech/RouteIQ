@@ -260,6 +260,7 @@ export default function RoutePlannerPage() {
             <MapView
               ref={mapRef}
               mode="route"
+              traffic={{ flow: true, incidents: true }}
               route={{ coordinates: fresh && selected ? selected.geometry : [], stops: mapStops, planned: !fresh }}
               altRoutes={altRoutes}
               onAltRouteSelect={setSelectedId}
