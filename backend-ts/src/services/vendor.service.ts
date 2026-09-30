@@ -152,6 +152,21 @@ export const vendorService = {
   },
 
   /**
+   * Staff set the pickup point of a vendor who has none, so a won bid can be routed to them.
+   * Only the point (and city) change: the company details are the vendor's own and stay under KYC.
+   */
+  async setLocation(vendorId: string, input: { lat: number; lng: number; city?: string }, actor: AuditActor) {
+    const changes: Record<string, unknown> = { latitude: input.lat, longitude: input.lng, updated_at: new Date().toISOString() };
+    if (input.city) changes.city = input.city;
+    const { data, error } = await supabase
+      .from('vendor_profiles').update(changes).eq('id', vendorId).select('id, company_name, city, latitude, longitude').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new HttpError(404, 'Vendor not found');
+    await auditService.record('staff-console', actor, 'vendor_location_set', { vendor_id: vendorId, lat: input.lat, lng: input.lng });
+    return data;
+  },
+
+  /**
    * Submit (or resubmit) the vendor's full KYC wizard: company, contact,
    * bank and document details, plus the wizard's own draft blob (`kycData`).
    * Always moves the profile to `kyc_status: 'submitted'` and notifies superadmins

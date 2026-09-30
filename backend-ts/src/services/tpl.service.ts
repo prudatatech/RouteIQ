@@ -6,6 +6,7 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
 import { notificationService } from './notification.service';
+import { emailService } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
 import { assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
@@ -380,6 +381,25 @@ export const tplService = {
     throw new HttpError(409, refusal(String(existing.status)));
   },
 
+  /** Tells an approved applicant to set up their sign-in; the page sends the code and takes the password. Never throws. */
+  async emailApproval(partner: { email?: string | null; company_name?: string | null }) {
+    if (!partner.email) return;
+    const link = `${settings.WEB_APP_URL}/3pl/onboard/setup?email=${encodeURIComponent(partner.email)}`;
+    await emailService.send(
+      partner.email,
+      'MargixIndia: your 3PL application was approved',
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
+          <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+          <p>Your 3PL partner application has been approved. Set up your password to open your partner portal and start receiving load offers.</p>
+          <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Set up my account</a></p>
+          <p style="font-size: 12px; color: #666;">We will email you a 6-digit code on that page to confirm it is you. If the button does not work, copy this address into your browser: ${escapeHtml(link)}</p>
+        </div>
+      `,
+    );
+  },
+
   /**
    * Approve a pending 3PL application, or a partner's pending profile update.
    * Only a partner waiting for review can be approved.
@@ -418,6 +438,8 @@ export const tplService = {
       'tpl_approved',
       id,
     );
+    // A first-time applicant has no account yet, so the in-app notice above reaches nobody: email the setup link
+    if (!updates) await this.emailApproval(partner);
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },

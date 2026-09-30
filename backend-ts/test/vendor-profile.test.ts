@@ -75,3 +75,46 @@ describe('POST /vendor/profile', () => {
     expect(write.body).not.toHaveProperty('kyc_status');
   });
 });
+
+describe('PUT /vendor/:id/location', () => {
+  const set = (body: Record<string, unknown>, user = 'admin-1', id = VENDOR) =>
+    request(app).put(`/api/v1/vendor/${id}/location`).set('Authorization', `Bearer ${supabaseMock.signUserToken(user)}`).send(body);
+
+  beforeEach(() => {
+    supabaseMock.reset({
+      users: [
+        { id: VENDOR, role: 'vendor', is_active: true },
+        { id: 'admin-1', role: 'admin', is_active: true },
+        { id: 'manager-1', role: 'manager', is_active: true },
+      ],
+      vendor_profiles: [{ ...APPROVED, latitude: null, longitude: null }],
+      tpl_partners: [],
+      ai_agent_logs: [],
+    });
+  });
+
+  it('lets an admin place the vendor, leaving KYC and company details alone, and audits it', async () => {
+    const res = await set({ lat: 18.52, lng: 73.85, city: 'Pune' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({
+      latitude: 18.52, longitude: 73.85, company_name: APPROVED.company_name, address: APPROVED.address, kyc_status: 'approved',
+    });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'vendor_location_set' });
+  });
+
+  it.each([
+    ['a latitude out of range', { lat: 91, lng: 73 }],
+    ['no longitude', { lat: 18 }],
+    ['the null island', { lat: 0, lng: 0 }],
+  ])('refuses %s', async (_name, body) => {
+    expect((await set(body)).status).toBe(400);
+    expect(supabaseMock.rows('vendor_profiles')[0].latitude).toBeNull();
+  });
+
+  it('is for admins only, and for a vendor that exists', async () => {
+    expect((await set({ lat: 18, lng: 73 }, VENDOR)).status).toBe(403);
+    expect((await set({ lat: 18, lng: 73 }, 'manager-1')).status).toBe(403);
+    expect((await set({ lat: 18, lng: 73 }, 'admin-1', 'nobody')).status).toBe(404);
+    expect(supabaseMock.rows('vendor_profiles')[0].latitude).toBeNull();
+  });
+});

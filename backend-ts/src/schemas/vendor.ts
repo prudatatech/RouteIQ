@@ -28,6 +28,13 @@ export const VendorProfileSchema = z.object({
 });
 export type VendorProfileInput = z.infer<typeof VendorProfileSchema>;
 
+/** Where staff place a vendor's pickup when the vendor has not (address and company details stay the vendor's own). */
+export const VendorLocationSchema = z.object({
+  lat: coordinate('Latitude', 90),
+  lng: coordinate('Longitude', 180),
+  city: z.string().trim().min(1, 'Enter the city').max(100, 'City name is too long').optional(),
+}).refine(v => !(v.lat === 0 && v.lng === 0), 'Choose a real location');
+
 /** Storage paths of KYC files: <vendor id>/<file>, no folder tricks. */
 export function isOwnKycPath(vendorId: string, path: unknown): path is string {
   return typeof path === 'string'

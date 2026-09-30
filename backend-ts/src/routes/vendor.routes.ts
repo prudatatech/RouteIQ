@@ -7,7 +7,7 @@ import { manifestParcelCode } from '../core/parcelCode';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { rateLimitByUser } from '../core/rate-limit';
 import {
-  KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorProfileSchema,
+  KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
 } from '../schemas/vendor';
 
@@ -178,6 +178,16 @@ router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), a
     const reason = parseRejectionReason(req.body?.reason);
     const data = await vendorService.rejectKyc(req.params.id, reason, req.user);
     res.json({ success: true, data });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Set a vendor's pickup location for them (Admin/Super Admin), e.g. when a bid can't be awarded without one
+router.put('/:id/location', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(VendorLocationSchema, req.body);
+    res.json(await vendorService.setLocation(req.params.id, input, req.user));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

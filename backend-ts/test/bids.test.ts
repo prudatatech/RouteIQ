@@ -285,6 +285,8 @@ describe('awarding a bid', () => {
     const res = await approve('bid-1');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/pickup location/);
+    // The console tells this failure apart, names the vendor and can offer to set the location for them
+    expect(res.body).toMatchObject({ code: 'vendor_location_missing', vendor_id: VENDOR, vendor_name: 'Acme' });
     expect(supabaseMock.rows('capacity_bids')[0].status).toBe('pending');
     expect(supabaseMock.mutations).toEqual([]);
   });
