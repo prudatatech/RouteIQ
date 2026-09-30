@@ -133,7 +133,7 @@ const mr: Record<keyof typeof en, string> = {
   quote_range: 'किंमत श्रेणी',
   quote_suggested: 'सुचवलेली {price}',
   quote_title: 'किंमत आणि पिकअपची तारीख',
-  quote_unavailable: 'या प्रवासाची किंमत आम्ही अजून दाखवू शकत नाही.',
+  quote_unavailable: 'या बुकिंगची किंमत आम्ही अजून दाखवू शकत नाही.',
   quote_working: 'तुमची किंमत काढत आहे',
   route_a_to_b: '{from} ते {to}',
   signout: 'साइन आउट',
