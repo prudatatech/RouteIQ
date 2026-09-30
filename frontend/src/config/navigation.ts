@@ -91,11 +91,14 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    to: '/backhaul', label: 'Return trips & 3PL', icon: Waypoints, roles: admins, badge: 'returnTrips',
+    to: '/return-trips', label: 'Return trips & 3PL', icon: Waypoints, roles: admins, badge: 'returnTrips',
+    // A partner's own page is under /3pl-partners; it belongs to this section too
+    also: ['/3pl-partners'],
     children: [
-      { to: '/backhaul', label: 'Return trips', roles: admins },
-      { to: '/bids', label: 'Bids', roles: admins, badge: 'bids' },
-      { to: '/3pl-partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
+      { to: '/return-trips', label: 'Open return trips', roles: admins },
+      { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
+      { to: '/return-trips?tab=pool', label: 'Pool loads', roles: admins },
+      { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
     ],
   },
   {

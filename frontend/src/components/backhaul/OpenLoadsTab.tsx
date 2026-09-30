@@ -7,7 +7,9 @@ import { formatKg, formatDay } from '@/utils/display'
 const columns: Column<OpenLoad>[] = [
   {
     key: 'tracking', header: 'Tracking ID', sortValue: r => r.tracking_id,
-    cell: r => <span className="font-mono text-sm">{r.tracking_id}</span>,
+    cell: r => (
+      <Link to={`/shipments/${encodeURIComponent(r.id)}`} className="font-mono text-sm font-medium text-text underline decoration-border underline-offset-2 hover:decoration-text">{r.tracking_id}</Link>
+    ),
   },
   { key: 'shipper', header: 'Vendor', sortValue: r => r.shipper ?? '', cell: r => r.shipper ?? '—' },
   { key: 'from', header: 'From', hideBelow: 'lg', sortValue: r => r.origin ?? '', cell: r => r.origin ?? '—' },

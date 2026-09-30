@@ -19,12 +19,17 @@ const withOpen = (base: string, id: unknown) => {
   return open ? `${base}${base.includes('?') ? '&' : '?'}open=${encodeURIComponent(open)}` : base
 }
 
-/** The 3PL partner dashboard lives at /3pl-portal/<partner id>; without the id there is nowhere to go. */
-const partnerPage = (tab: string, openKey?: string): Resolver => data => {
+/** A page of the 3PL partner portal, /3pl-portal/<partner id>/<page> (no page is Orders, its home); without the id there is nowhere to go. */
+const partnerPage = (page: '' | 'earnings' | 'lanes' | 'documents' | 'settings', openKey?: string): Resolver => data => {
   const partnerId = str(data.partner_id)
   if (!partnerId) return null
-  return withOpen(`/3pl-portal/${partnerId}?tab=${tab}`, openKey ? data[openKey] : null)
+  return withOpen(`/3pl-portal/${encodeURIComponent(partnerId)}${page ? `/${page}` : ''}`, openKey ? data[openKey] : null)
 }
+
+/** Return trips (spare truck space, its bids and the 3PL partners) is one page with a tab for each. */
+const RETURN_TRIPS = '/return-trips'
+/** A partner's page in the console, or the partners tab without an id. */
+const partnerRecord: Resolver = d => (str(d.partner_id) ? `/3pl-partners/${encodeURIComponent(str(d.partner_id)!)}` : `${RETURN_TRIPS}?tab=partners`)
 
 /** A cargo notification opens its case, else its transfer or claim, else the consignment (docs/cargo-plan.md). */
 const cargoCase = (fallback: Resolver): Resolver => d => (str(d.exception_id) ? `/cargo/exceptions/${str(d.exception_id)}` : fallback(d))
@@ -47,15 +52,17 @@ const STAFF: Record<string, Resolver> = {
   vendor_request: request('vendor', 'request_id'),
   vendor_request_cancelled: request('vendor', 'request_id'),
   customer_booking: request('customer', 'booking_id'),
-  capacity_bid: d => withOpen('/bids', d.bid_id),
-  capacity_window_closed: d => withOpen('/bids', d.window_id),
-  stop_flagged: d => withOpen('/bids', d.bid_id ?? d.window_id),
+  // A bid opens on Bids to decide; a closed return trip shows its waiting bids; a flagged stop reopens the return trip
+  capacity_bid: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.bid_id),
+  capacity_window_closed: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.window_id),
+  stop_flagged: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.bid_id ?? d.window_id),
   kyc_submitted: d => withOpen('/admin/kyc', d.profile_id),
-  tpl_application: d => withOpen('/3pl-partners', d.partner_id),
-  tpl_update: d => withOpen('/3pl-partners', d.partner_id),
-  tpl_order_status: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
-  tpl_order_accepted: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
-  tpl_offer_declined: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
+  // A new application or a change request goes to the partners tab, which opens that partner; the rest go to the partner
+  tpl_application: d => withOpen(`${RETURN_TRIPS}?tab=partners`, d.partner_id),
+  tpl_update: d => withOpen(`${RETURN_TRIPS}?tab=partners`, d.partner_id),
+  tpl_order_status: partnerRecord,
+  tpl_order_accepted: partnerRecord,
+  tpl_offer_declined: partnerRecord,
   stop_failed: d => shipmentPath(d.manifest_id),
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
   vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
@@ -120,15 +127,15 @@ const VENDOR: Record<string, Resolver> = {
   cargo_rto_started: d => withOpen('/vendor/shipments', d.request_id),
   cargo_at_hub: d => withOpen('/vendor/shipments', d.request_id),
   cargo_claim_update: d => withOpen('/vendor/shipments', d.request_id),
-  // 3PL partner
-  tpl_offer: partnerPage('orders', 'offer_id'),
-  tpl_offer_taken: partnerPage('orders'),
-  tpl_offer_withdrawn: partnerPage('orders'),
+  // 3PL partner: offers and orders are the portal's home; a payment is under Earnings; the account status shows on every page
+  tpl_offer: partnerPage('', 'offer_id'),
+  tpl_offer_taken: partnerPage(''),
+  tpl_offer_withdrawn: partnerPage(''),
   tpl_order_paid: partnerPage('earnings'),
-  tpl_approved: partnerPage('overview'),
-  tpl_paused: partnerPage('overview'),
-  tpl_resumed: partnerPage('overview'),
-  tpl_rejected: partnerPage('overview'),
+  tpl_approved: partnerPage(''),
+  tpl_paused: partnerPage(''),
+  tpl_resumed: partnerPage(''),
+  tpl_rejected: partnerPage(''),
 }
 
 /** The page a notification opens, or null when it has no page (it is then only marked read). */

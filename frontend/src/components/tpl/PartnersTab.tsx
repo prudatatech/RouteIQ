@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
 import { formatPercent } from '@/components/tpl/stats'
 import {
-  BulkActionBar, Button, DataTable, IconButton, Page, PageHeader, SearchInput, StatusPill, Tabs,
+  BulkActionBar, Button, DataTable, IconButton, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
+import { useAuthStore } from '@/store/authStore'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
 
@@ -28,12 +29,12 @@ type StatusTab = typeof TABS[number]
 const isPending = (p: TplPartner) => p.status === 'pending'
 
 /**
- * The single 3PL partners area: directory of every application and partner,
- * grouped by status. Selecting a row opens the detail page, which is where
- * verification (documents, approve/reject) happens; pending rows also get
- * inline approve/reject here, plus a bulk approve for the queue.
+ * The 3PL partners tab of Return trips: every application and partner, grouped by status. Selecting a row opens
+ * the detail page, which is where verification (documents, approve/reject) happens. Admins can view; only a
+ * superadmin can approve or reject, so pending rows get inline approve/reject and a bulk approve for them alone.
  */
-export default function TplPartnersPage() {
+export default function PartnersTab() {
+  const canDecide = useAuthStore(s => s.role) === 'superadmin'
   const navigate = useNavigate()
   // Opened from a link (a notification, global search): ?open=<partner id> goes straight to the partner
   const [searchParams] = useSearchParams()
@@ -43,7 +44,7 @@ export default function TplPartnersPage() {
   }, [openId, navigate])
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
-  const [tab, setTab] = useTabParam<StatusTab>(TABS, 'pending')
+  const [tab, setTab] = useTabParam<StatusTab>(TABS, 'pending', 'status')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
@@ -144,7 +145,7 @@ export default function TplPartnersPage() {
     {
       key: 'name', header: 'Partner', sortValue: p => p.company_name, cell: p => (
         <div>
-          <p className="font-medium text-text">{p.company_name}</p>
+          <Link to={`/3pl-partners/${encodeURIComponent(p.id)}`} onClick={e => e.stopPropagation()} className="font-medium text-text underline decoration-border underline-offset-2 hover:decoration-text">{p.company_name}</Link>
           <p className="font-mono text-xs text-muted">{p.custom_id || 'No 3PL ID yet'}</p>
         </div>
       ),
@@ -190,7 +191,7 @@ export default function TplPartnersPage() {
     { key: 'status', header: 'Status', cell: p => <StatusPill status={p.status} /> },
     {
       key: 'actions', header: 'Actions', align: 'right', cell: p => (
-        isPending(p) ? (
+        canDecide && isPending(p) ? (
           <span className="inline-flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <IconButton
               label={`Approve ${p.company_name}`}
@@ -213,22 +214,19 @@ export default function TplPartnersPage() {
   ]
 
   return (
-    <Page>
-      <PageHeader
-        title="3PL partners"
-        description="Every 3PL application, from review to active partner."
-        actions={<Button icon={<Plus size={16} />} onClick={() => navigate('/3pl/onboard')}>Invite a partner</Button>}
-      >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <Tabs
-            label="Filter by status"
-            value={tab}
-            onChange={setTab}
-            tabs={TABS.map(t => ({ id: t, label: t === 'all' ? 'All' : t.charAt(0).toUpperCase() + t.slice(1), count: counts[t] ?? 0 }))}
-          />
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or 3PL ID" className="sm:max-w-xs" />
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          label="Filter partners by status"
+          value={tab}
+          onChange={setTab}
+          tabs={TABS.map(t => ({ id: t, label: t === 'all' ? 'All' : t.charAt(0).toUpperCase() + t.slice(1), count: counts[t] ?? 0 }))}
+        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or 3PL ID" className="sm:w-64" />
+          <Button variant="secondary" icon={<Plus size={16} />} onClick={() => navigate('/3pl/onboard')}>Invite a partner</Button>
         </div>
-      </PageHeader>
+      </div>
 
       <DataTable
         caption="3PL partners"
@@ -244,7 +242,7 @@ export default function TplPartnersPage() {
         empty={search.trim()
           ? { title: 'No partners match your search', action: <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button> }
           : { title: tab === 'pending' ? 'No pending applications' : 'No partners here yet', description: 'Applications appear here once submitted.' }}
-        selection={{
+        selection={!canDecide ? undefined : {
           selectedKeys: selection.selectedKeys,
           onToggleRow: key => selection.toggleRow(key),
           onToggleAll: (pageRows, checked) => selection.toggleAll(pageRows, checked),
@@ -252,11 +250,11 @@ export default function TplPartnersPage() {
         }}
       />
 
-      <div className="mt-3">
+      {canDecide && (
         <BulkActionBar count={selection.count} onClear={selection.clear}>
           <Button size="sm" disabled={bulkBusy} loading={bulkBusy} onClick={bulkApprove}>Approve selected</Button>
         </BulkActionBar>
-      </div>
-    </Page>
+      )}
+    </div>
   )
 }

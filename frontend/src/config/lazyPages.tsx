@@ -33,11 +33,9 @@ export const emergency = page(() => import('@/pages/EmergencyPage'))
 export const cargo = page(() => import('@/pages/cargo/CargoPage'))
 export const cargoException = page(() => import('@/pages/cargo/ExceptionCasePage'))
 export const cargoTransfer = page(() => import('@/pages/cargo/TransferPage'))
-export const bids = page(() => import('@/pages/BidsPage'))
-export const backhaul = page(() => import('@/pages/BackhaulPage'))
+export const returnTrips = page(() => import('@/pages/ReturnTripsPage'))
 export const requests = page(() => import('@/pages/RequestsPage'))
 export const liveMap = page(() => import('@/pages/LiveMapPage'))
-export const tplPartners = page(() => import('@/pages/TplPartnersPage'))
 export const tplPartnerDetail = page(() => import('@/pages/TplPartnerDetailPage'))
 export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminPerson = page(() => import('@/pages/admin/PersonPage'))
@@ -82,10 +80,8 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/cargo': cargo.preload,
   '/optimize': optimize.preload,
   '/route-planner': routePlanner.preload,
-  '/backhaul': backhaul.preload,
-  '/bids': bids.preload,
+  '/return-trips': returnTrips.preload,
   '/requests': requests.preload,
-  '/3pl-partners': tplPartners.preload,
   '/analytics': analytics.preload,
   '/finance': finance.preload,
   '/insights': insights.preload,

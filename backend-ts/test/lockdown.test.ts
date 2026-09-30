@@ -26,18 +26,21 @@ const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 beforeEach(() => {
   supabaseMock.reset({
-    users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+    users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: 'driver-1', role: 'driver', is_active: true }],
     tpl_partners: [PARTNER],
     vehicles: [{ id: FOREIGN_VEHICLE, driver_id: 'someone-else' }],
   });
 });
 
 describe('3PL partner records', () => {
-  it('queue, approve and delete need a superadmin', async () => {
+  it('the queue is for staff who can view partners, and approve and delete need a superadmin', async () => {
     expect((await request(app).get('/api/v1/tpl/queue')).status).toBe(401);
-    expect((await request(app).get('/api/v1/tpl/queue').set(bearer(admin()))).status).toBe(403);
+    expect((await request(app).get('/api/v1/tpl/queue').set(bearer(admin()))).status).toBe(200);
+    expect((await request(app).get('/api/v1/tpl/queue').set(bearer(supabaseMock.signUserToken('driver-1')))).status).toBe(403);
     expect((await request(app).post(`/api/v1/tpl/approve/${PARTNER.id}`)).status).toBe(401);
+    expect((await request(app).post(`/api/v1/tpl/approve/${PARTNER.id}`).set(bearer(admin()))).status).toBe(403);
     expect((await request(app).delete(`/api/v1/tpl/${PARTNER.id}`)).status).toBe(401);
+    expect((await request(app).delete(`/api/v1/tpl/${PARTNER.id}`).set(bearer(admin()))).status).toBe(403);
   });
 
   it('shows anonymous callers a public view without PAN or bank details', async () => {

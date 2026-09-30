@@ -57,8 +57,8 @@ describe('partner document replacement', () => {
     expect(supabaseMock.rows('tpl_documents')[0].file_url).toBe(`${PID}/pan_new.pdf`);
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
     const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id).sort();
-    // 3PL pages are superadmin's, so admin is not sent what it cannot open
-    expect(recipients).toEqual(['super-1']);
+    // Admin can open the 3PL pages too
+    expect(recipients).toEqual(['admin-1', 'super-1']);
     expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'tpl_document_replaced', agent_name: 'partner-portal' });
   });
 
@@ -112,7 +112,8 @@ describe('partner settings request', () => {
     expect(row.pending_updates).toMatchObject({ sla_commitment: '4 Hours', corridors: GOOD.corridors });
     expect(row.sla_commitment).toBeUndefined();
     expect(supabaseMock.rows('tpl_corridors')).toHaveLength(0);
-    expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(1);
+    // Admin and superadmin are told
+    expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(2);
   });
 
   it.each([

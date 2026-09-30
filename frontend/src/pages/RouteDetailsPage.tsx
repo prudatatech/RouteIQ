@@ -198,7 +198,7 @@ export default function RouteDetailsPage() {
   // A vendor load is its own trip and its id is the load's id, so its paperwork and its shipment page open from that id.
   // Edit and duplicate exist only for vendor loads; ordinary trips don't offer them.
   const handleEdit = () => navigate(`/shipments/${route.id}/manifest`)
-  const handleDuplicate = () => navigate('/backhaul', { state: { duplicateManifest: route } })
+  const handleDuplicate = () => navigate('/return-trips?tab=pool&view=match', { state: { duplicateManifest: route } })
 
   return (
     <Page>

@@ -52,10 +52,10 @@ describe('what a manager can do in operations', () => {
 });
 
 describe('3PL notifications', () => {
-  it('reach superadmin only, since admin cannot open the 3PL pages', async () => {
+  it('reach admin and superadmin, who can open the 3PL pages, but not managers', async () => {
     await notificationService.notifyStaff('New 3PL application', 'A partner applied', 'tpl_application', { partner_id: 'p1' });
     const rows = supabaseMock.rows('notifications');
-    expect(rows.map(r => r.user_id)).toEqual(['super-1']);
+    expect(rows.map(r => r.user_id).sort()).toEqual(['admin-1', 'super-1']);
   });
 
   it('other staff notifications still reach admin', async () => {

@@ -2,25 +2,32 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowRight, Check, Truck, X } from 'lucide-react'
+import { ArrowRight, Check, Clock, Truck, X } from 'lucide-react'
+import clsx from 'clsx'
 import {
   Alert, Button, Card, DataTable, EmptyState, ErrorState, Input, Modal, SectionHeader, Skeleton, StatusPill, useConfirm,
   type Column,
 } from '@/components/ui'
 import { tplNetworkAPI, type TplOffer, type TplOrder } from '@/services/api'
+import { useNow } from '@/hooks/useNow'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { ORDER_STEPS, nextOrderStep, orderStepIndex } from './orderSteps'
 
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || '—'
 
-const NEXT_STEP: Record<string, { status: 'picked_up' | 'in_transit' | 'delivered'; label: string } | undefined> = {
-  accepted: { status: 'picked_up', label: 'Mark picked up' },
-  picked_up: { status: 'in_transit', label: 'Mark in transit' },
-  in_transit: { status: 'delivered', label: 'Mark delivered' },
-}
-
 /** `datetime-local` value to an ISO string, or undefined when empty. */
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
+
+/** "12 min", "2 h 5 min" or "3 days": how long an offer has been waiting. */
+function waiting(since: string, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000))
+  if (minutes < 1) return 'under a minute'
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  if (hours >= 48) return `${Math.floor(hours / 24)} days`
+  return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`
+}
 
 function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClose: () => void; onDone: () => void }) {
   const [pickup, setPickup] = useState('')
@@ -101,10 +108,29 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
   )
 }
 
-/** The partner's "Orders" tab: loads offered to them, and the orders they have accepted. */
+/** Where an order is on its way, as a line of steps; the current one is marked for screen readers too. */
+function OrderProgress({ status }: { status: TplOrder['status'] }) {
+  const at = orderStepIndex(status)
+  return (
+    <ol className="grid grid-cols-4 gap-1.5" aria-label="Order progress">
+      {ORDER_STEPS.map((step, i) => (
+        <li key={step.status} aria-current={i === at ? 'step' : undefined}>
+          <span className={clsx('block h-1.5 rounded-full', i <= at ? 'bg-brand-fill' : 'bg-neutral-soft')} aria-hidden="true" />
+          <span className={clsx('mt-1 block truncate text-xs', i === at ? 'font-medium text-text' : 'text-muted')}>{step.label}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/**
+ * The partner's Orders page: loads offered to them (accept before another partner takes it), then the orders
+ * they accepted, each with the one step to do next, then finished orders and past offers.
+ */
 export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   const queryClient = useQueryClient()
   const { prompt } = useConfirm()
+  const now = useNow(30_000)
   const [accepting, setAccepting] = useState<TplOffer | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -154,7 +180,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   }
 
   const advance = async (o: TplOrder) => {
-    const step = NEXT_STEP[o.status]
+    const step = nextOrderStep(o.status)
     if (!step) return
     if (step.status === 'delivered') {
       const note = await prompt({
@@ -177,7 +203,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   const liveOrders = allOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
   const doneOrders = allOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled')
 
-  const orderColumns: Column<TplOrder>[] = [
+  const doneColumns: Column<TplOrder>[] = [
     {
       key: 'route', header: 'Route',
       cell: o => (
@@ -189,34 +215,13 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
       ),
     },
     { key: 'amount', header: 'Agreed amount', align: 'right', cell: o => <span className="tabular">{formatRupees(o.agreed_amount)}</span>, sortValue: o => Number(o.agreed_amount) },
-    {
-      key: 'due', header: 'Due by', hideBelow: 'md',
-      cell: o => (o.due_by ? formatDateTime(o.due_by) : <span className="text-muted">Not set</span>),
-      sortValue: o => (o.due_by ? new Date(o.due_by).getTime() : null),
-    },
     { key: 'status', header: 'Status', cell: o => <StatusPill status={o.status} />, sortValue: o => o.status },
     {
-      key: 'action', header: 'Next step', align: 'right',
-      cell: o => {
-        const step = NEXT_STEP[o.status]
-        if (step) {
-          return (
-            <Button
-              size="sm"
-              icon={<Truck size={14} />}
-              disabled={update.isPending}
-              loading={update.isPending && update.variables?.id === o.id}
-              onClick={() => advance(o)}
-            >
-              {step.label}
-            </Button>
-          )
-        }
-        return o.status === 'delivered' && o.pod_note
-          ? <span className="text-xs text-muted" title={o.pod_note}>Delivered {formatRelative(o.delivered_at)}</span>
-          : null
-      },
+      key: 'done', header: 'Finished', hideBelow: 'md',
+      cell: o => (o.delivered_at ? `Delivered ${formatRelative(o.delivered_at, now)}` : <span className="text-muted">Cancelled</span>),
+      sortValue: o => (o.delivered_at ? new Date(o.delivered_at).getTime() : null),
     },
+    { key: 'pod', header: 'Proof of delivery', hideBelow: 'lg', cell: o => <span className="text-sm text-muted">{o.pod_note ?? '—'}</span> },
   ]
 
   const pastColumns: Column<TplOffer>[] = [
@@ -228,7 +233,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
     { key: 'status', header: 'Outcome', cell: o => <StatusPill status={o.status} /> },
     {
       key: 'detail', header: 'Details', hideBelow: 'md',
-      cell: o => <span className="text-sm text-muted">{o.status === 'declined' ? o.decline_reason : o.status === 'taken' ? 'Another partner accepted first' : formatRelative(o.offered_at)}</span>,
+      cell: o => <span className="text-sm text-muted">{o.status === 'declined' ? o.decline_reason : o.status === 'taken' ? 'Another partner accepted first' : formatRelative(o.offered_at, now)}</span>,
     },
   ]
 
@@ -239,7 +244,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   return (
     <div className="space-y-8">
       <section className="space-y-3">
-        <SectionHeader title="Load offers" description="Loads dispatch sent you. The first partner to accept gets the load." />
+        <SectionHeader title="Load offers" description="Accept before another partner does: the first partner to accept gets the load." />
         {!canAccept && <Alert tone="warning">Your account is not active, so you cannot accept loads until it is approved again.</Alert>}
         {offers.isLoading ? (
           <Skeleton className="h-24 w-full" />
@@ -257,11 +262,14 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
                       {shortPlace(o.pickup_location)} <ArrowRight size={14} aria-label="to" className="text-muted" /> {shortPlace(o.drop_location)}
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
-                      {[o.corridor_name, o.weight_kg != null ? formatKg(o.weight_kg) : null, `Offered ${formatRelative(o.offered_at)}`].filter(Boolean).join(' · ')}
+                      {[o.corridor_name, o.weight_kg != null ? formatKg(o.weight_kg) : null].filter(Boolean).join(' · ')}
                     </p>
                   </div>
                   <p className="shrink-0 text-lg font-semibold tabular text-text">{o.proposed_price != null ? formatRupees(o.proposed_price) : 'Quote needed'}</p>
                 </div>
+                <p className="flex items-center gap-1.5 text-sm text-warning">
+                  <Clock size={14} aria-hidden="true" /> Waiting {waiting(o.offered_at, now)}, still yours to take
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <Button icon={<Check size={16} />} disabled={!canAccept || decline.isPending} onClick={() => setAccepting(o)}>Accept</Button>
                   <Button
@@ -281,24 +289,64 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
       </section>
 
       <section className="space-y-3">
-        <SectionHeader title="Your orders" description="Loads you accepted. Update each one as it moves." />
-        <DataTable
-          caption="Active orders"
-          columns={orderColumns}
-          rows={liveOrders}
-          rowKey={o => o.id}
-          loading={orders.isLoading}
-          empty={{ title: 'No active orders', description: 'Accept a load offer and it appears here.' }}
-        />
-        {doneOrders.length > 0 && (
-          <DataTable caption="Finished orders" columns={orderColumns} rows={doneOrders} rowKey={o => o.id} />
+        <SectionHeader title="Active orders" description="Loads you accepted. Do the next step as each one moves." />
+        {orders.isLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : liveOrders.length === 0 ? (
+          <Card padded>
+            <EmptyState compact icon={<Truck size={22} />} title="No active orders" description="Accept a load offer and it appears here." />
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {liveOrders.map(o => {
+              const step = nextOrderStep(o.status)
+              const late = o.due_by != null && new Date(o.due_by).getTime() < now
+              return (
+                <Card key={o.id} padded className="space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-1.5 text-base font-semibold text-text" title={`${o.pickup_location} to ${o.drop_location}`}>
+                        {shortPlace(o.pickup_location)} <ArrowRight size={14} aria-label="to" className="text-muted" /> {shortPlace(o.drop_location)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {[o.weight_kg != null ? formatKg(o.weight_kg) : null, `Accepted ${formatRelative(o.accepted_at, now)}`].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-lg font-semibold tabular text-text">{formatRupees(o.agreed_amount)}</p>
+                  </div>
+                  <OrderProgress status={o.status} />
+                  <p className={clsx('text-sm', late ? 'font-medium text-danger' : 'text-muted')}>
+                    {o.due_by ? `${late ? 'Was due' : 'Due by'} ${formatDateTime(o.due_by)}` : 'No due time set'}
+                  </p>
+                  {step && (
+                    <Button
+                      fullWidth
+                      icon={<Truck size={16} />}
+                      disabled={update.isPending}
+                      loading={update.isPending && update.variables?.id === o.id}
+                      onClick={() => advance(o)}
+                    >
+                      {step.label}
+                    </Button>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
         )}
       </section>
+
+      {doneOrders.length > 0 && (
+        <section className="space-y-3">
+          <SectionHeader title="Finished orders" />
+          <DataTable caption="Finished orders" columns={doneColumns} rows={doneOrders} rowKey={o => o.id} pageSize={10} />
+        </section>
+      )}
 
       {pastOffers.length > 0 && (
         <section className="space-y-3">
           <SectionHeader title="Past offers" description="Offers you declined, that another partner took, or that dispatch withdrew." />
-          <DataTable caption="Past offers" columns={pastColumns} rows={pastOffers} rowKey={o => o.id} />
+          <DataTable caption="Past offers" columns={pastColumns} rows={pastOffers} rowKey={o => o.id} pageSize={10} />
         </section>
       )}
 

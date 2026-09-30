@@ -1,348 +1,188 @@
-import { errorMessage, formatDate } from '@/utils/display'
-import { useEffect, useMemo, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import {
-  FileText, MapPin, Calendar, CheckCircle2, Star,
-  Package, AlertTriangle, Truck, Building2, Hash, CreditCard, Eye, UploadCloud, LogOut,
-} from 'lucide-react'
-import {
-  Alert, Button, Card, CardHeader, DataTable, EmptyState, ErrorState, FileButton, IfscVerifiedHint, Page, PageHeader, SearchInput, Spinner, Stat, StatusPill, Tabs, useConfirm, useTabParam,
-} from '@/components/ui'
-import type { Column } from '@/components/ui'
-import toast from 'react-hot-toast'
-import { supabase, openChannel } from '@/services/supabase'
+import { useEffect, useMemo, useRef } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { tplAPI, tplNetworkAPI } from '@/services/api'
-import { TplOrdersTab } from '@/components/tpl/TplOrdersTab'
-import { TplEarningsTab } from '@/components/tpl/TplEarningsTab'
-import { formatPercent, formatRating } from '@/components/tpl/stats'
-import { useAuthStore } from '@/store/authStore'
+import clsx from 'clsx'
+import toast from 'react-hot-toast'
+import { Lock, LogOut } from 'lucide-react'
+import { Alert, Button, EmptyState, ErrorState, IconButton, Spinner, StatusPill } from '@/components/ui'
 import { NotificationsBell } from '@/components/ui/NotificationsBell'
-import { openKycDocument } from '@/services/kycDocuments'
-import { uploadTplDocument } from '@/services/tplDocuments'
-import { CorridorEditor } from '@/components/tpl/CorridorEditor'
-import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
-import { corridorRateText, corridorToFormRow, emptyCorridorRow, type CorridorFormRow, type RateUnit } from '@/components/tpl/constants'
+import { supabase } from '@/services/supabase'
+import { tplAPI, tplNetworkAPI } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
+import { legacyTabPage, portalAccess } from '@/components/tpl/portal/access'
+import { PortalContext, type PortalContextValue, type PortalPartner } from '@/components/tpl/portal/portalContext'
+import OrdersPage from '@/components/tpl/portal/OrdersPage'
+import EarningsPage from '@/components/tpl/portal/EarningsPage'
+import LanesPage from '@/components/tpl/portal/LanesPage'
+import DocumentsPage from '@/components/tpl/portal/DocumentsPage'
+import SettingsPage from '@/components/tpl/portal/SettingsPage'
 
-const TABS = ['overview', 'coverage', 'documents', 'orders', 'earnings', 'settings'] as const
-type Tab = typeof TABS[number]
+const LINKS = [
+  { to: '', label: 'Orders' },
+  { to: 'earnings', label: 'Earnings' },
+  { to: 'lanes', label: 'Lanes' },
+  { to: 'documents', label: 'Documents' },
+  { to: 'settings', label: 'Settings' },
+] as const
 
-interface Corridor {
-  id: string
-  corridor_name: string
-  vehicle_types: string[] | string | null
-  proposed_rate: string | null
-  rate_amount?: number | null
-  rate_unit?: RateUnit | null
-  priority: number | string | null
+function CenteredState({ children }: { children: React.ReactNode }) {
+  return <div className="flex min-h-screen items-center justify-center bg-bg p-6"><div className="w-full max-w-md">{children}</div></div>
 }
 
-interface TplDocument {
-  id: string
-  doc_type: string
-  file_url: string
-  uploaded_at: string
-}
-
-interface TplPendingUpdates {
-  sla_commitment?: string
-  tax_treatment?: string
-  corridors?: CorridorFormRow[]
-}
-
-/** Vehicle types come as a list, or occasionally as one comma-separated string. */
-function vehicleList(value: string[] | string | null | undefined): string[] {
-  if (Array.isArray(value)) return value
-  return (value ?? '').split(',').map(v => v.trim()).filter(Boolean)
-}
-
-interface TplPartner {
-  id: string
-  company_name: string
-  custom_id?: string | null
-  gstin?: string | null
-  pan_number?: string | null
-  msme_status?: string | null
-  bank_account_no?: string | null
-  bank_ifsc?: string | null
-  bank_name?: string | null
-  bank_branch?: string | null
-  bank_ifsc_verified_at?: string | null
-  status: string
-  created_at: string
-  sla_commitment?: string | null
-  tax_treatment?: string | null
-  pending_updates?: TplPendingUpdates | null
-}
-
+/**
+ * The 3PL partner portal at /3pl-portal/:id. It is the partner's own: an account may only open the portal of the
+ * partner record linked to its sign-in, whatever id the address carries (the API enforces this too).
+ * Orders is the home page; Earnings, Lanes, Documents and Settings are pages of their own.
+ */
 export default function TplDashboardPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { confirm } = useConfirm()
-  const [tab, setTab] = useTabParam<Tab>(TABS, 'overview')
-  const [corridorSearch, setCorridorSearch] = useState('')
+  const location = useLocation()
+  const userId = useAuthStore(s => s.userId)
 
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [partner, setPartner] = useState<TplPartner | null>(null)
-  const [corridors, setCorridors] = useState<Corridor[]>([])
-  const [documents, setDocuments] = useState<TplDocument[]>([])
-  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
-  const stats = useQuery({ queryKey: ['tpl-my-stats'], queryFn: tplNetworkAPI.myStats, retry: false })
-  const offersQuery = useQuery({ queryKey: ['tpl-my-offers'], queryFn: tplNetworkAPI.myOffers, retry: false })
-  const openOffers = (offersQuery.data ?? []).filter(o => o.status === 'offered').length
-
-  const filteredCorridors = useMemo(() => {
-    const q = corridorSearch.trim().toLowerCase()
-    if (!q) return corridors
-    return corridors.filter(c => [
-      c.corridor_name, Array.isArray(c.vehicle_types) ? c.vehicle_types.join(', ') : c.vehicle_types,
-    ].some(v => v?.toLowerCase().includes(q)))
-  }, [corridors, corridorSearch])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
+  const signOut = async () => {
+    try { await supabase.auth.signOut() } catch (err) { console.error('Sign-out failed', err) }
     useAuthStore.getState().clearAuth()
     navigate('/login?as=vendor', { replace: true })
   }
 
-  const [reloadKey, setReloadKey] = useState(0)
+  // Whose portal this account has: checked before anything of the address's partner is loaded
+  const own = useQuery({
+    queryKey: ['tpl-own-partner', userId],
+    queryFn: () => tplAPI.byUser(userId!) as Promise<{ id: string } | null>,
+    enabled: !!userId,
+    retry: false,
+  })
+  const access = own.data !== undefined ? portalAccess(own.data?.id, id) : null
 
+  const partnerQuery = useQuery({
+    queryKey: ['tpl-portal-partner', id],
+    queryFn: () => tplAPI.getPartner(id!) as Promise<PortalPartner>,
+    enabled: access === 'own',
+  })
+  useRealtimeRefresh('tpl_portal_partner', ['tpl_partners', 'tpl_corridors', 'tpl_documents'], [['tpl-portal-partner', id]])
+  const offers = useQuery({ queryKey: ['tpl-my-offers'], queryFn: tplNetworkAPI.myOffers, enabled: access === 'own', retry: false })
+  const openOffers = (offers.data ?? []).filter(o => o.status === 'offered').length
+
+  const partner = partnerQuery.data
+  // An approved settings request arrives through realtime
+  const hadPending = useRef(false)
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        if (!id) throw new Error('This address is missing the partner ID.')
-        const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
-        if (!uuidRegex.test(id)) throw new Error('This address is not a valid partner dashboard link.')
+    if (!partner) return
+    if (hadPending.current && !partner.pending_updates && partner.status === 'active') toast.success('Your pending updates have been approved')
+    hadPending.current = !!partner.pending_updates
+  }, [partner])
 
-        const partnerData = await tplAPI.getPartner(id)
-        if (!partnerData) throw new Error('We could not find this partner profile.')
-        // The backend only shows the full record (and accepts changes) to the partner's own
-        // account, so anyone else would see a dashboard they cannot use.
-        if (partnerData.user_id !== useAuthStore.getState().userId) {
-          throw new Error('This dashboard belongs to another partner account. Sign in with the partner account to open it.')
-        }
+  // Old links used one page with ?tab=; each tab is a page now
+  const base = `/3pl-portal/${id}`
+  const legacy = legacyTabPage(new URLSearchParams(location.search).get('tab'))
+  const atBase = location.pathname.replace(/\/$/, '') === base
+  const legacyTarget = atBase && legacy !== null && legacy !== '' ? `${base}/${legacy}` : null
+  const value = useMemo<PortalContextValue | null>(() => partner ? {
+    partner,
+    corridors: partner.tpl_corridors ?? [],
+    documents: partner.tpl_documents ?? [],
+    reload: () => { partnerQuery.refetch() },
+  } : null, [partner, partnerQuery])
 
-        setPartner(partnerData)
-        setCorridors(partnerData.tpl_corridors || [])
-        setDocuments(partnerData.tpl_documents || [])
-      } catch (err) {
-        console.error('Dashboard fetch error:', err)
-        setError(errorMessage(err, 'We could not load your dashboard. Check your connection and try again.'))
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchDashboardData()
-
-    const channel = openChannel(`public:tpl_partners:id=eq.${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tpl_partners', filter: `id=eq.${id}` }, payload => {
-        if (payload.new) {
-          setPartner(payload.new as TplPartner)
-          supabase.from('tpl_corridors').select('*').eq('partner_id', id).then(({ data }) => {
-            if (data) setCorridors(data)
-          })
-          if (payload.new.status === 'active' && !payload.new.pending_updates) {
-            toast.success('Your pending updates have been approved')
-          }
-        }
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [id, reloadKey])
-
-  const handleReplaceDocument = async (doc: TplDocument, file: File | undefined) => {
-    if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('The file is over the 2 MB limit. Choose a smaller file.')
-      return
-    }
-    const ok = await confirm({
-      title: 'Replace this document?',
-      message: `Uploading a new ${doc.doc_type} will send your profile back for approval and pause any active operations until it's reviewed again.`,
-      confirmLabel: 'Replace and resubmit',
-      tone: 'danger',
-    })
-    if (!ok) return
-
-    try {
-      setUploadingDoc(doc.id)
-      const fileName = await uploadTplDocument(file, doc.doc_type, { applicationId: id! })
-        .catch((err: Error) => { throw new Error(`Upload failed: ${err.message}`) })
-
-      // The backend checks the file, sends the partner back to review and tells staff.
-      await tplAPI.replaceDocument(id!, doc.id, fileName)
-
-      setPartner((p) => p && ({ ...p, status: 'pending' }))
-      setDocuments(docs => docs.map(d => (d.id === doc.id ? { ...d, file_url: fileName, uploaded_at: new Date().toISOString() } : d)))
-      toast.success(`${doc.doc_type} updated. Status changed to pending approval.`)
-    } catch (err) {
-      console.error('Document update error:', err)
-      toast.error(errorMessage(err, 'Failed to update document.'))
-    } finally {
-      setUploadingDoc(null)
-    }
+  if (!userId || own.isLoading || (access === 'own' && partnerQuery.isLoading)) {
+    return <CenteredState><div className="flex justify-center"><Spinner size={32} /></div></CenteredState>
   }
 
-  // ─── Settings form ───────────────────────────────
-  const [settingsForm, setSettingsForm] = useState<{ slaCommitment: string, taxTreatment: string, corridors: CorridorFormRow[] } | null>(null)
-  const [isSubmittingSettings, setIsSubmittingSettings] = useState(false)
-
-  useEffect(() => {
-    if (!partner || settingsForm) return
-    const pending = partner.pending_updates
-    setSettingsForm({
-      slaCommitment: pending?.sla_commitment || partner.sla_commitment || '2 Hours',
-      taxTreatment: pending?.tax_treatment || partner.tax_treatment || '12% GTA (With ITC) - Forward Charge',
-      corridors: pending?.corridors && pending.corridors.length > 0
-        ? pending.corridors
-        : corridors.length > 0
-          ? corridors.map((c, i) => corridorToFormRow(c, i))
-          : [emptyCorridorRow()],
-    })
-  }, [partner, corridors, settingsForm])
-
-  const handleSaveSettings = async () => {
-    if (!settingsForm) return
-    const ok = await confirm({
-      title: 'Save these settings?',
-      message: "Saving these changes will send your profile back for approval and pause any active operations until it's reviewed again.",
-      confirmLabel: 'Save and resubmit',
-      tone: 'danger',
-    })
-    if (!ok) return
-
-    const namedCorridors = settingsForm.corridors.filter(c => c.name.trim())
-    if (namedCorridors.length === 0) {
-      toast.error('Add at least one corridor you serve, for example DEL-BOM')
-      return
-    }
-    setIsSubmittingSettings(true)
-    try {
-      const requested = {
-        sla_commitment: settingsForm.slaCommitment,
-        tax_treatment: settingsForm.taxTreatment,
-        corridors: namedCorridors,
-      }
-      const updates = { ...requested, requested_at: new Date().toISOString() }
-      // Nothing changes until staff approve; the backend validates the request and tells staff.
-      await tplAPI.requestSettings(id!, requested)
-
-      setPartner((p) => p && ({ ...p, pending_updates: updates, status: 'pending' }))
-      toast.success('Settings update requested. Awaiting approval.')
-    } catch (err) {
-      toast.error(errorMessage(err, 'Failed to submit the settings update.'))
-    } finally {
-      setIsSubmittingSettings(false)
-    }
-  }
-
-  if (loading) {
+  if (own.error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg">
-        <Spinner size={32} />
-      </div>
+      <CenteredState>
+        <ErrorState title="We could not open your portal" description="Check your connection and try again." onRetry={() => own.refetch()} />
+        <div className="mt-4 flex justify-center"><Button variant="ghost" icon={<LogOut size={16} />} onClick={signOut}>Sign out</Button></div>
+      </CenteredState>
     )
   }
 
-  if (error || !partner) {
+  if (access === 'no-partner' || access === 'other') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg p-6">
-        <div className="w-full max-w-md">
-          <ErrorState
-            title="We could not open this dashboard"
-            description={error || 'This partner profile does not exist, or you do not have access to it.'}
-            onRetry={() => setReloadKey(k => k + 1)}
-          />
-          <div className="mt-4 flex justify-center">
-            <Button variant="ghost" icon={<LogOut size={16} />} onClick={handleLogout}>Sign out and use another account</Button>
-          </div>
-        </div>
-      </div>
+      <CenteredState>
+        <EmptyState
+          icon={<Lock size={22} />}
+          title={access === 'other' ? 'This portal belongs to another partner' : 'This account is not a 3PL partner'}
+          description={access === 'other'
+            ? 'You can only open your own partner portal.'
+            : 'Sign in with the account you set up when your 3PL application was approved.'}
+          action={access === 'other' && own.data
+            ? <Button onClick={() => navigate(`/3pl-portal/${own.data!.id}`, { replace: true })}>Open my portal</Button>
+            : undefined}
+        />
+        <div className="mt-4 flex justify-center"><Button variant="ghost" icon={<LogOut size={16} />} onClick={signOut}>Sign out and use another account</Button></div>
+      </CenteredState>
     )
   }
 
-  const corridorColumns: Column<Corridor>[] = [
-    { key: 'name', header: 'Route', cell: c => <span className="font-medium">{c.corridor_name}</span>, sortValue: c => c.corridor_name },
-    {
-      key: 'vehicles', header: 'Vehicle types', cell: c => (
-        <div className="flex flex-wrap gap-1">
-          {vehicleList(c.vehicle_types).map(v => (
-            <span key={v} className="rounded-full bg-neutral-soft px-2 py-0.5 text-xs text-neutral">{v}</span>
-          ))}
-        </div>
-      ),
-    },
-    { key: 'priority', header: 'Priority', cell: c => <span>P{c.priority ?? '—'}</span>, sortValue: c => c.priority ?? null },
-    { key: 'rate', header: 'Rate', align: 'right', cell: c => <span>{corridorRateText(c)}</span>, sortValue: c => (c.rate_amount != null ? Number(c.rate_amount) : null) },
-  ]
+  // The API only shows the full record to the partner's own account: anything else is not this account's portal
+  if (partnerQuery.error || !partner || !value || partner.user_id !== userId) {
+    return (
+      <CenteredState>
+        <ErrorState
+          title="We could not open this portal"
+          description="This partner profile could not be loaded, or you do not have access to it."
+          onRetry={() => partnerQuery.refetch()}
+        />
+        <div className="mt-4 flex justify-center"><Button variant="ghost" icon={<LogOut size={16} />} onClick={signOut}>Sign out and use another account</Button></div>
+      </CenteredState>
+    )
+  }
+
+  if (legacyTarget) return <Navigate to={legacyTarget} replace />
+
+  const statusTitle: Record<string, string> = {
+    pending: 'Your profile is in review',
+    paused: 'Your account is paused',
+    rejected: 'Your application was not approved',
+  }
 
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="sticky top-0 z-10 border-b border-border bg-surface">
-        <div className="mx-auto flex h-16 max-w-content items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-control bg-brand-fill text-text">
-              <Truck size={18} />
+    <PortalContext.Provider value={value}>
+      <div className="min-h-screen bg-bg text-text">
+        <header className="sticky top-0 z-40 border-b border-border bg-surface">
+          <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-3 px-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <img src="/margix-logo.png" alt="" className="h-8 w-8 shrink-0 object-contain" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold leading-none text-text">MargixIndia 3PL</p>
+                <p className="mt-1 truncate text-xs leading-none text-muted">{partner.company_name}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-text leading-none">MargixIndia 3PL</p>
-              <p className="mt-0.5 text-xs text-muted leading-none">Partner portal</p>
+            <div className="flex shrink-0 items-center gap-2">
+              <StatusPill status={partner.status} className="hidden sm:inline-flex" />
+              <NotificationsBell placement="right" />
+              <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-2 rounded-control border border-border px-3 py-1.5 text-xs text-muted sm:flex">
-              <Building2 size={12} /> {partner.company_name}
-            </span>
-            <StatusPill status={partner.status} className="hidden sm:inline-flex" />
-            <NotificationsBell placement="right" />
-            <Button variant="ghost" size="sm" icon={<LogOut size={14} />} onClick={handleLogout}>Sign out</Button>
-          </div>
-        </div>
-      </header>
+          <nav aria-label="Partner portal" className="mx-auto max-w-content overflow-x-auto px-4 sm:px-6">
+            <ul className="flex min-w-max gap-0.5 sm:gap-1">
+              {LINKS.map(link => (
+                <li key={link.label}>
+                  <NavLink
+                    to={link.to ? `${base}/${link.to}` : base}
+                    end
+                    className={({ isActive }) => clsx(
+                      '-mb-px inline-flex h-11 items-center gap-1.5 border-b-2 px-2.5 text-sm sm:gap-2 sm:px-3 font-medium transition-colors',
+                      isActive ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text',
+                    )}
+                  >
+                    {link.label}
+                    {link.to === '' && openOffers > 0 && (
+                      <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs tabular text-brand" aria-label={`${openOffers} offers waiting`}>{openOffers}</span>
+                    )}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </header>
 
-      <div className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6">
-        <Page>
-          <PageHeader
-            title={partner.company_name}
-            description={
-              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="flex items-center gap-1.5"><Hash size={12} /> {partner.custom_id || partner.id.split('-')[0]}</span>
-                {partner.gstin && <span className="flex items-center gap-1.5"><CreditCard size={12} /> GSTIN {partner.gstin}</span>}
-                <span className="flex items-center gap-1.5"><Calendar size={12} /> Partner since {formatDate(partner.created_at)}</span>
-              </span>
-            }
-            actions={<StatusPill status={partner.status} />}
-          >
-            <Tabs
-              label="Dashboard sections"
-              value={tab}
-              onChange={setTab}
-              tabs={[
-                { id: 'overview', label: 'Overview' },
-                { id: 'coverage', label: 'Corridors', count: corridors.length },
-                { id: 'documents', label: 'Documents', count: documents.length },
-                { id: 'orders', label: 'Orders', count: openOffers > 0 ? openOffers : undefined },
-                { id: 'earnings', label: 'Earnings' },
-                { id: 'settings', label: 'Settings' },
-              ]}
-            />
-          </PageHeader>
-
+        <main className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6 lg:py-8">
           {partner.status !== 'active' && (
-            <Alert
-              tone={partner.status === 'rejected' ? 'danger' : 'warning'}
-              title={
-                partner.status === 'pending' ? 'Your profile is in review'
-                  : partner.status === 'paused' ? 'Your account is paused'
-                    : partner.status === 'rejected' ? 'Your application was not approved'
-                      : 'Your account is not active'
-              }
-            >
+            <Alert tone={partner.status === 'rejected' ? 'danger' : 'warning'} title={statusTitle[partner.status] ?? 'Your account is not active'}>
               {partner.status === 'pending'
                 ? 'You cannot accept new loads until we approve it. Your existing orders stay open. We will notify you.'
                 : partner.status === 'paused'
@@ -350,177 +190,16 @@ export default function TplDashboardPage() {
                   : 'You cannot accept new loads. Contact MargixIndia dispatch to have your account reviewed.'}
             </Alert>
           )}
-
-          {tab === 'overview' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Stat
-                  label="Active orders"
-                  value={stats.data ? stats.data.orders_active.toLocaleString('en-IN') : '—'}
-                  icon={<Package size={16} />}
-                  hint={stats.data ? `${stats.data.orders_completed.toLocaleString('en-IN')} delivered so far` : undefined}
-                  loading={stats.isLoading}
-                />
-                <Stat
-                  label="Acceptance rate"
-                  value={formatPercent(stats.data?.acceptance_rate)}
-                  icon={<CheckCircle2 size={16} />}
-                  hint={stats.data && stats.data.offers_accepted + stats.data.offers_declined > 0
-                    ? `${stats.data.offers_accepted.toLocaleString('en-IN')} accepted of ${(stats.data.offers_accepted + stats.data.offers_declined).toLocaleString('en-IN')} answered`
-                    : 'Shown after you answer an offer'}
-                  loading={stats.isLoading}
-                />
-                <Stat
-                  label="Late deliveries"
-                  value={stats.data ? stats.data.sla_breaches.toLocaleString('en-IN') : '—'}
-                  icon={<AlertTriangle size={16} />}
-                  tone={stats.data && stats.data.sla_breaches > 0 ? 'warning' : 'default'}
-                  hint={`Delivered after the due time. Your SLA commitment: ${partner.sla_commitment || 'not set'}`}
-                  loading={stats.isLoading}
-                />
-                <Stat
-                  label="Rating from dispatch"
-                  value={formatRating(stats.data?.rating_avg)}
-                  icon={<Star size={16} />}
-                  hint={stats.data && stats.data.rating_count > 0 ? `${stats.data.rating_count.toLocaleString('en-IN')} rated ${stats.data.rating_count === 1 ? 'order' : 'orders'}` : 'Shown after dispatch rates a delivery'}
-                  loading={stats.isLoading}
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Card padded>
-                  <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><Building2 size={16} className="text-brand" /> Company details</h3>
-                  <dl className="space-y-3 text-sm">
-                    {[['PAN', partner.pan_number], ['GSTIN', partner.gstin], ['MSME status', partner.msme_status],
-                      ['Bank A/C', partner.bank_account_no ? `****${String(partner.bank_account_no).slice(-4)}` : '—'],
-                      ['IFSC', partner.bank_ifsc],
-                      ['Bank', [partner.bank_name, partner.bank_branch].filter(Boolean).join(', ')]].map(([label, val]) => (
-                      <div key={label} className="flex items-center justify-between">
-                        <dt className="text-muted">{label}</dt>
-                        <dd className="font-mono text-text">{val || '—'}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {partner.bank_ifsc && <p className="mt-2 text-right"><IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} /></p>}
-                </Card>
-                <Card padded>
-                  <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><MapPin size={16} className="text-brand" /> Active corridors</h3>
-                  {corridors.length === 0 ? (
-                    <EmptyState compact title="No corridors yet" description="Add the routes you serve so dispatch can offer you loads." action={<Button variant="secondary" onClick={() => setTab('settings')}>Add corridors</Button>} />
-                  ) : (
-                    <div className="space-y-2">
-                      {corridors.map(c => (
-                        <div key={c.id} className="flex items-center justify-between rounded-control border border-border bg-surface-subtle px-3 py-2 text-sm">
-                          <div>
-                            <p className="font-medium text-text">{c.corridor_name}</p>
-                            <p className="text-xs text-muted">{vehicleList(c.vehicle_types).join(', ') || 'No vehicle types'}</p>
-                          </div>
-                          <span className="text-right text-brand">{corridorRateText(c)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </div>
-            </div>
-          )}
-
-          {tab === 'coverage' && (
-            <div className="space-y-3">
-              <SearchInput value={corridorSearch} onChange={setCorridorSearch} placeholder="Search by route or vehicle type" className="max-w-xs" />
-              <DataTable
-                caption="Approved corridors"
-                columns={corridorColumns}
-                rows={filteredCorridors}
-                rowKey={c => c.id}
-                empty={corridorSearch
-                  ? { title: 'No corridors match your search' }
-                  : { title: 'No corridors yet', description: 'Add the routes you serve so dispatch can offer you loads.', action: <Button onClick={() => setTab('settings')}>Add corridors</Button> }}
-              />
-            </div>
-          )}
-
-          {tab === 'documents' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {documents.length === 0 && (
-                  <div className="md:col-span-2 lg:col-span-3">
-                    <EmptyState title="No documents on file" description="Your application documents appear here once they are uploaded. Contact MargixIndia dispatch if some are missing." />
-                  </div>
-                )}
-                {documents.map(doc => (
-                  <Card key={doc.id} padded>
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand">
-                        <FileText size={18} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h4 className="truncate text-sm font-medium text-text">{doc.doc_type}</h4>
-                        <p className="mt-0.5 text-xs text-muted">Uploaded {formatDate(doc.uploaded_at)}</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={<Eye size={14} />}
-                        onClick={async () => {
-                          try { await openKycDocument(doc.file_url) } catch (err) {
-                            toast.error(errorMessage(err, 'Could not open document.'))
-                          }
-                        }}
-                      >
-                        View
-                      </Button>
-                      <FileButton
-                        variant="secondary"
-                        size="sm"
-                        icon={<UploadCloud size={14} />}
-                        loading={uploadingDoc === doc.id}
-                        accept=".pdf,.png,.jpg,.jpeg"
-                        onFile={file => handleReplaceDocument(doc, file)}
-                      >
-                        Update
-                      </FileButton>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {tab === 'orders' && <TplOrdersTab canAccept={partner.status === 'active'} />}
-
-          {tab === 'earnings' && <TplEarningsTab />}
-
-          {tab === 'settings' && settingsForm && (
-            <Card padded>
-              <CardHeader title="Operational settings" />
-              <div className="space-y-8 pt-6">
-                {partner.pending_updates && (
-                  <Alert tone="warning" title="Your update is waiting for approval">
-                    A new request replaces this one. Your current terms stay in place until it is approved.
-                  </Alert>
-                )}
-                <OperationalTermsFields
-                  slaCommitment={settingsForm.slaCommitment}
-                  taxTreatment={settingsForm.taxTreatment}
-                  onSlaChange={v => setSettingsForm(f => f && { ...f, slaCommitment: v })}
-                  onTaxChange={v => setSettingsForm(f => f && { ...f, taxTreatment: v })}
-                />
-                <div className="border-t border-border pt-8">
-                  <CorridorEditor
-                    corridors={settingsForm.corridors}
-                    onChange={rows => setSettingsForm(f => f && { ...f, corridors: rows })}
-                  />
-                </div>
-                <div className="flex justify-end border-t border-border pt-6">
-                  <Button loading={isSubmittingSettings} onClick={handleSaveSettings}>Submit for approval</Button>
-                </div>
-              </div>
-            </Card>
-          )}
-        </Page>
+          <Routes>
+            <Route index element={<OrdersPage />} />
+            <Route path="earnings" element={<EarningsPage />} />
+            <Route path="lanes" element={<LanesPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to={base} replace />} />
+          </Routes>
+        </main>
       </div>
-    </div>
+    </PortalContext.Provider>
   )
 }

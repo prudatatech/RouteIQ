@@ -10,13 +10,14 @@ import { Lock } from 'lucide-react'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { inboxLink, type RequestSource } from '@/components/requests/model'
+import { returnTripsLink, type OldReturnTripsPage } from '@/config/returnTripsRedirect'
 import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
-  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
+  today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -38,7 +39,7 @@ const AuditLogPage = adminAudit.Component
 const FinancePage = finance.Component
 const SettingsPage = adminSettings.Component
 const VendorInvoicesPage = vendorInvoices.Component
-const BackhaulPage = backhaul.Component
+const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
 const ShipmentManifestPage = shipmentManifest.Component
 const ShipmentPage = shipmentPage.Component
@@ -49,7 +50,6 @@ const ExceptionCasePage = cargoException.Component
 const TransferPage = cargoTransfer.Component
 const DriverPage = driver.Component
 const CustomerTrackingPage = customerTracking.Component
-const TplPartnersPage = tplPartners.Component
 const TplPartnerDetailPage = tplPartnerDetail.Component
 const TplOnboardingPage = tplOnboarding.Component
 const TplTrackApplicationPage = tplTrackApplication.Component
@@ -58,7 +58,6 @@ const TplDashboardPage = tplDashboard.Component
 const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
 const VehicleSharePage = vehicleShare.Component
-const BidsPage = bids.Component
 const VendorPortalPage = vendorPortal.Component
 const VendorTrackingPage = vendorTracking.Component
 const VendorShipmentRequestPage = vendorShipmentRequest.Component
@@ -97,6 +96,12 @@ function MovedTo({ to }: { to: string }) {
 function MovedToRequests({ source }: { source: RequestSource }) {
   const location = useLocation()
   return <Navigate to={inboxLink(source, location.search)} state={location.state} replace />
+}
+
+/** Send an old Backhaul, Bids or 3PL partners address to its Return trips tab, with its filters and ?open= carried over. */
+function MovedToReturnTrips({ from }: { from: OldReturnTripsPage }) {
+  const location = useLocation()
+  return <Navigate to={returnTripsLink(from, location.search)} state={location.state} replace />
 }
 
 /** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
@@ -179,7 +184,7 @@ function TplActivateRedirect() {
 function TplVerifyRedirect() {
   const [searchParams] = useSearchParams()
   const id = searchParams.get('id')
-  return <Navigate to={id ? `/3pl-partners/${id}` : '/3pl-partners'} replace />
+  return <Navigate to={id ? `/3pl-partners/${id}` : '/return-trips?tab=partners'} replace />
 }
 
 export default function App() {
@@ -295,7 +300,8 @@ export default function App() {
           <Route path="/3pl/onboard/track" element={<LazyRoute><TplTrackApplicationPage /></LazyRoute>} />
           <Route path="/3pl/onboard/setup" element={<LazyRoute><TplSetupCredentialsPage /></LazyRoute>} />
           <Route path="/3pl-portal/activate" element={<TplActivateRedirect />} />
-          <Route path="/3pl-portal/:id" element={
+          {/* The partner portal has its own pages (Orders, Earnings, Lanes, Documents, Settings) under the id */}
+          <Route path="/3pl-portal/:id/*" element={
             <LazyRoute><PrivateRoute allowedRoles={['vendor']}>
               <TplDashboardPage />
             </PrivateRoute></LazyRoute>
@@ -391,9 +397,9 @@ export default function App() {
                 <RoutePlannerPage />
               </PrivateRoute>
             } />
-            <Route path="bids" element={
+            <Route path="return-trips" element={
               <PrivateRoute allowedRoles={ADMINS}>
-                <BidsPage />
+                <ReturnTripsPage />
               </PrivateRoute>
             } />
             <Route path="analytics" element={
@@ -431,14 +437,12 @@ export default function App() {
                 <AuditLogPage />
               </PrivateRoute>
             } />
-            <Route path="3pl-partners" element={
-              <PrivateRoute allowedRoles={SUPERADMIN}>
-                <TplPartnersPage />
-              </PrivateRoute>
-            } />
+            {/* Return trips replaced the Backhaul, Bids and 3PL partners pages; old links keep their tab and ?open= */}
+            <Route path="3pl-partners" element={<MovedToReturnTrips from="partners" />} />
             <Route path="3pl-partners/verify" element={<TplVerifyRedirect />} />
+            {/* Admins can view a partner; approving, rejecting and pausing stay with the superadmin (in the page and the API) */}
             <Route path="3pl-partners/:id" element={
-              <PrivateRoute allowedRoles={SUPERADMIN}>
+              <PrivateRoute allowedRoles={ADMINS}>
                 <TplPartnerDetailPage />
               </PrivateRoute>
             } />
@@ -449,11 +453,8 @@ export default function App() {
             } />
             {/* AI Hub came back as Insights */}
             <Route path="ai-hub" element={<MovedTo to="/insights" />} />
-            <Route path="backhaul" element={
-              <PrivateRoute allowedRoles={ADMINS}>
-                <BackhaulPage />
-              </PrivateRoute>
-            } />
+            <Route path="backhaul" element={<MovedToReturnTrips from="backhaul" />} />
+            <Route path="bids" element={<MovedToReturnTrips from="bids" />} />
             <Route path="requests" element={
               <PrivateRoute allowedRoles={OPERATIONS}>
                 <RequestsPage />
@@ -463,13 +464,13 @@ export default function App() {
             <Route path="bookings" element={<MovedToRequests source="customer" />} />
             <Route path="vendor-requests" element={<MovedToRequests source="vendor" />} />
             {/* Old addresses, kept so bookmarks and links in emails still work */}
-            <Route path="capacity-bidding" element={<MovedTo to="/bids" />} />
-            <Route path="cargo-network" element={<MovedTo to="/backhaul" />} />
-            <Route path="3pl-network" element={<MovedTo to="/3pl-partners" />} />
+            <Route path="capacity-bidding" element={<MovedToReturnTrips from="bids" />} />
+            <Route path="cargo-network" element={<MovedToReturnTrips from="backhaul" />} />
+            <Route path="3pl-network" element={<MovedToReturnTrips from="partners" />} />
             <Route path="3pl-network/verify" element={<MovedTo to="/3pl-partners/verify" />} />
             <Route path="superadmin" element={<MovedTo to="/admin/users" />} />
             <Route path="admin" element={<MovedTo to="/admin/users" />} />
-            <Route path="admin/bids" element={<MovedTo to="/bids" />} />
+            <Route path="admin/bids" element={<MovedToReturnTrips from="bids" />} />
             <Route path="admin/requests" element={<MovedToRequests source="vendor" />} />
             <Route path="live-map" element={
               <PrivateRoute allowedRoles={OPERATIONS}>
