@@ -106,7 +106,10 @@ export const navSections: NavSection[] = [
     // Old claim links and notifications still open /cargo?tab=claims: keep Money lit for them
     also: ['/cargo?tab=claims'],
     children: [
-      { to: '/money', label: 'Overview', roles: admins, badge: 'money' },
+      { to: '/money', label: 'To price', roles: admins, badge: 'money' },
+      { to: '/money?tab=invoices', label: 'Invoices', roles: admins },
+      { to: '/money?tab=driver-pay', label: 'Driver pay', roles: admins },
+      { to: '/money?tab=expenses', label: 'Expenses', roles: admins },
       { to: '/money?tab=claims', label: 'Claims', roles: admins },
     ],
   },
