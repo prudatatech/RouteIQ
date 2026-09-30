@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { CheckCircle2, MapPin, ShieldAlert, StickyNote, Truck, Wrench, Zap } from 'lucide-react'
-import { humanize } from '@/components/ui'
+import { CheckCircle2, Combine, MapPin, ShieldAlert, Split, StickyNote, Truck, Wrench, Zap } from 'lucide-react'
+import { StatusPill, humanize } from '@/components/ui'
 import { formatDateTime } from '@/utils/display'
 import type { CaseTimelineEntry, CustodyEvent } from '@/services/cargo'
 import { ConditionPill } from './CargoBits'
@@ -58,8 +58,11 @@ function movement(e: CustodyEvent): string | null {
   return to ?? from
 }
 
-/** The custody chain of one consignment, oldest first: every handover with count, condition, proof and who recorded it. */
-export function CustodyTimeline({ events, className }: { events: CustodyEvent[]; className?: string }) {
+/**
+ * The custody chain of one consignment, oldest first: every handover with count, condition, proof
+ * and who recorded it. A master's timeline merges its lots' events; each is tagged with its lot.
+ */
+export function CustodyTimeline({ events, className, showLots = true }: { events: CustodyEvent[]; className?: string; showLots?: boolean }) {
   const ordered = [...events].sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
   return (
     <div className={className} aria-label="Custody history">
@@ -67,6 +70,8 @@ export function CustodyTimeline({ events, className }: { events: CustodyEvent[];
         items={ordered.map(e => {
           const trouble = !!e.condition && e.condition !== 'good'
           const facts = [
+            // A split or merge is described by the backend's plain-words line ("Split into lots A, B and C")
+            (e.kind === 'split' || e.kind === 'merge') ? e.summary : null,
             pcs(e.pieces),
             e.weight_kg != null ? `${e.weight_kg.toLocaleString('en-IN')} kg` : null,
             movement(e),
@@ -77,10 +82,17 @@ export function CustodyTimeline({ events, className }: { events: CustodyEvent[];
           const who = [e.recorded_by_name, e.recorded_role ? humanize(e.recorded_role) : null].filter(Boolean).join(' · ')
           return {
             key: e.id,
-            dot: trouble ? <ShieldAlert size={13} className="text-danger" /> : e.kind === 'delivery' ? <CheckCircle2 size={13} className="text-success" /> : <Truck size={13} />,
+            dot: trouble
+              ? <ShieldAlert size={13} className="text-danger" />
+              : e.kind === 'delivery' ? <CheckCircle2 size={13} className="text-success" />
+                : e.kind === 'split' ? <Split size={13} className="text-brand" />
+                  : e.kind === 'merge' ? <Combine size={13} className="text-brand" /> : <Truck size={13} />,
             body: (
               <>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {showLots && e.lot_label && (
+                    <StatusPill tone="brand" dot={false} className="whitespace-nowrap">Lot {e.lot_label}</StatusPill>
+                  )}
                   <span className="text-sm font-medium text-text">{custodyKindLabel(e.kind)}</span>
                   {e.condition && <ConditionPill condition={e.condition} />}
                   <span className="text-xs text-muted">{formatDateTime(e.recorded_at)}</span>

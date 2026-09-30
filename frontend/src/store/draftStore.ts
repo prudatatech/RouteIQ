@@ -46,6 +46,26 @@ export interface DraftShipmentData {
   asking_price?: string;
   /** Price charged to the customer, in rupees before GST. Empty when not entered. */
   freight_charge?: string;
+  /** Declared value of the goods in rupees; split across the lots of a multi-drop booking. Empty when not entered. */
+  declared_value?: string;
+  /** Deliver to several consignees: each drop becomes a lot of this consignment (drops[] on POST /shipments). */
+  multi_drop?: boolean;
+  drops?: DraftDrop[];
+}
+
+/** One drop of a multi-drop booking. Pieces, weight and value are typed text; empty weight and value follow pieces. */
+export interface DraftDrop {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  consignee_name: string;
+  consignee_phone: string;
+  consignee_gstin: string;
+  pieces: string;
+  weight_kg: string;
+  declared_value: string;
 }
 
 const initialDraftData: DraftShipmentData = {
@@ -79,7 +99,10 @@ const initialDraftData: DraftShipmentData = {
   scheduled_time: '',
   open_bidding: false,
   bidding_opens_at: '',
-  bidding_closes_at: ''
+  bidding_closes_at: '',
+  declared_value: '',
+  multi_drop: false,
+  drops: [],
 };
 
 interface DraftStore {

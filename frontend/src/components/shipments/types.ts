@@ -54,6 +54,22 @@ export interface ShipmentRow {
   asking_price?: number | null
   bidding_opens_at?: string | null
   bidding_closes_at?: string | null
+  // Lots (docs/cargo-plan.md "Lots"): a split consignment is a master with lots under it
+  /** A master holds no goods itself; its status and pieces roll up from its lots. */
+  is_master?: boolean | null
+  /** Set on a lot: its master (a vendor load's lots carry `parent_manifest_id`). */
+  parent_shipment_id?: string | null
+  parent_manifest_id?: string | null
+  lot_seq?: number | null
+  /** `A`, `B`, `A1` … */
+  lot_label?: string | null
+  split_reason?: string | null
+  declared_value?: number | null
+  /** This lot's part of the master's freight_charge. */
+  freight_share?: number | null
+  consignee_name?: string | null
+  consignee_phone?: string | null
+  consignee_gstin?: string | null
 }
 
 /** One entry of GET /shipments/:id/history (backend-ts ShipmentService.getShipmentHistory). */

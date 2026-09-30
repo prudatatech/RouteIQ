@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ExternalLink, FileText, MapPin, Pencil, Trash2, Truck } from 'lucide-react'
 import {
-  Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, useConfirm,
+  Alert, Button, DetailList, Drawer, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm,
 } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
@@ -109,13 +109,16 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
   // goods do after that (pickup, in transit, hubs, delivery, holds, returns) is a custody event or
   // a case action in the Cargo section, not a plain status change.
   const beforePickup = s.status === 'created' || s.status === 'assigned'
-  const canCancel = beforePickup
+  const canCancel = beforePickup && s.is_master !== true
   // A vehicle can be (re)assigned while the goods are still with the sender. Goods on a vehicle
   // (a failed delivery included) move by a transfer or a re-attempt; assignDriver refuses them.
   const withSender = !s.current_holder || s.current_holder === 'consignor'
-  const canAssign = beforePickup || (s.status === 'exception' && withSender)
+  // A split master holds no goods: its lots are assigned, moved and delivered one by one
+  const master = s.is_master === true
+  const lot = !!s.parent_shipment_id || !!s.parent_manifest_id
+  const canAssign = !master && (beforePickup || (s.status === 'exception' && withSender))
   const assignLabel = s.status === 'exception' ? 'Assign again' : s.status === 'assigned' ? 'Change vehicle' : 'Assign vehicle'
-  const canDelete = !UNDELETABLE_STATUSES.has(s.status ?? '')
+  const canDelete = !master && !UNDELETABLE_STATUSES.has(s.status ?? '')
   const bid = s.capacity_bids
   const signatureIsImage = s.signature_data?.startsWith('data:image')
   const historyEvents = historyQuery.data?.events ?? []
@@ -167,6 +170,8 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       description={
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={s.status} kind="cargo">{shipmentStatusLabel(s.status)}</StatusPill>
+          {master && <StatusPill tone="brand" dot={false}>Split into lots</StatusPill>}
+          {lot && s.lot_label && <StatusPill tone="brand" dot={false}>Lot {s.lot_label}</StatusPill>}
           {s.priority && <StatusPill tone={priorityTone[s.priority] ?? 'neutral'} dot={false}>{humanize(s.priority)} priority</StatusPill>}
         </div>
       }
@@ -212,6 +217,10 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           <DetailList
             items={[
               { label: 'Items', value: s.total_items != null ? s.total_items.toLocaleString('en-IN') : null },
+              ...(s.consignee_name ? [{ label: 'Consignee', value: [s.consignee_name, s.consignee_phone, s.consignee_gstin].filter(Boolean).join(' · ') }] : []),
+              ...(s.split_reason ? [{ label: 'Split', value: statusToLabel(s.split_reason, 'split_reason') }] : []),
+              ...(s.declared_value != null ? [{ label: 'Declared value', value: formatRupees(s.declared_value) }] : []),
+              ...(s.freight_share != null ? [{ label: 'Freight share', value: formatRupees(s.freight_share) }] : []),
               { label: 'Weight', value: formatKg(s.total_weight_kg) },
               ...(s.freight_charge != null ? [{ label: 'Price', value: formatRupees(s.freight_charge) }] : []),
               { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
@@ -235,10 +244,19 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
         </Section>
 
         <section className="space-y-3" aria-label="Cargo">
-          <ConsignmentCargo key={s.id} code={s.tracking_id} cargoRef={refOfShipmentRow(s)} />
+          <ConsignmentCargo
+            key={s.id}
+            code={s.tracking_id}
+            cargoRef={refOfShipmentRow(s)}
+            figures={{
+              weight_kg: s.total_weight_kg ?? null,
+              declared_value: s.declared_value ?? null,
+              freight: s.freight_share ?? s.freight_charge ?? null,
+            }}
+          />
         </section>
 
-        {!manifestOnly && !s.vehicle_id && !isBiddingOpen(s) && (
+        {!manifestOnly && !master && !s.vehicle_id && !isBiddingOpen(s) && (
           <EscalationPanel key={s.id} source={{ shipment_id: s.id }} canEscalate={s.status === 'created'} />
         )}
 
@@ -358,7 +376,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {!closed && (
+        {!closed && !master && (
           <Section title="Parcel label">
             <ParcelLabel trackingId={s.tracking_id} size={112} />
           </Section>

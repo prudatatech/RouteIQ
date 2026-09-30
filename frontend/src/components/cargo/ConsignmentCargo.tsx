@@ -16,6 +16,8 @@ import {
   DeliveryModal, HoldModal, HubModal, MoveToVehicleModal, PickupModal, ReattemptModal, StartReturnModal, type ConsignmentModal,
 } from './ConsignmentActionModals'
 import { consignmentActions, exceptionTypeLabel, holderLabel } from './logic'
+import LotsPanel from './LotsPanel'
+import type { SplitAvailable } from './lots'
 
 const HOLDER_ICON = { consignor: User, vehicle: Truck, hub: Warehouse, consignee: PackageCheck } as const
 
@@ -83,10 +85,11 @@ export function WhereCard({ where, now }: { where: WhereIsIt; now: number }) {
 }
 
 /**
- * Cargo custody for one consignment: where it is now, the actions its state allows, and the
- * custody timeline. Used in the shipment drawer and for vendor loads. `code` is the RTX-/CM- id.
+ * Cargo custody for one consignment: where it is now, the actions its state allows, its lots, and
+ * the custody timeline. Used in the shipment drawer and for vendor loads. `code` is the RTX-/CM- id
+ * (a lot's is `RTX-ABC123-B`). `figures` are its weight, declared value and freight, for a split.
  */
-export default function ConsignmentCargo({ code, cargoRef }: { code: string; cargoRef: CargoRef }) {
+export default function ConsignmentCargo({ code, cargoRef, figures }: { code: string; cargoRef: CargoRef; figures?: Omit<SplitAvailable, 'pieces'> }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const now = useNow(30_000)
@@ -169,8 +172,13 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
       <section className="space-y-3">
         <Heading>Where is it now</Heading>
         <WhereCard where={w} now={now} />
+        {w.is_master && (
+          <p className="text-sm text-muted">This consignment is split into lots. The goods are picked up, moved and delivered per lot: open a lot below to work it.</p>
+        )}
         {buttons.length > 0 && <div className="flex flex-wrap gap-2">{buttons}</div>}
       </section>
+
+      <LotsPanel code={code} cargoRef={cargoRef} where={w} figures={figures} />
 
       <section className="space-y-3">
         <Heading>Custody history</Heading>
@@ -181,7 +189,7 @@ export default function ConsignmentCargo({ code, cargoRef }: { code: string; car
         ) : (timeline.data ?? []).length === 0 ? (
           <p className="text-sm text-muted">No handover recorded yet. Pickup, hubs, transfers and delivery appear here with counts, photos and signatures.</p>
         ) : (
-          <CustodyTimeline events={timeline.data ?? []} />
+          <CustodyTimeline events={timeline.data ?? []} showLots={w.is_master} />
         )}
       </section>
 

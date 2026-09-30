@@ -5,7 +5,7 @@ import { vehiclesAPI } from '@/services/api'
 import type { DraftShipmentData } from '@/store/draftStore'
 import type { VehicleOption } from '../types'
 import { CARGO_TYPES, chargeableKg } from './payload'
-import type { StepId } from './validation'
+import { declaredValueOf, draftDropsBalance, type StepId } from './validation'
 import { formatKg, formatRupees, formatDate } from '@/utils/display'
 
 function ReviewSection({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
@@ -25,6 +25,9 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
   const vehicle = vehicles.find(v => v.id === data.selectedVehicleId)
   const cargoName = CARGO_TYPES.find(c => c.id === data.cargo_type)?.name ?? humanize(data.cargo_type || 'standard')
   const stops = data.stops || []
+  const multi = !!data.multi_drop
+  const drops = data.drops || []
+  const split = multi ? draftDropsBalance(data) : null
 
   return (
     <div className="space-y-4">
@@ -33,8 +36,26 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
           columns={1}
           items={[
             { label: 'Pickup', value: data.origin_address || data.origin_name || null },
-            ...stops.map((s, i) => ({ label: `Stop ${i + 1}`, value: s.address || s.name })),
-            { label: 'Destination', value: data.delivery_point_address || data.delivery_point_name || null },
+            ...(multi
+              ? drops.map((d, i) => ({
+                label: `Drop ${i + 1}`,
+                value: (
+                  <span>
+                    <span className="block">{d.consignee_name}{d.consignee_phone ? ` · ${d.consignee_phone}` : ''}</span>
+                    <span className="block text-xs text-muted">{d.address}</span>
+                    {split?.rows[i] && (
+                      <span className="block text-xs text-muted tabular">
+                        {(split.rows[i].pieces ?? 0).toLocaleString('en-IN')} pieces · {formatKg(split.rows[i].weight_kg)}
+                        {split.rows[i].declared_value != null ? ` · ${formatRupees(split.rows[i].declared_value)}` : ''}
+                      </span>
+                    )}
+                  </span>
+                ),
+              }))
+              : [
+                ...stops.map((s, i) => ({ label: `Stop ${i + 1}`, value: s.address || s.name })),
+                { label: 'Destination', value: data.delivery_point_address || data.delivery_point_name || null },
+              ]),
             { label: 'Dispatch', value: data.plan_for_later && data.scheduled_date
               ? formatDate(data.scheduled_date)
               : 'Today' },
@@ -52,6 +73,8 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
             { label: 'Package size', value: `${data.length_cm} × ${data.width_cm} × ${data.height_cm} cm` },
             { label: 'Chargeable weight', value: formatKg(chargeableKg(data)) },
             { label: 'Price', value: data.freight_charge ? formatRupees(Number(data.freight_charge)) : 'Not set' },
+            ...(declaredValueOf(data) != null ? [{ label: 'Declared value', value: formatRupees(declaredValueOf(data)) }] : []),
+            ...(multi ? [{ label: 'Lots', value: `${drops.length.toLocaleString('en-IN')}, one per drop` }] : []),
           ]}
         />
       </ReviewSection>

@@ -1,4 +1,5 @@
 import type { DraftShipmentData } from '@/store/draftStore'
+import { dropsBalance, gstinError, phoneError } from '@/components/cargo/lots'
 
 export const STEPS = [
   { id: 'route', label: 'Route' },
@@ -8,23 +9,58 @@ export const STEPS = [
 ] as const
 export type StepId = (typeof STEPS)[number]['id']
 
+type DropField = 'place' | 'consignee_name' | 'consignee_phone' | 'consignee_gstin' | 'pieces' | 'weight_kg' | 'declared_value'
+
 export type FieldErrors = Partial<Record<
   'origin' | 'destination' | 'scheduled_date' | 'total_items' | 'total_weight_kg' | 'length_cm' | 'width_cm' | 'height_cm' |
-  'vehicle' | 'asking_price' | 'freight_charge',
+  'vehicle' | 'asking_price' | 'freight_charge' | 'declared_value' | 'drops' | 'drops_split',
   string
->>
+>> & {
+  /** One drop's field: `drop:<drop id>:<field>`. */
+  [key: `drop:${string}:${DropField}`]: string | undefined
+}
+
+export const dropError = (errors: FieldErrors, id: string, field: DropField) => errors[`drop:${id}:${field}`]
 
 export const todayIso = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** The declared value as a number, or null when not entered (or not a valid amount). */
+export function declaredValueOf(d: Pick<DraftShipmentData, 'declared_value'>): number | null {
+  if (!d.declared_value || !d.declared_value.trim()) return null
+  const v = Number(d.declared_value)
+  return Number.isFinite(v) && v >= 0 ? v : null
+}
+
+/** The pieces split of a multi-drop draft, against the booked totals. */
+export function draftDropsBalance(d: DraftShipmentData) {
+  return dropsBalance(
+    { pieces: Number(d.total_items) || 0, weight_kg: Number(d.total_weight_kg) || 0, declared_value: declaredValueOf(d) },
+    (d.drops ?? []).map(x => ({ pieces: x.pieces, weight_kg: x.weight_kg, declared_value: x.declared_value })),
+  )
+}
+
 /** Problems that stop the user leaving a step. Empty when the step is complete. */
 export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
   const e: FieldErrors = {}
+  const drops = d.drops ?? []
   if (step === 'route') {
     if (!d.origin_lat || !d.origin_lng) e.origin = 'Choose a pickup address from the suggestions.'
-    if (!d.dest_lat || !d.dest_lng) e.destination = 'Choose a destination from the suggestions.'
+    if (d.multi_drop) {
+      if (drops.length < 2) e.drops = 'Add at least two drops, or deliver to one destination.'
+      for (const x of drops) {
+        if (!x.lat || !x.lng) e[`drop:${x.id}:place`] = 'Choose the drop address from the suggestions.'
+        if (!x.consignee_name.trim()) e[`drop:${x.id}:consignee_name`] = 'Enter who receives this drop.'
+        const phone = phoneError(x.consignee_phone, true)
+        if (phone) e[`drop:${x.id}:consignee_phone`] = phone
+        const gstin = gstinError(x.consignee_gstin)
+        if (gstin) e[`drop:${x.id}:consignee_gstin`] = gstin
+      }
+    } else if (!d.dest_lat || !d.dest_lng) {
+      e.destination = 'Choose a destination from the suggestions.'
+    }
     if (d.plan_for_later) {
       if (!d.scheduled_date) e.scheduled_date = 'Choose a dispatch date.'
       else if (d.scheduled_date < todayIso()) e.scheduled_date = 'The dispatch date cannot be in the past.'
@@ -37,6 +73,17 @@ export function validateStep(step: StepId, d: DraftShipmentData): FieldErrors {
     if (!(Number(d.width_cm) > 0)) e.width_cm = 'Enter a width above 0.'
     if (!(Number(d.height_cm) > 0)) e.height_cm = 'Enter a height above 0.'
     if (d.freight_charge && !(Number(d.freight_charge) >= 0)) e.freight_charge = 'Enter a price of 0 or more, or leave it empty.'
+    if (d.declared_value && d.declared_value.trim() && declaredValueOf(d) == null) e.declared_value = 'Enter a value of 0 or more, or leave it empty.'
+    if (d.multi_drop && drops.length >= 2) {
+      const balance = draftDropsBalance(d)
+      balance.rows.forEach((r, i) => {
+        const id = drops[i].id
+        if (r.errors.pieces) e[`drop:${id}:pieces`] = r.errors.pieces
+        if (r.errors.weight_kg) e[`drop:${id}:weight_kg`] = r.errors.weight_kg
+        if (r.errors.declared_value) e[`drop:${id}:declared_value`] = r.errors.declared_value
+      })
+      if (balance.problems.length > 0) e.drops_split = balance.problems.join(' ')
+    }
   }
   if (step === 'vehicle' && d.open_bidding) {
     if (!d.selectedVehicleId) e.vehicle = 'Choose the vehicle whose spare space vendors will bid on.'

@@ -3,7 +3,7 @@
  * consignment allows in its current state, piece arithmetic and ageing. No React here,
  * so everything is covered by logic.test.ts.
  */
-import type { Tone } from '@/components/ui/status'
+import { statusToLabel, type Tone } from '@/components/ui/status'
 import { manifestTrackingId } from '@/components/shipments/format'
 import type {
   CargoException, CargoRef, ClaimStatus, ClaimType, ConditionCode, ConsignmentLabel, CustodyKind, ExceptionActionName, ExceptionAction,
@@ -108,6 +108,8 @@ const CUSTODY_LABELS: Record<CustodyKind, string> = {
   hold: 'Put on hold',
   release_hold: 'Hold released',
   lost: 'Marked lost',
+  split: statusToLabel('split', 'custody'),
+  merge: statusToLabel('merge', 'custody'),
 }
 
 /** "vehicle_breakdown" → "Vehicle breakdown"; unknown values are humanised. */
@@ -407,7 +409,16 @@ export interface ConsignmentActions {
 }
 
 /** What staff can do with a consignment, from where it is now. */
-export function consignmentActions(w: Pick<WhereIsIt, 'status' | 'current_holder' | 'vehicle' | 'pieces' | 'open_exceptions' | 'delivery_otp_required' | 'rto'>): ConsignmentActions {
+export function consignmentActions(
+  w: Pick<WhereIsIt, 'status' | 'current_holder' | 'vehicle' | 'pieces' | 'open_exceptions' | 'delivery_otp_required' | 'rto'> & { is_master?: boolean },
+): ConsignmentActions {
+  // A split master holds no goods of its own: only its lots are picked up, moved or delivered
+  if (w.is_master) {
+    return {
+      pickup: false, depart: false, deliver: false, raiseException: false, moveToVehicle: false, hold: false, release: false,
+      reattemptOn: null, startReturn: false, hubIn: false, hubOut: false, sendOtp: false,
+    }
+  }
   const terminal = TERMINAL_SHIPMENT.includes(w.status) || w.status === 'completed'
   const onVehicle = w.current_holder === 'vehicle' && !!w.vehicle
   const atHub = w.current_holder === 'hub'

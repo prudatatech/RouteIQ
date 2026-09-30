@@ -7,12 +7,14 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Alert, Button, FileButton, Input, Modal, Select, Textarea } from '@/components/ui'
-import { depotsAPI, vehiclesAPI } from '@/services/api'
+import { depotsAPI } from '@/services/api'
 import { errorMessage, formatKg } from '@/utils/display'
 import {
   CONDITION_CODES, cargoKeys, custodyAPI, exceptionsAPI, transfersAPI,
   type CargoRef, type ConditionCode, type CustodyBody, type ExceptionType, type WhereIsIt,
 } from '@/services/cargo'
+import { useOperatingVehicles } from './useOperatingVehicles'
+import { parsePieces, partialTransferNote } from './lots'
 import { CONDITION_LABELS, EXCEPTION_TYPE_LABELS, exceptionTypeLabel, isOpenException, onBoardCount, positionOf } from './logic'
 
 export type ConsignmentModal = 'move' | 'hold' | 'hub_in' | 'hub_out' | 'reattempt' | 'return' | 'pickup' | 'deliver'
@@ -51,25 +53,16 @@ function Footer({ onClose, busy, label, danger }: { onClose: () => void; busy: b
   )
 }
 
-interface VehicleRow { id: string; plate_number: string; status?: string | null; available_capacity_kg?: number | null; vehicle_type?: string | null }
-
-/** Vehicles in service, for a transfer or a hub departure. */
-function useOperatingVehicles(enabled = true) {
-  return useQuery({
-    queryKey: ['vehicles', 'transfer-targets'],
-    queryFn: async () => ((await vehiclesAPI.list()) as VehicleRow[])
-      .filter(v => ['available', 'idle', 'on_route'].includes(v.status ?? ''))
-      .sort((a, b) => a.plate_number.localeCompare(b.plate_number)),
-    enabled,
-  })
-}
-
-/** Move the goods to another vehicle: plans a transfer (POST /cargo/transfers) and opens it. */
+/**
+ * Move the goods, or part of them, to another vehicle: plans a transfer (POST /cargo/transfers)
+ * and opens it. Fewer pieces than on board make a partial transfer: the backend splits the
+ * consignment into a lot that moves and a lot that stays, and transfers the moving lot.
+ */
 export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
   const navigate = useNavigate()
   const done = useDone(onClose)
-  // A transfer moves the whole consignment: every piece on board goes (the backend refuses a split)
   const onBoard = onBoardCount(where.pieces)
+  const [pieces, setPieces] = useState(onBoard > 0 ? String(onBoard) : '')
   const [vehicleId, setVehicleId] = useState('')
   const [meet, setMeet] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -84,13 +77,17 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
       return transfersAPI.create({
         from_vehicle_id: where.vehicle!.id,
         to_vehicle_id: vehicleId,
-        items: [{ ref: cargoRef, pieces: onBoard }],
+        items: [{ ref: cargoRef, pieces: Number(pieces) }],
         meet_address: meet.trim(),
         ...(pos ? { meet_lat: pos.lat, meet_lng: pos.lng } : {}),
       })
     },
     onSuccess: transfer => {
-      done(transfer.code ? `Transfer ${transfer.code} planned. Both drivers are told.` : 'Transfer planned. Both drivers are told.')
+      const moving = transfer.split_lots?.moving?.tracking_id
+      const planned = transfer.code ? `Transfer ${transfer.code} planned` : 'Transfer planned'
+      done(moving
+        ? `${planned}: ${Number(pieces).toLocaleString('en-IN')} of ${onBoard.toLocaleString('en-IN')} move as lot ${moving}. Both drivers are told.`
+        : `${planned}. Both drivers are told.`)
       if (transfer.id) navigate(`/cargo/transfers/${transfer.id}`)
     },
     onError: err => setServerError(errorMessage(err, 'We could not plan the transfer. Try again.')),
@@ -100,6 +97,8 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
     const next: Record<string, string> = {}
     if (!vehicleId) next.vehicle = 'Choose the vehicle that takes the goods.'
     if (onBoard < 1) next.vehicle = 'No pieces are on board to move.'
+    const pe = wholeNumber(pieces, onBoard)
+    if (pe) next.pieces = pe
     if (!meet.trim()) next.meet = 'Say where the vehicles meet.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
@@ -113,7 +112,7 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
       onClose={onClose}
       onSubmit={submit}
       closeOnBackdrop={false}
-      title={`Move ${code} to another vehicle`}
+      title={`Move all or part of ${code} to another vehicle`}
       description={`From ${where.vehicle?.plate_number ?? 'its vehicle'}. A transfer is planned; both drivers count the pieces at the handover.`}
       footer={<Footer onClose={onClose} busy={create.isPending} label="Plan transfer" />}
     >
@@ -132,12 +131,34 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
           hint="The server checks the vehicle has room for the goods."
           required
         />
-        <p className="text-sm text-text">All <span className="tabular font-medium">{onBoard.toLocaleString('en-IN')}</span> {onBoard === 1 ? 'piece' : 'pieces'} on board move together.</p>
+        <Input
+          label="Pieces to move"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={onBoard}
+          value={pieces}
+          onChange={e => setPieces(e.target.value)}
+          error={errors.pieces}
+          hint={`${onBoard.toLocaleString('en-IN')} on board. Fewer than all moves part of it as a new lot.`}
+          className="sm:max-w-xs"
+          required
+        />
+        <PartialNote pieces={pieces} onBoard={onBoard} />
         <Input label="Meeting place" value={meet} onChange={e => setMeet(e.target.value)} error={errors.meet} maxLength={200} hint="Where the two drivers meet" required />
         {serverError && <Alert tone="danger">{serverError}</Alert>}
       </div>
     </Modal>
   )
+}
+
+/** "30 of 100 will move as a new lot" under the pieces box, once the count is a valid number. */
+function PartialNote({ pieces, onBoard }: { pieces: string; onBoard: number }) {
+  const n = parsePieces(pieces)
+  const note = partialTransferNote(n != null && n <= onBoard ? n : null, onBoard)
+  return note.partial
+    ? <Alert tone="info">{note.text}</Alert>
+    : <p className="text-sm text-text">{note.text}</p>
 }
 
 /** Put the goods on hold with a reason (custody `hold`, staff only). */
