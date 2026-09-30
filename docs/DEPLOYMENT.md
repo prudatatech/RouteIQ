@@ -39,9 +39,9 @@ The Azure resources are:
 |---|---|---|
 | Web | Vercel project `prudatas-projects/margixindia` | Static Web App `margix-web` |
 | Backend | Railway `routeiq-production-7034.up.railway.app` | Container App `margix-api` |
-| Deploys | Automatically on push to `main` | Automatically on push to `main` once `infra/github-oidc.sh` has been run (§4.4); until then `./infra/deploy.sh` |
+| Deploys | Automatically on push to `main` | Automatically on push to `main` (§4.4) |
 
-Until the domain is switched (§4.5), **a push to `main` updates Vercel and Railway, not Azure.** To update Azure as well, run `./infra/deploy.sh`.
+Until the domain is switched (§4.5), **a push to `main` updates both**: Vercel and Railway (which serve margixindia.com), and Azure.
 
 Both setups use the **same Supabase database**, so they share all data.
 
@@ -121,7 +121,7 @@ It creates a passwordless login for GitHub (a federated credential) and gives it
 
 Optionally, add the public Mapbox token as the variable `VITE_MAPBOX_TOKEN`, so web maps built by GitHub draw roads.
 
-**Status on 30 Sep 2026:** the workflow and the `--images-only` path are in place and tested from a signed-in Mac. `github-oidc.sh` hasn't been run yet, so pushes don't deploy to Azure yet.
+**Status:** switched on 30 Sep 2026. The GitHub login `margix-github-deploy` has Contributor on `margix-rg` only, and signs in with either GitHub subject format. The first automatic deploy (run 36742994688, commit 89d8d19) succeeded end to end.
 
 ### 4.5 Moving margixindia.com to Azure
 
