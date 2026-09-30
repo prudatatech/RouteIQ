@@ -16,37 +16,60 @@ export const MAP_STYLE_URL = '/map-style.json'
 /**
  * Base maps the layer switcher offers. All are free and need no token:
  * Carto (streets, dark) and Esri's public tile services (satellite, terrain).
+ *
+ * None of them may draw its own country borders: India's official boundaries are drawn on
+ * top by MapView (components/map/indiaBorders.ts), and the vector styles' border layers are
+ * hidden. That is why terrain is the street map with a relief layer (TERRAIN_HILLSHADE), not a
+ * topographic map with borders baked into the image.
  */
 export type BaseStyleId = 'streets' | 'satellite' | 'terrain' | 'dark'
 
-const rasterStyle = (name: string, tiles: string, attribution: string, maxzoom: number): StyleSpecification => ({
+interface RasterLayerSpec {
+  tiles: string[]
+  attribution: string
+  maxzoom: number
+}
+
+const rasterStyle = (name: string, ...layers: RasterLayerSpec[]): StyleSpecification => ({
   version: 8,
   name,
-  sources: { base: { type: 'raster', tiles: [tiles], tileSize: 256, maxzoom, attribution } },
-  layers: [{ id: 'base', type: 'raster', source: 'base' }],
+  sources: Object.fromEntries(layers.map((l, i) => [
+    `base-${i}`,
+    { type: 'raster' as const, tiles: l.tiles, tileSize: 256, maxzoom: l.maxzoom, attribution: l.attribution },
+  ])),
+  layers: layers.map((_, i) => ({ id: `base-${i}`, type: 'raster' as const, source: `base-${i}` })),
 })
 
-export const BASE_STYLES: Record<BaseStyleId, { label: string; style: string | StyleSpecification }> = {
-  streets: { label: 'Streets', style: MAP_STYLE_URL },
+/** Colour of India's-view country borders on a base map, with a casing on imagery. */
+export interface BorderStyle {
+  color: string
+  casing?: string
+}
+
+export const BASE_STYLES: Record<BaseStyleId, { label: string; style: string | StyleSpecification; border: BorderStyle }> = {
+  streets: { label: 'Streets', style: MAP_STYLE_URL, border: { color: '#d4b3b6' } },
   satellite: {
     label: 'Satellite',
-    style: rasterStyle(
-      'Satellite',
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      'Imagery © Esri, Maxar, Earthstar Geographics',
-      18,
-    ),
+    style: rasterStyle('Satellite', {
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+      maxzoom: 18,
+    }),
+    border: { color: '#ffffff', casing: '#1f2933' },
   },
-  terrain: {
-    label: 'Terrain',
-    style: rasterStyle(
-      'Terrain',
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-      'Map © Esri, HERE, Garmin, OpenStreetMap contributors',
-      18,
-    ),
-  },
-  dark: { label: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+  // The street map with Esri's relief shading under its roads and labels
+  terrain: { label: 'Terrain', style: MAP_STYLE_URL, border: { color: '#b08f93' } },
+  dark: { label: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', border: { color: '#707070' } },
+}
+
+/** Relief shading drawn under the street map's water, roads and labels for the terrain base map. */
+export const TERRAIN_HILLSHADE = {
+  tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}'],
+  attribution: 'Relief © Esri, USGS, NGA, NASA',
+  maxzoom: 16,
+  /** A street-map layer it goes under (map-style.json). */
+  beforeId: 'waterway',
+  opacity: 0.45,
 }
 
 export const BASE_STYLE_IDS = Object.keys(BASE_STYLES) as BaseStyleId[]

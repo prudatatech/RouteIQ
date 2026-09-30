@@ -239,7 +239,7 @@ export default function HomeScreen({ navigation }: any) {
             >
               {Platform.OS === 'android' && (
                 <UrlTile
-                  urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&hl=en"
+                  urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&hl=en&gl=IN"
                   maximumZ={19}
                   tileSize={256}
                   flipY={false}

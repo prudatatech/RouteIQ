@@ -9,7 +9,8 @@ import Map, {
   type MapRef,
 } from 'react-map-gl/maplibre'
 import clsx from 'clsx'
-import { BASE_STYLES, MAP_DEFAULTS } from '@/config/mapConfig'
+import { BASE_STYLES, MAP_DEFAULTS, TERRAIN_HILLSHADE } from '@/config/mapConfig'
+import { INDIA_BORDERS_SOURCE_ID, INDIA_BORDERS_URL, hideCountryBorders, indiaBordersLayers } from './indiaBorders'
 import {
   GEOFENCE_SOURCE_ID,
   ROUTE_SOURCE_ID,
@@ -327,7 +328,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
           cooperativeGestures={mode === 'picker'}
           cursor={onPick ? 'crosshair' : undefined}
           style={{ position: 'absolute', inset: 0 }}
-          onLoad={(e) => { setZoom(e.target.getZoom()); setLoad({ status: 'ready' }) }}
+          onLoad={(e) => {
+            setZoom(e.target.getZoom())
+            setLoad({ status: 'ready' })
+            // India's official boundaries: hide the base map's own country borders, now and after every style switch
+            hideCountryBorders(e.target)
+            e.target.on('styledata', () => hideCountryBorders(e.target))
+          }}
           onZoomEnd={(e) => setZoom(e.viewState.zoom)}
           onError={handleError}
           onClick={onPick ? handleClick : undefined}
@@ -336,6 +343,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
           {interactive && controls.recenter && <RecenterButton onClick={recenter} />}
           {interactive && controls.zoom && <NavigationControl position="top-right" showCompass={pitch > 0} />}
           {interactive && controls.fullscreen && <FullscreenControl position="top-right" />}
+
+          {baseStyle === 'terrain' && (
+            <Source id="terrain-hillshade" type="raster" tiles={TERRAIN_HILLSHADE.tiles} tileSize={256} maxzoom={TERRAIN_HILLSHADE.maxzoom} attribution={TERRAIN_HILLSHADE.attribution}>
+              <Layer id="terrain-hillshade" type="raster" beforeId={TERRAIN_HILLSHADE.beforeId} paint={{ 'raster-opacity': TERRAIN_HILLSHADE.opacity }} />
+            </Source>
+          )}
+
+          <Source id={INDIA_BORDERS_SOURCE_ID} type="geojson" data={INDIA_BORDERS_URL}>
+            {indiaBordersLayers(baseStyle).map((layer) => <Layer key={`${layer.id}-${baseStyle}`} {...layer} />)}
+          </Source>
 
           {geofences.features.length > 0 && (
             <Source id={GEOFENCE_SOURCE_ID} type="geojson" data={geofences}>

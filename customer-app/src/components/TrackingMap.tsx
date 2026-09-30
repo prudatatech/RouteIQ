@@ -51,7 +51,7 @@ export function TrackingMap({ pickup, drop, vehicle, vehicleLabel }: TrackingMap
         }}
       >
         {Platform.OS === 'android' && (
-          <UrlTile urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&hl=en" maximumZ={19} tileSize={256} flipY={false} />
+          <UrlTile urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&hl=en&gl=IN" maximumZ={19} tileSize={256} flipY={false} />
         )}
         <Marker coordinate={pickup} pinColor={colors.accent} title={t('pickup')} />
         <Marker coordinate={drop} pinColor={colors.info} title={t('dropoff')} />
