@@ -34,13 +34,14 @@ const stop = (e: MouseEvent) => e.stopPropagation()
  * Position that glides to `target` whenever it changes, along `route` when the
  * vehicle is on it. Returns the position to draw.
  */
-function useAnimatedPosition(target: LatLng, route?: [number, number][]): LatLng {
+function useAnimatedPosition(target: LatLng, route?: [number, number][], instant = false): LatLng {
   const [position, setPosition] = useState(target)
   const current = useRef(target)
   const routeRef = useRef(route)
   routeRef.current = route
 
   useEffect(() => {
+    if (instant) { current.current = { lat: target.lat, lng: target.lng }; return }
     const from = current.current
     if (from.lat === target.lat && from.lng === target.lng) return
     return animateMarkerAlongRoute({
@@ -53,7 +54,7 @@ function useAnimatedPosition(target: LatLng, route?: [number, number][]): LatLng
         setPosition({ lat, lng })
       },
     })
-  }, [target.lat, target.lng])
+  }, [target.lat, target.lng, instant])
 
   return position
 }
@@ -68,7 +69,8 @@ interface VehicleMarkerProps {
 }
 
 export const VehicleMarker = memo(function VehicleMarker({ vehicle, selected, showLabel, route, onSelect }: VehicleMarkerProps) {
-  const position = useAnimatedPosition(vehicle.position, route)
+  const glided = useAnimatedPosition(vehicle.position, route, vehicle.instant)
+  const position = vehicle.instant ? vehicle.position : glided
   const status = vehicleStatusStyle(vehicle.status)
   const tone = MAP_TONES[status.tone]
   const kind = VEHICLE_ICONS[(vehicle.vehicle_type ?? '').toLowerCase()] ?? VEHICLE_ICONS.truck
@@ -174,8 +176,10 @@ export const StopMarker = memo(function StopMarker({ stop: routeStop }: { stop: 
         title={`${name} · ${status.label}`}
         className={clsx(
           'flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-semibold shadow-raised',
-          pending ? 'border-text bg-surface text-text' : clsx('border-surface text-white', MAP_TONES[status.tone].bg),
+          !routeStop.color && (pending ? 'border-text bg-surface text-text' : clsx('border-surface text-white', MAP_TONES[status.tone].bg)),
+          routeStop.color && 'bg-surface',
         )}
+        style={routeStop.color ? { borderColor: routeStop.color, color: routeStop.color } : undefined}
       >
         {routeStop.sequence}
       </span>

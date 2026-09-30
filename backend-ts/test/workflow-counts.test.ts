@@ -4,6 +4,7 @@ import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { AnalyticsService } from '../src/services/analytics.service';
 import { InvoiceService } from '../src/services/invoice.service';
+import { resetMlHealth } from '../src/services/optimizer/ml-client';
 
 const app = testApp();
 const admin = () => ({ Authorization: `Bearer ${supabaseMock.signUserToken('admin-1')}` });
@@ -120,7 +121,9 @@ describe('the optimizer', () => {
     });
     supabaseMock.rows('shipments')[0].delivery_points[0].latitude = 22.0;
     supabaseMock.rows('shipments')[0].delivery_points[1].latitude = 21.5;
+    resetMlHealth();
     vi.stubGlobal('fetch', vi.fn(async (input: any, init?: any) => {
+      if (String(input).endsWith('/health')) return new Response('{"status":"healthy"}', { status: 200 });
       if (String(input).includes('/optimize')) {
         sentToMl = JSON.parse(init.body);
         return new Response(JSON.stringify({ routes: [{ vehicle_id: VEH, stop_ids: [SHIP], total_distance_km: 50, total_duration_minutes: 90, estimated_fuel_liters: 8 }], total_distance_km: 50, total_fuel_liters: 8 }), { status: 200 });

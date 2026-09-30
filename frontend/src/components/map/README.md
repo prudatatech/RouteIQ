@@ -20,6 +20,9 @@ import { MapView, type MapVehicle, type MapPoint, type MapRoute } from '@/compon
 
 `MapView` takes `baseStyle` (`streets` | `satellite` | `terrain` | `dark`, see `BASE_STYLES` in `config/mapConfig.ts`),
 `trails` (`{ id, coordinates: [lng, lat][] }[]`, drawn under the vehicles) and `clusters` (default true).
+`lines` (`MapLine[]`: `{ id, coordinates, color, width?, dashed?, opacity? }`) draws several coloured lines under the
+markers: one per vehicle route, an old order dashed under a new one (Optimize page), or a track cut by speed (trip replay).
+A `MapRouteStop` may carry a `color`, and a `MapVehicle` may set `instant` to skip the glide when the caller animates it.
 No token is needed: streets and dark are Carto, satellite and terrain are Esri's public tiles.
 `LayerSwitcher` is the Layers menu; `LiveMap` uses it with `layerPrefs.ts` (choices kept in this browser)
 for traffic incidents, route lines, the selected vehicle's trail (from `gps_points`) and clustering.

@@ -20,6 +20,7 @@ export type {
   MapAltRoute,
   MapControls,
   MapFit,
+  MapLine,
   MapMode,
   MapPoint,
   MapPointKind,

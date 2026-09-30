@@ -1,13 +1,14 @@
 /**
  * Tab slots of the vehicle page (/fleet/:vehicleId).
  *
- *   LocationTabSlot     -> components/fleet/location/VehicleLocationPanel (GPS, trail, activity, share)
+ *   LocationTabSlot     -> components/fleet/location/VehicleLocationPanel (GPS, trail, activity, share) and TripReplayCard
  *   MaintenanceTabSlot  -> VehicleHealthPanel (health score + VehicleMaintenanceTab: condition bars, open job, service history)
  *   FuelTabSlot         -> reported tank level + components/fleet/fuel/VehicleFuelTab (fill-ups, mileage, anomalies)
  */
 import { Fuel } from 'lucide-react'
 import { Card, CardBody, CardHeader, humanize } from '@/components/ui'
 import { VehicleLocationPanel } from '@/components/fleet/location/VehicleLocationPanel'
+import { TripReplayCard } from '@/components/fleet/location/TripReplayCard'
 import VehicleFuelTab from '@/components/fleet/fuel/VehicleFuelTab'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
 import type { Vehicle } from '@/components/fleet/types'
@@ -25,6 +26,7 @@ export function LocationTabSlot({ vehicle }: SlotProps) {
   return (
     <div data-tab-slot="location" className="space-y-4">
       <VehicleLocationPanel key={vehicle.id} vehicleId={vehicle.id} />
+      <TripReplayCard key={`replay-${vehicle.id}`} vehicleId={vehicle.id} plate={vehicle.plate_number} />
     </div>
   )
 }

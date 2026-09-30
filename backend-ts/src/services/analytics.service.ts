@@ -264,6 +264,7 @@ export class AnalyticsService {
         new_sequence: s.new_stop_sequence,
         saved_mins: saved,
         cause: s.trigger,
+        engine: s.engine ?? null,
         incident_id: s.incident_id ?? null,
         delay_minutes: s.delay_minutes ?? null,
         severity: fromTraffic ? 'high' : 'medium',

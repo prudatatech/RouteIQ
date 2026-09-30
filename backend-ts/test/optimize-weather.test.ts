@@ -4,6 +4,7 @@ import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { settings } from '../src/core/config';
 import { externalHttp } from '../src/core/http';
+import { resetMlHealth } from '../src/services/optimizer/ml-client';
 
 const app = testApp();
 const admin = () => ({ Authorization: `Bearer ${supabaseMock.signUserToken('admin-1')}` });
@@ -25,8 +26,10 @@ function reset() {
     notifications: [],
   });
   // The ML service call goes through fetch; capture the factors it is sent
+  resetMlHealth();
   vi.stubGlobal('fetch', vi.fn(async (input: any, init?: any) => {
     const url = String(input);
+    if (url.endsWith('/health')) return new Response('{"status":"healthy"}', { status: 200 });
     if (url.includes('/optimize')) {
       sentToMl = JSON.parse(init.body);
       return new Response(JSON.stringify({ routes: [], total_distance_km: 0, total_fuel_liters: 0 }), { status: 200 });
