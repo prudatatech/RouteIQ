@@ -48,7 +48,11 @@ function saveKerb(vehicleId: string, value: string) {
 
 const placeToPoint = (p: ResolvedPlace) => ({ lat: p.lat, lng: p.lng, address: p.address })
 
-export default function RoutePlannerPage() {
+/**
+ * Plan a truck trip by hand. `embedded` is for the Dispatch workspace: no page title, and the new
+ * trip goes to Trips to send (`onCreated`) instead of opening its page.
+ */
+export default function RoutePlannerPage({ embedded = false, onCreated }: { embedded?: boolean; onCreated?: (tripId: string) => void }) {
   const navigate = useNavigate()
   const mapRef = useRef<MapViewHandle>(null)
 
@@ -123,8 +127,9 @@ export default function RoutePlannerPage() {
   const createRoute = useMutation({
     mutationFn: (body: CreateRouteRequest) => routingAPI.createRoute(body),
     onSuccess: created => {
-      toast.success('Route created. Dispatch it from the Routes page when the driver is ready.')
-      navigate(`/routes/${created.id}`)
+      toast.success('Trip created. Send it to the driver from Trips to send in Dispatch.')
+      if (onCreated) onCreated(created.id)
+      else navigate(`/routes/${created.id}`)
     },
   })
 
@@ -241,10 +246,12 @@ export default function RoutePlannerPage() {
 
   return (
     <Page>
-      <PageHeader
-        title="Route planner"
-        description="Plan a truck trip with live traffic, tolls and a fuel estimate. Compare routes, put the stops in the best order, then create the route."
-      />
+      {!embedded && (
+        <PageHeader
+          title="Route planner"
+          description="Plan a truck trip with live traffic, tolls and a fuel estimate. Compare routes, put the stops in the best order, then create the trip."
+        />
+      )}
 
       {routingUnavailable && (
         <Alert tone="danger" title="Route planning is not set up">{statusQ.data?.message}</Alert>
@@ -288,7 +295,7 @@ export default function RoutePlannerPage() {
                   disabled={!vehicleId}
                   onClick={create}
                 >
-                  Create route{vehicle ? ` for ${vehicle.plate_number}` : ''}
+                  Create trip{vehicle ? ` for ${vehicle.plate_number}` : ''}
                 </Button>
                 {mapsLink && (
                   <a href={mapsLink.url} target="_blank" rel="noopener noreferrer" className={buttonClasses({ variant: 'secondary' })}>
@@ -298,11 +305,11 @@ export default function RoutePlannerPage() {
                 <Button variant="secondary" icon={<Copy size={16} />} onClick={copyPlan}>Copy plan</Button>
               </div>
               <div className="mt-3 space-y-1 text-xs text-muted">
-                {needsVehicleHint && <p>Choose a vehicle to create the route.</p>}
+                {needsVehicleHint && <p>Choose a vehicle to create the trip.</p>}
                 {mapsLink && mapsLink.omitted > 0 && <p>Google Maps opens up to 9 stops, so the last {mapsLink.omitted} are left out of that link.</p>}
                 <p>Arrival times do not include time spent loading or unloading at stops.</p>
                 {createRoute.isError && (
-                  <p role="alert" className="text-danger">{routingErrorMessage(createRoute.error, 'Could not create the route. Try again.')}</p>
+                  <p role="alert" className="text-danger">{routingErrorMessage(createRoute.error, 'Could not create the trip. Try again.')}</p>
                 )}
               </div>
             </Card>

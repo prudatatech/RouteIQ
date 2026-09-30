@@ -115,6 +115,35 @@ describe('GET /shipments/:ref/overview', () => {
     expect((await get(MANIFEST)).status).toBe(200);
   });
 
+  it('resolves a vendor request id: to its load once one exists, to the request itself before that', async () => {
+    const REQUEST = 'bbbbbbbb-0000-4000-8000-000000000000';
+    const PENDING = 'cccccccc-0000-4000-8000-000000000000';
+    reset({
+      cargo_manifest: [{ id: MANIFEST, vehicle_id: 'veh-1', vendor_request_id: REQUEST, status: 'scheduled', capacity_kg: 900, pickup_location: 'Vashi', drop_location: 'Surat', created_at: '2026-09-01T10:00:00Z' }],
+      vendor_shipment_requests: [
+        { id: REQUEST, vendor_id: 'vendor-1', status: 'assigned', cost: 15000, created_at: '2026-08-30T10:00:00Z' },
+        { id: PENDING, vendor_id: 'vendor-1', status: 'pending', cost: null, pickup_location: 'Thane', drop_location: 'Nashik', required_capacity_kg: 2500, created_at: '2026-09-02T10:00:00Z', metadata: {} },
+      ],
+      shipments: [], customer_bookings: [], cargo_exception_items: [], cargo_transfer_items: [], cargo_claims: [], invoices: [],
+    });
+    // A request that has a load shows the load, by the request's id
+    const withLoad = await get(REQUEST);
+    expect(withLoad.status).toBe(200);
+    expect(withLoad.body).toMatchObject({ kind: 'manifest', code: 'CM-ABCDEF12', requester: { kind: 'vendor_load', id: REQUEST }, price: 15000 });
+
+    // One with nothing assigned is the request: its route, weight and vendor, no trip
+    const bare = await get(PENDING);
+    expect(bare.status).toBe(200);
+    expect(bare.body).toMatchObject({
+      kind: 'request',
+      code: 'VR-CCCCCCCC',
+      shipment: { id: PENDING, status: 'pending', origin_name: 'Thane', total_weight_kg: 2500 },
+      requester: { kind: 'vendor_load', id: PENDING, name: 'Sharma Steel', status: 'pending' },
+      trip: null, vehicle: null, price: null,
+    });
+    expect(bare.body.shipment.delivery_points[0]).toMatchObject({ name: 'Nashik' });
+  });
+
   it('answers 404 for an unknown reference, and only to staff', async () => {
     expect((await get('RTX-NOPE0000')).status).toBe(404);
     expect((await get(SHIP, staff('driver-1'))).status).toBe(403);

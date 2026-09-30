@@ -140,7 +140,7 @@ export default function RoutesPage() {
           // Keep button clicks and key presses from opening the row.
           <div className="flex justify-end" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
             {showDispatch && (
-              <Button variant="secondary" size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(r)}>Dispatch</Button>
+              <Button variant="secondary" size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(r)}>Send to driver</Button>
             )}
             {showComplete && (
               <Button

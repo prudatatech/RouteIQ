@@ -3,6 +3,7 @@ import { supabase } from '@/services/supabase'
 import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
+import type { ShipmentOverview } from '@/components/shipments/types'
 
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
@@ -437,6 +438,8 @@ export const authAPI = {
 export const shipmentsAPI = {
   list: (params?: Record<string, unknown>) => api.get('/shipments/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/shipments/${id}`).then(r => r.data),
+  /** The shipment page's read: one id, tracking id or CM- code, with its trip, vehicle, driver, requester, problems, claims and invoice. */
+  overview: (ref: string) => api.get(`/shipments/${encodeURIComponent(ref)}/overview`).then(r => r.data as ShipmentOverview),
   // Public page: no sign-in header (so it never waits on the auth session) and a short timeout, so it always ends in a result or an error.
   trackPublicly: (trackingId: string) => axios
     .get(`${baseURL}/shipments/track/${encodeURIComponent(trackingId)}`, { timeout: 20_000 })

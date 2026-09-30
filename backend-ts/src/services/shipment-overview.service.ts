@@ -3,7 +3,9 @@
  *
  * Everything the page at /shipments/:ref needs in one read: the shipment shaped like a row of the
  * list, and what it links to: who asked for it, its trip, vehicle, driver, lots, problems,
- * transfers, claims and invoice. `ref` is an id, a tracking id (RTX-…) or a load code (CM-…).
+ * transfers, claims and invoice. `ref` is a shipment id, a tracking id (RTX-…), a vendor load's code
+ * (CM-…) or id, or the id of a vendor request (the request inbox links loads by it: a request that
+ * has been given a vehicle resolves to its load, one that has not is shown as the request it is).
  */
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
@@ -35,7 +37,8 @@ export interface OverviewTrip {
 }
 
 export interface ShipmentOverview {
-  kind: 'shipment' | 'manifest';
+  /** `request` is a vendor's load request that has no load yet (nothing assigned). */
+  kind: 'shipment' | 'manifest' | 'request';
   code: string;
   shipment: Record<string, any>;
   requester: OverviewRequester;
@@ -150,9 +153,72 @@ async function requesterOf(c: Consignment, row: Record<string, any>): Promise<{ 
   return { requester: staff, requestCost: null };
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A vendor request that no vehicle has been given yet, shaped like a row of the shipment list. */
+async function requestOverview(request: Record<string, any>): Promise<ShipmentOverview> {
+  const [{ data: vendor }, { data: vehicle }] = await Promise.all([
+    supabase.from('vendor_profiles').select('company_name').eq('id', request.vendor_id).maybeSingle(),
+    request.assigned_vehicle_id
+      ? supabase.from('vehicles').select('id, plate_number, driver_id, driver_name').eq('id', request.assigned_vehicle_id).maybeSingle()
+      : Promise.resolve({ data: null as any }),
+  ]);
+  const cost = request.cost != null ? Number(request.cost) : null;
+  const code = `VR-${String(request.id).substring(0, 8).toUpperCase()}`;
+  return {
+    kind: 'request',
+    code,
+    shipment: {
+      id: request.id,
+      tracking_id: code,
+      status: request.status,
+      origin_name: request.pickup_location ?? null,
+      origin_address: request.pickup_location ?? null,
+      origin_lat: request.pickup_lat ?? null,
+      origin_lng: request.pickup_lng ?? null,
+      total_weight_kg: request.required_capacity_kg ?? null,
+      freight_charge: cost,
+      metadata: request.metadata ?? {},
+      created_at: request.created_at ?? null,
+      delivery_points: [{ id: `${request.id}_dp`, name: request.drop_location ?? null, address: request.drop_location ?? null, latitude: request.drop_lat ?? null, longitude: request.drop_lng ?? null }],
+      vehicle_id: vehicle?.id ?? null,
+      driver_name: vehicle?.driver_name ?? null,
+    },
+    requester: { kind: 'vendor_load', id: request.id, name: vendor?.company_name ?? null, status: request.status ?? null },
+    trip: null,
+    vehicle: vehicle ? { id: vehicle.id, plate_number: vehicle.plate_number ?? null } : null,
+    driver: vehicle?.driver_id ? { id: vehicle.driver_id, name: vehicle.driver_name ?? null } : null,
+    master: null,
+    problems: [],
+    transfers: [],
+    claims: [],
+    invoice: null,
+    price: cost,
+  };
+}
+
+/**
+ * The consignment a reference names. An id that is a vendor request resolves to that request's
+ * load once there is one (the master, when the load was split); until then it is the request itself.
+ */
+async function findOverviewTarget(ref: string): Promise<{ consignment: Consignment } | { request: Record<string, any> }> {
+  try {
+    return { consignment: await resolveRef(ref) };
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status !== 404 || !UUID.test(ref.trim())) throw e;
+  }
+  const { data: request } = await supabase.from('vendor_shipment_requests').select('*').eq('id', ref.trim()).maybeSingle();
+  if (!request) throw new HttpError(404, 'Consignment not found');
+  const { data: loads } = await supabase.from('cargo_manifest').select('id, parent_manifest_id, created_at').eq('vendor_request_id', request.id);
+  const load = [...(loads ?? [])].sort((a: any, b: any) => Number(!!a.parent_manifest_id) - Number(!!b.parent_manifest_id) || Date.parse(a.created_at ?? '') - Date.parse(b.created_at ?? ''))[0];
+  return load ? { consignment: await resolveRef({ manifest_id: load.id }) } : { request };
+}
+
 /** The consignment (and, for a master, its lots) as one shipment page reads it. */
 export async function shipmentOverview(ref: string): Promise<ShipmentOverview> {
-  const c = await resolveRef(ref);
+  const target = await findOverviewTarget(ref);
+  if ('request' in target) return requestOverview(target.request);
+  const c = target.consignment;
   const row = await ShipmentService.getListRow(c.kind, c.id);
   if (!row) throw new HttpError(404, 'Shipment not found');
 

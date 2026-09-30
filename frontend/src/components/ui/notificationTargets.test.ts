@@ -66,7 +66,7 @@ describe('staff notifications', () => {
     ['tpl_order_status', { order_id: 'o1', partner_id: 'p1' }, '/3pl-partners/p1'],
     ['tpl_order_accepted', { order_id: 'o1', partner_id: 'p1' }, '/3pl-partners/p1'],
     ['tpl_offer_declined', { offer_id: 'f1', partner_id: 'p1' }, '/3pl-partners/p1'],
-    ['stop_failed', { manifest_id: 'm1' }, '/shipments?open=m1'],
+    ['stop_failed', { manifest_id: 'm1' }, '/shipments/m1'],
     ['route_postponed', { route_id: 'r1' }, '/routes/r1'],
     ['fleet_alert', { alert_id: 'a1' }, '/fleet?tab=alerts&open=a1'],
     ['vehicle_request', { vehicle_id: 'v1' }, '/vehicle-requests?open=v1'],
@@ -80,13 +80,13 @@ describe('staff notifications', () => {
     ['cargo_transfer_planned', { transfer_id: 't1' }, '/cargo/transfers/t1'],
     ['cargo_transfer_completed', {}, '/cargo?tab=transfers'],
     ['cargo_partial_delivery', { exception_id: 'x1', shipment_id: 's1' }, '/cargo/exceptions/x1'],
-    ['cargo_rto_started', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_rto_started', { shipment_id: 's1' }, '/shipments/s1'],
     ['cargo_at_hub', { depot_id: 'd1', shipment_id: 's1' }, '/cargo?tab=hubs&hub=d1'],
-    ['cargo_at_hub', { manifest_id: 'm1' }, '/shipments?open=m1'],
-    ['cargo_delivery_otp', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_at_hub', { manifest_id: 'm1' }, '/shipments/m1'],
+    ['cargo_delivery_otp', { shipment_id: 's1' }, '/shipments/s1'],
     ['cargo_claim_update', { claim_id: 'c1' }, '/cargo?tab=claims&open=c1'],
     ['driver_action_rejected', { route_id: 'r1' }, '/routes/r1'],
-    ['driver_action_rejected', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['driver_action_rejected', { shipment_id: 's1' }, '/shipments/s1'],
   ])('%s goes to %s', (type, data, path) => {
     expect(at(type, data, 'staff')).toBe(path)
   })

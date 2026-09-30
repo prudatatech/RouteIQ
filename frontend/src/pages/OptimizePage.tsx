@@ -19,7 +19,8 @@ import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert, useConfirm,
 } from '@/components/ui'
-import { isMasterRow } from '@/components/cargo/lots'
+import { needsVehicle } from '@/components/dispatch/logic'
+import type { ShipmentRow } from '@/components/shipments/types'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
@@ -148,7 +149,16 @@ type ApiError = Error & {
   response?: { data?: { detail?: string | { msg: string }[] } }
 }
 
-export default function OptimizePage() {
+/**
+ * Plan many trips at once. `embedded` is for the Dispatch workspace: no page title, the shipments
+ * to plan can start from a chosen few (`initialShipmentIds`), and the result sends the person on to
+ * Trips to send (`onReviewTrips`).
+ */
+export default function OptimizePage({ embedded = false, initialShipmentIds, onReviewTrips }: {
+  embedded?: boolean
+  initialShipmentIds?: string[]
+  onReviewTrips?: () => void
+} = {}) {
   const queryClient = useQueryClient()
   const location = useLocation() as { state?: { routeId?: string } }
   const navigate = useNavigate()
@@ -163,7 +173,7 @@ export default function OptimizePage() {
   const [weatherLevel, setWeatherLevel] = useState('0.5')
   // null means nothing was touched yet, so everything counts as selected.
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string> | null>(null)
-  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string> | null>(null)
+  const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string> | null>(() => (initialShipmentIds ? new Set(initialShipmentIds) : null))
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
   // The suggestion whose new order is drawn on the map before it is applied
   const [previewId, setPreviewId] = useState<string | null>(null)
@@ -178,10 +188,10 @@ export default function OptimizePage() {
 
   const { data: pendingShipments = [], isLoading: shipmentsLoading } = useQuery<Shipment[]>({
     queryKey: ['shipments', 'pending'],
-    queryFn: () => api.get('/shipments/').then(r => r.data.filter((s: Shipment & { status: string; vehicle_id?: string | null }) =>
-      // New loads, and failed deliveries waiting for another attempt (the server plans both).
-      // A split master holds no goods: its lots are dispatched, each under its own code.
-      !isMasterRow(s) && ((s.status === 'created' && !s.vehicle_id) || s.status === 'exception'),
+    queryFn: () => api.get('/shipments/', { params: { limit: 500 } }).then(r => (r.data as (Shipment & ShipmentRow)[]).filter(
+      // The shipments Dispatch lists under Needs a vehicle: new loads and lots, and failed deliveries
+      // waiting for another attempt (the server plans both). A split master is never planned.
+      s => needsVehicle(s),
     )),
   })
 
@@ -267,7 +277,7 @@ export default function OptimizePage() {
         toast.success(data.message || 'Route re-optimized')
         queryClient.invalidateQueries({ queryKey: ['route', routeIdToReoptimize] })
       } else {
-        toast.success(`Optimized ${data.routes?.length ?? 0} route${data.routes?.length === 1 ? '' : 's'} in ${(data.solve_time_seconds || 0).toFixed(1)}s`)
+        toast.success(`Planned ${data.routes?.length ?? 0} ${data.routes?.length === 1 ? 'trip' : 'trips'} in ${(data.solve_time_seconds || 0).toFixed(1)}s. Send them from Trips to send.`)
         queryClient.invalidateQueries({ queryKey: ['routes'] })
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
         queryClient.invalidateQueries({ queryKey: ['vehicles'] })
@@ -423,14 +433,17 @@ export default function OptimizePage() {
   const mapPlans = previewPlan ? [previewPlan] : resultPlans
   const mapDepot: LatLng | null = previewPlan ? null : result?.depot ? { lat: result.depot.latitude, lng: result.depot.longitude } : null
 
+  const summaryLine = routeIdToReoptimize
+    ? `Re-optimizing trip ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
+    : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} shipments that need a vehicle.`
+
   return (
     <Page>
-      <PageHeader
-        title="Route optimization"
-        description={routeIdToReoptimize
-          ? `Re-optimizing route ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
-          : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} pending shipments.`}
-      />
+      {embedded ? (
+        <p className="text-sm text-muted">{summaryLine}</p>
+      ) : (
+        <PageHeader title="Optimize" description={summaryLine} />
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Configuration */}
@@ -595,7 +608,7 @@ export default function OptimizePage() {
                   <EngineBanner engine={result.engine} matrixSource={result.matrix_source} note={result.engine_note} />
 
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                    <Stat label="Routes" value={(result.routes?.length ?? 0).toLocaleString('en-IN')} />
+                    <Stat label="Trips" value={(result.routes?.length ?? 0).toLocaleString('en-IN')} />
                     <Stat label="Total distance" value={formatKm(result.total_distance_km ?? 0)} />
                     <Stat label="ETA" value={formatMinutes(result.new_eta_minutes ?? result.routes?.[0]?.total_duration_minutes ?? 0)} />
                     <Stat label="Fuel" value={`${(result.total_fuel_liters ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`} />
@@ -618,8 +631,8 @@ export default function OptimizePage() {
 
                   {!routeIdToReoptimize && (result.routes?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-brand-soft px-4 py-3 text-sm text-text">
-                      <span>The new routes are waiting to be dispatched.</span>
-                      <Button size="sm" variant="secondary" onClick={() => navigate('/routes?status=pending')}>Review and dispatch</Button>
+                      <span>{(result.routes?.length ?? 0).toLocaleString('en-IN')} {result.routes?.length === 1 ? 'trip' : 'trips'} ready. Review and send them in Trips to send.</span>
+                      <Button size="sm" variant="secondary" onClick={() => (onReviewTrips ? onReviewTrips() : navigate('/dispatch?tab=to-send'))}>Go to Trips to send</Button>
                     </div>
                   )}
 

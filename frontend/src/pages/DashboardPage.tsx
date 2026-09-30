@@ -436,7 +436,7 @@ export default function DashboardPage() {
             error={shipmentsError ? 'We could not load shipments.' : undefined}
             onRetry={() => refetchShipments()}
             empty={{ title: 'No active shipments', description: 'Every shipment has been delivered or cancelled.', action: <Button onClick={openModal}>Create shipment</Button> }}
-            onRowClick={s => navigate('/shipments?tracking=' + s.tracking_id)}
+            onRowClick={s => navigate(`/shipments/${encodeURIComponent(s.tracking_id)}`)}
             pageSize={10}
           />
         </div>

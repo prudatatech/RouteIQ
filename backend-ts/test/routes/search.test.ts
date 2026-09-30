@@ -67,7 +67,7 @@ describe('GET /search', () => {
     const res = await search('rtx-abc', admin());
     expect(res.status).toBe(200);
     expect(res.body.results.shipments).toEqual([
-      expect.objectContaining({ id: SHIPMENT_ID, type: 'shipment', path: `/shipments?open=${SHIPMENT_ID}` }),
+      expect.objectContaining({ id: SHIPMENT_ID, type: 'shipment', path: `/shipments/${SHIPMENT_ID}` }),
     ]);
   });
 

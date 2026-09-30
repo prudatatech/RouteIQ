@@ -63,7 +63,7 @@ async function searchShipments(term: string): Promise<SearchResultItem[]> {
         label: s.tracking_id ?? s.id,
         sublabel: [s.status, s.origin_name || s.origin_address].filter(Boolean).join(' · '),
         type: 'shipment',
-        path: `/shipments?open=${s.id}`,
+        path: `/shipments/${s.id}`,
       });
     }
   }
@@ -90,7 +90,7 @@ async function searchShipments(term: string): Promise<SearchResultItem[]> {
           label: s?.tracking_id ?? id,
           sublabel: s ? [s.status, s.origin_name || s.origin_address].filter(Boolean).join(' · ') : 'Delivery stop match',
           type: 'shipment',
-          path: `/shipments?open=${id}`,
+          path: `/shipments/${id}`,
         });
       }
     }
@@ -122,7 +122,7 @@ async function searchCargoManifests(term: string): Promise<SearchResultItem[]> {
     label: displayId(r.id),
     sublabel: [r.status, r.pickup_location, r.drop_location].filter(Boolean).join(' · '),
     type: 'cargo_manifest',
-    path: `/shipments?open=${r.id}`,
+    path: `/shipments/${r.id}`,
   }));
 }
 

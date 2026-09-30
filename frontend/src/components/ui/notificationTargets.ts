@@ -28,7 +28,8 @@ const partnerPage = (tab: string, openKey?: string): Resolver => data => {
 
 /** A cargo notification opens its case, else its transfer or claim, else the consignment (docs/cargo-plan.md). */
 const cargoCase = (fallback: Resolver): Resolver => d => (str(d.exception_id) ? `/cargo/exceptions/${str(d.exception_id)}` : fallback(d))
-const cargoConsignment: Resolver = d => withOpen('/shipments', d.shipment_id ?? d.manifest_id)
+const shipmentPage = (id: unknown) => (str(id) ? `/shipments/${encodeURIComponent(str(id)!)}` : '/shipments')
+const cargoConsignment: Resolver = d => shipmentPage(d.shipment_id ?? d.manifest_id)
 
 const STAFF: Record<string, Resolver> = {
   sos: d => withOpen('/emergency', d.alert_id),
@@ -44,7 +45,7 @@ const STAFF: Record<string, Resolver> = {
   tpl_order_status: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
   tpl_order_accepted: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
   tpl_offer_declined: d => str(d.partner_id) ? `/3pl-partners/${str(d.partner_id)}` : '/3pl-partners',
-  stop_failed: d => withOpen('/shipments', d.manifest_id),
+  stop_failed: d => shipmentPage(d.manifest_id),
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
   vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),

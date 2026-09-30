@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
-  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
+  dashboard, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
   backhaul, bookings, vendorRequests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
@@ -40,6 +40,8 @@ const VendorInvoicesPage = vendorInvoices.Component
 const BackhaulPage = backhaul.Component
 const ShipmentsPage = shipments.Component
 const ShipmentManifestPage = shipmentManifest.Component
+const ShipmentPage = shipmentPage.Component
+const DispatchPage = dispatchWorkspace.Component
 const EmergencyPage = emergency.Component
 const CargoPage = cargo.Component
 const ExceptionCasePage = cargoException.Component
@@ -304,6 +306,16 @@ export default function App() {
             <Route path="shipments" element={
               <PrivateRoute allowedRoles={['superadmin', 'admin']}>
                 <ShipmentsPage />
+              </PrivateRoute>
+            } />
+            <Route path="shipments/:id" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+                <ShipmentPage />
+              </PrivateRoute>
+            } />
+            <Route path="dispatch" element={
+              <PrivateRoute allowedRoles={['superadmin', 'admin', 'manager']}>
+                <DispatchPage />
               </PrivateRoute>
             } />
             <Route path="shipments/:id/manifest" element={

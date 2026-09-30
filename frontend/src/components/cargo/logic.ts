@@ -149,10 +149,10 @@ export function refOfShipmentRow(row: { id: string; tracking_id: string }): Carg
   return row.tracking_id.startsWith('CM-') ? { manifest_id: row.id } : { shipment_id: row.id }
 }
 
-/** Where a consignment's page is: a shipment opens its drawer, a vendor load opens Shipments too (merged list). */
+/** Where a consignment's page is: /shipments/:id, for a shipment or a vendor load. */
 export function consignmentHref(c: ConsignmentLabel): string | null {
   const id = c.shipment_id ?? c.manifest_id
-  return id ? `/shipments?open=${encodeURIComponent(id)}` : null
+  return id ? `/shipments/${encodeURIComponent(id)}` : null
 }
 
 // ── SLA ────────────────────────────────────────────────────────────────────

@@ -335,7 +335,7 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
               {booking.shipment_id && (
                 <>
                   {' '}Re-attempt, move them to another vehicle or return them from{' '}
-                  <Link to={`/shipments?open=${encodeURIComponent(booking.shipment_id)}`} className="font-medium underline">the shipment’s cargo panel</Link>.
+                  <Link to={`/shipments/${encodeURIComponent(booking.shipment_id)}`} className="font-medium underline">the shipment’s page</Link>.
                 </>
               )}
             </Alert>
