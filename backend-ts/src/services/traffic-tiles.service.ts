@@ -133,7 +133,7 @@ export async function getFlowTile({ z, x, y }: TileCoords): Promise<Buffer | nul
 
   const request = (async () => {
     try {
-      const url = `https://api.tomtom.com/traffic/map/4/tile/flow/relative/${z}/${x}/${y}.png?key=${encodeURIComponent(settings.TOMTOM_API_KEY)}`;
+      const url = `https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/${z}/${x}/${y}.png?key=${encodeURIComponent(settings.TOMTOM_API_KEY)}`;
       const { body, contentType } = await externalHttp.getBuffer(url, 6000);
       if (!contentType.startsWith('image/png') || body.length === 0) throw new Error(`Unexpected TomTom answer (${contentType})`);
       remember(key, body, TILE_CACHE_SECONDS);

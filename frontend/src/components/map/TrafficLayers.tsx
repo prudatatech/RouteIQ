@@ -37,7 +37,7 @@ function FlowLayer({ url }: { url: string }) {
         }
         if (!map.getLayer(FLOW_LAYER_ID)) {
           map.addLayer(
-            { id: FLOW_LAYER_ID, type: 'raster', source: FLOW_SOURCE_ID, paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 150 } },
+            { id: FLOW_LAYER_ID, type: 'raster', source: FLOW_SOURCE_ID, paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 150 } },
             flowInsertBeforeId(style.layers),
           )
         }
