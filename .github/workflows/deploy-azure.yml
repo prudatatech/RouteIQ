@@ -147,7 +147,4 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Build and upload the web app
-        env:
-          # Public pk. token (optional); without it web maps draw straight lines
-          VITE_MAPBOX_TOKEN: ${{ vars.VITE_MAPBOX_TOKEN }}
         run: ./infra/deploy.sh --images-only --web-only

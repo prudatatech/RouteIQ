@@ -98,7 +98,7 @@ Settings:
 ### 4.3 Secrets and API keys
 
 - **Location:** secrets live **only** in `infra/secrets.env`. It isn't committed and is readable only by its owner; `infra/secrets.env.example` lists every key and where to get it.
-- **Six keys are required for the backend to start:** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `SECRET_KEY` and `PEOPLE_HASH_SALT`. The others switch features on, such as Mapbox road routes (`VITE_MAPBOX_TOKEN`), email (`RESEND_API_KEY`) and Mappls, ULIP, e-way bill and SparkGPS.
+- **Six keys are required for the backend to start:** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `SECRET_KEY` and `PEOPLE_HASH_SALT`. The others switch features on, such as road routes on the maps (`MAPBOX_ACCESS_TOKEN`, with `TOMTOM_API_KEY` as the fallback), email (`RESEND_API_KEY`) and Mappls, ULIP, e-way bill and SparkGPS.
 - **Filling it from files you already have:** `./infra/import-secrets.sh backend/.env [other.env]` prints key names only, never values.
 - **Applying a change:** after editing, run `./infra/set-secrets.sh` (secrets only, quick) or `./infra/deploy.sh` (also rebuilds).
 - **`PEOPLE_HASH_SALT` must never change** once documents have been uploaded. It hashes document numbers, and a new salt stops old documents matching new uploads. It was generated on 30 Sep 2026, before any documents existed. If the old Railway backend is still in use when documents are uploaded, set the same value there.
@@ -128,7 +128,7 @@ Expected times: web only about 1.5 to 2 minutes (a warm local run measured 76 s;
 ```
 It creates a passwordless login for GitHub (a federated credential) and gives it Contributor on `margix-rg`. It then stores `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` as repository **variables** (not secrets) using the `gh` CLI.
 
-Optionally, add the public Mapbox token as the variable `VITE_MAPBOX_TOKEN`, so web maps built by GitHub draw roads.
+The web build needs no map token: `VITE_MAPBOX_TOKEN` is no longer used. Maps get road routes from the API (`POST /api/v1/routing/directions`), which uses `MAPBOX_ACCESS_TOKEN` and falls back to `TOMTOM_API_KEY`.
 
 **Status:** switched on 30 Sep 2026. The GitHub login `margix-github-deploy` has Contributor on `margix-rg` only, and signs in with either GitHub subject format. The first automatic deploy (run 36742994688, commit 89d8d19) succeeded end to end.
 
@@ -224,7 +224,7 @@ It has native modules (push notifications, file sharing, image picker), so it ne
 | Backend tests fail with `EADDRNOTAVAIL` | The Mac ran out of ephemeral ports | Re-run the failing files alone; a fix is in progress |
 | Push succeeded but Railway didn't deploy | Railway's GitHub trigger sometimes stops firing | Railway dashboard → Deploy latest commit (only while Railway still serves the domain) |
 | Local web app signs in to the **live** Supabase | `frontend/.env.local` sets `VITE_SUPABASE_DIRECT_URL`, which overrides `VITE_SUPABASE_URL` | For local runs, set both to the local Supabase |
-| Web maps draw straight lines | `VITE_MAPBOX_TOKEN` is blank | Add it to `infra/secrets.env`, then `./infra/deploy.sh --skip-api` |
+| Web maps draw straight lines | The API has neither `MAPBOX_ACCESS_TOKEN` nor `TOMTOM_API_KEY` (the directions endpoint answers 503), or both providers failed | Add a key to `infra/secrets.env`, then `./infra/set-secrets.sh`. No web rebuild is needed; `VITE_MAPBOX_TOKEN` is no longer used |
 | Files in the session scratchpad disappeared | The scratchpad is wiped when a session restarts | Keep anything reusable in the repo (`infra/`, `e2e/`) |
 
 ---

@@ -3,7 +3,8 @@
  *
  * POST /routing/plan            routes for a truck (TomTom, Mapbox fallback) with traffic, tolls and fuel
  * POST /routing/optimize-order  best order of the stops between a fixed start and end
- * GET  /routing/open-loads      open shipments and loads whose pickup and drop points can be used as stops
+ * POST /routing/directions      road line through up to 25 waypoints for any map (Mapbox, TomTom fallback); any signed-in user
+ * GET  /routing/open-loads     open shipments and loads whose pickup and drop points can be used as stops
  * GET  /routing/status          which routing services are set up
  * POST /routing/create-route    save a plan as a route for a vehicle
  */
@@ -12,7 +13,8 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { rateLimitByUser } from '../core/rate-limit';
 import { HttpError, sendError } from '../core/errors';
-import { PlanRequestSchema, CreatePlannedRouteSchema, MAX_STOPS } from '../schemas/routing';
+import { PlanRequestSchema, CreatePlannedRouteSchema, DirectionsRequestSchema, MAX_STOPS } from '../schemas/routing';
+import { getDirections } from '../services/directions.service';
 import {
   isMapboxConfigured, isTomTomConfigured, listOpenLoads, optimizeStopOrder, planRoute, NO_ROUTING_MESSAGE, type PlanInput,
 } from '../services/routing.service';
@@ -56,6 +58,19 @@ router.post('/plan', ...staff, rateLimitByUser('routing-plan', 30, 60), async (r
 router.post('/optimize-order', ...staff, rateLimitByUser('routing-optimize', 10, 60), async (req: Request, res: Response) => {
   try {
     res.json(await optimizeStopOrder(parsePlan(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// Every role's maps draw road lines, so this is open to any signed-in user. Rate limited per user, and
+// identical requests come from the cache, so it cannot burn the provider quota.
+router.post('/directions', requireAuth, rateLimitByUser('routing-directions', 120, 60), async (req: Request, res: Response) => {
+  try {
+    const parsed = DirectionsRequestSchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(400, firstIssue(parsed.error.issues));
+    const { cached: _cached, ...directions } = await getDirections(parsed.data.waypoints, parsed.data.traffic);
+    res.json(directions);
   } catch (e) {
     sendError(req, res, e);
   }

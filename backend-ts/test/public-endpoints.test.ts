@@ -33,12 +33,10 @@ describe('public endpoints are rate limited', () => {
 });
 
 describe('endpoints that spend money or reveal data need a signed-in caller', () => {
-  it('refuses the directions proxy without a token and with bad coordinates', async () => {
-    expect((await request(app).get('/api/v1/shipments/track/RTX-1/route?lat=1&lng=1&dLat=2&dLng=2')).status).toBe(401);
-    const res = await request(app)
-      .get('/api/v1/shipments/track/RTX-1/route?lat=999&lng=1&dLat=2&dLng=2')
-      .set({ Authorization: `Bearer ${supabaseMock.signUserToken('vendor-1')}` });
-    expect(res.status).toBe(400);
+  it('takes no coordinates on the public tracking route, so it is not an open directions proxy', async () => {
+    // Coordinates in the query are ignored; an unknown tracking id gets a 404 and nothing is routed
+    const res = await request(app).get('/api/v1/shipments/track/RTX-NOPE0000/route?lat=1&lng=1&dLat=2&dLng=2');
+    expect(res.status).toBe(404);
   });
 
   it('does not let vendors read fleet analytics or the driver ETA model', async () => {

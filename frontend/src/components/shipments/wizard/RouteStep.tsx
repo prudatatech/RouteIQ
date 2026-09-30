@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { MapPin, X } from 'lucide-react'
 import { Checkbox, IconButton, Input, PlaceSearch } from '@/components/ui'
-import { AddressPicker, MapView, type LatLng, type MapPoint } from '@/components/map'
+import { AddressPicker, MapView, fetchDrivingRoute, type LatLng, type MapPoint, type MapRoute } from '@/components/map'
 import { reversePlace, type ResolvedPlace } from '@/services/geocoding'
 import type { StepProps } from './stepProps'
 import { todayIso } from './validation'
@@ -42,6 +43,24 @@ export default function RouteStep({ data, update, errors }: StepProps) {
   const destination = data.dest_lat && data.dest_lng
     ? { address: data.delivery_point_address || data.delivery_point_name, lat: data.dest_lat, lng: data.dest_lng }
     : null
+
+  // The road line through the pickup, stops and drop(s); a dashed straight line shows until it arrives or when there is none
+  const waypoints: LatLng[] = (() => {
+    if (!origin) return []
+    const through = multi ? placedDrops : destination ? [...stops.filter(s => s.lat && s.lng), destination] : []
+    return through.length > 0 ? [origin, ...through].map(p => ({ lat: p.lat, lng: p.lng })) : []
+  })()
+  const road = useQuery({
+    queryKey: ['wizard-road', waypoints.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';')],
+    queryFn: () => fetchDrivingRoute(waypoints),
+    enabled: waypoints.length >= 2,
+    staleTime: 3 * 60_000,
+    retry: false,
+  })
+  const previewRoute: MapRoute | null = waypoints.length < 2 ? null
+    : road.data
+      ? { coordinates: road.data.coordinates, congestion: road.data.congestion.length > 0 ? road.data.congestion : undefined }
+      : { coordinates: waypoints.map(p => [p.lng, p.lat] as [number, number]), planned: true }
 
   const setOrigin = (place: ResolvedPlace | null) => update(place
     ? { origin_name: nameOf(place), origin_address: place.address, origin_lat: place.lat, origin_lng: place.lng }
@@ -150,14 +169,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
                 })),
               ]
               : routePoints(origin, destination, stops)}
-            route={multi
-              ? (origin && placedDrops.length > 0 ? { coordinates: [origin, ...placedDrops].map(p => [p.lng, p.lat] as [number, number]), planned: true } : null)
-              : origin && destination
-                ? {
-                  coordinates: [origin, ...stops.filter(s => s.lat && s.lng), destination].map(p => [p.lng, p.lat] as [number, number]),
-                  planned: true,
-                }
-                : null}
+            route={previewRoute}
             ariaLabel="Map of the pickup, stops and destination. Click to place a pin, drag pins to adjust."
           />
         </div>

@@ -126,7 +126,7 @@ export function OptimizeMap({ plans, depot, fallbackStops, fallbackVehicles, hea
         />
       </div>
       {plans.length > 0 && !directionsAvailable && (
-        <p className="border-t border-border px-4 py-2 text-xs text-muted">Lines run straight between stops. Add a Mapbox token to draw them along the roads.</p>
+        <p className="border-t border-border px-4 py-2 text-xs text-muted">Lines run straight between stops. Road directions are not available right now.</p>
       )}
     </Card>
   )

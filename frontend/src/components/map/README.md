@@ -12,8 +12,10 @@ import { MapView, type MapVehicle, type MapPoint, type MapRoute } from '@/compon
 
 - **MapLibre GL** (`maplibre-gl` 4) through `react-map-gl/maplibre`.
 - Base map: `/map-style.json` (Carto Positron vector tiles, OpenMapTiles fonts). **No token needed.**
-- `VITE_MAPBOX_TOKEN` is optional. It is only used for driving directions
-  (`fetchDrivingRoute`). Without it, routes are drawn as dashed straight lines.
+- Driving directions (`fetchDrivingRoute`) come from the backend, `POST /routing/directions` (Mapbox
+  driving-traffic, TomTom fallback), so no map token is needed in the browser. When the server has no
+  provider (503) or no route, routes are drawn as dashed straight lines. The public tracking page uses
+  `fetchTrackedRoute`, which asks `GET /shipments/track/:id/route` (the server picks both ends).
 - Place search uses `services/geocoding.ts` (ArcGIS, no token).
 
 ### Base maps and layers
@@ -41,9 +43,9 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 - **Incidents** (`incidents`): accident, road works, closure, jam, flooding, weather, hazard and breakdown icons (lucide, same look as the point markers), grouped into counts below zoom 11.
   A click opens a popup with the type, road, delay and how long ago it started. Data comes from `GET /traffic/incidents?bbox=minLng,minLat,maxLng,maxLat&refresh=1`:
   stored incidents in view, and from zoom 9 the server also fetches fresh ones from TomTom when its data for the area is older than 5 minutes.
-- **Congestion-coloured route** (`route.congestion`): `fetchDrivingRoute` asks Mapbox for `annotations=congestion,duration,distance`. Give `route.congestion`
+- **Congestion-coloured route** (`route.congestion`): `fetchDrivingRoute` asks the backend, which asks Mapbox for `annotations=congestion,duration,distance`. Give `route.congestion`
   (one level per line segment) to `MapView` and the line is coloured by it (`congestion.ts`); without it, or without a token, the line is flat or dashed as before.
-- **Live ETA** (`useLiveEta`, `TripEtaCard`, `VehicleTripEta`): the vehicle's position through its remaining stops with Mapbox driving-traffic, against the same drive without traffic
+- **Live ETA** (`useLiveEta`, `TripEtaCard`, `VehicleTripEta`): the vehicle's position through its remaining stops with live-traffic road directions, against the same drive without traffic
   (`fetchFreeFlowSeconds`) and the route's planned arrival (`route_stops.planned_arrival_at`). Asked at most every 2 minutes per vehicle; routes are cached for 3 minutes in `directions.ts`.
   Used on the live map (selected-vehicle panel and route summary), the route details page and the shipment tracking map.
 
@@ -58,7 +60,7 @@ A `flyTo` asked for before the style has loaded runs once the map is ready.
 | `markers.tsx` | Vehicle, point and stop markers |
 | `layers.ts` | Route line, geofence circles, bounds helpers |
 | `overlays.tsx` | Recenter control, status legend, loading and error states |
-| `directions.ts` | `fetchDrivingRoute()` (Mapbox driving-traffic with congestion annotations, optional) and `fetchFreeFlowSeconds()` |
+| `directions.ts` | `fetchDrivingRoute()` (backend road directions with congestion annotations) and `fetchFreeFlowSeconds()` |
 | `TrafficLayers.tsx`, `trafficFlow.ts`, `trafficIncidents.ts` | Live traffic flow tiles, incident markers, and their pure helpers |
 | `congestion.ts` | Congestion levels, route segmenting and the colour-by-congestion layer |
 | `liveEta.ts`, `useLiveEta.ts`, `TripEta.tsx`, `VehicleTripEta.tsx`, `tripStops.ts` | Live ETA with traffic |

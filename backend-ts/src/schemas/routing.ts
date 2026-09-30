@@ -60,3 +60,14 @@ export const CreatePlannedRouteSchema = z.object({
   avoid,
 });
 export type CreatePlannedRoute = z.infer<typeof CreatePlannedRouteSchema>;
+
+/** Most waypoints one directions request may carry. */
+export const MAX_DIRECTIONS_WAYPOINTS = 25;
+
+export const DirectionsRequestSchema = z.object({
+  waypoints: z.array(z.object({ lat, lng }).refine(notNullIsland, REAL_PLACE))
+    .min(2, 'Give at least two waypoints')
+    .max(MAX_DIRECTIONS_WAYPOINTS, `Up to ${MAX_DIRECTIONS_WAYPOINTS} waypoints`),
+  /** Live traffic (default). False asks for the free-flow time. */
+  traffic: z.boolean().default(true),
+});

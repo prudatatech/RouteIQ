@@ -2,7 +2,6 @@ import { Clock, Gauge, Route as RouteIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { Skeleton } from '@/components/ui'
 import { formatKm, formatMinutes, formatTime } from '@/utils/display'
-import { directionsAvailable } from './directions'
 import { describeVsPlan, planStatus, trafficDelayText, type LiveEta } from './liveEta'
 
 const PLAN_TONE = { late: 'text-danger', on_time: 'text-success', early: 'text-success' } as const
@@ -21,13 +20,13 @@ export function TripEtaLine({ eta }: { eta: LiveEta }) {
 
 /**
  * Remaining distance, the arrival time with live traffic, how much of that is traffic, and how it
- * compares with the plan. Every number comes from Mapbox driving-traffic and the route's own planned
+ * compares with the plan. Every number comes from live-traffic road directions and the route's own planned
  * arrival; what is not known is left out.
  */
 export function TripEtaCard({ eta, loading, error, className }: {
   eta: LiveEta | null | undefined
   loading?: boolean
-  /** The estimate could not be worked out (no position, no stops, or Mapbox did not answer). */
+  /** The estimate could not be worked out (no position, no stops, or the directions service did not answer). */
   error?: string | null
   className?: string
 }) {
@@ -36,9 +35,7 @@ export function TripEtaCard({ eta, loading, error, className }: {
       <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase text-muted">
         <Clock size={13} aria-hidden="true" /> Live ETA with traffic
       </h3>
-      {!directionsAvailable ? (
-        <p className="mt-2 text-sm text-muted">Live traffic ETA needs the Mapbox directions token, which is not set up.</p>
-      ) : eta ? (
+      {eta ? (
         <div className="mt-2 space-y-2">
           <div className="flex items-end justify-between gap-3">
             <div>

@@ -102,7 +102,7 @@ const bySequence = (a: LiveMapStop, b: LiveMapStop) => (a.sequence ?? 0) - (b.se
 
 /**
  * Live fleet map: vehicles with realtime GPS, the selected vehicle's active
- * route (road route when a Mapbox token is set), open marketplace loads and a
+ * route (road route from the backend directions service), open marketplace loads and a
  * place search. Drawing is done by MapView.
  */
 export default function LiveMap({

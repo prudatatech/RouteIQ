@@ -9,9 +9,10 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessShipment, isStaff } from '../core/ownership';
 import { ShipmentCreateSchema, ShipmentEditSchema } from '../schemas';
 import { CUSTODY_ONLY_SHIPMENT_STATUSES, DRIVER_SHIPMENT_STATUSES, OPERATING_VEHICLE_STATUSES, SHIPMENT_PATCH_STATUSES } from '../core/transitions';
-import { parseCoordinate, parseNumberInRange, parseOptionalText } from '../core/validate';
-import { rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
+import { parseCoordinate, parseOptionalText } from '../core/validate';
+import { rateLimitByIp } from '../core/rate-limit';
 import { ShipmentService } from '../services/shipment.service';
+import { getDirections } from '../services/directions.service';
 import { SecurityService } from '../services/security.service';
 import { sendError } from '../core/errors';
 import { rateDelivery } from '../services/driver-performance.service';
@@ -65,49 +66,34 @@ router.get('/track/:tracking_id', rateLimitByIp('shipment-track', 60, 60), async
   }
 });
 
-// ── GET /track/:tracking_id/route (PUBLIC — Google Maps Directions Proxy) ──
-router.get('/track/:tracking_id/route', requireAuth, rateLimitByUser('directions-proxy', 60, 60), async (req: Request, res: Response) => {
+// ── GET /track/:tracking_id/route (PUBLIC — the road line from the vehicle to its next stop) ──
+// The public tracking page has no sign-in, so it cannot call POST /routing/directions. Instead of an
+// open directions proxy (anyone could route any two points on our provider quota), this takes NO
+// coordinates: the server finds the vehicle and the next stop of that one shipment itself, so it can only
+// ever draw the line the tracking page already shows. Rate limited per IP; identical lines are cached.
+router.get('/track/:tracking_id/route', rateLimitByIp('track-route', 30, 60), async (req: Request, res: Response) => {
   try {
-    if (!req.query.lat || !req.query.lng || !req.query.dLat || !req.query.dLng) {
-      res.status(400).json({ detail: 'Missing coordinates' });
+    const info = await ShipmentService.getPublicTracking(req.params.tracking_id);
+    if (!info) {
+      res.status(404).json({ detail: 'Shipment with this tracking ID not found' });
       return;
     }
-    // Only numbers reach the Directions API: this endpoint spends our quota
-    const lat = parseNumberInRange(req.query.lat, 'lat', -90, 90);
-    const lng = parseNumberInRange(req.query.lng, 'lng', -180, 180);
-    const dLat = parseNumberInRange(req.query.dLat, 'dLat', -90, 90);
-    const dLng = parseNumberInRange(req.query.dLng, 'dLng', -180, 180);
-
-    // Fetch directly from Google Maps API to get both polyline and duration
-    const { settings } = await import('../core/config');
-    const axios = (await import('axios')).default;
-
-    if (!settings.GOOGLE_MAPS_API_KEY) {
-      res.status(500).json({ detail: 'Google Maps API key not configured' });
+    const drop = info.destination;
+    // A load (CM-) heads for its pickup until it is in transit; a shipment always heads for its drop
+    const toPickup = String(info.tracking_id).startsWith('CM-') && info.status !== 'in_transit';
+    const stop = toPickup && info.origin_lat != null && info.origin_lng != null
+      ? { lat: Number(info.origin_lat), lng: Number(info.origin_lng) }
+      : drop?.lat != null && drop?.lng != null ? { lat: Number(drop.lat), lng: Number(drop.lng) } : null;
+    const vehicle = info.vehicle?.lat != null && info.vehicle?.lng != null
+      ? { lat: Number(info.vehicle.lat), lng: Number(info.vehicle.lng) }
+      : null;
+    const finished = info.status === 'delivered' || info.status === 'cancelled';
+    if (!vehicle || !stop || finished) {
+      res.status(404).json({ detail: 'There is no route to show for this shipment right now.' });
       return;
     }
-
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${lat},${lng}&destination=${dLat},${dLng}&key=${settings.GOOGLE_MAPS_API_KEY}`;
-    const response = await axios.get(url);
-
-    if (response.data.status !== 'OK' || !response.data.routes?.[0]) {
-      res.status(404).json({ detail: 'Trip not found' });
-      return;
-    }
-
-    const route = response.data.routes[0];
-    const polyline = route.overview_polyline.points;
-    let durationSeconds = 0;
-
-    if (route.legs && route.legs.length > 0) {
-      durationSeconds = route.legs.reduce((acc: number, leg: any) => acc + (leg.duration?.value || 0), 0);
-    }
-
-    const polylineModule = await import('@mapbox/polyline');
-    const decoded = polylineModule.default.decode(polyline);
-    const geojsonCoords = decoded.map(coord => [coord[1], coord[0]]);
-
-    res.json({ coordinates: geojsonCoords, raw_polyline: polyline, duration_seconds: durationSeconds });
+    const { cached: _cached, ...directions } = await getDirections([vehicle, stop], true);
+    res.json(directions);
   } catch (e: any) {
     sendError(req, res, e);
   }
