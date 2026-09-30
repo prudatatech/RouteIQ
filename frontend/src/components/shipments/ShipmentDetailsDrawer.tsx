@@ -376,7 +376,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
           </Section>
         )}
 
-        {!closed && (
+        {!closed && !master && (
           <Section title="Parcel label">
             <ParcelLabel trackingId={s.tracking_id} size={112} />
           </Section>

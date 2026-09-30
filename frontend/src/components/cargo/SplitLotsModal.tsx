@@ -15,7 +15,7 @@ import { errorMessage, formatKg, formatRupees } from '@/utils/display'
 import {
   SPLIT_REASONS, cargoKeys, lotsAPI, type CargoRef, type SplitLotInput, type SplitReason, type WhereIsIt,
 } from '@/services/cargo'
-import { defaultSplitReason, gstinError, heldPieces, phoneError, splitBalance, type SplitAvailable } from './lots'
+import { defaultSplitReason, gstinError, heldPieces, hubName, phoneError, splitBalance, type SplitAvailable } from './lots'
 import { useOperatingVehicles } from './useOperatingVehicles'
 
 type Destination = 'drop' | 'vehicle' | 'hub' | 'stay'
@@ -80,7 +80,7 @@ function toInput(r: Row): SplitLotInput {
 /** "on HR55AB1234" / "at Patna" / "with the sender": where the rest stays. */
 function herePhrase(w: WhereIsIt): string {
   if (w.current_holder === 'vehicle' && w.vehicle) return `on ${w.vehicle.plate_number}`
-  if (w.current_holder === 'hub' && w.depot) return `at ${w.depot.name}`
+  if (w.current_holder === 'hub' && w.depot) return `at ${hubName(w.depot.name)}`
   return 'with the sender'
 }
 

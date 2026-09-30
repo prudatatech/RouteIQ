@@ -64,7 +64,7 @@ function LotRows({ lots, selectedId, onOpen }: { lots: ShipmentRow[]; selectedId
               <span className="min-w-0 font-mono font-medium text-brand">{l.tracking_id}</span>
               <span><StatusPill status={l.status} kind="cargo">{shipmentStatusLabel(l.status)}</StatusPill></span>
               <span className="min-w-0 truncate text-text">
-                {[l.consignee_name, dest?.name || dest?.address].filter(Boolean).join(' · ') || <span className="text-muted">No drop</span>}
+                {[l.consignee_name, dest?.name && dest.name !== l.consignee_name ? dest.name : dest?.address].filter(Boolean).join(' · ') || <span className="text-muted">No drop</span>}
               </span>
               <span className="min-w-0 truncate text-muted">
                 {l.total_items != null ? `${l.total_items.toLocaleString('en-IN')} pcs · ` : ''}{lotHolder(l)}
