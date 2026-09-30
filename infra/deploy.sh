@@ -188,9 +188,9 @@ if [[ $SKIP_WEB -eq 0 ]]; then
   # The token is fetched now and handed over through the environment: never written to disk.
   SWA_CLI_DEPLOYMENT_TOKEN="$(az staticwebapp secrets list --name "$WEB_APP" --resource-group "$RG" --query properties.apiKey -o tsv)"
   export SWA_CLI_DEPLOYMENT_TOKEN
-  # Run the uploader from an empty temp folder with a pinned version: inside frontend/ npx resolved
-  # the package against the project on GitHub's runners and failed (ENOENT frontend/margix).
-  ( cd "$TMP_DIR" && npx --yes @azure/static-web-apps-cli@2.0.10 deploy "$ROOT_DIR/frontend/dist" --env production )
+  # npm reads the PREFIX environment variable as its install prefix, and azure.env exports PREFIX=margix,
+  # so on GitHub's runners npx tried to install into ./margix (ENOENT). Hide it from npm for this call.
+  ( cd "$TMP_DIR" && env -u PREFIX npx --yes @azure/static-web-apps-cli@2.0.10 deploy "$ROOT_DIR/frontend/dist" --env production )
   unset SWA_CLI_DEPLOYMENT_TOKEN
 fi
 
