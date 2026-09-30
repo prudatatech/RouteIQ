@@ -24,16 +24,25 @@ if [[ -z "$(az ad sp list --filter "appId eq '$APP_ID'" --query '[0].id' -o tsv)
   az ad sp create --id "$APP_ID" -o none
 fi
 
-# Federated credential for pushes to the branch (and one for manual runs from the same branch).
-CRED_NAME="github-${BRANCH}"
-if [[ -z "$(az ad app federated-credential list --id "$APP_ID" --query "[?name=='$CRED_NAME'].name" -o tsv)" ]]; then
-  log "Adding federated credential for repo:$REPO:ref:refs/heads/$BRANCH"
-  az ad app federated-credential create --id "$APP_ID" --parameters "{
-    \"name\": \"$CRED_NAME\",
-    \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"repo:$REPO:ref:refs/heads/$BRANCH\",
-    \"audiences\": [\"api://AzureADTokenExchange\"]
-  }" -o none
+# Federated credentials for pushes and manual runs on the branch. GitHub sends the subject in one of
+# two forms, depending on the organisation's settings: "repo:owner/repo:ref:..." or, with immutable
+# ids, "repo:owner@<id>/repo@<id>:ref:...". Register both so either works.
+add_credential() {
+  local name="$1" subject="$2"
+  if [[ -z "$(az ad app federated-credential list --id "$APP_ID" --query "[?name=='$name'].name" -o tsv)" ]]; then
+    log "Adding federated credential $name for $subject"
+    az ad app federated-credential create --id "$APP_ID" --parameters "{
+      \"name\": \"$name\",
+      \"issuer\": \"https://token.actions.githubusercontent.com\",
+      \"subject\": \"$subject\",
+      \"audiences\": [\"api://AzureADTokenExchange\"]
+    }" -o none
+  fi
+}
+add_credential "github-${BRANCH}" "repo:$REPO:ref:refs/heads/$BRANCH"
+if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  OWNER_ID="$(gh api "repos/$REPO" --jq .owner.id)"; REPO_ID="$(gh api "repos/$REPO" --jq .id)"
+  add_credential "github-${BRANCH}-ids" "repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${REPO_ID}:ref:refs/heads/$BRANCH"
 fi
 
 # Pushes only swap images and upload the web app (deploy.sh --images-only), so Contributor on the
