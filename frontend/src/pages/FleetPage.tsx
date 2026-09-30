@@ -65,6 +65,15 @@ async function fetchAllVehicles(): Promise<Vehicle[]> {
   return rows
 }
 
+/** A shipment's weight counts against its vehicle while it is booked on it or on board. */
+interface AllocatedShipment {
+  status: string
+  vehicle_id?: string | null
+  current_vehicle_id?: string | null
+  total_weight_kg?: number | null
+}
+const ALLOCATED_STATUSES = new Set(['assigned', 'picked_up', 'in_transit', 'out_for_delivery', 'partially_delivered', 'on_hold', 'returning'])
+
 export default function FleetPage() {
   const role = useAuthStore(s => s.role)
   const navigate = useNavigate()
@@ -125,14 +134,15 @@ export default function FleetPage() {
 
   const { data: shipments = [] } = useQuery({
     queryKey: ['shipments'],
-    queryFn: () => shipmentsAPI.list() as Promise<any[]>,
+    queryFn: () => shipmentsAPI.list() as Promise<AllocatedShipment[]>,
   })
 
   const vehicles = useMemo(() => {
     const allocated = new Map<string, number>()
     for (const s of shipments) {
-      if (s.vehicle_id && ['assigned', 'picked_up', 'in_transit'].includes(s.status)) {
-        allocated.set(s.vehicle_id, (allocated.get(s.vehicle_id) || 0) + (s.total_weight_kg || 0))
+      const vehicleId = s.current_vehicle_id ?? s.vehicle_id
+      if (vehicleId && ALLOCATED_STATUSES.has(s.status)) {
+        allocated.set(vehicleId, (allocated.get(vehicleId) || 0) + (s.total_weight_kg || 0))
       }
     }
     return rawVehicles.map(v => ({
