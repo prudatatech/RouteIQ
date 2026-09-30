@@ -21,7 +21,7 @@ import { ConfirmReceiptCard } from '../components/cargo/ConfirmReceiptCard';
 import { ClaimsCard } from '../components/cargo/ClaimsCard';
 import { LotsCard, isLotClaim } from '../components/cargo/LotsCard';
 import { colors, fontFamily, radius, size, space } from '../theme';
-import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail, type Claim } from '../services/api';
+import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { BOOKING_STEPS, bookingStatusInfo, canCancel, deliveryFailed, formatMinutes, isDelivered } from '../utils/bookingStatus';
 import { claimClosesAt, claimWindowOpen, deliveredAt, mergeClaims } from '../utils/cargo';
@@ -59,20 +59,7 @@ export default function BookingDetailScreen({ navigation, route }: any) {
     `cargo:${id}:${hasShipment}`,
     t('cargo_load_failed'),
   );
-  // A booking split into lots: claims are raised per lot, so each lot's claims are listed too.
-  const lotCodes = (cargo.data?.lots ?? []).map((l) => l.code).join(',');
-  const claims = useRemote(
-    async () => {
-      if (!hasShipment || !trackingId) return [] as Claim[];
-      const refs = [trackingId, ...(lotCodes ? lotCodes.split(',') : [])];
-      const lists = await Promise.all(refs.map((ref) => api.listClaims(ref)));
-      return mergeClaims(lists.flat(), undefined);
-    },
-    `claims:${hasShipment ? trackingId : ''}:${lotCodes}`,
-    t('claims_load_failed'),
-  );
   const { reload: reloadCargo } = cargo;
-  const { reload: reloadClaims } = claims;
 
   // Bumped on every refresh, so child cards that load their own data refresh with the screen.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -81,19 +68,14 @@ export default function BookingDetailScreen({ navigation, route }: any) {
     reloadCargo();
     setRefreshKey((k) => k + 1);
   }, [reload, reloadCargo]);
-  const refreshAll = useCallback(() => {
-    refresh();
-    reloadClaims();
-  }, [refresh, reloadClaims]);
 
   // A claim filed on the next screen shows up here when the customer comes back.
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(CLAIM_CREATED_EVENT, () => {
-      reloadClaims();
       reloadCargo();
     });
     return () => sub.remove();
-  }, [reloadClaims, reloadCargo]);
+  }, [reloadCargo]);
 
   const status = data?.booking.status;
   const shipmentStatus = cargo.data?.where?.status ?? data?.booking.shipment_status ?? null;
@@ -118,13 +100,9 @@ export default function BookingDetailScreen({ navigation, route }: any) {
           error={error}
           loading={loading}
           refresh={refresh}
-          refreshAll={refreshAll}
           cargo={cargo.data}
           cargoError={cargo.error}
           retryCargo={reloadCargo}
-          listedClaims={claims.data}
-          claimsError={claims.error}
-          retryClaims={reloadClaims}
           refreshKey={refreshKey}
           navigation={navigation}
         />
@@ -138,13 +116,9 @@ interface DetailsProps {
   error?: string;
   loading: boolean;
   refresh: () => void;
-  refreshAll: () => void;
   cargo: BookingCargo | null | undefined;
   cargoError?: string;
   retryCargo: () => void;
-  listedClaims: Claim[] | undefined;
-  claimsError?: string;
-  retryClaims: () => void;
   refreshKey: number;
   navigation: any;
 }
@@ -154,13 +128,9 @@ function Details({
   error,
   loading,
   refresh,
-  refreshAll,
   cargo,
   cargoError,
   retryCargo,
-  listedClaims,
-  claimsError,
-  retryClaims,
   refreshKey,
   navigation,
 }: DetailsProps) {
@@ -184,7 +154,7 @@ function Details({
   const [pulling, setPulling] = useState(false);
   const pull = () => {
     setPulling(true);
-    refreshAll();
+    refresh();
   };
   const [wasLoading, setWasLoading] = useState(loading);
   if (wasLoading !== loading) {
@@ -220,7 +190,8 @@ function Details({
 
   const handedOverAt = delivered ? deliveredAt(cargo, tracking) : null;
   const claimWindow = delivered ? claimWindowOpen(handedOverAt, now) : null;
-  const allClaims = mergeClaims(listedClaims, cargo?.claims);
+  // The cargo view carries the claims of the master and of every lot (each lot's tagged with its code)
+  const allClaims = mergeClaims(cargo?.claims, undefined);
   const shipmentId = where?.shipment_id ?? null;
   // The receipt form waits for the cargo data, which says whether the customer already confirmed.
   const cargoSettled = cargo !== undefined || !!cargoError;
@@ -377,8 +348,8 @@ function Details({
           onRaise={() =>
             navigation.navigate('Claim', { bookingId: booking.id, shipmentId, trackingId: booking.tracking_id })
           }
-          error={claimsError}
-          onRetry={retryClaims}
+          error={cargoError ? t('claims_load_failed') : undefined}
+          onRetry={retryCargo}
         />
 
         {canCancel(booking.status) ? (

@@ -279,15 +279,6 @@ class ApiClient {
     if (typeof data?.signed_url !== 'string') throw new Error(SERVER_MESSAGE());
     return { path: String(data.path ?? ''), signed_url: data.signed_url, token: data.token ?? null };
   }
-
-  /**
-   * The customer's own claims for one consignment or lot (its tracking ID). The server answers a
-   * plain array. The cargo view's `claims` holds only the booking's own, so a lot's come from here.
-   */
-  async listClaims(ref: string): Promise<Claim[]> {
-    const data = await this.request('GET', `/cargo/claims?ref=${encodeURIComponent(ref)}`);
-    return asArray(data).map(normaliseClaim).filter((c): c is Claim => c !== null);
-  }
 }
 
 const idempotencyHeader = (key?: string): Record<string, string> | undefined => (key ? { 'Idempotency-Key': key } : undefined);
@@ -543,6 +534,8 @@ export interface Claim {
   shipment_id: string | null;
   /** Its RTX- code; a lot's ends in the lot label (`RTX-ABC123-B`). */
   consignment_code: string | null;
+  /** The cargo view tags a lot's claim with the lot's code (`RTX-ABC123-B`); null for the booking's own. */
+  lot_code: string | null;
 }
 
 /**
@@ -719,6 +712,7 @@ function normaliseClaim(raw: unknown): Claim | null {
     settled_at: asString(c.settled_at),
     shipment_id: asString(c.shipment_id),
     consignment_code: asString(c.consignment_code),
+    lot_code: asString(c.lot_code),
   };
 }
 
@@ -793,7 +787,7 @@ const timeOf = (e: CustodyEvent) => (e.recorded_at ? new Date(e.recorded_at).get
  * GET /customer/bookings/:id/cargo: `{ booking_id, shipment_id, tracking_id, where, timeline,
  * pod: { received_by, photo_url, signature_url, signature_data } | null, exceptions, claims,
  * rating: { rating } | null, lots }`. A master's own `pod` is null (each lot has its own), and its
- * `claims` are the booking's own: a lot's claims are listed by the lot's tracking ID.
+ * `claims` are the master's and every lot's, each lot's tagged with `lot_code`.
  */
 export function normaliseBookingCargo(raw: unknown): BookingCargo {
   const d = asObject(raw) ?? {};

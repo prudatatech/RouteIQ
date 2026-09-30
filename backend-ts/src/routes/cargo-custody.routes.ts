@@ -320,7 +320,7 @@ router.post('/claims', requireAuth, requireRole('customer', 'vendor', ...STAFF_R
 router.get('/claims', requireAuth, requireRole('customer', 'vendor', ...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const q = (k: string) => (typeof req.query[k] === 'string' && req.query[k] ? String(req.query[k]) : undefined);
-    res.json(await listClaims({ status: q('status'), ref: q('ref') }, req.user!));
+    res.json(await listClaims({ status: q('status'), ref: q('ref'), limit: q('limit'), cursor: q('cursor') }, req.user!));
   } catch (e) {
     sendError(req, res, e);
   }

@@ -745,10 +745,32 @@ export const hubsAPI = {
   inventory: (depotId: string) => api.get(`/cargo/hubs/${enc(depotId)}/inventory`).then(r => listOf<unknown>(r.data, 'items').map(mapHubInventoryRow)),
 }
 
+const CLAIM_PAGE_SIZE = 200
+/** A safety stop: 50 pages of 200 claims. */
+const MAX_CLAIM_PAGES = 50
+
+function nextCursorOf(data: unknown): string | undefined {
+  const cursor = data && typeof data === 'object' ? (data as { next_cursor?: unknown }).next_cursor : undefined
+  return typeof cursor === 'string' && cursor ? cursor : undefined
+}
+
 export const claimsAPI = {
-  list: (params: { status?: string; ref?: string } = {}) => api.get('/cargo/claims', {
-    params: Object.fromEntries(Object.entries(params).filter(([, v]) => v)),
-  }).then(r => listOf<unknown>(r.data, 'claims').map(mapClaim)),
+  /**
+   * The claims, newest first. The backend answers `{ items, next_cursor }` (50 a page, at most 200);
+   * this follows the cursor, so the list is complete. An older backend's bare array still works.
+   */
+  list: async (params: { status?: string; ref?: string } = {}) => {
+    const filters = Object.fromEntries(Object.entries(params).filter(([, v]) => v))
+    const rows: unknown[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < MAX_CLAIM_PAGES; page++) {
+      const { data } = await api.get('/cargo/claims', { params: { ...filters, limit: CLAIM_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })
+      rows.push(...listOf<unknown>(data, 'claims'))
+      cursor = Array.isArray(data) ? undefined : nextCursorOf(data)
+      if (!cursor) break
+    }
+    return rows.map(mapClaim)
+  },
   get: (id: string) => api.get(`/cargo/claims/${enc(id)}`).then(r => mapClaim(r.data)),
   create: (body: { exception_id?: string; ref: CargoRef; claim_type: ClaimType; claimed_amount?: number; notes?: string }) =>
     post<unknown>('/cargo/claims', body).then(mapClaim),

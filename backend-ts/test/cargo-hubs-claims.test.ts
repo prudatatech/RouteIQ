@@ -146,10 +146,10 @@ describe('claims', () => {
     delivered(1);
     await file({ ref: { shipment_id: ID.s1 }, claim_type: 'damage', claimed_amount: 500 });
     await file({ ref: { manifest_id: ID.m1 }, claim_type: 'shortage', claimed_amount: 100 }, auth.vendor());
-    expect((await request(app).get(api('/cargo/claims')).set(auth.admin())).body).toHaveLength(2);
-    expect((await request(app).get(api('/cargo/claims')).set(auth.customer())).body.map((c: any) => c.claim_type)).toEqual(['damage']);
-    expect((await request(app).get(api('/cargo/claims')).set(auth.vendor())).body.map((c: any) => c.claim_type)).toEqual(['shortage']);
-    expect((await request(app).get(api('/cargo/claims')).set(auth.customer(ID.otherCustomer))).body).toHaveLength(0);
+    expect((await request(app).get(api('/cargo/claims')).set(auth.admin())).body.items).toHaveLength(2);
+    expect((await request(app).get(api('/cargo/claims')).set(auth.customer())).body.items.map((c: any) => c.claim_type)).toEqual(['damage']);
+    expect((await request(app).get(api('/cargo/claims')).set(auth.vendor())).body.items.map((c: any) => c.claim_type)).toEqual(['shortage']);
+    expect((await request(app).get(api('/cargo/claims')).set(auth.customer(ID.otherCustomer))).body.items).toHaveLength(0);
   });
 
   it('can be raised from a case by staff, as a draft linked to it', async () => {
