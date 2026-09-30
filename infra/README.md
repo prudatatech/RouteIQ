@@ -8,7 +8,6 @@ the data, so the Azure side is stateless and can be rebuilt at any time.
 Browser --> Static Web App  <prefix>-web   (frontend/, Vite build, Free)
         --> Container App   <prefix>-api   (backend-ts, external HTTPS + WebSockets, exactly 1 replica)
                               |--> <prefix>-ml     (ml-service, internal only, scales to zero)
-                              |--> <prefix>-redis  (redis:7-alpine, internal TCP, no persistence)
                               '--> Supabase (database, auth, storage)
 Shared: <prefix>-rg, <prefix>-logs (Log Analytics, 30 days), <prefix>-env (Container Apps, Consumption),
         Azure Container Registry (Basic, admin off, pulled with a managed identity that has AcrPull)
@@ -118,7 +117,6 @@ OTPs issued by the old API cannot be verified by the new one.
 | Item | Approx. per month |
 |---|---|
 | api, 0.5 vCPU / 1 GiB always on (after the monthly free grant of 180k vCPU-s and 360k GiB-s) | 12 to 30 USD |
-| redis, 0.25 vCPU / 0.5 GiB always on | 6 to 15 USD |
 | ml, scales to zero | 0 to 3 USD |
 | Container Registry Basic | ~5 USD |
 | Log Analytics (5 GB/month free) | 0 to 3 USD |
@@ -126,7 +124,6 @@ OTPs issued by the old API cannot be verified by the new one.
 | Total | roughly 25 to 55 USD |
 
 Idle replicas are billed at a much lower rate than active ones, so real cost sits near the low end. The
-`redis` app is currently not used by the code (see below); set it to 0 replicas or remove it from `main.bicep` to save its share.
 The budget alerts you at 50, 100 and 150 of a 200 monthly budget (`budget.bicep`; currency is your billing currency, and some
 offers, such as certain free trials, may not support budgets: deploy.sh then warns loudly).
 
@@ -157,8 +154,6 @@ Container Apps restarts and revision swaps cause a brief overlap of two replicas
 
 ## Known limitations
 
-- **Redis:** `backend-ts` reads `REDIS_URL` in config but the code only uses the Upstash REST client (`UPSTASH_REDIS_REST_URL/TOKEN`),
-  which cannot talk to a plain Redis container. Until the client is switched to a TCP Redis library, either provide Upstash credentials
-  or rely on the built-in in-memory fallback cache. `REDIS_URL` is wired to `redis://margix-redis:6379/0`, ready for that change.
+- **Redis:** there is no Redis container. The backend's cache and rate limits use the Upstash REST client (`UPSTASH_REDIS_REST_URL/TOKEN` in `secrets.env`) and fall back to an in-memory cache when those are blank, which is fine with one api replica.
 - **ml cold start:** `ml` scales to zero, so the first optimizer call after idle waits for the container to start.
 - **Static Web App location:** SWA is not available in Central India, so `WEB_LOCATION` defaults to `eastasia`. It only stores metadata; the site is served from the global edge.

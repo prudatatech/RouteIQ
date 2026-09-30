@@ -8,7 +8,7 @@ param location string = 'centralindia'
 @description('Static Web Apps is not offered in every region (not in Central India). Used only for the SWA resource.')
 param webLocation string = 'eastasia'
 
-@description('Name prefix: <prefix>-api, <prefix>-ml, <prefix>-redis, <prefix>-web ...')
+@description('Name prefix: <prefix>-api, <prefix>-ml, <prefix>-web ...')
 @minLength(2)
 @maxLength(12)
 param prefix string = 'margix'
@@ -37,7 +37,6 @@ param secretValues object = {}
 
 var apiPort = 8000
 var mlPort = 8001
-var redisPort = 6379
 
 var isPlaceholderApi = startsWith(apiImage, 'mcr.microsoft.com/k8se/quickstart')
 var isPlaceholderMl = startsWith(mlImage, 'mcr.microsoft.com/k8se/quickstart')
@@ -143,37 +142,6 @@ var identityBlock = {
   }
 }
 
-// ---------------------------------------------------------------- redis (cache only)
-// No volume, no persistence: it is a cache, losing it only costs a cold cache.
-// NOTE: backend-ts currently talks to Redis through the Upstash REST client (UPSTASH_REDIS_REST_*),
-// not through REDIS_URL, so this app is provisioned and wired but not yet used by the code.
-resource redis 'Microsoft.App/containerApps@2024-03-01' = {
-  name: '${prefix}-redis'
-  location: location
-  properties: {
-    managedEnvironmentId: env.id
-    configuration: {
-      ingress: {
-        external: false
-        transport: 'tcp'
-        targetPort: redisPort
-        exposedPort: redisPort
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'redis'
-          image: 'docker.io/library/redis:7-alpine'
-          args: [ '--save', '', '--appendonly', 'no' ]
-          resources: { cpu: json('0.25'), memory: '0.5Gi' }
-        }
-      ]
-      scale: { minReplicas: 1, maxReplicas: 1 }
-    }
-  }
-}
-
 // ---------------------------------------------------------------- ml service
 resource ml 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${prefix}-ml'
@@ -250,7 +218,6 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'NODE_ENV', value: 'production' }
             { name: 'APP_ENV', value: 'production' }
             { name: 'ML_SERVICE_URL', value: 'https://${ml.properties.configuration.ingress.fqdn}' }
-            { name: 'REDIS_URL', value: 'redis://${redis.name}:${redisPort}/0' }
             { name: 'WEB_APP_URL', value: webOrigin }
             { name: 'ALLOWED_ORIGINS', value: allowedOrigins }
             { name: 'CORS_ORIGIN_PATTERNS', value: corsPatterns }
@@ -280,7 +247,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
       // the rate limiters and the customer OTP store all live in this process's memory.
       // A second replica would run every job twice, split rate-limit counters (silently
       // doubling the limits) and reject OTPs that were issued by the other replica.
-      // Do not raise maxReplicas or add scale rules until that state moves to Redis/Supabase.
+      // Do not raise maxReplicas or add scale rules until that state moves to a shared store (Upstash Redis or Supabase).
       scale: { minReplicas: 1, maxReplicas: 1 }
     }
   }
@@ -293,6 +260,5 @@ output apiName string = api.name
 output apiFqdn string = api.properties.configuration.ingress.fqdn
 output mlName string = ml.name
 output mlFqdn string = ml.properties.configuration.ingress.fqdn
-output redisName string = redis.name
 output webName string = web.name
 output webHostname string = web.properties.defaultHostname
