@@ -37,7 +37,7 @@ router.get('/route/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (
         .eq('id', req.params.route_id)
         .maybeSingle();
       if (mErr) throw mErr;
-      if (!manifest) throw new HttpError(404, 'Route not found');
+      if (!manifest) throw new HttpError(404, 'Trip not found');
       const m = manifest as any;
       push(m.vehicles?.latitude, m.vehicles?.longitude);
       if (path.length === 0) push(m.pickup_lat, m.pickup_lng);

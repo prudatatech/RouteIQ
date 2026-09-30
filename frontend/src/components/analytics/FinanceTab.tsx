@@ -18,10 +18,10 @@ const profitClass = (n: number) => (n < 0 ? 'text-danger' : 'text-text')
 
 const routeColumns: Column<RouteRow>[] = [
   {
-    key: 'route', header: 'Route', sortValue: r => r.plate_number ?? '',
+    key: 'route', header: 'Trip', sortValue: r => r.plate_number ?? '',
     cell: r => (
       <Link to={`/routes/${r.route_id}`} className="font-medium text-brand hover:underline">
-        {r.plate_number ?? 'Route'} · {r.completed_at ? formatDate(r.completed_at) : 'in progress'}
+        {r.plate_number ?? 'Trip'} · {r.completed_at ? formatDate(r.completed_at) : 'in progress'}
       </Link>
     ),
   },
@@ -78,11 +78,11 @@ export default function FinanceTab() {
           title="Fuel price is not set"
           action={<Link to="/admin/settings" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Set fuel price</Link>}
         >
-          Fuel for completed routes is left out of costs until there is a price per litre. Recorded fuel expenses are still counted.
+          Fuel for completed trips is left out of costs until there is a price per litre. Recorded fuel expenses are still counted.
         </Alert>
       )}
       {s && !s.fuel.price_missing && s.fuel.routes_without_fuel_data > 0 && (
-        <Alert tone="info" title={`${s.fuel.routes_without_fuel_data} completed ${s.fuel.routes_without_fuel_data === 1 ? 'route has' : 'routes have'} no fuel estimate`}>
+        <Alert tone="info" title={`${s.fuel.routes_without_fuel_data} completed ${s.fuel.routes_without_fuel_data === 1 ? 'trip has' : 'trips have'} no fuel estimate`}>
           There is no distance or fuel figure for {s.fuel.routes_without_fuel_data === 1 ? 'it' : 'them'}. Add a fuel expense to count the cost.
         </Alert>
       )}
@@ -100,7 +100,7 @@ export default function FinanceTab() {
           hint={s ? (s.active_trucks > 0 ? `Across ${formatNumber(s.active_trucks)} truck${s.active_trucks === 1 ? '' : 's'} that worked` : 'No truck activity in this range') : undefined} />
         <Stat label="Cost per km" icon={<Route size={18} />} loading={loading}
           value={s?.cost_per_km != null ? formatRupees(s.cost_per_km) : '—'}
-          hint={s ? (s.distance_km > 0 ? `Over ${formatNumber(Math.round(s.distance_km))} km of completed routes` : 'No completed routes with distance') : undefined} />
+          hint={s ? (s.distance_km > 0 ? `Over ${formatNumber(Math.round(s.distance_km))} km of completed trips` : 'No completed trips with distance') : undefined} />
         <Stat label="Not yet paid" icon={<Coins size={18} />} loading={loading} value={s ? money(s.outstanding) : '—'}
           tone={s && s.outstanding > 0 ? 'warning' : 'default'} hint="Issued invoices, with GST" />
       </section>
@@ -133,7 +133,7 @@ export default function FinanceTab() {
           </ChartCard>
           <ChartCard
             title="Costs by category"
-            description="Recorded expenses, plus fuel estimated from route litres"
+            description="Recorded expenses, plus fuel estimated from trip litres"
             empty={categoryBars.length === 0}
             emptyTitle="No costs in this range"
             emptyDescription="Add an expense in Finance to see where the money goes."
@@ -154,16 +154,16 @@ export default function FinanceTab() {
       {hasData && (
         <div className="grid gap-6 xl:grid-cols-2">
           <Card>
-            <CardHeader title="Most profitable routes" description="Delivered revenue minus costs tied to the route" />
+            <CardHeader title="Most profitable trips" description="Delivered revenue minus costs tied to the trip" />
             <div className="p-2 sm:p-4">
               <DataTable
-                caption="Most profitable routes"
+                caption="Most profitable trips"
                 columns={routeColumns}
                 rows={s?.routes ?? []}
                 rowKey={r => r.route_id}
                 pageSize={10}
                 initialSort={{ key: 'profit', direction: 'desc' }}
-                empty={{ title: 'No route has revenue or costs yet', description: 'Routes show here once their deliveries are invoiced or expenses are tied to them.' }}
+                empty={{ title: 'No trip has revenue or costs yet', description: 'Trips show here once their deliveries are invoiced or expenses are tied to them.' }}
               />
             </div>
           </Card>

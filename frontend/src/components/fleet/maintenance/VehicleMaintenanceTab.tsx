@@ -130,7 +130,7 @@ function JobCard({ job, vehicleId, onReturn, onEdit }: { job: MaintenanceJob; ve
         {job.note && <div className="sm:col-span-2"><dt className="inline text-muted">Note: </dt><dd className="inline break-words text-text">{job.note}</dd></div>}
         {released > 0 && (
           <div className="sm:col-span-2 text-muted">
-            {released} {released === 1 ? 'route or load was' : 'routes and loads were'} released when it was moved.
+            {released} {released === 1 ? 'trip or load was' : 'trips and loads were'} released when it was moved.
           </div>
         )}
       </dl>

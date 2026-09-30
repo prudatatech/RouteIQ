@@ -129,13 +129,13 @@ export async function getOpenWork(vehicleId: string): Promise<OpenWork> {
   const parts: string[] = [];
   const active = routes.filter(r => r.status === 'active').length;
   const planned = routes.length - active;
-  if (active) parts.push(plural(active, 'active route'));
-  if (planned) parts.push(plural(planned, 'planned route'));
+  if (active) parts.push(plural(active, 'active trip'));
+  if (planned) parts.push(plural(planned, 'planned trip'));
   if (manifests.length) parts.push(plural(manifests.length, 'load'));
   const { consignmentsOnVehicle } = await import('./cargo/exception.service');
   const cargo = (await consignmentsOnVehicle(vehicleId)).length;
   if (cargo && !routes.length && !manifests.length) parts.push(plural(cargo, 'consignment') + ' on board');
-  let summary = parts.length ? parts.join(', ') : 'No routes or loads';
+  let summary = parts.length ? parts.join(', ') : 'No trips or loads';
   if (onBoard) summary += `, ${plural(onBoard, 'shipment')} already on board`;
   return { routes, manifests, shipments_on_board: onBoard, cargo_on_board: cargo, blocking: routes.length + manifests.length + cargo > 0, summary };
 }
@@ -225,7 +225,7 @@ export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSc
   if (work.blocking && !input.release_work) {
     throw new HttpError(
       409,
-      `${vehicle.plate_number} has work in progress (${work.summary}). Release its routes and loads to move it to maintenance, or wait until it finishes.`,
+      `${vehicle.plate_number} has work in progress (${work.summary}). Release its trips and loads to move it to maintenance, or wait until it finishes.`,
       { requires_release: true, open_work: work },
     );
   }

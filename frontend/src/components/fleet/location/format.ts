@@ -149,9 +149,9 @@ export function jobText(job: ActivityJob): string {
   const where = routeText(job.from, job.to)
   if (job.kind === 'route') {
     const progress = job.stops_total ? `${job.stops_done ?? 0} of ${job.stops_total} stops done` : null
-    return ['Route', where, progress].filter(Boolean).join(', ')
+    return ['Trip', where, progress].filter(Boolean).join(', ')
   }
-  return ['Manifest', where, job.weight_kg ? formatKg(job.weight_kg) : null].filter(Boolean).join(', ')
+  return ['Shipment', where, job.weight_kg ? formatKg(job.weight_kg) : null].filter(Boolean).join(', ')
 }
 
 /** "60% full (600 kg of 1,000 kg)", "60% full", "600 kg on board", or null when nothing is known. */

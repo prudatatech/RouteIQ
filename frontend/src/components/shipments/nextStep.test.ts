@@ -86,7 +86,7 @@ describe('nextStep for a vendor request with no load yet', () => {
   const req = (over: Partial<NextStepFacts>) => nextStep({ kind: 'request', status: 'pending', ...over })
 
   it('a new request waits for a decision in Requests', () => {
-    expect(req({})).toMatchObject({ stage: 'request', headline: 'New vendor request', action: { kind: 'open_request', label: 'Review request' } })
+    expect(req({})).toMatchObject({ stage: 'request', headline: 'New request', action: { kind: 'open_request', label: 'Review request' } })
   })
 
   it('an accepted, priced request needs a vehicle; without a price it needs one first', () => {

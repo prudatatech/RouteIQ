@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "ts-node src/scripts/seed.ts",
-    "check:queries": "ts-node --transpile-only scripts/check-queries.ts"
+    "check:queries": "ts-node --transpile-only scripts/check-queries.ts",
+    "check:vocabulary": "node ../scripts/check-vocabulary.mjs --only backend"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",

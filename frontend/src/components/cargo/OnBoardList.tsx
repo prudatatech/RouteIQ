@@ -68,7 +68,7 @@ export function OnBoardCard({ vehicleId, className, description }: { vehicleId: 
         ) : q.isError ? (
           <ErrorState compact title="We could not load the cargo on board" onRetry={() => q.refetch()} />
         ) : items.length === 0 ? (
-          <EmptyState compact icon={<PackageOpen size={22} />} title="Nothing on board" description="Consignments picked up by this vehicle appear here until they are delivered or handed over." />
+          <EmptyState compact icon={<PackageOpen size={22} />} title="Nothing on board" description="Shipments picked up by this vehicle appear here until they are delivered or handed over." />
         ) : (
           <OnBoardList items={items} />
         )}

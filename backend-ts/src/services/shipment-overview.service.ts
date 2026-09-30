@@ -208,7 +208,7 @@ async function findOverviewTarget(ref: string): Promise<{ consignment: Consignme
     if (!(e instanceof HttpError) || e.status !== 404 || !UUID.test(ref.trim())) throw e;
   }
   const { data: request } = await supabase.from('vendor_shipment_requests').select('*').eq('id', ref.trim()).maybeSingle();
-  if (!request) throw new HttpError(404, 'Consignment not found');
+  if (!request) throw new HttpError(404, 'Shipment not found');
   const { data: loads } = await supabase.from('cargo_manifest').select('id, parent_manifest_id, created_at').eq('vendor_request_id', request.id);
   const load = [...(loads ?? [])].sort((a: any, b: any) => Number(!!a.parent_manifest_id) - Number(!!b.parent_manifest_id) || Date.parse(a.created_at ?? '') - Date.parse(b.created_at ?? ''))[0];
   return load ? { consignment: await resolveRef({ manifest_id: load.id }) } : { request };

@@ -14,7 +14,7 @@ const MOVE_DURATION_MS = 1500
 const POINT_KINDS: Record<MapPointKind, { icon: LucideIcon; name: string }> = {
   pickup: { icon: Package, name: 'Pickup' },
   drop: { icon: Flag, name: 'Drop' },
-  incident: { icon: TriangleAlert, name: 'Incident' },
+  incident: { icon: TriangleAlert, name: 'Problem' },
   hub: { icon: Warehouse, name: 'Hub' },
   load: { icon: Boxes, name: 'Open load' },
   location: { icon: MapPin, name: 'Location' },

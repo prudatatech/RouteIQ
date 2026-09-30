@@ -62,7 +62,7 @@ export default function OpenLoadsTab() {
         empty={data.length === 0
           ? {
               title: 'No open loads',
-              description: 'Every shipment is already on a route. New shipments without a vehicle show up here.',
+              description: 'Every shipment is already on a trip. New shipments without a vehicle show up here.',
               action: <Link to="/shipments" className={buttonClasses({ variant: 'secondary' })}>Go to Shipments</Link>,
             }
           : { title: 'No matches', description: 'Try a different search.' }}

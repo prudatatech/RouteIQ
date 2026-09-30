@@ -28,7 +28,7 @@ export default function DropsSplit({ data, update, errors }: StepProps) {
   const anyTyped = balance.rows.some(r => r.weightTyped || r.valueTyped)
 
   if (drops.length < 2) {
-    return <p className="text-sm text-muted">Add at least two drops on the Route step to split the pieces between them.</p>
+    return <p className="text-sm text-muted">Add at least two drops on the Trip step to split the pieces between them.</p>
   }
 
   const left = balance.left

@@ -91,7 +91,7 @@ router.get('/track/:tracking_id/route', requireAuth, rateLimitByUser('directions
     const response = await axios.get(url);
 
     if (response.data.status !== 'OK' || !response.data.routes?.[0]) {
-      res.status(404).json({ detail: 'Route not found' });
+      res.status(404).json({ detail: 'Trip not found' });
       return;
     }
 

@@ -100,12 +100,12 @@ export interface VehicleStatusChange {
  */
 export async function assertVehicleStatusChange(vehicleId: string, from: string, next: string): Promise<void> {
   if (from === next) return;
-  if (next === 'on_route') throw new HttpError(409, 'A vehicle goes on route when a route is started for it, not by hand.');
+  if (next === 'on_route') throw new HttpError(409, 'A vehicle goes on trip when a trip is started for it, not by hand.');
   assertTransition(VEHICLE_STATUS_TRANSITIONS, 'vehicle', from, next);
   if (next === 'archived') {
     const { data: active, error } = await supabase.from('routes').select('id').eq('vehicle_id', vehicleId).eq('status', 'active').limit(1);
     if (error) throw error;
-    if (active && active.length > 0) throw new HttpError(409, "This vehicle is on an active route and can't be archived. Wait for the route to finish, or cancel it first.");
+    if (active && active.length > 0) throw new HttpError(409, "This vehicle is on an active trip and can't be archived. Wait for the trip to finish, or cancel it first.");
   }
 }
 

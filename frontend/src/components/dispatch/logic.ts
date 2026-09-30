@@ -49,4 +49,4 @@ export function tripSource(r: { depot_id?: string | null; plan?: { source?: stri
   return r.depot_id ? 'optimizer' : 'other'
 }
 
-export const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Route planner', other: 'Trip' } as const
+export const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Trip planner', other: 'Trip' } as const

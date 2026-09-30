@@ -36,7 +36,7 @@ const PERIODS = [
 ]
 
 const STATUS_ROWS = [
-  { key: 'on_route', label: 'On route', fill: 'bg-info' },
+  { key: 'on_route', label: 'On trip', fill: 'bg-info' },
   { key: 'idle', label: 'Idle / available', fill: 'bg-success' },
   { key: 'maintenance', label: 'Maintenance', fill: 'bg-warning' },
   { key: 'offline', label: 'Offline', fill: 'bg-neutral' },
@@ -78,21 +78,21 @@ export default function FleetAnalyticsView() {
           icon={<Gauge size={18} />}
           loading={loading}
           value={d?.utilisation_pct == null ? '—' : `${d.utilisation_pct}%`}
-          hint={d ? (d.total_vehicles === 0 ? 'No vehicles added yet' : `${formatNumber(d.by_status.on_route)} of ${formatNumber(d.total_vehicles)} on a route now`) : undefined}
+          hint={d ? (d.total_vehicles === 0 ? 'No vehicles added yet' : `${formatNumber(d.by_status.on_route)} of ${formatNumber(d.total_vehicles)} on a trip now`) : undefined}
         />
         <Stat
           label="Active in period"
           icon={<Truck size={18} />}
           loading={loading}
           value={d ? `${formatNumber(d.active_in_period)} of ${formatNumber(d.total_vehicles)}` : '—'}
-          hint={d?.active_in_period_pct == null ? undefined : `${d.active_in_period_pct}% ran at least one route`}
+          hint={d?.active_in_period_pct == null ? undefined : `${d.active_in_period_pct}% ran at least one trip`}
         />
         <Stat
           label="Distance"
           icon={<RouteIcon size={18} />}
           loading={loading}
           value={d ? `${formatNumber(d.distance.total_km)} km` : '—'}
-          hint={d ? `${formatNumber(d.distance.routes)} route${d.distance.routes === 1 ? '' : 's'} dispatched (planned distance)` : undefined}
+          hint={d ? `${formatNumber(d.distance.routes)} trip${d.distance.routes === 1 ? '' : 's'} dispatched (planned distance)` : undefined}
         />
         <Stat
           label="Load carried"
@@ -166,11 +166,11 @@ export default function FleetAnalyticsView() {
 
       <ChartCard
         title="Distance per day"
-        description="Planned kilometres of the routes dispatched each day"
+        description="Planned kilometres of the trips dispatched each day"
         loading={loading}
         empty={!hasDistance}
-        emptyTitle="No routes dispatched in this period"
-        emptyDescription="Dispatch a route and its distance shows here."
+        emptyTitle="No trips dispatched in this period"
+        emptyDescription="Dispatch a trip and its distance shows here."
         height="h-64"
       >
         <SimpleBarChart
@@ -183,16 +183,16 @@ export default function FleetAnalyticsView() {
       </ChartCard>
 
       <Card>
-        <CardHeader title="Most distance" description="Vehicles with the longest routes dispatched in the period" />
+        <CardHeader title="Most distance" description="Vehicles with the longest trips dispatched in the period" />
         <CardBody>
           {(d?.distance.top_vehicles.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted">{loading ? 'Loading…' : 'No vehicle has a dispatched route in this period.'}</p>
+            <p className="text-sm text-muted">{loading ? 'Loading…' : 'No vehicle has a dispatched trip in this period.'}</p>
           ) : (
             <ol className="divide-y divide-border">
               {d!.distance.top_vehicles.map(v => (
                 <li key={v.vehicle_id} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <Link to={`/fleet/${v.vehicle_id}`} className="font-mono text-brand hover:underline">{v.plate_number}</Link>
-                  <span className="tabular text-muted">{formatNumber(v.distance_km)} km · {formatNumber(v.routes)} route{v.routes === 1 ? '' : 's'}</span>
+                  <span className="tabular text-muted">{formatNumber(v.distance_km)} km · {formatNumber(v.routes)} trip{v.routes === 1 ? '' : 's'}</span>
                 </li>
               ))}
             </ol>

@@ -47,7 +47,7 @@ export const CreatePlannedRouteSchema = z.object({
     address: z.string().trim().max(500).nullish(),
     lat, lng,
     delivery_point_id: z.string().uuid().nullish(),
-  }).refine(notNullIsland, REAL_PLACE)).min(1, 'A route needs at least one stop').max(MAX_STOPS + 1),
+  }).refine(notNullIsland, REAL_PLACE)).min(1, 'A trip needs at least one stop').max(MAX_STOPS + 1),
   origin: point,
   distance_km: z.number().min(0).max(20_000),
   duration_minutes: z.number().min(0).max(60 * 24 * 14),

@@ -14,7 +14,7 @@ const STATUS_OPTIONS = [{ value: '', label: 'All statuses' }, ...CLAIM_STATUSES.
 
 const columns: Column<CargoClaim>[] = [
   { key: 'code', header: 'Claim', sortValue: c => c.code, cell: c => <span className="font-mono font-medium">{c.code}</span> },
-  { key: 'consignment', header: 'Consignment', cell: c => <span onClick={e => e.stopPropagation()}><ConsignmentLink c={c} /></span> },
+  { key: 'consignment', header: 'Shipment', cell: c => <span onClick={e => e.stopPropagation()}><ConsignmentLink c={c} /></span> },
   { key: 'type', header: 'Type', hideBelow: 'md', sortValue: c => c.claim_type, cell: c => claimTypeLabel(c.claim_type) },
   { key: 'status', header: 'Status', sortValue: c => c.status, cell: c => <StatusPill status={c.status} /> },
   { key: 'claimed', header: 'Claimed', align: 'right', sortValue: c => c.claimed_amount ?? 0, cell: c => <span className="tabular">{money(c.claimed_amount)}</span> },
@@ -63,7 +63,7 @@ export default function ClaimsTab() {
         pageSize={15}
         empty={status
           ? { icon: <ShieldCheck size={22} />, title: 'No claims with this status', description: 'Choose another status to see more.' }
-          : { icon: <ShieldCheck size={22} />, title: 'No claims yet', description: 'Claims are raised from an exception case, when goods are damaged, short or lost.' }}
+          : { icon: <ShieldCheck size={22} />, title: 'No claims yet', description: 'Claims are raised from a problem case, when goods are damaged, short or lost.' }}
       />
       <ClaimDrawer claim={selected} onClose={() => setSelectedId(null)} />
     </div>

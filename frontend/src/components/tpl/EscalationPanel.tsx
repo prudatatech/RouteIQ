@@ -219,14 +219,14 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
                 <EmptyState
                   compact
                   icon={<Network size={22} />}
-                  title="No partner covers this route"
+                  title="No partner covers this trip"
                   description="No active 3PL partner has a corridor from this pickup to this drop-off. Partners add corridors on their dashboard."
                 />
               )
             ) : (
               <div className="space-y-2">
                 <p className="text-sm text-text">
-                  {newPartners.length.toLocaleString('en-IN')} active {newPartners.length === 1 ? 'partner covers' : 'partners cover'} this route:{' '}
+                  {newPartners.length.toLocaleString('en-IN')} active {newPartners.length === 1 ? 'partner covers' : 'partners cover'} this trip:{' '}
                   {newPartners.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')}.
                 </p>
                 <Button icon={<Network size={16} />} loading={send.isPending} onClick={askSend}>

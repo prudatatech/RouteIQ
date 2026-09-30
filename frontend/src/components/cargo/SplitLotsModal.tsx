@@ -53,7 +53,7 @@ const destinationsFor = (holder: Holder): { id: Destination; label: string }[] =
 /** What naming a vehicle does, by where the goods are (the backend's split rules). */
 const VEHICLE_HINT: Record<Holder, string> = {
   vehicle: 'A transfer to this vehicle is planned for this lot.',
-  hub: 'The lot goes on this vehicle’s route and leaves the hub with a hub-out.',
+  hub: 'The lot goes on this vehicle’s trip and leaves the hub with a hub-out.',
   consignor: 'This vehicle is assigned to pick the lot up.',
   consignee: '',
 }
@@ -135,7 +135,7 @@ export default function SplitLotsModal({ cargoRef, code, where, figures, onClose
       toast.success(codes.length > 0 ? `${code} split into ${codes.join(', ')}` : `${code} split into lots`)
       onClose()
     },
-    onError: err => setServerError(errorMessage(err, 'We could not split the consignment. Try again.')),
+    onError: err => setServerError(errorMessage(err, 'We could not split the shipment. Try again.')),
   })
 
   const submit = () => {

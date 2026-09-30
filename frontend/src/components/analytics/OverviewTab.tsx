@@ -66,7 +66,7 @@ export default function OverviewTab() {
       ) : (
         <section aria-label={`Figures for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Stat
-            label="Routes"
+            label="Trips"
             icon={<Route size={18} />}
             loading={loading}
             value={formatNumber(ov?.trips_today)}
@@ -80,7 +80,7 @@ export default function OverviewTab() {
             hint="Shipments marked delivered"
           />
           <Stat
-            label="Vehicles on route"
+            label="Vehicles on trip"
             icon={<Truck size={18} />}
             loading={loading}
             value={ov ? `${formatNumber(ov.running_vehicles)} of ${formatNumber(ov.total_vehicles)}` : '—'}
@@ -89,7 +89,7 @@ export default function OverviewTab() {
               : undefined}
           />
           <Stat
-            label="Backhaul revenue"
+            label="Return trip revenue"
             icon={<IndianRupee size={18} />}
             loading={loading}
             value={ov && ov.backhaul_loads_today > 0 ? formatRupees(ov.backhaul_revenue) : '—'}
@@ -137,22 +137,22 @@ export default function OverviewTab() {
       )}
 
       <ChartCard
-        title="Routes and deliveries"
-        description={`Routes dispatched and shipments delivered each day, ${rangeLabel}`}
+        title="Trips and deliveries"
+        description={`Trips dispatched and shipments delivered each day, ${rangeLabel}`}
         loading={activity.isLoading}
         error={activity.isError}
         onRetry={() => activity.refetch()}
         empty={!hasActivity}
-        emptyTitle="No routes or deliveries in this range"
-        emptyDescription="Dispatch a route or deliver a shipment and it will show here."
+        emptyTitle="No trips or deliveries in this range"
+        emptyDescription="Dispatch a trip or deliver a shipment and it will show here."
         height="h-72"
       >
         <SimpleBarChart
           data={days}
           categoryKey="date"
           formatCategory={formatDay}
-          series={[{ key: 'trips', label: 'Routes' }, { key: 'deliveries', label: 'Deliveries' }]}
-          label={`Routes and deliveries per day. Total ${days.reduce((s, d) => s + d.trips, 0)} routes and ${days.reduce((s, d) => s + d.deliveries, 0)} deliveries.`}
+          series={[{ key: 'trips', label: 'Trips' }, { key: 'deliveries', label: 'Deliveries' }]}
+          label={`Trips and deliveries per day. Total ${days.reduce((s, d) => s + d.trips, 0)} trips and ${days.reduce((s, d) => s + d.deliveries, 0)} deliveries.`}
         />
       </ChartCard>
     </div>

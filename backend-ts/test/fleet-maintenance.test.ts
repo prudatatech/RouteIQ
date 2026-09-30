@@ -234,7 +234,7 @@ describe('moving a vehicle to maintenance', () => {
       expect(res.body.open_work).toMatchObject({ blocking: true });
       expect(res.body.open_work.routes).toHaveLength(1);
       expect(res.body.open_work.manifests).toHaveLength(1);
-      expect(res.body.open_work.summary).toContain('1 active route');
+      expect(res.body.open_work.summary).toContain('1 active trip');
       expect(res.body.open_job).toBeNull();
     });
 
@@ -260,7 +260,7 @@ describe('moving a vehicle to maintenance', () => {
       expect(cargoCase).toMatchObject({ id: res.body.released_work.cargo_exception_id, source: 'maintenance', status: 'open', vehicle_id: VEHICLE, maintenance_job_id: res.body.id });
       expect(supabaseMock.rows('vehicles')[0].status).toBe('maintenance');
       const titles = supabaseMock.rows('notifications').filter(n => n.user_id === 'driver-1').map(n => n.title);
-      expect(titles).toContain('Route cancelled');
+      expect(titles).toContain('Trip cancelled');
       expect(titles).not.toContain('Load cancelled');
       expect(titles).toContain('Vehicle moved to maintenance');
     });

@@ -207,7 +207,7 @@ export const capacityService = {
 
     const now = Date.now();
     if (window.status !== 'open' || window.winning_bid_id || new Date(window.closes_at).getTime() <= now || new Date(window.opens_at).getTime() > now) {
-      throw new HttpError(409, 'This capacity window is not open for bids');
+      throw new HttpError(409, 'This return trip is not open for bids');
     }
     const windowVehicle = window.vehicles as any;
     if (windowVehicle?.available_capacity_kg != null && weightKg > Number(windowVehicle.available_capacity_kg)) {
@@ -913,7 +913,7 @@ export const capacityService = {
         notify(() => notificationService.sendNotification(
           vehicle.driver_id,
           'New pickup added',
-          `A pickup at ${vendorOriginName} and a drop-off were added to your route.`,
+          `A pickup at ${vendorOriginName} and a drop-off were added to your trip.`,
           'cargo_assigned',
           { vehicle_id: window.vehicle_id, shipment_id: shipmentId }
         ));
@@ -1013,7 +1013,7 @@ export const capacityService = {
     if (!shipment?.bid_id) {
       notify(() => notificationService.notifyStaff(
         'Driver flagged a stop',
-        `The driver of ${plate} flagged a stop that was added to the route. Please check it.`,
+        `The driver of ${plate} flagged a stop that was added to the trip. Please check it.`,
         'stop_flagged', { confirmation_id: confirmationId, route_stop_id: conf.route_stop_id },
       ));
       return;

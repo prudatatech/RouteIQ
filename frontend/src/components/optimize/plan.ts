@@ -87,7 +87,7 @@ export function engineInfo(engine: OptimizerEngine | undefined, matrixSource?: s
     case 'fallback-road-matrix':
       return {
         title: 'Built-in solver, road distances',
-        detail: `The ML service was not reachable, so the routes were planned here using road distances and times from ${matrixSource === 'tomtom' ? 'TomTom' : 'Mapbox'}.`,
+        detail: `The ML service was not reachable, so the trips were planned here using road distances and times from ${matrixSource === 'tomtom' ? 'TomTom' : 'Mapbox'}.`,
         tone: 'info',
       }
     case 'fallback-estimated':
@@ -124,7 +124,7 @@ export function plansFromResult(routes: ServerRoute[] | undefined, depot: LatLng
     return [{
       key: r.id ?? `route-${i}`,
       vehicleId,
-      label: vehicleId ? vehicleLabel(vehicleId) : `Route ${i + 1}`,
+      label: vehicleId ? vehicleLabel(vehicleId) : `Trip ${i + 1}`,
       color: routeColor(i),
       origin: depot,
       closed: true,

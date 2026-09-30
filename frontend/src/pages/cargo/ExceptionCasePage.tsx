@@ -152,7 +152,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
   const mapPoints: MapPoint[] = casePos ? [{ id: 'case', kind: 'incident', position: casePos, label: `${kase.code}: ${exceptionTypeLabel(kase.type)}`, active: sla.state === 'overdue' }] : []
 
   const itemColumns: Column<ExceptionItem>[] = [
-    { key: 'ref', header: 'Consignment', cell: i => <ConsignmentLink c={i} /> },
+    { key: 'ref', header: 'Shipment', cell: i => <ConsignmentLink c={i} /> },
     { key: 'status', header: 'Status', cell: i => (i.status ? <StatusPill status={i.status} kind="cargo" /> : '—') },
     {
       key: 'pieces',
@@ -329,14 +329,14 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
 
         <div className="min-w-0 space-y-4 lg:col-span-2">
           <section className="space-y-3" aria-labelledby="goods-heading">
-            <h2 id="goods-heading" className="text-lg font-semibold text-text">Affected consignments</h2>
+            <h2 id="goods-heading" className="text-lg font-semibold text-text">Affected shipments</h2>
             <DataTable
-              caption={`Consignments in ${kase.code}`}
+              caption={`Shipments in ${kase.code}`}
               columns={itemColumns}
               rows={kase.items}
               rowKey={i => i.id}
               pageSize={10}
-              empty={{ title: 'No consignment on this case', description: 'The case is about the vehicle or route only.' }}
+              empty={{ title: 'No shipment on this case', description: 'The case is about the vehicle or trip only.' }}
             />
           </section>
 

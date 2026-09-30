@@ -125,7 +125,7 @@ export default function ConsignmentCargo({ code, cargoRef, figures }: { code: st
     return (
       <div className="space-y-3">
         <Heading>Where is it now</Heading>
-        <ErrorState compact title="We could not load where this consignment is" onRetry={() => where.refetch()} />
+        <ErrorState compact title="We could not load where this shipment is" onRetry={() => where.refetch()} />
       </div>
     )
   }
@@ -162,7 +162,7 @@ export default function ConsignmentCargo({ code, cargoRef, figures }: { code: st
     can.hold && <Button key="hold" size="sm" variant="secondary" icon={<Hand size={14} />} onClick={() => setModal('hold')}>Hold</Button>,
     can.release && <Button key="release" size="sm" variant="secondary" icon={<Hand size={14} />} loading={custody.isPending && custody.variables?.kind === 'release_hold'} onClick={release}>Release hold</Button>,
     can.startReturn && <Button key="return" size="sm" variant="secondary" icon={<Undo2 size={14} />} onClick={() => setModal('return')}>Start return</Button>,
-    can.raiseException && <Button key="raise" size="sm" variant="ghost" icon={<AlertTriangle size={14} />} onClick={() => setModal('raise')}>Raise exception</Button>,
+    can.raiseException && <Button key="raise" size="sm" variant="ghost" icon={<AlertTriangle size={14} />} onClick={() => setModal('raise')}>Raise problem</Button>,
   ].filter(Boolean)
 
   const common = { cargoRef, code, where: w, onClose: () => setModal(null) }
@@ -173,7 +173,7 @@ export default function ConsignmentCargo({ code, cargoRef, figures }: { code: st
         <Heading>Where is it now</Heading>
         <WhereCard where={w} now={now} />
         {w.is_master && (
-          <p className="text-sm text-muted">This consignment is split into lots. The goods are picked up, moved and delivered per lot: open a lot below to work it.</p>
+          <p className="text-sm text-muted">This shipment is split into lots. The goods are picked up, moved and delivered per lot: open a lot below to work it.</p>
         )}
         {buttons.length > 0 && <div className="flex flex-wrap gap-2">{buttons}</div>}
       </section>

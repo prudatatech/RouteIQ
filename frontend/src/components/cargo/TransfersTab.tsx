@@ -45,7 +45,7 @@ export default function TransfersTab() {
       ),
     },
     {
-      key: 'items', header: 'Consignments', hideBelow: 'md', align: 'right', sortValue: pieces,
+      key: 'items', header: 'Shipments', hideBelow: 'md', align: 'right', sortValue: pieces,
       cell: t => <span className="tabular">{t.items.length.toLocaleString('en-IN')} · {pieces(t).toLocaleString('en-IN')} pcs</span>,
     },
     {
@@ -93,7 +93,7 @@ export default function TransfersTab() {
         empty={{
           icon: <ArrowRightLeft size={22} />,
           title: 'No transfers',
-          description: 'Transfers are planned from an exception case, or from a shipment’s "Move to another vehicle".',
+          description: 'Transfers are planned from a problem case, or from a shipment’s "Move to another vehicle".',
         }}
       />
     </div>

@@ -85,7 +85,7 @@ router.post('/bid', requireAuth, async (req: Request, res: Response) => {
       .eq('status', 'active')
       .single();
 
-    if (!activeRoute) return res.status(400).json({ detail: 'You must have an active route to bid on a return load' });
+    if (!activeRoute) return res.status(400).json({ detail: 'You must have an active trip to bid on a return load' });
 
     // Calculate current payload (sum of pending stops)
     const pendingStops = (activeRoute.route_stops || []).filter((s: any) => s.status === 'pending');

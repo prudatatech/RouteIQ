@@ -205,7 +205,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
 
   const doneColumns: Column<TplOrder>[] = [
     {
-      key: 'route', header: 'Route',
+      key: 'route', header: 'Trip',
       cell: o => (
         <span className="inline-flex max-w-xs items-center gap-1.5" title={`${o.pickup_location} to ${o.drop_location}`}>
           <span className="truncate">{shortPlace(o.pickup_location)}</span>
@@ -226,7 +226,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
 
   const pastColumns: Column<TplOffer>[] = [
     {
-      key: 'route', header: 'Route',
+      key: 'route', header: 'Trip',
       cell: o => <span>{shortPlace(o.pickup_location)} to {shortPlace(o.drop_location)}</span>,
     },
     { key: 'price', header: 'Rate', align: 'right', cell: o => <span className="tabular">{o.proposed_price != null ? formatRupees(o.proposed_price) : '—'}</span> },

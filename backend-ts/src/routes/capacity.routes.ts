@@ -295,14 +295,14 @@ router.post('/driver/postpone-route', requireAuth, requireRole('driver'), async 
       return res.status(400).json({ error: 'route_id is required' });
     }
     if (!(await canAccessRoute(req.user!, route_id))) {
-      return res.status(403).json({ error: 'Not authorized for this route' });
+      return res.status(403).json({ error: 'Not authorized for this trip' });
     }
     const { supabase } = await import('../core/supabase');
     const { data: driver } = await supabase.from('users').select('full_name').eq('id', req.user!.user_id).maybeSingle();
     try {
       await notificationService.notifyStaff(
-        'Route postponed by driver',
-        `${driver?.full_name ?? 'A driver'} has not accepted the new route yet and will be asked again in 10 minutes.`,
+        'Trip postponed by driver',
+        `${driver?.full_name ?? 'A driver'} has not accepted the new trip yet and will be asked again in 10 minutes.`,
         'route_postponed',
         { route_id, driver_id: req.user!.user_id }
       );

@@ -144,7 +144,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
           </span>
         </div>
 
-        {closed && <Alert tone="danger">This capacity window has closed. Choose another one.</Alert>}
+        {closed && <Alert tone="danger">This return trip has closed. Choose another one.</Alert>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input

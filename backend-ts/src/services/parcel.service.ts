@@ -214,7 +214,7 @@ export async function scanParcel(driverId: string, input: ScanInput): Promise<Sc
     return { ok: true, purpose, kind: 'manifest', shipment_id: null, manifest_id: manifest.id, tracking_id: manifest.code, stop_id: expectedStop, already: false, status: manifest.status };
   }
 
-  throw new HttpError(404, 'This parcel is not on your route');
+  throw new HttpError(404, 'This parcel is not on your trip');
 }
 
 /** True when the driver scanned this shipment at its delivery stop. */

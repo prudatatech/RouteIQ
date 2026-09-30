@@ -332,7 +332,7 @@ export async function holdCargoOnVehicle(
       type: ctx.type,
       severity: ctx.type === 'vehicle_accident' ? 'critical' : 'high',
       source: ctx.source,
-      description: `${ctx.reason} ${goods.length} ${goods.length === 1 ? 'consignment is' : 'consignments are'} on ${vehicle?.plate_number ?? 'the vehicle'} and need a plan: transfer, hub drop, repair or return.`,
+      description: `${ctx.reason} ${goods.length} ${goods.length === 1 ? 'shipment is' : 'shipments are'} on ${vehicle?.plate_number ?? 'the vehicle'} and need a plan: transfer, hub drop, repair or return.`,
       items: goods.map(c => ({ consignment: c, pieces_affected: piecesHeld(c.pieces) })),
       vehicle_id: vehicleId,
       route_id: only.routeId ?? null,
@@ -754,7 +754,7 @@ export async function exceptionAction(id: string, body: Record<string, any>, act
         }
         await notifyOwner(c, 'Your goods are coming back', 'Your goods are being returned to the sender.', 'cargo_rto_started', { exception_id: row.id });
       }
-      await notifyStaffSafe(`Return to origin for case ${row.code}`, `${goods.length} consignment(s) are being returned.${pending.length ? ` Waiting for a vehicle: ${pending.join(', ')}.` : ''}`, 'cargo_rto_started', { exception_id: row.id });
+      await notifyStaffSafe(`Return to origin for case ${row.code}`, `${goods.length} shipment(s) are being returned.${pending.length ? ` Waiting for a vehicle: ${pending.join(', ')}.` : ''}`, 'cargo_rto_started', { exception_id: row.id });
       row = await planned(await loadException(row.id), actor, `Return to origin started${pending.length ? `; ${pending.join(', ')} need a transfer or hub departure first` : ''}`);
       break;
     }
@@ -807,9 +807,9 @@ export async function exceptionAction(id: string, body: Record<string, any>, act
       if (body.ref) {
         const c = await resolveRef(body.ref);
         target = goods.find(g => g.c.id === c.id)!;
-        if (!target) throw new HttpError(400, 'That consignment is not on this case');
+        if (!target) throw new HttpError(400, 'That shipment is not on this case');
       } else if (goods.length !== 1) {
-        throw new HttpError(400, 'Name the consignment to write off (ref)');
+        throw new HttpError(400, 'Name the shipment to write off (ref)');
       }
       if (!target) throw new HttpError(409, 'This case has no goods');
       await recordCustody(target.c, { kind: 'lost', pieces: body.pieces ?? null, notes: `Written off: ${note} (case ${row.code})` }, actor, { via: 'exception', exceptionId: row.id });
@@ -874,7 +874,7 @@ export async function createManualException(body: Record<string, any>, actor: Ac
   const type = str(body.type, 'type', 40)!;
   const description = str(body.description, 'description', 2000)!;
   const itemsIn = Array.isArray(body.items) ? body.items : [];
-  if (itemsIn.length === 0 && !body.vehicle_id) throw new HttpError(400, 'Add the affected consignments (items) or a vehicle');
+  if (itemsIn.length === 0 && !body.vehicle_id) throw new HttpError(400, 'Add the affected shipments (items) or a vehicle');
   if (itemsIn.length > 50) throw new HttpError(400, 'At most 50 items');
   const items: ExceptionItemInput[] = [];
   for (const it of itemsIn) {

@@ -38,7 +38,7 @@ const statusTone: Record<string, Tone> = {
 }
 
 const statusLabel: Record<string, string> = {
-  on_route: 'On route',
+  on_route: 'On trip',
   in_transit: 'In transit',
   in_progress: 'In progress',
   picked_up: 'Picked up',
@@ -123,7 +123,7 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
   // A shipment or vendor load in the cargo custody flow. "lost" is lost goods here, not a lost bid.
   cargo: {
     lost: { tone: 'danger', label: 'Lost' },
-    exception: { tone: 'danger', label: 'Exception' },
+    exception: { tone: 'danger', label: 'Problem' },
     on_hold: { tone: 'warning', label: 'On hold' },
   },
   // Why a consignment was split into lots (`split_reason` on a lot).

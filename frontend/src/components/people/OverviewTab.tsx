@@ -141,12 +141,12 @@ export function PerformanceTab({ detail }: { detail: PersonDetail }) {
   if (perf.isLoading) return <Skeleton className="h-28 w-full" />
   if (perf.isError) return <ErrorState title="We could not load performance" description="Check your connection and try again." onRetry={() => perf.refetch()} />
   const row = perf.data?.find(r => r.id === vehicle.id)
-  if (!row) return <Card><EmptyState title="No performance data yet" description="It appears after the first completed route." /></Card>
+  if (!row) return <Card><EmptyState title="No performance data yet" description="It appears after the first completed trip." /></Card>
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Deliveries" value={row.deliveries.toLocaleString('en-IN')} hint={`${row.completed_routes.toLocaleString('en-IN')} routes completed`} />
+        <Stat label="Deliveries" value={row.deliveries.toLocaleString('en-IN')} hint={`${row.completed_routes.toLocaleString('en-IN')} trips completed`} />
         <Stat label="On time" value={row.on_time_pct === null ? '—' : `${row.on_time_pct.toLocaleString('en-IN', { maximumFractionDigits: 0 })}%`}
           hint={row.timed_deliveries > 0 ? `${row.on_time_deliveries} of ${row.timed_deliveries} timed stops` : 'No timed stops yet'} />
         <Stat label="Rating" value={row.avg_rating === null ? 'Not rated' : row.avg_rating.toLocaleString('en-IN', { minimumFractionDigits: 1 })}

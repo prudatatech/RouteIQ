@@ -131,7 +131,7 @@ describe('validateAction and buildAction', () => {
     expect(buildAction('write_off', { pieces: '3', note: ' Crushed ' })).toEqual({ action: 'write_off', pieces: 3, note: 'Crushed' })
   })
   it('names the consignment of a write-off or claim when the case has several', () => {
-    expect(validateAction('write_off', { pieces: '1', note: 'x' }, { needsRef: true }).ref).toBe('Choose the consignment.')
+    expect(validateAction('write_off', { pieces: '1', note: 'x' }, { needsRef: true }).ref).toBe('Choose the shipment.')
     expect(buildAction('write_off', { pieces: '1', note: 'x', ref: 'manifest:m1' })).toEqual({ action: 'write_off', pieces: 1, note: 'x', ref: { manifest_id: 'm1' } })
     expect(buildAction('raise_claim', { claim_type: 'loss', claimed_amount: '10', ref: 'shipment:s1' })).toMatchObject({ ref: { shipment_id: 's1' } })
     expect(refKey({ shipment_id: 's1' })).toBe('shipment:s1')

@@ -308,7 +308,7 @@ export function validateAction(action: PanelAction, v: ActionValues, ctx: { maxP
       else if (text('note').length < 3) errors.note = 'Write at least a few words.'
       break
     case 'write_off': {
-      if (ctx.needsRef && !text('ref')) errors.ref = 'Choose the consignment.'
+      if (ctx.needsRef && !text('ref')) errors.ref = 'Choose the shipment.'
       const n = Number(text('pieces'))
       if (!text('pieces')) errors.pieces = 'Enter how many pieces.'
       else if (!Number.isInteger(n) || n < 1) errors.pieces = 'Enter a whole number of 1 or more.'

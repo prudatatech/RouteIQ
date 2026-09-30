@@ -14,8 +14,8 @@ interface AlertSettings {
 
 const FIELDS: { key: Field; label: string; unit: string; hint: string }[] = [
   { key: 'overspeed_kmph', label: 'Overspeed limit', unit: 'km/h', hint: 'An alert opens when a vehicle goes faster than this.' },
-  { key: 'idle_minutes', label: 'Long idle', unit: 'minutes', hint: 'A vehicle on an active route that has not moved for this long.' },
-  { key: 'gps_lost_minutes', label: 'GPS lost', unit: 'minutes', hint: 'A vehicle on an active route that has sent no location for this long.' },
+  { key: 'idle_minutes', label: 'Long idle', unit: 'minutes', hint: 'A vehicle on an active trip that has not moved for this long.' },
+  { key: 'gps_lost_minutes', label: 'GPS lost', unit: 'minutes', hint: 'A vehicle on an active trip that has sent no location for this long.' },
   { key: 'low_fuel_pct', label: 'Low fuel', unit: '% in the tank', hint: 'Only for vehicles whose device reports a fuel level.' },
 ]
 

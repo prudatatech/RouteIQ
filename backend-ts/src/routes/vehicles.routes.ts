@@ -735,7 +735,7 @@ router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), asyn
       .eq('status', 'active');
 
     if (vehicle.status === 'on_route' || (activeRoutes && activeRoutes.length > 0)) {
-      res.status(409).json({ detail: "This vehicle is on an active route and can't be deleted. Wait for the route to finish, or cancel it first." });
+      res.status(409).json({ detail: "This vehicle is on an active trip and can't be deleted. Wait for the trip to finish, or cancel it first." });
       return;
     }
 

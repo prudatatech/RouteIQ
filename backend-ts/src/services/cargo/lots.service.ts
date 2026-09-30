@@ -174,7 +174,7 @@ async function loadById(kind: RefKind, id: string): Promise<Consignment | null> 
 async function fullRow(c: { kind: RefKind; id: string }): Promise<Record<string, any>> {
   const { data, error } = await supabase.from(tableOf(c.kind)).select('*').eq('id', c.id).maybeSingle();
   if (error) throw new Error(`Failed to read the consignment: ${error.message}`);
-  if (!data) throw new HttpError(404, 'Consignment not found');
+  if (!data) throw new HttpError(404, 'Shipment not found');
   return data;
 }
 
@@ -795,7 +795,7 @@ export async function splitConsignment(
   if (asked < held) lots.push({ pieces: held - asked, remainder: true });
   // One lot is enough when the consignment keeps pieces it already accounted for (a remainder after a partial delivery)
   const accountedBefore = c.pieces.delivered + c.pieces.short + c.pieces.returned;
-  if (lots.length < 2 && accountedBefore === 0) throw new HttpError(400, 'A split makes at least two lots. To move all the goods, move the consignment itself.');
+  if (lots.length < 2 && accountedBefore === 0) throw new HttpError(400, 'A split makes at least two lots. To move all the goods, move the shipment itself.');
   if (lots.length > 26) throw new HttpError(400, 'At most 26 lots at a time');
 
   // Where each lot goes next must suit where the goods are
@@ -962,7 +962,7 @@ export async function splitConsignment(
   if (mvErr || !moved) {
     await supabase.from(tableOf(c.kind)).delete().in('id', ids);
     if (mvErr) throw new Error(`Failed to update the consignment split: ${mvErr.message}`);
-    throw new HttpError(409, 'This consignment was just changed by someone else. Refresh and try again.');
+    throw new HttpError(409, 'This shipment was just changed by someone else. Refresh and try again.');
   }
 
   // Drops and stops (shipments): each lot gets its own delivery points; the source's open stops go
@@ -1152,7 +1152,7 @@ export async function mergeLots(refs: unknown[], actor: Actor): Promise<{ ref: {
   if (cs.some(c => c.isMaster)) throw new HttpError(409, 'A master holds no goods of its own. Merge its lots.');
   const kind = cs[0].kind;
   const masterId = cs[0].parentId;
-  if (!masterId || cs.some(c => c.kind !== kind || c.parentId !== masterId)) throw new HttpError(409, 'Only lots of the same consignment can be merged.');
+  if (!masterId || cs.some(c => c.kind !== kind || c.parentId !== masterId)) throw new HttpError(409, 'Only lots of the same shipment can be merged.');
   const first = cs[0];
   if (cs.some(c => c.holder !== first.holder || (c.vehicleId ?? null) !== (first.vehicleId ?? null) || (c.depotId ?? null) !== (first.depotId ?? null))) {
     throw new HttpError(409, 'These lots are not with the same holder in the same place, so they can\'t be merged.');

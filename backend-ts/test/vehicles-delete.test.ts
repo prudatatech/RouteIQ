@@ -46,7 +46,7 @@ describe('DELETE /vehicles/:id — refuses while on an active route', () => {
     reset('on_route');
     const res = await del('veh-1');
     expect(res.status).toBe(409);
-    expect(res.body.detail).toMatch(/active route/);
+    expect(res.body.detail).toMatch(/active trip/);
     expect(supabaseMock.rows('vehicles')).toHaveLength(1);
   });
 

@@ -84,7 +84,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
     try {
       const found = await findHoldCase(vehicleId, job)
       if (!found) {
-        toast('The goods on board are on hold. Open Cargo, then Exceptions, to plan them.', { duration: 8000 })
+        toast('The goods on board are on hold. Open Cargo, then Problems, to plan them.', { duration: 8000 })
       } else if (plan === 'transship') {
         navigate(`/cargo/exceptions/${found.id}?action=transship`)
       } else if (plan === 'hub') {
@@ -94,7 +94,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
         toast.success(`Goods held on the vehicle under case ${found.code}`)
       }
     } catch (err) {
-      toast.error(apiErrorMessage(err, 'The vehicle is in maintenance, but the goods could not be planned. Open Cargo, then Exceptions, to finish.'))
+      toast.error(apiErrorMessage(err, 'The vehicle is in maintenance, but the goods could not be planned. Open Cargo, then Problems, to finish.'))
     } finally {
       queryClient.invalidateQueries({ queryKey: cargoKeys.all })
     }
@@ -121,7 +121,7 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
     const next: Record<string, string> = {}
     if (!expected) next.expected = 'Say when the vehicle should be back.'
     else if (expected < istToday()) next.expected = 'The expected return date cannot be in the past.'
-    if (needsRelease && !release) next.release = 'Tick the box to release its routes and loads, or wait until they finish.'
+    if (needsRelease && !release) next.release = 'Tick the box to release its trips and loads, or wait until they finish.'
     if (hasCargo && !plan) next.plan = 'Choose what happens to the goods on board.'
     if (hasCargo && plan === 'hub' && !depotId) next.depot = 'Choose the hub to send the goods to.'
     setErrors(next)
@@ -168,10 +168,10 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
                   checked={release}
                   onChange={e => setRelease(e.target.checked)}
                   error={errors.release}
-                  label="Release its routes and loads"
+                  label="Release its trips and loads"
                   description={hasCargo
-                    ? 'Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told. Goods already on board follow the plan below.'
-                    : 'Its routes and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told.'}
+                    ? 'Its trips and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told. Goods already on board follow the plan below.'
+                    : 'Its trips and loads are cancelled, shipments not yet picked up go back to the queue, and the driver is told.'}
                 />
               </div>
             )}

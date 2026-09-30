@@ -190,7 +190,7 @@ export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActo
     const { holdCargoOnVehicle } = await import('./cargo/exception.service');
     await holdCargoOnVehicle(
       route.vehicle_id,
-      hold ?? { source: 'manual', type: 'other', reason: 'The route was cancelled while goods were on board.' },
+      hold ?? { source: 'manual', type: 'other', reason: 'The trip was cancelled while goods were on board.' },
       actor ?? null,
       { shipmentIds, manifestIds: [], routeId },
     );
@@ -681,7 +681,7 @@ export class ShipmentService {
         409,
         holder === 'hub' || status === 'at_hub'
           ? 'These goods are at a hub. Send them on with a hub departure (hub out) on the vehicle that collects them.'
-          : 'These goods are already on a vehicle. To move them to another vehicle, plan a cargo transfer (Cargo, Transfers), or schedule a re-attempt from the cargo exception.',
+          : 'These goods are already on a vehicle. To move them to another vehicle, plan a cargo transfer (Cargo, Transfers), or schedule a re-attempt from the problem.',
         { use: holder === 'hub' || status === 'at_hub' ? 'hub_out' : 'transfer' },
       );
     }
@@ -1252,7 +1252,7 @@ export class ShipmentService {
           if (vehicle?.driver_id) {
             const text =
               status === 'delivered' ? ['Delivery marked done', `Dispatch marked the delivery to ${destination} as delivered.`]
-              : status === 'created' ? ['Delivery removed', `Dispatch took the delivery to ${destination} off your route.`]
+              : status === 'created' ? ['Delivery removed', `Dispatch took the delivery to ${destination} off your trip.`]
               : actor?.role === 'customer' ? ['Delivery cancelled', `The customer cancelled the delivery to ${destination}.`]
               : ['Delivery cancelled', `Dispatch cancelled the delivery to ${destination}.`];
             await notificationService.sendNotification(vehicle.driver_id, text[0], text[1], 'shipment_' + (status === 'delivered' ? 'delivered' : 'cancelled'), { shipment_id: shipmentId, route_id: route.id });

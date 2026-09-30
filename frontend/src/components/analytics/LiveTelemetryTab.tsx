@@ -186,7 +186,7 @@ export default function LiveTelemetryTab({ vehicleId, onVehicleChange }: {
           value={mission ? `${Math.round(mission.progress_pct)}%` : '—'}
           hint={mission
             ? `${formatNumber(mission.remaining_stops)} stop${mission.remaining_stops === 1 ? '' : 's'} left`
-            : missions.isError ? 'We could not load active routes' : 'Not on an active route'}
+            : missions.isError ? 'We could not load active trips' : 'Not on an active trip'}
         />
       </section>
 

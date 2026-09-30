@@ -142,7 +142,7 @@ export default function StopsEditor({
           recentPlacesKey={RECENT_KEY}
           disabled={disabled || full}
         />
-        {full && <p className="mt-1 text-xs text-muted">That is the most stops one route can have.</p>}
+        {full && <p className="mt-1 text-xs text-muted">That is the most stops one trip can have.</p>}
       </div>
 
       <div>

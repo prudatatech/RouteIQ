@@ -77,7 +77,7 @@ function stopPoints(route: ReplayRoute | undefined): (LatLng & { name: string; s
 function routeLabel(r: ReplayRoute): string {
   const when = r.started_at ?? r.created_at
   const stops = r.route_stops?.length ?? 0
-  return `${when ? `${formatDay(when)}, ${formatTime(when)}` : 'Route'} · ${stops} stop${stops === 1 ? '' : 's'}${r.status === 'active' ? ' · in progress' : ''}`
+  return `${when ? `${formatDay(when)}, ${formatTime(when)}` : 'Trip'} · ${stops} stop${stops === 1 ? '' : 's'}${r.status === 'active' ? ' · in progress' : ''}`
 }
 
 /**
@@ -230,7 +230,7 @@ export function TripReplayCard({ vehicleId, plate }: { vehicleId: string; plate:
       <CardHeader title="Trip replay" description="Play back where the vehicle went, how fast, and where it stopped" />
       <CardBody className="space-y-4">
         <div role="group" aria-label="What to replay" className="inline-flex rounded-control border border-border p-0.5">
-          {([['range', 'Date and time'], ['route', 'A route']] as const).map(([id, label]) => (
+          {([['range', 'Date and time'], ['route', 'A trip']] as const).map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -258,13 +258,13 @@ export function TripReplayCard({ vehicleId, plate }: { vehicleId: string; plate:
         ) : routes.isLoading ? (
           <Skeleton className="h-10 w-full" />
         ) : routes.isError ? (
-          <ErrorState compact title="We could not load this vehicle's routes" onRetry={() => routes.refetch()} />
+          <ErrorState compact title="We could not load this vehicle's trips" onRetry={() => routes.refetch()} />
         ) : (routes.data?.length ?? 0) === 0 ? (
-          <EmptyState compact icon={<RouteIcon size={22} />} title="No routes to replay" description="Routes this vehicle has started or completed show up here." />
+          <EmptyState compact icon={<RouteIcon size={22} />} title="No trips to replay" description="Trips this vehicle has started or completed show up here." />
         ) : (
           <Select
-            label="Route"
-            placeholder="Choose a route"
+            label="Trip"
+            placeholder="Choose a trip"
             value={routeId}
             onChange={e => chooseRoute(e.target.value)}
             options={(routes.data ?? []).map(r => ({ value: r.id, label: routeLabel(r) }))}
@@ -272,7 +272,7 @@ export function TripReplayCard({ vehicleId, plate }: { vehicleId: string; plate:
         )}
 
         {!applied ? (
-          <EmptyState compact title="Choose what to replay" description="Pick a date and time, or a route, to load the GPS track." />
+          <EmptyState compact title="Choose what to replay" description="Pick a date and time, or a trip, to load the GPS track." />
         ) : track.isLoading ? (
           <Skeleton className="h-80 w-full" />
         ) : track.isError ? (

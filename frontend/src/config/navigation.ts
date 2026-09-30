@@ -97,7 +97,7 @@ export const navSections: NavSection[] = [
     children: [
       { to: '/return-trips', label: 'Open return trips', roles: admins },
       { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
-      { to: '/return-trips?tab=pool', label: 'Pool loads', roles: admins },
+      { to: '/return-trips?tab=pool', label: 'Combine loads', roles: admins },
       { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
     ],
   },

@@ -78,7 +78,7 @@ router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (
 router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!(await canAccessRoute(req.user!, req.params.route_id))) {
-      res.status(403).json({ detail: 'Not authorized to view this route' });
+      res.status(403).json({ detail: 'Not authorized to view this trip' });
       return;
     }
 
@@ -97,7 +97,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
         .maybeSingle();
 
       if (manifestErr || !manifest) {
-        res.status(404).json({ detail: 'Route not found' });
+        res.status(404).json({ detail: 'Trip not found' });
         return;
       }
 
@@ -136,7 +136,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
 router.patch('/:route_id/status', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!(await canAccessRoute(req.user!, req.params.route_id))) {
-      res.status(403).json({ detail: 'Not authorized to update this route' });
+      res.status(403).json({ detail: 'Not authorized to update this trip' });
       return;
     }
     const newStatus = req.body?.status;
@@ -149,7 +149,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       return;
     }
     if (!isStaff(req.user) && newStatus !== 'active') {
-      res.status(403).json({ detail: 'Drivers can only start their own route' });
+      res.status(403).json({ detail: 'Drivers can only start their own trip' });
       return;
     }
 
@@ -198,7 +198,7 @@ router.post('/:route_id/reroute', requireAuth, async (req: Request, res: Respons
       .single();
 
     if (error || !route) {
-      res.status(404).json({ detail: 'Route not found' });
+      res.status(404).json({ detail: 'Trip not found' });
       return;
     }
 
@@ -228,7 +228,7 @@ router.post('/:route_id/reroute', requireAuth, async (req: Request, res: Respons
 router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized to edit routes' });
+      res.status(403).json({ detail: 'Not authorized to edit trips' });
       return;
     }
 
@@ -245,7 +245,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       .maybeSingle();
 
     if (error || !route) {
-      res.status(404).json({ detail: 'Route not found' });
+      res.status(404).json({ detail: 'Trip not found' });
       return;
     }
 
@@ -253,12 +253,12 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
     const newVehicleId = parsed.data.vehicle_id;
     if (newVehicleId && newVehicleId !== route.vehicle_id) {
       if (!['pending', 'optimizing'].includes(route.status)) {
-        throw new HttpError(409, `This route is ${String(route.status).replace('_', ' ')}. Only a route that has not started can change vehicle.`);
+        throw new HttpError(409, `This trip is ${String(route.status).replace('_', ' ')}. Only a trip that has not started can change vehicle.`);
       }
       const { data: vehicle } = await supabase.from('vehicles').select('id, status').eq('id', newVehicleId).maybeSingle();
       if (!vehicle) throw new HttpError(404, 'Vehicle not found');
       if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
-        throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a route.`);
+        throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a trip.`);
       }
       const { error: vehicleErr } = await supabase.from('routes').update({ vehicle_id: newVehicleId }).eq('id', route.id).eq('status', route.status);
       if (vehicleErr) throw new Error(vehicleErr.message);
@@ -283,7 +283,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
 router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => {
   try {
     if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
-      res.status(403).json({ detail: 'Not authorized to delete routes' });
+      res.status(403).json({ detail: 'Not authorized to delete trips' });
       return;
     }
 
@@ -294,13 +294,13 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
       .single();
 
     if (error || !route) {
-      res.status(404).json({ detail: 'Route not found' });
+      res.status(404).json({ detail: 'Trip not found' });
       return;
     }
 
     if (['active', 'completed'].includes(route.status)) {
       res.status(409).json({
-        detail: `This route is ${String(route.status).replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`,
+        detail: `This trip is ${String(route.status).replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`,
       });
       return;
     }
@@ -319,7 +319,7 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
     await supabase.from('route_stops').delete().eq('route_id', route.id);
     await supabase.from('routes').delete().eq('id', route.id);
 
-    res.json({ detail: 'Route deleted successfully' });
+    res.json({ detail: 'Trip deleted successfully' });
   } catch (e: any) {
     sendError(req, res, e);
   }

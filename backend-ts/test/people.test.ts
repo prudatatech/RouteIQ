@@ -148,7 +148,7 @@ describe('status', () => {
     }));
     const busy = await request(app).post(`/api/v1/people/${DRV}/status`).set(admin).send({ status: 'inactive', reason: 'Left the company' });
     expect(busy.status).toBe(409);
-    expect(busy.body.detail).toContain('active route');
+    expect(busy.body.detail).toContain('active trip');
 
     supabaseMock.rows('routes')[0].status = 'completed';
     const ask = await request(app).post(`/api/v1/people/${DRV}/status`).set(admin).send({ status: 'inactive', reason: 'Left the company' });

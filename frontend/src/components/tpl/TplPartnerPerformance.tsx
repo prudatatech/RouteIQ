@@ -84,7 +84,7 @@ export function TplPartnerPerformance({ partnerId, slaCommitment }: { partnerId:
   const isLate = (o: TplOrder) => !!o.due_by && new Date(o.delivered_at ?? Date.now()).getTime() > new Date(o.due_by).getTime()
 
   const columns: Column<TplOrder>[] = [
-    { key: 'route', header: 'Route', cell: o => <span>{shortPlace(o.pickup_location)} to {shortPlace(o.drop_location)}</span> },
+    { key: 'route', header: 'Trip', cell: o => <span>{shortPlace(o.pickup_location)} to {shortPlace(o.drop_location)}</span> },
     { key: 'amount', header: 'Agreed amount', align: 'right', cell: o => <span className="tabular">{formatRupees(o.agreed_amount)}</span>, sortValue: o => Number(o.agreed_amount) },
     {
       key: 'status', header: 'Status',

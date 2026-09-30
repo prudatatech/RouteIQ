@@ -203,7 +203,7 @@ export function planText(p: PlanTextInput): string {
   const times = pointTimes(p.departureIso, p.route.legs)
   const last = p.points.length - 1
   const lines = [
-    `Route plan: ${p.points[0]?.name ?? 'Start'} to ${p.points[last]?.name ?? 'End'}`,
+    `Trip plan: ${p.points[0]?.name ?? 'Start'} to ${p.points[last]?.name ?? 'End'}`,
     ...(p.vehicle ? [`Vehicle: ${p.vehicle}`] : []),
     `Leaves: ${formatDateTime(p.departureIso)}`,
     '',
@@ -220,7 +220,7 @@ export function planText(p: PlanTextInput): string {
   if (p.fuel?.litres != null) {
     lines.push(`Fuel: about ${p.fuel.litres.toLocaleString('en-IN')} L${p.fuel.cost != null ? ` (${formatRupees(p.fuel.cost)})` : ''}`)
   }
-  if (!p.truckAware) lines.push('Note: this route does not consider truck restrictions.')
+  if (!p.truckAware) lines.push('Note: this trip does not consider truck restrictions.')
   lines.push('', `Open in Google Maps: ${p.mapsUrl}`)
   return lines.join('\n')
 }

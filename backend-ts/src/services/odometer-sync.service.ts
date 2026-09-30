@@ -155,7 +155,7 @@ export async function syncVehicleOdometer(
       used = journeys.count;
       source = 'routes';
       watermark = journeys.latest;
-      message = 'No GPS points in this period, so the distance of completed routes and loads was added.';
+      message = 'No GPS points in this period, so the distance of completed trips and loads was added.';
     }
   }
 

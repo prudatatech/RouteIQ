@@ -98,7 +98,7 @@ export default function VendorsTab() {
         onRetry={() => refetch()}
         empty={top.length === 0}
         emptyTitle="No vendor loads yet"
-        emptyDescription="Vendors appear here once a shipment request is assigned to them."
+        emptyDescription="Vendors appear here once a request is assigned to them."
       >
         <SimpleBarChart
           data={top}

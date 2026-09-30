@@ -154,7 +154,7 @@ async function evidenceFolders(c: Consignment, extra: string[] = []): Promise<st
 }
 
 function checkPaths(paths: unknown[], folders: string[], field: string): void {
-  for (const p of paths) if (!isPathIn(p, folders)) throw new HttpError(400, `${field} must be files uploaded for this consignment`);
+  for (const p of paths) if (!isPathIn(p, folders)) throw new HttpError(400, `${field} must be files uploaded for this shipment`);
 }
 
 // ── Exceptions opened by custody ────────────────────────────
@@ -390,7 +390,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
     case 'arrived_pickup':
     case 'arrived_drop': {
       if (['delivered', 'returned', 'lost', 'cancelled'].includes(c.status)) {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')}.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}.`);
       }
       const vehicleId = c.vehicleId ?? (await plannedVehicleOf(c));
       const event = await insertEvent(c, {
@@ -409,7 +409,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         throw new HttpError(409, 'These goods were already picked up.');
       }
       if (!['created', 'assigned', 'on_hold', 'exception'].includes(c.status)) {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')} and can't be picked up.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')} and can't be picked up.`);
       }
       // A 3PL partner's truck is not ours; a pickup implied by a delivery or a status change may
       // have no vehicle on record. A pickup recorded through the custody endpoint needs one.
@@ -465,7 +465,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
       if (c.status === 'at_hub') throw new HttpError(409, 'These goods are at a hub. Record the hub departure (hub_out) instead.');
       // After a failed or partial delivery, setting off again is the re-attempt: out for delivery
       if (!['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered'].includes(c.status) || c.holder !== 'vehicle') {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')}, so it can't depart.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}, so it can't depart.`);
       }
       const previous = c.status;
       const next = c.status === 'picked_up' ? 'in_transit' : ['exception', 'partially_delivered'].includes(c.status) ? 'out_for_delivery' : c.status;
@@ -486,7 +486,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         c = await reload(c);
       }
       if (!['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered'].includes(c.status)) {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')} and can't be delivered.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')} and can't be delivered.`);
       }
       // Evidence: who received it; the OTP when one is required (or given); and a photo or
       // signature. Staff may rely on a verified OTP or log a reason instead of a photo.
@@ -599,7 +599,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         c = await reload(c);
       }
       if (!['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered'].includes(c.status)) {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')}, so no delivery was due.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}, so no delivery was due.`);
       }
       const attempts = c.attempts + 1;
       const rto = attempts >= c.maxAttempts;
@@ -776,7 +776,7 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
     // ── Returns ──
     case 'return_pickup': {
       if (!['at_hub', 'exception', 'partially_delivered', 'on_hold'].includes(c.status)) {
-        throw new HttpError(409, `This consignment is ${c.status.replace(/_/g, ' ')}, so a return pickup does not apply.`);
+        throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}, so a return pickup does not apply.`);
       }
       const vehicleId = c.holder === 'vehicle' && actor?.role !== 'driver' && !input.vehicle_id ? c.vehicleId : await vehicleFor(c, input, actor);
       if (!vehicleId) throw new HttpError(400, 'Name the vehicle taking the goods back (vehicle_id)');

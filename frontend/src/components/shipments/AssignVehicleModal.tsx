@@ -127,7 +127,7 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     if (subject.count > 1) {
       const ok = await confirm({
         title: `Assign ${plate} to ${subject.count} loads?`,
-        message: 'The vehicle is assigned to every selected load, and the loads are added to its cargo manifest.',
+        message: 'The vehicle is assigned to every selected load, and the loads are added to its shipments.',
         confirmLabel: 'Assign vehicle',
       })
       if (!ok) return
@@ -157,7 +157,7 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     if (failed.length > 0) {
       toast.error(assignedIds.length === 0 ? failed[0].message : `Assigned ${assignedIds.length}, ${failed.length} failed: ${failed.slice(0, 3).map(f => f.message).join('; ')}`)
     } else {
-      toast.success(subject.kind === 'booking' ? 'Vehicle assigned. The customer has been told.' : subject.kind === 'vendor' ? 'Vehicle assigned. The load was added to its cargo manifest.' : 'Vehicle assigned')
+      toast.success(subject.kind === 'booking' ? 'Vehicle assigned. The customer has been told.' : subject.kind === 'vendor' ? 'Vehicle assigned. The load was added to its shipments.' : 'Vehicle assigned')
     }
     if (assignedIds.length > 0) {
       onAssigned?.({ kind: subject.kind, vehicleId: a.vehicle.id, plate, assignedIds, failed })

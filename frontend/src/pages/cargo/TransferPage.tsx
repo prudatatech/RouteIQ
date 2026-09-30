@@ -130,7 +130,7 @@ export default function TransferPage() {
   }
 
   const columns: Column<TransferItem>[] = [
-    { key: 'consignment', header: 'Consignment', cell: i => <ConsignmentLink c={i} /> },
+    { key: 'consignment', header: 'Shipment', cell: i => <ConsignmentLink c={i} /> },
     { key: 'planned', header: 'Planned', align: 'right', cell: i => <span className="tabular">{n(i.pieces_planned)}</span> },
     {
       key: 'out', header: 'Out', align: 'right',
@@ -205,11 +205,11 @@ export default function TransferPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Consignments" description="What was planned, handed over and received" />
+            <CardHeader title="Shipments" description="What was planned, handed over and received" />
             <CardBody className="space-y-4">
               {mismatches > 0 && (
                 <Alert tone="danger" title="Counts do not match">
-                  {mismatches === 1 ? '1 consignment does not match' : `${mismatches} consignments do not match`}: a shortage case opens when fewer pieces arrive than were handed over.
+                  {mismatches === 1 ? '1 shipment does not match' : `${mismatches} shipments do not match`}: a shortage case opens when fewer pieces arrive than were handed over.
                 </Alert>
               )}
               <p className="text-sm text-muted">
@@ -218,12 +218,12 @@ export default function TransferPage() {
                 {' · '}In <span className="tabular font-medium text-text">{anyIn ? n(sum(i => i.pieces_in)) : '—'}</span> pieces
               </p>
               <DataTable
-                caption="Consignments in this transfer"
+                caption="Shipments in this transfer"
                 columns={columns}
                 rows={items}
                 rowKey={i => i.id}
                 pageSize={50}
-                empty={{ title: 'No consignments', description: 'This transfer has no consignments on it.' }}
+                empty={{ title: 'No shipments', description: 'This transfer has no shipments on it.' }}
               />
             </CardBody>
           </Card>
@@ -291,8 +291,8 @@ export default function TransferPage() {
                   { label: 'Note', value: t.note || 'No note' },
                   { label: 'Planned', value: t.planned_at ? formatDateTime(t.planned_at) : '—' },
                   {
-                    label: 'New route',
-                    value: t.new_route_id ? <Link to={`/routes/${t.new_route_id}`} className="text-brand hover:underline">Open the new route</Link> : 'None',
+                    label: 'New trip',
+                    value: t.new_route_id ? <Link to={`/routes/${t.new_route_id}`} className="text-brand hover:underline">Open the new trip</Link> : 'None',
                   },
                 ]}
               />

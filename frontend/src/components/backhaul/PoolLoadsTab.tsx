@@ -76,7 +76,7 @@ export default function PoolLoadsTab() {
       <Card className="lg:col-span-3">
         <CardHeader title="Choose loads" description="Pick two or more loads to carry on one truck." />
         {(loads.data ?? []).length < 2 ? (
-          <EmptyState compact title="Not enough open loads" description="Pooling needs at least two shipments that are not on a route yet." />
+          <EmptyState compact title="Not enough open loads" description="Combining needs at least two shipments that are not on a trip yet." />
         ) : (
           <ul className="divide-y divide-border">
             {(loads.data ?? []).map(load => {
@@ -127,7 +127,7 @@ export default function PoolLoadsTab() {
               <Alert tone="warning">These loads weigh more than {vehicle?.plate_number} can carry. Remove a load or choose a bigger vehicle.</Alert>
             )}
             <Button fullWidth disabled={!canPlan} loading={plan.isPending} onClick={() => plan.mutate()}>
-              Plan pooled route
+              Plan a combined trip
             </Button>
           </CardBody>
         </Card>

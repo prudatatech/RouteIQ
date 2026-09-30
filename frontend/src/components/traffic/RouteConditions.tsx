@@ -18,7 +18,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
 
       <section aria-labelledby="route-weather-heading" className="space-y-2">
         <h3 id="route-weather-heading" className="flex items-center gap-2 text-sm font-medium text-text">
-          <CloudRain size={16} aria-hidden="true" /> Weather at the middle of the route
+          <CloudRain size={16} aria-hidden="true" /> Weather at the middle of the trip
         </h3>
         {weather.isLoading ? (
           <Skeleton className="h-10 w-full" />
@@ -46,16 +46,16 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
 
       <section aria-labelledby="route-traffic-heading" className="space-y-2 border-t border-border pt-4">
         <h3 id="route-traffic-heading" className="flex items-center gap-2 text-sm font-medium text-text">
-          <TriangleAlert size={16} aria-hidden="true" /> Traffic incidents on this route
+          <TriangleAlert size={16} aria-hidden="true" /> Traffic incidents on this trip
         </h3>
         {traffic.isLoading ? (
           <Skeleton className="h-10 w-full" />
         ) : traffic.isError ? (
           <ErrorState compact description="We could not load traffic incidents. Try again in a few minutes." onRetry={() => traffic.refetch()} />
         ) : !traffic.data?.configured ? (
-          <p className="text-sm text-muted">Traffic incidents are off. Add a TomTom key to check active routes.</p>
+          <p className="text-sm text-muted">Traffic incidents are off. Add a TomTom key to check active trips.</p>
         ) : traffic.data.incidents.length === 0 ? (
-          <EmptyState compact title="No incidents on this route" description="TomTom reports nothing along the path right now." />
+          <EmptyState compact title="No problems on this trip" description="TomTom reports nothing along the path right now." />
         ) : (
           <ul className="divide-y divide-border rounded-control border border-border">
             {traffic.data.incidents.map(i => (

@@ -63,7 +63,7 @@ export default function RaiseExceptionModal({ open, onClose, consignment, defaul
       if (!pieces && where.pieces.total) setPieces(String(onBoardCount(where.pieces) || where.pieces.total))
     } catch (err) {
       setFound(null)
-      setErrors(e => ({ ...e, code: errorMessage(err, 'We could not find that consignment. Check the code.') }))
+      setErrors(e => ({ ...e, code: errorMessage(err, 'We could not find that shipment. Check the code.') }))
     } finally {
       setLooking(false)
     }
@@ -85,11 +85,11 @@ export default function RaiseExceptionModal({ open, onClose, consignment, defaul
     const next: Record<string, string> = {}
     if (!type) next.type = 'Choose what happened.'
     if (!description.trim()) next.description = 'Describe what happened and what was seen.'
-    if (!knownRef) next.code = next.code ?? 'Find the consignment first.'
+    if (!knownRef) next.code = next.code ?? 'Find the shipment first.'
     const n = Number(pieces)
     if (!pieces) next.pieces = 'Enter how many pieces are affected.'
     else if (!Number.isInteger(n) || n < 0) next.pieces = 'Enter a whole number.'
-    else if (maxPieces != null && n > maxPieces) next.pieces = `The consignment has ${maxPieces.toLocaleString('en-IN')} pieces.`
+    else if (maxPieces != null && n > maxPieces) next.pieces = `The shipment has ${maxPieces.toLocaleString('en-IN')} pieces.`
     setErrors(next)
     if (Object.keys(next).length > 0 || !knownRef || !type) return
     setServerError('')
@@ -111,8 +111,8 @@ export default function RaiseExceptionModal({ open, onClose, consignment, defaul
       onClose={onClose}
       onSubmit={submit}
       closeOnBackdrop={false}
-      title="Raise an exception"
-      description={consignment ? `For ${consignment.code}. The case gets an owner and a deadline.` : 'Open a case for a problem with a consignment. It gets an owner and a deadline.'}
+      title="Raise a problem"
+      description={consignment ? `For ${consignment.code}. The case gets an owner and a deadline.` : 'Open a case for a problem with a shipment. It gets an owner and a deadline.'}
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -125,7 +125,7 @@ export default function RaiseExceptionModal({ open, onClose, consignment, defaul
           <div className="flex items-start gap-2">
             <Input
               className="flex-1"
-              label="Consignment"
+              label="Shipment"
               placeholder="RTX-… or CM-…"
               value={code}
               onChange={e => { setCode(e.target.value); setFound(null) }}

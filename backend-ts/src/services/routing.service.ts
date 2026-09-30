@@ -530,7 +530,7 @@ async function mapboxRoutes(points: PlanPoint[], avoid: AvoidOptions, departMs: 
   return routes;
 }
 
-export const NO_ROUTING_MESSAGE = 'Route planning is not set up. Ask an administrator to add a TomTom or Mapbox key to the server.';
+export const NO_ROUTING_MESSAGE = 'Trip planning is not set up. Ask an administrator to add a TomTom or Mapbox key to the server.';
 
 function planCacheKey(input: PlanInput, profile: TruckProfile, isNow: boolean, departMs: number): string {
   const body = JSON.stringify({

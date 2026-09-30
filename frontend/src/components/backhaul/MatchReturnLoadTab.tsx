@@ -117,10 +117,10 @@ export default function MatchReturnLoadTab({ manifest, onDismissManifest }: {
       {manifest && (
         <Alert
           tone="info"
-          title="Copied from Route details"
+          title="Copied from Trip details"
           action={onDismissManifest && <Button variant="ghost" size="sm" onClick={onDismissManifest}>Dismiss</Button>}
         >
-          {manifest.vehicles?.plate_number ? `${manifest.vehicles.plate_number}` : 'This route'}
+          {manifest.vehicles?.plate_number ? `${manifest.vehicles.plate_number}` : 'This trip'}
           {manifestPath ? `: ${manifestPath}. ` : '. '}
           {manifest.vehicle_id && vehicleList.some(v => v.id === manifest.vehicle_id)
             ? 'Its truck is filled in below. Choose a load to see if it fits the return trip.'

@@ -183,7 +183,7 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
 
   const where = body.meet_address ? ` at ${body.meet_address}` : '';
   const target = toVehicle ? toVehicle.plate_number : `the ${depot.name} hub`;
-  const summary = `${goods.length} consignment(s), ${goods.reduce((s, g) => s + g.pieces, 0)} pieces`;
+  const summary = `${goods.length} shipment(s), ${goods.reduce((s, g) => s + g.pieces, 0)} pieces`;
   await notifyVehicleDriver(from.id, 'Cargo transfer planned', `Hand over ${summary} to ${target}${where}. Count them out in the app.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   if (toVehicle) await notifyVehicleDriver(toVehicle.id, 'Cargo transfer planned', `Collect ${summary} from ${from.plate_number}${where}. Count them in when you receive them.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   await notifyStaffSafe(`Transfer ${transfer.code} planned`, `${summary} from ${from.plate_number} to ${target}.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
@@ -196,7 +196,7 @@ function matchItems(items: any[], body: z.infer<typeof HandoverSchema>['items'],
   const out = [];
   for (const item of items) {
     const idx = refs.findIndex(c => c.id === (item.shipment_id ?? item.manifest_id));
-    if (idx < 0) throw new HttpError(400, 'Count every consignment on the transfer');
+    if (idx < 0) throw new HttpError(400, 'Count every shipment on the transfer');
     out.push({ item, c: refs[idx], input: body[idx] });
   }
   return out;
@@ -207,7 +207,7 @@ async function resolveBodyRefs(body: z.infer<typeof HandoverSchema>['items'], it
   for (const b of body) refs.push(await resolveRef(b.ref));
   const ids = new Set(items.map(i => i.shipment_id ?? i.manifest_id));
   for (const c of refs) if (!ids.has(c.id)) throw new HttpError(400, `${c.code} is not on this transfer`);
-  if (refs.length !== items.length) throw new HttpError(400, 'Count every consignment on the transfer');
+  if (refs.length !== items.length) throw new HttpError(400, 'Count every shipment on the transfer');
   return refs;
 }
 
@@ -222,7 +222,7 @@ export async function handoverOut(id: string, input: unknown, user: TokenData): 
   const items = await transferItems(id);
   const pairs = matchItems(items, body.items, await resolveBodyRefs(body.items, items));
   for (const p of pairs) {
-    if (p.input.pieces_out == null) throw new HttpError(400, 'pieces_out is required for each consignment');
+    if (p.input.pieces_out == null) throw new HttpError(400, 'pieces_out is required for each shipment');
     if (p.input.pieces_out > p.item.pieces_planned) throw new HttpError(409, `${p.c.code}: ${p.input.pieces_out} counted out, but only ${p.item.pieces_planned} were planned.`);
   }
 
@@ -282,7 +282,7 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
   const items = await transferItems(id);
   const pairs = matchItems(items, body.items, await resolveBodyRefs(body.items, items));
   for (const p of pairs) {
-    if (p.input.pieces_in == null) throw new HttpError(400, 'pieces_in is required for each consignment');
+    if (p.input.pieces_in == null) throw new HttpError(400, 'pieces_in is required for each shipment');
   }
 
   const vehicleChanged = !!transfer.to_vehicle_id;
@@ -389,7 +389,7 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
   if (newRouteId) await supabase.from('cargo_transfers').update({ new_route_id: newRouteId }).eq('id', id);
   await notifyStaffSafe(
     `Transfer ${transfer.code} completed`,
-    `${pairs.length} consignment(s) moved${vehicleChanged ? '. Update e-way bill Part B for the new vehicle.' : ' to the hub.'}`,
+    `${pairs.length} shipment(s) moved${vehicleChanged ? '. Update e-way bill Part B for the new vehicle.' : ' to the hub.'}`,
     'cargo_transfer_completed',
     { transfer_id: id, code: transfer.code, eway_part_b_required: vehicleChanged },
   );

@@ -402,7 +402,7 @@ export function StartReturnModal({ cargoRef, code, where, onClose }: Common) {
             hint="The return is recorded on this case."
           />
         ) : (
-          <Alert tone="info">This consignment has no open case, so one is opened for the return.</Alert>
+          <Alert tone="info">This shipment has no open case, so one is opened for the return.</Alert>
         )}
         {!caseId && (
           <Select
