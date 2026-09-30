@@ -33,8 +33,7 @@ export const cargoException = page(() => import('@/pages/cargo/ExceptionCasePage
 export const cargoTransfer = page(() => import('@/pages/cargo/TransferPage'))
 export const bids = page(() => import('@/pages/BidsPage'))
 export const backhaul = page(() => import('@/pages/BackhaulPage'))
-export const bookings = page(() => import('@/pages/BookingsPage'))
-export const vendorRequests = page(() => import('@/pages/VendorRequestsPage'))
+export const requests = page(() => import('@/pages/RequestsPage'))
 export const liveMap = page(() => import('@/pages/LiveMapPage'))
 export const tplPartners = page(() => import('@/pages/TplPartnersPage'))
 export const tplPartnerDetail = page(() => import('@/pages/TplPartnerDetailPage'))
@@ -82,7 +81,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/route-planner': routePlanner.preload,
   '/backhaul': backhaul.preload,
   '/bids': bids.preload,
-  '/vendor-requests': vendorRequests.preload,
+  '/requests': requests.preload,
   '/3pl-partners': tplPartners.preload,
   '/analytics': analytics.preload,
   '/finance': finance.preload,

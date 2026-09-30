@@ -411,7 +411,8 @@ export const vendorAPI = {
   passingRoutes: () => api.get('/vendor/passing-routes').then(r => ensureArray(r.data)),
   createShipmentRequest: (data: Record<string, unknown>) => api.post('/vendor/shipment-request', data).then(r => r.data),
   pendingRequests: () => api.get('/vendor/shipment-request/pending').then(r => r.data),
-  approveRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/approve`).then(r => r.data),
+  /** Accept a load at a price: a flat `cost`, or a `cost_per_km`. Needed unless the load already has a price. */
+  approveRequest: (id: string, price?: { cost?: number; cost_per_km?: number }) => api.put(`/vendor/shipment-request/${id}/approve`, price ?? {}).then(r => r.data),
   rejectRequest: (id: string, reason: string) => api.put(`/vendor/shipment-request/${id}/reject`, { reason }).then(r => r.data),
   /** The vendor withdraws a load they posted, while it has no vehicle yet. */
   cancelRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/cancel`).then(r => r.data),
@@ -558,6 +559,8 @@ export interface CustomerBooking {
   customer_id: string
   pickup_name: string
   pickup_address: string
+  pickup_lat?: number | null
+  pickup_lng?: number | null
   drop_name: string
   drop_address: string
   weight_kg: number
