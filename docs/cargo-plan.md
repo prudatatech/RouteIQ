@@ -118,8 +118,8 @@ All endpoints are under `/api/v1/cargo`, validated with zod and idempotent (`ide
 The ref for a consignment is `{ shipment_id }` or `{ manifest_id }`.
 
 ### Where is it / timeline
-- `GET /cargo/where/:ref` returns `{ ref, status, current_holder, vehicle: {id, plate_number, driver_name, lat, lng, last_seen_at} | null, depot: {id,name,address} | null, pieces: {total, delivered, damaged, short, returned, on_board}, seal_number, open_exceptions: [...], delivery_attempts, rto }`. The `:ref` is a shipment uuid, a tracking id (RTX-…) or a manifest code (CM-…).
-- `GET /cargo/timeline/:ref` returns `{ events: CustodyEvent[] }`, newest last, with signed photo and signature URLs.
+- `GET /cargo/where/:ref` returns `{ ref, code, status, current_holder, vehicle: {id, plate_number, driver_name, lat, lng, last_seen_at} | null, depot: {id,name,address} | null, pieces: {total, delivered, damaged, short, returned, on_board}, seal_number, open_exceptions: [{id, code, type, severity, status, sla_due_at}], delivery_attempts, max_delivery_attempts, delivery_otp_required, rto, on_hold_reason }`. `pieces.on_board` is 0 when the goods are not on a vehicle and null when the count is unknown. `delivery_otp_required` is always false for a vendor load. The `:ref` is a shipment uuid, a tracking id (RTX-…) or a manifest code (CM-…).
+- `GET /cargo/timeline/:ref` returns `{ events: CustodyEvent[] }`, newest last, with signed photo and signature URLs. Each event is `{ id, kind, summary, recorded_at, from_holder, to_holder, from_vehicle: {id, plate_number} | null, to_vehicle, from_depot: {id, name} | null, to_depot, pieces, condition, receiver_name, otp_verified, photo_urls: string[], signature_url, lat, lng }`; staff also get `weight_kg, seal_number, seal_ok, notes, exception_id, transfer_id, driver: {id, name} | null, recorded_by: {id, name, role} | null, recorded_role`. The storage paths themselves are never sent.
 - Customers (for their own booking), vendors (for their own loads) and drivers (for their current vehicle) get a redacted version: no internal notes, no staff names.
 
 ### Custody events: driver and staff
@@ -139,6 +139,7 @@ Drivers may post only for consignments on their current vehicle (before pickup: 
 - It also accepts the delivery sheet's optional `outcome` (`delivered` | `delivered_with_remarks` | `partial` | `refused` | `not_delivered`), `pieces`, `pieces_refused`, `pieces_short`, `pieces_damaged`, `condition`, `otp` and `photo_paths` (inside the stop's `pod/<stop_id>/` folder). With an outcome, the delivery evidence rules apply. Without one, the older shape keeps its rules (the receiver name and photo stay optional). The OTP is always checked when it is required.
 - Completing the return stop of goods being returned records the `return_delivery`.
 - complete-stop, verify-pod and 3PL order updates record the pickup first when the goods were never picked up (an implied pickup, noted on the event).
+- `POST /cargo/verify-pod { tracking_id, recipient_name, photo_paths?, otp?, reason? }` (staff) needs a photo, the OTP or a reason of at least 3 characters. Its photos must be the shipment's own uploads (`cargo/<shipment id>/`, from `POST /cargo/custody/upload-url` with the shipment's ref).
 - Staff may record a delivery with a verified OTP or a logged `reason` instead of a photo or signature.
 
 ### Delivery OTP
@@ -147,8 +148,8 @@ Drivers may post only for consignments on their current vehicle (before pickup: 
 - `otp/send` answers `{ expires_at, notified: { in_app, sms } }`. The code goes to the customer who booked. At most 5 codes per shipment an hour. Shipments only.
 
 ### Exceptions
-- `GET /cargo/exceptions?status=&type=&severity=&vehicle_id=&ref=&overdue=` lists cases with items and SLA.
-- `GET /cargo/exceptions/:id` returns the case plus its items, merged timeline (custody + SOS + maintenance + notes), transfers and claims.
+- `GET /cargo/exceptions?status=&type=&severity=&vehicle_id=&ref=&overdue=` lists cases (a bare array, newest first, at most 300) with items and SLA. `status` takes one status or several separated by commas (`open,investigating,action_planned` is every open case). Each case is the row (without `notes`) plus `plate_number`, `vehicle: {id, plate_number, status, vehicle_type, latitude, longitude, driver_name} | null`, `owner: {id, full_name} | null`, `sla: {due_at, overdue, minutes_left}` and `items: [{id, ref, code, status, current_holder, current_vehicle_id, current_depot_id, pieces_held, pieces_total, pieces_affected, weight_affected_kg, condition, note}]`.
+- `GET /cargo/exceptions/:id` returns the case as listed plus `timeline`, `sos_alert`, `maintenance_job`, `transfers` and `claims`. Timeline entries are `{ at, source: 'case' | 'custody' | 'sos' | 'maintenance', kind, text, ref?, by, by_name, role, data? }`, oldest first; `source: 'case'` entries are the case log (`kind` `opened`, `note`, `action` or `resolved`). `transfers` are full transfers as `GET /cargo/transfers/:id` answers them; `claims` are short (`id, code, claim_type, status, claimed_amount, approved_amount, settled_amount, shipment_id, manifest_id, created_at`), and `GET /cargo/claims/:id` gives the whole claim.
 - `POST /cargo/exceptions` raises a case by hand: `{ type, severity, description, items: [{ref, pieces_affected, condition}], vehicle_id?, lat?, lng? }` (staff, or a driver for their own vehicle).
 - `POST /cargo/exceptions/:id/actions { action, ... }`, where action is one of:
   - `assign_owner {owner_id}`
@@ -157,7 +158,7 @@ Drivers may post only for consignments on their current vehicle (before pickup: 
   - `move_to_hub {depot_id}`, which creates a transfer to the depot
   - `wait_for_repair {expected_at}`
   - `continue_after_repair`, which releases the hold and restores the route on the same vehicle
-  - `return_to_origin`
+  - `return_to_origin` (it takes no note; add one with `add_note`)
   - `reattempt {scheduled_for}`
   - `deliver_with_remarks`
   - `write_off {pieces, note}`, which marks the pieces lost or damaged
@@ -180,21 +181,23 @@ Drivers may post only for consignments on their current vehicle (before pickup: 
 - `POST /cargo/transfers/:id/handover-in { items: [{ref, pieces_in, condition}], photo_paths?, signature_path? }`, called by the to-driver, hub staff or staff. If pieces_in < pieces_out, a shortage exception opens.
   - On completion it moves the goods: current_vehicle_id changes (or holder becomes hub), vehicle loads are updated, and the remaining stops are re-created on the new vehicle's route. Eway Part B is marked required when the vehicle changes.
   - Consignor, consignee and vendor are notified.
-- `POST /cargo/transfers/:id/cancel`, and `POST /cargo/transfers/:id/eway { eway_part_b_ref }`.
+- `POST /cargo/transfers/:id/cancel { reason? }`, and `POST /cargo/transfers/:id/eway { eway_part_b_ref }`.
+- A transfer is answered as the row (it has no `created_at`: `planned_at` is when it was made) plus `from_vehicle` and `to_vehicle` (`{id, plate_number, driver_name, latitude, longitude, status}`), `to_depot` (`{id, name, address, latitude, longitude}`), `exception: {id, code, type, status} | null` and `items: [{id, ref, code, status, pieces_planned, pieces_out, pieces_in, condition_in}]`.
 - `GET /cargo/transfers?status=` and `GET /cargo/transfers/:id`.
 
 ### Hubs
 - `GET /cargo/hubs` lists depots with their counts.
-- `GET /cargo/hubs/:depot_id/inventory` returns consignments at the hub with pieces, since when (ageing), next leg and exceptions.
+- `GET /cargo/hubs/:depot_id/inventory` returns `{ depot, items }`: the consignments at the hub with pieces, since when (ageing), next leg and exceptions. Each item is `{ ref, code, status, pieces, pieces_total, weight_kg, since, age_hours, rto, on_hold_reason, next_leg: {name, address, lat, lng} | null, open_exceptions }`; `since` is null when no arrival was recorded.
 
 ### Claims
 - `POST /cargo/claims { exception_id?, ref, claim_type, claimed_amount, notes }`. Staff, the customer (their own delivered or returned shipment, within 7 days of delivery) or the vendor (their own load) can raise one. The declared_value is prefilled from `shipment_hsn`.
-- `POST /cargo/claims/:id/documents-upload-url` returns a signed upload URL (the same pattern as `pod.service`).
+- `POST /cargo/claims/:id/documents-upload-url { content_type, size }` returns a signed upload URL `{ path, token, signed_url, bucket }` (the same pattern as `pod.service`), for a JPG, PNG or PDF. The path is added to the claim's `document_paths` when the URL is handed out, so the client only uploads the file; `document_paths` is not a PATCH field. A claim's `documents` lists the paths that can be signed (the file is there).
+- Every claim answer carries `consignment_code`, the RTX- or CM- code of the goods.
 - `PATCH /cargo/claims/:id`, staff only, moves the status and sets the insurer, FIR, survey and amounts.
 - `GET /cargo/claims?status=&ref=`: staff see all, customers and vendors see their own.
 
 ### Vehicle cargo
-- `GET /cargo/vehicles/:vehicle_id/on-board` returns consignments currently on the vehicle, with pieces, weight and next stop. It is used by the vehicle page, the SOS panel and the maintenance modal.
+- `GET /cargo/vehicles/:vehicle_id/on-board` returns `{ vehicle: {id, plate_number, status, driver_name, lat, lng}, totals: {consignments, pieces, weight_kg}, items }`: the consignments currently on the vehicle, each `{ ref, code, status, pieces_on_board, pieces_total, weight_kg, seal_number, condition, rto, on_hold_reason, next_stop: {stop_id, route_id, sequence, name, address, lat, lng} | null, open_exceptions }`. It is used by the vehicle page, the SOS panel and the maintenance modal.
 
 ### Customer
 - `GET /customer/bookings/:id/cargo` returns where + timeline (redacted), the POD (signed URLs), open exception notices (type, a plain message, revised ETA) and the claim status.
@@ -220,6 +223,8 @@ What the backend does where the contract above leaves a choice. These notes are 
 - **Status PATCH.** `PATCH /shipments/:id` accepts `created`, `picked_up` (recorded as a custody pickup) and `cancelled`. A driver asking for anything else gets 403. Staff asking for a custody status get 409 with `use: 'cargo_custody'`.
 - **Stranding.**
   - Goods on a vehicle that loses its work go `on_hold` on one open case per vehicle. A second trigger (the SOS, then the maintenance job) adds to that case and links the SOS alert and the job.
+  - That case is the vehicle's open case of type `vehicle_breakdown`, `vehicle_accident` or `other` and source `sos`, `maintenance` or `manual`. Its `sos_alert_id` and `maintenance_job_id` are set only when empty, so a second SOS on the same case is not linked by id: find the case by the id first, then as the vehicle's newest open hold case.
+  - Opening a maintenance job answers `released_work.cargo_exception_id`, the case now holding the goods (only when goods were on board).
   - The case type is `vehicle_accident` for an accident, `vehicle_breakdown` for a breakdown or tyre job, and `other` for a plain route or load cancel and a scheduled service.
   - A case cannot be resolved while any of its goods is still on hold, and `release_hold` refuses goods on a vehicle that is not in service.
   - A vendor load still with the consignor is cancelled as before.
@@ -252,6 +257,12 @@ What the backend does where the contract above leaves a choice. These notes are 
   - `GET /cargo/hubs` lists depots with `consignments`, `pieces`, `weight_kg`, `oldest_since` and `oldest_age_hours`. Inventory items carry `pieces`, `since`, `age_hours`, `next_leg`, `rto` and `open_exceptions`.
 - **Bookings and dashboard.** A booking shows `in_transit` while its shipment is out for delivery, at a hub or returning. `GET /dashboard/shipment-counts` counts every status.
 - **Relationship names.** `db-ambiguous-relations.json` was extended by hand for the new keys. Regenerate it after applying the migration.
+
+## Web client
+
+- `frontend/src/services/cargo.ts` is the client; `frontend/src/services/cargoMap.ts` maps the answers above to the web's shapes (a consignment `{ ref, code }` becomes flat `shipment_id` / `manifest_id` / `tracking_id`; embedded vehicles, depots and people on timeline events become plates and names). `backend-ts/test/cargo-web-contract.test.ts` pins the backend side of those shapes.
+- The web sets a shipment's status with `PATCH /shipments/:id` only to `created` (off its vehicle) and `cancelled`, before pickup. Pickup, in transit, delivery, hubs, holds and returns are custody events or case actions from the shipment's cargo panel; the control-room delivery (`verify-pod`) and the legacy web driver view (`complete-stop`) go through custody too.
+- A vehicle is re-assigned only while the goods are with the sender. Goods on a vehicle, a failed delivery included, move by a transfer or a re-attempt.
 
 ## UI surfaces
 
