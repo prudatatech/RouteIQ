@@ -214,6 +214,20 @@ describe('the first driver is paid for their leg before a transfer', () => {
     expect(entries()).toHaveLength(1);
   });
 
+  it('pays a route the transfer itself cancelled (the moved goods were its last stops), and never one that was not started', async () => {
+    Object.assign(one('routes', ID.route1), { status: 'cancelled' });
+    expect((await recordShipmentLegAfterTransfer([ID.s1], transfer.id, V))?.created).toBe(true);
+    expect(entries()).toHaveLength(1);
+    expect((await recordTripPay({ route_id: ID.route1 }))?.created).toBe(false);
+    expect(entries()).toHaveLength(1);
+
+    world({ cargo_manifest: [], cargo_transfers: [transfer], driver_pay_rates: [{ ...rate }] });
+    Object.assign(one('shipments', ID.s1), { current_vehicle_id: ID.v2 });
+    Object.assign(one('routes', ID.route1), { status: 'cancelled', started_at: null });
+    expect(await recordShipmentLegAfterTransfer([ID.s1], transfer.id, V)).toBeNull();
+    expect(entries()).toHaveLength(0);
+  });
+
   it('waits while goods of the trip are still aboard the from-vehicle', async () => {
     Object.assign(one('shipments', ID.s2), { current_vehicle_id: V, current_holder: 'vehicle', status: 'in_transit' });
     expect(await recordShipmentLegAfterTransfer([ID.s1], transfer.id, V)).toBeNull();

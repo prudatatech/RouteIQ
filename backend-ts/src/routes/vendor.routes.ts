@@ -224,9 +224,9 @@ router.put('/:id/location', requireAuth, requireRole('superadmin', 'admin'), asy
 // Assign vehicle to shipment request (Admin/Super Admin)
 router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
-    const { vehicle_id, cost, cost_per_km, dispatch } = req.body ?? {};
+    const { vehicle_id, cost, cost_per_km } = req.body ?? {};
     if (typeof vehicle_id !== 'string' || !vehicle_id) throw new HttpError(400, 'vehicle_id is required');
-    const request = await vendorService.assignVehicleToRequest(req.params.id, vehicle_id, cost, cost_per_km, { dispatch: dispatch === true });
+    const request = await vendorService.assignVehicleToRequest(req.params.id, vehicle_id, cost, cost_per_km);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');

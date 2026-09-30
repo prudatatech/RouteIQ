@@ -148,7 +148,7 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
         catch (err) { failed.push({ id: booking.id, message: errorMessage(err, 'We could not assign the vehicle. Try again.') }) }
       } else if (loads) {
         for (const load of loads) {
-          try { await vendorAPI.assignVehicle(load.id, { vehicle_id: a.vehicle.id, dispatch: sendNow }); assignedIds.push(load.id) }
+          try { await vendorAPI.assignVehicle(load.id, { vehicle_id: a.vehicle.id }); assignedIds.push(load.id) }
           catch (err) { failed.push({ id: load.id, message: `${vendorName(load)}: ${errorMessage(err, 'failed')}` }) }
         }
       }
@@ -160,7 +160,7 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     }
     if (failed.length > 0) {
       toast.error(assignedIds.length === 0 ? failed[0].message : `Assigned ${assignedIds.length}, ${failed.length} failed: ${failed.slice(0, 3).map(f => f.message).join('; ')}`)
-    } else if (!sendNow) {
+    } else if (!sendNow && subject.kind !== 'vendor') {
       toast.success(
         (t) => (
           <span>
@@ -200,12 +200,16 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
             <LiveMap vehicles={mapVehicles} />
           </div>
         )}
-        <Checkbox
-          checked={sendNow}
-          onChange={e => setSendNow(e.target.checked)}
-          label="Send to driver now"
-          description="The driver is told and the trip starts. Uncheck to send it later from Dispatch, Trips to send."
-        />
+        {subject?.kind === 'vendor' ? (
+          <p className="text-sm text-muted">A vendor load is sent to the driver as soon as it is assigned.</p>
+        ) : (
+          <Checkbox
+            checked={sendNow}
+            onChange={e => setSendNow(e.target.checked)}
+            label="Send to driver now"
+            description="The driver is told and the trip starts. Uncheck to send it later from Dispatch, Trips to send."
+          />
+        )}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <SearchInput value={search} onChange={setSearch} label="Search vehicles" placeholder="Plate, driver or type" className="w-full sm:max-w-xs" />
           {vehicles.data && <p className="text-sm text-muted">{available} of {assessments.length} {assessments.length === 1 ? 'vehicle' : 'vehicles'} can take this</p>}

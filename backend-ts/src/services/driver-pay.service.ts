@@ -453,8 +453,10 @@ export async function recordShipmentLegAfterTransfer(shipmentIds: string[], tran
   const { data: stops } = await supabase.from('route_stops').select('route_id').in('delivery_point_id', pointIds);
   const routeIds = [...new Set((stops ?? []).map((r: any) => r.route_id as string))];
   if (routeIds.length === 0) return null;
+  // The route the driver drove: one that was started (by then the transfer may have cancelled it, as the
+  // moved goods were its last stops)
   const { data: routes } = await supabase.from('routes').select('id, vehicle_id, status, started_at, created_at')
-    .in('id', routeIds).eq('vehicle_id', fromVehicleId).in('status', ['active', 'completed']);
+    .in('id', routeIds).eq('vehicle_id', fromVehicleId).not('started_at', 'is', null);
   const route = (routes ?? []).sort((a: any, b: any) => String(b.started_at ?? b.created_at).localeCompare(String(a.started_at ?? a.created_at)))[0];
   if (!route) return null;
 
