@@ -27,6 +27,7 @@ import {
   trailLineLayer,
   withValidPosition,
 } from './layers'
+import AltRoutes from './AltRoutes'
 import { clusterVehicles, type VehicleCluster } from './cluster'
 import { ClusterMarker, PointMarker, StopMarker, VehicleMarker } from './markers'
 import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
@@ -367,6 +368,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
               <Layer {...trailLineLayer} />
             </Source>
           )}
+
+          <AltRoutes routes={props.altRoutes} onSelect={props.onAltRouteSelect} />
 
           {line && (
             <Source id={ROUTE_SOURCE_ID} type="geojson" data={line}>

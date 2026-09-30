@@ -1,5 +1,5 @@
 import {
-  BarChart3, Banknote, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned,
+  BarChart3, Banknote, Briefcase, Building2, ClipboardCheck, ClipboardList, FileCheck2, History, Inbox, LayoutDashboard, Lightbulb, Map, MapPinned, Milestone,
   Package, Route, Settings, ShieldAlert, Smartphone, Truck, Users, Waypoints, type LucideIcon,
 } from 'lucide-react'
 
@@ -42,6 +42,7 @@ export const navSections: NavSection[] = [
     title: 'Planning',
     items: [
       { to: '/routes', label: 'Routes', icon: Map, roles: staff },
+      { to: '/route-planner', label: 'Route planner', icon: Milestone, roles: staff },
       { to: '/optimize', label: 'Route optimization', icon: Route, roles: staff },
       { to: '/backhaul', label: 'Backhaul pooling', icon: Waypoints, roles: staff },
     ],

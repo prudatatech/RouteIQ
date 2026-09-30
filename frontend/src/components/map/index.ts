@@ -10,6 +10,7 @@ export type { DrivingRoute } from './directions'
 export type { LiveMapProps, LiveMapStop, LiveMapVehicle } from './LiveMap'
 export type {
   LatLng,
+  MapAltRoute,
   MapControls,
   MapFit,
   MapMode,
