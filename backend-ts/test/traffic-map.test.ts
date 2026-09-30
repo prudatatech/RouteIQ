@@ -96,7 +96,7 @@ describe('traffic flow tiles', () => {
     expect(first.headers['cache-control']).toBe('private, max-age=120');
     expect((first.body as Buffer).equals(FAKE_PNG)).toBe(true);
     expect(JSON.stringify(first.headers)).not.toContain('tomtom-secret-key');
-    expect(http.mock.calls[0][0]).toContain('api.tomtom.com/traffic/map/4/tile/flow/relative0/5/20/13.png');
+    expect(http.mock.calls[0][0]).toContain('api.tomtom.com/traffic/map/4/tile/flow/relative-delay/5/20/13.png');
 
     const second = await request(app).get(url);
     expect(second.status).toBe(200);

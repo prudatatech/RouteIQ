@@ -71,18 +71,26 @@ export interface Consignment {
   maxAttempts: number;
   rto: boolean;
   onHoldReason: string | null;
+  /** The master this consignment is a lot of (docs/cargo-plan.md, Lots), or null. */
+  parentId: string | null;
+  /** A master that was split: it holds no goods of its own, its lots do. */
+  isMaster: boolean;
+  /** The lot's label (A, B, A1 …), or null for a consignment that is not a lot. */
+  lotLabel: string | null;
   row: Record<string, any>;
 }
 
 export const SHIPMENT_CUSTODY_COLUMNS =
   'id, tracking_id, status, total_items, total_weight_kg, origin_name, origin_address, origin_lat, origin_lng, received_by, photo_url, signature_url, freight_charge, metadata, ' +
   'current_holder, current_vehicle_id, current_depot_id, pieces_total, pieces_delivered, pieces_damaged, pieces_short, pieces_returned, seal_number, ' +
-  'delivery_attempts, max_delivery_attempts, delivery_otp_required, delivery_otp_hash, delivery_otp_expires_at, rto, on_hold_reason, created_at, updated_at';
+  'delivery_attempts, max_delivery_attempts, delivery_otp_required, delivery_otp_hash, delivery_otp_expires_at, rto, on_hold_reason, created_at, updated_at, ' +
+  'parent_shipment_id, lot_seq, lot_label, is_master, declared_value, freight_share, consignee_name, consignee_phone, consignee_gstin, split_reason, eway_bill_ref, eway_part_b_required';
 
 export const MANIFEST_CUSTODY_COLUMNS =
   'id, vehicle_id, vendor_request_id, status, capacity_kg, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, received_by, photo_url, signature_url, ' +
   'current_holder, current_vehicle_id, current_depot_id, pieces_total, pieces_delivered, pieces_damaged, pieces_short, pieces_returned, seal_number, ' +
-  'delivery_attempts, max_delivery_attempts, rto, on_hold_reason, created_at, updated_at';
+  'delivery_attempts, max_delivery_attempts, rto, on_hold_reason, created_at, updated_at, ' +
+  'parent_manifest_id, lot_seq, lot_label, is_master, declared_value, freight_share, consignee_name, consignee_phone, consignee_gstin, split_reason, eway_bill_ref, eway_part_b_required';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -186,6 +194,21 @@ function derivedHolder(status: string): Holder {
 
 const num = (v: unknown, fallback = 0) => (v == null || !Number.isFinite(Number(v)) ? fallback : Number(v));
 
+/** The master a row is a lot of, or null. */
+export function parentIdOf(kind: RefKind, row: Record<string, any>): string | null {
+  return (kind === 'shipment' ? row.parent_shipment_id : row.parent_manifest_id) ?? null;
+}
+
+/**
+ * The code of a consignment: its tracking id (a shipment lot's is the master's with the label,
+ * RTX-ABC123-B), or CM-XXXXXXXX for a load (a load lot's is the master's code with the label).
+ */
+export function codeOf(kind: RefKind, row: Record<string, any>): string {
+  if (kind === 'shipment') return String(row.tracking_id ?? row.id);
+  const parent = parentIdOf(kind, row);
+  return parent && row.lot_label ? `${manifestParcelCode(parent)}-${row.lot_label}` : manifestParcelCode(row.id);
+}
+
 export function toConsignment(kind: RefKind, row: Record<string, any>): Consignment {
   const rawStatus = String(row.status);
   const status = kind === 'shipment' ? rawStatus : canonicalManifestStatus(row);
@@ -193,7 +216,7 @@ export function toConsignment(kind: RefKind, row: Record<string, any>): Consignm
   return {
     kind,
     id: row.id,
-    code: kind === 'shipment' ? String(row.tracking_id ?? row.id) : manifestParcelCode(row.id),
+    code: codeOf(kind, row),
     status,
     rawStatus,
     holder: (row.current_holder as Holder) ?? derivedHolder(rawStatus),
@@ -212,8 +235,31 @@ export function toConsignment(kind: RefKind, row: Record<string, any>): Consignm
     maxAttempts: num(row.max_delivery_attempts, 3) || 3,
     rto: row.rto === true,
     onHoldReason: row.on_hold_reason ?? null,
+    parentId: parentIdOf(kind, row),
+    isMaster: row.is_master === true,
+    lotLabel: row.lot_label ?? null,
     row,
   };
+}
+
+/**
+ * A master holds no goods of its own once split, so nothing is picked up, moved or delivered on
+ * it: the lots carry the goods. Throws a 409 naming the lots to act on instead.
+ */
+export async function assertNotMaster(c: Consignment, action: string): Promise<void> {
+  if (!c.isMaster) return;
+  const table = c.kind === 'shipment' ? 'shipments' : 'cargo_manifest';
+  const column = c.kind === 'shipment' ? 'parent_shipment_id' : 'parent_manifest_id';
+  const { data } = await supabase.from(table).select(c.kind === 'shipment' ? SHIPMENT_CUSTODY_COLUMNS : MANIFEST_CUSTODY_COLUMNS).eq(column, c.id);
+  const lots = ((data ?? []) as any[])
+    .filter(r => r.status !== 'cancelled')
+    .sort((a, b) => Number(a.lot_seq) - Number(b.lot_seq))
+    .map(r => toConsignment(c.kind, r));
+  throw new HttpError(
+    409,
+    `${c.code} was split into lots (${lots.map(l => l.code).join(', ') || 'none open'}), so it holds no goods of its own. ${action} on a lot instead.`,
+    { use: 'lots', master: refOf(c), lots: lots.map(l => ({ ref: refOf(l), code: l.code, label: l.lotLabel })) },
+  );
 }
 
 /** Whether the goods have ever left the consignor. */
@@ -243,10 +289,12 @@ async function loadManifest(id: string): Promise<Consignment | null> {
   return data ? toConsignment('manifest', data) : null;
 }
 
-/** A vendor load from its CM- code (the first 8 hex characters of its id). */
+/** A vendor load from its CM- code (the first 8 hex characters of its id), or a load lot's (CM-XXXXXXXX-B). */
 async function loadManifestByCode(code: string): Promise<Consignment | null> {
-  const prefix = code.slice(3).toLowerCase();
-  if (!/^[0-9a-f]{8}$/.test(prefix)) return null;
+  const m = /^CM-([0-9A-F]{8})(?:-([0-9A-Z.]{1,12}))?$/i.exec(code);
+  if (!m) return null;
+  const prefix = m[1].toLowerCase();
+  const label = m[2]?.toUpperCase() ?? null;
   const { data, error } = await supabase
     .from('cargo_manifest')
     .select(MANIFEST_CUSTODY_COLUMNS)
@@ -254,8 +302,19 @@ async function loadManifestByCode(code: string): Promise<Consignment | null> {
     .lte('id', `${prefix}-ffff-ffff-ffff-ffffffffffff`)
     .limit(1);
   if (error) throw new Error(`Failed to read the load: ${error.message}`);
-  const row = (data ?? []).find((r: any) => String(r.id).toLowerCase().startsWith(prefix));
-  return row ? toConsignment('manifest', row) : null;
+  const rows = ((data ?? []) as any[]).filter(r => String(r.id).toLowerCase().startsWith(prefix));
+  if (!label) {
+    // The load whose own code this is (a lot's own id can share the prefix; the master or plain load wins)
+    const row = rows.find(r => !r.parent_manifest_id) ?? rows[0];
+    return row ? toConsignment('manifest', row) : null;
+  }
+  for (const master of rows) {
+    const { data: lot, error: lotErr } = await supabase
+      .from('cargo_manifest').select(MANIFEST_CUSTODY_COLUMNS).eq('parent_manifest_id', master.id).eq('lot_label', label).maybeSingle();
+    if (lotErr) throw new Error(`Failed to read the load lot: ${lotErr.message}`);
+    if (lot) return toConsignment('manifest', lot);
+  }
+  return null;
 }
 
 /**
@@ -339,10 +398,14 @@ export async function assertCanAct(user: TokenData, c: Consignment): Promise<voi
   if (!vehicle || !mine.includes(vehicle)) throw new HttpError(403, 'This consignment is not on your vehicle');
 }
 
-/** The customer's own booking for a shipment, or null. */
+/** Whether the customer booked this shipment, or the master it is a lot of. */
 export async function customerOwnsShipment(customerId: string, shipmentId: string): Promise<boolean> {
   const { data } = await supabase.from('customer_bookings').select('id, customer_id').eq('shipment_id', shipmentId).eq('customer_id', customerId).limit(1);
-  return !!data && data.length > 0;
+  if (data && data.length > 0) return true;
+  const { data: lot } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
+  if (!lot?.parent_shipment_id) return false;
+  const { data: master } = await supabase.from('customer_bookings').select('id, customer_id').eq('shipment_id', lot.parent_shipment_id).eq('customer_id', customerId).limit(1);
+  return !!master && master.length > 0;
 }
 
 /** The vendor who asked for a load, or null. */
@@ -410,6 +473,11 @@ export async function writeConsignment(c: Consignment, patch: Record<string, unk
   const { data, error } = await supabase.from(table).update(body).eq('id', c.id).eq('status', c.rawStatus).select('id').maybeSingle();
   if (error) throw new Error(`Failed to update the consignment: ${error.message}`);
   if (!data) throw new HttpError(409, 'This consignment was just changed by someone else. Refresh and try again.');
+  // A lot moved: its master's status and holder are worked out again from its lots
+  if (c.parentId) {
+    const { rollupMaster } = await import('./lots.service');
+    await rollupMaster(c.kind, c.parentId, null);
+  }
   return stored;
 }
 

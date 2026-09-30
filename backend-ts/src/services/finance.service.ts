@@ -315,14 +315,16 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const [shipRes, manRes] = await Promise.all([
-    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
-    supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
   ]);
   if (shipRes.error) throw new Error(`Failed to read shipments: ${shipRes.error.message}`);
   if (manRes.error) throw new Error(`Failed to read manifests: ${manRes.error.message}`);
-  const shipments = (shipRes.data ?? []).filter((s: any) => s.updated_at >= startISO && s.updated_at < endISO);
+  // A master is billed only for the part it kept (its freight_share); its lots are billed on their own
+  const ownPart = (r: any) => !r.is_master || num(r.freight_share) > 0;
+  const shipments = (shipRes.data ?? []).filter((s: any) => ownPart(s) && s.updated_at >= startISO && s.updated_at < endISO);
   // A manifest without a vendor request came from a won bid and is billed on its shipment
-  const manifests = (manRes.data ?? []).filter((m: any) => m.vendor_request_id && m.updated_at >= startISO && m.updated_at < endISO);
+  const manifests = (manRes.data ?? []).filter((m: any) => m.vendor_request_id && ownPart(m) && m.updated_at >= startISO && m.updated_at < endISO);
 
   const invoiced = await Promise.all([
     selectIn<{ shipment_id: string }>('invoices', 'shipment_id', shipments.map((s: any) => s.id), 'shipment_id', q => q.neq('status', 'void')),
@@ -345,15 +347,15 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
       label: s.tracking_id ?? s.id,
       detail: s.origin_name ?? null,
       delivered_at: s.updated_at,
-      can_invoice: (!!s.bid_id && wonBids.has(s.bid_id)) || num(s.freight_charge) > 0,
+      can_invoice: s.is_master || s.parent_shipment_id ? num(s.freight_share) > 0 : (!!s.bid_id && wonBids.has(s.bid_id)) || num(s.freight_charge) > 0,
     })),
     ...manifests.filter((m: any) => !invoicedManifests.has(m.id)).map((m: any) => ({
       kind: 'manifest' as const,
       id: m.id,
-      label: manifestParcelCode(String(m.id)),
+      label: m.parent_manifest_id && m.lot_label ? `${manifestParcelCode(String(m.parent_manifest_id))}-${m.lot_label}` : manifestParcelCode(String(m.id)),
       detail: [m.pickup_location, m.drop_location].filter(Boolean).join(' to ') || null,
       delivered_at: m.updated_at,
-      can_invoice: pricedRequests.has(m.vendor_request_id),
+      can_invoice: m.is_master || m.parent_manifest_id ? num(m.freight_share) > 0 : pricedRequests.has(m.vendor_request_id),
     })),
   ].sort((a, b) => String(b.delivered_at).localeCompare(String(a.delivered_at)));
 }

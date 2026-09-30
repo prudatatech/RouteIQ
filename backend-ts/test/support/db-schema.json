@@ -67,7 +67,19 @@
     "delivery_attempts",
     "max_delivery_attempts",
     "rto",
-    "on_hold_reason"
+    "on_hold_reason",
+    "parent_manifest_id",
+    "lot_seq",
+    "lot_label",
+    "is_master",
+    "declared_value",
+    "freight_share",
+    "consignee_name",
+    "consignee_phone",
+    "consignee_gstin",
+    "split_reason",
+    "eway_bill_ref",
+    "eway_part_b_required"
   ],
   "customers": [
     "id",
@@ -95,7 +107,11 @@
     "status",
     "shipment_id",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "pieces",
+    "consignee_name",
+    "consignee_phone",
+    "lot_shipment_id"
   ],
   "depots": [
     "id",
@@ -363,7 +379,19 @@
     "on_hold_reason",
     "delivery_otp_required",
     "delivery_otp_hash",
-    "delivery_otp_expires_at"
+    "delivery_otp_expires_at",
+    "parent_shipment_id",
+    "lot_seq",
+    "lot_label",
+    "is_master",
+    "declared_value",
+    "freight_share",
+    "consignee_name",
+    "consignee_phone",
+    "consignee_gstin",
+    "split_reason",
+    "eway_bill_ref",
+    "eway_part_b_required"
   ],
   "sos_alerts": [
     "id",
@@ -696,7 +724,8 @@
     "cancelled_by",
     "cancel_reason",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "drops"
   ],
   "parcel_scans": [
     "id",

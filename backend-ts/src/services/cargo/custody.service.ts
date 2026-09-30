@@ -18,8 +18,9 @@ import { ShipmentService } from '../shipment.service';
 import { InvoiceService } from '../invoice.service';
 import { releaseVehicleLoad, setOperatingVehicleStatus, vehicleHasOpenWork } from '../route.service';
 import { signedUrl, createKycUploadUrl } from '../pod.service';
+import { manifestParcelCode } from '../../core/parcelCode';
 import {
-  CONDITIONS, addPieces, assertCanAct, manifestStatusFor, driverVehicleId, parsePieces, piecesHeld, piecesPatch, plannedVehicleOf,
+  CONDITIONS, addPieces, assertCanAct, assertNotMaster, manifestStatusFor, driverVehicleId, parsePieces, piecesHeld, piecesPatch, plannedVehicleOf,
   refColumns, refOf, reload, resolveRef, vehicleSummary, wasPickedUp, weightOf, writeConsignment,
   type Actor, type Condition, type Consignment, type Holder, type Pieces,
 } from './consignment';
@@ -31,7 +32,7 @@ import type { TokenData } from '../../core/auth';
 export const CUSTODY_KINDS = [
   'booked', 'accepted', 'arrived_pickup', 'pickup', 'departed', 'arrived_drop', 'delivery', 'partial_delivery',
   'refused', 'undelivered', 'handover_out', 'handover_in', 'hub_in', 'hub_out', 'return_pickup', 'return_delivery',
-  'inspection', 'hold', 'release_hold', 'lost',
+  'inspection', 'hold', 'release_hold', 'lost', 'split', 'merge',
 ] as const;
 export type CustodyKind = typeof CUSTODY_KINDS[number];
 
@@ -42,6 +43,8 @@ export const DELIVERY_FAILURE_REASONS = ['customer_unavailable', 'address_unreac
 const STAFF_ONLY_KINDS: readonly string[] = ['hold', 'release_hold', 'lost', 'booked'];
 /** Kinds recorded only through a transfer. */
 const TRANSFER_ONLY_KINDS: readonly string[] = ['handover_out', 'handover_in'];
+/** Kinds recorded only by splitting or merging lots (POST /cargo/lots/split, /cargo/lots/merge). */
+const LOT_ONLY_KINDS: readonly string[] = ['split', 'merge'];
 
 export interface CustodyInput {
   kind: CustodyKind;
@@ -272,7 +275,8 @@ async function vehicleFor(c: Consignment, input: CustodyInput, actor: Actor | nu
 /** What a manifest delivery has always done besides the status: bill, close the request, free the load. */
 async function afterManifestDelivered(c: Consignment): Promise<void> {
   await InvoiceService.onManifestDelivered(c.id);
-  if (c.row.vendor_request_id) await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', c.row.vendor_request_id);
+  // A load lot's request completes when its master (all its lots) is delivered: see lots.service rollupMaster
+  if (c.row.vendor_request_id && !c.parentId) await supabase.from('vendor_shipment_requests').update({ status: 'completed' }).eq('id', c.row.vendor_request_id);
   const vehicleId = c.row.vehicle_id ?? c.vehicleId;
   await releaseVehicleLoad(vehicleId, Number(c.row.capacity_kg) || 0);
   if (vehicleId && !(await vehicleHasOpenWork(vehicleId, { manifestId: c.id }))) await setOperatingVehicleStatus(vehicleId, 'available');
@@ -317,6 +321,9 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
   const kind = input.kind;
   if (!(CUSTODY_KINDS as readonly string[]).includes(kind)) throw new HttpError(400, `kind must be one of: ${CUSTODY_KINDS.join(', ')}`);
   if (TRANSFER_ONLY_KINDS.includes(kind) && via !== 'transfer') throw new HttpError(400, 'Handovers are recorded through a cargo transfer');
+  if (LOT_ONLY_KINDS.includes(kind)) throw new HttpError(400, 'Splits and merges are recorded through /cargo/lots/split and /cargo/lots/merge');
+  // A split master holds no goods of its own: its lots are picked up, moved and delivered
+  await assertNotMaster(c, 'Record pickups, deliveries and other custody steps');
   if (input.condition != null && !(CONDITIONS as readonly string[]).includes(input.condition)) {
     throw new HttpError(400, `condition must be one of: ${CONDITIONS.join(', ')}`);
   }
@@ -877,6 +884,38 @@ export async function recordHandover(
   return event;
 }
 
+// ── Lots: split and merge events ────────────────────────────
+
+/**
+ * A split or merge custody event on a consignment (the master, the lot split or merged, and each
+ * lot made or merged), in the custody log and the shipment_logs hash chain. Called by lots.service.
+ */
+export async function recordLotEvent(
+  c: Consignment,
+  kind: 'split' | 'merge',
+  input: { pieces: number | null; weight_kg?: number | null; notes: string },
+  actor: Actor | null,
+  extraLog: Record<string, unknown> = {},
+): Promise<Record<string, any>> {
+  const vehicleId = c.holder === 'vehicle' || c.holder === 'consignor' ? c.vehicleId : null;
+  const event = await insertEvent(c, {
+    kind,
+    pieces: input.pieces,
+    weight_kg: input.weight_kg ?? null,
+    photo_paths: [],
+    notes: input.notes.slice(0, 500),
+    from_holder: c.holder,
+    to_holder: c.holder,
+    from_vehicle_id: vehicleId,
+    to_vehicle_id: vehicleId,
+    from_depot_id: c.depotId,
+    to_depot_id: c.depotId,
+    driver_id: await driverOf(vehicleId),
+  }, actor);
+  await logShipment(c, c.rawStatus, event, actor, extraLog);
+  return event;
+}
+
 // ── Reading: where is it, timeline ──────────────────────────
 
 export interface WhereView {
@@ -895,6 +934,15 @@ export interface WhereView {
   delivery_otp_required: boolean;
   rto: boolean;
   on_hold_reason: string | null;
+  /** A master that was split (its status, holder and pieces are rolled up from its lots). */
+  is_master: boolean;
+  /** For a lot: its label and master (also flat as `lot_label` and `master`). */
+  lot: { label: string; seq: number | null; master: { ref: { shipment_id: string } | { manifest_id: string }; code: string } } | null;
+  lot_label: string | null;
+  master: { ref: { shipment_id: string } | { manifest_id: string }; code: string } | null;
+  /** A lot's own e-way bill reference, and whether Part B needs updating after a vehicle change. */
+  eway_bill_ref: string | null;
+  eway_part_b_required: boolean;
 }
 
 /** Open cases a consignment is in. */
@@ -911,7 +959,11 @@ export async function openExceptionsFor(c: { kind: 'shipment' | 'manifest'; id: 
   return (data ?? []) as any[];
 }
 
-export async function whereIs(c: Consignment, opts: { redacted?: boolean } = {}): Promise<WhereView> {
+export async function whereIs(c: Consignment, opts: { redacted?: boolean; user?: TokenData | null } = {}): Promise<WhereView> {
+  if (c.isMaster) {
+    const { masterWhere } = await import('./lots.service');
+    return masterWhere(c, opts);
+  }
   const vehicleId = c.holder === 'vehicle' || c.holder === 'consignor' ? c.vehicleId ?? (await plannedVehicleOf(c)) : null;
   const vehicle = c.holder === 'vehicle' || (c.holder === 'consignor' && vehicleId) ? await vehicleSummary(vehicleId) : null;
   let depot: WhereView['depot'] = null;
@@ -944,7 +996,26 @@ export async function whereIs(c: Consignment, opts: { redacted?: boolean } = {})
     delivery_otp_required: c.kind === 'shipment' && c.row.delivery_otp_required === true,
     rto: c.rto,
     on_hold_reason: opts.redacted ? null : c.onHoldReason,
+    is_master: false,
+    ...(await lotTag(c)),
+    eway_bill_ref: c.row.eway_bill_ref ?? null,
+    eway_part_b_required: c.row.eway_part_b_required === true,
   };
+}
+
+/** The lot fields of `where`: its label and master, nested and flat. */
+async function lotTag(c: Consignment): Promise<Pick<WhereView, 'lot' | 'lot_label' | 'master'>> {
+  if (!c.parentId || !c.lotLabel) return { lot: null, lot_label: null, master: null };
+  const master = await masterRefOf(c);
+  return { lot: { label: c.lotLabel, seq: c.row.lot_seq != null ? Number(c.row.lot_seq) : null, master }, lot_label: c.lotLabel, master };
+}
+
+/** The ref and code of a lot's master. */
+async function masterRefOf(c: Consignment): Promise<{ ref: { shipment_id: string } | { manifest_id: string }; code: string }> {
+  const ref = c.kind === 'shipment' ? { shipment_id: c.parentId! } : { manifest_id: c.parentId! };
+  if (c.kind === 'manifest') return { ref, code: manifestParcelCode(c.parentId!) };
+  const { data } = await supabase.from('shipments').select('tracking_id').eq('id', c.parentId!).maybeSingle();
+  return { ref, code: data?.tracking_id ?? c.code.replace(/-[^-]+$/, '') };
 }
 
 /** A plain-words line for one event, as the customer and driver apps show it. */
@@ -971,12 +1042,23 @@ export function describeEvent(e: { kind: string; pieces?: number | null; receive
     case 'hold': return 'On hold';
     case 'release_hold': return 'Moving again';
     case 'lost': return 'Reported missing';
+    // Split and merge notes are written by the system in plain words ("Split into lots A (50), B (25)")
+    case 'split': return (e as { notes?: string | null }).notes || 'Split into lots';
+    case 'merge': return (e as { notes?: string | null }).notes || 'Lots merged';
     default: return e.kind.replace(/_/g, ' ');
   }
 }
 
-/** The custody timeline, oldest first, with signed links to photos and signatures. Redacted: no notes, staff or driver ids. */
-export async function timelineOf(c: Consignment, opts: { redacted?: boolean } = {}) {
+/**
+ * The custody timeline, oldest first, with signed links to photos and signatures. Redacted: no
+ * notes, staff or driver ids. A master's timeline merges its own with its lots' (each event tagged
+ * with its lot).
+ */
+export async function timelineOf(c: Consignment, opts: { redacted?: boolean; own?: boolean; user?: TokenData | null } = {}): Promise<{ events: any[] }> {
+  if (c.isMaster && !opts.own) {
+    const { masterTimeline } = await import('./lots.service');
+    return masterTimeline(c, opts);
+  }
   const column = c.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
   const { data, error } = await supabase.from('cargo_custody_events').select('*').eq(column, c.id).order('recorded_at', { ascending: true });
   if (error) throw new Error(`Failed to read the custody timeline: ${error.message}`);

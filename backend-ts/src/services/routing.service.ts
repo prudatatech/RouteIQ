@@ -727,6 +727,7 @@ export async function listOpenLoads(): Promise<OpenLoad[]> {
     .from('shipments')
     .select('id, tracking_id, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points!delivery_points_shipment_id_fkey(id, name, address, latitude, longitude, created_at)')
     .in('status', ['created', 'exception'])
+    .neq('is_master', true)
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) throw error;
@@ -744,6 +745,7 @@ export async function listOpenLoads(): Promise<OpenLoad[]> {
     .from('cargo_manifest')
     .select('id, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, capacity_kg, status, created_at')
     .eq('status', 'scheduled')
+    .neq('is_master', true)
     .order('created_at', { ascending: false })
     .limit(100);
   if (mErr) throw mErr;

@@ -176,6 +176,22 @@ export const ShipmentEditSchema = z.object({
 });
 export type ShipmentEditInput = z.infer<typeof ShipmentEditSchema>;
 
+/** One drop of a multi-drop booking or shipment: it becomes a lot with its own delivery point. */
+export const DropInputSchema = z.object({
+  name: z.string().trim().max(200).nullable().optional(),
+  address: z.string().trim().min(1, 'Each drop needs an address').max(500),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  consignee_name: z.string().trim().min(1, 'Each drop needs a consignee').max(200),
+  consignee_phone: z.string().trim().min(6).max(20).nullable().optional(),
+  consignee_gstin: z.string().trim().toUpperCase().regex(/^[0-9]{2}[0-9A-Z]{13}$/, 'consignee_gstin must be a 15-character GSTIN').nullable().optional(),
+  pieces: z.number().int().min(1, 'Each drop needs at least one piece').max(100_000),
+  weight_kg: z.number().min(0).max(1_000_000).nullable().optional(),
+  declared_value: z.number().min(0).max(10_000_000_000).nullable().optional(),
+  eway_bill_ref: z.string().trim().min(1).max(60).nullable().optional(),
+});
+export type DropInput = z.infer<typeof DropInputSchema>;
+
 export const ShipmentCreateSchema = z.object({
   tracking_id: z.string().regex(/^RTX-[A-Z0-9]{6,16}$/, 'tracking_id must look like RTX-XXXXXXXX').optional().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
@@ -209,6 +225,17 @@ export const ShipmentCreateSchema = z.object({
   asking_price: z.number().optional().nullable(),
   /** What the customer is charged, in rupees before GST. Used for the invoice when no bid was won. */
   freight_charge: z.number().min(0).max(99_999_999.99).optional().nullable(),
+  /**
+   * Several drops, each to its own consignee (docs/cargo-plan.md, Lots): with two or more, the
+   * shipment is created as a master with one lot per drop. One drop is the same as dest_*.
+   */
+  drops: z.array(DropInputSchema).max(26).optional(),
+  /** What the goods are worth, in rupees (lots split it). */
+  declared_value: z.number().min(0).max(10_000_000_000).optional().nullable(),
+  consignee_name: z.string().trim().max(200).optional().nullable(),
+  consignee_phone: z.string().trim().max(20).optional().nullable(),
+  consignee_gstin: z.string().trim().toUpperCase().regex(/^[0-9]{2}[0-9A-Z]{13}$/, 'consignee_gstin must be a 15-character GSTIN').optional().nullable(),
+  eway_bill_ref: z.string().trim().min(1).max(60).optional().nullable(),
 });
 export type ShipmentCreate = z.infer<typeof ShipmentCreateSchema>;
 

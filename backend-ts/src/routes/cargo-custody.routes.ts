@@ -29,6 +29,7 @@ import {
 import { hubInventory, listHubs } from '../services/cargo/hub.service';
 import { claimDocumentUploadUrl, createClaim, getClaim, listClaims, updateClaim } from '../services/cargo/claim.service';
 import { vehicleOnBoard } from '../services/cargo/onboard.service';
+import { LotEwaySchema, MergeSchema, SplitSchema, lotsOverview, mergeLots, setLotEway, splitConsignment } from '../services/cargo/lots.service';
 import { notifyStaffSafe } from '../services/cargo/notify';
 
 const router = Router();
@@ -76,7 +77,7 @@ router.get('/where/:ref', requireAuth, async (req: Request, res: Response) => {
   try {
     const c = await resolveRef(req.params.ref);
     const { redacted } = await assertCanView(req.user!, c);
-    res.json(await whereIs(c, { redacted }));
+    res.json(await whereIs(c, { redacted, user: req.user! }));
   } catch (e) {
     sendError(req, res, e);
   }
@@ -86,7 +87,7 @@ router.get('/timeline/:ref', requireAuth, async (req: Request, res: Response) =>
   try {
     const c = await resolveRef(req.params.ref);
     const { redacted } = await assertCanView(req.user!, c);
-    res.json(await timelineOf(c, { redacted }));
+    res.json(await timelineOf(c, { redacted, user: req.user! }));
   } catch (e) {
     sendError(req, res, e);
   }
@@ -243,6 +244,48 @@ router.post('/transfers/:id/cancel', requireAuth, requireRole(...STAFF_ROLES), i
 router.post('/transfers/:id/eway', requireAuth, requireRole(...STAFF_ROLES), idempotent('cargo-transfer-eway'), async (req: Request, res: Response) => {
   try {
     res.json(await setEwayPartB(parse(UUID, req.params.id), req.body?.eway_part_b_ref));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Lots (docs/cargo-plan.md, Lots) ─────────────────────────
+// Split one consignment into lots: by hand, at a hub (cross-dock), or the rest after a partial delivery
+router.post('/lots/split', requireAuth, requireRole(...STAFF_ROLES), idempotent('cargo-lots-split'), async (req: Request, res: Response) => {
+  try {
+    const body = parse(SplitSchema, req.body);
+    const c = await resolveRef(body.ref);
+    res.status(201).json(await splitConsignment(c, { reason: body.reason, lots: body.lots, note: body.note ?? null }, actorOf(req), { via: 'api' }));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+router.post('/lots/merge', requireAuth, requireRole(...STAFF_ROLES), idempotent('cargo-lots-merge'), async (req: Request, res: Response) => {
+  try {
+    const body = parse(MergeSchema, req.body);
+    res.json(await mergeLots(body.refs, actorOf(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// A lot's own e-way bill reference
+router.post('/lots/eway', requireAuth, requireRole(...STAFF_ROLES), idempotent('cargo-lots-eway'), async (req: Request, res: Response) => {
+  try {
+    const body = parse(LotEwaySchema, req.body);
+    res.json(await setLotEway(await resolveRef(body.ref), body.eway_bill_ref));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// The master and its lots, from the master or any lot
+router.get('/lots/:ref', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const c = await resolveRef(req.params.ref);
+    const { redacted } = await assertCanView(req.user!, c);
+    res.json(await lotsOverview(c, { redacted, user: req.user! }));
   } catch (e) {
     sendError(req, res, e);
   }

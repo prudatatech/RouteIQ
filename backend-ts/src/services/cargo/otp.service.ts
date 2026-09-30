@@ -15,7 +15,7 @@ import { consumeRateLimit } from '../../core/rate-limit';
 import { FINAL_SHIPMENT_STATUSES } from '../../core/transitions';
 import { sendSms, smsConfigured } from '../sms.service';
 import { bookingCustomer, notifyUserSafe } from './notify';
-import type { Actor, Consignment } from './consignment';
+import { assertNotMaster, type Actor, type Consignment } from './consignment';
 
 export const OTP_TTL_HOURS = 24;
 export const OTP_MAX_WRONG = 5;
@@ -41,6 +41,7 @@ function safeEqual(a: string, b: string): boolean {
  */
 export async function sendDeliveryOtp(c: Consignment, actor: Actor | null): Promise<{ expires_at: string; notified: { in_app: boolean; sms: boolean } }> {
   if (c.kind !== 'shipment') throw new HttpError(400, 'A delivery code is sent for shipments only');
+  await assertNotMaster(c, 'Send the delivery code');
   if ((FINAL_SHIPMENT_STATUSES as readonly string[]).includes(c.status)) {
     throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}, so no delivery code is needed.`);
   }

@@ -10,6 +10,7 @@ import { computeQuote, isTodayOrLater } from '../services/customer-booking.servi
 import { cancelBooking, createBooking, getCustomerBooking, listCustomerBookings } from '../services/customer-bookings.service';
 import { confirmReceipt, customerCargo } from '../services/cargo/customer.service';
 import { idempotent } from '../core/idempotency';
+import { DropInputSchema } from '../schemas';
 
 const router = Router();
 router.use(requireAuth, requireRole('customer'));
@@ -47,6 +48,18 @@ const BookingSchema = QuoteSchema.extend({
   pickup_address: z.string().trim().min(1, 'Choose a pickup location').max(500),
   drop_name: z.string().trim().min(1, 'Choose a drop-off location').max(200),
   drop_address: z.string().trim().min(1, 'Choose a drop-off location').max(500),
+  /**
+   * Several drops, each to its own consignee with its share of the pieces (docs/cargo-plan.md,
+   * Lots). drop_* is still the drop the price is quoted to (the farthest). The weights, when given
+   * for every drop, add up to weight_kg.
+   */
+  drops: z.array(DropInputSchema).min(2, 'A multi-drop booking has at least two drops').max(20).optional(),
+}).superRefine((b, ctx) => {
+  if (!b.drops) return;
+  const named = b.drops.filter(d => d.weight_kg != null);
+  if (named.length > 0 && named.length < b.drops.length) ctx.addIssue({ code: 'custom', message: 'Give the weight of every drop, or of none' });
+  const sum = named.reduce((s, d) => s + (d.weight_kg ?? 0), 0);
+  if (named.length === b.drops.length && Math.abs(sum - b.weight_kg) > 0.5) ctx.addIssue({ code: 'custom', message: `The drops weigh ${sum} kg in all, but the booking is for ${b.weight_kg} kg` });
 });
 
 const CancelSchema = z.object({ reason: z.string().trim().max(500).optional().nullable() });

@@ -39,16 +39,24 @@ export async function customerCargo(customerId: string, bookingId: string) {
     })
     .filter(Boolean);
   const delivered = ['delivered', 'partially_delivered', 'returned'].includes(c.rawStatus);
+  // A booking split into lots (several drops, or goods split on the way) shows each lot, with its own POD
+  const { customerLots } = await import('./lots.service');
+  const lots = c.isMaster ? await customerLots(c) : [];
   return {
     booking_id: booking.id,
     shipment_id: c.id,
     tracking_id: c.code,
     where,
     timeline: timeline.events,
-    pod: delivered ? await getProofOfDelivery(c.id) : null,
+    pod: delivered && !c.isMaster ? await getProofOfDelivery(c.id) : null,
     exceptions: notices,
     claims,
     rating: c.row.driver_rating != null ? { rating: c.row.driver_rating } : null,
+    lots: lots.map(l => ({
+      ref: l.ref, code: l.code, label: l.label, status: l.status, current_holder: l.current_holder, pieces: l.pieces,
+      consignee: l.consignee ? { name: l.consignee.name } : null, drop: l.drop, vehicle: l.vehicle, depot: l.depot,
+      text: l.text, pod: l.pod,
+    })),
   };
 }
 

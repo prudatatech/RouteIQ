@@ -14,7 +14,7 @@ router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), as
     // Fetch shipments that have no active driver (status = 'created')
     const { data: shipments, error } = await supabase
       .from('shipments')
-      .select('*, delivery_points(*)')
+      .select('*, delivery_points!delivery_points_shipment_id_fkey(*)')
       .eq('status', 'created')
       .order('created_at', { ascending: false })
       .limit(10);
@@ -99,7 +99,7 @@ router.post('/bid', requireAuth, async (req: Request, res: Response) => {
     // 2. Verify Shipment
     const { data: shipment } = await supabase
       .from('shipments')
-      .select('*, delivery_points(*)')
+      .select('*, delivery_points!delivery_points_shipment_id_fkey(*)')
       .eq('id', shipment_id)
       .single();
 

@@ -215,12 +215,17 @@ async function exceptionItems(exceptionId: string): Promise<any[]> {
   return data ?? [];
 }
 
-/** The consignments of a case, freshly read. */
+/**
+ * The consignments of a case, freshly read. A consignment split into lots after the case opened
+ * is left out (its lots joined the case when it was split): a master holds no goods of its own.
+ */
 async function itemConsignments(exceptionId: string): Promise<{ item: any; c: Consignment }[]> {
   const out: { item: any; c: Consignment }[] = [];
   for (const item of await exceptionItems(exceptionId)) {
     try {
-      out.push({ item, c: await resolveRef(item.shipment_id ? { shipment_id: item.shipment_id } : { manifest_id: item.manifest_id }) });
+      const c = await resolveRef(item.shipment_id ? { shipment_id: item.shipment_id } : { manifest_id: item.manifest_id });
+      if (c.isMaster) continue;
+      out.push({ item, c });
     } catch (e) {
       if (!(e instanceof HttpError && e.status === 404)) throw e;
     }
@@ -874,6 +879,8 @@ export async function createManualException(body: Record<string, any>, actor: Ac
   const items: ExceptionItemInput[] = [];
   for (const it of itemsIn) {
     const c = await resolveRef(it?.ref);
+    const { assertNotMaster } = await import('./consignment');
+    await assertNotMaster(c, 'Raise the case');
     if (opts.driverVehicleIds) {
       const { plannedVehicleOf } = await import('./consignment');
       const v = await plannedVehicleOf(c);

@@ -33,6 +33,8 @@ export class AnalyticsService {
       .from('shipments')
       .select('id, updated_at')
       .eq('status', 'delivered')
+      // A split consignment is counted by its lots, never also as its master
+      .neq('is_master', true)
       .gte('updated_at', startISO)
       .lt('updated_at', endISO);
     if (recentErr) throw recentErr;
@@ -47,6 +49,7 @@ export class AnalyticsService {
       .from('cargo_manifest')
       .select('id, updated_at')
       .in('status', ['delivered', 'completed'])
+      .neq('is_master', true)
       .gte('updated_at', startISO)
       .lt('updated_at', endISO);
     if (manifestErr) throw manifestErr;
@@ -288,7 +291,7 @@ export class AnalyticsService {
       { count: totalRoutesCount },
       { count: completedRoutesCount },
     ] = await Promise.all([
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered'),
+      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').neq('is_master', true),
       supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']),
       supabase.from('routes').select('id', { count: 'exact', head: true }).eq('status', 'completed'),

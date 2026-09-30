@@ -129,12 +129,29 @@ export async function markAssigned(
     shipment.id, 'assigned', shipment.origin_lat, shipment.origin_lng,
     { vehicle_id: vehicle.id, route_id: route.id }, actor,
   );
+  await rollupParentOf(shipment.id, actor);
   try {
     const { onShipmentStatus } = await import('./customer-bookings.service');
     await onShipmentStatus(shipment.id, 'assigned', { vehicle_id: vehicle.id });
   } catch (e) {
     console.error('Failed to update the customer booking:', e);
   }
+}
+
+/** A lot changed: its master's status and holder are worked out again (docs/cargo-plan.md, Lots). */
+async function rollupParentOf(shipmentId: string, actor?: LogActor | null): Promise<void> {
+  const { data } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
+  if (!data?.parent_shipment_id) return;
+  const { rollupMaster } = await import('./cargo/lots.service');
+  await rollupMaster('shipment', data.parent_shipment_id, actor ?? null);
+}
+
+/** A master holds no goods of its own once split: status changes and vehicles go on its lots. */
+async function assertNotSplit(shipmentId: string, action: string): Promise<void> {
+  const { data } = await supabase.from('shipments').select('is_master').eq('id', shipmentId).maybeSingle();
+  if (!data?.is_master) return;
+  const { resolveRef, assertNotMaster } = await import('./cargo/consignment');
+  await assertNotMaster(await resolveRef({ shipment_id: shipmentId }), action);
 }
 
 /**
@@ -308,7 +325,9 @@ export class ShipmentService {
       .from('shipments')
       .select('total_weight_kg')
       .in('id', shipmentIds as string[])
-      .in('status', [...ShipmentService.LOAD_STATUSES]);
+      .in('status', [...ShipmentService.LOAD_STATUSES])
+      // A master's weight is carried by its lots
+      .neq('is_master', true);
     return (shipments || []).reduce((sum: number, s: any) => sum + (Number(s.total_weight_kg) || 0), 0);
   }
 
@@ -383,6 +402,33 @@ export class ShipmentService {
    * Create a new shipment with parcels.
    */
   static async createShipment(shipmentIn: ShipmentCreate, actor?: LogActor | null): Promise<Shipment> {
+    // Two or more drops: a master with one lot per drop (docs/cargo-plan.md, Lots)
+    if (shipmentIn.drops && shipmentIn.drops.length > 1) {
+      const { createMultiDrop } = await import('./cargo/lots.service');
+      const masterId = await createMultiDrop(shipmentIn, actor ?? null);
+      const master = await ShipmentService.getShipment(masterId);
+      if (!master) throw new Error('Failed to retrieve created shipment');
+      return master;
+    }
+    // One drop is the plain destination, with its consignee
+    if (shipmentIn.drops && shipmentIn.drops.length === 1) {
+      const d = shipmentIn.drops[0];
+      shipmentIn = {
+        ...shipmentIn,
+        dest_name: d.name ?? d.consignee_name,
+        dest_address: d.address,
+        dest_lat: d.lat,
+        dest_lng: d.lng,
+        total_items: d.pieces,
+        total_weight_kg: shipmentIn.total_weight_kg || d.weight_kg || 0,
+        declared_value: shipmentIn.declared_value ?? d.declared_value ?? null,
+        consignee_name: shipmentIn.consignee_name ?? d.consignee_name,
+        consignee_phone: shipmentIn.consignee_phone ?? d.consignee_phone ?? null,
+        consignee_gstin: shipmentIn.consignee_gstin ?? d.consignee_gstin ?? null,
+        eway_bill_ref: shipmentIn.eway_bill_ref ?? d.eway_bill_ref ?? null,
+        drops: undefined,
+      };
+    }
     const trackingId = shipmentIn.tracking_id || `RTX-${uuidv4().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
 
     // A load put on a vehicle at creation must fit that vehicle, like any other assignment
@@ -407,6 +453,12 @@ export class ShipmentService {
         total_weight_kg: shipmentIn.total_weight_kg,
         freight_charge: shipmentIn.freight_charge ?? null,
         metadata: shipmentIn.metadata ?? {},
+        // Only what was given, so rows keep their defaults otherwise
+        ...(shipmentIn.declared_value != null ? { declared_value: shipmentIn.declared_value } : {}),
+        ...(shipmentIn.consignee_name ? { consignee_name: shipmentIn.consignee_name } : {}),
+        ...(shipmentIn.consignee_phone ? { consignee_phone: shipmentIn.consignee_phone } : {}),
+        ...(shipmentIn.consignee_gstin ? { consignee_gstin: shipmentIn.consignee_gstin } : {}),
+        ...(shipmentIn.eway_bill_ref ? { eway_bill_ref: shipmentIn.eway_bill_ref } : {}),
       })
       .select()
       .single();
@@ -617,6 +669,7 @@ export class ShipmentService {
   static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new HttpError(404, 'Shipment not found');
+    await assertNotSplit(shipmentId, 'Assign a vehicle');
     const holder = (shipment as any).current_holder as string | undefined;
     const status = String(shipment.status);
     // Goods already on a vehicle or at a hub move by a custody action, never by re-assigning
@@ -916,6 +969,14 @@ export class ShipmentService {
       is_verified: SecurityService.verifyChain(data.shipment_logs || []),
       capacity_bids: data.capacity_bids || null,
     };
+    // A split shipment lists its lots; a lot names its master (docs/cargo-plan.md, Lots)
+    if (data.is_master) {
+      const { shipmentLotsDetail } = await import('./cargo/lots.service');
+      (shipment as any).lots = await shipmentLotsDetail(data.id);
+    } else if (data.parent_shipment_id) {
+      const { data: master } = await supabase.from('shipments').select('id, tracking_id, status').eq('id', data.parent_shipment_id).maybeSingle();
+      (shipment as any).master = master ?? null;
+    }
     return shipment;
   }
 
@@ -972,14 +1033,24 @@ export class ShipmentService {
         logs: d.shipment_logs || [],
         is_verified: SecurityService.verifyChain(d.shipment_logs || []),
         capacity_bids: d.capacity_bids || null,
-        vehicle_id: vehicleId,
-        driver_name: driverName,
+        // A master's goods are on its lots' vehicles, never its own (so it is not counted twice)
+        vehicle_id: d.is_master ? null : vehicleId,
+        driver_name: d.is_master ? null : driverName,
         open_bidding: !!bidWindow,
         asking_price: bidWindow?.floor_price ?? null,
         bidding_opens_at: bidWindow?.opens_at ?? null,
         bidding_closes_at: bidWindow?.closes_at ?? null,
       };
     });
+
+    // Masters show how their lots stand; lots name their master (docs/cargo-plan.md, Lots)
+    const { lotsSummaries } = await import('./cargo/lots.service');
+    const shipmentLots = await lotsSummaries('shipment', data.filter((d: any) => d.is_master).map((d: any) => d.id));
+    const trackingById = new Map(data.map((d: any) => [d.id, d.tracking_id]));
+    for (const row of mappedShipments as any[]) {
+      if (row.is_master) row.lots_summary = shipmentLots.get(row.id) ?? { count: 0, delivered_lots: 0, pieces_delivered: 0, lots: [] };
+      if (row.parent_shipment_id) row.master_tracking_id = trackingById.get(row.parent_shipment_id) ?? null;
+    }
 
     // Fetch Cargo Manifests to show them in the unified list
     const { data: manifests, error: manifestError } = await supabase
@@ -989,9 +1060,17 @@ export class ShipmentService {
       .limit(limit);
     if (manifestError) throw manifestError;
 
+    const manifestLots = await lotsSummaries('manifest', (manifests || []).filter((m: any) => m.is_master).map((m: any) => m.id));
     const mappedManifests = (manifests || []).map((m: any) => ({
       id: m.id,
-      tracking_id: manifestParcelCode(m.id),
+      tracking_id: m.parent_manifest_id && m.lot_label ? `${manifestParcelCode(m.parent_manifest_id)}-${m.lot_label}` : manifestParcelCode(m.id),
+      is_master: m.is_master === true,
+      parent_manifest_id: m.parent_manifest_id ?? null,
+      lot_label: m.lot_label ?? null,
+      ...(m.is_master ? { lots_summary: manifestLots.get(m.id) ?? { count: 0, delivered_lots: 0, pieces_delivered: 0, lots: [] } } : {}),
+      pieces_total: m.pieces_total ?? null,
+      current_holder: m.current_holder ?? null,
+      current_vehicle_id: m.is_master ? null : m.current_vehicle_id ?? null,
       vendor_request_id: m.vendor_request_id ?? null,
       status: m.status === 'scheduled' ? 'created' : m.status, // maps scheduled to created
       priority: 'high',
@@ -1013,7 +1092,7 @@ export class ShipmentService {
       parcels: [],
       logs: [],
       is_verified: true,
-      vehicle_id: m.vehicle_id,
+      vehicle_id: m.is_master ? null : m.vehicle_id,
       driver_name: m.vehicles?.users?.full_name || 'Driver Assigned',
       created_at: m.created_at,
       updated_at: m.created_at,
@@ -1161,6 +1240,12 @@ export class ShipmentService {
       .eq('id', shipmentId)
       .maybeSingle();
     if (currentErr || !current) return null;
+    // A split master: cancelling it cancels its lots (before pickup); anything else goes on a lot
+    const { data: split } = await supabase.from('shipments').select('is_master').eq('id', shipmentId).maybeSingle();
+    if (split?.is_master) {
+      if (status !== 'cancelled') await assertNotSplit(shipmentId, 'Change the status');
+      return ShipmentService.cancelSplitShipment(shipmentId, actor, extraMetadata);
+    }
 
     // Asking for the status it already has succeeds without logging or billing twice;
     // anything else must follow the allowed transitions (delivered and cancelled are final).
@@ -1205,6 +1290,25 @@ export class ShipmentService {
   }
 
   /**
+   * Cancels a split shipment: every lot still with the sender is cancelled (the booking or staff
+   * cancel the whole consignment), and the master follows. Refused when any lot has been picked up.
+   */
+  static async cancelSplitShipment(shipmentId: string, actor?: LogActor | null, extraMetadata?: Record<string, any>): Promise<Shipment | null> {
+    const { lotsOf, rollupMaster } = await import('./cargo/lots.service');
+    const { wasPickedUp } = await import('./cargo/consignment');
+    const live = (await lotsOf('shipment', shipmentId)).filter(l => !['delivered', 'returned', 'lost', 'cancelled'].includes(l.status));
+    const moved = live.filter(l => wasPickedUp(l));
+    if (moved.length > 0) {
+      throw new HttpError(409, `${moved.map(l => l.code).join(', ')} ${moved.length === 1 ? 'has' : 'have'} been picked up, so the shipment can no longer be cancelled.`);
+    }
+    for (const lot of live) {
+      await ShipmentService.updateShipmentStatus(lot.id, 'cancelled', null, null, null, null, actor, { ...(extraMetadata ?? {}), cancelled_with: shipmentId });
+    }
+    await rollupMaster('shipment', shipmentId, actor ?? null);
+    return ShipmentService.getShipment(shipmentId);
+  }
+
+  /**
    * What follows any shipment status change, whichever path made it (a status update, a custody
    * event): the delivery is billed, the customer's booking follows, and a cancelled, delivered or
    * un-assigned shipment leaves its route (pending stops closed, the driver told) and the
@@ -1227,6 +1331,7 @@ export class ShipmentService {
       for (const v of await vehiclesOnStopsOf(await ShipmentService.deliveryPointIds(shipmentId))) vehicles.add(v);
     }
     for (const vehicleId of vehicles) await ShipmentService.recalculateVehicleCapacity(vehicleId);
+    await rollupParentOf(shipmentId, actor);
   }
 
   /**
@@ -1298,6 +1403,12 @@ export class ShipmentService {
         409,
         `This shipment is ${existing.status.replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`
       );
+    }
+    // A split shipment and its lots are one consignment note: cancel it (which cancels the lots) instead
+    const { data: lots } = await supabase.from('shipments').select('id').eq('parent_shipment_id', shipmentId).limit(1);
+    const { data: self } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
+    if ((lots && lots.length > 0) || self?.parent_shipment_id) {
+      throw new HttpError(409, 'This shipment is split into lots, so it can\'t be deleted. Cancel it instead.');
     }
 
     // 1. Get delivery point

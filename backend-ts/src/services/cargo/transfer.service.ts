@@ -20,7 +20,7 @@ import type { TokenData } from '../../core/auth';
 import { ShipmentService } from '../shipment.service';
 import { releaseVehicleLoad } from '../route.service';
 import {
-  CONDITIONS, RefSchema, addPieces, piecesHeld, piecesPatch, refColumns, reload, resolveRef, weightOf, writeConsignment,
+  CONDITIONS, RefSchema, addPieces, assertNotMaster, piecesHeld, piecesPatch, refColumns, reload, resolveRef, weightOf, writeConsignment,
   type Actor, type Condition, type Consignment,
 } from './consignment';
 import { insertWithCode } from './exception.service';
@@ -98,18 +98,19 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
     if (!exc) throw new HttpError(404, 'Cargo case not found');
   }
 
-  const goods: { c: Consignment; pieces: number }[] = [];
+  const goods: { c: Consignment; pieces: number; partial: boolean }[] = [];
   for (const item of body.items) {
     const c = await resolveRef(item.ref);
+    await assertNotMaster(c, 'Transfer the goods');
     if (goods.some(g => g.c.id === c.id)) throw new HttpError(400, `${c.code} is listed twice`);
     if (c.holder !== 'vehicle' || c.vehicleId !== from.id) throw new HttpError(409, `${c.code} is not on ${from.plate_number}.`);
     const held = piecesHeld(c.pieces);
-    // A consignment moves whole: its pieces stay together on one vehicle
-    if (held != null && item.pieces !== held) {
-      throw new HttpError(409, `${c.code} has ${held} pieces on board; a transfer moves all of them.`);
-    }
+    // Fewer pieces than are on board: the consignment is split first into a lot that moves and a
+    // lot that stays (docs/cargo-plan.md, Lots); the transfer then moves the moving lot whole
+    if (held != null && item.pieces > held) throw new HttpError(409, `${c.code} has ${held} pieces on board.`);
+    if (held != null && item.pieces < 1) throw new HttpError(400, `Move at least one piece of ${c.code}`);
     if (held == null && item.pieces < 1) throw new HttpError(400, `Count the pieces of ${c.code}`);
-    goods.push({ c, pieces: item.pieces });
+    goods.push({ c, pieces: item.pieces, partial: held != null && item.pieces < held });
   }
 
   // One open transfer per consignment
@@ -124,6 +125,7 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   }
 
   const weight = goods.reduce((sum, g) => sum + weightOf(g.c, g.pieces), 0);
+  const partialOpen = goods.filter(g => g.partial);
   let toVehicle: any = null;
   if (body.to_vehicle_id) {
     if (body.to_vehicle_id === from.id) throw new HttpError(400, 'Choose a different vehicle');
@@ -142,6 +144,20 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
     const { data } = await supabase.from('depots').select('id, name, address').eq('id', body.to_depot_id).maybeSingle();
     if (!data) throw new HttpError(404, 'Hub not found');
     depot = data;
+  }
+
+  // Split the partial items now that the transfer is known to be possible: the moving lot goes on it
+  const splits: { from: { ref: any; code: string }; moving: { ref: any; code: string; label: string; pieces: number }; staying: { ref: any; code: string; label: string; pieces: number } }[] = [];
+  for (const g of partialOpen) {
+    const { splitConsignment } = await import('./lots.service');
+    const result = await splitConsignment(g.c, { reason: 'partial_transfer', lots: [{ pieces: g.pieces }] }, actor, { via: 'transfer' });
+    const [moving, staying] = result.lots;
+    splits.push({
+      from: { ref: result.source.ref, code: result.source.code },
+      moving: { ref: moving.ref, code: moving.code, label: moving.label, pieces: moving.pieces },
+      staying: { ref: staying.ref, code: staying.code, label: staying.label, pieces: staying.pieces },
+    });
+    g.c = await resolveRef(moving.ref);
   }
 
   const transfer = await insertWithCode('cargo_transfers', 'TRF', {
@@ -170,7 +186,9 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   await notifyVehicleDriver(from.id, 'Cargo transfer planned', `Hand over ${summary} to ${target}${where}. Count them out in the app.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   if (toVehicle) await notifyVehicleDriver(toVehicle.id, 'Cargo transfer planned', `Collect ${summary} from ${from.plate_number}${where}. Count them in when you receive them.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
   await notifyStaffSafe(`Transfer ${transfer.code} planned`, `${summary} from ${from.plate_number} to ${target}.`, 'cargo_transfer_planned', { transfer_id: transfer.id, code: transfer.code });
-  return getTransfer(transfer.id);
+  const view = await getTransfer(transfer.id);
+  // `lots` names the two lots of the first split too, for clients that move one consignment at a time
+  return splits.length > 0 ? { ...view, splits, lots: { moving: splits[0].moving, staying: splits[0].staying } } : view;
 }
 
 function matchItems(items: any[], body: z.infer<typeof HandoverSchema>['items'], refs: Consignment[]): { item: any; c: Consignment; input: (typeof body)[number] }[] {
@@ -331,6 +349,8 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
       on_hold_reason: null,
       ...piecesPatch(pieces),
       ...(c.kind === 'manifest' && !toHub ? { vehicle_id: transfer.to_vehicle_id } : {}),
+      // A new vehicle: e-way bill Part B is due for these goods (for a partial transfer, only the moving lot)
+      ...(vehicleChanged ? { eway_part_b_required: true } : {}),
     });
     const moved = await reload(c);
     await recordHandover(moved, 'in', {
@@ -395,6 +415,11 @@ export async function setEwayPartB(id: string, ref: unknown): Promise<any> {
   const transfer = await loadTransfer(id);
   if (transfer.status === 'cancelled') throw new HttpError(409, 'This transfer was cancelled.');
   await supabase.from('cargo_transfers').update({ eway_part_b_ref: ref.trim(), eway_part_b_updated_at: new Date().toISOString() }).eq('id', id);
+  // Part B is updated for the goods this transfer moved
+  for (const item of await transferItems(id)) {
+    const table = item.shipment_id ? 'shipments' : 'cargo_manifest';
+    await supabase.from(table).update({ eway_part_b_required: false }).eq('id', item.shipment_id ?? item.manifest_id).eq('eway_part_b_required', true);
+  }
   return getTransfer(id);
 }
 

@@ -9,6 +9,10 @@
  *     (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost), or, when only a
  *     rate per km was agreed, that rate times the trip's road distance; GST is the rate the
  *     vendor entered on the request
+ *   - a lot of a split consignment (docs/cargo-plan.md, Lots): its freight_share, the part of the
+ *     master's price that falls to it; a master is billed only for the part it kept (its own
+ *     freight_share, the pieces delivered before the split), so the master's price is never
+ *     billed twice
  * With no price no invoice is written; the delivery shows up under "unpriced
  * deliveries" in Finance instead. Money is rupees; the amount is before GST.
  */
@@ -20,6 +24,8 @@ const PRICE_SOURCE_BID = 'bid';
 const PRICE_SOURCE_FREIGHT = 'freight_charge';
 const PRICE_SOURCE_REQUEST = 'vendor_request';
 const PRICE_SOURCE_RATE = 'vendor_rate_per_km';
+/** A lot (or the part a master kept) is billed for its share of the consignment's freight. */
+const PRICE_SOURCE_LOT = 'lot_freight_share';
 
 export interface InvoiceResult {
   status: 'created' | 'exists' | 'unpriced' | 'skipped';
@@ -96,9 +102,31 @@ export const InvoiceService = {
     const { data: existing } = await supabase.from('invoices').select('id').eq('shipment_id', shipmentId).neq('status', 'void').maybeSingle();
     if (existing) return { status: 'exists', invoiceId: existing.id };
 
-    const { data: shipment, error } = await supabase.from('shipments').select('id, bid_id, freight_charge').eq('id', shipmentId).maybeSingle();
+    const { data: shipment, error } = await supabase
+      .from('shipments').select('id, bid_id, freight_charge, is_master, parent_shipment_id, freight_share').eq('id', shipmentId).maybeSingle();
     if (error) throw new Error(`Failed to read shipment: ${error.message}`);
     if (!shipment) return { status: 'skipped' };
+
+    // Lots and masters: the share of the freight that is theirs, and the vendor of the master's won bid
+    if (shipment.is_master || shipment.parent_shipment_id) {
+      const share = Number(shipment.freight_share ?? (shipment.parent_shipment_id ? shipment.freight_charge : 0));
+      if (!Number.isFinite(share) || share <= 0) return { status: shipment.is_master ? 'skipped' : 'unpriced' };
+      let lotVendor: string | null = null;
+      const masterId = shipment.parent_shipment_id ?? shipment.id;
+      const { data: master } = await supabase.from('shipments').select('bid_id').eq('id', masterId).maybeSingle();
+      if (master?.bid_id) {
+        const { data: bid } = await supabase.from('capacity_bids').select('vendor_id, status').eq('id', master.bid_id).maybeSingle();
+        if (bid?.status === 'won') lotVendor = bid.vendor_id ?? null;
+      }
+      const lotInvoice = await insertInvoice({
+        shipment_id: shipmentId,
+        vendor_id: lotVendor,
+        amount: share,
+        gst_rate: await shipmentGstRate(masterId),
+        price_source: PRICE_SOURCE_LOT,
+      });
+      return { status: 'created', invoiceId: lotInvoice };
+    }
 
     // A won bid sets the price; without one, the freight charge entered on the shipment does
     let vendorId: string | null = null;
@@ -140,12 +168,28 @@ export const InvoiceService = {
 
     const { data: manifest, error } = await supabase
       .from('cargo_manifest')
-      .select('id, vendor_request_id, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .select('id, vendor_request_id, pickup_lat, pickup_lng, drop_lat, drop_lng, is_master, parent_manifest_id, freight_share')
       .eq('id', manifestId)
       .maybeSingle();
     if (error) throw new Error(`Failed to read manifest: ${error.message}`);
     // A manifest made from a won bid is invoiced through its shipment, not here
     if (!manifest || !manifest.vendor_request_id) return { status: 'skipped' };
+
+    // A load lot is billed for its freight share; a master only for the part it kept
+    if (manifest.is_master || manifest.parent_manifest_id) {
+      const share = Number(manifest.freight_share ?? 0);
+      if (!Number.isFinite(share) || share <= 0) return { status: manifest.is_master ? 'skipped' : 'unpriced' };
+      const { data: req } = await supabase.from('vendor_shipment_requests').select('vendor_id, metadata').eq('id', manifest.vendor_request_id).maybeSingle();
+      const gst = Number(req?.metadata?.cargo?.gstRate);
+      const lotInvoice = await insertInvoice({
+        manifest_id: manifestId,
+        vendor_id: req?.vendor_id ?? null,
+        amount: share,
+        gst_rate: Number.isFinite(gst) && gst > 0 && gst <= 100 ? gst : 0,
+        price_source: PRICE_SOURCE_LOT,
+      });
+      return { status: 'created', invoiceId: lotInvoice };
+    }
 
     const { data: request, error: reqErr } = await supabase
       .from('vendor_shipment_requests')

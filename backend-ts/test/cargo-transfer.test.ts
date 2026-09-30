@@ -173,9 +173,10 @@ describe('transshipment to a relief truck', () => {
     expect((await request(app).post(api(`/cargo/transfers/${second.body.id}/cancel`)).set(auth.admin()).send({})).status).toBe(409);
   });
 
-  it('refuses part of a consignment, goods not on the vehicle, and the same vehicle', async () => {
+  it('refuses more pieces than are on board, goods not on the vehicle, and the same vehicle', async () => {
     const plan = (body: object) => request(app).post(api('/cargo/transfers')).set(auth.admin()).send(body);
-    expect((await plan({ from_vehicle_id: ID.v1, to_vehicle_id: ID.v2, items: [{ ref: { shipment_id: ID.s1 }, pieces: 4 }] })).status).toBe(409);
+    // Part of a consignment is split into lots first (cargo-lots-transfer.test.ts); more than is on board never moves
+    expect((await plan({ from_vehicle_id: ID.v1, to_vehicle_id: ID.v2, items: [{ ref: { shipment_id: ID.s1 }, pieces: 11 }] })).status).toBe(409);
     expect((await plan({ from_vehicle_id: ID.v1, to_vehicle_id: ID.v2, items: [{ ref: { shipment_id: ID.s2 }, pieces: 5 }] })).status).toBe(409);
     expect((await plan({ from_vehicle_id: ID.v1, to_vehicle_id: ID.v1, items: [{ ref: { shipment_id: ID.s1 }, pieces: 10 }] })).status).toBe(400);
     expect((await plan({ from_vehicle_id: ID.v1, to_vehicle_id: ID.vMaint, items: [{ ref: { shipment_id: ID.s1 }, pieces: 10 }] })).status).toBe(409);

@@ -7,6 +7,7 @@
  */
 import { supabase } from '../../core/supabase';
 import { HttpError } from '../../core/errors';
+import { manifestParcelCode } from '../../core/parcelCode';
 import { piecesHeld, refOf, vehicleSummary, weightOf, type Consignment } from './consignment';
 import { consignmentsOnVehicle } from './exception.service';
 import { openExceptionsFor } from './custody.service';
@@ -53,6 +54,10 @@ export async function vehicleOnBoard(vehicleId: string) {
   const goods = await consignmentsOnVehicle(vehicleId);
   const conditions = await lastConditions(goods);
   const stops = await nextStops(vehicleId, goods.filter(c => c.kind === 'shipment').map(c => c.id));
+  // Lots show their master, so the driver sees "RTX-ABC123-B · 25 pcs" and whose goods they are
+  const masterIds = [...new Set(goods.filter(c => c.kind === 'shipment' && c.parentId).map(c => c.parentId!))];
+  const masters = new Map<string, string>();
+  if (masterIds.length) for (const m of (await supabase.from('shipments').select('id, tracking_id').in('id', masterIds)).data ?? []) masters.set(m.id, m.tracking_id);
   const items = [];
   for (const c of goods) {
     const held = piecesHeld(c.pieces);
@@ -72,6 +77,17 @@ export async function vehicleOnBoard(vehicleId: string) {
         ? stops.get(c.id) ?? null
         : { stop_id: `${c.id}_drop`, route_id: c.id, sequence: 2, name: c.row.drop_location ?? null, address: c.row.drop_location ?? null, lat: c.row.drop_lat ?? null, lng: c.row.drop_lng ?? null },
       open_exceptions: exceptions.map((e: any) => ({ id: e.id, code: e.code, type: e.type, severity: e.severity, status: e.status })),
+      lot: c.parentId && c.lotLabel
+        ? {
+            label: c.lotLabel,
+            master: {
+              ref: c.kind === 'shipment' ? { shipment_id: c.parentId } : { manifest_id: c.parentId },
+              code: c.kind === 'shipment' ? masters.get(c.parentId) ?? null : manifestParcelCode(c.parentId),
+            },
+          }
+        : null,
+      consignee_name: c.row.consignee_name ?? null,
+      display: `${c.code} · ${held ?? '?'} pcs`,
     });
   }
   return {
