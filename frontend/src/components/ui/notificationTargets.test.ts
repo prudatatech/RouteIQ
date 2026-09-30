@@ -121,3 +121,9 @@ describe('staff notifications', () => {
     expect(at('something_new', { x: 1 }, 'staff')).toBeNull()
   })
 })
+
+describe('driver pay notifications', () => {
+  it('a missing pay rate opens Driver pay', () => {
+    expect(at('driver_pay_rate_missing', { vehicle_type: 'truck' }, 'staff')).toBe('/money/driver-pay')
+  })
+})

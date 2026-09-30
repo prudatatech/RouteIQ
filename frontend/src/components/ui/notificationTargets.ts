@@ -65,6 +65,8 @@ const STAFF: Record<string, Resolver> = {
   driver_needs_vehicle: personPage(),
   document_uploaded: personPage('documents'),
   bank_details_changed: personPage('bank'),
+  // No pay rate for a vehicle type: set it on Driver pay
+  driver_pay_rate_missing: () => '/money/driver-pay',
   stop_prompts_released: personPage(),
   people_status: d => {
     const ids = Array.isArray(d.user_ids) ? d.user_ids.filter((x): x is string => typeof x === 'string') : []
