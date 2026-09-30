@@ -1,14 +1,20 @@
 name: Deploy to Azure
+# Runs on every push to main that touches the apps or infra, and by hand from the Actions tab.
+#
+# It only builds and pushes the images, swaps them into the container apps and uploads the web app
+# (infra/deploy.sh --images-only). Secrets and settings stay in Azure, where infra/set-secrets.sh put
+# them, so GitHub never holds an API key. Changes to main.bicep or secrets are applied by running
+# ./infra/deploy.sh or ./infra/set-secrets.sh from a signed-in machine.
+#
+# The job is skipped until infra/github-oidc.sh has been run once: it creates the passwordless
+# GitHub -> Azure login and stores AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID as
+# repository variables. See docs/DEPLOYMENT.md section 4.4.
 
-# DISABLED until you run infra/github-oidc.sh and add its three values as GitHub secrets
-# (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) plus SECRETS_ENV (the contents of
-# infra/secrets.env). Until then this only runs by hand (workflow_dispatch).
-# To enable pushes to main, replace the `on:` block with the commented one below.
 on:
+  push:
+    branches: [main]
+    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**']
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  #   paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**']
 
 concurrency:
   group: deploy-azure
@@ -20,24 +26,20 @@ permissions:
 
 jobs:
   deploy:
+    if: ${{ vars.AZURE_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Write secrets file
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy new images and web app
         env:
-          SECRETS_ENV: ${{ secrets.SECRETS_ENV }}
-        run: (umask 077; printf '%s\n' "$SECRETS_ENV" > infra/secrets.env)
-
-      - name: Deploy
-        run: ./infra/deploy.sh
+          # Public pk. token (optional); without it web maps draw straight lines
+          VITE_MAPBOX_TOKEN: ${{ vars.VITE_MAPBOX_TOKEN }}
+        run: ./infra/deploy.sh --images-only

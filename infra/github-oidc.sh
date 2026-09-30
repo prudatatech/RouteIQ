@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-time setup so GitHub Actions can deploy without stored passwords (OIDC federation).
-# YOU run this: it creates an app registration, a service principal and a role assignment.
-# Needs: az login as a user who can create app registrations and assign roles (Owner is enough).
+# The account owner runs this once: it creates an app registration, a federated credential (no password)
+# and a Contributor role assignment on the resource group, then stores the three ids in GitHub.
+# Needs: az login as the subscription owner, and gh signed in to GitHub.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -35,19 +36,26 @@ if [[ -z "$(az ad app federated-credential list --id "$APP_ID" --query "[?name==
   }" -o none
 fi
 
-# Owner is needed on the subscription: deploy.sh creates the resource group, the ACR role assignment
-# and the subscription-level budget. Narrow it if you pre-create those.
-SCOPE="/subscriptions/$SUB"
-if [[ -z "$(az role assignment list --assignee "$APP_ID" --scope "$SCOPE" --role Owner --query '[0].id' -o tsv)" ]]; then
-  log "Granting Owner on $SCOPE"
-  az role assignment create --assignee "$APP_ID" --role Owner --scope "$SCOPE" -o none
+# Pushes only swap images and upload the web app (deploy.sh --images-only), so Contributor on the
+# resource group is enough: no access to the rest of the subscription, and no secrets in GitHub.
+SCOPE="/subscriptions/$SUB/resourceGroups/$RG"
+if [[ -z "$(az role assignment list --assignee "$APP_ID" --scope "$SCOPE" --role Contributor --query '[0].id' -o tsv)" ]]; then
+  log "Granting Contributor on $SCOPE"
+  az role assignment create --assignee "$APP_ID" --role Contributor --scope "$SCOPE" -o none
 fi
 
-echo
-echo "Add these as GitHub repository secrets ($REPO > Settings > Secrets and variables > Actions):"
-echo "  AZURE_CLIENT_ID       = $APP_ID"
-echo "  AZURE_TENANT_ID       = $TENANT"
-echo "  AZURE_SUBSCRIPTION_ID = $SUB"
-echo
-echo "Also add the contents of infra/secrets.env as a secret named SECRETS_ENV (the workflow writes it to a file at run time)."
-echo "Then enable the push trigger in .github/workflows/deploy-azure.yml."
+# The three ids are not secrets: store them as repository variables. The workflow runs only once they exist.
+if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  gh variable set AZURE_CLIENT_ID --repo "$REPO" --body "$APP_ID"
+  gh variable set AZURE_TENANT_ID --repo "$REPO" --body "$TENANT"
+  gh variable set AZURE_SUBSCRIPTION_ID --repo "$REPO" --body "$SUB"
+  log "Stored AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID as variables on $REPO."
+  log "Every push to $BRANCH that touches backend-ts, ml-service, frontend or infra now deploys to Azure."
+else
+  echo
+  echo "gh is not signed in. Add these as repository VARIABLES ($REPO > Settings > Secrets and variables > Actions > Variables):"
+  echo "  AZURE_CLIENT_ID       = $APP_ID"
+  echo "  AZURE_TENANT_ID       = $TENANT"
+  echo "  AZURE_SUBSCRIPTION_ID = $SUB"
+fi
+echo "Optional: add the public Mapbox token (pk.) as the variable VITE_MAPBOX_TOKEN so web maps draw roads."

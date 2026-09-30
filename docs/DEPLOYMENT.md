@@ -39,7 +39,7 @@ The Azure resources are:
 |---|---|---|
 | Web | Vercel project `prudatas-projects/margixindia` | Static Web App `margix-web` |
 | Backend | Railway `routeiq-production-7034.up.railway.app` | Container App `margix-api` |
-| Deploys | Automatically on push to `main` | `./infra/deploy.sh` (manual until GitHub OIDC is set up, see §4.4) |
+| Deploys | Automatically on push to `main` | Automatically on push to `main` once `infra/github-oidc.sh` has been run (§4.4); until then `./infra/deploy.sh` |
 
 Until the domain is switched (§4.5), **a push to `main` updates Vercel and Railway, not Azure.** To update Azure as well, run `./infra/deploy.sh`.
 
@@ -104,11 +104,24 @@ Settings:
 - **`PEOPLE_HASH_SALT` must never change** once documents have been uploaded. It hashes document numbers, and a new salt stops old documents matching new uploads. It was generated on 30 Sep 2026, before any documents existed. If the old Railway backend is still in use when documents are uploaded, set the same value there.
 - **Rotating a key:** change it at the provider, update `secrets.env`, then run `./infra/set-secrets.sh`.
 
-### 4.4 Automatic deploys from GitHub (not set up yet)
+### 4.4 Automatic deploys from GitHub
 
-1. Run `./infra/github-oidc.sh` once. The account owner runs this, because it creates an identity and a role assignment.
-2. Add the three values it prints, plus the contents of `secrets.env` as `SECRETS_ENV`, to GitHub → Settings → Secrets → Actions.
-3. Enable the push trigger in `.github/workflows/deploy-azure.yml`. It currently runs only on manual dispatch.
+`.github/workflows/deploy-azure.yml` runs on every push to `main` that touches `backend-ts/`, `ml-service/`, `frontend/` or `infra/`. You can also run it by hand from the Actions tab. It runs `./infra/deploy.sh --images-only`, which:
+- builds and pushes new images and swaps them into `margix-api` and `margix-ml`;
+- uploads the web app;
+- finishes only when `/health` answers and the running version uses the new image.
+
+**Secrets never go to GitHub.** They stay in Azure. The GitHub login can only change `margix-rg`, as Contributor. Template changes (`main.bicep`) and secret changes are applied from a signed-in machine with `./infra/deploy.sh` or `./infra/set-secrets.sh`.
+
+**One-time switch-on.** The job is skipped until this step is done. The subscription owner runs:
+```bash
+./infra/github-oidc.sh
+```
+It creates a passwordless login for GitHub (a federated credential) and gives it Contributor on `margix-rg`. It then stores `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` as repository **variables** (not secrets) using the `gh` CLI.
+
+Optionally, add the public Mapbox token as the variable `VITE_MAPBOX_TOKEN`, so web maps built by GitHub draw roads.
+
+**Status on 30 Sep 2026:** the workflow and the `--images-only` path are in place and tested from a signed-in Mac. `github-oidc.sh` hasn't been run yet, so pushes don't deploy to Azure yet.
 
 ### 4.5 Moving margixindia.com to Azure
 

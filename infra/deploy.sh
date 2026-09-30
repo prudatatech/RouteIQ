@@ -2,6 +2,8 @@
 # One-command, idempotent deploy of MargixIndia to Azure.
 #   ./infra/deploy.sh                 everything
 #   ./infra/deploy.sh --only-infra    resource group, Bicep, budget; no images, no web
+#   ./infra/deploy.sh --images-only   build + push images, swap them in, deploy the web; keeps the secrets
+#                                     and settings already in Azure (used by GitHub Actions on push)
 #   ./infra/deploy.sh --skip-api      do not build/push/roll the api and ml images
 #   ./infra/deploy.sh --skip-web      do not build/deploy the frontend
 # Re-running is safe: Bicep is declarative and images are tagged with the git sha.
@@ -9,14 +11,15 @@ set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-SKIP_WEB=0; SKIP_API=0; ONLY_INFRA=0
+SKIP_WEB=0; SKIP_API=0; ONLY_INFRA=0; IMAGES_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --skip-web) SKIP_WEB=1 ;;
     --skip-api) SKIP_API=1 ;;
     --only-infra) ONLY_INFRA=1 ;;
+    --images-only) IMAGES_ONLY=1 ;;
     -h|--help) sed -n '2,7p' "${BASH_SOURCE[0]}"; exit 0 ;;
-    *) die "unknown flag: $arg (use --skip-web, --skip-api, --only-infra)" ;;
+    *) die "unknown flag: $arg (use --skip-web, --skip-api, --only-infra, --images-only)" ;;
   esac
 done
 
@@ -86,6 +89,13 @@ deploy_bicep() { # api image, ml image
 
 out() { az deployment group show -g "$RG" -n "${PREFIX}-main" --query "properties.outputs.$1.value" -o tsv; }
 
+if [[ $IMAGES_ONLY -eq 1 ]]; then
+  # No Bicep and no secrets: read the names from the last infra deployment and only swap images.
+  log "Images only: reading $RG from the last infra deployment"
+  ACR_NAME="$(out acrName)"; ACR_SERVER="$(out acrLoginServer)"
+  API_FQDN="$(out apiFqdn)"; WEB_HOST="$(out webHostname)"
+  [[ -n "$ACR_SERVER" && -n "$API_FQDN" ]] || die "no infra deployment found in $RG: run ./infra/deploy.sh once first"
+else
 # 5. resource group + infra, keeping whatever image is already running
 log "Resource group $RG in $LOCATION"
 az group create --name "$RG" --location "$LOCATION" --only-show-errors -o none
@@ -114,6 +124,8 @@ else
   warn "BUDGET_EMAIL is empty in azure.env: no budget alerts configured"
 fi
 
+fi
+
 if [[ $ONLY_INFRA -eq 1 ]]; then
   log "Infra only: done. API: https://$API_FQDN  Web: https://$WEB_HOST"
   exit 0
@@ -128,7 +140,7 @@ NEW_API_IMAGE=""
 
 # backend-ts and ml-service exit at start-up without Supabase credentials, so rolling real images
 # before secrets exist would only crash-loop. Keep the placeholder until they are filled in.
-if [[ $SKIP_API -eq 0 && ( -z "$(secret_value SUPABASE_URL)" || -z "$(secret_value SUPABASE_SERVICE_ROLE_KEY)" ) ]]; then
+if [[ $IMAGES_ONLY -eq 0 && $SKIP_API -eq 0 && ( -z "$(secret_value SUPABASE_URL)" || -z "$(secret_value SUPABASE_SERVICE_ROLE_KEY)" ) ]]; then
   warn "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing in infra/secrets.env: skipping the api and ml images."
   warn "Fill infra/secrets.env, then run ./infra/deploy.sh again (or with --skip-web)."
   SKIP_API=1
@@ -150,14 +162,23 @@ if [[ $SKIP_API -eq 0 ]]; then
   docker push "$NEW_API_IMAGE"
   docker push "$NEW_ML_IMAGE"
 
-  # 8. roll the apps: re-run Bicep with the real images (also fixes the ingress port and adds probes)
-  deploy_bicep "$NEW_API_IMAGE" "$NEW_ML_IMAGE"
+  # 8. roll the apps
+  if [[ $IMAGES_ONLY -eq 1 ]]; then
+    # Only the image changes; secrets, env vars, ingress and probes stay as Bicep last set them.
+    log "Swapping in $NEW_API_IMAGE and $NEW_ML_IMAGE"
+    az containerapp update -g "$RG" -n "$API_APP" --image "$NEW_API_IMAGE" --only-show-errors -o none
+    az containerapp update -g "$RG" -n "$ML_APP" --image "$NEW_ML_IMAGE" --only-show-errors -o none
+  else
+    # re-run Bicep with the real images (also fixes the ingress port and adds probes)
+    deploy_bicep "$NEW_API_IMAGE" "$NEW_ML_IMAGE"
+  fi
 fi
 
 # 9. frontend
 if [[ $SKIP_WEB -eq 0 ]]; then
   API_URL="https://${API_DOMAIN:-$API_FQDN}"
-  MAPBOX_PUBLIC="$(secret_value VITE_MAPBOX_TOKEN)"
+  # The public pk. token: from secrets.env locally, or the VITE_MAPBOX_TOKEN variable in CI
+  MAPBOX_PUBLIC="$(secret_value VITE_MAPBOX_TOKEN)"; MAPBOX_PUBLIC="${MAPBOX_PUBLIC:-${VITE_MAPBOX_TOKEN:-}}"
   [[ -n "$MAPBOX_PUBLIC" ]] || warn "VITE_MAPBOX_TOKEN is blank in secrets.env: the map builds without a public Mapbox token"
   log "Building frontend against $API_URL"
   ( cd "$ROOT_DIR/frontend"
