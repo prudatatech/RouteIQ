@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import { AlarmSettingsSection } from '@/components/fleet/AlarmSettings'
 import { AutoEscalationSetting } from '@/components/tpl/AutoEscalationSetting'
 import { PeopleSettingsCard } from '@/components/people/PeopleSettingsCard'
+import { CompanyProfileCard } from '@/components/money/CompanyProfileCard'
 
 const PHONE_PATTERN = /^\+?[0-9]{7,15}$/
 
@@ -140,6 +141,10 @@ export default function SettingsPage() {
               )}
             </CardBody>
           </Card>
+
+          <div className="lg:col-span-2">
+            <CompanyProfileCard />
+          </div>
 
           <DispatchPhoneCard />
 

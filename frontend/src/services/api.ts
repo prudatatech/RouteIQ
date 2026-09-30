@@ -4,6 +4,7 @@ import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
+import type { CompanyProfile, InvoiceDetail, InvoiceSummary } from '@/utils/finance'
 
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
@@ -565,10 +566,17 @@ export interface ExpenseInput {
 export const financeAPI = {
   summary: (range: DateParams) => api.get('/finance/summary', { params: range }).then(r => r.data),
   unpriced: (range: DateParams) => api.get('/finance/unpriced', { params: range }).then(r => ensureArray(r.data)),
-  invoices: (params: DateParams & { status?: string }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
+  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
   createInvoice: (target: { shipment_id: string } | { manifest_id: string }) => api.post('/finance/invoices', target).then(r => r.data),
-  payInvoice: (id: string) => api.put(`/finance/invoices/${id}/pay`).then(r => r.data),
-  voidInvoice: (id: string) => api.put(`/finance/invoices/${id}/void`).then(r => r.data),
+  invoiceSummary: () => api.get('/finance/invoices/summary').then(r => r.data as InvoiceSummary),
+  /** Offline payment: staff record how and when the money arrived. */
+  payInvoice: (id: string, data: { method: string; reference?: string; paid_on?: string }) => api.put(`/finance/invoices/${id}/pay`, data).then(r => r.data),
+  voidInvoice: (id: string, reason: string) => api.put(`/finance/invoices/${id}/void`, { reason }).then(r => r.data),
+  /** Sets the price of a delivery that has none and issues its invoice. */
+  setPrice: (data: { kind: 'shipment' | 'manifest'; id: string; amount: number }) =>
+    api.post('/finance/unpriced/price', data).then(r => r.data as { invoice_id: string; invoice_number: string | null; amount: number }),
+  company: () => api.get('/finance/company').then(r => r.data as CompanyProfile),
+  saveCompany: (data: Partial<CompanyProfile>) => api.put('/finance/company', data).then(r => r.data as CompanyProfile),
   expenses: (params: DateParams & { category?: string; vehicle_id?: string }) => api.get('/finance/expenses', { params }).then(r => ensureArray(r.data)),
   createExpense: (data: ExpenseInput) => api.post('/finance/expenses', data).then(r => r.data),
   updateExpense: (id: string, data: Partial<ExpenseInput>) => api.put(`/finance/expenses/${id}`, data).then(r => r.data),
@@ -579,6 +587,12 @@ export const financeAPI = {
   settings: () => api.get('/finance/settings').then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
   saveFuelPrice: (fuel_price_per_litre: number) =>
     api.put('/finance/settings', { fuel_price_per_litre }).then(r => r.data as { fuel_price_per_litre: number | null; rate_per_km: number | null }),
+}
+
+/** One invoice: the document with its links, and its PDF. */
+export const invoicesAPI = {
+  get: (id: string) => api.get(`/invoices/${id}`).then(r => r.data as InvoiceDetail),
+  pdf: (id: string) => api.get(`/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
 }
 
 export interface CustomerBooking {

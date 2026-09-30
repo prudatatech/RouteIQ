@@ -99,10 +99,12 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    to: '/finance', label: 'Money', icon: Banknote, roles: admins, badge: 'money',
+    to: '/money', label: 'Money', icon: Banknote, roles: admins, badge: 'money',
+    // Old claim links and notifications still open /cargo?tab=claims: keep Money lit for them
+    also: ['/cargo?tab=claims'],
     children: [
-      { to: '/finance', label: 'Finance', roles: admins, badge: 'money' },
-      { to: '/cargo?tab=claims', label: 'Claims', roles: admins },
+      { to: '/money', label: 'Overview', roles: admins, badge: 'money' },
+      { to: '/money?tab=claims', label: 'Claims', roles: admins },
     ],
   },
   {

@@ -16,7 +16,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer, bids,
-  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, finance, adminSettings, vendorInvoices,
+  backhaul, requests, liveMap, tplPartners, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, vendorInvoices,
   vendorPortal, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipments, vendorShipmentRequest, vendorTracking,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -35,7 +35,8 @@ const UsersPage = adminUsers.Component
 const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
-const FinancePage = finance.Component
+const MoneyPage = money.Component
+const InvoicePage = invoicePage.Component
 const SettingsPage = adminSettings.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const BackhaulPage = backhaul.Component
@@ -401,11 +402,18 @@ export default function App() {
                 <AnalyticsPage />
               </PrivateRoute>
             } />
-            <Route path="finance" element={
+            <Route path="money" element={
               <PrivateRoute allowedRoles={ADMINS}>
-                <FinancePage />
+                <MoneyPage />
               </PrivateRoute>
             } />
+            <Route path="money/invoices/:id" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <InvoicePage />
+              </PrivateRoute>
+            } />
+            {/* Finance became Money; keep old links and bookmarks (and their ?tab=) working */}
+            <Route path="finance" element={<MovedTo to="/money" />} />
             <Route path="admin/settings" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <SettingsPage />

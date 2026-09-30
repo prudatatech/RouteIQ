@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { toCsv } from './csv'
-import { EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, categoryLabel, expenseCsvRows, invoiceCsvRows, type Expense, type Invoice } from './finance'
+import { EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, categoryLabel, paymentMethodLabel, expenseCsvRows, invoiceCsvRows, type Expense, type Invoice } from './finance'
 
 const expense: Expense = {
   id: 'e1', vehicle_id: 'v1', route_id: null, plate_number: 'MH12AB1234', category: 'toll', amount: 400.5,
@@ -28,5 +28,12 @@ describe('finance CSV', () => {
   it('falls back to the raw value for an unknown category', () => {
     expect(categoryLabel('fuel')).toBe('Fuel')
     expect(categoryLabel('mystery')).toBe('mystery')
+  })
+})
+
+describe('payment methods', () => {
+  it('names the four offline ways an invoice is paid', () => {
+    expect(['bank', 'upi', 'cash', 'cheque'].map(paymentMethodLabel)).toEqual(['Bank transfer', 'UPI', 'Cash', 'Cheque'])
+    expect(paymentMethodLabel(null)).toBe('')
   })
 })
