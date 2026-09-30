@@ -18,7 +18,7 @@ const CLOSED: LoadStage = 'closed'
 function ActionStrip({ items }: { items: ActionItem[] }) {
   if (items.length === 0) return null
   return (
-    <section aria-label="What needs you" className="space-y-2">
+    <section aria-label="What needs you" className="grid gap-2 lg:grid-cols-2">
       {items.map(item => (
         <Alert
           key={item.id}

@@ -7,11 +7,11 @@ import { formatKg } from '@/utils/display'
 /** The route as one line: pickup → drop. Both places wrap on a narrow screen. */
 export function Route({ pickup, drop, className }: { pickup: string | null; drop: string | null; className?: string }) {
   return (
-    <p className={className}>
+    <span className={`block ${className ?? ''}`}>
       <span className="break-words">{pickup ?? '—'}</span>
       <ArrowRight size={14} aria-label="to" className="mx-1.5 inline-block align-[-2px] text-muted" />
       <span className="break-words">{drop ?? '—'}</span>
-    </p>
+    </span>
   )
 }
 
