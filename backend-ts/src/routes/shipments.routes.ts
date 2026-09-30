@@ -382,12 +382,12 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
 // ── POST /:shipment_id/assign ──────────────────────────────
 router.post('/:shipment_id/assign', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
   try {
-    const { vehicle_id } = req.body;
+    const { vehicle_id, dispatch } = req.body;
     if (!vehicle_id) {
       res.status(400).json({ detail: 'vehicle_id is required' });
       return;
     }
-    const shipment = await ShipmentService.assignDriver(req.params.shipment_id, vehicle_id, { id: req.user!.user_id, role: req.user!.role });
+    const shipment = await ShipmentService.assignDriver(req.params.shipment_id, vehicle_id, { id: req.user!.user_id, role: req.user!.role }, { dispatch: dispatch === true });
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found or could not be assigned' });
       return;

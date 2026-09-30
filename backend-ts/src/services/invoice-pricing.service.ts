@@ -29,7 +29,7 @@ async function priceShipment(id: string, amount: number): Promise<void> {
     .from('shipments').select('id, status, bid_id, is_master, parent_shipment_id').eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read shipment: ${error.message}`);
   if (!s) throw new HttpError(404, 'Shipment not found');
-  if (s.status !== 'delivered') throw new HttpError(409, 'Only delivered shipments can be priced here');
+  if (s.status !== 'delivered' && s.status !== 'partially_delivered') throw new HttpError(409, 'Only delivered shipments can be priced here');
 
   if (s.is_master || s.parent_shipment_id) {
     const { error: upErr } = await supabase.from('shipments').update({ freight_share: amount }).eq('id', id);

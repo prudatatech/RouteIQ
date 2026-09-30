@@ -634,7 +634,7 @@ export class ShipmentService {
     // 5. Create tamper-evident log
     await ShipmentService.recordShipmentLog(dbShipment.id, 'created', null, null, undefined, actor);
 
-    // 5.5 A shipment created with a vehicle is assigned to it and its route dispatched
+    // 5.5 A shipment created with a vehicle is assigned to it; its trip stays pending unless dispatch was asked for
     if (shipmentIn.vehicle_id && !shipmentIn.open_bidding && createdDpIds.length > 0) {
       await markAssigned(
         { id: dbShipment.id, status: 'created', origin_lat: shipmentIn.origin_lat ?? null, origin_lng: shipmentIn.origin_lng ?? null },
@@ -642,7 +642,7 @@ export class ShipmentService {
         { id: routeIdForVehicle! },
         actor,
       );
-      await dispatchRoute(routeIdForVehicle!);
+      if (shipmentIn.dispatch) await dispatchRoute(routeIdForVehicle!);
     }
 
     // 6. Recalculate vehicle capacity if vehicle assigned
@@ -666,10 +666,11 @@ export class ShipmentService {
 
   /**
    * Assign a driver/vehicle to an existing shipment. Also puts a failed delivery
-   * (exception) back on a vehicle. The route is created pending and dispatched through
-   * the route service, so the vehicle goes on_route and the driver is told.
+   * (exception) back on a vehicle. The route is created pending. Only with `dispatch: true` is
+   * it sent through the route service (vehicle on_route, driver told); otherwise it waits in
+   * Dispatch under "Trips to send".
    */
-  static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null): Promise<Shipment | null> {
+  static async assignDriver(shipmentId: string, vehicleId: string, actor?: LogActor | null, opts: { dispatch?: boolean } = {}): Promise<Shipment | null> {
     const shipment = await this.getShipment(shipmentId);
     if (!shipment) throw new HttpError(404, 'Shipment not found');
     await assertNotSplit(shipmentId, 'Assign a vehicle');
@@ -755,7 +756,8 @@ export class ShipmentService {
       { id: routeId },
       actor,
     );
-    if (routeStatus === 'pending') await dispatchRoute(routeId);
+    // The trip stays pending in Dispatch (Trips to send) unless the caller asked to send it now
+    if (opts.dispatch === true && routeStatus === 'pending') await dispatchRoute(routeId);
 
     // Optionally trigger vendor match
     const lastStop = finalDeliveryPoint<any>(deliveryPoints)!;
@@ -1362,7 +1364,7 @@ export class ShipmentService {
    */
   static async afterStatusChange(shipmentId: string, status: string, actor?: LogActor | null): Promise<void> {
     // Bill the delivery (complete-stop, custody deliveries and verify-pod all end up here)
-    if (status === 'delivered') await InvoiceService.onShipmentDelivered(shipmentId);
+    if (status === 'delivered' || status === 'partially_delivered') await InvoiceService.onShipmentDelivered(shipmentId);
 
     // Keep a customer's booking (and their notifications) in step with the shipment
     try {

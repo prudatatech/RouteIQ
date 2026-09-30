@@ -429,6 +429,64 @@ export async function recordJourneyAfterTransferSafe(masterId: string, fromVehic
   }
 }
 
+/**
+ * A transfer took customer shipments (lots) off a vehicle: when that leaves the vehicle with no
+ * goods of the trip aboard, the first driver's leg is over at the handover. Pays the from-route:
+ * the per-trip amount and the km up to the handover point (GPS from the route's start, else the
+ * pickup to the handover). The entry is keyed on the route, so the route completing later finds
+ * it and pays nothing more; doing this twice pays once. Returns null when there is nothing to pay.
+ */
+export async function recordShipmentLegAfterTransfer(shipmentIds: string[], transferId: string, fromVehicleId: string): Promise<{ entry: any; created: boolean } | null> {
+  if (shipmentIds.length === 0) return null;
+  // Goods still aboard: the route completes as usual and pays the whole trip
+  const [{ data: aboard }, { data: aboardLoads }] = await Promise.all([
+    supabase.from('shipments').select('id').eq('current_vehicle_id', fromVehicleId).eq('current_holder', 'vehicle')
+      .not('status', 'in', '(delivered,partially_delivered,returned,lost,cancelled)').limit(1),
+    supabase.from('cargo_manifest').select('id').eq('current_vehicle_id', fromVehicleId).eq('current_holder', 'vehicle')
+      .not('status', 'in', '(delivered,completed,returned,cancelled,lost)').limit(1),
+  ]);
+  if ((aboard ?? []).length > 0 || (aboardLoads ?? []).length > 0) return null;
+
+  const { data: points } = await supabase.from('delivery_points').select('id').in('shipment_id', shipmentIds);
+  const pointIds = (points ?? []).map((d: any) => d.id);
+  if (pointIds.length === 0) return null;
+  const { data: stops } = await supabase.from('route_stops').select('route_id').in('delivery_point_id', pointIds);
+  const routeIds = [...new Set((stops ?? []).map((r: any) => r.route_id as string))];
+  if (routeIds.length === 0) return null;
+  // The route the driver drove: one that was started (by then the transfer may have cancelled it, as the
+  // moved goods were its last stops)
+  const { data: routes } = await supabase.from('routes').select('id, vehicle_id, status, started_at, created_at')
+    .in('id', routeIds).eq('vehicle_id', fromVehicleId).not('started_at', 'is', null);
+  const route = (routes ?? []).sort((a: any, b: any) => String(b.started_at ?? b.created_at).localeCompare(String(a.started_at ?? a.created_at)))[0];
+  if (!route) return null;
+
+  const existing = await existingEntry('route_id', route.id);
+  if (existing) return { entry: existing, created: false };
+
+  const { data: transfer } = await supabase.from('cargo_transfers').select('id, from_vehicle_id, meet_lat, meet_lng, completed_at').eq('id', transferId).maybeSingle();
+  const finishedAt = transfer?.completed_at ?? new Date().toISOString();
+  const gps = route.started_at ? await gpsKm(fromVehicleId, route.started_at, finishedAt) : null;
+  let distance: TripKm;
+  if (gps != null) {
+    distance = { km: gps, source: 'gps' };
+  } else {
+    const { data: origins } = await supabase.from('shipments').select('origin_lat, origin_lng').in('id', shipmentIds);
+    const start = (origins ?? []).map((o: any) => pt(o.origin_lat, o.origin_lng)).find(Boolean) ?? null;
+    const handover = transfer ? await handoverPoint(transfer) : null;
+    distance = journeyEstimateKm(start, handover ? [handover] : []);
+  }
+  return saveEntry({ key: 'route_id', tripId: route.id, vehicleId: fromVehicleId, finishedAt, distance });
+}
+
+/** The hook the transfer code calls for shipments: never throws. */
+export async function recordShipmentLegAfterTransferSafe(shipmentIds: string[], transferId: string, fromVehicleId: string): Promise<void> {
+  try {
+    await recordShipmentLegAfterTransfer(shipmentIds, transferId, fromVehicleId);
+  } catch (e) {
+    console.error('[driver-pay] Could not record the leg pay after a transfer:', e);
+  }
+}
+
 /** Entries for trips that finished before driver pay existed. Staff choose the first trip date. */
 export async function backfillTripPay(actor: AuditActor, fromDate: string) {
   validDate(fromDate, 'from');

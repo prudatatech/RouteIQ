@@ -278,6 +278,21 @@ async function lotsInOpenCases(kind: RefKind, lots: Consignment[]): Promise<Set<
   return out;
 }
 
+/**
+ * Whether a consignment is settled: nothing of it is still on a vehicle, at a hub, returning or
+ * on hold. A master is settled when all its live lots are; anything else when it is delivered,
+ * returned or lost, or partially delivered with no piece left to hold.
+ */
+export async function consignmentSettled(kind: RefKind, id: string): Promise<boolean> {
+  const c = await loadById(kind, id);
+  if (!c) return false;
+  if (c.isMaster) {
+    const lots = (await lotsOf(kind, id)).filter(l => l.status !== 'cancelled');
+    return lots.length > 0 && lots.every(l => settled({ status: l.status, holder: l.holder, pieces: l.pieces, openCase: false }));
+  }
+  return settled({ status: c.status, holder: c.holder, pieces: c.pieces, openCase: false });
+}
+
 function rollupInput(lots: Consignment[], inCases: Set<string>): RollupLot[] {
   return lots.map(l => ({ status: l.status, holder: l.holder, pieces: l.pieces, openCase: inCases.has(l.id) }));
 }
@@ -286,7 +301,7 @@ function rollupInput(lots: Consignment[], inCases: Set<string>): RollupLot[] {
 async function afterMasterStatus(master: Consignment, status: string, actor: Actor | null, lotsCount: number): Promise<void> {
   if (master.kind === 'shipment') {
     await ShipmentService.recordShipmentLog(master.id, status, null, null, { rollup: true, lots: lotsCount }, actor ? { id: actor.id, role: actor.role } : null);
-    if (status === 'delivered') await InvoiceService.onShipmentDelivered(master.id);
+    if (status === 'delivered' || status === 'partially_delivered') await InvoiceService.onShipmentDelivered(master.id);
     // A failed delivery of one lot is told to the customer on that lot, not again for the whole
     if (status !== 'exception') {
       try {
@@ -744,7 +759,7 @@ export async function splitConsignment(
   target: Consignment,
   input: { reason: SplitReason; lots: LotInput[]; note?: string | null },
   actor: Actor | null,
-  opts: { via?: 'api' | 'transfer' | 'create' } = {},
+  opts: { via?: 'api' | 'transfer' | 'create'; dispatch?: boolean } = {},
 ): Promise<SplitResult> {
   const c = await reload(target);
   if (c.isMaster) await refuseMasterSplit(c);
@@ -1054,7 +1069,7 @@ export async function splitConsignment(
   if (emptied && emptied !== c.status) {
     if (c.kind === 'shipment') {
       await ShipmentService.recordShipmentLog(c.id, emptied, null, null, { split_into: lotCs.map(l => l.code) }, actor);
-      if (emptied === 'delivered') await InvoiceService.onShipmentDelivered(c.id);
+      if (emptied === 'delivered' || emptied === 'partially_delivered') await InvoiceService.onShipmentDelivered(c.id);
     } else if (emptied === 'delivered') {
       await InvoiceService.onManifestDelivered(c.id);
     }
@@ -1096,8 +1111,9 @@ export async function splitConsignment(
     }
   }
 
-  // A route made for lots assigned at the sender starts, as for any assigned shipment
-  for (const routeId of toDispatch) {
+  // A route made for lots assigned at the sender starts, as for any assigned shipment, except a
+  // shipment created with a vehicle: that trip waits unless the caller asked to send it
+  for (const routeId of opts.via === 'create' && opts.dispatch !== true ? [] : toDispatch) {
     try {
       const { routeService } = await import('../route.service');
       await routeService.changeStatus(routeId, 'active');
@@ -1322,7 +1338,7 @@ export async function createMultiDrop(input: ShipmentCreate, actor: LogActor | n
       to_vehicle_id: input.vehicle_id ?? null,
       eway_bill_ref: d.eway_bill_ref ?? null,
     })),
-  }, splitActor, { via: 'create' });
+  }, splitActor, { via: 'create', dispatch: input.dispatch === true });
 
   // Lots waiting for a vehicle go through the matching engine like any new shipment
   if (!input.vehicle_id) {

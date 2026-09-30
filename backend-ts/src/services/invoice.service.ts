@@ -13,6 +13,9 @@
  *     master's price that falls to it; a master is billed only for the part it kept (its own
  *     freight_share, the pieces delivered before the split), so the master's price is never
  *     billed twice
+ * A shipment or lot that settles as partially_delivered (nothing left on a vehicle or at a hub) is
+ * invoiced too, for its price or freight_share; the short and refused pieces are written on the
+ * invoice's notes so a claim can offset it. One that still holds pieces waits until it settles.
  * Every invoice is issued with a due date: the payment terms in Settings (company profile), 15 days by default.
  * With no price no invoice is written; the delivery shows up under "unpriced
  * deliveries" in Finance instead. Money is rupees; the amount is before GST.
@@ -69,6 +72,8 @@ interface NewInvoice {
   amount: number;
   gst_rate: number;
   price_source: string;
+  /** Free text on the invoice, e.g. the pieces short or refused on a partial delivery. */
+  notes?: string | null;
 }
 
 interface InvoiceRow {
@@ -135,12 +140,14 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
   const amount = round2(input.amount);
   const gstAmount = round2((amount * input.gst_rate) / 100);
   const termsDays = await paymentTermsDays();
+  const { notes, ...fields } = input;
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = new Date();
     const { data, error } = await supabase
       .from('invoices')
       .insert({
-        ...input,
+        ...fields,
+        ...(notes ? { notes } : {}),
         invoice_number: await nextInvoiceNumber(now),
         amount,
         gst_amount: gstAmount,
@@ -165,16 +172,40 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
   throw new Error('Failed to create invoice: could not get a free invoice number');
 }
 
+/** What a partial delivery left unbilled, in words for the invoice notes. Null when nothing was short or refused. */
+export function partialDeliveryNote(row: { pieces_total?: unknown; pieces_delivered?: unknown; pieces_short?: unknown; pieces_returned?: unknown }): string | null {
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const short = n(row.pieces_short);
+  const refused = n(row.pieces_returned);
+  const delivered = n(row.pieces_delivered);
+  const total = row.pieces_total == null ? delivered + short + refused : n(row.pieces_total);
+  const parts = [`${delivered} of ${total} pieces delivered`];
+  if (short > 0) parts.push(`${short} short`);
+  if (refused > 0) parts.push(`${refused} refused or returned`);
+  return `Partial delivery: ${parts.join(', ')}. A claim for the missing pieces can offset this invoice.`;
+}
+
 export const InvoiceService = {
-  /** Invoice for a delivered shipment, priced from its accepted bid. Safe to call twice. */
+  /**
+   * Invoice for a delivered shipment (or one that settled as partially_delivered), priced from its
+   * accepted bid, freight charge or lot share. Safe to call twice: a shipment is never invoiced twice.
+   */
   async createForShipment(shipmentId: string): Promise<InvoiceResult> {
     const { data: existing } = await supabase.from('invoices').select('id').eq('shipment_id', shipmentId).neq('status', 'void').maybeSingle();
     if (existing) return { status: 'exists', invoiceId: existing.id };
 
     const { data: shipment, error } = await supabase
-      .from('shipments').select('id, bid_id, freight_charge, is_master, parent_shipment_id, freight_share').eq('id', shipmentId).maybeSingle();
+      .from('shipments').select('id, status, bid_id, freight_charge, is_master, parent_shipment_id, freight_share, pieces_total, pieces_delivered, pieces_short, pieces_returned').eq('id', shipmentId).maybeSingle();
     if (error) throw new Error(`Failed to read shipment: ${error.message}`);
     if (!shipment) return { status: 'skipped' };
+
+    // A partial delivery is billed once nothing of it is left on a vehicle, at a hub, returning or held
+    let notes: string | null = null;
+    if (shipment.status === 'partially_delivered') {
+      const { consignmentSettled } = await import('./cargo/lots.service');
+      if (!(await consignmentSettled('shipment', shipmentId))) return { status: 'skipped' };
+      notes = partialDeliveryNote(shipment);
+    }
 
     // Lots and masters: the share of the freight that is theirs, and the vendor of the master's won bid
     if (shipment.is_master || shipment.parent_shipment_id) {
@@ -193,6 +224,7 @@ export const InvoiceService = {
         amount: share,
         gst_rate: await shipmentGstRate(masterId),
         price_source: PRICE_SOURCE_LOT,
+        notes,
       });
       return { status: 'created', invoiceId: lotInvoice };
     }
@@ -226,6 +258,7 @@ export const InvoiceService = {
       amount,
       gst_rate: await shipmentGstRate(shipmentId),
       price_source: priceSource,
+      notes,
     });
     return { status: 'created', invoiceId };
   },
@@ -326,6 +359,7 @@ export const InvoiceService = {
    * and never fails the delivery. The invoice can be missed but not the POD.
    */
   async onShipmentDelivered(shipmentId: string): Promise<void> {
+    // Also called for a shipment that settled as partially_delivered (see createForShipment)
     try {
       await InvoiceService.createForShipment(shipmentId);
     } catch (e) {

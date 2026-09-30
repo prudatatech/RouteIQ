@@ -19,7 +19,7 @@ import { isPlaceholderPlate } from '../../core/vehicles';
 import type { TokenData } from '../../core/auth';
 import { ShipmentService } from '../shipment.service';
 import { releaseVehicleLoad } from '../route.service';
-import { recordJourneyAfterTransferSafe } from '../driver-pay.service';
+import { recordJourneyAfterTransferSafe, recordShipmentLegAfterTransferSafe } from '../driver-pay.service';
 import {
   CONDITIONS, RefSchema, addPieces, assertNotMaster, piecesHeld, piecesPatch, refColumns, reload, resolveRef, weightOf, writeConsignment,
   type Actor, type Condition, type Consignment,
@@ -386,6 +386,8 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
   for (const masterId of new Set(pairs.filter(p => p.c.kind === 'manifest').map(p => p.c.parentId ?? p.c.id))) {
     await recordJourneyAfterTransferSafe(masterId, transfer.from_vehicle_id);
   }
+  // Customer shipments (lots): the first driver's leg up to the handover is paid too
+  await recordShipmentLegAfterTransferSafe(pairs.filter(p => p.c.kind === 'shipment').map(p => p.c.id), id, transfer.from_vehicle_id);
   if (newRouteId) await supabase.from('cargo_transfers').update({ new_route_id: newRouteId }).eq('id', id);
   await notifyStaffSafe(
     `Transfer ${transfer.code} completed`,

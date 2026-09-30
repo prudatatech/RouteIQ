@@ -153,11 +153,19 @@ describe('assigning a vehicle', () => {
     supabaseMock.rows('vehicles')[0] = vehicle();
   });
 
-  it('adds the load to the vehicle and puts it on the road', async () => {
+  it('adds the load to the vehicle, puts it on the road and tells the driver at once (a vendor load has no trip to hold back)', async () => {
     const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000 });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ status: 'on_route', current_load_kg: 600, available_capacity_kg: 400 });
     expect(supabaseMock.rows('vendor_shipment_requests')[0].cost).toBe(9000);
+    expect(supabaseMock.writes('notifications', 'POST').map(w => w.body).some(b => b.type === 'cargo_assigned')).toBe(true);
+  });
+
+  it('ignores a dispatch flag: assigning a vendor load always sends it', async () => {
+    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000, dispatch: false });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
+    expect(supabaseMock.writes('notifications', 'POST').map(w => w.body).some(b => b.type === 'cargo_assigned')).toBe(true);
   });
 
   it('refuses a load that does not fit the free capacity, without claiming the request', async () => {

@@ -722,8 +722,9 @@ export const vendorService = {
       throw new Error(`Failed to create manifest: ${manifestErr.message}`);
     }
 
-    // The load now sits on the vehicle. It goes on the road only from an operating status
-    // (checked above), so a vehicle that went into maintenance meanwhile is left alone.
+    // The load now sits on the vehicle. A vendor load has no trip to hold back in Dispatch, so
+    // assigning it always sends it: the vehicle goes on the road (only from an operating status,
+    // checked above, so a vehicle that went into maintenance meanwhile is left alone) and the driver is told.
     const newLoad = (Number(assignee.current_load_kg) || 0) + required;
     const newAvail = Math.max(0, (free ?? 0) - required);
     await supabase.from('vehicles').update({
