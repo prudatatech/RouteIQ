@@ -14,22 +14,23 @@ import { supabaseMock } from './mock-supabase';
 
 // supabase-js (PostgREST, GoTrue/JWKS, Storage) all call the global fetch(),
 // which Node implements with undici — a client with its own keep-alive
-// connection pool, completely separate from node:http's Agent. Each test
-// file's mock Supabase server is short-lived (a fresh instance on a fresh
-// port per file, per `test/support/mock-supabase.ts`), so a socket undici
-// keeps pooled past the moment the server considers a response finished
-// (or the file ends and the server closes) is a socket that can be handed
-// back out for a later request and get ECONNRESET, "socket hang up", or a
-// desynced HTTP parse ("Parse Error: Expected HTTP/...") when reused.
-// Disabling pooling means every fetch() opens its own connection, so there
-// is never a stale socket to race against.
-setGlobalDispatcher(new Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 }));
+// connection pool, completely separate from node:http's Agent. Keep-alive
+// stays on: a new connection per fetch() leaves every socket in TIME_WAIT
+// for 30s on macOS, and the full suite's thousands of mock Supabase calls
+// then use up the ephemeral ports (connect EADDRNOTAVAIL).
+//
+// Reuse is safe because the client always gives up an idle socket before
+// the server does. undici drops it after 4s, while the mock server (a plain
+// node:http server) keeps it for 5s (`server.keepAliveTimeout`). The server
+// never closes a socket that undici might still send a request on. When a
+// test file ends, `supabaseMock.stop()` closes the idle sockets too.
+setGlobalDispatcher(new Agent({ keepAliveTimeout: 4_000, keepAliveMaxTimeout: 4_000 }));
 
-// supertest's requests to the app (superagent, via node:http with
-// `agent: false`) and the 'ws' package's WebSocket handshake already open a
-// fresh connection per request/handshake, so this has no effect on pooling
-// for them — it's set only so nothing in this process falls back to a
-// pooled http.globalAgent connection by accident.
+// supertest's requests to the app reuse their connection through the
+// keep-alive agent in test/support/test-app.ts, and the 'ws' package's
+// WebSocket handshake opens its own connection. This is set only so that
+// nothing in this process falls back to a pooled http.globalAgent
+// connection by accident.
 http.globalAgent = new http.Agent({ keepAlive: false });
 
 // Never load a developer's backend-ts/.env into tests
