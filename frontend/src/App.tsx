@@ -432,6 +432,8 @@ export default function App() {
                 <MoneyPage />
               </PrivateRoute>
             } />
+            {/* The menu's Invoices link: the Invoices tab of Money */}
+            <Route path="money/invoices" element={<Navigate to="/money?tab=invoices" replace />} />
             <Route path="money/invoices/:id" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <InvoicePage />

@@ -107,7 +107,7 @@ export const navSections: NavSection[] = [
     also: ['/cargo?tab=claims'],
     children: [
       { to: '/money', label: 'To price', roles: admins, badge: 'money' },
-      { to: '/money?tab=invoices', label: 'Invoices', roles: admins },
+      { to: '/money/invoices', label: 'Invoices', roles: admins },
       { to: '/money?tab=driver-pay', label: 'Driver pay', roles: admins },
       { to: '/money?tab=expenses', label: 'Expenses', roles: admins },
       { to: '/money?tab=claims', label: 'Claims', roles: admins },
