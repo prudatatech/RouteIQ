@@ -4,17 +4,19 @@ import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { Copy, LocateFixed } from 'lucide-react'
 import {
-  Alert, Button, Checkbox, EmptyState, IconButton, Input, Select, Skeleton, StatusPill, statusToLabel,
+  Alert, Button, Checkbox, EmptyState, IconButton, Input, Select, Skeleton, StatusPill,
 } from '@/components/ui'
 import LiveMap from '@/components/map/LiveMap'
 import { capacityAPI, telemetryAPI, vehiclesAPI } from '@/services/api'
 import { reversePlace } from '@/services/geocoding'
-import { apiErrorMessage, freeCapacityKg, haversineKm } from '../format'
+import { apiErrorMessage, freeCapacityKg } from '../format'
+import type { AssignableVehicle } from '../assignVehicle'
+import VehiclePicker from './VehiclePicker'
+import { NEARBY_VEHICLE_RADIUS_KM, nearbyVehicles } from './nearbyVehicles'
 import type { VehicleOption } from '../types'
 import type { StepProps } from './stepProps'
 import { formatKg, formatKm } from '@/utils/display'
 import { DriverLicenceBadge } from '@/components/people/DriverLicenceBadge'
-import { licenceSuffix } from '@/components/people/docs'
 
 const BIDDING_WINDOWS = [5, 10, 15, 30]
 
@@ -37,16 +39,18 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
 
   const hasOrigin = !!(data.origin_lat && data.origin_lng)
 
-  // Saved drafts (archived) are not real vehicles yet; nearest to the pickup first.
-  const options = useMemo(() => vehicles
-    .filter(v => v.status !== 'archived')
-    .map(v => ({
-      ...v,
-      distance_km: hasOrigin && v.latitude != null && v.longitude != null
-        ? haversineKm(data.origin_lat, data.origin_lng, v.latitude, v.longitude)
-        : null,
-    }))
-    .sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity)), [vehicles, hasOrigin, data.origin_lat, data.origin_lng])
+  // Saved drafts (archived) are not real vehicles yet
+  const options = useMemo(() => vehicles.filter(v => v.status !== 'archived'), [vehicles])
+  const pickup = useMemo(() => (hasOrigin ? { lat: data.origin_lat, lng: data.origin_lng } : null), [hasOrigin, data.origin_lat, data.origin_lng])
+  const weightKg = Number(data.total_weight_kg) || 0
+
+  // The map shows the vehicles the list offers: within the base radius (plus the chosen one) and those with no position are not drawn
+  const mapVehicles = useMemo(() => nearbyVehicles(options as AssignableVehicle[], { label: 'New shipment', pickup, weightKg }, NEARBY_VEHICLE_RADIUS_KM, { keepId: data.selectedVehicleId || null })
+    .nearby
+    .filter(a => a.distanceKm !== null || !pickup)
+    .filter(a => a.vehicle.latitude != null && a.vehicle.longitude != null)
+    .map(a => ({ id: a.vehicle.id, plate_number: a.vehicle.plate_number, status: a.vehicle.status ?? 'unknown', latitude: a.vehicle.latitude, longitude: a.vehicle.longitude, vehicle_type: a.vehicle.vehicle_type ?? undefined })),
+  [options, pickup, weightKg, data.selectedVehicleId])
 
   const selected = options.find(v => v.id === data.selectedVehicleId) ?? null
 
@@ -55,14 +59,6 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
     queryFn: () => capacityAPI.getNearbyVendors({ lat: data.origin_lat, lng: data.origin_lng, radius: 50 }),
     enabled: data.open_bidding && hasOrigin,
   })
-
-  const vehicleLabel = (v: VehicleOption & { distance_km: number | null }) => {
-    const parts = [v.plate_number]
-    if (v.distance_km != null) parts.push(`${formatKm(v.distance_km)} away`)
-    if (v.capacity_kg != null) parts.push(`${formatKg(freeCapacityKg(v))} of ${formatKg(v.capacity_kg)} free`)
-    if (v.status && v.status !== 'available') parts.push(statusToLabel(v.status))
-    return parts.join(' · ') + licenceSuffix(v.driver_licence_status)
-  }
 
   const setPickupFromVehicle = async () => {
     if (!selected || selected.latitude == null || selected.longitude == null) return
@@ -105,10 +101,6 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
   const whatsappHref = mobileLink
     ? `https://wa.me/${data.mobilePhone.replace(/\D/g, '')}?text=${encodeURIComponent(`MargixIndia tracking link. Open it on your phone to share your location for this trip: ${mobileLink}`)}`
     : ''
-
-  const mapVehicles = options
-    .filter(v => v.latitude != null && v.longitude != null)
-    .map(v => ({ id: v.id, plate_number: v.plate_number, status: v.status ?? 'unknown', latitude: v.latitude, longitude: v.longitude, vehicle_type: v.vehicle_type ?? undefined }))
 
   return (
     <div className="space-y-5">
@@ -165,17 +157,15 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
         ) : options.length === 0 ? (
           <EmptyState compact title="No vehicles in your fleet" description="Add a vehicle under Fleet to assign it here. You can still create the shipment and assign a vehicle later." />
         ) : (
-          <Select
-            label="Vehicle"
-            required={data.open_bidding}
-            hint={data.open_bidding ? undefined : (hasOrigin ? 'Optional. Nearest to the pickup first.' : 'Optional.')}
-            value={data.selectedVehicleId}
+          <VehiclePicker
+            vehicles={options as AssignableVehicle[]}
+            pickup={pickup}
+            weightKg={weightKg}
+            selectedId={data.selectedVehicleId}
+            onSelect={id => update({ selectedVehicleId: id })}
+            allowNone={!data.open_bidding}
             error={errors.vehicle}
-            onChange={e => update({ selectedVehicleId: e.target.value })}
-          >
-            <option value="">{data.open_bidding ? 'Choose a vehicle' : 'No vehicle yet'}</option>
-            {options.map(v => <option key={v.id} value={v.id}>{vehicleLabel(v)}</option>)}
-          </Select>
+          />
         )}
         {selected?.driver_licence_status && <div><DriverLicenceBadge status={selected.driver_licence_status} /></div>}
 
