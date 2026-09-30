@@ -11,6 +11,8 @@ import { cancelBooking, createBooking, getCustomerBooking, listCustomerBookings 
 import { confirmReceipt, customerCargo } from '../services/cargo/customer.service';
 import { idempotent } from '../core/idempotency';
 import { DropInputSchema } from '../schemas';
+import { listCustomerInvoices } from '../services/customer-invoices.service';
+import { clearCustomerPushToken, saveCustomerPushToken } from '../services/customer-push.service';
 
 const router = Router();
 router.use(requireAuth, requireRole('customer'));
@@ -130,6 +132,33 @@ router.post('/bookings/:id/cancel', async (req: Request, res: Response) => {
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     const user = req.user!;
     res.json(await cancelBooking(bookingId(req), { role: 'customer', userId: user.user_id, actorRole: 'customer' }, parsed.data.reason || null));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /customer/invoices — my invoices (PDF: GET /invoices/:id/pdf) ──
+router.get('/invoices', async (req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(await listCustomerInvoices(req.user!.user_id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── PUT /customer/push-token — this phone's Expo push token; DELETE on sign-out ──
+router.put('/push-token', rateLimitByIp('customer-push-token', 60, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    res.json(await saveCustomerPushToken(req.user!.user_id, req.body?.token));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+router.delete('/push-token', async (req: Request, res: Response) => {
+  try {
+    res.json(await clearCustomerPushToken(req.user!.user_id));
   } catch (e) {
     sendError(req, res, e);
   }

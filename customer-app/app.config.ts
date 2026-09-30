@@ -14,6 +14,14 @@ if (!googleMapsApiKey) {
   console.warn(message);
 }
 
+// The EAS project the push tokens belong to (`eas init` prints it; set it in customer-app/.env or the
+// EAS environment). Without it the app builds, but cannot get a push token, so no pushes arrive.
+const easProjectId = process.env.EAS_PROJECT_ID?.trim();
+
+if (!easProjectId) {
+  console.warn('[app.config] EAS_PROJECT_ID is not set; push notifications will not register a device token.');
+}
+
 // SDK 57's ExpoConfig type dropped the top-level `splash` field (superseded by
 // the expo-splash-screen config plugin), but the native splash still reads it
 // at build time, so it's kept here as-is and the object is cast below instead
@@ -54,11 +62,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
       predictiveBackGestureEnabled: false,
     },
+    ...(easProjectId ? { extra: { eas: { projectId: easProjectId } } } : {}),
     web: {
       favicon: './assets/favicon.png',
     },
     plugins: [
       'expo-secure-store',
+      // Push notifications: the Android channel the backend sends customer pushes to (see
+      // services/push.ts, PUSH_CHANNEL), and the small status-bar icon (the white-on-transparent
+      // adaptive icon), tinted in the brand colour.
+      [
+        'expo-notifications',
+        {
+          icon: './assets/android-icon-monochrome.png',
+          color: '#FFC107', // the theme's accentFill (design/tokens.json); the config cannot import app code
+          defaultChannel: 'default',
+        },
+      ],
+      // Invoice PDFs are opened or shared from a saved file
+      'expo-sharing',
       // Claim photos: from the library or taken on the spot. No video, so no microphone.
       [
         'expo-image-picker',

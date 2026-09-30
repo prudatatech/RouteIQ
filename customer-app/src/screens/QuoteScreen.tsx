@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
+import { askForPushAfterBooking } from '../services/push';
 import { api, BOOKING_CREATED_EVENT, type BookingDrop, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
@@ -12,6 +13,9 @@ import { hasTranslation } from '../locales';
 
 /** How far ahead a pickup can be planned from the date list. */
 const DAYS_AHEAD = 60;
+
+/** Lets the "Booking sent" view appear before the notification question does. */
+const PUSH_PROMPT_DELAY_MS = 800;
 
 type DayChoice = 'today' | 'tomorrow' | 'other';
 
@@ -82,6 +86,8 @@ export default function QuoteScreen({ navigation, route }: any) {
       });
       setBookedId(created.id);
       DeviceEventEmitter.emit(BOOKING_CREATED_EVENT);
+      // The right moment to offer notifications: the customer now has a booking to hear about (asked once, see services/push.ts).
+      setTimeout(() => void askForPushAfterBooking(), PUSH_PROMPT_DELAY_MS);
     } catch (e: any) {
       setBookingError(e?.message || t('book_failed'));
     } finally {

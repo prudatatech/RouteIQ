@@ -87,7 +87,8 @@
     "full_name",
     "company_name",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "push_token"
   ],
   "delivery_points": [
     "id",

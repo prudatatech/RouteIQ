@@ -116,13 +116,17 @@ export async function createBooking(customerId: string, input: BookingInput) {
 
 /**
  * Adds `shipment_status` to booking rows: the status of the linked shipment. A failed delivery
- * (exception) has no booking status of its own, so the apps read it from here.
+ * (exception) has no booking status of its own, so the apps read it from here. Also `rated`: whether
+ * the delivery has been rated, so the bookings list can ask for a rating without one call per booking.
  */
-async function withShipmentStatus<T extends { shipment_id?: string | null }>(rows: T[]): Promise<(T & { shipment_status: string | null })[]> {
+async function withShipmentStatus<T extends { shipment_id?: string | null }>(rows: T[]): Promise<(T & { shipment_status: string | null; rated: boolean })[]> {
   const ids = Array.from(new Set(rows.map(r => r.shipment_id).filter((id): id is string => !!id)));
-  const shipments = await selectIn<{ id: string; status: string }>('shipments', 'id', ids, 'id, status');
-  const byId = new Map(shipments.map(sh => [sh.id, sh.status]));
-  return rows.map(r => ({ ...r, shipment_status: r.shipment_id ? byId.get(r.shipment_id) ?? null : null }));
+  const shipments = await selectIn<{ id: string; status: string; driver_rating: number | null }>('shipments', 'id', ids, 'id, status, driver_rating');
+  const byId = new Map(shipments.map(sh => [sh.id, sh]));
+  return rows.map(r => {
+    const sh = r.shipment_id ? byId.get(r.shipment_id) : undefined;
+    return { ...r, shipment_status: sh?.status ?? null, rated: sh?.driver_rating != null };
+  });
 }
 
 export async function listCustomerBookings(customerId: string) {

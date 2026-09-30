@@ -21,12 +21,13 @@ import { ConfirmReceiptCard } from '../components/cargo/ConfirmReceiptCard';
 import { ClaimsCard } from '../components/cargo/ClaimsCard';
 import { LotsCard, isLotClaim } from '../components/cargo/LotsCard';
 import { colors, fontFamily, radius, size, space } from '../theme';
-import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail } from '../services/api';
+import { api, CLAIM_CREATED_EVENT, type BookingCargo, type BookingDetail, type Invoice } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { BOOKING_STEPS, bookingStatusInfo, canCancel, deliveryFailed, formatMinutes, isDelivered } from '../utils/bookingStatus';
 import { claimClosesAt, claimWindowOpen, deliveredAt, mergeClaims } from '../utils/cargo';
-import { formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
+import { formatDate, formatDateTime, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation } from '../hooks/useTranslation';
+import { invoicesOfBooking } from '../utils/invoices';
 
 /** How often live tracking refreshes while the shipment is moving. */
 const LIVE_REFRESH_MS = 30_000;
@@ -60,14 +61,18 @@ export default function BookingDetailScreen({ navigation, route }: any) {
     t('cargo_load_failed'),
   );
   const { reload: reloadCargo } = cargo;
+  // The invoice notice is a bonus on this screen: without a signal the booking still shows.
+  const invoices = useRemote(() => api.listInvoices().catch(() => [] as Invoice[]), `invoices:${id}`);
+  const { reload: reloadInvoices } = invoices;
 
   // Bumped on every refresh, so child cards that load their own data refresh with the screen.
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => {
     reload();
     reloadCargo();
+    reloadInvoices();
     setRefreshKey((k) => k + 1);
-  }, [reload, reloadCargo]);
+  }, [reload, reloadCargo, reloadInvoices]);
 
   // A claim filed on the next screen shows up here when the customer comes back.
   useEffect(() => {
@@ -105,6 +110,8 @@ export default function BookingDetailScreen({ navigation, route }: any) {
           retryCargo={reloadCargo}
           refreshKey={refreshKey}
           navigation={navigation}
+          invoices={invoicesOfBooking(invoices.data ?? [], id)}
+          showOtp={route.params.focus === 'otp'}
         />
       )}
     </SafeAreaView>
@@ -121,6 +128,10 @@ interface DetailsProps {
   retryCargo: () => void;
   refreshKey: number;
   navigation: any;
+  /** This booking's invoices, newest first. */
+  invoices: Invoice[];
+  /** Opened from the delivery-code notification: show the code card whatever the status. */
+  showOtp: boolean;
 }
 
 function Details({
@@ -133,6 +144,8 @@ function Details({
   retryCargo,
   refreshKey,
   navigation,
+  invoices,
+  showOtp,
 }: DetailsProps) {
   const { t } = useTranslation();
   const { booking, tracking } = detail;
@@ -146,6 +159,8 @@ function Details({
   const vehicle = tracking?.vehicle;
   const delivered = !cancelled && isDelivered(shipment);
   const notices = cargo?.exceptions ?? [];
+  // The customer reported a problem while rating: the claim option stays open (see the claims card below).
+  const [issueReported, setIssueReported] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // Read once: the claim window is measured in days, so a clock frozen at screen open is close enough.
@@ -199,6 +214,9 @@ function Details({
   const lots = cargo?.lots ?? [];
   const split = lots.length > 0;
   const bookingClaims = split ? allClaims.filter((c) => !lots.some((l) => isLotClaim(c, l))) : allClaims;
+  // A claim is offered only when a problem was reported (with the rating) or a claim already exists;
+  // a delivery rated without an issue shows no claim option.
+  const claimOption = issueReported || bookingClaims.length > 0;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -250,7 +268,34 @@ function Details({
 
         {cargoError ? <ErrorBanner message={cargoError} action={{ label: t('try_again'), onPress: retryCargo }} /> : null}
 
-        {!cancelled && !split && shipment.shipment_status === 'out_for_delivery' ? (
+        {delivered && cargoSettled ? (
+          <ConfirmReceiptCard
+            bookingId={booking.id}
+            receipt={cargo?.receipt ?? null}
+            onConfirmed={(withIssue) => {
+              if (withIssue) setIssueReported(true);
+              retryCargo();
+            }}
+          />
+        ) : null}
+
+        {invoices.map((invoice) => (
+          <Banner
+            key={invoice.id}
+            tone={invoice.status === 'paid' ? 'info' : invoice.overdue ? 'warning' : 'info'}
+            icon="file-text"
+            message={
+              invoice.status === 'paid'
+                ? t('booking_invoice_paid', { number: invoice.invoice_number ?? '' })
+                : `${t('booking_invoice_issued', { number: invoice.invoice_number ?? '', amount: invoice.total != null ? formatINR(invoice.total) : '' })}${
+                    invoice.due_date ? ` ${t('invoice_due', { date: formatDate(invoice.due_date) })}.` : ''
+                  }`
+            }
+            action={{ label: t('booking_invoice_view'), onPress: () => navigation.navigate('Invoice', { id: invoice.id }) }}
+          />
+        ))}
+
+        {!cancelled && !split && (showOtp || shipment.shipment_status === 'out_for_delivery') ? (
           <DeliveryOtpCard
             bookingId={booking.id}
             trackingId={booking.tracking_id}
@@ -338,13 +383,11 @@ function Details({
 
         {cargo?.pod ? <ProofOfDeliveryCard pod={cargo.pod} /> : null}
 
-        {delivered && cargoSettled ? <ConfirmReceiptCard bookingId={booking.id} receipt={cargo?.receipt ?? null} onConfirmed={retryCargo} /> : null}
-
         <ClaimsCard
           claims={bookingClaims}
-          windowOpen={split ? null : claimWindow}
+          windowOpen={split || !claimOption ? null : claimWindow}
           closesAt={claimWindow ? claimClosesAt(handedOverAt) : null}
-          canRaise={!!shipmentId && !split}
+          canRaise={!!shipmentId && !split && claimOption}
           onRaise={() =>
             navigation.navigate('Claim', { bookingId: booking.id, shipmentId, trackingId: booking.tracking_id })
           }

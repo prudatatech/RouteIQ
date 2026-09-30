@@ -62,3 +62,7 @@ Who may download:
 | another vendor or customer | 404, the same as an unknown id |
 
 The customer and vendor apps get the invoice id from the `invoice_issued` and `invoice_paid` notifications (`data.invoice_id`) and from their own invoice lists (`GET /vendor/invoices`).
+
+### The customer's own invoice list
+
+`GET /api/v1/customer/invoices` (customer only) lists the invoices of the caller's bookings, lots included, newest first. Void invoices and ones billed to a vendor are left out, so every row can be downloaded with `GET /invoices/:id/pdf`. Each row has `id`, `invoice_number`, `status`, `total`, `amount`, `gst_amount`, `issued_at`, `due_date`, `overdue`, `days_overdue`, `paid_at`, `payment_method`, `payment_reference`, `shipment_id`, `booking_id`, `tracking_id`, `pickup_name` and `drop_name`. `GET /customer/bookings` rows also carry `rated` (the delivery has been rated).
