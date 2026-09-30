@@ -14,6 +14,12 @@ load_azure_env() {
   set -a
   # shellcheck disable=SC1091
   source "$INFRA_DIR/azure.env"
+  # Account-specific values (subscription, alert email) live in a gitignored file next to it,
+  # so moving to a new Azure account only means editing azure.local.env.
+  if [[ -f "$INFRA_DIR/azure.local.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$INFRA_DIR/azure.local.env"
+  fi
   set +a
   PREFIX="${PREFIX:-margix}"
   LOCATION="${LOCATION:-centralindia}"

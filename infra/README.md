@@ -14,7 +14,7 @@ Shared: <prefix>-rg, <prefix>-logs (Log Analytics, 30 days), <prefix>-env (Conta
 Subscription: <prefix>-budget with alerts at 50 / 100 / 150
 ```
 
-Files: `main.bicep` (resources), `budget.bicep` (subscription budget), `azure.env` (settings, committed),
+Files: `main.bicep` (resources), `budget.bicep` (subscription budget), `azure.env` (shared settings, committed), `azure.local.env` (this account's subscription and alert email, gitignored),
 `secrets.env.example` (every key, with where to get it), `deploy.sh`, `set-secrets.sh`, `github-oidc.sh`.
 
 ## Prerequisites
@@ -27,7 +27,9 @@ Files: `main.bicep` (resources), `budget.bicep` (subscription budget), `azure.en
 
 ```bash
 az login
-$EDITOR infra/azure.env                       # PREFIX, LOCATION, BUDGET_EMAIL (SUBSCRIPTION_ID optional)
+cp infra/azure.local.env.example infra/azure.local.env
+$EDITOR infra/azure.local.env                 # SUBSCRIPTION_ID, BUDGET_EMAIL for this account (gitignored)
+$EDITOR infra/azure.env                       # shared defaults: PREFIX, LOCATION (usually unchanged)
 cp infra/secrets.env.example infra/secrets.env
 $EDITOR infra/secrets.env                     # at minimum the Supabase keys, SECRET_KEY, PEOPLE_HASH_SALT
 ./infra/deploy.sh
@@ -64,7 +66,7 @@ az containerapp logs show -g margix-rg -n margix-api --follow
 Export nothing from the old account: Supabase holds all the data.
 
 1. `az logout && az login` with the new account (`az account list -o table` to check the subscription).
-2. Adjust `infra/azure.env` (new `SUBSCRIPTION_ID` if needed; budget email).
+2. Create `infra/azure.local.env` from the example with the new account's `SUBSCRIPTION_ID` and budget email. `azure.env` normally stays as it is.
 3. Keep your `infra/secrets.env` (it is not tied to the Azure account) or refill it from `secrets.env.example`.
 4. `./infra/deploy.sh`
 5. New URLs are printed. Re-point DNS (below), and update anything that stored the old API URL
