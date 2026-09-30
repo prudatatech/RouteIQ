@@ -18,11 +18,13 @@ export const CARGO_NOTIFICATION_TYPES = [
 ] as const;
 export type CargoNotificationType = typeof CARGO_NOTIFICATION_TYPES[number];
 
-/** The customer whose booking became this shipment, if any. */
+/** The customer whose booking became this shipment (or the master it is a lot of), if any. */
 export async function bookingCustomer(shipmentId: string): Promise<{ customer_id: string; booking_id: string } | null> {
   const { data } = await supabase.from('customer_bookings').select('id, customer_id').eq('shipment_id', shipmentId).limit(1);
   const row = data?.[0];
-  return row?.customer_id ? { customer_id: row.customer_id, booking_id: row.id } : null;
+  if (row?.customer_id) return { customer_id: row.customer_id, booking_id: row.id };
+  const { data: lot } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
+  return lot?.parent_shipment_id ? bookingCustomer(lot.parent_shipment_id) : null;
 }
 
 export async function notifyStaffSafe(title: string, body: string, type: CargoNotificationType, data: Record<string, unknown>): Promise<void> {

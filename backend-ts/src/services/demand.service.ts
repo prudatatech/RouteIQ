@@ -109,7 +109,7 @@ export async function getDemandOverview() {
   const since = startOfIndianDay(HISTORY_DAYS - 1);
 
   const [{ data: openShipments, error: e1 }, { data: openRequests, error: e2 }, { data: vehicles, error: e3 }] = await Promise.all([
-    supabase.from('shipments').select('id, origin_name, origin_address').eq('status', 'created'),
+    supabase.from('shipments').select('id, origin_name, origin_address').eq('status', 'created').neq('is_master', true),
     supabase.from('vendor_shipment_requests').select('id, pickup_location').in('status', ['pending', 'approved']),
     supabase.from('vehicles').select('id, current_location_name').eq('status', 'available'),
   ]);
@@ -126,7 +126,7 @@ export async function getDemandOverview() {
   );
 
   const { data: shipments, error: e4 } = await supabase
-    .from('shipments').select('id, origin_name, origin_address, created_at').gte('created_at', since.toISOString());
+    .from('shipments').select('id, origin_name, origin_address, created_at').neq('is_master', true).gte('created_at', since.toISOString());
   if (e4) throw new Error(`Failed to read shipment history: ${e4.message}`);
   const { data: requests, error: e5 } = await supabase
     .from('vendor_shipment_requests').select('id, pickup_location, drop_location, created_at').gte('created_at', since.toISOString());

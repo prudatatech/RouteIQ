@@ -104,7 +104,9 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
         const { count, error } = await supabase
           .from('shipments')
           .select('id', { count: 'exact', head: true })
-          .eq('status', status);
+          .eq('status', status)
+          // A split consignment is counted by its lots, never also as its master
+          .neq('is_master', true);
         if (error) throw error;
         return [status, count ?? 0] as const;
       }),
@@ -118,7 +120,7 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
     };
     const manifestCounts = await Promise.all(
       Object.keys(manifestStatus).map(async status => {
-        const { count, error } = await supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status);
+        const { count, error } = await supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status).neq('is_master', true);
         if (error) throw error;
         return [status, count ?? 0] as const;
       }),

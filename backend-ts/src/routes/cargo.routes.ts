@@ -63,8 +63,9 @@ export interface OpenLoad {
 async function loadOpenLoads(ids?: string[]): Promise<OpenLoad[]> {
   let query = supabase
     .from('shipments')
-    .select('id, tracking_id, status, priority, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points(id, name, address, latitude, longitude)')
+    .select('id, tracking_id, status, priority, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points!delivery_points_shipment_id_fkey(id, name, address, latitude, longitude)')
     .eq('status', 'created')
+    .neq('is_master', true)
     .order('created_at', { ascending: false });
   query = ids ? query.in('id', ids) : query.limit(100);
 

@@ -85,9 +85,9 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     // ── Load shipments ──
     let dpQuery;
     if (payload.shipment_ids && payload.shipment_ids.length > 0) {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids).in('status', PLANNABLE_STATUSES);
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids).in('status', PLANNABLE_STATUSES).neq('is_master', true);
     } else {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('status', PLANNABLE_STATUSES).limit(100);
+      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('status', PLANNABLE_STATUSES).neq('is_master', true).limit(100);
     }
     const { data: shipmentRows, error: dpErr } = await dpQuery;
     // The final drop is the destination (see core/destination)

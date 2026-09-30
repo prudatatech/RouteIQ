@@ -44,7 +44,7 @@ export async function computePublicStats(): Promise<PublicStats> {
 
   // Cities delivered to: the drop-off city of the latest delivered shipments
   const { data: delivered, error } = await supabase
-    .from('shipments').select('id').eq('status', 'delivered').order('updated_at', { ascending: false }).limit(CITY_SAMPLE);
+    .from('shipments').select('id').eq('status', 'delivered').neq('is_master', true).order('updated_at', { ascending: false }).limit(CITY_SAMPLE);
   if (error) throw new Error(`Failed to read delivered shipments: ${error.message}`);
   const points = await selectIn<any>('delivery_points', 'shipment_id', (delivered ?? []).map((s: any) => s.id), 'address, name');
   const cities = new Set<string>();

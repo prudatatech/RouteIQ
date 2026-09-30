@@ -116,7 +116,9 @@
         "inspection",
         "hold",
         "release_hold",
-        "lost"
+        "lost",
+        "split",
+        "merge"
     ],
     "cargo_custody_events.condition": [
         "good",
@@ -230,5 +232,19 @@
         "staff",
         "customer",
         "vendor"
+    ],
+    "shipments.split_reason": [
+        "multi_drop",
+        "partial_transfer",
+        "hub_crossdock",
+        "partial_delivery_remainder",
+        "manual"
+    ],
+    "cargo_manifest.split_reason": [
+        "multi_drop",
+        "partial_transfer",
+        "hub_crossdock",
+        "partial_delivery_remainder",
+        "manual"
     ]
 }

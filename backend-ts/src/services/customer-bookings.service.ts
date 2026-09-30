@@ -9,7 +9,7 @@
 import { HttpError } from '../core/errors';
 import { supabase } from '../core/supabase';
 import { indianDateKey } from '../core/istDate';
-import { ShipmentCreateSchema } from '../schemas';
+import { ShipmentCreateSchema, type DropInput } from '../schemas';
 import { computeQuote, isTodayOrLater, type QuoteInput } from './customer-booking.service';
 import { selectIn } from './finance.service';
 import { notificationService } from './notification.service';
@@ -29,10 +29,12 @@ export interface BookingInput extends QuoteInput {
   pickup_address: string;
   drop_name: string;
   drop_address: string;
+  /** A multi-drop booking's drops: each becomes a lot when the booking is confirmed. */
+  drops?: DropInput[];
 }
 
 const BOOKING_COLUMNS =
-  'id, customer_id, pickup_name, pickup_address, pickup_lat, pickup_lng, drop_name, drop_address, drop_lat, drop_lng, weight_kg, load_type, vehicle_type, pickup_date, quoted_price, quote_details, status, shipment_id, tracking_id, vehicle_id, cancelled_by, cancel_reason, created_at, updated_at';
+  'id, customer_id, pickup_name, pickup_address, pickup_lat, pickup_lng, drop_name, drop_address, drop_lat, drop_lng, weight_kg, load_type, vehicle_type, pickup_date, quoted_price, quote_details, status, shipment_id, tracking_id, vehicle_id, cancelled_by, cancel_reason, created_at, updated_at, drops';
 
 /** Latest pickup date allowed, as YYYY-MM-DD in India. */
 export function lastBookableDate(): string {
@@ -100,12 +102,14 @@ export async function createBooking(customerId: string, input: BookingInput) {
       quoted_price: quote.available ? quote.suggested : null,
       quote_details: { low: quote.low, suggested: quote.suggested, high: quote.high, distance_km: quote.distance_km, factors: quote.factors, source: quote.source },
       status: 'requested',
+      ...(input.drops && input.drops.length > 1 ? { drops: input.drops } : {}),
     })
     .select(BOOKING_COLUMNS)
     .single();
   if (error || !data) throw new Error(`Failed to create booking: ${error?.message}`);
 
-  await notifyCustomer(data, 'Booking received', `We have your booking from ${input.pickup_name} to ${input.drop_name}. Our team will confirm it soon.`, 'requested');
+  const to = input.drops && input.drops.length > 1 ? `${input.drops.length} drops` : input.drop_name;
+  await notifyCustomer(data, 'Booking received', `We have your booking from ${input.pickup_name} to ${to}. Our team will confirm it soon.`, 'requested');
   await notifyStaff('New customer booking', `${input.pickup_name} to ${input.drop_name}, ${input.weight_kg} kg, pickup ${input.date}`, data.id);
   return data;
 }
@@ -216,11 +220,10 @@ export async function confirmBooking(id: string, actor: LogActor, options: { pri
           origin_address: claimed.pickup_address,
           origin_lat: claimed.pickup_lat,
           origin_lng: claimed.pickup_lng,
-          dest_name: claimed.drop_name,
-          dest_address: claimed.drop_address,
-          dest_lat: claimed.drop_lat,
-          dest_lng: claimed.drop_lng,
-          total_items: 1,
+          // A multi-drop booking becomes a master with one lot per drop (docs/cargo-plan.md, Lots)
+          ...(Array.isArray(claimed.drops) && claimed.drops.length > 1
+            ? { drops: claimed.drops, total_items: claimed.drops.reduce((s: number, d: any) => s + (Number(d.pieces) || 0), 0) }
+            : { dest_name: claimed.drop_name, dest_address: claimed.drop_address, dest_lat: claimed.drop_lat, dest_lng: claimed.drop_lng, total_items: 1 }),
           total_weight_kg: Number(claimed.weight_kg),
           load_type: claimed.load_type === 'part' ? 'partial' : 'full',
           freight_charge: freight,
