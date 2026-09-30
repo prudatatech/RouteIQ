@@ -123,7 +123,7 @@ export const MAP_TONES: Record<MapTone, ToneStyle> = {
 
 /** Colours for GL layers (route line, geofences). */
 export const MAP_COLORS = {
-  route: c.accent,
+  route: c.info,
   routeCasing: c.surface,
   plannedRoute: c.neutral,
   trail: c.info,
@@ -134,7 +134,7 @@ export const MAP_COLORS = {
  * and the route summary, so a colour always means the same thing. Green, amber, red, dark red.
  */
 export const TRAFFIC_COLORS = {
-  low: c.success,
+  low: c.info,
   moderate: '#F59E0B',
   heavy: c.danger,
   severe: '#7F1D1D',
