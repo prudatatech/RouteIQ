@@ -97,9 +97,29 @@ export function useRouteActions({
   /** Runs `action` at the stop, or after the driver confirms when they are not near it. */
   const atStop = useCallback(
     (stop: RouteStop, action: () => void) => {
-      // Testing override: bypass GPS and geofence checks completely
-      // so deliveries can be made from anywhere.
-      action();
+      const target = stopCoord(stop);
+      if (!target) {
+        action();
+        return;
+      }
+      // The driver can always go on (a stop's pin can be off, or GPS weak), but has to confirm.
+      // The delivery sends the phone's position, so dispatch sees where it was really recorded.
+      if (!currentLoc) {
+        Alert.alert(t('alert_gps_req_title'), t('alert_gps_req_desc'), [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('continue_anyway'), onPress: action },
+        ]);
+        return;
+      }
+      const dist = distanceMeters(currentLoc, target);
+      if (dist > ARRIVAL_RADIUS_M) {
+        Alert.alert(t('alert_geofence_title'), `${t('alert_geofence_desc')} (${Math.round(dist)} m)`, [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('continue_anyway'), onPress: action },
+        ]);
+      } else {
+        action();
+      }
     },
     [currentLoc, t],
   );
