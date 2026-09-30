@@ -18,6 +18,9 @@
  */
 import { supabase } from '../core/supabase';
 import { haversineKm, isValidPoint, ROAD_FACTOR } from './geo';
+import { formatINR } from '../core/format';
+import { notificationService } from './notification.service';
+import { bookingCustomer, manifestRequest } from './cargo/notify';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRICE_SOURCE_BID = 'bid';
@@ -66,6 +69,65 @@ interface NewInvoice {
   price_source: string;
 }
 
+interface InvoiceRow {
+  id: string;
+  invoice_number?: string | null;
+  shipment_id?: string | null;
+  manifest_id?: string | null;
+  vendor_request_id?: string | null;
+  vendor_id?: string | null;
+  total?: number | null;
+  amount?: number | null;
+}
+
+/**
+ * Who is told about an invoice, with the ids their app needs to open it: the customer whose booking
+ * this shipment is (booking_id), and the vendor it is billed to (request_id for a load, bid_id for
+ * space they won). A 3PL partner is not invoiced: they are paid for the order (tpl_order_paid).
+ */
+async function invoiceAudience(inv: InvoiceRow): Promise<Array<{ userId: string; ids: Record<string, string> }>> {
+  const base: Record<string, string> = { invoice_id: inv.id };
+  if (inv.shipment_id) base.shipment_id = inv.shipment_id;
+  if (inv.manifest_id) base.manifest_id = inv.manifest_id;
+  const out: Array<{ userId: string; ids: Record<string, string> }> = [];
+
+  if (inv.shipment_id) {
+    const customer = await bookingCustomer(inv.shipment_id);
+    if (customer) out.push({ userId: customer.customer_id, ids: { ...base, booking_id: customer.booking_id } });
+  }
+  if (inv.vendor_id) {
+    const ids: Record<string, string> = { ...base };
+    let requestId = inv.vendor_request_id ?? null;
+    if (!requestId && inv.manifest_id) requestId = (await manifestRequest(inv.manifest_id))?.request_id ?? null;
+    if (requestId) ids.request_id = requestId;
+    if (inv.shipment_id) {
+      const { data: shipment } = await supabase.from('shipments').select('bid_id').eq('id', inv.shipment_id).maybeSingle();
+      if (shipment?.bid_id) ids.bid_id = shipment.bid_id;
+    }
+    out.push({ userId: inv.vendor_id, ids });
+  }
+  return out;
+}
+
+/** Tells the requester an invoice was issued or paid. Once per invoice and event; never fails the caller. */
+export async function announceInvoice(invoiceId: string, event: 'issued' | 'paid'): Promise<void> {
+  try {
+    const { data: inv } = await supabase
+      .from('invoices').select('id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, total, amount').eq('id', invoiceId).maybeSingle();
+    if (!inv) return;
+    const label = inv.invoice_number ?? 'Your invoice';
+    const money = formatINR(inv.total ?? inv.amount);
+    const [title, body, type] = event === 'issued'
+      ? [`Invoice ${label} issued`, `${label} is ready${money ? `: ${money}` : ''}. You can view and download it.`, 'invoice_issued']
+      : [`Invoice ${label} paid`, `We received your payment${money ? ` of ${money}` : ''} for ${label}. Thank you.`, 'invoice_paid'];
+    for (const { userId, ids } of await invoiceAudience(inv as InvoiceRow)) {
+      await notificationService.sendNotificationOnce(userId, title, body, type, { ...ids, invoice_number: inv.invoice_number ?? null }, 'invoice_id', 24 * 365);
+    }
+  } catch (e) {
+    console.error(`[invoice] could not notify about invoice ${invoiceId} (${event}):`, e);
+  }
+}
+
 /** Inserts the invoice, retrying with a fresh number if two deliveries raced for the same one. */
 async function insertInvoice(input: NewInvoice): Promise<string> {
   const amount = round2(input.amount);
@@ -86,7 +148,10 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
       })
       .select('id')
       .single();
-    if (!error && data) return data.id;
+    if (!error && data) {
+      await announceInvoice(data.id, 'issued');
+      return data.id;
+    }
     // 23505: unique violation. Either the number was taken (retry) or the delivery already has an invoice.
     if (error?.code !== '23505') throw new Error(`Failed to create invoice: ${error?.message}`);
     const column = input.shipment_id ? 'shipment_id' : input.manifest_id ? 'manifest_id' : 'vendor_request_id';

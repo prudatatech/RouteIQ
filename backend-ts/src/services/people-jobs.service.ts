@@ -20,6 +20,7 @@ import { DOC_LABELS, DocRow, DocType, EXPIRING_WITHIN_DAYS, daysBetween, todayKe
 import { getPeopleSettings } from './people-settings.service';
 import { PERSON_ROLES, logActivity, nowIso, removeStoredFiles } from './people-common';
 import { setSignInBan } from './people.service';
+import { isPlaceholderPlate } from '../core/vehicles';
 
 type Marker = 'd30' | 'd7' | 'd0';
 
@@ -162,6 +163,7 @@ export async function returnFromLeaveAndSuspension(now = new Date()): Promise<nu
   const people = await selectIn<{ id: string; full_name: string | null; status: string; role: string }>(
     'users', 'id', candidates.map(p => p.user_id), 'id, full_name, status, role');
   const returned: string[] = [];
+  const returnedIds: string[] = [];
   for (const profile of candidates) {
     const person = people.find(p => p.id === profile.user_id);
     if (!person || !(PERSON_ROLES as readonly string[]).includes(person.role)) continue;
@@ -175,11 +177,12 @@ export async function returnFromLeaveAndSuspension(now = new Date()): Promise<nu
     await logActivity(person.id, null, 'status_changed', { from: person.status, to: 'active', reason, automatic: true });
     invalidateRoleCache(person.id);
     if (backFromSuspension) await setSignInBan(person.id, false);
+    returnedIds.push(person.id);
     returned.push(`${person.full_name ?? 'A team member'} (${reason.toLowerCase()})`);
   }
   if (returned.length > 0) {
     try {
-      await notificationService.notifyStaff('People back at work', `${returned.join(', ')}. They are active again.`, 'people_status', { count: returned.length });
+      await notificationService.notifyStaff('People back at work', `${returned.join(', ')}. They are active again.`, 'people_status', { count: returned.length, user_ids: returnedIds });
     } catch (e: any) {
       console.error('[people-jobs] could not notify about returns:', e.message);
     }
@@ -223,6 +226,45 @@ export async function purgeDocumentsAfterRetention(now = new Date()): Promise<nu
   return purged;
 }
 
+// ── Drivers who never registered a vehicle ─────────────────
+
+/** A new driver gets a day to register a vehicle; after that staff are asked once to assign or register one. */
+export const VEHICLE_GRACE_HOURS = 24;
+const VEHICLE_NOTICE_LOOKBACK_DAYS = 30;
+const VEHICLE_NOTICES_PER_RUN = 25;
+
+export async function promptDriversWithoutVehicle(now = new Date()): Promise<number> {
+  const newest = new Date(now.getTime() - VEHICLE_GRACE_HOURS * 3600_000).toISOString();
+  const oldest = new Date(now.getTime() - VEHICLE_NOTICE_LOOKBACK_DAYS * 86_400_000).toISOString();
+  const { data: drivers, error } = await supabase
+    .from('users').select('id, full_name, phone, created_at').eq('role', 'driver').eq('is_active', true).lte('created_at', newest).gte('created_at', oldest);
+  if (error) throw new Error(`Failed to read drivers: ${error.message}`);
+  if (!drivers || drivers.length === 0) return 0;
+
+  const vehicles = await selectIn<{ driver_id: string; plate_number: string | null; status: string }>(
+    'vehicles', 'driver_id', drivers.map(d => d.id), 'driver_id, plate_number, status', q => q.neq('status', 'archived'));
+  const hasVehicle = new Set(vehicles.filter(v => !isPlaceholderPlate(v.plate_number)).map(v => v.driver_id));
+
+  let sent = 0;
+  for (const d of drivers.filter(x => !hasVehicle.has(x.id)).slice(0, VEHICLE_NOTICES_PER_RUN)) {
+    try {
+      // Once per driver: the notice is not repeated on later days
+      await notificationService.notifyStaffOnce(
+        'Driver has no vehicle',
+        `${d.full_name ?? 'A new driver'} signed up ${VEHICLE_GRACE_HOURS} hours ago and has not registered a vehicle. Register one for them or assign a vehicle.`,
+        'driver_needs_vehicle',
+        { user_id: d.id },
+        'user_id',
+        VEHICLE_NOTICE_LOOKBACK_DAYS * 24,
+      );
+      sent += 1;
+    } catch (e: any) {
+      console.error('[people-jobs] vehicle prompt failed:', e.message);
+    }
+  }
+  return sent;
+}
+
 export interface DailyJobResult { expiry: ExpiryJobResult | null; returned: number; purged: number; failed: string[] }
 
 /** One daily pass. A failing step is reported and does not stop the others. */
@@ -238,6 +280,7 @@ export async function runPeopleDailyJob(now = new Date()): Promise<DailyJobResul
   };
   await step('document expiry', async () => { result.expiry = await runDocumentExpiryJob(now); });
   await step('leave and suspension', async () => { result.returned = await returnFromLeaveAndSuspension(now); });
+  await step('drivers without a vehicle', async () => { await promptDriversWithoutVehicle(now); });
   await step('document retention', async () => { result.purged = await purgeDocumentsAfterRetention(now); });
   return result;
 }

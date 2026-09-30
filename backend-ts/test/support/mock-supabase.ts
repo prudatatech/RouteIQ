@@ -516,7 +516,8 @@ class MockSupabase {
               : conflictColumns.length > 0 ? rows.find(r => conflictColumns.every(c => r[c] === input[c]))
               : input.id != null ? rows.find(r => r.id === input.id) : undefined;
             if (existing) return Object.assign(existing, input);
-            const row = { id: crypto.randomUUID(), ...input };
+            // The database stamps a notification's time itself (created_at default now())
+            const row = { id: crypto.randomUUID(), ...(table === 'notifications' ? { created_at: new Date().toISOString() } : {}), ...input };
             rows.push(row);
             return row;
           });

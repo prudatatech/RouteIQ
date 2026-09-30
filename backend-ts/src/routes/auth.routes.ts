@@ -20,6 +20,7 @@ import { findAuthUserByEmail } from '../core/auth-users';
 import { driverWindows, inWindows } from '../services/driver-assignments.service';
 import { getPayoutAccount } from '../services/people-bank.service';
 import { sendSms, smsConfigured } from '../services/sms.service';
+import { notificationService } from '../services/notification.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -246,6 +247,11 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
         return;
       }
       driver = newDriver;
+
+      // Staff hear about every new driver once. A failed notice never blocks the sign-in.
+      notificationService
+        .notifyStaffOnce('New driver signed up', `${newDriver.full_name ?? 'A new driver'} (${phone}) signed up. Review their profile and documents.`, 'driver_signed_up', { user_id: newDriver.id }, 'user_id')
+        .catch(e => console.error('[auth] new driver notification failed:', e));
     }
 
     if (!driver.is_active) {

@@ -13,6 +13,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { selectIn } from './finance.service';
+import { notifyDeliveryRated } from './cargo/notify';
 
 export const ON_TIME_WINDOW_KEY = 'on_time_window_minutes';
 export const DEFAULT_ON_TIME_WINDOW_MINUTES = 30;
@@ -181,6 +182,7 @@ export async function rateDelivery(shipmentId: string, rating: number, note: str
     .select('id, driver_rating, driver_rating_note, driver_rated_at')
     .single();
   if (updErr) throw new Error(`Failed to save rating: ${updErr.message}`);
+  await notifyDeliveryRated(shipmentId, rating, { driverId: vehicle?.driver_id ?? null, byCustomer: false });
   return updated;
 }
 

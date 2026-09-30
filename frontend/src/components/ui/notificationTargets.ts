@@ -28,13 +28,25 @@ const partnerPage = (tab: string, openKey?: string): Resolver => data => {
 
 /** A cargo notification opens its case, else its transfer or claim, else the consignment (docs/cargo-plan.md). */
 const cargoCase = (fallback: Resolver): Resolver => d => (str(d.exception_id) ? `/cargo/exceptions/${str(d.exception_id)}` : fallback(d))
-const cargoConsignment: Resolver = d => withOpen('/shipments', d.shipment_id ?? d.manifest_id)
+/** A shipment has its own page; a vendor load (manifest) opens in the shipments list. */
+const shipmentPage: Resolver = d => (str(d.shipment_id) ? `/shipments/${encodeURIComponent(str(d.shipment_id)!)}` : null)
+const cargoConsignment: Resolver = d => shipmentPage(d) ?? withOpen('/shipments', d.manifest_id)
+/** A person's page (People), optionally on a tab. */
+const personPage = (tab?: string): Resolver => d => {
+  const id = str(d.user_id) ?? str(d.driver_id)
+  return id ? `/admin/users/${encodeURIComponent(id)}${tab ? `?tab=${tab}` : ''}` : '/admin/users'
+}
+/** The Requests inbox, opened on one booking or vendor load. */
+const request = (source: 'customer' | 'vendor', key: 'booking_id' | 'request_id'): Resolver => d => {
+  const id = str(d[key])
+  return id ? `/requests?open=${encodeURIComponent(id)}&source=${source}` : `/requests?source=${source}`
+}
 
 const STAFF: Record<string, Resolver> = {
   sos: d => withOpen('/emergency', d.alert_id),
-  vendor_request: d => withOpen('/vendor-requests', d.request_id),
-  vendor_request_cancelled: d => withOpen('/vendor-requests', d.request_id),
-  customer_booking: d => withOpen('/bookings', d.booking_id),
+  vendor_request: request('vendor', 'request_id'),
+  vendor_request_cancelled: request('vendor', 'request_id'),
+  customer_booking: request('customer', 'booking_id'),
   capacity_bid: d => withOpen('/bids', d.bid_id),
   capacity_window_closed: d => withOpen('/bids', d.window_id),
   stop_flagged: d => withOpen('/bids', d.bid_id ?? d.window_id),
@@ -48,6 +60,18 @@ const STAFF: Record<string, Resolver> = {
   route_postponed: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : '/routes'),
   vehicle_request: d => withOpen('/vehicle-requests', d.vehicle_id),
   fleet_alert: d => withOpen('/fleet?tab=alerts', d.alert_id),
+  // People and documents
+  driver_signed_up: personPage(),
+  driver_needs_vehicle: personPage(),
+  document_uploaded: personPage('documents'),
+  bank_details_changed: personPage('bank'),
+  stop_prompts_released: personPage(),
+  people_status: d => {
+    const ids = Array.isArray(d.user_ids) ? d.user_ids.filter((x): x is string => typeof x === 'string') : []
+    return ids.length === 1 ? `/admin/users/${encodeURIComponent(ids[0])}` : '/admin/users'
+  },
+  // A rated delivery opens its shipment
+  delivery_rated: d => shipmentPage(d) ?? '/shipments',
   document_expiring: d => (str(d.user_id) ? `/admin/users/${str(d.user_id)}?tab=documents` : '/admin/users?tab=attention'),
   // Cargo custody
   cargo_exception_opened: cargoCase(() => '/cargo'),
@@ -83,6 +107,11 @@ const VENDOR: Record<string, Resolver> = {
   bid_expired: d => withOpen('/vendor/shipments', d.bid_id),
   bid_reopened: d => withOpen('/vendor/shipments', d.bid_id),
   passing_route: () => '/vendor/corridor',
+  return_trip_opened: () => '/vendor/corridor',
+  vendor_profile_incomplete: () => '/vendor/documents',
+  // Money
+  invoice_issued: () => '/vendor/invoices',
+  invoice_paid: () => '/vendor/invoices',
   // Their goods: moved, at a hub, partly delivered, returning, or a claim update
   cargo_exception_opened: d => withOpen('/vendor/shipments', d.request_id),
   cargo_exception_resolved: d => withOpen('/vendor/shipments', d.request_id),

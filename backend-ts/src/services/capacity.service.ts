@@ -65,6 +65,36 @@ function truckIsNearVendor(vehicle: any, vendor: any): boolean {
   return haversineKm(truckAt, vendorAt) * ROAD_FACTOR <= GEOFENCE_KM;
 }
 
+/**
+ * Tells the vendors who would see a newly opened window (a truck within the geofence, or in their own
+ * city) that space is on offer. The same rule as listOpenWindowsForVendors, so a vendor is only told
+ * about windows they can bid on. Vendors without a location are not told: they could not bid.
+ * The plate is never included. A vendor is told once per window.
+ */
+async function notifyVendorsOfWindow(window: { id: string; closes_at: string; floor_price?: number | null; trigger_type?: string | null }, vehicleId: string): Promise<number> {
+  const [{ data: vehicle }, { data: vendors, error }] = await Promise.all([
+    supabase.from('vehicles').select('vehicle_type, latitude, longitude, current_location_name, available_capacity_kg').eq('id', vehicleId).maybeSingle(),
+    supabase.from('vendor_profiles').select('id, latitude, longitude, city').eq('kyc_status', 'approved'),
+  ]);
+  if (error) throw new Error(`Failed to load vendors: ${error.message}`);
+  const desc = vehicle?.vehicle_type ? `A ${vehicle.vehicle_type}` : 'A truck';
+  const space = vehicle?.available_capacity_kg ? ` with ${formatKg(Number(vehicle.available_capacity_kg))} free` : '';
+  let told = 0;
+  for (const v of vendors ?? []) {
+    if (!truckIsNearVendor(vehicle, v)) continue;
+    const sent = await notificationService.sendNotificationOnce(
+      v.id,
+      'Space on a return trip',
+      `${desc}${space} is heading back near you. Place a bid before it closes.`,
+      'return_trip_opened',
+      { window_id: window.id, closes_at: window.closes_at, trigger_type: window.trigger_type ?? null },
+      'window_id',
+    );
+    if (sent) told += 1;
+  }
+  return told;
+}
+
 /** A vendor's own bid; the plate is shown only once the vendor has won the window (needed for handover). */
 function toVendorBid(b: any) {
   const w = one<any>(b.capacity_windows);
@@ -112,6 +142,8 @@ export interface OpenWindowInput {
   /** A shipment the window is opened for (kept as the standby load; a winning bid gets its own shipment). */
   shipmentId?: string | null;
   createdBy?: string | null;
+  /** Tell the vendors near the truck (default). The driver's matching toggle turns it off when its own broadcast covers them. */
+  notifyVendors?: boolean;
 }
 
 export const capacityService = {
@@ -273,12 +305,12 @@ export const capacityService = {
       return;
     }
 
-    if (!(await findOpenWindow(vehicleId))) {
-      await this.openWindow({ vehicleId, triggerType: 'return_trip' });
-    }
-
-    // Hook into the vendor passing route broadcast system
+    // Hook into the vendor passing route broadcast system. With the truck's position known that
+    // broadcast tells the vendors along the route, so the window itself stays quiet.
     const { data: vehicle } = await supabase.from('vehicles').select('latitude, longitude').eq('id', vehicleId).maybeSingle();
+    if (!(await findOpenWindow(vehicleId))) {
+      await this.openWindow({ vehicleId, triggerType: 'return_trip', notifyVendors: !(vehicle?.latitude && vehicle?.longitude) });
+    }
     let routeId;
     const { data: routes } = await supabase.from('routes').select('id').eq('vehicle_id', vehicleId).order('created_at', { ascending: false }).limit(1);
 
@@ -375,6 +407,9 @@ export const capacityService = {
     const { error: flagErr } = await supabase
       .from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: closesAt.toISOString() }).eq('id', vehicleId);
     if (flagErr) console.error(`[capacity] Failed to flag vehicle ${vehicleId} as bidding: ${flagErr.message}`);
+    if (input.notifyVendors !== false && opensAt.getTime() <= Date.now() + 60_000) {
+      notify(() => notifyVendorsOfWindow(window, vehicleId));
+    }
     return window;
   },
 
@@ -615,6 +650,15 @@ export const capacityService = {
     ]);
     const pickupAt = point(vendor?.latitude, vendor?.longitude);
     if (!isValidPoint(pickupAt)) {
+      // Tell the vendor how to fix it, once per bid
+      notify(() => notificationService.sendNotificationOnce(
+        pre.vendor_id,
+        'Add your pickup location',
+        'Your bid could not be awarded because your company profile has no pickup location. Add it so the truck knows where to come.',
+        'vendor_profile_incomplete',
+        { bid_id: bidId, window_id: pre.window_id, missing: 'location' },
+        'bid_id',
+      ));
       throw new HttpError(400, "This vendor has no pickup location on their profile, so the truck can't be routed to them. Ask them to add it first.");
     }
     if (preWindow?.status === 'cancelled') throw new HttpError(409, 'This bidding window was cancelled');

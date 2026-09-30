@@ -286,6 +286,19 @@ export async function createDocument(actor: Actor, subject: PersonRow, body: Rec
   await logActivity(subject.id, actor.user_id, 'document_added', {
     doc_id: created.id, doc_type: type, replaced: replaced.map(d => d.id), resubmission_count: resubmission,
   });
+  // Staff review what a person uploads themselves; a document staff add on someone's behalf needs no notice
+  if (actor.user_id === subject.id && subject.role === 'driver') {
+    try {
+      await notificationService.notifyStaff(
+        'Document uploaded',
+        `${subject.full_name ?? 'A driver'} uploaded a ${DOC_LABELS[type].toLowerCase()} to review.`,
+        'document_uploaded',
+        { user_id: subject.id, doc_id: created.id, doc_type: type },
+      );
+    } catch (e: any) {
+      console.error('[people] could not notify staff about an uploaded document:', e.message);
+    }
+  }
   const ctx = await documentContext(subject);
   const out = serializeDocument(created, ctx);
   if (out.name_mismatch) warnings.push('name_mismatch');
@@ -401,6 +414,19 @@ export async function updateDocument(actor: Actor, subject: PersonRow, docId: st
     doc_id: doc.id, doc_type: type, fields: changed, ...(rejectionReason ? { reason: rejectionReason } : {}),
     ...(metadata.verification_note && status === 'verified' ? { note: metadata.verification_note } : {}),
   });
+  if (status === 'verified' && doc.status !== 'verified' && actor.user_id !== subject.id) {
+    try {
+      await notificationService.sendNotification(
+        subject.id,
+        `${DOC_LABELS[type]} verified`,
+        `Your ${DOC_LABELS[type].toLowerCase()} was checked and verified.`,
+        'document_verified',
+        { user_id: subject.id, doc_id: doc.id, doc_type: type },
+      );
+    } catch (e: any) {
+      console.error('[people] could not notify about a verified document:', e.message);
+    }
+  }
   if (status === 'rejected') {
     try {
       await notificationService.sendNotification(

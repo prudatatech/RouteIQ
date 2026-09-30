@@ -14,6 +14,7 @@ import { resolveRef, type Consignment } from './consignment';
 import { openExceptionsFor, revisedEta, timelineOf, whereIs } from './custody.service';
 import { ownerNotice } from './exception.service';
 import { CLAIM_TYPES, claimsForBooking, createClaim } from './claim.service';
+import { notifyDeliveryRated } from './notify';
 
 async function bookingShipment(customerId: string, bookingId: string): Promise<{ booking: any; c: Consignment }> {
   const { data: booking, error } = await supabase.from('customer_bookings').select('id, customer_id, shipment_id, status').eq('id', bookingId).maybeSingle();
@@ -105,6 +106,8 @@ export async function confirmReceipt(customerId: string, bookingId: string, inpu
     .select('id')
     .maybeSingle();
   if (!saved) throw new HttpError(409, 'This delivery has already been rated.');
+
+  await notifyDeliveryRated(c.id, body.rating, { driverId, byCustomer: true, comment: body.comment ?? null });
 
   let claim = null;
   if (body.issue) {
