@@ -17,6 +17,7 @@ export const POINT_TONES: Record<MapPointKind, MapTone> = {
 /* ── Route line ─────────────────────────────────────────────────────────── */
 
 export const ROUTE_SOURCE_ID = 'mapview-route'
+export const ROUTE_CONGESTION_SOURCE_ID = 'mapview-route-congestion'
 
 export function routeFeature(route: MapRoute): Feature<LineString> | null {
   const coords = route.coordinates.length > 1

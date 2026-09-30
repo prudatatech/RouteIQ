@@ -7,6 +7,13 @@ export { default as InlineTrackingMap } from './InlineTrackingMap'
 export { useLiveVehiclePositions } from './useLiveVehiclePositions'
 export { fetchDrivingRoute, directionsAvailable } from './directions'
 export type { DrivingRoute } from './directions'
+export { default as VehicleTripEta } from './VehicleTripEta'
+export { TripEtaCard, TripEtaLine } from './TripEta'
+export { remainingStops } from './tripStops'
+export type { TripStopRow } from './tripStops'
+export { useLiveEta } from './useLiveEta'
+export type { EtaStop } from './useLiveEta'
+export type { CongestionLevel } from './congestion'
 export type { LiveMapProps, LiveMapStop, LiveMapVehicle } from './LiveMap'
 export type {
   LatLng,
@@ -17,6 +24,7 @@ export type {
   MapPointKind,
   MapRoute,
   MapRouteStop,
+  MapTraffic,
   MapTrail,
   MapVehicle,
   MapViewHandle,

@@ -5,6 +5,8 @@ import toast from 'react-hot-toast'
 import { shipmentsAPI, telemetryAPI } from '@/services/api'
 import LiveMap, { type LiveMapStop, type LiveMapVehicle } from './LiveMap'
 import { formatMinutes } from '@/utils/display'
+import { remainingStops } from './tripStops'
+import { useLiveEta } from './useLiveEta'
 
 interface PublicTracking {
   tracking_id?: string
@@ -44,6 +46,17 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
   })
 
   const [isCalling, setIsCalling] = useState(false)
+
+  // Live ETA with traffic from where the vehicle is now to its next stop (pickup or drop)
+  const target = trackInfo ? nextStop(trackInfo) : undefined
+  const vLat = trackInfo?.vehicle?.lat
+  const vLng = trackInfo?.vehicle?.lng
+  const liveEta = useLiveEta({
+    origin: vLat != null && vLng != null ? { lat: Number(vLat), lng: Number(vLng) } : null,
+    stops: remainingStops(target),
+    enabled: !!target,
+  })
+  const eta = liveEta.data
 
   if (isLoading) {
     return (
@@ -98,7 +111,15 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
       <div className="absolute left-3 top-3 z-10 flex items-center gap-4 rounded-control border border-border bg-surface px-3 py-2 shadow-raised">
         <div>
           <div className="text-xs text-muted">Arrives in</div>
-          <div className="text-sm font-medium text-text">{trackInfo.eta_minutes ? formatMinutes(trackInfo.eta_minutes) : 'Not available yet'}</div>
+          <div className="text-sm font-medium text-text">
+            {eta ? formatMinutes(eta.etaSeconds / 60) : trackInfo.eta_minutes ? formatMinutes(trackInfo.eta_minutes) : 'Not available yet'}
+          </div>
+          {eta && eta.trafficDelaySeconds > 0 && (
+            <div className="text-xs text-danger">Traffic adds {formatMinutes(eta.trafficDelaySeconds / 60)}</div>
+          )}
+          {eta && eta.trafficDelaySeconds === 0 && eta.freeFlowSeconds !== null && (
+            <div className="text-xs text-muted">No traffic delay</div>
+          )}
         </div>
         <button
           type="button"

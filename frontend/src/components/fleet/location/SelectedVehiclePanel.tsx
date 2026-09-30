@@ -1,5 +1,6 @@
 import { ArrowLeft, Crosshair, MapPin } from 'lucide-react'
 import { Button, EmptyState, ErrorState, IconButton, Skeleton, StatusPill } from '@/components/ui'
+import { VehicleTripEta } from '@/components/map'
 import ActivitySummary from './ActivitySummary'
 import GpsReadout from './GpsReadout'
 import ShareLocationButton from './ShareLocationButton'
@@ -59,6 +60,8 @@ export default function SelectedVehiclePanel({ vehicleId, plate, onBack, onZoom 
               : activity.isLoading
                 ? <Skeleton className="h-10 w-full" />
                 : <p className="text-sm text-muted">We could not work out what this vehicle is doing right now.</p>}
+
+            <VehicleTripEta vehicleId={vehicleId} position={positioned ? { lat: data.latitude!, lng: data.longitude! } : null} />
 
             <div className="flex flex-wrap gap-2">
               {positioned && onZoom && <Button variant="secondary" icon={<Crosshair size={16} />} onClick={onZoom}>Zoom to vehicle</Button>}

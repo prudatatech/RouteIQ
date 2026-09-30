@@ -8,7 +8,7 @@
  */
 import { settings } from '../core/config';
 import { supabase } from '../core/supabase';
-import { cacheGet, cacheSet } from '../core/redis';
+import { cacheDeletePattern, cacheGet, cacheSet } from '../core/redis';
 import { externalHttp } from '../core/http';
 import { distanceToPathKm, isValidPoint, LatLng } from './geo';
 import { mergeRerouteSuggestions, evaluateReroute, RerouteSuggestion } from './reroute.service';
@@ -154,7 +154,7 @@ export function tilesForPath(path: LatLng[]): [number, number, number, number][]
 
 const FIELDS = '{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code,iconCategory},startTime,endTime,from,to,length,delay,roadNumbers,timeValidity}}}';
 
-async function fetchTile(bbox: [number, number, number, number]): Promise<TrafficIncident[]> {
+export async function fetchTile(bbox: [number, number, number, number]): Promise<TrafficIncident[]> {
   const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${encodeURIComponent(settings.TOMTOM_API_KEY)}`
     + `&bbox=${bbox.map(n => n.toFixed(4)).join(',')}&fields=${encodeURIComponent(FIELDS)}&language=en-GB&timeValidityFilter=present`;
   return parseTomTomIncidents(await externalHttp.getJson<any>(url, 15000));
@@ -236,6 +236,8 @@ export async function refreshTrafficIncidents(): Promise<TrafficRunSummary> {
       const { error } = await supabase.from('traffic_incidents').update({ active: false }).eq('active', true).lt('last_seen_at', ranAt);
       if (error) console.error('[traffic] Could not close cleared incidents:', error.message);
     }
+    // Viewport lookups (traffic-area.service) must see this run's closures, so their freshness marks reset
+    if (errors === 0) await cacheDeletePattern('traffic:area:*').catch(() => undefined);
     await mergeRerouteSuggestions(suggestions, errors === 0 ? new Set(found.keys()) : null);
 
     const summary: TrafficRunSummary = {

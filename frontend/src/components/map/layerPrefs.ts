@@ -4,13 +4,16 @@ import { BASE_STYLE_IDS, type BaseStyleId } from '@/config/mapConfig'
 /** What the layer switcher on the live map remembers between visits. */
 export interface LayerPrefs {
   base: BaseStyleId
+  /** Live traffic flow colours on the roads. */
+  flow: boolean
+  /** Traffic incident icons (accidents, road works, closures). */
   traffic: boolean
   routes: boolean
   trails: boolean
   clusters: boolean
 }
 
-export const DEFAULT_LAYER_PREFS: LayerPrefs = { base: 'streets', traffic: true, routes: true, trails: true, clusters: true }
+export const DEFAULT_LAYER_PREFS: LayerPrefs = { base: 'streets', flow: true, traffic: true, routes: true, trails: true, clusters: true }
 
 const STORAGE_KEY = 'margixindia.liveMap.layers'
 
@@ -19,10 +22,11 @@ export function parseLayerPrefs(raw: string | null): LayerPrefs {
   if (!raw) return DEFAULT_LAYER_PREFS
   try {
     const value = JSON.parse(raw) as Partial<Record<keyof LayerPrefs, unknown>>
-    const flag = (key: 'traffic' | 'routes' | 'trails' | 'clusters') =>
+    const flag = (key: 'flow' | 'traffic' | 'routes' | 'trails' | 'clusters') =>
       typeof value[key] === 'boolean' ? (value[key] as boolean) : DEFAULT_LAYER_PREFS[key]
     return {
       base: BASE_STYLE_IDS.includes(value.base as BaseStyleId) ? (value.base as BaseStyleId) : DEFAULT_LAYER_PREFS.base,
+      flow: flag('flow'),
       traffic: flag('traffic'),
       routes: flag('routes'),
       trails: flag('trails'),

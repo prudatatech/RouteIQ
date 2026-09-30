@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { marketplaceAPI, routesAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
-import { describeIncident } from '@/utils/traffic'
 import { useAuthStore } from '@/store/authStore'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
@@ -13,9 +12,12 @@ import MapView from './MapView'
 import LayerSwitcher, { type LayerOverlay } from './LayerSwitcher'
 import { useLayerPrefs } from './layerPrefs'
 import { fetchDrivingRoute, type DrivingRoute } from './directions'
+import { TripEtaLine } from './TripEta'
+import { useTrafficTileToken } from './useTrafficTileToken'
+import { remainingStops as toEtaStops } from './tripStops'
+import { useLiveEta } from './useLiveEta'
 import { useLiveVehiclePositions } from './useLiveVehiclePositions'
 import type { LatLng, MapMode, MapPoint, MapRoute, MapRouteStop, MapTrail, MapVehicle, MapViewHandle } from './types'
-import { formatMinutes } from '@/utils/display'
 
 /** Vehicle as returned by the vehicles API. */
 export interface LiveMapVehicle {
@@ -40,6 +42,8 @@ export interface LiveMapStop {
   id?: string
   sequence?: number
   status?: string
+  /** Set when the route is dispatched; the live ETA is compared with it. */
+  planned_arrival_at?: string | null
   delivery_points?: DeliveryPoint | DeliveryPoint[] | null
 }
 
@@ -76,6 +80,8 @@ export interface LiveMapProps {
 
 /** Zoom used when a vehicle is selected. */
 const SELECT_ZOOM = 16
+/** The selected vehicle's road route (and its congestion colours) is fetched again this often. */
+const ROUTE_REFRESH_MS = 3 * 60_000
 /** How far back the selected vehicle's trail goes. */
 const TRAIL_HOURS = 6
 
@@ -161,8 +167,8 @@ export default function LiveMap({
       : []
   }), [pendingStops])
 
-  // Road route from the vehicle through the stops. Refetched when the stops
-  // or the selected vehicle change, not on every GPS ping.
+  // Road route from the vehicle through the stops. Refetched when the stops or the selected
+  // vehicle change, not on every GPS ping, and every few minutes so the congestion colours stay current.
   const [driving, setDriving] = useState<DrivingRoute | null>(null)
   const vehiclePosRef = useRef<LatLng | null>(null)
   vehiclePosRef.current = selectedVehicle?.position ?? null
@@ -170,9 +176,18 @@ export default function LiveMap({
   stopsRef.current = stops
   const stopsKey = stops.map((s) => `${s.position.lat},${s.position.lng}`).join(';')
   const hasVehiclePosition = Boolean(selectedVehicle)
-
+  const [trafficTick, setTrafficTick] = useState(0)
   useEffect(() => {
-    setDriving(null)
+    if (!selectedId || stops.length === 0) return
+    const timer = window.setInterval(() => setTrafficTick((n) => n + 1), ROUTE_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [selectedId, stops.length])
+
+  const drivingFor = useRef('')
+  useEffect(() => {
+    const key = `${selectedId}|${stopsKey}|${hasVehiclePosition}`
+    // A refresh keeps the old line until the new one arrives; only a different route clears it.
+    if (drivingFor.current !== key) { drivingFor.current = key; setDriving(null) }
     const start = vehiclePosRef.current
     const waypoints = stopsRef.current.map((s) => s.position)
     if (!start || waypoints.length === 0) return
@@ -184,12 +199,16 @@ export default function LiveMap({
       })
     return () => controller.abort()
     // Keyed on stopsKey (not positions) so a moving vehicle does not trigger a refetch.
-  }, [selectedId, stopsKey, hasVehiclePosition])
+  }, [selectedId, stopsKey, hasVehiclePosition, trafficTick])
 
   const route = useMemo<MapRoute | null>(() => {
     if (stops.length === 0 || !layers.routes) return null
     const start = selectedVehicle ? [[selectedVehicle.position.lng, selectedVehicle.position.lat] as [number, number]] : []
-    if (driving) return { coordinates: [...start, ...driving.coordinates], stops }
+    if (driving) {
+      // The vehicle's own position is prepended to the road geometry: that first segment has no traffic data
+      const congestion = driving.congestion.length > 0 ? [...start.map(() => 'unknown' as const), ...driving.congestion] : undefined
+      return { coordinates: [...start, ...driving.coordinates], stops, congestion }
+    }
     const straight = [...start, ...stops.map((s) => [s.position.lng, s.position.lat] as [number, number])]
     return { coordinates: straight, stops, planned: true }
   }, [stops, driving, selectedVehicle, layers.routes])
@@ -211,21 +230,23 @@ export default function LiveMap({
         }]
       : []), [openLoads, compact])
 
-  // ── Traffic incidents on active routes (staff only) ───────────────────
+  // ── Live traffic (staff only: the tiles and incidents need a signed-in staff user) ──
   const role = useAuthStore((s) => s.role)
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
-  const { data: traffic } = useQuery({
+  const tileToken = useTrafficTileToken(isStaff)
+  const { data: routeIncidents } = useQuery({
     queryKey: ['traffic-incidents'],
     queryFn: () => trafficAPI.incidents(),
     refetchInterval: 60_000,
     enabled: !compact && isStaff,
   })
-  const incidentPoints = useMemo<MapPoint[]>(() => (!layers.traffic ? [] : traffic?.incidents ?? []).map((i) => ({
-    id: `traffic-${i.id}`,
-    kind: 'incident' as const,
-    position: { lat: i.lat, lng: i.lng },
-    label: `Traffic: ${describeIncident(i)}`,
-  })), [traffic, layers.traffic])
+
+  // ── Live ETA of the selected vehicle through its remaining stops ──────
+  const etaStops = useMemo(
+    () => toEtaStops(customPendingStops && customPendingStops.length > 0 ? customPendingStops : activeRoute?.route_stops),
+    [customPendingStops, activeRoute],
+  )
+  const liveEta = useLiveEta({ origin: selectedVehicle?.position ?? null, stops: etaStops, enabled: !compact && !!selectedId })
 
   // ── Trail of the selected vehicle, from its GPS history ───────────────
   const { data: track } = useVehicleTrack(selectedId, TRAIL_HOURS, !compact && layers.trails)
@@ -256,17 +277,23 @@ export default function LiveMap({
   }, [zoomFocusEvent, selectedPosition])
 
   const handleSelect = (id: string) => {
-    if (id.startsWith('load-') || id.startsWith('traffic-')) return
+    if (id.startsWith('load-')) return
     setClickedId(id)
     onVehicleSelect?.(id)
   }
 
+  const notSetUp = tileToken.data && !tileToken.data.configured
   const overlays: LayerOverlay[] = [
     ...(isStaff ? [{
+      id: 'flow',
+      label: 'Live traffic',
+      checked: layers.flow,
+      hint: notSetUp ? 'Not set up yet' : 'Congestion on the roads',
+    }, {
       id: 'traffic',
       label: 'Traffic incidents',
       checked: layers.traffic,
-      hint: traffic && !traffic.configured ? 'Not set up yet' : 'Incidents on active routes',
+      hint: 'Accidents, road works and closures',
     }] : []),
     { id: 'routes', label: 'Route lines', checked: layers.routes, hint: 'Active route of the selected vehicle' },
     { id: 'trails', label: 'Vehicle trail', checked: layers.trails, hint: `Where the selected vehicle went in the last ${TRAIL_HOURS} hours` },
@@ -281,9 +308,10 @@ export default function LiveMap({
       mode={mode}
       vehicles={mapVehicles}
       route={route}
-      points={[...loadPoints, ...incidentPoints]}
+      points={loadPoints}
       trails={trails}
       baseStyle={compact ? 'streets' : layers.base}
+      traffic={{ flow: isStaff && layers.flow, incidents: isStaff && !compact && layers.traffic }}
       clusters={layers.clusters}
       selectedId={selectedId}
       onSelect={handleSelect}
@@ -303,13 +331,13 @@ export default function LiveMap({
       {!compact && (
         <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
           <MapPlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 13)} />
-          {isStaff && traffic && (
+          {isStaff && routeIncidents && (
             <p className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-muted shadow-raised">
-              {!traffic.configured
+              {!routeIncidents.configured
                 ? 'Traffic incidents are not set up yet.'
-                : traffic.incidents.length === 0
+                : routeIncidents.incidents.length === 0
                   ? 'No traffic incidents on active routes.'
-                  : `${traffic.incidents.length.toLocaleString('en-IN')} traffic ${traffic.incidents.length === 1 ? 'incident' : 'incidents'} on active routes.`}
+                  : `${routeIncidents.incidents.length.toLocaleString('en-IN')} traffic ${routeIncidents.incidents.length === 1 ? 'incident' : 'incidents'} on active routes.`}
             </p>
           )}
           {selectedId && activeRoute && (
@@ -318,13 +346,7 @@ export default function LiveMap({
               <p className="mt-1 text-xs text-muted">
                 {remainingStops} {remainingStops === 1 ? 'stop' : 'stops'} left · {activeRoute.status === 'active' ? 'Active' : 'Pending'}
               </p>
-              {driving && (
-                <p className="mt-1 text-xs text-muted">
-                  Arrives in <span className="font-medium text-text">{formatMinutes(driving.durationSeconds / 60)}</span>
-                  {' · '}
-                  <span className="tabular">{(driving.distanceMeters / 1000).toFixed(1)} km</span> to go
-                </p>
-              )}
+              {liveEta.data && <TripEtaLine eta={liveEta.data} />}
             </section>
           )}
         </div>

@@ -129,6 +129,17 @@ export const MAP_COLORS = {
   trail: c.info,
 }
 
+/**
+ * Live traffic, from free-flowing to stopped. One scale for the flow tiles' legend, the route line
+ * and the route summary, so a colour always means the same thing. Green, amber, red, dark red.
+ */
+export const TRAFFIC_COLORS = {
+  low: c.success,
+  moderate: '#F59E0B',
+  heavy: c.danger,
+  severe: '#7F1D1D',
+}
+
 interface StatusStyle {
   label: string
   tone: MapTone

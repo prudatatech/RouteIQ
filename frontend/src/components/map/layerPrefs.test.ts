@@ -8,6 +8,13 @@ describe('saved map layer choices', () => {
     expect(parseLayerPrefs('not json')).toEqual(DEFAULT_LAYER_PREFS)
   })
 
+  it('shows live traffic flow unless it was turned off', () => {
+    expect(DEFAULT_LAYER_PREFS.flow).toBe(true)
+    expect(parseLayerPrefs(JSON.stringify({ base: 'dark' })).flow).toBe(true)
+    expect(parseLayerPrefs(JSON.stringify({ flow: false })).flow).toBe(false)
+    expect(parseLayerPrefs(JSON.stringify({ flow: 'no' })).flow).toBe(true)
+  })
+
   it('keeps valid choices and ignores unknown ones', () => {
     expect(parseLayerPrefs(JSON.stringify({ base: 'satellite', traffic: false, trails: 'yes' })))
       .toEqual({ ...DEFAULT_LAYER_PREFS, base: 'satellite', traffic: false })

@@ -54,6 +54,40 @@ export interface TrafficIncident {
   affected_route_ids: string[]
 }
 
+/** Icon family of an incident on the map (the server derives it from the type). */
+export type TrafficIncidentKind = 'accident' | 'roadworks' | 'closure' | 'jam' | 'flooding' | 'weather' | 'hazard' | 'breakdown' | 'other'
+
+/** An open incident inside a map view (GET /traffic/incidents?bbox=). */
+export interface AreaIncident {
+  id: string
+  type: string
+  kind: TrafficIncidentKind
+  severity: number
+  description: string | null
+  road: string | null
+  lat: number
+  lng: number
+  delay_seconds: number | null
+  starts_at: string | null
+  ends_at: string | null
+  last_seen_at: string | null
+}
+
+export interface AreaIncidents {
+  configured: boolean
+  incidents: AreaIncident[]
+  /** What happened to the request for fresh data: fetched, fresh (recent enough), not_requested, not_configured, area_too_large or failed. */
+  refresh: string
+  fetched_at: string | null
+}
+
+export interface TileToken {
+  configured: boolean
+  token: string | null
+  /** Seconds the token works for. */
+  expires_in: number
+}
+
 export interface RouteWeather {
   configured: boolean
   available: boolean
@@ -80,6 +114,11 @@ export const trafficAPI = {
     api.get('/traffic/incidents', { params: routeId ? { route_id: routeId } : undefined })
       .then(r => r.data as { configured: boolean; incidents: TrafficIncident[] }),
   refresh: () => api.post('/traffic/refresh').then(r => r.data),
+  /** Open incidents inside a view, `minLng,minLat,maxLng,maxLat`. With `refresh`, the server also asks TomTom when its data for the area is older than 5 minutes. */
+  incidentsInBbox: (bbox: string, refresh: boolean, signal?: AbortSignal) =>
+    api.get('/traffic/incidents', { params: { bbox, refresh: refresh ? '1' : undefined }, signal }).then(r => r.data as AreaIncidents),
+  /** Short-lived token for the live traffic tiles (the map cannot send the login header for tiles). */
+  tileToken: () => api.get('/traffic/tile-token').then(r => r.data as TileToken),
 }
 
 export const weatherAPI = {
