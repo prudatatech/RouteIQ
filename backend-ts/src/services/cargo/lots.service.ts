@@ -736,7 +736,9 @@ export async function splitConsignment(
   if (FINAL.includes(c.status) || c.rawStatus === 'completed') throw new HttpError(409, `${c.code} is ${c.status.replace(/_/g, ' ')} and can't be split.`);
   const held = piecesHeld(c.pieces);
   if (held == null || c.pieces.total == null) throw new HttpError(409, `Count the pieces of ${c.code} before splitting it.`);
-  if (held < 2) throw new HttpError(409, `${c.code} holds ${held} ${held === 1 ? 'piece' : 'pieces'}, too few to split.`);
+  if (held < 1 || (held < 2 && c.pieces.delivered + c.pieces.short + c.pieces.returned === 0)) {
+    throw new HttpError(409, `${c.code} holds ${held} ${held === 1 ? 'piece' : 'pieces'}, too few to split.`);
+  }
 
   // Only goods with one holder in one place
   if (c.holder === 'consignee') throw new HttpError(409, `${c.code} was delivered and can't be split.`);
@@ -776,7 +778,9 @@ export async function splitConsignment(
   const asked = lots.reduce((s, l) => s + l.pieces, 0);
   if (asked > held) throw new HttpError(409, `The lots have ${asked} pieces, but ${c.code} holds ${held}.`);
   if (asked < held) lots.push({ pieces: held - asked, remainder: true });
-  if (lots.length < 2) throw new HttpError(400, 'A split makes at least two lots. To move all the goods, move the consignment itself.');
+  // One lot is enough when the consignment keeps pieces it already accounted for (a remainder after a partial delivery)
+  const accountedBefore = c.pieces.delivered + c.pieces.short + c.pieces.returned;
+  if (lots.length < 2 && accountedBefore === 0) throw new HttpError(400, 'A split makes at least two lots. To move all the goods, move the consignment itself.');
   if (lots.length > 26) throw new HttpError(400, 'At most 26 lots at a time');
 
   // Where each lot goes next must suit where the goods are

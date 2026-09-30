@@ -1404,6 +1404,12 @@ export class ShipmentService {
         `This shipment is ${existing.status.replace('_', ' ')} and can't be deleted. Cancel it instead, or leave it as-is.`
       );
     }
+    // A split shipment and its lots are one consignment note: cancel it (which cancels the lots) instead
+    const { data: lots } = await supabase.from('shipments').select('id').eq('parent_shipment_id', shipmentId).limit(1);
+    const { data: self } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
+    if ((lots && lots.length > 0) || self?.parent_shipment_id) {
+      throw new HttpError(409, 'This shipment is split into lots, so it can\'t be deleted. Cancel it instead.');
+    }
 
     // 1. Get delivery point
     const { data: dps } = await supabase

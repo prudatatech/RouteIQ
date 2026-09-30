@@ -357,3 +357,67 @@ A lot's tracking id is the master's with a suffix: `RTX-ABC123-A`, `-B`. Custome
   - A handover of a partial transfer shows "Hand over 30 of 100 (lot C)".
   - Hub drop can split into outbound lots when hub staff tell the driver to.
 - **Customer app:** the booking shows the lots with their progress, and each lot has its own POD and claim.
+
+### Lots: backend implementation notes
+
+What the backend does where the Lots section leaves a choice, or differs from it. These notes are part of the contract.
+
+- **Where the code is.** `backend-ts/src/services/cargo/lots.service.ts` (split, merge, rollup, labels, conservation, views, multi-drop create); the endpoints are in `routes/cargo-custody.routes.ts`. Migration `20260930014100_cargo_lots.sql` (not applied yet): apply it before deploying this backend, since the custody reads select the new columns.
+- **Extra columns** beyond the model above: `eway_bill_ref` and `eway_part_b_required` (bool) on `shipments` and `cargo_manifest`, and `customer_bookings.drops` (jsonb) for a multi-drop booking until it is confirmed.
+- **API shapes.**
+  - `POST /cargo/lots/split` (staff, idempotent) takes `{ ref, reason = 'manual', lots: [LotInput] }` where LotInput is `{ pieces, weight_kg?, declared_value?, freight_share?, consignee_name?, consignee_phone?, consignee_gstin?, drop?: { name?, address, lat, lng }, to_vehicle_id?, to_depot_id?, eway_bill_ref? }`. It answers 201 `{ master: {ref, code}, source: {ref, code}, lots: [{ ref, code, label, pieces, weight_kg, declared_value, freight_share, status, transfer: {id, code} | null }] }`. `source` is the consignment split (the master itself, or the lot split again); the remainder lot, when made, is last.
+  - `POST /cargo/lots/merge { refs }` (staff) answers `{ ref, code, label, pieces }` of the lot kept.
+  - `POST /cargo/lots/eway { ref, eway_bill_ref }` (staff) sets a lot's own e-way bill reference and answers its LotView. A master refuses it (409).
+  - `GET /cargo/lots/:ref` answers `{ master: { ref, code, is_master, status, current_holder, pieces, weight_kg, declared_value, freight_share }, lots: LotView[], totals: LotTotals }` from the master or any lot (a consignment never split answers itself with `lots: []`).
+  - **LotView:** `{ ref, code, label, seq, status, current_holder, vehicle: {id, plate_number} | null, depot: {id, name} | null, pieces: {total, delivered, damaged, short, returned, on_board}, weight_kg, declared_value, freight_share, drop: {name, address, lat, lng} | null, consignee: {name, phone, gstin} | null, eway_bill_ref, eway_part_b_required, split_reason, open_exceptions: [{id, code, type, severity, status, sla_due_at}] }`. The redacted view (customers, vendors, drivers) has `freight_share: null`.
+  - **LotTotals:** `{ lots, pieces_total, delivered, damaged, short, returned, held, by_holder: {consignor, vehicle, hub}, weight_kg, progress_text }`, with `progress_text` like "60 of 100 delivered · 25 at Patna hub · 15 on HR55AB1234" (then "N returned", "N short or lost").
+  - Every `GET /cargo/where` answer gains `is_master`, `lot: { label, seq, master: {ref, code} } | null`, `eway_bill_ref` and `eway_part_b_required`. A master's also has `lots: LotView[]` and `totals: LotTotals`; its `status` and `current_holder` are the rollup, `pieces` add its own record and its lots', `vehicle` / `depot` are set only when every held piece is on that one vehicle or hub, `open_exceptions` join its lots' cases, and `seal_number` is null.
+  - A master's `GET /cargo/timeline` merges its own events with its lots', oldest first; every event carries `lot: { label, code, ref } | null`.
+  - `POST /cargo/transfers` answers with `splits: [{ from: {ref, code}, moving: {ref, code, label, pieces}, staying: {ref, code, label, pieces} }]` when an item moved part of what was on board; `items` then name the moving lot.
+  - `GET /cargo/driver/on-board` and `/cargo/vehicles/:id/on-board` items gain `lot: { label, master: {ref, code} } | null`, `consignee_name` and `display` (`RTX-ABC123-B · 25 pcs`).
+  - `GET /customer/bookings/:id/cargo` gains `lots: [{ ref, code, label, status, current_holder, pieces, consignee: {name} | null, drop, vehicle, depot, text, pod }]` (cancelled lots left out). `text` reads "Lot B (25 pieces): delivered to Sharma Traders, Boring Road, Patna" (pieces, not cartons). A master's own `pod` is null: each lot has its own.
+  - `POST /shipments` accepts `drops: [{ name?, address, lat, lng, consignee_name, consignee_phone?, consignee_gstin?, pieces, weight_kg?, declared_value?, eway_bill_ref? }]` (up to 26) and top-level `declared_value`, `consignee_name`, `consignee_phone`, `consignee_gstin`, `eway_bill_ref`. Two or more drops make the master (answered as `GET /shipments/:id`, with `lots: [{ id, tracking_id, lot_label, lot_seq, status, current_holder, current_vehicle_id, current_depot_id, pieces_total, pieces_delivered, total_weight_kg, declared_value, freight_share, consignee_name, consignee_phone, consignee_gstin, eway_bill_ref, eway_part_b_required, split_reason, delivery_points }]`); one drop is the plain destination with its consignee. A lot's `GET /shipments/:id` has `master: {id, tracking_id, status}`. Drop weights and values are given for every drop or none; given weights add up to `total_weight_kg` (±0.5 kg). With `vehicle_id` every lot is assigned to it (the vehicle must take the whole weight). A multi-drop shipment can't be opened for bidding.
+  - `POST /customer/bookings` accepts the same `drops` (2 to 20); weights for every drop or none, adding up to `weight_kg`. `drop_*` stays the drop the price is quoted to (the app sends the farthest). Confirming the booking creates the master and its lots; cancelling it cancels every lot while none was picked up.
+  - `GET /shipments` lists masters and lots. A master has `is_master: true`, `vehicle_id: null` and `lots_summary: { count, delivered_lots, pieces_delivered, lots: [{ id, code, label, status, current_holder, current_vehicle_id, pieces_total, consignee_name }] }`; a lot has `parent_shipment_id`, `lot_label` and `master_tracking_id`. Vendor loads carry `is_master`, `parent_manifest_id`, `lot_label` and, for a master, `lots_summary`; a load lot's `tracking_id` is its lot code.
+- **Rollup.**
+  - When every lot is settled: `delivered` if each is delivered with nothing short or returned (the master's own record included), `partially_delivered` if anything was delivered, else `returned` or `lost`.
+  - Otherwise, in this order: `on_hold` if an open lot is held; `exception` if any lot is in an open case or failed a delivery; `in_transit` if an open lot is moving (`returning` when every open lot is); `at_hub`; `partially_delivered` if some were delivered and the rest wait; `assigned`; `created`. A problem outranks movement, so the master shows it.
+  - Cancelled lots (merged or emptied) are ignored.
+  - The master row stores the rollup status and holder: they are rewritten with a compare-and-set after every lot write, so lists, bookings and counts read it. `where` computes the rollup live. A load master stores the load status for it.
+  - The master's holder is its lots' common holder; when they differ, `vehicle` if any lot is on a vehicle, else `hub`. `totals.by_holder` gives the breakdown. Its `current_vehicle_id` and `current_depot_id` are always null.
+  - A rollup status change is logged in the master's hash chain (`metadata.rollup`), bills the master's own part on `delivered`, and moves the customer's booking (a lot's failed delivery is told once, on the lot, not again for the master).
+- **Conservation.**
+  - Weight is shared pro rata of the held pieces.
+  - The value basis is `declared_value`, else the shipment's HSN lines (or the vendor's declared value). It is stored on the master at the split.
+  - The freight basis is a won bid's amount, else `freight_charge`, or for a lot its `freight_share`. A load's basis is its request's agreed cost; a load priced only per km has no freight share.
+  - The lots share `basis × held / total`. The master keeps the rest as its own `freight_share` (the part delivered before the split).
+  - A lot's `freight_charge` equals its `freight_share`.
+- **Splits.**
+  - Lots with fewer pieces than are held get a remainder lot (last) that keeps the source's drop and consignee. A single lot is allowed only when the source keeps pieces it already accounted for (the remainder after a partial delivery).
+  - A lot starts in its source's status, except the remainder of a partial delivery, which is back `in_transit`. A lot with a new drop starts with `delivery_attempts` at 0.
+  - Each lot gets its own delivery points (`shipment_id` and `lot_shipment_id` are the lot): its `drop`, else copies of the source's open drops. The lots are put on the source's vehicle route (when that vehicle is in service) before the source's open stops are cancelled.
+  - Open cases on the source are extended to every lot (items copied, pieces capped at the lot's). A case's goods leave out masters.
+  - A lot split again gives its children to the same master, labelled A1, A2 (A1 then A1.1, A1.2). The split lot keeps only what it accounted for, with its weight, value and freight reduced to that part: cancelled with 0 pieces when it had none, else delivered, partially delivered, returned or lost (a delivered part is billed then).
+  - **Refused:** a master (409 naming where its lots are, "with more than one holder" when they are in different places); goods being handed over on a transfer; goods on a planned transfer (except the split a partial transfer makes itself); delivered goods; goods without a count; goods whose vehicle or hub is not on record.
+  - **Reasons:**
+    - `partial_transfer` needs goods on a vehicle, and `hub_crossdock` goods at a hub.
+    - `partial_delivery_remainder` needs delivered pieces and a drop or consignee on each lot.
+    - `multi_drop` is before pickup, with a drop on each lot.
+  - **Where a lot goes next:**
+    - On a vehicle, `to_vehicle_id` or `to_depot_id` plans a transfer.
+    - At a hub, only `to_vehicle_id`: the lot's drop goes on that vehicle's route, and the goods leave with `hub_out`.
+    - With the sender, `to_vehicle_id` assigns the lot to that vehicle (a load's vehicle is set).
+- **Merges** need lots of one master with the same holder, vehicle or hub, status, consignee (name and phone) and drops. None may have delivered, short or returned pieces, a moving custody event since the split (pickup, departed, delivery, handovers, hub in/out, returns, lost) or an open transfer. The lowest-numbered lot keeps the goods; the others are cancelled with 0 pieces and their stops cancelled.
+- **Masters refuse** (409 with `use: 'lots'`, `master` and `lots: [{ref, code, label}]`): every custody kind, transfers, the delivery code, manual cases, a status PATCH, assigning a vehicle, a lot e-way reference, a split and deletion. Cancelling a master (a status PATCH to `cancelled`, or a booking cancel) cancels its lots instead, refused once any lot was picked up. `split` and `merge` are refused by `POST /cargo/custody` (400). Split and merge notes are written by the system in plain words, and are the event `summary` in every view.
+- **Invoices.**
+  - A lot is billed its `freight_share` when it is delivered, one invoice per lot, with `price_source: 'lot_freight_share'`. The GST rate comes from the master's HSN lines, and the vendor is the master's won bid's.
+  - A master is billed only its own kept share when it rolls up to delivered, and never when that share is 0.
+  - Finance's unpriced deliveries leave out masters that kept nothing.
+- **E-way bills.** A transfer's handover-in to a vehicle sets `eway_part_b_required` on the goods it moved (for a partial transfer, only the moving lot). `POST /cargo/transfers/:id/eway` clears it.
+- **Counting.** Masters are left out (`is_master` not true) of the dashboard counts, analytics' delivered counts, demand, the plannable loads (routing, optimizer, open loads), public delivered cities and vehicle loads. The shipments list gives masters `vehicle_id: null`, so fleet allocation counts lots only.
+- **Relationship names.** `delivery_points <-> shipments` is ambiguous now (`lot_shipment_id`): embeds name `delivery_points!delivery_points_shipment_id_fkey`. Self-embeds name `shipments_parent_shipment_id_fkey` / `cargo_manifest_parent_manifest_id_fkey`. `db-ambiguous-relations.json` was extended by hand.
+- **Vendor loads.** Split, merge, rollup, transfers, cross-docks, where, timeline, the customer and driver views and invoices work for loads. The limits:
+  - There is no multi-drop creation for loads (a vendor request has one drop). Split a load with a `drop` per lot instead; the lot's drop is its `drop_location` and `drop_lat`/`drop_lng`, and load lots have no route stops, as loads never had.
+  - A load master's `vehicle_id` is cleared at the split, so the driver app lists the lots as the loads.
+  - The vendor request completes when the master rolls up to delivered.
+  - Lot codes `CM-XXXXXXXX-A` resolve through `parent_manifest_id` and `lot_label`.

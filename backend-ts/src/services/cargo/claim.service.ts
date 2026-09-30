@@ -80,6 +80,8 @@ function claimRole(role: string): ClaimRole {
 
 /** What the goods were declared worth: the HSN lines of a shipment, or the vendor's declared value for a load. */
 export async function declaredValueOf(c: Consignment): Promise<number | null> {
+  // A lot carries its share of the value (docs/cargo-plan.md, Lots); so may any consignment
+  if (c.row.declared_value != null && Number.isFinite(Number(c.row.declared_value))) return Number(c.row.declared_value);
   if (c.kind === 'shipment') {
     const { data } = await supabase.from('shipment_hsn').select('declared_value').eq('shipment_id', c.id);
     const values = (data ?? []).map((r: any) => Number(r.declared_value)).filter(n => Number.isFinite(n));
