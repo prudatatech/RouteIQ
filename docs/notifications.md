@@ -1,6 +1,6 @@
 # Notifications
 
-Every in-app notification is a row in `notifications` (`user_id`, `title`, `body`, `type`, `data`), sent by `notificationService` (`backend-ts/src/services/notification.service.ts`). Staff types are sent with `notifyStaff` (admin and superadmin; managers too for the types in `OPERATIONS_NOTIFICATION_TYPES`). Deactivated accounts are skipped. A driver also gets a push with the same `data` plus `type`.
+Every in-app notification is a row in `notifications` (`user_id`, `title`, `body`, `type`, `data`), sent by `notificationService` (`backend-ts/src/services/notification.service.ts`). Staff types are sent with `notifyStaff` (admin and superadmin; managers too for the types in `OPERATIONS_NOTIFICATION_TYPES`). Deactivated accounts are skipped. A driver or a customer with a saved device token also gets a push with the same `data` plus `type`. A customer's token is saved by the customer app with `PUT /customer/push-token` `{ token }` (an Expo push token; cleared with `DELETE /customer/push-token` on sign-out) on their `customers` row; drivers save theirs on `users`. Customers are pushed on the `default` Android channel, drivers on `alarms`.
 
 Principle (workflow blueprint, principle 7): every handoff notifies and deep-links. Each notification carries the ids the receiving app needs to open the exact item, and the web resolvers in `frontend/src/components/ui/notificationTargets.ts` map staff and vendor types to a page. The mobile apps map the customer and driver types below to their own screens.
 
@@ -62,6 +62,8 @@ Invoice ids by recipient: a vendor load carries `manifest_id` and `request_id` (
 | `cargo_exception_opened`, `cargo_exception_resolved`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub` | Their goods | `booking_id`, `shipment_id`, `code`, plus `exception_id`, `transfer_id`, `depot_id` |
 | `cargo_delivery_otp` | Delivery code sent | `booking_id`, `shipment_id`, `code`, `expires_at`, `sent_by` |
 | `cargo_claim_update` | Their claim changes status | `booking_id`, `shipment_id`, `claim_id`, `code` (claim), `consignment_code` (shipment tracking id), `status` |
+
+The customer app opens these from the in-app list and from a tapped push with the same routing: `booking` and `cargo_*` (including `cargo_delivery_otp` and `cargo_claim_update`) open the booking (`booking_id`), the delivery code card shows on it while the goods are out for delivery; `invoice_issued` and `invoice_paid` open that invoice (`invoice_id`, else the invoice list).
 
 ## Drivers (driver app)
 
