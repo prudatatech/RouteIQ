@@ -33,6 +33,7 @@ interface DeliveryPoint {
   shipment_id?: string | null
 }
 interface RouteStop {
+  id?: string
   sequence?: number
   status?: string
   delivery_points?: DeliveryPoint
@@ -317,9 +318,15 @@ export default function DriverPage() {
       toast.error(err.response?.data?.detail || 'Could not send SOS. Call the control room directly.'),
   })
 
+  // A delivery is the stop's completion (custody `delivery` on the server); a raw status PATCH to
+  // delivered is refused by the backend
   const updateStatus = useMutation({
-    mutationFn: ({ shipmentId, status, params }: { shipmentId: string; status: string; params?: Record<string, unknown> }) =>
-      shipmentsAPI.updateStatus(shipmentId, status, params),
+    mutationFn: (body: { stop_id: string; received_by: string; signature_data: string }) =>
+      telemetryAPI.completeStop({
+        ...body,
+        status: 'completed',
+        ...(liveLocation ? { lat: liveLocation.lat, lng: liveLocation.lng } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['driver-routes'] })
       toast.success('Delivery completed')
@@ -375,13 +382,9 @@ export default function DriverPage() {
     // Read the signature straight off the canvas — no separate "save" step.
     const signatureData = signaturePadRef.current?.getDataUrl() ?? null
     if (!recipientName || !signatureData) return toast.error('Enter the receiver name and collect a signature')
-    if (!currentStop) return toast.error('No active stop')
+    if (!currentStop?.id) return toast.error('No active stop')
     if (!currentShipmentId) return toast.error('This stop has no linked shipment')
-    updateStatus.mutate({
-      shipmentId: currentShipmentId,
-      status: 'delivered',
-      params: { received_by: recipientName, signature_data: signatureData },
-    })
+    updateStatus.mutate({ stop_id: currentStop.id, received_by: recipientName, signature_data: signatureData })
   }
 
   const startTrip = () => {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 import { ArrowRight, Check, Truck, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { bookingsAPI, type CustomerBooking } from '@/services/api'
@@ -35,9 +36,12 @@ function statusOf(b: CustomerBooking): { label: string; tone: Tone } {
   return { label: statusToLabel(b.status, 'booking'), tone: statusToTone(b.status, 'booking') }
 }
 
-/** A booking whose vehicle can be chosen: waiting for one, already has one, or its delivery failed. */
-const canAssignVehicle = (b: CustomerBooking) =>
-  b.status === 'confirmed' || b.status === 'assigned' || (b.status === 'in_transit' && b.shipment_status === 'exception')
+/**
+ * A booking whose vehicle can be chosen: waiting for one, or already has one. Once the goods are
+ * picked up they stay on the vehicle, a failed delivery included, so another vehicle is a cargo
+ * transfer or a re-attempt on the shipment's case (the backend refuses a re-assignment).
+ */
+const canAssignVehicle = (b: CustomerBooking) => b.status === 'confirmed' || b.status === 'assigned'
 
 interface Vehicle {
   id: string
@@ -327,7 +331,13 @@ function BookingDrawer({ booking, onClose, confirming, cancelling, onConfirm, on
 
           {booking.shipment_status === 'exception' && booking.status !== 'delivered' && booking.status !== 'cancelled' && (
             <Alert tone="danger" title="The delivery attempt failed">
-              The driver could not deliver this load. The customer has been told. Choose a vehicle to try again.
+              The driver could not deliver this load and the goods are still on the vehicle. The customer has been told.
+              {booking.shipment_id && (
+                <>
+                  {' '}Re-attempt, move them to another vehicle or return them from{' '}
+                  <Link to={`/shipments?open=${encodeURIComponent(booking.shipment_id)}`} className="font-medium underline">the shipment’s cargo panel</Link>.
+                </>
+              )}
             </Alert>
           )}
 

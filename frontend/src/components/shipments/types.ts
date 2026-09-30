@@ -22,6 +22,8 @@ export interface ShipmentRow {
   /** Set on a cargo manifest that came from a vendor's posted load. */
   vendor_request_id?: string | null
   status?: string | null
+  /** Who holds the goods (cargo custody): consignor, vehicle, hub or consignee. Shipments only. */
+  current_holder?: string | null
   priority?: string | null
   origin_name?: string | null
   origin_address?: string | null
