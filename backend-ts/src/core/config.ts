@@ -144,6 +144,14 @@ export const settings = {
     ];
   },
 
+  // Address of the web app, for links in emails. Unset: the first allowed origin that is not localhost, else the first one.
+  get WEB_APP_URL(): string {
+    const configured = env('WEB_APP_URL').trim().replace(/\/+$/, '');
+    if (configured) return configured;
+    const origins = this.ALLOWED_ORIGINS;
+    return origins.find(o => !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(o)) ?? origins[0] ?? '';
+  },
+
   // CORS: optional regexes (comma-separated), e.g. ^https://margixindia-[a-z0-9-]+\.vercel\.app$
   get CORS_ORIGIN_PATTERNS(): RegExp[] {
     return env('CORS_ORIGIN_PATTERNS')

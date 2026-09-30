@@ -132,7 +132,7 @@ describe('staff notifications (D2)', () => {
       });
     });
 
-    it('notifies superadmin only, since admin cannot open the 3PL pages, when a new application is onboarded', async () => {
+    it('notifies admins and superadmins, who can both open the 3PL pages, when a new application is onboarded', async () => {
       const res = await request(app).post('/api/v1/tpl/onboard').send({
         companyName: 'Northline Logistics',
         email: 'ops@northline.example',
@@ -142,7 +142,7 @@ describe('staff notifications (D2)', () => {
       expect(res.status).toBe(200);
 
       const ids = notifiedUserIds();
-      expect(ids).toEqual(['active-superadmin']);
+      expect(ids.sort()).toEqual(['active-admin', 'active-superadmin']);
       const [write] = supabaseMock.writes('notifications', 'POST');
       expect(write.body.type).toBe('tpl_application');
     });

@@ -10,14 +10,14 @@ import { backhaulKeys, type BackhaulVehicle } from './data'
 
 /**
  * What staff can do once a load (or a pooled run) fits a truck: put the load(s) on that truck, or offer the
- * truck's space to vendors in a capacity bidding window (at the suggested price when there is one).
+ * truck's space to vendors as a return trip (at the suggested price when there is one).
  */
 export default function LoadActions({ loads, vehicle, suggestedPrice, onAssigned }: {
   /** The load or loads to put on the truck. */
   loads: { id: string; tracking_id: string; weight_kg: number | null }[]
   /** Null when the space was typed in and no vehicle was chosen: nothing can be assigned then. */
   vehicle: BackhaulVehicle | null
-  /** A suggested price for the load, offered as the window's minimum bid. */
+  /** A suggested price for the load, offered as the return trip's minimum bid. */
   suggestedPrice?: number | null
   onAssigned?: () => void
 }) {
@@ -71,10 +71,10 @@ export default function LoadActions({ loads, vehicle, suggestedPrice, onAssigned
           Assign to this vehicle
         </Button>
         <Button variant="secondary" icon={<Gavel size={16} />} disabled={!vehicle} onClick={() => setWindowOpen(true)}>
-          {price != null ? `Open a capacity bidding window at ${formatRupees(price)}` : 'Open a capacity bidding window'}
+          {price != null ? `Open a return trip at ${formatRupees(price)}` : 'Open a return trip'}
         </Button>
       </div>
-      {!vehicle && <Alert tone="info">Choose a vehicle from the list above to assign this load or open a window on it.</Alert>}
+      {!vehicle && <Alert tone="info">Choose a vehicle from the list above to assign this load or open a return trip on it.</Alert>}
       <OpenWindowModal
         open={windowOpen}
         onClose={() => setWindowOpen(false)}

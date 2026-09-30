@@ -68,16 +68,20 @@ describe('vendor notifications', () => {
 })
 
 describe('3PL partner notifications', () => {
-  it('opens the offer on the partner dashboard', () => {
-    expect(at('tpl_offer', { offer_id: 'o1', partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1?tab=orders&open=o1')
+  it('opens the offer on Orders, the portal home', () => {
+    expect(at('tpl_offer', { offer_id: 'o1', partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1?open=o1')
   })
 
-  it.each(['tpl_offer_taken', 'tpl_offer_withdrawn'])('%s opens the orders tab', type => {
-    expect(at(type, { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1?tab=orders')
+  it.each(['tpl_offer_taken', 'tpl_offer_withdrawn'])('%s opens Orders', type => {
+    expect(at(type, { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1')
   })
 
-  it('opens earnings for a payment', () => {
-    expect(at('tpl_order_paid', { order_id: 'o1', partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1?tab=earnings')
+  it('opens Earnings for a payment', () => {
+    expect(at('tpl_order_paid', { order_id: 'o1', partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1/earnings')
+  })
+
+  it.each(['tpl_approved', 'tpl_paused', 'tpl_resumed', 'tpl_rejected'])('%s opens the portal, where the account status is shown', type => {
+    expect(at(type, { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1')
   })
 
   it('has nowhere to go without the partner id', () => {
@@ -92,12 +96,17 @@ describe('staff notifications', () => {
     ['vendor_request', {}, '/requests?source=vendor'],
     ['vendor_request_cancelled', { request_id: 'r1' }, '/requests?open=r1&source=vendor'],
     ['customer_booking', { booking_id: 'b1' }, '/requests?open=b1&source=customer'],
-    ['capacity_bid', { bid_id: 'b1' }, '/bids?open=b1'],
-    ['capacity_window_closed', { window_id: 'w1' }, '/bids?open=w1'],
-    ['stop_flagged', { bid_id: 'b1', window_id: 'w1' }, '/bids?open=b1'],
+    ['capacity_bid', { bid_id: 'b1' }, '/return-trips?tab=bids&open=b1'],
+    ['capacity_bid', {}, '/return-trips?tab=bids'],
+    ['capacity_window_closed', { window_id: 'w1' }, '/return-trips?tab=bids&open=w1'],
+    ['stop_flagged', { bid_id: 'b1', window_id: 'w1' }, '/return-trips?tab=bids&open=b1'],
+    ['stop_flagged', { window_id: 'w1' }, '/return-trips?tab=bids&open=w1'],
     ['kyc_submitted', { profile_id: 'v1' }, '/admin/kyc?open=v1'],
-    ['tpl_application', { partner_id: 'p1' }, '/3pl-partners?open=p1'],
+    ['tpl_application', { partner_id: 'p1' }, '/return-trips?tab=partners&open=p1'],
+    ['tpl_application', {}, '/return-trips?tab=partners'],
+    ['tpl_update', { partner_id: 'p1' }, '/return-trips?tab=partners&open=p1'],
     ['tpl_order_status', { order_id: 'o1', partner_id: 'p1' }, '/3pl-partners/p1'],
+    ['tpl_order_status', {}, '/return-trips?tab=partners'],
     ['tpl_order_accepted', { order_id: 'o1', partner_id: 'p1' }, '/3pl-partners/p1'],
     ['tpl_offer_declined', { offer_id: 'f1', partner_id: 'p1' }, '/3pl-partners/p1'],
     ['stop_failed', { manifest_id: 'm1' }, '/shipments/m1'],

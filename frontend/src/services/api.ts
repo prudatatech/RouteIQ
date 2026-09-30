@@ -443,6 +443,9 @@ export const vendorAPI = {
   /** The vendor withdraws a load they posted, while it has no vehicle yet. */
   cancelRequest: (id: string) => api.put(`/vendor/shipment-request/${id}/cancel`).then(r => r.data),
   approveKyc: (id: string) => api.put(`/vendor/kyc/${id}/approve`).then(r => r.data),
+  /** Staff place a vendor who has no pickup location (their company details and KYC stay as they are). */
+  setLocation: (id: string, data: { lat: number; lng: number; city?: string }) =>
+    api.put(`/vendor/${encodeURIComponent(id)}/location`, data).then(r => r.data),
   rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
   /** Signed upload URL for one KYC document; use uploadKycDocument() from services/kycDocuments. */
   kycUploadUrl: (data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
@@ -677,6 +680,8 @@ export const dispatchAPI = {
 export const tplAPI = {
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
+  /** The partner record linked to this sign-in (the caller's own, or any for staff). */
+  byUser: (userId: string) => api.get(`/tpl/by-user/${encodeURIComponent(userId)}`).then(r => r.data),
   /** Full record for staff/the partner, or for an applicant who supplies the application's PAN; otherwise status only. */
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),

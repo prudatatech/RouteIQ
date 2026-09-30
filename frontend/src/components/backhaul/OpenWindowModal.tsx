@@ -5,6 +5,7 @@ import { capacityAPI, shipmentsAPI, vehiclesAPI } from '@/services/api'
 import { Button, Input, Modal, Select } from '@/components/ui'
 import { errorMessage, formatKg } from '@/utils/display'
 import { isMasterRow } from '@/components/cargo/lots'
+import { returnTripKeys } from '@/components/returnTrips/data'
 
 interface VehicleOption { id: string; plate_number: string; available_capacity_kg: number | null }
 interface ShipmentOption { id: string; tracking_id: string; status: string; origin_name: string | null; is_master?: boolean | null }
@@ -19,13 +20,13 @@ const DURATIONS = [
   { value: '1440', label: '24 hours' },
 ]
 
-/** Shipments that are already finished cannot be offered as the reason for a window. */
+/** Shipments that are already finished cannot be offered as the reason for a return trip. */
 const FINISHED = new Set(['delivered', 'cancelled', 'failed'])
 
 export interface FormState { vehicle_id: string; floor_price: string; duration: string; shipment_id: string }
 const blank = (): FormState => ({ vehicle_id: '', floor_price: '', duration: '60', shipment_id: '' })
 
-/** Staff open a capacity bidding window: which vehicle, the minimum bid, how long, and an optional shipment it is linked to. */
+/** Staff open a return trip (spare truck space for vendors to bid on): which vehicle, the minimum bid, how long, and an optional shipment it is linked to. */
 export default function OpenWindowModal({ open, onClose, initial }: {
   open: boolean
   onClose: () => void
@@ -68,12 +69,12 @@ export default function OpenWindowModal({ open, onClose, initial }: {
       shipment_id: form.shipment_id || null,
     }),
     onSuccess: () => {
-      toast.success('Bidding window opened. Vendors can bid now.')
-      queryClient.invalidateQueries({ queryKey: ['bids-board'] })
+      toast.success('Return trip opened. Vendors can bid now.')
+      queryClient.invalidateQueries({ queryKey: returnTripKeys.board })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       onClose()
     },
-    onError: err => toast.error(errorMessage(err, 'We could not open this window. Try again.')),
+    onError: err => toast.error(errorMessage(err, 'We could not open this return trip. Try again.')),
   })
 
   const submit = (e: FormEvent) => {
@@ -90,13 +91,13 @@ export default function OpenWindowModal({ open, onClose, initial }: {
     <Modal
       open={open}
       onClose={onClose}
-      title="Open a capacity bidding window"
-      description="Vendors near the vehicle can bid for its free space until the window ends. You choose the winning bid."
+      title="Open a return trip"
+      description="Vendors near the vehicle can bid for its free space until the return trip closes. You choose the winning bid."
       closeOnBackdrop={false}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="open-window-form" loading={save.isPending}>Open window</Button>
+          <Button type="submit" form="open-window-form" loading={save.isPending}>Open return trip</Button>
         </>
       }
     >

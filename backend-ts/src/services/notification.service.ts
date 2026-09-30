@@ -89,10 +89,8 @@ export const notificationService = {
    * are excluded.
    */
   async notifyStaff(title: string, body: string, type: string, data: any = {}) {
-    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type)
-      ? ['admin', 'superadmin', 'manager']
-      // 3PL partner work is a superadmin page, so admins are not sent what they cannot open
-      : type.startsWith('tpl_') ? ['superadmin'] : ['admin', 'superadmin'];
+    // Admins can open the 3PL pages (only approving is the superadmin's), so they are sent 3PL events too
+    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
     const { data: staff, error } = await supabase
       .from('users')
       .select('id')

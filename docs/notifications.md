@@ -22,8 +22,8 @@ Principle (workflow blueprint, principle 7): every handoff notifies and deep-lin
 | `vendor_request`, `vendor_request_cancelled` | A vendor posts or cancels a load | `request_id` | `/requests?open=:request_id&source=vendor` |
 | `vehicle_request` | A driver registers a vehicle for approval | `vehicle_id`, `driver_id` | `/vehicle-requests?open=:vehicle_id` |
 | `kyc_submitted` | A vendor submits KYC | `profile_id` | `/admin/kyc?open=:profile_id` |
-| `capacity_bid`, `capacity_window_closed`, `stop_flagged` | Bids, closed windows, flagged stops | `bid_id`, `window_id`, `confirmation_id`, `route_stop_id` | `/bids?open=...` |
-| `tpl_application`, `tpl_update`, `tpl_order_status`, `tpl_order_accepted`, `tpl_offer_declined` | 3PL partner events | `partner_id`, `order_id`, `offer_id` | `/3pl-partners/:partner_id` |
+| `capacity_bid`, `capacity_window_closed`, `stop_flagged` | Bids, closed return trips, flagged stops | `bid_id`, `window_id`, `confirmation_id`, `route_stop_id` | `/return-trips?tab=bids&open=...` (Bids to decide; the page moves to the right tab and opens the bid) |
+| `tpl_application`, `tpl_update`, `tpl_order_status`, `tpl_order_accepted`, `tpl_offer_declined` | 3PL partner events (admins and superadmins: admins can view partners, only a superadmin approves) | `partner_id`, `order_id`, `offer_id` | `tpl_application` and `tpl_update`: `/return-trips?tab=partners&open=:partner_id`; the others: `/3pl-partners/:partner_id` |
 | `sos` | An emergency | `alert_id`, `vehicle_id` | `/emergency?open=:alert_id` |
 | `stop_failed`, `route_postponed`, `driver_action_rejected` | Trip problems | `route_id`, `shipment_id`, `manifest_id` | `/routes/:route_id`, else the consignment |
 | `fleet_alert`, `document_expiring` | Alerts and expiring documents | `alert_id`, `user_id`, `doc_id` | `/fleet?tab=alerts`, `/admin/users/:user_id?tab=documents` |
@@ -47,6 +47,8 @@ Principle (workflow blueprint, principle 7): every handoff notifies and deep-lin
 | `cargo_exception_opened`, `cargo_exception_resolved`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub` | Their goods | `request_id`, `manifest_id`, `code`, plus `exception_id`, `transfer_id`, `depot_id`, `route_id` where they apply | `/vendor/loads/:request_id` |
 | `cargo_claim_update` | Their claim changes status | `request_id`, `manifest_id`, `claim_id`, `code` (claim), `consignment_code` (load), `status` | `/vendor/claims?open=:claim_id` |
 | `tpl_offer`, `tpl_offer_taken`, `tpl_offer_withdrawn`, `tpl_order_paid`, `tpl_approved`, `tpl_paused`, `tpl_resumed`, `tpl_rejected` | 3PL partner events (a partner is paid for an order with `tpl_order_paid`; a partner has no invoice) | `partner_id`, `offer_id`, `order_id` | `/3pl-portal/:partner_id?tab=...` |
+
+A newly approved 3PL applicant has no account yet, so approval is emailed too, with a link to `/3pl/onboard/setup` (the web address comes from `WEB_APP_URL`, else the first allowed origin that is not localhost).
 
 Invoice ids by recipient: a vendor load carries `manifest_id` and `request_id` (also for a 3PL-delivered load); space a vendor won carries `shipment_id` and `bid_id`.
 

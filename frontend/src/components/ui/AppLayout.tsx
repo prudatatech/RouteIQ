@@ -59,12 +59,12 @@ const QUEUE_TABLES = [
 ]
 
 /** Counts for the menu badges: the same queues as Today, from one request, refreshed when their tables change. */
-function useNavBadges(enabled: boolean, isSuperadmin: boolean) {
+function useNavBadges(enabled: boolean, canSeePartners: boolean) {
   const queryClient = useQueryClient()
   const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, enabled, refetchInterval: 30_000, retry: false })
   const partners = useQuery({
     queryKey: ['tpl-pending-partners'],
-    enabled: enabled && isSuperadmin,
+    enabled: enabled && canSeePartners,
     refetchInterval: 60_000,
     queryFn: async () => {
       const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
@@ -271,7 +271,7 @@ export default function AppLayout() {
 
   // Managers are staff too: they get search, notifications and the menu counts for their sections
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
-  const badges = useNavBadges(isStaff, role === 'superadmin')
+  const badges = useNavBadges(isStaff, role === 'superadmin' || role === 'admin')
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
   const sections = menuFor(role)
   const fullBleed = fullBleedPaths.some(p => location.pathname.startsWith(p))

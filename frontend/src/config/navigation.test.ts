@@ -13,17 +13,17 @@ describe('the staff menu', () => {
   it('gives a manager the operations sections only', () => {
     expect(labels('manager')).toEqual(['Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People'])
     const links = menuFor('manager').flatMap(s => [s.to, ...s.children.map(c => c.to)])
-    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/3pl-partners', '/bids', '/backhaul']) {
+    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/return-trips', '/3pl-partners']) {
       expect(links).not.toContain(forbidden)
     }
   })
 
-  it('hides 3PL and the audit log from admin, and shows KYC', () => {
+  it('shows admin the return trips and 3PL partners (to view), and KYC, but not the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
     expect(links).toContain('/admin/kyc')
-    expect(links).not.toContain('/3pl-partners')
+    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
     expect(links).not.toContain('/admin/audit')
-    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/3pl-partners', '/admin/audit']))
+    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
   })
 
   it('shows nothing to anyone who is not staff', () => {
@@ -35,7 +35,7 @@ describe('the staff menu', () => {
     const links = new Set(navSections.flatMap(s => [s.to, ...s.children.map(c => c.to.split('?')[0])]))
     for (const page of [
       '/today', '/requests', '/bookings', '/vendor-requests', '/shipments', '/dispatch', '/routes', '/route-planner', '/optimize', '/live-map',
-      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/admin/kyc', '/backhaul', '/bids', '/3pl-partners', '/money',
+      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/admin/kyc', '/return-trips', '/money',
       '/analytics', '/insights', '/admin/settings', '/admin/audit',
     ]) expect(links).toContain(page)
   })
@@ -73,6 +73,14 @@ describe('finding the open section', () => {
     expect(at('/money/invoices/i1')).toEqual(['Money', 'Overview'])
     expect(at('/cargo', '?tab=claims')[0]).toBe('Money')
     expect(at('/cargo', '?tab=transfers')).toEqual(['On the road', 'Problems'])
+  })
+
+  it('opens the right Return trips link for each tab, and keeps a partner page in the section', () => {
+    expect(at('/return-trips')).toEqual(['Return trips & 3PL', 'Open return trips'])
+    expect(at('/return-trips', '?tab=bids')).toEqual(['Return trips & 3PL', 'Bids to decide'])
+    expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips & 3PL', 'Pool loads'])
+    expect(at('/return-trips', '?tab=partners&status=active')).toEqual(['Return trips & 3PL', '3PL partners'])
+    expect(at('/3pl-partners/p1')).toEqual(['Return trips & 3PL', null])
   })
 
   it('matches nothing for an unknown page', () => {

@@ -3,7 +3,7 @@
  *
  * Public: onboarding, application tracking (status only), password setup.
  * Applicants may view or edit their pending application with its PAN.
- * Partners see their own record; superadmins manage the network.
+ * Partners see their own record; admins view the network and superadmins manage it.
  */
 import { withWarnings } from '../services/people-common';
 import { Router, Request, Response } from 'express';
@@ -84,8 +84,8 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
   }
 });
 
-// GET /api/v1/tpl/queue
-router.get('/queue', requireAuth, requireRole('superadmin'), async (req, res) => {
+// GET /api/v1/tpl/queue — admins can view the partners; only a superadmin decides (approve, reject, pause, resume, delete)
+router.get('/queue', requireAuth, requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const status = req.query.status as string || 'pending';
     res.json(await tplService.getQueue(status));

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Download, FileText, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
@@ -47,6 +48,9 @@ interface TplPartnerDetail {
 
 type DiffKind = 'added' | 'modified' | 'unchanged'
 interface DiffRow { key: string; kind: DiffKind; next: PendingCorridor; prev?: TplCorridor }
+
+/** The list of partners, a tab of Return trips. */
+const PARTNERS_TAB = '/return-trips?tab=partners'
 
 const vehiclesText = (v: string[] | string | null | undefined) => (Array.isArray(v) ? v.join(', ') : v ?? '')
 
@@ -114,6 +118,8 @@ export default function TplPartnerDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
+  // Admins can view a partner; only a superadmin approves, rejects, pauses or deletes (the API says the same)
+  const canDecide = useAuthStore(s => s.role) === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
 
   const { data: partner, isLoading, error, refetch } = useQuery<TplPartnerDetail>({
@@ -161,7 +167,7 @@ export default function TplPartnerDetailPage() {
       toast.success('Partner deleted')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
-      navigate('/3pl-partners')
+      navigate(PARTNERS_TAB)
     },
     onError: err => toast.error(errorMessage(err, 'We could not delete the partner. Try again.')),
   })
@@ -231,7 +237,7 @@ export default function TplPartnerDetailPage() {
       <PageHeader
         title={partner.company_name}
         description={`Submitted ${partner.created_at ? formatDateTime(partner.created_at) : '—'}${partner.email ? ` by ${partner.email}` : ''}`}
-        back={{ to: '/3pl-partners', label: 'Back to 3PL partners' }}
+        back={{ to: PARTNERS_TAB, label: 'Back to 3PL partners' }}
         actions={<StatusPill status={partner.status} />}
       />
 
@@ -350,7 +356,13 @@ export default function TplPartnerDetailPage() {
         <TplPartnerPerformance partnerId={partner.id} slaCommitment={partner.sla_commitment} />
       )}
 
-      {partner.status === 'pending' && (
+      {partner.status === 'pending' && !canDecide && (
+        <Alert tone="info" title="Waiting for a superadmin">
+          Only a superadmin can approve or reject a 3PL partner. You can review the details above.
+        </Alert>
+      )}
+
+      {partner.status === 'pending' && canDecide && (
         <Card padded className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <p className="text-sm text-muted">
             {partner.pending_updates
@@ -370,12 +382,12 @@ export default function TplPartnerDetailPage() {
         <Card padded>
           <p className="text-sm text-text">This application was rejected.</p>
           <div className="mt-4">
-            <Button variant="secondary" onClick={() => navigate('/3pl-partners')}>Back to 3PL partners</Button>
+            <Button variant="secondary" onClick={() => navigate(PARTNERS_TAB)}>Back to 3PL partners</Button>
           </div>
         </Card>
       )}
 
-      {(partner.status === 'active' || partner.status === 'paused') && (
+      {canDecide && (partner.status === 'active' || partner.status === 'paused') && (
         <Card padded className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <p className="text-sm text-muted">Pause a partner to stop new work from being routed to them, or remove them from the network.</p>
           <div className="flex shrink-0 gap-3">

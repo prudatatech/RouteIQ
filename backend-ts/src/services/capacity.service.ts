@@ -659,7 +659,11 @@ export const capacityService = {
         { bid_id: bidId, window_id: pre.window_id, missing: 'location' },
         'bid_id',
       ));
-      throw new HttpError(400, "This vendor has no pickup location on their profile, so the truck can't be routed to them. Ask them to add it first.");
+      throw new HttpError(400, "This vendor has no pickup location on their profile, so the truck can't be routed to them. The vendor has been asked to add one.", {
+        code: 'vendor_location_missing',
+        vendor_id: pre.vendor_id,
+        vendor_name: vendor?.company_name ?? null,
+      });
     }
     if (preWindow?.status === 'cancelled') throw new HttpError(409, 'This bidding window was cancelled');
     const { data: vehicle } = preWindow
