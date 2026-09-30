@@ -5,9 +5,9 @@
  * read. /optimize/incubate writes to it after asking the ML service to
  * evaluate a vehicle; traffic incidents write to it here.
  */
-import { settings } from '../core/config';
 import { cacheGet, cacheSet } from '../core/redis';
-import { externalHttp } from '../core/http';
+import { logFallback, mlPost } from './optimizer/ml-client';
+import { evaluateRerouteLocal, RerouteDecision } from './optimizer/reroute-local';
 
 export const REROUTE_CACHE_KEY = 'active_reroute_suggestions';
 const TTL_SECONDS = 3600;
@@ -25,12 +25,32 @@ export interface RerouteSuggestion {
   source?: 'traffic' | 'ml';
 }
 
-/** Asks the ML service whether a better stop order exists. Null when it is unreachable or finds nothing. */
-export async function evaluateReroute(vehicleId: string): Promise<{ saved_minutes: number; new_stop_sequence?: string[] } | null> {
+/** A better-order finding. Local findings carry the full figures; the ML service's carry what it reports. */
+export type RerouteFinding = Partial<RerouteDecision> & { saved_minutes: number; new_stop_sequence?: string[] };
+
+/** The ML service answers in seconds or not at all; do not hold up a request longer. */
+const ML_REROUTE_TIMEOUT_MS = 5_000;
+/** Below this the change is not worth a driver's attention (the ML service uses the same limit). */
+const MIN_SAVED_MINUTES = 5;
+
+/**
+ * Whether a better stop order exists for the vehicle's open route. Asks the ML service and, when it
+ * is not there, re-solves the remaining stops in-process. Null when nothing could be evaluated.
+ */
+export async function evaluateReroute(vehicleId: string): Promise<RerouteFinding | null> {
   try {
-    const decision: any = await externalHttp.postJson(`${settings.ML_SERVICE_URL}/evaluate-reroute`, { vehicle_id: vehicleId });
-    return decision && typeof decision.saved_minutes === 'number' ? decision : null;
-  } catch {
+    const decision: any = await mlPost('/evaluate-reroute', { vehicle_id: vehicleId }, { timeoutMs: ML_REROUTE_TIMEOUT_MS });
+    if (decision && typeof decision.saved_minutes === 'number') return { ...decision, engine: 'ml-service' };
+  } catch (e) {
+    logFallback('evaluate-reroute', e, 'the in-process re-solve');
+  }
+  try {
+    const local = await evaluateRerouteLocal(vehicleId);
+    if (!local.ok) return null;
+    const { decision } = local;
+    return decision.saved_minutes >= MIN_SAVED_MINUTES ? decision : { ...decision, saved_minutes: 0 };
+  } catch (e) {
+    console.warn('[optimizer] in-process reroute evaluation failed:', (e as Error).message);
     return null;
   }
 }

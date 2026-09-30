@@ -12,7 +12,8 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { sendError, HttpError } from '../core/errors';
 import { ShipmentService } from '../services/shipment.service';
-import { settings } from '../core/config';
+import { logFallback, mlPost } from '../services/optimizer/ml-client';
+import { orderDropsInProcess } from '../services/optimizer/pooling';
 import { MapplsService } from '../services/mappls.service';
 import { resolveAlert } from '../services/alerts.service';
 
@@ -242,26 +243,26 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
     // Stop order from the ML optimiser
     let stopIds: string[] | null = null;
     try {
-      const resp = await fetch(`${settings.ML_SERVICE_URL}/optimize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locations: [
-            { id: 'depot', lat: depot.latitude, lng: depot.longitude, demand_kg: 0 },
-            ...loads.map(l => ({ id: l.id, lat: l.dest_lat, lng: l.dest_lng, demand_kg: l.weight_kg })),
-          ],
-          vehicles: [{ id: vehicle.id, capacity_kg: vehicle.capacity_kg, start_lat: depot.latitude, start_lng: depot.longitude }],
-          algorithm: 'ortools',
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (resp.ok) {
-        const ml: any = await resp.json();
-        const seq = ml?.routes?.[0]?.stop_ids;
-        if (Array.isArray(seq)) stopIds = seq.filter((id: string) => id !== 'depot');
-      }
-    } catch {
-      console.warn('ML service unreachable for pooling optimisation');
+      const ml: any = await mlPost('/optimize', {
+        locations: [
+          { id: 'depot', lat: depot.latitude, lng: depot.longitude, demand_kg: 0 },
+          ...loads.map(l => ({ id: l.id, lat: l.dest_lat, lng: l.dest_lng, demand_kg: l.weight_kg })),
+        ],
+        vehicles: [{ id: vehicle.id, capacity_kg: vehicle.capacity_kg, start_lat: depot.latitude, start_lng: depot.longitude }],
+        algorithm: 'ortools',
+      }, { timeoutMs: 10_000, probe: true });
+      const seq = ml?.routes?.[0]?.stop_ids;
+      if (Array.isArray(seq)) stopIds = seq.filter((id: string) => id !== 'depot');
+    } catch (e) {
+      logFallback('pooling optimize', e, 'the in-process solver');
+    }
+    if (!stopIds || stopIds.length !== loads.length) {
+      const local = await orderDropsInProcess(
+        { lat: depot.latitude, lng: depot.longitude },
+        { id: vehicle.id, capacityKg: vehicle.capacity_kg },
+        loads.map(l => ({ id: l.id, lat: l.dest_lat as number, lng: l.dest_lng as number, weightKg: l.weight_kg || 0 })),
+      );
+      stopIds = local?.order ?? null;
     }
     if (!stopIds || stopIds.length !== loads.length) {
       res.status(502).json({ detail: 'The route optimiser is not available right now. Try again shortly.' });

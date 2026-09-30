@@ -23,6 +23,11 @@ import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { markAssigned } from '../services/shipment.service';
 import { isPlaceholderPlate } from '../core/vehicles';
+import { planOptimization } from '../services/optimizer/optimize-engine';
+import { predictEta } from '../services/optimizer/eta';
+import { evaluateReroute } from '../services/reroute.service';
+import { evaluateRerouteLocal } from '../services/optimizer/reroute-local';
+import { logFallback, mlPost } from '../services/optimizer/ml-client';
 
 /** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
 
@@ -30,9 +35,6 @@ import { isPlaceholderPlate } from '../core/vehicles';
 const PLANNABLE_STATUSES = ['created', 'exception'];
 
 const router = Router();
-
-// Extra time allowed for an ML optimize call beyond the solver's own time budget
-const ML_TIMEOUT_MARGIN_SECONDS = 15;
 
 // ── POST / — Run VRP optimization ──────────────────────────
 router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
@@ -162,24 +164,17 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       algorithm: payload.algorithm === 'genetic' ? 'ga' : payload.algorithm,
     };
 
-    let solution: any;
-    try {
-      const mlResponse = await fetch(`${settings.ML_SERVICE_URL}/optimize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mlPayload),
-        // The solver may use its whole time budget; allow for network and setup on top
-        signal: AbortSignal.timeout((payload.max_solve_time_seconds + ML_TIMEOUT_MARGIN_SECONDS) * 1000),
-      });
-      if (mlResponse.ok) {
-        solution = await mlResponse.json();
-      } else {
-        throw new Error('ML service unavailable');
-      }
-    } catch {
-      // Fallback: greedy nearest-neighbour solver in TS
-      solution = greedyFallback(depot, shipments, vehicles, mlPayload.traffic_factor);
-    }
+    // ML service first; when it is not reachable the in-process solver plans the routes
+    const outcome = await planOptimization({
+      depot,
+      shipments,
+      vehicles,
+      mlPayload,
+      considerTraffic: payload.consider_traffic,
+      maxSolveSeconds: payload.max_solve_time_seconds,
+    });
+    const solution = outcome.solution;
+    const viewByVehicle = new Map(outcome.routes.map(v => [v.vehicle_id, v]));
 
     // ── Save routes to DB ──
     const routeResponses: any[] = [];
@@ -293,6 +288,11 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
           status: s.status,
         })),
         created_at: routeRow.created_at,
+        // The stops in the order chosen, and in the order they were booked, for the map
+        plan: viewByVehicle.get(routeRow.vehicle_id)?.plan ?? [],
+        before: viewByVehicle.get(routeRow.vehicle_id)?.before ?? null,
+        saved_km: viewByVehicle.get(routeRow.vehicle_id)?.saved_km ?? null,
+        saved_minutes: viewByVehicle.get(routeRow.vehicle_id)?.saved_minutes ?? null,
       });
     }
 
@@ -303,7 +303,17 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       total_distance_km: solution.total_distance_km || 0,
       total_fuel_liters: solution.total_fuel_liters || 0,
       // null when the solver has no baseline to measure savings against
-      estimated_savings_pct: solution.savings_vs_naive_pct ?? null,
+      estimated_savings_pct: solution.savings_vs_naive_pct ?? (outcome.beforeKm > 0 ? Math.round((outcome.savedKm / outcome.beforeKm) * 1000) / 10 : null),
+      // Which engine produced the routes, and whether any distance is an estimate
+      engine: outcome.engine,
+      engine_note: outcome.engineNote,
+      matrix_source: outcome.matrixSource,
+      estimated: outcome.estimated,
+      saved_km: outcome.savedKm,
+      saved_minutes: outcome.savedMinutes,
+      before_total_km: outcome.beforeKm,
+      depot: { id: depot.id, name: depot.name ?? null, latitude: Number(depot.latitude), longitude: Number(depot.longitude) },
+      unassigned: outcome.unassigned,
       solve_time_seconds: solution.solve_time_seconds || 0,
       // The algorithm that actually produced the routes (may differ from the request on fallback)
       algorithm: solution.algorithm ?? mlPayload.algorithm,
@@ -317,56 +327,24 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
 });
 
 // ── POST /eta — ETA prediction ─────────────────────────────
+// Optional origin and destination ({ lat, lng }) let the fallback use a live-traffic road duration.
 router.post('/eta', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
     // Only known numbers go on to the ML service, and only sane ones
     const input = req.body ?? {};
+    const point = (v: any): LatLng | undefined => {
+      const p = { lat: Number(v?.lat), lng: Number(v?.lng) };
+      return v && isValidPoint(p) ? p : undefined;
+    };
     const etaInput = {
       distance_km: parseNumberInRange(input.distance_km ?? 10, 'distance_km', 0, 5000),
       traffic_density: parseNumberInRange(input.traffic_density ?? 0.5, 'traffic_density', 0, 1),
       weather_severity: parseNumberInRange(input.weather_severity ?? 0, 'weather_severity', 0, 1),
       ...(typeof input.vehicle_type === 'string' ? { vehicle_type: input.vehicle_type.slice(0, 30) } : {}),
+      origin: point(input.origin),
+      destination: point(input.destination),
     };
-    req.body = etaInput;
-
-    // Try calling ML service
-    try {
-      const mlRes = await fetch(`${settings.ML_SERVICE_URL}/predict-eta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(etaInput),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (mlRes.ok) {
-        const result = await mlRes.json();
-        res.json(result);
-        return;
-      }
-    } catch { /* fallback below */ }
-
-    // Physics-based fallback
-    const distKm = req.body.distance_km || 10;
-    const trafficDensity = req.body.traffic_density ?? 0.5;
-    const weatherSeverity = req.body.weather_severity ?? 0.0;
-    const baseSpeed = 45.0;
-
-    const trafficFactor = 1 - trafficDensity * 0.6;
-    const weatherFactor = 1 - weatherSeverity * 0.3;
-    const hour = new Date().getHours();
-    const peakFactor = (hour >= 8 && hour <= 10) || (hour >= 17 && hour <= 20) ? 0.75 : 1.0;
-
-    const effectiveSpeed = Math.max(5.0, baseSpeed * trafficFactor * weatherFactor * peakFactor);
-    const estimatedMinutes = (distKm / effectiveSpeed) * 60;
-    const uncertainty = Math.max(2.0, estimatedMinutes * 0.1 * (1 + trafficDensity + weatherSeverity));
-
-    res.json({
-      estimated_minutes: parseFloat(estimatedMinutes.toFixed(1)),
-      confidence_interval_low: parseFloat((estimatedMinutes - uncertainty).toFixed(1)),
-      confidence_interval_high: parseFloat((estimatedMinutes + uncertainty).toFixed(1)),
-      traffic_impact_minutes: parseFloat(Math.max(0, estimatedMinutes - (distKm / baseSpeed) * 60).toFixed(1)),
-      weather_impact_minutes: parseFloat((weatherSeverity * 5).toFixed(1)),
-      model_version: '1.0.0-physics-ts',
-    });
+    res.json(await predictEta(etaInput));
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -375,41 +353,35 @@ router.post('/eta', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
 // ── POST /incubate/:vehicle_id — AI Incubator ──────────────
 router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    // Try calling ML service for reroute evaluation
-    try {
-      const mlRes = await fetch(`${settings.ML_SERVICE_URL}/evaluate-reroute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicle_id: req.params.vehicle_id }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (mlRes.ok) {
-        const decision: any = await mlRes.json();
-        if (decision && decision.saved_minutes > 0) {
-          const existing = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
-          const newSuggestion = {
-            vehicle_id: decision.vehicle_id,
-            route_id: decision.route_id,
-            trigger: decision.trigger,
-            saved_minutes: decision.saved_minutes,
-            new_stop_sequence: decision.new_stop_sequence,
-          };
-          const combined = [newSuggestion, ...existing.filter((s: any) => s.vehicle_id !== decision.vehicle_id)];
-          await cacheSet('active_reroute_suggestions', combined, 3600);
+    // ML service when it is there, otherwise the remaining stops are re-solved in-process
+    const decision = await evaluateReroute(req.params.vehicle_id);
+    if (decision && decision.saved_minutes > 0) {
+      const existing = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
+      const newSuggestion = {
+        vehicle_id: decision.vehicle_id ?? req.params.vehicle_id,
+        route_id: decision.route_id,
+        trigger: decision.trigger,
+        saved_minutes: decision.saved_minutes,
+        new_stop_sequence: decision.new_stop_sequence,
+        engine: decision.engine,
+        source: 'ml',
+      };
+      const combined = [newSuggestion, ...existing.filter((s: any) => s.vehicle_id !== newSuggestion.vehicle_id)];
+      await cacheSet('active_reroute_suggestions', combined, 3600);
 
-          res.json({
-            status: 'suggested',
-            saved_minutes: decision.saved_minutes,
-            trigger: decision.trigger,
-            message: `AI Incubator found a better path! Saving ~${decision.saved_minutes} mins.`,
-          });
-          return;
-        }
-      }
-    } catch { /* fallback */ }
+      res.json({
+        status: 'suggested',
+        saved_minutes: decision.saved_minutes,
+        trigger: decision.trigger,
+        engine: decision.engine,
+        message: `AI Incubator found a better path! Saving ~${decision.saved_minutes} mins.`,
+      });
+      return;
+    }
 
     res.json({
       status: 'checked',
+      engine: decision?.engine ?? null,
       message: 'No better route found at this time. Current path is already optimized based on live traffic.',
     });
   } catch (e: any) {
@@ -421,7 +393,7 @@ router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), a
 router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { route_id } = req.params;
-    
+
     // 1. Get route to find vehicle_id
     const { data: route } = await supabase
       .from('routes')
@@ -441,165 +413,82 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
       return;
     }
 
-    // 2. Call ML Service evaluate-reroute
+    // 2. ML service evaluate-reroute, or the in-process re-solve of the pending stops
     let decision: any;
     try {
-      const mlRes = await fetch(`${settings.ML_SERVICE_URL}/evaluate-reroute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicle_id: route.vehicle_id }),
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (!mlRes.ok) {
-        throw new Error('ML service failed to evaluate reroute');
-      }
-      decision = await mlRes.json();
+      decision = await mlPost('/evaluate-reroute', { vehicle_id: route.vehicle_id }, { timeoutMs: 5_000 });
+      decision.engine = 'ml-service';
     } catch (err) {
-      // Fallback: Local greedy re-optimization
-      const { data: pendingStops } = await supabase
-        .from('route_stops')
-        .select('id, delivery_point_id, delivery_points(id, latitude, longitude)')
-        .eq('route_id', route_id)
-        .eq('status', 'pending');
-        
-      if (!pendingStops || pendingStops.length <= 1) {
-        res.json({
-          status: 'no_change',
-          message: 'Not enough pending stops to re-optimize.',
-        });
+      logFallback('reoptimize', err, 'the in-process re-solve');
+      const local = await evaluateRerouteLocal(route.vehicle_id, { routeId: route_id });
+      if (!local.ok) {
+        if (local.reason === 'no_position') {
+          throw new HttpError(409, 'Vehicle has no current position (no telemetry or last-known location); cannot re-optimize.');
+        }
+        res.json({ status: 'no_change', message: 'Not enough pending stops to re-optimize.' });
         return;
       }
-
-      // Get vehicle's latest known position
-      const { data: telemetry } = await supabase
-        .from('telemetry')
-        .select('latitude, longitude')
-        .eq('vehicle_id', route.vehicle_id)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      let currentLat = telemetry?.latitude;
-      let currentLng = telemetry?.longitude;
-
-      if (!currentLat || !currentLng) {
-        // Fall back to the vehicle's own last-known position
-        const { data: vehiclePos } = await supabase
-          .from('vehicles')
-          .select('latitude, longitude')
-          .eq('id', route.vehicle_id)
-          .maybeSingle();
-        currentLat = vehiclePos?.latitude;
-        currentLng = vehiclePos?.longitude;
-      }
-
-      if (!currentLat || !currentLng) {
-        throw new HttpError(409, 'Vehicle has no current position (no telemetry or last-known location); cannot re-optimize.');
-      }
-
-      const unvisited = [...pendingStops];
-      const newSequence = [];
-      
-      let totalDistanceKm = 0;
-      
-      // Greedy nearest neighbor
-      while (unvisited.length > 0) {
-        let bestIdx = -1;
-        let minDistance = Infinity;
-        
-        for (let i = 0; i < unvisited.length; i++) {
-          const stop = unvisited[i];
-          const dp: any = stop.delivery_points || {};
-          const lat = dp.latitude || dp.lat || 0;
-          const lng = dp.longitude || dp.lng || 0;
-          
-          if (lat === 0 && lng === 0) {
-            // Skip invalid coordinates for distance calc, just append them
-            if (minDistance === Infinity) { bestIdx = i; }
-            continue;
-          }
-          
-          // Haversine distance
-          const R = 6371; // km
-          const dLat = (lat - currentLat) * Math.PI / 180;
-          const dLng = (lng - currentLng) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(currentLat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
-                    Math.sin(dLng/2) * Math.sin(dLng/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const distance = R * c;
-          
-          if (distance < minDistance) {
-            minDistance = distance;
-            bestIdx = i;
-          }
-        }
-        
-        if (minDistance !== Infinity) {
-          totalDistanceKm += minDistance;
-        }
-
-        const nextStop = unvisited.splice(bestIdx, 1)[0];
-        newSequence.push(nextStop.delivery_point_id);
-        const dp: any = nextStop.delivery_points || {};
-        currentLat = dp.latitude || dp.lat || currentLat;
-        currentLng = dp.longitude || dp.lng || currentLng;
-      }
-
-      const drivingHours = totalDistanceKm / 40.0;
-      const realisticEtaMinutes = Math.round((drivingHours * 60) + (pendingStops.length * 15));
-
-      decision = {
-        new_stop_sequence: newSequence,
-        new_eta_minutes: realisticEtaMinutes,
-        new_distance_km: parseFloat(totalDistanceKm.toFixed(1)),
-        saved_minutes: Math.round(realisticEtaMinutes * 0.1),
-      };
-      
-      console.log(`[Re-optimize Fallback] Generated new sequence for ${route_id} with ${newSequence.length} stops.`);
+      decision = local.decision;
+      // The re-solve measures the remaining stops only, so the route's totals move by what it saved
+      const { data: totals } = await supabase.from('routes').select('total_distance_km, total_duration_minutes').eq('id', route_id).maybeSingle();
+      const km = Number(totals?.total_distance_km) || 0;
+      const min = Number(totals?.total_duration_minutes) || 0;
+      decision.new_distance_km = km > 0 ? Math.round(Math.max(0, km - (decision.saved_km ?? 0)) * 10) / 10 : null;
+      decision.new_eta_minutes = min > 0 ? Math.round(Math.max(0, min - decision.saved_minutes) * 10) / 10 : null;
     }
-    
+
     if (decision && decision.new_stop_sequence) {
       // Apply the new sequence to the database
       const newSequence = decision.new_stop_sequence; // Array of delivery_point_ids
-      
+
       // Get all pending stops for this route to map IDs
       const { data: pendingStops } = await supabase
         .from('route_stops')
-        .select('id, delivery_point_id')
+        .select('id, delivery_point_id, sequence')
         .eq('route_id', route_id)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .order('sequence', { ascending: true });
 
       if (pendingStops && pendingStops.length > 0) {
-        // Update sequences in parallel
+        const oldSequence = pendingStops.map((s: any) => String(s.delivery_point_id));
+        // Pending stops take the sequence numbers the pending stops already held, so
+        // stops already completed keep their place at the front.
+        const slots = pendingStops.map((s: any) => s.sequence).sort((a: number, b: number) => a - b);
         await Promise.all(pendingStops.map((stop: any) => {
           const newIdx = newSequence.indexOf(stop.delivery_point_id.toString());
-          if (newIdx !== -1) {
+          if (newIdx !== -1 && slots[newIdx] !== undefined) {
             return supabase
               .from('route_stops')
-              .update({ sequence: newIdx + 1 })
+              .update({ sequence: slots[newIdx] })
               .eq('id', stop.id);
           }
           return Promise.resolve();
         }));
 
-        // Update route ETA and Distance
-        await supabase
-          .from('routes')
-          .update({ 
-            total_duration_minutes: decision.new_eta_minutes,
-            total_distance_km: decision.new_distance_km,
-            estimated_fuel_liters: parseFloat((decision.new_distance_km / 4).toFixed(1)),
-          })
-          .eq('id', route_id);
+        // Update route ETA and Distance (when the new figures are known)
+        if (typeof decision.new_eta_minutes === 'number' && typeof decision.new_distance_km === 'number') {
+          await supabase
+            .from('routes')
+            .update({
+              total_duration_minutes: decision.new_eta_minutes,
+              total_distance_km: decision.new_distance_km,
+              estimated_fuel_liters: parseFloat((decision.new_distance_km / 4).toFixed(1)),
+            })
+            .eq('id', route_id);
+        }
 
         res.json({
           status: 'success',
           message: `Route re-optimized successfully. Saved ${decision.saved_minutes} minutes.`,
+          engine: decision.engine,
+          estimated: decision.estimated ?? null,
           saved_minutes: decision.saved_minutes,
+          saved_km: decision.saved_km ?? null,
           new_eta_minutes: decision.new_eta_minutes,
-          new_distance_km: decision.new_distance_km
+          new_distance_km: decision.new_distance_km,
+          old_distance_km: decision.old_distance_km ?? null,
+          old_stop_sequence: oldSequence,
+          new_stop_sequence: newSequence,
         });
         return;
       }
@@ -607,94 +496,12 @@ router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), a
 
     res.json({
       status: 'no_change',
-      message: decision.message || 'Route is already fully optimized.',
+      engine: decision?.engine ?? null,
+      message: decision?.message || 'Route is already fully optimized.',
     });
   } catch (e: any) {
     sendError(req, res, e);
   }
 });
-
-// ── Greedy nearest-neighbour fallback (no OR-Tools) ────────
-function greedyFallback(depot: any, deliveryPoints: any[], vehicles: any[], trafficFactor: number): any {
-  const startTime = Date.now();
-
-  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const R = 6371.0;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(a));
-  }
-
-  const unvisited = new Set(deliveryPoints.map((_: any, i: number) => i));
-  const routes: any[] = [];
-
-  for (const vehicle of vehicles) {
-    if (unvisited.size === 0) break;
-    let currentLat = depot.latitude;
-    let currentLng = depot.longitude;
-    const stopIds: string[] = [];
-    let load = 0;
-    let dist = 0;
-
-    while (unvisited.size > 0) {
-      let nearestIdx = -1;
-      let nearestDist = Infinity;
-
-      for (const idx of unvisited) {
-        const dp = deliveryPoints[idx];
-        const drop = finalDeliveryPoint<any>(dp.delivery_points);
-        const dpLat = drop?.latitude || dp.latitude;
-        const dpLng = drop?.longitude || dp.longitude;
-        if (!dpLat || !dpLng) continue;
-        const d = haversineKm(currentLat, currentLng, dpLat, dpLng);
-        if (d < nearestDist) {
-          nearestDist = d;
-          nearestIdx = idx;
-        }
-      }
-
-      if (nearestIdx === -1) break;
-      const dp = deliveryPoints[nearestIdx];
-      const dpDemand = dp.total_weight_kg || dp.weight_kg || dp.demand_kg || 0;
-      if (load + dpDemand > vehicle.capacity_kg) break;
-
-      dist += nearestDist * trafficFactor;
-      load += dpDemand;
-      stopIds.push(dp.id);
-      unvisited.delete(nearestIdx);
-      const dropOff = finalDeliveryPoint<any>(dp.delivery_points);
-      currentLat = dropOff?.latitude || dp.latitude;
-      currentLng = dropOff?.longitude || dp.longitude;
-    }
-
-    // Return to depot
-    dist += haversineKm(currentLat, currentLng, depot.latitude, depot.longitude);
-    const fuelEfficiency = vehicle.fuel_efficiency_kmpl || 10;
-
-    routes.push({
-      vehicle_id: vehicle.id,
-      stop_ids: stopIds,
-      total_distance_km: parseFloat(dist.toFixed(2)),
-      total_duration_minutes: parseFloat(((dist / 50) * 60).toFixed(1)),
-      estimated_fuel_liters: parseFloat((dist / fuelEfficiency).toFixed(2)),
-      traffic_delay_minutes: 0,
-      weather_condition: 'clear',
-      // Same measure the ML service uses: stops served per 5 km driven, capped at 1.
-      efficiency_score: stopIds.length ? parseFloat(Math.min(1, stopIds.length / (dist / 5 + 1)).toFixed(3)) : 0,
-    });
-  }
-
-  const totalDist = routes.reduce((sum: number, r: any) => sum + r.total_distance_km, 0);
-  return {
-    routes,
-    total_distance_km: parseFloat(totalDist.toFixed(2)),
-    total_fuel_liters: parseFloat(routes.reduce((sum: number, r: any) => sum + r.estimated_fuel_liters, 0).toFixed(2)),
-    solve_time_seconds: parseFloat(((Date.now() - startTime) / 1000).toFixed(3)),
-    savings_vs_naive_pct: null,
-    solver_status: 'greedy_fallback',
-    algorithm: 'greedy',
-  };
-}
 
 export default router;
