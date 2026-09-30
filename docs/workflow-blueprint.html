@@ -1,0 +1,326 @@
+<title>MargixIndia Workflow Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column (about 72ch) with wide tables and flow diagrams that break out and scroll on their own. Road-freight palette: asphalt ink, highway-sign green, amber for "needs you". */
+:root{
+  --bg:#f6f7f4; --surface:#ffffff; --ink:#1d2320; --muted:#5d6862; --line:#dde2dc;
+  --accent:#1f6b4a; --accent-soft:#e3f0e8; --amber:#9a5b00; --amber-soft:#fbefd9; --red:#a4332a; --red-soft:#f8e3e0;
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141816; --surface:#1b201d; --ink:#e7ece8; --muted:#9aa69f; --line:#2c3430;
+  --accent:#6fcf9f; --accent-soft:#1d3328; --amber:#f0b45a; --amber-soft:#3a2c14; --red:#f08a7f; --red-soft:#3c1f1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141816; --surface:#1b201d; --ink:#e7ece8; --muted:#9aa69f; --line:#2c3430;
+  --accent:#6fcf9f; --accent-soft:#1d3328; --amber:#f0b45a; --amber-soft:#3a2c14; --red:#f08a7f; --red-soft:#3c1f1b; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;padding-inline:16px;padding-block:40px 80px}
+main{max-width:980px;margin:0 auto;display:grid;gap:56px}
+.read{max-width:72ch}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,4.5vw,3rem)}
+h2{font-size:1.75rem}
+h3{font-size:1.2rem;font-family:var(--body);font-weight:700}
+p{margin:0}
+section{display:grid;gap:18px}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:1.15rem;color:var(--muted)}
+ul,ol{margin:0;padding-left:1.2em;display:grid;gap:6px}
+code,.code{font-family:var(--mono);font-size:.85em;background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:.95rem}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.role{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:12px;min-width:0}
+.role h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.role .who{font-size:.85rem;color:var(--muted);font-weight:400}
+.label{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.queue{display:grid;gap:6px;padding:0;list-style:none}
+.queue li{display:flex;gap:10px;align-items:baseline}
+.pill{font-family:var(--mono);font-size:.7rem;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.p-red{background:var(--red-soft);color:var(--red)}
+.p-amber{background:var(--amber-soft);color:var(--amber)}
+.p-green{background:var(--accent-soft);color:var(--accent)}
+.problem{border-left:3px solid var(--red);padding:4px 0 4px 14px}
+.flow{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.phase{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:10px}
+.phase h3 .pill{margin-left:6px}
+.decide{background:var(--amber-soft);border-radius:12px;padding:20px;display:grid;gap:10px}
+.decide h3{color:var(--amber)}
+footer{color:var(--muted);font-size:.9rem}
+a{color:var(--accent)}
+</style>
+
+<main>
+<header class="read" style="display:grid;gap:14px">
+  <span class="eyebrow">Operations design · 30 Sep 2026</span>
+  <h1>MargixIndia Workflow Blueprint</h1>
+  <p class="lede">Every screen we built works on its own. Together they don't yet tell anyone what to do next. This blueprint defines one flow for moving goods, who owns each step, and what each person sees when they open the app. We rebuild the navigation, home screens and handoffs around it.</p>
+</header>
+
+<section class="read">
+  <span class="eyebrow">What we found</span>
+  <h2>Why it feels disconnected</h2>
+  <p>We audited every page, every role's menu and eight end-to-end journeys in the code. The problems are structural rather than cosmetic:</p>
+  <div class="problem"><strong>Menus are organised by feature, not by work.</strong> Admins see 22 menu items. Nothing follows the order of the job: receive, dispatch, track, deliver, get paid.</div>
+  <div class="problem"><strong>One thing, many names.</strong> A vendor's goods appear as "vendor load", "manifest", "consignment", "shipment" and "request" on different screens. Statuses differ per page: "exception" means a failed delivery in one place and a problem case in another.</div>
+  <div class="problem"><strong>The same job lives in several places.</strong> Assigning a vehicle has three separate screens. Trips are created from the route planner, the optimizer and backhaul. The marketplace is split across Backhaul, Bids and Vendor loads.</div>
+  <div class="problem"><strong>Handoffs break between people.</strong>
+    <ul>
+      <li>Optimized trips sit undispatched with no prompt.</li>
+      <li>Managers can't sign in at all.</li>
+      <li>Several notifications open the wrong page or none.</li>
+      <li>Vendors aren't told a return-trip window opened.</li>
+      <li>Customers never see an invoice.</li>
+      <li>New drivers and uploaded documents reach nobody.</li>
+    </ul>
+  </div>
+  <div class="problem"><strong>No "what needs me now".</strong> The dashboard shows figures, but misses bookings to confirm, bids to decide, shipments with no vehicle and deliveries with no price.</div>
+</section>
+
+<section class="read">
+  <span class="eyebrow">Principles</span>
+  <h2>Seven rules every screen follows</h2>
+  <ol>
+    <li><strong>Every role opens on a work queue.</strong> Home is "what needs you now", sorted by urgency. Each item has one button that does the next step.</li>
+    <li><strong>The menu follows the job.</strong> Sections run in the order work happens, and each role sees only the sections it works in.</li>
+    <li><strong>One home page per thing.</strong> Every shipment, trip, vehicle, person, case, claim and invoice has one page with its own link. Drawers are for a quick look and always offer "Open".</li>
+    <li><strong>Every page says what's next.</strong> A bar at the top shows the current stage and the one action that moves it forward, or who it is waiting on.</li>
+    <li><strong>Everything links to what it touches.</strong> A shipment links to its trip, vehicle, driver, case, invoice and requester, and each of those links back.</li>
+    <li><strong>One word per thing, everywhere.</strong> The same vocabulary appears in the web app, driver app, customer app and notifications.</li>
+    <li><strong>Every handoff notifies and deep-links.</strong> When a step finishes, the next person is told, and the notification opens exactly the item they need to act on.</li>
+  </ol>
+</section>
+
+<section>
+  <div class="read" style="display:grid;gap:14px">
+    <span class="eyebrow">Vocabulary</span>
+    <h2>One word per thing</h2>
+    <p>These names replace the current mix in every app and notification. Codes stay as they are.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Word we use</th><th>What it is</th><th>Replaces</th><th>Code</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Request</strong></td><td>Demand to move goods that we haven't accepted yet: a customer booking or a vendor load.</td><td>booking, vendor load, vendor request, shipment request</td><td>booking id / request id</td></tr>
+      <tr><td><strong>Shipment</strong></td><td>Goods we have accepted to move, with one sender, pieces and a destination. Every request becomes a shipment, and staff can create one directly.</td><td>consignment, manifest, cargo manifest, load, order</td><td><span class="code">RTX-…</span> / <span class="code">CM-…</span></td></tr>
+      <tr><td><strong>Lot</strong></td><td>Part of a shipment split off for its own drop, truck or hub.</td><td>child consignment, split</td><td><span class="code">RTX-…-B</span></td></tr>
+      <tr><td><strong>Trip</strong></td><td>One vehicle's planned journey with its stops, which a driver runs.</td><td>route, manifest route, backhaul route</td><td>trip id</td></tr>
+      <tr><td><strong>Stop</strong></td><td>One pickup or drop on a trip.</td><td>delivery point, route stop, waypoint</td><td>n/a</td></tr>
+      <tr><td><strong>Problem</strong></td><td>Anything that stops goods moving as planned. SOS, breakdowns, damage, shortage, failed delivery and delay all open a problem case.</td><td>exception, cargo case, incident, alert</td><td><span class="code">EXC-…</span></td></tr>
+      <tr><td><strong>Transfer</strong></td><td>Moving goods from one truck to another truck or a hub.</td><td>transshipment, handover</td><td><span class="code">TRF-…</span></td></tr>
+      <tr><td><strong>Return trip</strong></td><td>Spare truck space that vendors can bid on.</td><td>backhaul, capacity window, pooling</td><td>n/a</td></tr>
+      <tr><td><strong>Claim</strong></td><td>Money asked for damaged, short or lost goods.</td><td>n/a</td><td><span class="code">CLM-…</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="read" style="display:grid;gap:14px">
+    <span class="eyebrow">The core flow</span>
+    <h2>How goods move, and who owns each step</h2>
+    <p>Every way work enters the system joins the same path. Each arrow is a handoff that sends a notification and a link to the next owner.</p>
+  </div>
+  <div class="flow"><pre class="mermaid">
+flowchart LR
+  subgraph IN["1 · Request"]
+    C["Customer books<br/>(customer app)"]
+    V["Vendor posts a load<br/>(vendor portal)"]
+    S["Staff create<br/>(web)"]
+  end
+  C --> A
+  V --> A
+  S --> SH
+  A["Accept and price<br/>ops desk"] --> SH["2 · Shipment<br/>(split into lots if needed)"]
+  SH --> D["3 · Dispatch<br/>assign vehicle, plan or optimize a trip"]
+  D --> T["4 · On the road<br/>driver runs the trip, live tracking"]
+  T -->|problem| P["Problem case<br/>hold, transfer, return"]
+  P --> T
+  T --> DL["5 · Delivered<br/>proof, OTP, receipt"]
+  DL --> B["6 · Close and bill<br/>invoice, driver pay, rating, claims"]
+  X["Return trips and 3PL<br/>spare space, partner carriers"] -.-> D
+  </pre></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th>Owner</th><th>Done when</th><th>Who is told next</th></tr></thead>
+    <tbody>
+      <tr><td>1 · Request</td><td>Customer, vendor or staff</td><td>Submitted with pickup, drop, goods and date</td><td>Ops desk: "New request"</td></tr>
+      <tr><td>Accept and price</td><td>Ops desk (admin or manager)</td><td>Accepted with a price; the shipment is created</td><td>Requester: "Accepted, ₹ price"</td></tr>
+      <tr><td>2 · Shipment</td><td>Ops desk</td><td>Pieces, weight and value are known; split into lots if there are several drops</td><td>It joins the "Needs a vehicle" queue</td></tr>
+      <tr><td>3 · Dispatch</td><td>Dispatcher</td><td>Vehicle with a driver assigned, trip sent</td><td>Driver: "New trip". Requester: "Truck assigned"</td></tr>
+      <tr><td>4 · On the road</td><td>Driver</td><td>Pickup recorded (pieces, condition, seal), then departure</td><td>Requester: "Picked up, on the way", with live tracking</td></tr>
+      <tr><td>Problem</td><td>Ops desk (case owner)</td><td>Resolved: continue, transfer, return or write off</td><td>Requester: plain message with the new arrival time</td></tr>
+      <tr><td>5 · Delivered</td><td>Driver and receiver</td><td>Proof of delivery (photo, signature or OTP, pieces)</td><td>Requester: "Delivered" and a rating request. Finance: invoice issued</td></tr>
+      <tr><td>6 · Close and bill</td><td>Finance</td><td>Invoice paid, driver paid, claims settled</td><td>Requester: invoice. Driver: payout</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="read" style="display:grid;gap:14px">
+    <span class="eyebrow">Roles</span>
+    <h2>What each person sees when they open the app</h2>
+    <p>Each role's home is a queue of work, most urgent first. Every line opens the exact list or item, with the next step already offered.</p>
+  </div>
+  <div class="grid2">
+    <article class="role">
+      <h3>Ops desk <span class="who">admin, superadmin · web</span></h3>
+      <span class="label">Home: Today</span>
+      <ul class="queue">
+        <li><span class="pill p-red">now</span>Open SOS and overdue problem cases</li>
+        <li><span class="pill p-amber">today</span>New requests to accept and price</li>
+        <li><span class="pill p-amber">today</span>Shipments that need a vehicle</li>
+        <li><span class="pill p-amber">today</span>Trips planned but not sent to the driver</li>
+        <li><span class="pill p-amber">today</span>Deliveries with no price (no invoice yet)</li>
+        <li><span class="pill p-green">review</span>Vehicle requests, documents, KYC, bids to decide</li>
+      </ul>
+      <span class="label">Menu</span>
+      <p>Today · Requests · Shipments · Dispatch · On the road · Fleet · People · Return trips &amp; 3PL · Money · Reports · Settings</p>
+    </article>
+    <article class="role">
+      <h3>Operations manager <span class="who">manager · web</span></h3>
+      <span class="label">Home: Today, operations only</span>
+      <ul class="queue">
+        <li><span class="pill p-red">now</span>SOS and problems on their trips</li>
+        <li><span class="pill p-amber">today</span>Shipments to dispatch, trips to send</li>
+        <li><span class="pill p-green">review</span>Driver documents and vehicle requests</li>
+      </ul>
+      <span class="label">Menu</span>
+      <p>Today · Requests · Shipments · Dispatch · On the road · Fleet · People. There is no Money or Settings. Managers can sign in and every notification they get opens a page they're allowed to see.</p>
+    </article>
+    <article class="role">
+      <h3>Driver <span class="who">driver app</span></h3>
+      <span class="label">Home: my trip</span>
+      <ul class="queue">
+        <li><span class="pill p-red">now</span>The one next action, in large text: go to pickup, record pickup, start, deliver at stop 3</li>
+        <li><span class="pill p-amber">today</span>Next trips waiting to be accepted</li>
+        <li><span class="pill p-green">info</span>Wallet: trip pay, what's paid and what's due</li>
+      </ul>
+      <span class="label">Tabs</span>
+      <p>Trip · Scan · Messages · Wallet · Profile. Every notification opens its trip, transfer, document or vehicle.</p>
+    </article>
+    <article class="role">
+      <h3>Vendor <span class="who">vendor portal · web</span></h3>
+      <span class="label">Home: my loads</span>
+      <ul class="queue">
+        <li><span class="pill p-red">action</span>KYC to fix, or a problem on a load</li>
+        <li><span class="pill p-amber">today</span>Loads by stage: waiting, truck assigned, on the way, delivered</li>
+        <li><span class="pill p-green">money</span>Invoices to pay, proofs of delivery, claims</li>
+      </ul>
+      <span class="label">Menu</span>
+      <p>My loads · Post a load · Return trips (bid on spare space) · Invoices &amp; proofs · Claims · Company. Vendors are told when a return trip opens on their lane.</p>
+    </article>
+    <article class="role">
+      <h3>3PL partner <span class="who">partner portal · web</span></h3>
+      <span class="label">Home: orders</span>
+      <ul class="queue">
+        <li><span class="pill p-red">now</span>Offers to accept before they're taken</li>
+        <li><span class="pill p-amber">today</span>Active orders to update: picked up, on the way, delivered</li>
+        <li><span class="pill p-green">money</span>Earnings and payments</li>
+      </ul>
+      <span class="label">Menu</span>
+      <p>Orders · Earnings · Lanes · Documents · Settings. Partners get an email when they are approved, and admins can open 3PL notifications.</p>
+    </article>
+    <article class="role">
+      <h3>Customer <span class="who">customer app</span></h3>
+      <span class="label">Home: my bookings</span>
+      <ul class="queue">
+        <li><span class="pill p-red">action</span>Delivery code to share, a problem notice with the new arrival time</li>
+        <li><span class="pill p-amber">today</span>Live progress of each booking and lot</li>
+        <li><span class="pill p-green">after</span>Confirm receipt, rate, invoice, claim</li>
+      </ul>
+      <span class="label">Tabs</span>
+      <p>Book · My bookings · Invoices · Notifications, with push notifications. The customer sees and pays invoices.</p>
+    </article>
+  </div>
+</section>
+
+<section>
+  <div class="read" style="display:grid;gap:14px">
+    <span class="eyebrow">Staff menu</span>
+    <h2>From 22 items to 11 sections</h2>
+    <p>Nothing is deleted. Every current page moves into the section for its step, often as a tab.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>New section</th><th>What's inside (tabs)</th><th>Current pages it absorbs</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Today</strong></td><td>Work queues and a live strip (active trips, on-time rate)</td><td>Dashboard</td></tr>
+      <tr><td><strong>Requests</strong></td><td>Customer bookings · Vendor loads, one inbox with the same Accept/Price/Reject actions</td><td>Customer bookings, Vendor loads</td></tr>
+      <tr><td><strong>Shipments</strong></td><td>All shipments and lots, each with its own page</td><td>Shipments, shipment drawer, manifest page</td></tr>
+      <tr><td><strong>Dispatch</strong></td><td>Needs a vehicle · Trips to send · Plan a trip · Optimize</td><td>Routes (pending), Route planner, Route optimization</td></tr>
+      <tr><td><strong>On the road</strong></td><td>Live map · Active trips · Problems (SOS + cargo cases, transfers, hubs)</td><td>Live map, Routes (active), Emergencies, Cargo, Insights (delay risk)</td></tr>
+      <tr><td><strong>Fleet</strong></td><td>Vehicles · Vehicle requests · Service &amp; fuel · Alerts</td><td>Fleet, Vehicle requests</td></tr>
+      <tr><td><strong>People</strong></td><td>Drivers &amp; staff · Documents to review · KYC</td><td>People, KYC review</td></tr>
+      <tr><td><strong>Return trips &amp; 3PL</strong></td><td>Open return trips · Bids to decide · 3PL partners</td><td>Backhaul pooling, Bids, 3PL partners</td></tr>
+      <tr><td><strong>Money</strong></td><td>To price · Invoices · Driver pay · Expenses · Claims</td><td>Finance, the unpriced panel, the claims tab</td></tr>
+      <tr><td><strong>Reports</strong></td><td>Performance, fleet, drivers, vendors, profit and loss</td><td>Analytics, Insights (reports)</td></tr>
+      <tr><td><strong>Settings</strong></td><td>Settings · Audit log</td><td>Settings, Audit log</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="read">
+  <span class="eyebrow">Handoffs</span>
+  <h2>Broken links we fix along the way</h2>
+  <ul>
+    <li><strong>Optimizer to dispatch:</strong> optimized trips land in "Trips to send" with a Send button, and the driver is told only when a trip is sent.</li>
+    <li><strong>Vehicle without a driver:</strong> assigning one warns you and blocks it. Documents rules apply when the policy says so.</li>
+    <li><strong>New driver signs up, driver uploads a document:</strong> staff are told, and the item appears in People → Documents to review.</li>
+    <li><strong>Return trip opens:</strong> vendors on that lane are told. If a vendor is missing a location, the vendor is asked to fix it.</li>
+    <li><strong>Invoice issued or paid:</strong> the customer, vendor or partner is told. Every invoice links to its shipment and back.</li>
+    <li><strong>Notification links:</strong> bookings, KYC, 3PL, claims and vehicle approval all open the exact item. The customer and vendor ids that were missing are added.</li>
+    <li><strong>Manager access:</strong> the manager signs in, lands on Today, and never gets a notification it can't open.</li>
+    <li><strong>Dead ends:</strong> vendor loads, bids, trips, the live map and invoices all link to the shipment, vehicle, driver and requester they involve.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="read" style="display:grid;gap:14px">
+    <span class="eyebrow">Delivery plan</span>
+    <h2>Four phases, each shippable on its own</h2>
+  </div>
+  <div class="grid2">
+    <div class="phase"><h3>Phase 1 · Staff operations spine <span class="pill p-amber">first</span></h3>
+      <ul>
+        <li>New menu and the Today home</li>
+        <li>One Requests inbox</li>
+        <li>The Dispatch workspace, with one shared assign-vehicle screen</li>
+        <li>A page per shipment with a "what's next" bar and related links</li>
+        <li>Manager access, notification link fixes, and optimizer-to-dispatch</li>
+      </ul></div>
+    <div class="phase"><h3>Phase 2 · Money and partners</h3>
+      <ul>
+        <li>Money section: to price, invoice pages, driver pay, claims</li>
+        <li>Vendor portal rebuilt around My loads, with proofs and claims</li>
+        <li>3PL portal navigation and approval email</li>
+        <li>Return trips merged into one place</li>
+      </ul></div>
+    <div class="phase"><h3>Phase 3 · Mobile apps</h3>
+      <ul>
+        <li>Driver home shows the one next action</li>
+        <li>Every driver notification deep-links</li>
+        <li>Customer app gets push notifications, invoices, and rating and receipt prompts</li>
+      </ul></div>
+    <div class="phase"><h3>Phase 4 · Vocabulary sweep</h3>
+      <ul>
+        <li>Apply the word list across all apps, notifications and statuses</li>
+        <li>An automated check keeps old words out</li>
+      </ul></div>
+  </div>
+</section>
+
+<section class="decide">
+  <h3>Decisions (30 Sep 2026)</h3>
+  <ul>
+    <li><strong>Driver pay: per trip plus per km.</strong> Staff set a fixed amount per trip and a rate per km, per vehicle type. The driver wallet shows real driver pay, not the customer's invoice.</li>
+    <li><strong>Payments: offline for now.</strong> Invoices are shown and downloadable in every app. Staff mark them paid when money arrives. A payment gateway can come later.</li>
+    <li><strong>Vendor approval: approve first.</strong> A vendor load must be accepted with a price before a vehicle can be assigned.</li>
+  </ul>
+</section>
+
+<footer class="read">Based on a code audit of the web app, driver app, customer app and backend on 30 Sep 2026. Phase 1 starts on approval of this blueprint.</footer>
+</main>
