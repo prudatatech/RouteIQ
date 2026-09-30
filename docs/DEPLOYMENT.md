@@ -157,6 +157,28 @@ No data export is needed: all data is in Supabase.
 - **Web:** check out the previous commit and run `./infra/deploy.sh --skip-api`.
 - **Database:** migrations are forward-only. Write a new migration that reverses the change.
 
+### 4.8 Sleeping to save cost (current state since 1 Oct 2026)
+
+While margixindia.com is still served by Railway and Vercel, the Azure backend is set to **sleep when idle**: `margix-api` runs with min 0 and max 1 replicas, and `margix-ml` already did. Nothing is deleted, and Azure charges almost nothing while no one uses it.
+
+What changes while it sleeps:
+- **Cold start:** the first request after idle takes about 10–30 s while the container starts.
+- **No background work:** the scheduler (SOS reminders, odometer sync, problem deadlines) and live GPS WebSockets only run while it is awake. That's fine for testing, **not for real operations**.
+- **Deploys still work:** a push still deploys, and the deploy wakes it briefly for the health check.
+
+Wake it for real use. Do this before pointing margixindia.com at Azure:
+```bash
+az containerapp update -n margix-api -g margix-rg --min-replicas 1 --max-replicas 1
+```
+A full `./infra/deploy.sh` (not `--images-only`) also sets it back to 1, because `main.bicep` pins min 1.
+
+Put it back to sleep:
+```bash
+az containerapp update -n margix-api -g margix-rg --min-replicas 0 --max-replicas 1
+```
+
+To stop paying for Azure entirely, delete everything with `az group delete -n margix-rg` (after this there's nothing left to wake). Recreate it later with `./infra/deploy.sh` and `./infra/set-secrets.sh` (§4.6). The container registry (~$5/month) and the logs keep a small charge as long as the resource group exists.
+
 ---
 
 ## 5. Database changes (Supabase)
