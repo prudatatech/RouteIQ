@@ -289,9 +289,9 @@ async function loadManifest(id: string): Promise<Consignment | null> {
   return data ? toConsignment('manifest', data) : null;
 }
 
-/** A vendor load from its CM- code (the first 8 hex characters of its id), or a load lot's (CM-XXXXXXXX-B). */
+/** A vendor load from its CM- code (the first 8 hex characters of its id), or a load lot's (CM-XXXXXXXX-B; a lot of a lot is its letter and a number, CM-XXXXXXXX-A3). */
 async function loadManifestByCode(code: string): Promise<Consignment | null> {
-  const m = /^CM-([0-9A-F]{8})(?:-([0-9A-Z.]{1,12}))?$/i.exec(code);
+  const m = /^CM-([0-9A-F]{8})(?:-([A-Z]{1,2}[0-9]{0,6}))?$/i.exec(code);
   if (!m) return null;
   const prefix = m[1].toLowerCase();
   const label = m[2]?.toUpperCase() ?? null;

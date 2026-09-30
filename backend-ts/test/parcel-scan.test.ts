@@ -174,3 +174,42 @@ describe('complete-stop and my-route use the scan', () => {
     expect(supabaseMock.rows('shipment_logs').find(l => l.shipment_id === 's1' && l.status === 'delivered')!.metadata_json.parcel_verified).toBe(false);
   });
 });
+
+describe('lots on the driver route (docs/cargo-plan.md, Lots)', () => {
+  const MASTER_LOAD = '88888888-aaaa-bbbb-cccc-000000000001';
+  const LOAD_LOT = '77777777-aaaa-bbbb-cccc-000000000001';
+
+  it("gives a lot's drop its pieces, consignee and lot in my-route", async () => {
+    supabaseMock.rows('routes')[0].route_stops = [
+      {
+        id: 'stop-1', sequence: 1, status: 'pending',
+        delivery_points: { id: 'dp-1', shipment_id: 's1', name: 'Gate 2', pieces: 25, consignee_name: 'Sharma Traders', consignee_phone: '9876543210', lot_shipment_id: 's1' },
+      },
+      { id: 'stop-2', sequence: 2, status: 'pending', delivery_points: { id: 'dp-2', shipment_id: 's2', name: 'Plain drop' } },
+    ];
+    const res = await request(app).get('/api/v1/telemetry/driver-ping/my-route').set(bearer('driver-1'));
+    expect(res.status).toBe(200);
+    const stops = res.body.route.stops as any[];
+    expect(stops.find(s => s.id === 'stop-1').delivery_point).toMatchObject({
+      pieces: 25, consignee_name: 'Sharma Traders', consignee_phone: '9876543210', lot_shipment_id: 's1',
+    });
+    expect(stops.find(s => s.id === 'stop-2').delivery_point).toMatchObject({ pieces: null, consignee_name: null, consignee_phone: null, lot_shipment_id: null });
+  });
+
+  it('names a load lot by its lot code in my-route and accepts that code at the scan', async () => {
+    supabaseMock.reset({
+      ...fixtures(),
+      routes: [],
+      route_stops: [],
+      cargo_manifest: [{ id: LOAD_LOT, vehicle_id: 'veh-1', status: 'scheduled', parent_manifest_id: MASTER_LOAD, lot_label: 'A2', created_at: NOW }],
+    });
+    const lotCode = `CM-${MASTER_LOAD.slice(0, 8).toUpperCase()}-A2`;
+    const res = await request(app).get('/api/v1/telemetry/driver-ping/my-route').set(bearer('driver-1'));
+    expect(res.status).toBe(200);
+    expect((res.body.route.stops as any[]).map(s => s.parcel.code)).toEqual([lotCode, lotCode]);
+
+    const scanned = await scan('driver-1', { code: lotCode.toLowerCase(), purpose: 'pickup', stop_id: `${LOAD_LOT}_pickup` });
+    expect(scanned.status).toBe(200);
+    expect(scanned.body).toMatchObject({ kind: 'manifest', manifest_id: LOAD_LOT, tracking_id: lotCode });
+  });
+});
