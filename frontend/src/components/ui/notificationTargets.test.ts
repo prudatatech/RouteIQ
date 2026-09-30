@@ -25,8 +25,16 @@ describe('vendor notifications', () => {
     },
   )
 
-  it('opens the corridors page for a passing truck', () => {
-    expect(at('passing_route', { route_id: 'r1' }, 'vendor')).toBe('/vendor/corridor')
+  it.each(['passing_route', 'return_trip_opened'])('%s opens the corridors page', type => {
+    expect(at(type, { route_id: 'r1', window_id: 'w1' }, 'vendor')).toBe('/vendor/corridor')
+  })
+
+  it('asks the vendor to fix the profile on Company & KYC', () => {
+    expect(at('vendor_profile_incomplete', { bid_id: 'b1' }, 'vendor')).toBe('/vendor/documents')
+  })
+
+  it.each(['invoice_issued', 'invoice_paid'])('%s opens Invoices', type => {
+    expect(at(type, { invoice_id: 'i1', request_id: 'r1' }, 'vendor')).toBe('/vendor/invoices')
   })
 
   it('still goes to the page when the id is missing', () => {
@@ -56,8 +64,10 @@ describe('3PL partner notifications', () => {
 describe('staff notifications', () => {
   it.each([
     ['sos', { alert_id: 'a1' }, '/emergency?open=a1'],
-    ['vendor_request', { request_id: 'r1' }, '/vendor-requests?open=r1'],
-    ['vendor_request_cancelled', { request_id: 'r1' }, '/vendor-requests?open=r1'],
+    ['vendor_request', { request_id: 'r1' }, '/requests?open=r1&source=vendor'],
+    ['vendor_request', {}, '/requests?source=vendor'],
+    ['vendor_request_cancelled', { request_id: 'r1' }, '/requests?open=r1&source=vendor'],
+    ['customer_booking', { booking_id: 'b1' }, '/requests?open=b1&source=customer'],
     ['capacity_bid', { bid_id: 'b1' }, '/bids?open=b1'],
     ['capacity_window_closed', { window_id: 'w1' }, '/bids?open=w1'],
     ['stop_flagged', { bid_id: 'b1', window_id: 'w1' }, '/bids?open=b1'],
@@ -80,13 +90,24 @@ describe('staff notifications', () => {
     ['cargo_transfer_planned', { transfer_id: 't1' }, '/cargo/transfers/t1'],
     ['cargo_transfer_completed', {}, '/cargo?tab=transfers'],
     ['cargo_partial_delivery', { exception_id: 'x1', shipment_id: 's1' }, '/cargo/exceptions/x1'],
-    ['cargo_rto_started', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_rto_started', { shipment_id: 's1' }, '/shipments/s1'],
+    ['cargo_rto_started', { manifest_id: 'm1' }, '/shipments?open=m1'],
     ['cargo_at_hub', { depot_id: 'd1', shipment_id: 's1' }, '/cargo?tab=hubs&hub=d1'],
     ['cargo_at_hub', { manifest_id: 'm1' }, '/shipments?open=m1'],
-    ['cargo_delivery_otp', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['cargo_delivery_otp', { shipment_id: 's1' }, '/shipments/s1'],
     ['cargo_claim_update', { claim_id: 'c1' }, '/cargo?tab=claims&open=c1'],
     ['driver_action_rejected', { route_id: 'r1' }, '/routes/r1'],
-    ['driver_action_rejected', { shipment_id: 's1' }, '/shipments?open=s1'],
+    ['driver_action_rejected', { shipment_id: 's1' }, '/shipments/s1'],
+    ['driver_signed_up', { user_id: 'u1' }, '/admin/users/u1'],
+    ['driver_signed_up', {}, '/admin/users'],
+    ['driver_needs_vehicle', { user_id: 'u1' }, '/admin/users/u1'],
+    ['document_uploaded', { user_id: 'u1', doc_id: 'd1' }, '/admin/users/u1?tab=documents'],
+    ['bank_details_changed', { user_id: 'u1' }, '/admin/users/u1?tab=bank'],
+    ['stop_prompts_released', { user_id: 'u1' }, '/admin/users/u1'],
+    ['people_status', { count: 1, user_ids: ['u1'] }, '/admin/users/u1'],
+    ['people_status', { count: 2, user_ids: ['u1', 'u2'] }, '/admin/users'],
+    ['delivery_rated', { shipment_id: 's1', rating: 4 }, '/shipments/s1'],
+    ['delivery_rated', {}, '/shipments'],
   ])('%s goes to %s', (type, data, path) => {
     expect(at(type, data, 'staff')).toBe(path)
   })

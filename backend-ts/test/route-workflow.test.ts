@@ -77,7 +77,9 @@ describe('vendor loads on the driver route', () => {
     await complete('m1_pickup');
     expect((await complete('m1_drop')).status).toBe(200);
     const types = supabaseMock.rows('notifications').filter(n => n.user_id === 'vendor-9').map(n => n.type);
-    expect(types.length).toBe(2);
+    // Two load updates, and the invoice for the delivered load
+    expect(types.filter(t => t !== 'invoice_issued').length).toBe(2);
+    expect(types.filter(t => t === 'invoice_issued').length).toBe(1);
   });
 
   it('keeps the pickup pending after Start Journey, and moves the load in transit at the pickup', async () => {

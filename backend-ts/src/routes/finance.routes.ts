@@ -10,7 +10,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { resolveIndianDateRange, indianDateKey } from '../core/istDate';
-import { InvoiceService } from '../services/invoice.service';
+import { InvoiceService, announceInvoice } from '../services/invoice.service';
 import { auditService } from '../services/audit.service';
 import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
@@ -122,6 +122,7 @@ async function moveInvoice(req: Request, res: Response, to: 'paid' | 'void') {
       if (!existing) throw new HttpError(404, 'Invoice not found');
       throw new HttpError(409, `Invoice is already ${existing.status}`);
     }
+    if (to === 'paid') await announceInvoice(data.id, 'paid');
     await auditService.record('staff-console', req.user!, `invoice_${to}`, { invoice_id: data.id, invoice_number: data.invoice_number ?? null, total: data.total ?? null });
     res.json(data);
   } catch (e) {

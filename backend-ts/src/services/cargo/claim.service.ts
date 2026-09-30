@@ -22,7 +22,7 @@ import { createKycUploadUrl, signedUrl } from '../pod.service';
 import { manifestParcelCode } from '../../core/parcelCode';
 import { RefSchema, customerOwnsShipment, manifestVendorId, refColumns, resolveRef, type Actor, type Consignment } from './consignment';
 import { insertWithCode } from './exception.service';
-import { notifyStaffSafe, notifyUserSafe } from './notify';
+import { notifyStaffSafe, notifyUserSafe, ownerRefs } from './notify';
 
 export const CLAIM_TYPES = ['damage', 'shortage', 'loss', 'theft', 'delay'] as const;
 export const CLAIM_STATUSES = ['draft', 'filed', 'surveyed', 'approved', 'rejected', 'settled', 'withdrawn'] as const;
@@ -268,7 +268,9 @@ export async function updateClaim(id: string, input: unknown): Promise<any> {
       settled: `Your claim ${claim.code} was settled${money(saved.settled_amount)}.`,
       withdrawn: `Your claim ${claim.code} was withdrawn.`,
     };
-    await notifyUserSafe(claim.raised_by, `Claim ${claim.code} update`, text[String(patch.status)] ?? `Your claim ${claim.code} is now ${patch.status}.`, 'cargo_claim_update', { claim_id: claim.id, code: claim.code, status: patch.status });
+    const refs = (await ownerRefs(claim))?.ids ?? {};
+    const consignment = await resolveRef(claim.manifest_id ? { manifest_id: claim.manifest_id } : { shipment_id: claim.shipment_id }).catch(() => null);
+    await notifyUserSafe(claim.raised_by, `Claim ${claim.code} update`, text[String(patch.status)] ?? `Your claim ${claim.code} is now ${patch.status}.`, 'cargo_claim_update', { ...refs, claim_id: claim.id, code: claim.code, consignment_code: consignment?.code ?? null, status: patch.status });
   }
   return claimView(saved);
 }

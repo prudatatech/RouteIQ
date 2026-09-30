@@ -210,6 +210,8 @@ Drivers may post only for consignments on their current vehicle (before pickup: 
 
 ## Notifications (type names, used in `notificationTargets`)
 
+Every notification type, its audience, trigger, data ids and target is listed in `docs/notifications.md`. A cargo notification to a customer always carries `booking_id` and `shipment_id`; to a vendor, `request_id` and `manifest_id`.
+
 `cargo_exception_opened`, `cargo_exception_escalated`, `cargo_exception_resolved`, `cargo_transfer_planned`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub`, `cargo_delivery_otp`, `cargo_claim_update`, `driver_action_rejected`.
 
 Customers and vendors get plain-language messages, for example "Your goods were moved to another truck after a breakdown. New ETA 6:40 pm."

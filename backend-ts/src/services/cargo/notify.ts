@@ -8,7 +8,7 @@
  */
 import { supabase } from '../../core/supabase';
 import { notificationService } from '../notification.service';
-import { manifestVendorId, type Consignment } from './consignment';
+import type { Consignment } from './consignment';
 
 /** The notification types of the cargo contract. */
 export const CARGO_NOTIFICATION_TYPES = [
@@ -25,6 +25,27 @@ export async function bookingCustomer(shipmentId: string): Promise<{ customer_id
   if (row?.customer_id) return { customer_id: row.customer_id, booking_id: row.id };
   const { data: lot } = await supabase.from('shipments').select('parent_shipment_id').eq('id', shipmentId).maybeSingle();
   return lot?.parent_shipment_id ? bookingCustomer(lot.parent_shipment_id) : null;
+}
+
+/** The vendor and the vendor request (the load they posted) behind a vendor-load consignment. */
+export async function manifestRequest(manifestId: string): Promise<{ vendor_id: string; request_id: string } | null> {
+  const { data: manifest } = await supabase.from('cargo_manifest').select('vendor_request_id').eq('id', manifestId).maybeSingle();
+  if (!manifest?.vendor_request_id) return null;
+  const { data: request } = await supabase.from('vendor_shipment_requests').select('vendor_id').eq('id', manifest.vendor_request_id).maybeSingle();
+  return request?.vendor_id ? { vendor_id: request.vendor_id, request_id: manifest.vendor_request_id } : null;
+}
+
+/** The ids a customer app (booking_id) or vendor app (request_id) needs to open the item a cargo row is about. */
+export async function ownerRefs(row: { shipment_id?: string | null; manifest_id?: string | null }): Promise<{ user_id: string; ids: Record<string, string> } | null> {
+  if (row.manifest_id) {
+    const m = await manifestRequest(row.manifest_id);
+    return m ? { user_id: m.vendor_id, ids: { request_id: m.request_id, manifest_id: row.manifest_id } } : null;
+  }
+  if (row.shipment_id) {
+    const b = await bookingCustomer(row.shipment_id);
+    return b ? { user_id: b.customer_id, ids: { booking_id: b.booking_id, shipment_id: row.shipment_id } } : null;
+  }
+  return null;
 }
 
 export async function notifyStaffSafe(title: string, body: string, type: CargoNotificationType, data: Record<string, unknown>): Promise<void> {
@@ -56,11 +77,32 @@ export async function notifyOwner(c: Pick<Consignment, 'kind' | 'id' | 'code'>, 
       const customer = await bookingCustomer(c.id);
       if (customer) await notifyUserSafe(customer.customer_id, title, text, type, { ...payload, booking_id: customer.booking_id });
     } else {
-      const vendorId = await manifestVendorId(c.id);
-      await notifyUserSafe(vendorId, title, text, type, payload);
+      const vendor = await manifestRequest(c.id);
+      if (vendor) await notifyUserSafe(vendor.vendor_id, title, text, type, { ...payload, request_id: vendor.request_id });
     }
   } catch (e) {
     console.error(`[cargo] Owner notification ${type} failed:`, e);
+  }
+}
+
+/**
+ * A delivery was rated. The driver hears how it went; staff hear it too when the customer rated
+ * (a rating staff entered themselves needs no notice to staff). Once per shipment and rating time.
+ */
+export async function notifyDeliveryRated(shipmentId: string, rating: number, opts: { driverId: string | null; byCustomer: boolean; comment?: string | null }): Promise<void> {
+  try {
+    const { data: shipment } = await supabase.from('shipments').select('tracking_id, driver_rated_at').eq('id', shipmentId).maybeSingle();
+    const code = shipment?.tracking_id ?? shipmentId;
+    const data = { shipment_id: shipmentId, code, rating, rated_at: shipment?.driver_rated_at ?? null, ...(opts.comment ? { comment: opts.comment } : {}) };
+    const who = opts.byCustomer ? 'The customer' : 'Dispatch';
+    if (opts.driverId) {
+      await notificationService.sendNotificationOnce(opts.driverId, `You got ${rating} out of 5`, `${who} rated delivery ${code} ${rating} out of 5.`, 'delivery_rated', data, 'rated_at', 1);
+    }
+    if (opts.byCustomer) {
+      await notificationService.notifyStaffOnce(`Delivery rated ${rating} out of 5`, `The customer rated ${code} ${rating} out of 5${opts.comment ? `: ${opts.comment}` : ''}.`, 'delivery_rated', data, 'rated_at', 1);
+    }
+  } catch (e) {
+    console.error('[rating] could not send the rating notification:', e);
   }
 }
 

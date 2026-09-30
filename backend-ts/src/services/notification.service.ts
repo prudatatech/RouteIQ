@@ -7,7 +7,12 @@ export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
   // Cargo cases, transfers, returns, hubs and claims (docs/cargo-plan.md); cargo_delivery_otp goes to customers only
   'cargo_exception_opened', 'cargo_exception_escalated', 'cargo_exception_resolved', 'cargo_transfer_planned', 'cargo_transfer_completed',
   'cargo_partial_delivery', 'cargo_rto_started', 'cargo_at_hub', 'cargo_claim_update', 'driver_action_rejected',
+  // Workflow handoffs (docs/notifications.md)
+  'driver_signed_up', 'driver_needs_vehicle', 'document_uploaded', 'delivery_rated',
 ]);
+
+/** How long a repeated notification (same person, type and key) is treated as a duplicate. */
+export const DEDUPE_HOURS = 24;
 
 export const notificationService = {
   /**
@@ -32,6 +37,29 @@ export const notificationService = {
     await pushService.sendToUser(userId, title, body, { ...(data ?? {}), type });
 
     return notif;
+  },
+
+  /**
+   * Like sendNotification, but not when this person already got a notification of this type with the
+   * same value under `data[key]` in the last DEDUPE_HOURS. For triggers that can fire twice (a scheduler
+   * pass, a retried request). Returns null when it was a duplicate.
+   */
+  async sendNotificationOnce(userId: string, title: string, body: string, type: string, data: Record<string, unknown>, key: string, hours = DEDUPE_HOURS) {
+    const since = new Date(Date.now() - hours * 3600_000).toISOString();
+    const { data: recent } = await supabase
+      .from('notifications').select('id, data').eq('user_id', userId).eq('type', type).gte('created_at', since);
+    if ((recent ?? []).some((r: any) => r.data?.[key] === data[key])) return null;
+    return this.sendNotification(userId, title, body, type, data);
+  },
+
+  /** notifyStaff with the same duplicate check as sendNotificationOnce, per staff member. */
+  async notifyStaffOnce(title: string, body: string, type: string, data: Record<string, unknown>, key: string, hours = DEDUPE_HOURS) {
+    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
+    const { data: staff, error } = await supabase.from('users').select('id').in('role', roles).eq('is_active', true);
+    if (error || !staff) return;
+    for (const member of staff) {
+      await this.sendNotificationOnce(member.id, title, body, type, data, key, hours);
+    }
   },
 
   /**
