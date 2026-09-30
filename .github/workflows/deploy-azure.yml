@@ -1,45 +1,153 @@
 name: Deploy to Azure
 # Runs on every push to main that touches the apps or infra, and by hand from the Actions tab.
 #
-# It only builds and pushes the images, swaps them into the container apps and uploads the web app
-# (infra/deploy.sh --images-only). Secrets and settings stay in Azure, where infra/set-secrets.sh put
-# them, so GitHub never holds an API key. Changes to main.bicep or secrets are applied by running
-# ./infra/deploy.sh or ./infra/set-secrets.sh from a signed-in machine.
+# It builds only what changed and deploys the parts in parallel (infra/deploy.sh --images-only):
+#   backend-ts/**  -> api job  (build + push the image, roll margix-api)
+#   ml-service/**  -> ml job   (build + push the image, roll margix-ml)
+#   frontend/**    -> web job  (build and upload the web app)
+#   infra/** or this workflow -> all three
+#   run by hand    -> all three, or the ones ticked in the form
+# Docker layers and npm packages are cached between runs. Secrets and settings stay in Azure, where
+# infra/set-secrets.sh put them, so GitHub never holds an API key. Changes to main.bicep or secrets are
+# applied by running ./infra/deploy.sh or ./infra/set-secrets.sh from a signed-in machine.
 #
-# The job is skipped until infra/github-oidc.sh has been run once: it creates the passwordless
+# The deploy jobs are skipped until infra/github-oidc.sh has been run once: it creates the passwordless
 # GitHub -> Azure login and stores AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID as
 # repository variables. See docs/DEPLOYMENT.md section 4.4.
 
 on:
   push:
     branches: [main]
-    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**']
+    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**', '.github/workflows/deploy-azure.yml']
   workflow_dispatch:
-
-concurrency:
-  group: deploy-azure
-  cancel-in-progress: false
+    inputs:
+      api:
+        description: Deploy the backend (margix-api)
+        type: boolean
+        default: true
+      ml:
+        description: Deploy the ML service (margix-ml)
+        type: boolean
+        default: true
+      web:
+        description: Deploy the web app
+        type: boolean
+        default: true
 
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 jobs:
-  deploy:
+  changes:
     if: ${{ vars.AZURE_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.pick.outputs.api }}
+      ml: ${{ steps.pick.outputs.ml }}
+      web: ${{ steps.pick.outputs.web }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          fetch-depth: 0
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          IN_API: ${{ inputs.api }}
+          IN_ML: ${{ inputs.ml }}
+          IN_WEB: ${{ inputs.web }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            { echo "api=$IN_API"; echo "ml=$IN_ML"; echo "web=$IN_WEB"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          usable() { [[ -n "$1" && ! "$1" =~ ^0+$ ]] && git cat-file -e "$1^{commit}" 2>/dev/null && git merge-base --is-ancestor "$1" "$GITHUB_SHA"; }
+          # Compare with the last commit that deployed successfully, so a failed deploy is retried by the
+          # next push; fall back to the commit before this push. No usable base (first push, force push,
+          # history gone) means deploy everything.
+          base="$(gh run list --workflow deploy-azure.yml --branch main --status success --limit 1 \
+                    --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
+          usable "$base" || base="$BEFORE"
+          if usable "$base"; then
+            files="$(git diff --name-only "$base" "$GITHUB_SHA")"
+            echo "Changed since $base:"; echo "$files"
+          else
+            echo "No usable base commit: deploying everything"
+            files="infra/"
+          fi
+          has() { grep -Eq "$1" <<<"$files" && echo true || echo false; }
+          if [[ "$(has '^(infra/|\.github/workflows/deploy-azure\.yml)')" == true ]]; then
+            api=true; ml=true; web=true
+          else
+            api="$(has '^backend-ts/')"; ml="$(has '^ml-service/')"; web="$(has '^frontend/')"
+          fi
+          echo "api=$api ml=$ml web=$web"
+          { echo "api=$api"; echo "ml=$ml"; echo "web=$web"; } >> "$GITHUB_OUTPUT"
+
+  api:
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-azure-api
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # exposes the Actions cache token to `docker buildx --cache-to type=gha`
+      - uses: crazy-max/ghaction-github-runtime@v3
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Deploy new images and web app
+      - name: Build, push and roll margix-api
+        run: ./infra/deploy.sh --images-only --api-only
+
+  ml:
+    needs: changes
+    if: ${{ needs.changes.outputs.ml == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-azure-ml
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build, push and roll margix-ml
+        run: ./infra/deploy.sh --images-only --ml-only
+
+  web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-azure-web
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and upload the web app
         env:
           # Public pk. token (optional); without it web maps draw straight lines
           VITE_MAPBOX_TOKEN: ${{ vars.VITE_MAPBOX_TOKEN }}
-        run: ./infra/deploy.sh --images-only
+        run: ./infra/deploy.sh --images-only --web-only

@@ -83,13 +83,13 @@ Work happens on the `ui/redesign` branch in the `.claude/worktrees/integration` 
 ### 4.2 Azure deploy script
 
 `infra/deploy.sh` is idempotent: safe to run again at any time. It:
-1. registers Azure providers;
-2. applies `infra/main.bicep`;
-3. builds `linux/amd64` images on this Mac;
-4. pushes them to the registry;
-5. rolls the container apps;
-6. builds the web app against the Azure backend and uploads it;
-7. waits for health and checks the running version.
+1. registers Azure providers and applies `infra/main.bicep` (skipped with `--images-only`);
+2. builds `linux/amd64` images on this Mac (on GitHub: `docker buildx --push` with the Actions layer cache);
+3. pushes them to the registry and rolls the container apps;
+4. builds the web app against the Azure backend and uploads it;
+5. waits for health (polls every 3 s, gives up after 5 minutes) and checks the running version.
+
+Choose parts with `--api-only`, `--ml-only` and `--web-only` (combinable, for example `--images-only --api-only --web-only`). With none of them everything is deployed. `--skip-api`, `--skip-web`, `--only-infra` and `--images-only` work as before.
 
 Settings:
 - `infra/azure.env` (committed): shared defaults: prefix, region.
@@ -106,10 +106,19 @@ Settings:
 
 ### 4.4 Automatic deploys from GitHub
 
-`.github/workflows/deploy-azure.yml` runs on every push to `main` that touches `backend-ts/`, `ml-service/`, `frontend/` or `infra/`. You can also run it by hand from the Actions tab. It runs `./infra/deploy.sh --images-only`, which:
-- builds and pushes new images and swaps them into `margix-api` and `margix-ml`;
-- uploads the web app;
-- finishes only when `/health` answers and the running version uses the new image.
+`.github/workflows/deploy-azure.yml` runs on every push to `main` that touches `backend-ts/`, `ml-service/`, `frontend/` or `infra/`. You can also run it by hand from the Actions tab, where you can untick the parts you don't want. It works out what changed since the last successful deploy (or deploys everything when it can't tell, such as on a force push) and runs only the needed jobs, at the same time:
+
+| Changed | Job | What it does |
+|---|---|---|
+| `backend-ts/**` | `api` | builds and pushes the image, swaps it into `margix-api`, waits for `/health` and the new revision |
+| `ml-service/**` | `ml` | the same for `margix-ml` |
+| `frontend/**` | `web` | builds the web app and uploads it |
+| `infra/**` or the workflow file | all three | |
+
+Each job type has its own concurrency group, so two pushes never race on the same app, and a running deploy is never cancelled. Image builds reuse Docker layers from the GitHub Actions cache (one cache per app; the Dockerfiles install dependencies before copying source), and the web job caches npm packages.
+
+Expected times: web only about 1.5 to 2 minutes (a warm local run measured 76 s; the Static Web Apps upload is about 50 s of that), backend only about 2 to 3 minutes with a warm cache, and the first run after a dependency change or an evicted cache takes longer. Each job runs `./infra/deploy.sh --images-only` with `--api-only`, `--ml-only` or `--web-only`, which also:
+- finishes only when the running version uses the new image.
 
 **Secrets never go to GitHub.** They stay in Azure. The GitHub login can only change `margix-rg`, as Contributor. Template changes (`main.bicep`) and secret changes are applied from a signed-in machine with `./infra/deploy.sh` or `./infra/set-secrets.sh`.
 
