@@ -26,6 +26,7 @@ import { evaluatePing } from '../services/alerts.service';
 import { recordGpsPoints, type GpsFix } from '../services/gps-history.service';
 import { idempotent } from '../core/idempotency';
 import { transitionSos } from '../services/sos.service';
+import { loadDriverStatus } from '../services/driver-status.service';
 import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.service';
 import { isPodPathFor } from '../services/pod.service';
 import { recordCustody, DELIVERY_FAILURE_REASONS, type CustodyInput } from '../services/cargo/custody.service';
@@ -1156,6 +1157,19 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       remaining_stops: remainingStops?.length || 0,
       route_completed: !remainingStops || remainingStops.length === 0,
     });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET /driver-ping/my-status — what else blocks or waits behind the current trip ──
+router.get('/driver-ping/my-status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== 'driver') {
+      res.status(403).json({ detail: 'Only drivers can fetch their status' });
+      return;
+    }
+    res.json(await loadDriverStatus(req.user!.user_id));
   } catch (e: any) {
     sendError(req, res, e);
   }
