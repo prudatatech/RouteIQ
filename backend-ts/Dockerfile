@@ -1,4 +1,4 @@
-# margixindia TS Backend — Railway Dockerfile
+# margixindia TS Backend — production image (Railway, Azure Container Apps)
 FROM node:20-slim
 
 WORKDIR /app
@@ -13,5 +13,9 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Railway sets PORT via env var
+# Drop dev dependencies from the final image
+RUN npm prune --omit=dev
+ENV NODE_ENV=production
+
+# The platform sets PORT (default 8000); the app listens on it on 0.0.0.0
 CMD ["node", "dist/index.js"]
