@@ -1,9 +1,12 @@
 /**
  * MargixIndia Driver App — Home
  *
- * Header (with the one SOS button) and status strip stay fixed; below them
- * the Home tab shows the map, one "next action" card for the current step,
- * and a "More actions" sheet for everything used less often. Data and
+ * Header (the notification bell and the one SOS button) and status strip stay
+ * fixed; below them the Home tab opens with one "next action" card (utils/
+ * nextAction decides it from the route, the cargo on board, transfers and
+ * SOS), then the rest of the trip and the map, and a "More actions" sheet for
+ * everything used less often. A tapped notification, from a push or the in-app
+ * list, opens its exact place through handleIntent (utils/notificationTarget). Data and
  * behaviour live in hooks: useDriverRoute (route, assignments, sync),
  * useLocationTracking (GPS), useDeviceLocationStatus, useSnappedRoute,
  * useAlertSiren, useRouteActions, useSos, useCargo (what is on board,
@@ -27,6 +30,8 @@ import { useRouteActions } from '../hooks/useRouteActions';
 import { useSos } from '../hooks/useSos';
 import { useParcelScan, type ScanOutcome } from '../hooks/useParcelScan';
 import { useCargoTransfers, useOnBoard } from '../hooks/useCargo';
+import { useDriverStatus, DRIVER_STATUS_KEY } from '../hooks/useDriverStatus';
+import { REGISTRATION_KEY } from '../hooks/useVehicleRegistration';
 import { sendCustody, type CargoSendResult } from '../services/cargoActions';
 import { manifestRefOfStop } from '../services/cargo';
 import { dropLotsFor, type DropLot } from '../utils/dropLots';
@@ -36,12 +41,17 @@ import { withQueuedStops } from '../utils/queuedStops';
 import { useDriverMessages } from '../hooks/useDriverMessages';
 import { useModalManager, type ActiveModal } from '../hooks/useModalManager';
 import type { RouteStop } from '../types/route';
+import type { View as RNView } from 'react-native';
 import { shortFeedback } from '../utils/feedback';
 import { formatTime } from '../utils/format';
-import { getNextStep, isRouteFinished, pendingStops } from '../utils/route';
+import { isRouteFinished, pendingStops, stopCounts } from '../utils/route';
+import { getNextAction, restOfStops, type AssignmentWaiting } from '../utils/nextAction';
+import { stopIdFor } from '../utils/notificationTarget';
+import { OPEN_TARGET_EVENT, takePendingIntent, type DriverIntent } from '../services/driverLinks';
 import BackhaulPopup from '../components/BackhaulPopup';
 import SosButton from '../components/SosButton';
 import HomeHeader from '../components/home/HomeHeader';
+import NotificationBell from '../components/home/NotificationBell';
 import StatusStrip from '../components/home/StatusStrip';
 import DriverTabBar, { type DriverTab } from '../components/home/DriverTabBar';
 import MoreActionsSheet, { type MoreAction } from '../components/home/MoreActionsSheet';
@@ -50,8 +60,12 @@ import SosDialog from '../components/modals/SosDialog';
 import SosCountdownDialog from '../components/modals/SosCountdownDialog';
 import CapacityDialog from '../components/modals/CapacityDialog';
 import IncomingCallDialog from '../components/modals/IncomingCallDialog';
-import { DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
+import { Banner, DialogFrame, ErrorBanner, OfflineBanner, type DialogVariant } from '../components/ui';
+import { ScrollToContext } from '../components/ScrollToContext';
+import type { DocFocus } from '../components/profile/DocumentsSection';
 import ReturnTripScreen from './ReturnTripScreen';
+import NotificationsScreen from './NotificationsScreen';
+import { useVehicleGate } from './VehicleGate';
 import FuelLogScreen from './FuelLogScreen';
 import RouteTab from './tabs/RouteTab';
 import ScanTab from './tabs/ScanTab';
@@ -68,7 +82,8 @@ import CargoTransfersCard from '../components/home/CargoTransfersCard';
 import type { ScanMethod } from '../components/scan/ParcelScanner';
 import { colors, space } from '../theme';
 import { fill } from '../locales';
-import { CARGO_CHANGED_EVENT, OPEN_TAB_EVENT } from '../components/NotificationListener';
+import { CARGO_CHANGED_EVENT } from '../components/NotificationListener';
+import { openNotification } from '../services/driverLinks';
 
 interface HomeScreenProps {
   onLogout: () => void;
@@ -85,13 +100,32 @@ const DIALOG_VARIANT: Partial<Record<ActiveModal['kind'], DialogVariant>> = {
   handover: 'full',
   hubDrop: 'full',
   returnPickup: 'full',
+  notifications: 'full',
 };
 
 /** Dialogs where the driver types or captures something: only Cancel or Back closes them, never a stray touch outside. */
 const FORM_DIALOGS: ActiveModal['kind'][] = ['pod', 'issue', 'capacity', 'sos', 'fuel', 'pickup', 'cargoCheck', 'handover', 'hubDrop', 'returnPickup'];
 
+/** A banner above the tabs: what a tapped notification says. */
+interface Notice {
+  tone: 'danger' | 'warning' | 'info';
+  message: string;
+}
+
+/** A tapped transfer notification waits for the transfer list, then opens it. */
+interface TransferIntent {
+  id: string;
+  phase: 'new' | 'fetching' | 'settled';
+}
+
 export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const { t } = useTranslation();
+  const vehicleGate = useVehicleGate();
+  const scrollRef = useRef<ScrollView>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [focusStopId, setFocusStopId] = useState<string | null>(null);
+  const [docFocus, setDocFocus] = useState<DocFocus | null>(null);
+  const [transferIntent, setTransferIntent] = useState<TransferIntent | null>(null);
   const [activeTab, setActiveTab] = useState<DriverTab>('route');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -109,10 +143,15 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     return () => sub.remove();
   }, [activeTab]);
 
-  // Tapping a push notification opens the tab it is about.
-  useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(OPEN_TAB_EVENT, (tab: DriverTab) => setActiveTab(tab));
-    return () => sub.remove();
+  // Brings an item deep in a tab (a document row) into view
+  const scrollToView = useCallback((view: RNView | null) => {
+    const scroll = scrollRef.current;
+    if (!view || !scroll) return;
+    try {
+      const inner = (scroll as any).getInnerViewRef?.() ?? (scroll as any).getInnerViewNode?.();
+      if (!inner) return;
+      view.measureLayout(inner, (_x, y) => scroll.scrollTo({ y: Math.max(0, y - space[4]), animated: true }), () => {});
+    } catch {}
   }, []);
 
   const data = useDriverRoute();
@@ -236,9 +275,52 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     if (activeTab === 'route') refresh();
   }, [activeTab, refresh]);
 
-  const step = getNextStep(routeData, tracking.isTracking, tracking.currentLoc);
+  const status = useDriverStatus();
   const finished = isRouteFinished(route);
   const nextPending = pendingStops(route)[0];
+
+  // A new trip, or a stop dispatch inserted, waits for a yes
+  const assignment = useMemo<AssignmentWaiting | null>(() => {
+    if (data.pendingConfirmation) {
+      return { kind: 'stop', stopName: data.pendingConfirmation.route_stops?.delivery_points?.name ?? null };
+    }
+    const waiting = data.assignmentRoute;
+    if (!waiting) return null;
+    const stops = route && route.id === waiting.id ? route.stops ?? [] : [];
+    const first = [...stops].sort((a, b) => a.sequence - b.sequence)[0];
+    return { kind: 'route', stops: stops.length || null, firstStop: first?.delivery_point?.name ?? null };
+  }, [data.pendingConfirmation, data.assignmentRoute, route]);
+
+  const nextAction = getNextAction({
+    routeData,
+    noVehicle: data.noVehicle,
+    assignment,
+    isTracking: tracking.isTracking,
+    currentLoc: tracking.currentLoc,
+    onBoard: onBoard.data ?? null,
+    transfers: cargoTransfers.transfers,
+    openSos: !!status.openSos,
+    dispatchIssues: status.dispatchIssues,
+    upcoming: status.upcoming,
+    pickupWaiting: pickupItems.length,
+    lotsAt: (stop) =>
+      dropLotsFor(stop, route, onBoard.items).map((l) => ({ code: l.code, pieces: l.pieces, label: l.lot.label, consigneeName: l.lot.consigneeName })),
+  });
+
+  // Stops the card does not show, in order: the rest of the trip under it
+  const cardStop =
+    nextAction.kind === 'go_to_stop' || nextAction.kind === 'deliver' || nextAction.kind === 'return_pickup'
+      ? nextAction.stop
+      : nextAction.kind === 'record_pickup'
+        ? nextAction.stop
+        : null;
+  const restStops = routeData?.active ? (cardStop ? restOfStops(route) : pendingStops(route)) : [];
+  const firstRestNumber = stopCounts(route).done + (cardStop ? 2 : 1);
+  // A transfer on the card is not listed twice
+  const featuredTransferId =
+    nextAction.kind === 'receive_goods' || nextAction.kind === 'hand_over' || nextAction.kind === 'drop_at_hub'
+      ? nextAction.transfer.transfer.id
+      : null;
 
   /** "Departed" for consignments just picked up: the server moves them to in transit. */
   const depart = useCallback(
@@ -284,10 +366,157 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
   // Picked up but not yet on the move: offered as "Depart with cargo"
   const awaitingDeparture = onBoard.items.filter((i) => i.status === 'picked_up');
 
+  const refreshStatus = useCallback(() => queryClient.invalidateQueries({ queryKey: DRIVER_STATUS_KEY }), [queryClient]);
+
   const raiseSos = useCallback(() => {
     openModal({ kind: 'sos' });
-    sos.trigger();
-  }, [openModal, sos]);
+    // The open alert becomes the card as soon as the server has it
+    sos.trigger().finally(refreshStatus);
+  }, [openModal, sos, refreshStatus]);
+
+  /** "I am safe": cancels the open alert from the card. Online only, so a failure is said out loud. */
+  const cancelOpenSos = useCallback(
+    (id: string) => {
+      Alert.alert(t('na2_sos_cancel_title'), t('na2_sos_cancel_desc'), [
+        { text: t('na2_keep_sos'), style: 'cancel' },
+        {
+          text: t('na2_sos_cancel'),
+          style: 'destructive',
+          onPress: () => {
+            api
+              .cancelSos(id)
+              .catch(() => Alert.alert(t('error'), t('na2_sos_cancel_failed')))
+              .finally(refreshStatus);
+          },
+        },
+      ]);
+    },
+    [t, refreshStatus],
+  );
+
+  /** Opens the exact place a notification is about (see utils/notificationTarget). */
+  const handleIntent = useCallback(
+    ({ target, notification }: DriverIntent) => {
+      closeModal();
+      const say = (tone: Notice['tone'], message: string) => setNotice(message ? { tone, message } : null);
+      const goHome = () => {
+        setActiveTab('route');
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      };
+      const reloadWork = () => {
+        refresh();
+        refetchOnBoard();
+        refetchTransfers();
+        refreshStatus();
+      };
+      setFocusStopId(null);
+      setNotice(null);
+
+      switch (target.kind) {
+        case 'trip':
+          // The accept prompt, if the trip is not accepted yet
+          goHome();
+          data.reopenAssignment();
+          refreshStatus();
+          break;
+        case 'cancelled':
+          goHome();
+          reloadWork();
+          say('warning', notification.body || t('na2_notice_cancelled'));
+          break;
+        case 'load':
+          goHome();
+          reloadWork();
+          say('info', notification.body);
+          break;
+        case 'transfer':
+          goHome();
+          setTransferIntent({ id: target.transferId, phase: 'new' });
+          break;
+        case 'cargo':
+          goHome();
+          reloadWork();
+          openModal({ kind: 'cargoCheck' });
+          break;
+        case 'documents':
+          setActiveTab('profile');
+          setDocFocus({ docId: target.docId, docType: target.docType, at: Date.now() });
+          break;
+        case 'vehicle':
+          // The vehicle gate shows the new decision; the profile shows the vehicle
+          queryClient.invalidateQueries({ queryKey: REGISTRATION_KEY });
+          setActiveTab('profile');
+          break;
+        case 'wallet':
+          setActiveTab('wallet');
+          queryClient.invalidateQueries({ queryKey: ['driver-pay'] });
+          break;
+        case 'rating': {
+          setActiveTab('wallet');
+          queryClient.invalidateQueries({ queryKey: ['driver-pay'] });
+          if (target.rating !== null) {
+            const text = target.code
+              ? fill(t('na2_notice_rating'), { code: target.code, rating: target.rating })
+              : fill(t('na2_notice_rating_plain'), { rating: target.rating });
+            say('info', target.comment ? `${text} "${target.comment}"` : text);
+          }
+          break;
+        }
+        case 'messages':
+          setActiveTab('messages');
+          break;
+        case 'stop': {
+          goHome();
+          reloadWork();
+          const stopId = stopIdFor(
+            target,
+            route?.stops ?? [],
+            onBoard.items.map((i) => ({ shipmentId: typeof i.ref === 'object' && 'shipment_id' in i.ref ? i.ref.shipment_id : null, stopId: i.stopId })),
+          );
+          setFocusStopId(stopId ?? nextPending?.id ?? null);
+          say('danger', notification.body || t('na2_notice_stop_fallback'));
+          break;
+        }
+        case 'profile':
+          setActiveTab('profile');
+          break;
+        case 'home':
+          goHome();
+          reloadWork();
+          break;
+      }
+    },
+    [closeModal, openModal, refresh, refetchOnBoard, refetchTransfers, refreshStatus, queryClient, data.reopenAssignment, route, onBoard.items, nextPending?.id, t],
+  );
+
+  // A tapped notification (push or the in-app list): take it now, and whenever the next one comes
+  const handleIntentRef = useRef(handleIntent);
+  handleIntentRef.current = handleIntent;
+  useEffect(() => {
+    const take = () => {
+      const intent = takePendingIntent();
+      if (intent) handleIntentRef.current(intent);
+    };
+    take();
+    const sub = DeviceEventEmitter.addListener(OPEN_TARGET_EVENT, take);
+    return () => sub.remove();
+  }, []);
+
+  // A tapped transfer notification: wait for the transfer list, open it, or say it is gone
+  useEffect(() => {
+    if (!transferIntent || !data.activeVehicleId) return;
+    const found = cargoTransfers.transfers.find((vt) => vt.transfer.id === transferIntent.id);
+    if (found) {
+      setTransferIntent(null);
+      openModal({ kind: 'handover', transfer: found });
+    } else if (transferIntent.phase === 'new') {
+      setTransferIntent({ ...transferIntent, phase: 'fetching' });
+      refetchTransfers().finally(() => setTransferIntent((cur) => (cur && cur.id === transferIntent.id ? { ...cur, phase: 'settled' } : cur)));
+    } else if (transferIntent.phase === 'settled') {
+      setTransferIntent(null);
+      setNotice({ tone: 'warning', message: t('na2_notice_transfer_gone') });
+    }
+  }, [transferIntent, cargoTransfers.transfers, data.activeVehicleId, openModal, refetchTransfers, t]);
 
   const onPullRefresh = async () => {
     setPullRefreshing(true);
@@ -483,8 +712,11 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             cancelState={sos.cancelState}
             onRetry={sos.trigger}
             onSendDetails={sos.sendDetails}
-            onCancel={sos.cancel}
-            onClose={closeModal}
+            onCancel={() => sos.cancel().finally(refreshStatus)}
+            onClose={() => {
+              closeModal();
+              refreshStatus();
+            }}
             onCheckCargo={onBoard.items.length > 0 ? () => openModal({ kind: 'cargoCheck' }) : undefined}
           />
         );
@@ -571,6 +803,8 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         );
       case 'moreActions':
         return <MoreActionsSheet actions={moreActions} onClose={closeModal} />;
+      case 'notifications':
+        return <NotificationsScreen onOpen={(n) => openNotification(n)} onClose={closeModal} headerRight={sosButton} />;
       case 'fuel':
         return data.activeVehicleId ? (
           <FuelLogScreen vehicleId={data.activeVehicleId} location={tracking.currentLoc} onClose={closeModal} headerRight={sosButton} />
@@ -606,13 +840,19 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     ) : null;
 
   return (
+    <ScrollToContext.Provider value={scrollToView}>
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.top}>
         <HomeHeader
           driverName={data.driverInfo?.full_name}
           plateNumber={data.activeVehicle?.plate_number}
           avatarUri={avatarUri}
-          right={sosButton}
+          right={
+            <View style={styles.headerRight}>
+              <NotificationBell onPress={() => openModal({ kind: 'notifications' })} />
+              {sosButton}
+            </View>
+          }
         />
         <StatusStrip
           location={deviceLocation}
@@ -633,6 +873,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
 
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView
+          ref={scrollRef}
           style={styles.flex}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.content}
@@ -640,31 +881,58 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             <RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} tintColor={colors.accent} colors={[colors.accent]} />
           }
         >
+          {notice ? (
+            <Banner
+              tone={notice.tone}
+              icon={notice.tone === 'info' ? 'information-circle-outline' : 'alert-circle-outline'}
+              message={notice.message}
+              action={{ label: t('na2_notice_dismiss'), onPress: () => setNotice(null) }}
+            />
+          ) : null}
           {syncBanner}
-          {activeTab === 'route' && (
-            <CargoTransfersCard transfers={cargoTransfers.transfers} onOpen={(transfer) => openModal({ kind: 'handover', transfer })} />
-          )}
           {activeTab === 'route' && (
             <RouteTab
               routeData={routeData}
-              step={step}
-              noVehicle={data.noVehicle}
+              restStops={restStops}
+              firstRestNumber={firstRestNumber}
+              upcoming={status.upcoming}
+              focusStopId={focusStopId}
               currentLoc={tracking.currentLoc}
               line={snapped.line}
               liveDistanceM={snapped.distanceM}
               liveDurationS={snapped.durationS}
-              isStartingTracking={tracking.isStarting}
-              refreshing={data.isRefreshing}
-              canFindReturnLoad={!!data.activeVehicleId}
-              onStartRoute={actions.startRoute}
-              onEnableTracking={tracking.start}
-              onNavigate={actions.navigateTo}
-              onArrivedManually={actions.confirmAtStop}
-              onConfirmStop={openPod}
-              onReportIssue={actions.failStop}
-              onFindReturnLoad={actions.findReturnLoad}
-              onRefresh={refresh}
+              transfers={cargoTransfers.transfers.filter((vt) => vt.transfer.id !== featuredTransferId)}
+              onOpenTransfer={(transfer) => openModal({ kind: 'handover', transfer })}
               onOpenMoreActions={() => openModal({ kind: 'moreActions' })}
+              card={{
+                action: nextAction,
+                isStartingTracking: tracking.isStarting,
+                refreshing: data.isRefreshing,
+                canFindReturnLoad: !!data.activeVehicleId,
+                sosId: status.openSos?.id ?? null,
+                onStartRoute: actions.startRoute,
+                onEnableTracking: tracking.start,
+                onNavigate: actions.navigateTo,
+                onArrivedManually: actions.confirmAtStop,
+                onConfirmStop: openPod,
+                onReportIssue: actions.failStop,
+                onFindReturnLoad: actions.findReturnLoad,
+                onRefresh: refresh,
+                onAcceptTrip: data.reopenAssignment,
+                onOpenTransfer: (transfer) => openModal({ kind: 'handover', transfer }),
+                onRecordPickup: (stop) => (stop ? openPod(stop) : openModal({ kind: 'pickup' })),
+                onDepart: depart,
+                onOpenReturnPickup: () => openModal({ kind: 'returnPickup' }),
+                onOpenHubDrop: () => openModal({ kind: 'hubDrop' }),
+                onOpenCargoCheck: () => openModal({ kind: 'cargoCheck' }),
+                onCallDispatch: dispatch.callDispatch,
+                onOpenDocuments: () => {
+                  setActiveTab('profile');
+                  setDocFocus({ docId: null, docType: 'driving_licence', at: Date.now() });
+                },
+                onRegisterVehicle: vehicleGate.registerVehicle,
+                onCancelSos: cancelOpenSos,
+              }}
             />
           )}
           {activeTab === 'scan' && (
@@ -700,6 +968,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
               avatarUri={avatarUri}
               onAvatarChange={setAvatarUri}
               onLogout={handleLogout}
+              docFocus={docFocus}
             />
           )}
         </ScrollView>
@@ -721,12 +990,14 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
         {shown ? renderDialog(shown) : null}
       </DialogFrame>
     </View>
+    </ScrollToContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   top: { backgroundColor: colors.surface },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   flex: { flex: 1 },
   content: { padding: space[4], paddingBottom: space[8], gap: space[4] },
 });

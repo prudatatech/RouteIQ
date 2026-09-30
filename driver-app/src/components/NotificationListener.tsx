@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
 import { colors } from '../theme';
+import { openNotification } from '../services/driverLinks';
 
 // Configure how notifications behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -17,26 +18,24 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/** Emitted with the DriverTab to show when the driver taps a push notification. */
-export const OPEN_TAB_EVENT = 'driver:open-tab';
-
 /** Emitted when a cargo notification arrives (a transfer planned, a case opened ...), so the cargo data reloads. */
 export const CARGO_CHANGED_EVENT = 'driver:cargo-changed';
 
 const isCargoType = (type: unknown) => typeof type === 'string' && (type.startsWith('cargo_') || type === 'driver_action_rejected');
 
-/** The tab a tapped notification opens: the wallet for a payment (`link: '/wallet'`), messages for chat, otherwise the route. */
-export function tabFor(type: string, link?: unknown): 'wallet' | 'messages' | 'route' {
-  if (type === 'payout_sent' || link === '/wallet') return 'wallet';
-  return /message|chat/i.test(type) ? 'messages' : 'route';
-}
+/** Emitted when any notification arrives, so the in-app list and its unread count reload. */
+export const NOTIFICATIONS_CHANGED_EVENT = 'driver:notifications-changed';
 
-/** Tapping a notification opens the tab it is about (see tabFor). */
-function openTabFor(response: Notifications.NotificationResponse) {
+/**
+ * Tapping a push opens the exact place it is about (see utils/notificationTarget). The push's
+ * data carries `type` and the ids; its title and body are kept for the banner Home shows.
+ */
+function openTarget(response: Notifications.NotificationResponse) {
   const content = response.notification.request.content;
-  const type = String((content.data as { type?: unknown } | undefined)?.type ?? '');
+  const data = (content.data ?? {}) as Record<string, unknown>;
+  const type = String(data.type ?? '');
   if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
-  DeviceEventEmitter.emit(OPEN_TAB_EVENT, tabFor(type, (content.data as { link?: unknown } | undefined)?.link));
+  openNotification({ type, title: content.title, body: content.body, data }, response.notification.request.identifier);
 }
 
 export const NotificationListener = () => {
@@ -64,14 +63,16 @@ export const NotificationListener = () => {
     const subscription = Notifications.addNotificationReceivedListener(notification => {
       const type = (notification.request.content.data as { type?: unknown } | undefined)?.type;
       if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
+      DeviceEventEmitter.emit(NOTIFICATIONS_CHANGED_EVENT);
     });
 
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTabFor);
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTarget);
 
     // The app was closed and a notification tap started it.
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
-        if (response) setTimeout(() => openTabFor(response), 500);
+        // Home takes the target when it mounts, so no delay is needed here
+        if (response) openTarget(response);
       })
       .catch(() => {});
 
@@ -94,6 +95,7 @@ export const NotificationListener = () => {
       }, (payload) => {
         const newNotif = payload.new as any;
         if (isCargoType(newNotif?.type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, newNotif.type);
+        DeviceEventEmitter.emit(NOTIFICATIONS_CHANGED_EVENT);
         
         // Show Toast/Alert for the driver
         if (Platform.OS === 'android') {

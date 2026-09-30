@@ -46,6 +46,24 @@ export interface DriverPay {
 }
 
 
+/** GET /telemetry/driver-ping/my-status: what blocks or waits behind the current trip. */
+export interface DriverStatus {
+  open_sos: { id: string; status: string; alert_type: string | null; created_at: string | null } | null;
+  dispatch_blocked: string[];
+  upcoming: Array<{ id: string; stops: number; first_stop: string | null; created_at: string | null }>;
+}
+
+/** One row of the in-app notification list (GET /notifications). */
+export interface AppNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  is_read: boolean;
+  data: Record<string, unknown> | null;
+  created_at: string;
+}
+
 const STORAGE_KEYS = {
   DRIVER_INFO: 'margixindia_driver_info',
 };
@@ -473,6 +491,33 @@ class ApiClient {
 
   async getMyRoute(): Promise<any> {
     return this.request('GET', `/telemetry/driver-ping/my-route?t=${Date.now()}`);
+  }
+
+  async getMyStatus(): Promise<DriverStatus> {
+    const data = await this.request('GET', '/telemetry/driver-ping/my-status');
+    return {
+      open_sos: data?.open_sos ?? null,
+      dispatch_blocked: Array.isArray(data?.dispatch_blocked) ? data.dispatch_blocked : [],
+      upcoming: Array.isArray(data?.upcoming) ? data.upcoming : [],
+    };
+  }
+
+  // ── In-app notifications ───────────────────────────────────
+
+  async getNotifications(limit = 50): Promise<{ notifications: AppNotification[]; unread_count: number }> {
+    const data = await this.request('GET', `/notifications?limit=${limit}`);
+    return {
+      notifications: Array.isArray(data?.notifications) ? data.notifications : [],
+      unread_count: Number(data?.unread_count) || 0,
+    };
+  }
+
+  async markNotificationRead(id: string): Promise<void> {
+    await this.request('POST', `/notifications/${encodeURIComponent(id)}/read`);
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.request('POST', '/notifications/read-all');
   }
 
   async setBreakStatus(is_break: boolean): Promise<any> {

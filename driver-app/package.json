@@ -44,6 +44,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-tests.js",
     "check:locales": "node scripts/check-locales.js"
   },
   "private": true

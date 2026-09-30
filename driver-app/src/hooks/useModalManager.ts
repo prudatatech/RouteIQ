@@ -26,7 +26,8 @@ export type DriverModal =
   | { kind: 'capacity' }
   | { kind: 'returnTrip' }
   | { kind: 'fuel' }
-  | { kind: 'moreActions' };
+  | { kind: 'moreActions' }
+  | { kind: 'notifications' };
 
 export type SystemModal = { kind: 'call' } | { kind: 'assignment' };
 
