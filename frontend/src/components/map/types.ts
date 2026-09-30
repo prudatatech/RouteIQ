@@ -19,6 +19,8 @@ export interface MapVehicle {
   label: string
   /** truck, van, bike or car. Chooses the marker icon; anything else (or unset) draws a truck. */
   vehicle_type?: string | null
+  /** Move straight to each new position instead of gliding. For a marker the caller animates itself (trip replay). */
+  instant?: boolean
 }
 
 /** A stop on a route. */
@@ -31,6 +33,8 @@ export interface MapRouteStop {
   status?: string
   /** Place or customer name, for the screen-reader label. */
   label?: string
+  /** Outline and number colour, to tie a stop to its route when several routes are shown. */
+  color?: string
 }
 
 /** A route line with optional numbered stops. */
@@ -47,6 +51,21 @@ export interface MapTrail {
   id: string
   /** GeoJSON [lng, lat] pairs, oldest first. */
   coordinates: [number, number][]
+}
+
+/** A line drawn on top of the base map: one of several routes, an old order, a stretch of a track. */
+export interface MapLine {
+  id: string
+  /** GeoJSON [lng, lat] pairs. */
+  coordinates: [number, number][]
+  /** Raw colour (hex). GL paint cannot read theme variables. */
+  color: string
+  /** Pixels. Default 4. */
+  width?: number
+  /** Draw dashed: a plan, an estimate or a previous order. */
+  dashed?: boolean
+  /** 0 to 1. Default 1. */
+  opacity?: number
 }
 
 export type MapPointKind = 'pickup' | 'drop' | 'incident' | 'hub' | 'load' | 'location'
@@ -99,6 +118,8 @@ export interface MapViewProps {
   route?: MapRoute | null
   /** Driven paths, drawn under the vehicles. */
   trails?: MapTrail[]
+  /** Coloured lines (several routes, before and after, a track by speed), drawn under the markers. */
+  lines?: MapLine[]
   points?: MapPoint[]
   /** Id of the selected vehicle or point. */
   selectedId?: string | null

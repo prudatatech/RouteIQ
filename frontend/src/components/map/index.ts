@@ -12,6 +12,7 @@ export type {
   LatLng,
   MapControls,
   MapFit,
+  MapLine,
   MapMode,
   MapPoint,
   MapPointKind,

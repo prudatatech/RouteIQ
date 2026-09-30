@@ -27,6 +27,7 @@ import {
   trailLineLayer,
   withValidPosition,
 } from './layers'
+import { LINES_SOURCE_ID, lineFeatures, linesCasingLayer, linesDashedLayer, linesSolidLayer } from './lines'
 import { clusterVehicles, type VehicleCluster } from './cluster'
 import { ClusterMarker, PointMarker, StopMarker, VehicleMarker } from './markers'
 import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
@@ -95,6 +96,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     mode = 'fleet',
     route = null,
     trails,
+    lines,
     baseStyle = 'streets',
     clusters: clusteringOn = true,
     selectedId = null,
@@ -122,6 +124,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const vehicles = useMemo(() => withValidPosition(props.vehicles), [props.vehicles])
   const points = useMemo(() => withValidPosition(props.points), [props.points])
   const stops = useMemo(() => withValidPosition(route?.stops), [route?.stops])
+
+  // Lines count toward the fitted bounds like trails do
+  const boundsTrails = useMemo(() => [...(trails ?? []), ...(lines ?? []).map((l) => ({ id: l.id, coordinates: l.coordinates }))], [trails, lines])
 
   const mapRef = useRef<MapRef>(null)
   const [attempt, setAttempt] = useState(0)
@@ -157,8 +162,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   }, [])
 
   // Latest content, read by camera helpers without re-subscribing effects.
-  const content = useRef({ vehicles, points, route, stops, trails })
-  content.current = { vehicles, points, route, stops, trails }
+  const content = useRef({ vehicles, points, route, stops, trails: boundsTrails })
+  content.current = { vehicles, points, route, stops, trails: boundsTrails }
   const padding = useRef(fitPadding)
   padding.current = fitPadding
 
@@ -219,8 +224,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     // Length and end only: a line that starts at a moving vehicle must not refit on every ping.
     route?.coordinates.length ?? 0,
     route?.coordinates[route.coordinates.length - 1]?.join(',') ?? '',
-    (trails ?? []).map((t) => `${t.id}:${t.coordinates.length}`).join(','),
-  ].join('|'), [vehicles, points, stops, route?.coordinates, trails])
+    boundsTrails.map((t) => `${t.id}:${t.coordinates.length}`).join(','),
+  ].join('|'), [vehicles, points, stops, route?.coordinates, boundsTrails])
 
   const hasFitted = useRef(false)
   useEffect(() => { hasFitted.current = false }, [attempt])
@@ -304,6 +309,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const planned = Boolean(route?.planned) || (route?.coordinates.length ?? 0) < 2
   const geofences = useMemo(() => geofenceFeatures(points), [points])
   const trailData = useMemo(() => trailFeatures(trails ?? []), [trails])
+  const lineData = useMemo(() => lineFeatures(lines ?? []), [lines])
   const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
   const center = initialCenter ?? { lng: MAP_DEFAULTS.CENTER[0], lat: MAP_DEFAULTS.CENTER[1] }
 
@@ -365,6 +371,14 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             <Source id={TRAIL_SOURCE_ID} type="geojson" data={trailData}>
               <Layer {...trailCasingLayer} />
               <Layer {...trailLineLayer} />
+            </Source>
+          )}
+
+          {lineData.features.length > 0 && (
+            <Source id={LINES_SOURCE_ID} type="geojson" data={lineData}>
+              <Layer {...linesCasingLayer} />
+              <Layer {...linesDashedLayer} />
+              <Layer {...linesSolidLayer} />
             </Source>
           )}
 

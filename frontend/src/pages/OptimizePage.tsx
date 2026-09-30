@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Navigation, RotateCw, Sparkles } from 'lucide-react'
+import { Check, Eye, Navigation, RotateCw, Sparkles, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { isDraftVehicle } from '@/utils/vehicles'
 import { licenceSuffix } from '@/components/people/docs'
-import { MapView, type MapRouteStop, type MapVehicle } from '@/components/map'
+import type { MapRouteStop, MapVehicle } from '@/components/map'
+import { OptimizeMap } from '@/components/optimize/OptimizeMap'
+import { EngineBanner, RouteSummaryLine, SavingsStats, UnassignedList } from '@/components/optimize/ResultPanels'
+import {
+  pendingStopPoints, plansFromReorder, plansFromResult,
+  type LatLng, type OptimizerEngine, type RoutePlan, type ServerRoute, type UnassignedShipment,
+} from '@/components/optimize/plan'
 import { formatMinutes, formatKm } from '@/utils/display'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
@@ -25,6 +31,7 @@ const ALGORITHM_LABELS: Record<string, string> = {
   ortools: 'OR-Tools',
   ga: 'Genetic algorithm',
   greedy: 'Greedy (fallback)',
+  'cheapest-insertion+2opt': 'Cheapest insertion + 2-opt (built in)',
 }
 
 interface Vehicle {
@@ -58,15 +65,12 @@ interface OptimizedRouteStop {
   status?: string | null
 }
 
-interface OptimizedRoute {
-  id?: string
-  vehicle_id?: string | null
-  total_distance_km?: number | null
-  total_duration_minutes?: number | null
+interface OptimizedRoute extends ServerRoute {
   estimated_fuel_liters?: number | null
   stops?: OptimizedRouteStop[] | null
   stop_ids?: string[] | null
   vehicles?: { plate_number?: string | null; latitude?: number | null; longitude?: number | null; status?: string | null } | null
+  depot_id?: string | null
   route_stops?: { id?: string; sequence: number; status?: string | null; delivery_points?: DeliveryPoint | DeliveryPoint[] | null }[] | null
 }
 
@@ -79,6 +83,19 @@ interface OptimizeResult {
   algorithm?: string
   message?: string
   new_eta_minutes?: number
+  /** Which engine planned the routes; the built-in solver runs when the ML service is not reachable. */
+  engine?: OptimizerEngine
+  engine_note?: string | null
+  matrix_source?: string | null
+  /** True when any distance is straight-line x a road factor rather than a routed value. */
+  estimated?: boolean
+  saved_km?: number | null
+  saved_minutes?: number | null
+  before_total_km?: number | null
+  depot?: { id: string; name: string | null; latitude: number; longitude: number } | null
+  unassigned?: UnassignedShipment[]
+  /** Set for a re-optimized route: the stop order before and after, as delivery point ids. */
+  reorder?: { oldSequence: string[]; newSequence: string[]; routeId: string }
   /** Where the weather effect came from: live conditions, a value set by hand, or none. */
   weather?: { source: 'off' | 'manual' | 'live' | 'unavailable'; severity: number; description: string | null }
 }
@@ -107,6 +124,7 @@ interface RerouteSuggestion {
   insight: string
   /** Why the suggestion exists, for example "Accident on NH48, +25 min". */
   cause: string | null
+  engine: OptimizerEngine | null
 }
 
 interface Insight {
@@ -118,6 +136,7 @@ interface Insight {
   saved_mins: number | null
   insight: string
   cause?: string | null
+  engine?: OptimizerEngine | null
 }
 
 // useMutation's onError is called with the generic query-error type, so these read the
@@ -143,6 +162,8 @@ export default function OptimizePage() {
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string> | null>(null)
   const [selectedShipmentIds, setSelectedShipmentIds] = useState<Set<string> | null>(null)
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
+  // The suggestion whose new order is drawn on the map before it is applied
+  const [previewId, setPreviewId] = useState<string | null>(null)
 
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'optimizable'],
@@ -217,6 +238,13 @@ export default function OptimizePage() {
           solve_time_seconds: (performance.now() - startedAt) / 1000,
           message: reoptData.message,
           new_eta_minutes: duration,
+          engine: reoptData.engine,
+          estimated: reoptData.estimated ?? undefined,
+          saved_km: reoptData.saved_km,
+          saved_minutes: reoptData.saved_minutes,
+          reorder: Array.isArray(reoptData.new_stop_sequence)
+            ? { oldSequence: reoptData.old_stop_sequence ?? [], newSequence: reoptData.new_stop_sequence, routeId: routeIdToReoptimize }
+            : undefined,
         }
       }
       return optimizationAPI.optimize({
@@ -257,7 +285,7 @@ export default function OptimizePage() {
   })
   const suggestions: RerouteSuggestion[] = insights
     .filter((i) => i.type === 'reroute_suggestion' && !dismissedSuggestions.has(i.id))
-    .map((i) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight, cause: i.cause ?? null }))
+    .map((i) => ({ id: i.id, vehicle_id: i.vehicle_id, route_id: i.route_id, new_sequence: i.new_sequence, saved_mins: i.saved_mins, insight: i.insight, cause: i.cause ?? null, engine: i.engine ?? null }))
 
   const { data: activeVehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ['vehicles', 'active-for-suggestions'],
@@ -269,6 +297,7 @@ export default function OptimizePage() {
     onSuccess: (_data, s) => {
       toast.success('Reroute applied')
       setDismissedSuggestions(prev => new Set(prev).add(s.id))
+      setPreviewId(null)
       queryClient.invalidateQueries({ queryKey: ['ai-insights'] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
     },
@@ -337,6 +366,58 @@ export default function OptimizePage() {
       return []
     })
   }, [result, pendingShipments, deliveryPointById])
+
+  // ── Route plans for the map: the optimized routes, a re-optimized route, or a suggestion being previewed ──
+  const previewSuggestion = suggestions.find(x => x.id === previewId) ?? null
+  const { data: previewRoute } = useQuery({
+    queryKey: ['route', previewSuggestion?.route_id, 'preview'],
+    queryFn: () => routesAPI.get(previewSuggestion!.route_id) as Promise<OptimizedRoute & { vehicles?: { plate_number?: string | null; latitude?: number | null; longitude?: number | null } | null }>,
+    enabled: !!previewSuggestion,
+  })
+  const vehicleLabel = (id: string) => vehicleById.get(id)?.plate_number || 'Vehicle'
+  const vehiclePosition = (v?: { latitude?: number | null; longitude?: number | null } | null): LatLng | null =>
+    v?.latitude != null && v?.longitude != null ? { lat: v.latitude, lng: v.longitude } : null
+
+  const previewPlan: RoutePlan | null = useMemo(() => {
+    if (!previewSuggestion || !previewRoute || !previewSuggestion.new_sequence) return null
+    const v = vehicleById.get(previewSuggestion.vehicle_id) ?? activeVehicles.find(a => a.id === previewSuggestion.vehicle_id)
+    return plansFromReorder({
+      key: `preview-${previewSuggestion.id}`,
+      label: v?.plate_number || 'Vehicle',
+      vehicleId: previewSuggestion.vehicle_id,
+      origin: vehiclePosition(previewRoute.vehicles) ?? vehiclePosition(v),
+      current: pendingStopPoints(previewRoute.route_stops as never),
+      newSequence: previewSuggestion.new_sequence,
+      savedMin: previewSuggestion.saved_mins,
+    })
+  }, [previewSuggestion, previewRoute, vehicleById, activeVehicles])
+
+  const resultPlans: RoutePlan[] = useMemo(() => {
+    if (!result) return []
+    if (result.reorder) {
+      const route = result.routes?.[0]
+      const stops = pendingStopPoints(route?.route_stops as never)
+      const v = route?.vehicles
+      const plan = plansFromReorder({
+        key: `reopt-${result.reorder.routeId}`,
+        label: v?.plate_number || 'Route',
+        vehicleId: route?.vehicle_id ?? null,
+        origin: vehiclePosition(v),
+        // The stops as they were driven before the change, then the new order
+        current: result.reorder.oldSequence.length > 0
+          ? result.reorder.oldSequence.flatMap(id => stops.filter(x => x.id === id))
+          : stops,
+        newSequence: result.reorder.newSequence,
+        savedMin: result.saved_minutes,
+      })
+      return plan ? [plan] : []
+    }
+    return plansFromResult(result.routes, result.depot ? { lat: result.depot.latitude, lng: result.depot.longitude } : null, vehicleLabel)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, vehicleById])
+
+  const mapPlans = previewPlan ? [previewPlan] : resultPlans
+  const mapDepot: LatLng | null = previewPlan ? null : result?.depot ? { lat: result.depot.latitude, lng: result.depot.longitude } : null
 
   return (
     <Page>
@@ -482,11 +563,21 @@ export default function OptimizePage() {
 
         {/* Map + result */}
         <div className="space-y-6 lg:col-span-8">
-          <Card className="overflow-hidden">
-            <div className="h-80">
-              <MapView mode="route" vehicles={mapVehicles} route={{ coordinates: [], stops: mapStops }} ariaLabel="Optimization map" />
-            </div>
-          </Card>
+          <OptimizeMap
+            plans={mapPlans}
+            depot={mapDepot}
+            fallbackStops={mapStops}
+            fallbackVehicles={mapVehicles}
+            header={previewPlan && previewSuggestion ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-brand-soft px-4 py-2 text-sm text-text">
+                <span>
+                  Previewing the suggested order for <span className="font-medium">{previewPlan.label}</span>
+                  {previewSuggestion.saved_mins != null ? `, about ${previewSuggestion.saved_mins} min shorter` : ''}. Nothing has changed yet.
+                </span>
+                <Button size="sm" variant="ghost" icon={<X size={14} />} onClick={() => setPreviewId(null)}>Close preview</Button>
+              </div>
+            ) : undefined}
+          />
 
           <Card>
             <CardHeader title="Result" />
@@ -497,6 +588,8 @@ export default function OptimizePage() {
                 <EmptyState compact title="No result yet" description="Run an optimization to see routes here." />
               ) : (
                 <div className="space-y-6">
+                  <EngineBanner engine={result.engine} matrixSource={result.matrix_source} note={result.engine_note} />
+
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                     <Stat label="Routes" value={(result.routes?.length ?? 0).toLocaleString('en-IN')} />
                     <Stat label="Total distance" value={formatKm(result.total_distance_km ?? 0)} />
@@ -505,6 +598,15 @@ export default function OptimizePage() {
                     <Stat label="Savings" value={result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—'} />
                     <Stat label="Algorithm used" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
                   </div>
+
+                  <SavingsStats
+                    savedKm={result.saved_km}
+                    savedMinutes={result.saved_minutes}
+                    beforeKm={result.before_total_km}
+                    estimated={result.estimated}
+                  />
+
+                  <UnassignedList items={result.unassigned} />
 
                   {result.weather && weatherNote(result.weather) && (
                     <p className="text-sm text-muted">{weatherNote(result.weather)}</p>
@@ -523,13 +625,16 @@ export default function OptimizePage() {
                       const stopCount = r.route_stops?.length ?? r.stops?.length ?? r.stop_ids?.length ?? 0
                       return (
                         <div key={r.id ?? i} className="flex items-center justify-between gap-3 rounded-control border border-border px-4 py-3">
-                          <div>
-                            <div className="text-sm font-medium text-text">{vehicle || `Route ${i + 1}`}</div>
-                            <div className="text-xs text-muted">{stopCount.toLocaleString('en-IN')} stop{stopCount === 1 ? '' : 's'}</div>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-muted">
-                            <span>{formatKm(r.total_distance_km ?? 0)}</span>
-                            <span>{formatMinutes(r.total_duration_minutes ?? 0)}</span>
+                          <RouteSummaryLine
+                            color={resultPlans.find(p => p.key === (r.id ?? `route-${i}`))?.color ?? 'transparent'}
+                            label={vehicle || `Route ${i + 1}`}
+                            stops={stopCount}
+                            km={r.total_distance_km}
+                            minutes={r.total_duration_minutes}
+                            savedKm={r.saved_km}
+                            savedMinutes={r.saved_minutes}
+                          />
+                          <div className="flex shrink-0 items-center gap-4 text-sm text-muted">
                             {r.id && (
                               <Button size="sm" variant="ghost" onClick={() => navigate(`/routes/${r.id}`)}>View</Button>
                             )}
@@ -581,9 +686,21 @@ export default function OptimizePage() {
                           <div className="text-sm font-medium text-text">{vehicle?.plate_number || 'Vehicle'}</div>
                           {s.cause && <div className="text-sm text-text">{s.cause}</div>}
                           <div className="text-xs text-muted">{s.insight}</div>
+                          {s.engine && s.engine !== 'ml-service' && <div className="text-xs text-muted">Found by the built-in solver.</div>}
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
                           {s.saved_mins != null && <StatusPill tone="brand" dot={false}>-{s.saved_mins} min</StatusPill>}
+                          {s.new_sequence && s.new_sequence.length > 0 && (
+                            <Button
+                              size="sm"
+                              variant={previewId === s.id ? 'primary' : 'secondary'}
+                              icon={<Eye size={14} />}
+                              aria-pressed={previewId === s.id}
+                              onClick={() => setPreviewId(previewId === s.id ? null : s.id)}
+                            >
+                              {previewId === s.id ? 'Previewing' : 'Preview'}
+                            </Button>
+                          )}
                           {s.new_sequence && s.new_sequence.length > 0 ? (
                             <Button
                               size="sm"
@@ -592,7 +709,7 @@ export default function OptimizePage() {
                               onClick={async () => {
                               const ok = await confirm({
                                 title: 'Apply this reroute?',
-                                message: `${vehicle?.plate_number ?? 'The vehicle'} will follow the new stop order and its driver will see the change.`,
+                                message: `${vehicle?.plate_number ?? 'The vehicle'} will follow the new stop order and its driver will see the change.${previewId === s.id ? '' : ' Preview it on the map first to see the difference.'}`,
                                 confirmLabel: 'Apply reroute',
                               })
                               if (ok) applySuggestion.mutate(s)
