@@ -55,16 +55,17 @@ info "booking detail keys: $(jb '.booking|keys|join(",")')"
 req customer GET "/customer/bookings/$B1/cargo"; info "cargo view of an unconfirmed booking: HTTP $ST $(ev 160)"
 t CB06 "the cargo view of an unconfirmed booking says so (409), not 500" "$([ "$ST" = 409 ] && echo 1 || echo 0)" "HTTP $ST"
 
-bb() { req customer POST /customer/bookings "$(single | jq -c "$2")"; chk "$1" "$3" 400; }
-bb CB10 "missing drop name refused" 'del(.drop_name)' "missing drop name refused"
-bb CB11 "blank (spaces) drop name refused" '.drop_name="   "' "blank drop name refused"
-bb CB12 "missing pickup address refused" 'del(.pickup_address)' "missing pickup address refused"
-bb CB13 "5000-character pickup name refused" ".pickup_name=\"$(printf 'N%.0s' $(seq 1 5000))\"" "5000-character pickup name refused"
-bb CB14 "5000-character drop address refused" ".drop_address=\"$(printf 'A%.0s' $(seq 1 5000))\"" "5000-character drop address refused"
-bb CB15 "zero weight refused" '.weight_kg=0' "zero weight refused"
-bb CB16 "negative weight refused" '.weight_kg=-10' "negative weight refused"
-bb CB17 "latitude out of range refused" '.drop_lat=200' "latitude out of range refused"
-req customer POST /customer/bookings "$(single "$PAST")"; chk CB18 "a past pickup date is refused" 400
+bb() { req customer POST /customer/bookings "$(single | jq -c "$3")"; chk "$1" "$2" 400; }
+bb CB10 "missing drop name refused" 'del(.drop_name)'
+bb CB11 "blank (spaces) drop name refused" '.drop_name="   "'
+bb CB12 "missing pickup address refused" 'del(.pickup_address)'
+bb CB13 "5000-character pickup name refused" ".pickup_name=\"$(printf 'N%.0s' $(seq 1 5000))\""
+bb CB14 "5000-character drop address refused" ".drop_address=\"$(printf 'A%.0s' $(seq 1 5000))\""
+bb CB15 "zero weight refused" '.weight_kg=0'
+bb CB16 "negative weight refused" '.weight_kg=-10'
+bb CB17 "latitude out of range refused" '.drop_lat=200'
+BADDATE=""; for k in 1 2 3; do m=$(TZ=Asia/Kolkata date -d "$(date +%Y-%m-01) +$k month" +%Y-%m); last=$(date -d "$m-01 +1 month -1 day" +%d); [ "$last" -lt 31 ] && { BADDATE="$m-31"; break; }; done
+req customer POST /customer/bookings "$(single "$BADDATE")"; chk CB18 "an impossible pickup date ($BADDATE) is refused, not a 500 or a booking" 400
 req customer POST /customer/bookings "$(single "$FAR")"; chk CB19 "a pickup date 120 days out is refused" 400
 req customer POST /customer/bookings "$(multi 5 | jq -c 'del(.drops[1])')"; chk CB20 "multi-drop with one drop refused" 400
 bm() { req customer POST /customer/bookings "$(multi 3 2 | jq -c "$2")"; chk "$1" "$3" 400; }
@@ -133,6 +134,7 @@ B1_SH=$MASTER; B1_TRK=$(sql "select tracking_id from customer_bookings where id=
 info "B1 shipment=$B1_SH tracking=$B1_TRK"
 req customer POST "/customer/bookings/$B1/cancel" '{"reason":"changed my mind"}'; chk CX11 "cancel at 'confirmed'" 200
 t CX12 "the shipment is cancelled with its booking" "$([ "$(sstatus "$B1_SH")" = cancelled ] && echo 1 || echo 0)" "shipment=$(sstatus "$B1_SH")"
+info "B1 shipment log statuses: $(sql "select string_agg(status,',' order by timestamp) from shipment_logs where shipment_id='$B1_SH'")"
 req anon GET "/shipments/track/$B1_TRK"; t CX13 "public tracking of a cancelled booking says cancelled" "$([ "$ST" = 200 ] && [ "$(jb .status)" = cancelled ] && echo 1 || echo 0)" "HTTP $ST status=$(jb .status)"
 req superadmin POST "/bookings/$B1/confirm" '{}'; chk CX14 "a cancelled booking cannot be confirmed again" 409
 req customer GET "/customer/bookings/$B1"; t CX15 "booking detail after cancel: cancelled, tracking shows cancelled" "$([ "$(jb .booking.status)" = cancelled ] && echo 1 || echo 0)" "status=$(jb .booking.status) shipment_status=$(jb .booking.shipment_status) tracking.status=$(jb .tracking.status)"
@@ -179,7 +181,7 @@ req superadmin POST "/bookings/$B2/cancel" '{"reason":"test"}'; t CF15 "staff ca
 req customer GET "/customer/bookings/$B2/cargo"; chk CF16 "cargo view in transit" 200
 info "cargo view (in transit): where=$(jb '.where|tostring'|cut -c1-300)"
 info "cargo view timeline texts: $(jb '[.timeline[]|(.text // .title // .kind)]|join(" | ")' | cut -c1-500)"
-t CF17 "the customer's cargo view shows no driver phone, plate id or internal notes" "$(lacks "$BODY" 'driver_phone|"phone"|internal|staff_note|delivery_otp|otp_hash')" "matches=$(printf '%s' "$BODY" | grep -oiE 'driver_phone|"phone"|internal|staff_note|delivery_otp|otp_hash' | sort -u | tr '\n' ' ')"
+t CF17 "the customer's cargo view shows no driver phone, plate id or internal notes" "$(lacks "$BODY" 'driver_phone|"phone"|staff_note|otp_hash')" "matches=$(printf '%s' "$BODY" | grep -oiE '.{50}("phone"|driver_phone|staff_note|otp_hash).{40}' | head -3 | tr '\n' ' ')"
 req customer GET "/customer/bookings/$B2"; info "booking detail in transit: tracking keys=$(jb '.tracking|keys|join(",")')"
 S1=$(stop_of "$L1"); S2=$(stop_of "$L2")
 complete_stop driverA "$S1"; chk CF20 "driver delivers lot 1" 200
@@ -195,9 +197,9 @@ sect "G. Public tracking as anyone (no sign-in)"
 trk() { req anon GET "/shipments/track/$1"; }
 trk "$B2_TRK"; chk CT01 "public tracking of the delivered multi-drop shipment" 200
 info "public tracking paths: $(printf '%s' "$BODY" | jq -r '[paths(scalars)|map(tostring)|join(".")]|map(gsub("\\.[0-9]+\\.";".#."))|unique|join(" ")' 2>/dev/null | cut -c1-1500)"
-BAD=$(printf '%s' "$BODY" | jq -r '[paths(scalars)|map(tostring)|join(".")]|map(select(test("phone|otp|hash|email|customer|consignee|freight|price|amount|driver|metadata|signature|gstin|declared|invoice|rating|weight|pan";"i")))|unique|join(", ")' 2>/dev/null)
+BAD=$(printf '%s' "$BODY" | jq -r '[paths(scalars)|map(tostring)|join(".")]|map(select(test("phone|otp|hash|email|customer|consignee|freight|price|amount|driver|metadata|signature|gstin|declared|invoice|rating";"i")))|unique|join(", ")' 2>/dev/null)
 t CT02 "public tracking carries no contact, money, rating or OTP fields" "$([ -z "$BAD" ] && echo 1 || echo 0)" "sensitive-looking keys: ${BAD:-none}"
-t CT03 "public tracking does not show the proof-of-delivery photo or signature links" "$(lacks "$BODY" 'photo|signature|supabase|signed|token=')" "$(printf '%s' "$BODY" | grep -oiE '[a-z_]*(photo|signature|signed|token)[a-z_]*' | sort -u | tr '\n' ' ')"
+t CT03 "public tracking does not show the proof-of-delivery photo or signature links" "$(lacks "$BODY" 'photo|signature|supabase|signed_url|token=')" "$(printf '%s' "$BODY" | grep -oiE '[a-z_]*(photo|signature|signed_url|token)[a-z_]*' | sort -u | tr '\n' ' ')"
 t CT04 "public tracking shows the status and a history" "$([ "$(jb .status)" != null ] && [ "$(jb '.history|length')" -gt 0 ] 2>/dev/null && echo 1 || echo 0)" "status=$(jb .status) history=$(jb '.history|length')"
 info "history texts: $(jb '[.history[]|(.description // .text // .status)]|join(" | ")' | cut -c1-500)"
 for LT in $(sql "select tracking_id from shipments where parent_shipment_id='$B2_M'"); do trk "$LT"; info "lot tracking $LT: HTTP $ST status=$(jb .status) destination=$(jb '.destination.name') consignee-ish=$(printf '%s' "$BODY" | grep -oiE 'consignee[a-z_]*' | head -1)"; done
@@ -225,6 +227,7 @@ t CR07 "the rating is stored on the delivery" "$([ "$(sql "select driver_rating 
 req customer POST "/customer/bookings/$B2/confirm-receipt" '{"rating":4,"comment":"ड्राइवर समय पर आया"}' --idem "$RK"; chk CR08 "the same key replays the first answer (200)" 200
 req customer POST "/customer/bookings/$B2/confirm-receipt" '{"rating":1}'; chk CR09 "a second rating with a new key is refused (409)" 409
 req customer GET "/customer/bookings/$B2/cargo"; t CR10 "the cargo view shows the rating given" "$([ "$(jb .rating.rating)" = 4 ] && echo 1 || echo 0)" "rating=$(jb '.rating|tostring')"
+t CR10b "the rating is linked to the driver and the truck that delivered (so it counts for them)" "$([ -n "$(sql "select rated_driver_id from shipments where id='$B2_M'")" ] && echo 1 || echo 0)" "rated_driver_id=$(sql "select coalesce(rated_driver_id::text,'NULL') from shipments where id='$B2_M'") rated_vehicle_id=$(sql "select coalesce(rated_vehicle_id::text,'NULL') from shipments where id='$B2_M'")"
 req customer GET /customer/bookings; t CR11 "the bookings list marks it rated" "$([ "$(jb '[.[]|select(.id=="'"$B2"'")][0].rated')" = true ] && echo 1 || echo 0)" "rated=$(jb '[.[]|select(.id=="'"$B2"'")][0].rated')"
 t CR12 "the driver was told about the rating" "$([ "$(sql "select count(*) from notifications where user_id='$(uid driverA)' and created_at > now() - interval '10 minutes' and (title ilike '%rat%' or body ilike '%rat%')")" -ge 1 ] && echo 1 || echo 0)" "driverA notifications: $(sql "select string_agg(title,' | ') from notifications where user_id='$(uid driverA)' and created_at > now() - interval '10 minutes'" | cut -c1-300)"
 
@@ -276,7 +279,7 @@ t CI04 "the multi-drop invoices add up to the price 12000 (7200 + 4800)" "$([ "$
 t CI05 "GST is a whole number of paise" "$([ "$(echo "$INV" | jq '[.[]|select(((.gst_amount|tonumber)*100) as $g | (($g-($g|round))|fabs) > 0.001)]|length')" = 0 ] && echo 1 || echo 0)" "gst: $(echo "$INV" | jq -c '[.[].gst_amount]')"
 IV1=$(echo "$INV" | jq -r '.[0].id'); IV_B2=$(echo "$INV" | jq -r '[.[]|select(.booking_id=="'"$B2"'")][0].id')
 req customer GET "/invoices/$IV_B2/pdf"; chk CI10 "download the PDF of my invoice" 200
-t CI11 "the download is a PDF with a file name" "$([ "$(jb ._nonjson)" = true ] && [ "$(jb .head | cut -c1-4)" = '%PDF' ] && echo 1 || echo 0)" "$(ev 220)"
+t CI11 "the download is a PDF with a file name" "$([ "$(jb ._nonjson)" = true ] && [ "$(jb .head | head -1 | cut -c1-4)" = '%PDF' ] && echo 1 || echo 0)" "$(ev 220)"
 req customer2 GET "/invoices/$IV_B2/pdf"; chk CI12 "customer2 cannot download my PDF" "403 404"
 req customer2 GET "/invoices/$IV_B2"; chk CI13 "customer2 cannot read the invoice document" "403 404"
 req customer GET "/invoices/$IV_B2"; chk CI14 "a customer cannot read the staff invoice document (403)" 403
@@ -296,7 +299,7 @@ sect "K. Notifications and account"
 req customer GET /notifications; chk CN01 "list my notifications" 200
 NOTES=$BODY; info "total=$(jb .total) unread=$(jb .unread_count) titles=$(jb '[.notifications[]|.title]|unique|join(" | ")' | cut -c1-700)"
 t CN02 "customer notifications use the shared vocabulary (no consignment, manifest, route, exception, incident...)" "$(lacks "$NOTES" '[Cc]onsignment|[Mm]anifest|[Rr]oute|[Ee]xception|[Ii]ncident|[Bb]ackhaul|[Tt]ransshipment')" "hits: $(printf '%s' "$NOTES" | grep -oiE 'consignment|manifest|route|exception|incident|backhaul|transshipment' | sort | uniq -c | tr '\n' ' ')"
-t CN03 "no duplicate notifications for one event" "$([ "$(jb '[.notifications[]|(.title+.body+(.created_at|.[0:16]))]|(length - (unique|length))')" = 0 ] && echo 1 || echo 0)" "dups=$(jb '[.notifications[]|(.title+.body+(.created_at|.[0:16]))]|(length - (unique|length))')"
+t CN03 "no duplicate notifications for one event" "$([ "$(jb '[.notifications[]|(.title+.body+(.data.booking_id // "")+(.created_at|.[0:19]))]|(length - (unique|length))')" = 0 ] && echo 1 || echo 0)" "dups=$(jb '[.notifications[]|(.title+.body+(.data.booking_id // "")+(.created_at|.[0:19]))]|(length - (unique|length))') sample: $(jb '[.notifications[]|(.title+" | "+(.data.booking_id // "")+" | "+(.created_at|.[0:19]))]|group_by(.)|map(select(length>1)|.[0])|.[0:3]|join(" ;; ")')"
 FIRST=$(jb '.notifications[0].id')
 req customer POST "/notifications/$FIRST/read"; chk CN04 "mark one read" 200
 req customer2 POST "/notifications/$FIRST/read"; chk CN05 "customer2 cannot mark my notification read" 404

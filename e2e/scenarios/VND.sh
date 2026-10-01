@@ -12,7 +12,8 @@ info "vendor=$V1 vendor2=$V2 (approved) vendor3=$V3 (new sign-up, no profile) tr
 reset_trucks
 STORY_REQ=$(sql "select id from vendor_shipment_requests where vendor_id='$V1' order by created_at limit 1")
 STORY_MAN=$(sql "select id from cargo_manifest where vendor_request_id='$STORY_REQ'")
-STORY_WIN=$(sql "select id from capacity_windows order by created_at limit 1")
+LA=$(sql "select id from shipments where parent_shipment_id is not null order by created_at limit 1")
+STORY_WIN=$(sql "select id from capacity_windows order by opens_at limit 1")
 info "story load=$STORY_REQ manifest=$STORY_MAN return-trip window=$STORY_WIN"
 ld() { jq -nc '{pickup:{address:"Okhla, Delhi",lat:28.53,lng:77.27},drop:{address:"Sitapura, Jaipur",lat:26.79,lng:75.82},capacity:2000,metadata:{cargo:{gstRate:"18",declaredValue:"250000",description:"Auto parts"}}}'; }
 
@@ -92,7 +93,8 @@ req vendor PUT "/vendor/shipment-request/$L4/reject" '{"reason":"no"}'; chk VB42
 req superadmin PUT "/vendor/shipment-request/$L4/reject" '{"reason":"आज कोई ट्रक उपलब्ध नहीं"}'; chk VB43 "reject with a Hindi reason" 200
 req vendor GET /vendor/loads; t VB44 "the vendor sees it closed with the reason" "$([ "$(jb '[.[]|select(.id=="'"$L4"'")][0].stage')" = closed ] && echo 1 || echo 0)" "$(jb '[.[]|select(.id=="'"$L4"'")][0]|tostring'|cut -c1-300)"
 req vendor PUT "/vendor/shipment-request/$L4/cancel" '{}'; chk VB45 "cancelling a rejected load is refused" 409
-t VB46 "the vendor was told about the rejection with the reason" "$([ "$(sql "select count(*) from notifications where user_id='$V1' and body like '%ट्रक%'")" -ge 1 ] && echo 1 || echo 0)" "$(sql "select string_agg(title||': '||left(body,60),' | ') from notifications where user_id='$V1' and created_at > now() - interval '5 minutes'" | cut -c1-400)"
+t VB46 "the vendor was told about the rejection with the reason" "$([ "$(sql "select count(*) from notifications where user_id='$V1' and title ilike '%reject%' and body like '%ट्रक%'")" -ge 1 ] && echo 1 || echo 0)" "$(sql "select title||': '||body from notifications where user_id='$V1' and title ilike '%reject%' order by created_at desc limit 1")"
+req vendor GET /vendor/loads; info "the rejected load on the board: reason=$(jb '[.[]|select(.id=="'"$L4"'")][0].rejection_reason')"
 # assign L1
 req superadmin PUT "/vendor/shipment-request/$L1/assign-vehicle" '{"vehicle_id":"not-a-uuid"}'; t VB50 "assign with a malformed vehicle id is a clean 4xx" "$([ "$ST" -ge 400 ] && [ "$ST" -lt 500 ] && echo 1 || echo 0)" "HTTP $ST $(ev 120)"
 req superadmin PUT "/vendor/shipment-request/$L1/assign-vehicle" '{}'; chk VB51 "assign with no vehicle refused" 400
@@ -119,10 +121,10 @@ req vendor GET "/vendor/loads/$L1"; t VB64 "the vendor sees it delivered with pr
 
 sect "C. Invoices and payment"
 req vendor GET /vendor/invoices; chk VC01 "my invoices" 200
-VI=$(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0].id'); info "invoice of L1: $(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0]|{n:.invoice_number,amount,gst_rate,gst_amount,total,status,reference,due_date}|tostring')"
-t VC02 "the load has an invoice for the agreed price with 18% GST (20000 + 3600 = 23600)" "$([ "$(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0]|[((.amount|tonumber)+0),((.gst_rate|tonumber)+0),((.total|tonumber)+0)]|tostring')" = "[20000,18,23600]" ] && echo 1 || echo 0)" "$(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0]|[.amount,.gst_rate,.total]|tostring')"
+VI=$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].id'); info "invoice of L1: $(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|{n:.invoice_number,amount,gst_rate,gst_amount,total,status,reference,due_date,vendor_request_id}|tostring')"
+t VC02 "the load has an invoice for the agreed price with 18% GST (20000 + 3600 = 23600)" "$([ "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[((.amount|tonumber)+0),((.gst_rate|tonumber)+0),((.total|tonumber)+0)]|tostring')" = "[20000,18,23600]" ] && echo 1 || echo 0)" "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[.amount,.gst_rate,.total]|tostring')"
 t VC03 "every vendor invoice has total = amount + GST" "$([ "$(jb '[.[]|select(((.amount|tonumber)+(.gst_amount|tonumber)-(.total|tonumber))|fabs>0.005)]|length')" = 0 ] && echo 1 || echo 0)" "rows=$(jb length)"
-t VC04 "the invoice has a reference the vendor recognises (the load code)" "$([ -n "$(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0].reference // empty')" ] && echo 1 || echo 0)" "reference=$(jb '[.[]|select(.vendor_request_id=="'"$L1"'")][0].reference')"
+t VC04 "the invoice has a reference the vendor recognises (the load code)" "$([ -n "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference // empty')" ] && echo 1 || echo 0)" "reference=$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference')"
 req vendor GET "/invoices/$VI/pdf"; chk VC10 "download the invoice PDF" 200
 t VC11 "it is a PDF" "$([ "$(jb .head | cut -c1-4)" = '%PDF' ] && echo 1 || echo 0)" "$(ev 200)"
 req vendor2 GET "/invoices/$VI/pdf"; chk VC12 "another vendor cannot download it" "403 404"
@@ -134,7 +136,7 @@ req vendor PUT "/finance/invoices/$VI/pay" '{"method":"upi","reference":"x"}'; c
 req vendor GET /finance/invoices; chk VC18 "a vendor cannot read finance invoices" 403
 req vendor GET /invoices/payment-details; chk VC20 "payment details" 200
 t VC21 "payment details say where to pay" "$(has "$BODY" 'HDFC|upi|account|bank')" "$(ev 200)"
-req superadmin PUT "/finance/invoices/$VI/pay" '{"method":"neft","reference":"NEFT-UAT-1"}'; chk VC30 "staff mark it paid" 200
+req superadmin PUT "/finance/invoices/$VI/pay" '{"method":"bank","reference":"NEFT-UAT-1"}'; chk VC30 "staff mark it paid" 200
 req vendor GET /vendor/invoices; t VC31 "the vendor sees it paid with the reference" "$([ "$(jb '[.[]|select(.id=="'"$VI"'")][0].status')" = paid ] && echo 1 || echo 0)" "$(jb '[.[]|select(.id=="'"$VI"'")][0]|{status,paid_at,payment_method,payment_reference}|tostring')"
 req vendor GET "/vendor/loads/$L1"; t VC32 "the load is closed once it is delivered and paid" "$([ "$(jb .stage)" = closed ] && echo 1 || echo 0)" "stage=$(jb .stage)"
 t VC33 "the vendor was told the invoice was paid" "$([ "$(sql "select count(*) from notifications where user_id='$V1' and (title ilike '%paid%' or body ilike '%paid%')")" -ge 1 ] && echo 1 || echo 0)" "$(sql "select string_agg(title,' | ') from notifications where user_id='$V1' and created_at > now() - interval '10 minutes'" | cut -c1-300)"
@@ -171,7 +173,7 @@ req vendor GET /capacity/windows/open; chk VE02 "the vendor lists open return tr
 t VE03 "the new window is listed, without driver name or phone" "$([ "$(echo "$BODY" | grep -c "$W2")" -ge 1 ] && echo 1 || echo 0)" "keys=$(jb '.[0]|keys|join(",")') leaks: $(printf '%s' "$BODY" | grep -oiE 'driver_name|driver_phone|Ravi|9900000003|"phone"' | sort -u | tr '\n' ' ')"
 t VE04 "no driver name or phone in the open list" "$(lacks "$BODY" 'driver_name|driver_phone|Ravi Driver|Sunil Driver|9900000003|9900000004')" "$(printf '%s' "$BODY" | grep -oiE 'driver_name|driver_phone|Ravi Driver|Sunil Driver|9900000003|9900000004' | sort -u | tr '\n' ' ')"
 bid() { jq -nc --arg w "$W2" '{window_id:$w,bid_amount:9000,weight_kg:1500,dropoff_name:"Gurgaon depot",dropoff_address:"Sector 18, Gurgaon",dropoff_lat:28.47,dropoff_lng:77.03}'; }
-bb() { req "$1" POST /capacity/bids "$(bid | jq -c "$2")"; }
+bb() { req "$1" POST /capacity/bids "$(bid | jq -c "${2:-.}")"; }
 bb vendor '.bid_amount=4000'; chk VE10 "a bid below the minimum (4000 < 5000) refused" 400
 t VE11 "the refusal names the minimum" "$(has "$BODY" '5,000|5000|minimum')" "$(ev 160)"
 bb vendor '.weight_kg=99999'; chk VE12 "a load heavier than the free space refused" 400
@@ -221,7 +223,7 @@ req vendor POST /capacity/bids "{\"window_id\":\"$STORY_WIN\",\"bid_amount\":999
 req vendor GET /notifications; t VE57 "the winner was told" "$([ "$(jb '[.notifications[]|select((.title+.body)|test("won|awarded|accepted";"i"))]|length')" -ge 1 ] && echo 1 || echo 0)" "titles: $(jb '[.notifications[]|.title]|unique|join(" | ")' | cut -c1-400)"
 req vendor2 GET /notifications; t VE58 "the other bidder was told they did not win" "$([ "$(jb '[.notifications[]|select((.title+.body)|test("lost|not won|not selected|rejected|closed";"i"))]|length')" -ge 1 ] && echo 1 || echo 0)" "titles: $(jb '[.notifications[]|.title]|unique|join(" | ")' | cut -c1-400)"
 req vendor GET /vendor/loads; info "after winning, my loads board: $(jb 'length') rows, stages: $(jb '[.[]|.stage]|join(",")')"
-info "the won space on the board: row keys $(jb ".[0]|keys|join(\",\")")"
+info "the won space on the board: kinds $(jb '[.[]|.kind]|join(",")') bid rows: $(jb '[.[]|select(.kind!="posted")|{code,stage,price}|tostring]|join(" ")')"
 # a driver-opened window has no minimum; the vendor's price is checked by the pricing engine
 sql "update vehicles set latitude=28.6, longitude=77.2, current_location_name='Delhi', status='available', available_capacity_kg=8000 where id='$T2'" >/dev/null
 req driverB POST /capacity/driver/open-backhaul-window "{\"vehicle_id\":\"$T2\",\"available_capacity_kg\":3000,\"trigger_type\":\"return_trip\"}"; chk VE60 "driver B opens a return trip (no minimum price)" "200 201"
@@ -232,7 +234,7 @@ req vendor2 POST /capacity/bids "$(jq -nc --arg w "$W3" '{window_id:$w,bid_amoun
 
 sect "F. Documents and KYC (vendor3, a new sign-up)"
 req vendor3 GET /vendor/profile; t VF01 "a new vendor gets an empty profile template, not an error" "$([ "$ST" = 200 ] && echo 1 || echo 0)" "$(ev 160)"
-vp() { jq -nc '{companyName:"Naya Vyapar Pvt Ltd",gstNumber:"07AAACR5055K1Z7",city:"Delhi",address:"Nehru Place, Delhi",lat:28.55,lng:77.25}'; }
+vp() { jq -nc '{companyName:"Naya Vyapar Pvt Ltd",gstNumber:"27AAPFU0939F1ZV",city:"Delhi",address:"Nehru Place, Delhi",lat:28.55,lng:77.25}'; }
 bp() { req vendor3 POST /vendor/profile "$(vp | jq -c "$2")"; chk "$1" "$3" 400; }
 bp VF10 '.companyName="A"' "a 1-character company name refused"
 bp VF11 ".companyName=\"$(printf 'C%.0s' $(seq 1 201))\"" "a 201-character company name refused"
@@ -268,7 +270,7 @@ kd "{\"docUrls\":{\"bad key\":\"$DOCPATH\"}}"; chk VF43 "a document key with a s
 kd '{}'; chk VF44 "saving nothing refused" 400
 kd "{\"otherDocs\":[$(for i in $(seq 1 11); do printf '{"name":"d%s","path":"%s/o%s.pdf"},' $i "$V3" $i; done | sed 's/,$//')]}"; chk VF45 "11 other documents refused" 400
 req vendor2 PUT /vendor/kyc/documents "{\"docUrls\":{\"x\":\"$DOCPATH\"}}"; chk VF46 "another vendor cannot attach my document" 400
-sb() { req vendor3 POST /vendor/kyc/submit "$(vp | jq -c ". + {kycData:{data:{panNumber:\"AAACR5055K\",docUrls:{gst_certificate:\"$DOCPATH\"}},otherDocs:[]}} | $1")"; }
+sb() { req vendor3 POST /vendor/kyc/submit "$(vp | jq -c ". + {kycData:{data:{panNumber:\"AAPFU0939F\",docUrls:{gst_certificate:\"$DOCPATH\"}},otherDocs:[]}} | $1")"; }
 sb '.kycData.data.panNumber="12345"'; chk VF50 "a malformed PAN refused" 400
 sb 'del(.kycData)'; chk VF51 "no KYC data refused" 400
 sb '.kycData.data.docUrls.gst_certificate="'"$V2"'/x.pdf"'; chk VF52 "a document of another vendor refused" 400
@@ -330,9 +332,10 @@ req vendor2 PUT "/vendor/$V1/location" '{"lat":10,"lng":10}'; chk VG28 "move my 
 
 sect "H. 3PL onboarding (public) and staff verification"
 xf() { echo "--hdr X-Forwarded-For:10.77.$1.$2"; }
-tpl() { jq -nc --arg e "$1" --arg c "$2" --arg id "$3" '{custom_id:$id,companyName:$c,email:$e,pan:"ABCDE1234F",phone:"9876543210",msmeStatus:"Small",slaCommitment:"4 Hours",taxTreatment:"12% GTA (With ITC) - Forward Charge",corridors:[{name:"Delhi - Jaipur",vehicles:"Truck, Trailer",rate:25000,rate_unit:"per_trip",priority:"1"}],documents:[]}'; }
+PANA=AAPFU0939F
+tpl() { jq -nc --arg e "$1" --arg c "$2" --arg id "$3" --arg pan "${4:-ABCDE1234F}" --arg gst "${5:-}" '{custom_id:$id,companyName:$c,email:$e,pan:$pan,phone:"9876543210",msmeStatus:"Small",slaCommitment:"4 Hours",taxTreatment:"12% GTA (With ITC) - Forward Charge",corridors:[{name:"Delhi - Jaipur",vehicles:"Truck, Trailer",rate:25000,rate_unit:"per_trip",priority:"1"}],documents:[]}+(if $gst!="" then {gst:$gst} else {} end)'; }
 n=1; ob() { n=$((n+1)); req anon POST /tpl/onboard "$1" --hdr "X-Forwarded-For:10.77.1.$n"; }
-ob "$(tpl uat-a1@example.test "Sharma Roadlines" uat_tpl_a1)"; chk VH01 "apply as a 3PL partner" "200 201"
+ob "$(tpl uat-a1@example.test "Sharma Roadlines" uat_tpl_a1 "$PANA" 27AAPFU0939F1ZV)"; chk VH01 "apply as a 3PL partner" "200 201"
 TA=$(jb .data.id); TAC=$(jb .data.custom_id); TBC=uat_tpl_b1; info "application id=$TA custom_id=$TAC status=$(jb .data.status)"
 t VH02 "the application starts pending, with an id to track it by" "$([ "$(jb .data.status)" = pending ] && [ -n "$TA" ] && echo 1 || echo 0)" "$(ev 160)"
 ob "$(tpl uat-b1@example.test "भारत परिवहन सेवा" uat_tpl_b1)"; chk VH03 "apply with a Hindi company name" "200 201"
@@ -354,18 +357,18 @@ ob '{"companyName":"No Email Co","pan":"ABCDE1234F"}'; chk VH16 "no email refuse
 RLC=0; for i in $(seq 1 7); do req anon POST /tpl/onboard '{"companyName":"x"}' --hdr "X-Forwarded-For:10.88.0.1"; [ "$ST" = 429 ] && RLC=$((RLC+1)); done
 t VH17 "onboarding is rate limited per address (5 an hour)" "$([ "$RLC" -ge 1 ] && echo 1 || echo 0)" "429s in 7 calls from one address: $RLC"
 req anon GET "/tpl/$TAC"; chk VH20 "track the application by its partner ID" 200
-t VH21 "the public view shows status only: no PAN, email, phone, bank or GSTIN" "$(lacks "$BODY" 'pan_number|ABCDE1234F|9876543210|bank_account|"email"|uat-a1@|gstin|phone')" "keys=$(jb 'keys|join(",")') leaks: $(printf '%s' "$BODY" | grep -oiE 'pan_number|ABCDE1234F|9876543210|bank_account|"email"|uat-a1@|gstin|"phone"' | sort -u | tr '\n' ' ')"
+t VH21 "the public view shows status only: no PAN, email, phone, bank or GSTIN" "$(lacks "$BODY" 'pan_number|AAPFU0939F|9876543210|bank_account|"email"|uat-a1@|gstin|phone')" "keys=$(jb 'keys|join(",")') leaks: $(printf '%s' "$BODY" | grep -oiE 'pan_number|AAPFU0939F|9876543210|bank_account|"email"|uat-a1@|gstin|"phone"' | sort -u | tr '\n' ' ')"
 t VH22 "the status is pending and the email is masked" "$([ "$(jb .status)" = pending ] && [ "$(has "$(jb .email_masked)" '\*\*\*')" = 1 ] && echo 1 || echo 0)" "status=$(jb .status) email_masked=$(jb .email_masked)"
 req anon GET "/tpl/$TA"; t VH23 "by the internal id too, still only the public view" "$([ "$ST" = 200 ] && [ "$(has "$BODY" 'pan_number')" = 0 ] && echo 1 || echo 0)" "HTTP $ST"
-req anon GET "/tpl/$TAC?pan=ABCDE1234F"; t VH24 "with the right PAN the applicant sees the full record" "$([ "$ST" = 200 ] && [ "$(has "$BODY" 'pan_number')" = 1 ] && echo 1 || echo 0)" "HTTP $ST keys=$(jb 'keys|join(",")'|cut -c1-200)"
+req anon GET "/tpl/$TAC?pan=$PANA"; t VH24 "with the right PAN the applicant sees the full record" "$([ "$ST" = 200 ] && [ "$(has "$BODY" 'pan_number')" = 1 ] && echo 1 || echo 0)" "HTTP $ST keys=$(jb 'keys|join(",")'|cut -c1-200)"
 req anon GET "/tpl/$TAC?pan=ZZZZZ9999Z"; t VH25 "with a wrong PAN only the public view" "$([ "$(has "$BODY" 'pan_number')" = 0 ] && echo 1 || echo 0)" "HTTP $ST"
 req anon GET /tpl/does_not_exist; chk VH26 "an unknown application is a 404" 404
 req anon GET "/tpl/$TAC'%20OR%201=1"; t VH27 "an injection-looking id is a clean 404/400" "$([ "$ST" = 404 ] || [ "$ST" = 400 ] && echo 1 || echo 0)" "HTTP $ST $(ev 100)"
 LOCK=0; for i in $(seq 1 12); do req anon GET "/tpl/$TBC?pan=AAAAA000${i}A" --hdr "X-Forwarded-For:10.99.0.5"; [ "$ST" = 429 ] && LOCK=$((LOCK+1)); done
 t VH28 "guessing the PAN is limited (10 tries per 15 minutes)" "$([ "$LOCK" -ge 1 ] && echo 1 || echo 0)" "429s in 12 guesses: $LOCK"
 req anon PATCH "/tpl/$TAC" '{"companyName":"Hijacked"}'; chk VH30 "edit an application with no PAN refused" 403
-req anon PATCH "/tpl/$TAC" '{"companyName":"Hijacked","verify_pan":"ZZZZZ9999Z","pan":"ABCDE1234F"}' --hdr "X-Forwarded-For:10.99.0.6"; chk VH31 "edit with a wrong PAN refused" 403
-req anon PATCH "/tpl/$TAC" '{"companyName":"Sharma Roadlines (Delhi)","pan":"ABCDE1234F","verify_pan":"ABCDE1234F","slaCommitment":"6 Hours"}' --hdr "X-Forwarded-For:10.99.0.7"; chk VH32 "the applicant edits their pending application with the PAN" 200
+req anon PATCH "/tpl/$TAC" "{\"companyName\":\"Hijacked\",\"verify_pan\":\"ZZZZZ9999Z\",\"pan\":\"$PANA\"}" --hdr "X-Forwarded-For:10.99.0.6"; chk VH31 "edit with a wrong PAN refused" 403
+req anon PATCH "/tpl/$TAC" "{\"companyName\":\"Sharma Roadlines (Delhi)\",\"pan\":\"$PANA\",\"verify_pan\":\"$PANA\",\"slaCommitment\":\"6 Hours\"}" --hdr "X-Forwarded-For:10.99.0.7"; chk VH32 "the applicant edits their pending application with the PAN" 200
 req anon GET "/tpl/$TAC"; t VH32b "the partner ID the applicant was given still works after they edit the application" "$([ "$ST" = 200 ] && echo 1 || echo 0)" "HTTP $ST custom_id now: $(sql "select coalesce(custom_id,'NULL') from tpl_partners where id='$TA'")"
 t VH33 "the edit was saved" "$([ "$(sql "select company_name from tpl_partners where id='$TA'")" = "Sharma Roadlines (Delhi)" ] && echo 1 || echo 0)" "$(sql "select company_name,sla_commitment from tpl_partners where id='$TA'")"
 req anon POST /tpl/applications/upload-url '{"custom_id":"uat_tpl_a1","doc_type":"pan_card","content_type":"application/pdf","size":2000}' --hdr "X-Forwarded-For:10.99.0.8"; info "public document upload URL for a new application: HTTP $ST $(ev 140)"

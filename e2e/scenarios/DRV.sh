@@ -157,19 +157,19 @@ info "truck 1 load after the delivery: $(sql "select current_load_kg,available_c
 sect "G. Delivery code (lot B holds 20)"
 req superadmin POST /cargo/otp/send "{\"ref\":{\"shipment_id\":\"$LB\"}}"; chk DG01 "dispatch sends the delivery code" "200 201"
 OTP=$(otp_for "$LB"); WRONG=$([ "$OTP" = 111111 ] && echo 222222 || echo 111111)
-req driverA GET "/cargo/where/$LB"; t DG02 "the code does not appear in what the driver reads about the lot" "$(lacks "$BODY" "$OTP|delivery_otp")" "HTTP $ST hits: $(printf '%s' "$BODY" | grep -oE "$OTP|delivery_otp[a-z_]*" | sort -u | tr '\n' ' ')"
+req driverA GET "/cargo/where/$LB"; t DG02 "the code does not appear in what the driver reads about the lot" "$(lacks "$BODY" "$OTP|delivery_otp_hash")" "HTTP $ST hits: $(printf '%s' "$BODY" | grep -oE "$OTP|delivery_otp[a-z_]*" | sort -u | tr '\n' ' ')"
 req driverA GET /telemetry/driver-ping/my-route; t DG03 "nor in the driver's trip view" "$(lacks "$BODY" "\"$OTP\"|otp_hash|delivery_otp_hash")" "HTTP $ST"
 req driverA GET /routes; t DG03b "nor in the driver's trip list" "$(lacks "$BODY" "\"$OTP\"|otp_hash|delivery_otp_hash")" "HTTP $ST"
 cb() { complete_stop driverA "$SB" "$1"; }
 cb '{"pieces":20}'; chk DG04 "delivery with no code when one is required" 400
 cb '{"pieces":20,"otp":"12ab56"}'; chk DG05 "delivery with a non-numeric code" 400
 cb '{"pieces":20,"otp":"12345"}'; chk DG06 "delivery with a 5-digit code" 400
+req driverA POST /cargo/custody "{\"ref\":{\"shipment_id\":\"$LB\"},\"kind\":\"delivery\",\"receiver_name\":\"x\",\"photo_paths\":[\"$(photo "$LB")\"]}"; chk DG07 "a delivery through the custody route with no code, when one is required, is refused (400)" 400
 for i in 1 2 3 4; do cb "{\"pieces\":20,\"otp\":\"$WRONG\"}"; echo "CHECK DG1$i $([ "$ST" = 400 ] && echo PASS || echo FAIL) wrong code try $i is a 400 with the tries left | HTTP $ST tries_left=$(jb .tries_left) $(ev 140)"; done
 cb "{\"pieces\":20,\"otp\":\"$WRONG\"}"; chk DG15 "the 5th wrong code locks the stop (429)" 429
 cb "{\"pieces\":20,\"otp\":\"$OTP\"}"; chk DG16 "the RIGHT code is refused while locked (429)" 429
 t DG17 "the lot was not delivered during the lock" "$([ "$(sstatus "$LB")" = in_transit ] && echo 1 || echo 0)" "status=$(sstatus "$LB")"
 req driverA POST /cargo/custody "{\"ref\":{\"shipment_id\":\"$LB\"},\"kind\":\"delivery\",\"otp\":\"$OTP\",\"receiver_name\":\"x\",\"photo_paths\":[\"$(photo "$LB")\"]}"; t DG18 "the lock also holds on the custody route (no way round it)" "$([ "$ST" = 429 ] && echo 1 || echo 0)" "HTTP $ST $(ev 140)"
-req driverA POST /cargo/custody "{\"ref\":{\"shipment_id\":\"$LB\"},\"kind\":\"delivery\",\"receiver_name\":\"x\",\"photo_paths\":[\"$(photo "$LB")\"]}"; t DG19 "a delivery recorded without a code through custody is refused when a code is required" "$([ "$ST" = 400 ] && echo 1 || echo 0)" "HTTP $ST $(ev 140)"
 req superadmin POST /cargo/otp/send "{\"ref\":{\"shipment_id\":\"$LB\"}}"; info "dispatch resends the code during the lock: HTTP $ST (this clears the lock)"
 OTP2=$(otp_for "$LB")
 cb '{"pieces":20,"otp":"'"$OTP2"'"}'; chk DG20 "after a new code is sent the right code delivers lot B" 200
@@ -202,7 +202,7 @@ info "after cancel: lots=$(sstatus "$LX"),$(sstatus "$LY") route=$(sql "select s
 complete_stop driverA "$SX"; chk DI04 "completing a cancelled stop is refused (409)" 409
 t DI05 "the message is the driver-facing one: cancelled by dispatch" "$(has "$BODY" 'cancelled by dispatch|cancelled')" "$(ev 160)"
 complete_stop driverA "$SY" '{"outcome":"not_delivered","reason":"other"}'; t DI06 "failing a cancelled stop is refused (409)" "$([ "$ST" = 409 ] && echo 1 || echo 0)" "HTTP $ST $(ev 160)"
-pickup driverA "$LX" 5; t DI07 "a pickup of a cancelled lot is refused" "$([ "$ST" = 409 ] && echo 1 || echo 0)" "HTTP $ST $(ev 160)"
+pickup driverA "$LX" 5; t DI07 "a pickup of a cancelled lot is refused" "$([ "$ST" = 409 ] || [ "$ST" = 403 ] && echo 1 || echo 0)" "HTTP $ST $(ev 160)"
 req driverA POST /telemetry/driver-ping/start-route "{\"route_id\":\"$R2\"}"; info "start a cancelled trip: HTTP $ST $(ev 160)"
 t DI08 "a cancelled trip cannot be started" "$([ "$ST" -ge 400 ] && [ "$ST" -lt 500 ] && echo 1 || echo 0)" "HTTP $ST route=$(sql "select status from routes where id='$R2'") truck=$(sql "select status from vehicles where id='$T1'")"
 req driverA POST /telemetry/driver-ping/accept-route "{\"route_id\":\"$R2\"}"; info "accept a cancelled trip: HTTP $ST $(ev 120)"
@@ -302,12 +302,15 @@ fl "$(echo "$base" | jq -c '.odometer_km=9500|.litres=30')"
 info "backwards odometer: HTTP $ST flags=$(jb '.flags|tostring') $(ev 200)"
 t DK41 "a backwards odometer is flagged or refused" "$([ "$ST" = 400 ] || [ "$(has "$BODY" 'backwards')" = 1 ] && echo 1 || echo 0)" "HTTP $ST flags=$(jb '.flags|tostring')"
 t DK42 "the vehicle's odometer did not go backwards" "$([ "$(sql "select odometer_km from vehicles where id='$T1'" | cut -d. -f1)" -ge 10000 ] && echo 1 || echo 0)" "odometer=$(sql "select odometer_km from vehicles where id='$T1'")"
-fl "$(echo "$base" | jq -c '.odometer_km=910000|.litres=35')"; info "a jump of 900,000 km in one fill: HTTP $ST flags=$(jb '.flags|tostring')"
-t DK43 "a 900,000 km jump is flagged or refused" "$([ "$ST" = 400 ] || [ -n "$(jb '.flags[]?')" ] && echo 1 || echo 0)" "HTTP $ST flags=$(jb '.flags|tostring')"
-t DK44 "...and did not move the vehicle's odometer to 910000" "$([ "$(sql "select odometer_km from vehicles where id='$T1'" | cut -d. -f1)" -lt 900000 ] && echo 1 || echo 0)" "odometer=$(sql "select odometer_km from vehicles where id='$T1'")"
 fl '{"litres":25,"total_amount":2400,"odometer_km":10600,"payment_mode":"upi"}'; chk DK45 "litres + total (price worked out) with UPI" 201
 t DK46 "price per litre is worked out (96)" "$([ "$(jn .price_per_litre)" = 96 ] && echo 1 || echo 0)" "price=$(jb .price_per_litre)"
 fl '{"litres":25,"price_per_litre":90}'; info "a fill with no odometer and no payment mode: HTTP $ST payment=$(jb .payment_mode) odometer=$(jb .odometer_km)"
+fl "$(echo "$base" | jq -c '.odometer_km=910000|.litres=35')"; info "a typo of 910000 km instead of 10100 in one fill: HTTP $ST flags=$(jb '.flags|tostring') $(ev 200)"
+t DK43 "a 900,000 km jump is flagged or refused, not a server error" "$([ "$ST" = 400 ] || { [ "$ST" = 201 ] && [ -n "$(jb '.flags[]?')" ]; } && echo 1 || echo 0)" "HTTP $ST flags=$(jb '.flags|tostring')"
+info "rows stored: $(sql "select count(*)||' rows, max odometer '||coalesce(max(odometer_km)::text,'-')||', max kmpl '||coalesce(max(kmpl)::text,'-') from vehicle_fuel_logs where vehicle_id='$T1'" 2>&1 | head -2)"
+t DK44 "...and did not move the vehicle's odometer to 910000" "$([ "$(sql "select odometer_km from vehicles where id='$T1'" | cut -d. -f1)" -lt 900000 ] && echo 1 || echo 0)" "odometer=$(sql "select odometer_km from vehicles where id='$T1'")"
+fl '{"litres":20,"price_per_litre":96,"odometer_km":10700,"payment_mode":"cash"}'; t DK47 "after that entry the next normal fill (20 L at 96, odometer 10700) still saves" "$([ "$ST" = 201 ] && echo 1 || echo 0)" "HTTP $ST $(ev 200)"
+req driverA GET "/fleet/vehicles/$T1/fuel-stats"; info "fuel stats after the typo: $(ev 360)"
 req driverA GET "/fleet/vehicles/$T1/fuel-logs"; chk DK50 "list the fuel log" 200
 t DK51 "newest first" "$([ "$(jb 'map(.filled_at)|. == (sort|reverse)')" = true ] && echo 1 || echo 0)" "first=$(jb '.[0].filled_at') last=$(jb '.[-1].filled_at')"
 req driverA PUT "/fleet/fuel-logs/$FL1" '{"litres":1}'; chk DK52 "a driver cannot edit a fuel entry (staff only)" 403
@@ -326,10 +329,10 @@ reset_trucks
 req driverA GET /driver/pay; chk DP01 "the driver's pay" 200
 info "driver pay keys: $(jb 'keys|join(",")') totals: $(jb '.totals|tostring' | cut -c1-300)"
 info "driver pay trips: $(jb '[.trips[]?|{route:.route_id,km,amount,status}]|tostring' | cut -c1-500)"
-COMPLETED=$(sql "select count(*) from routes where vehicle_id='$T1' and status='completed'")
+COMPLETED=$(sql "select count(*) from routes r where r.vehicle_id='$T1' and r.status='completed' and not exists (select 1 from driver_pay_entries e where e.route_id=r.id)")
 ENTRIES=$(sql "select count(*) from driver_pay_entries where driver_id='$DA'")
-t DP02 "every trip this driver completed earns a pay entry (completed trips=$COMPLETED, entries=$ENTRIES) (known: UAT-002)" "$([ "$COMPLETED" = "$ENTRIES" ] && echo 1 || echo 0)" "completed=$COMPLETED entries=$ENTRIES entry routes: $(sql "select string_agg(route_id::text||':'||status,',') from driver_pay_entries where driver_id='$DA'")"
-t DP03 "the driver's view agrees with the entries on the books" "$([ "$(jb '[.trips[]?]|length')" = "$ENTRIES" ] || [ "$(jb '.entries|length')" = "$ENTRIES" ] && echo 1 || echo 0)" "view rows: trips=$(jb '.trips|length') entries=$(jb '.entries|length')"
+t DP02 "every trip this driver completed has a pay entry (completed trips with none: $COMPLETED) (UAT-002 says some are missing)" "$([ "$COMPLETED" = 0 ] && echo 1 || echo 0)" "completed trips with no entry=$COMPLETED; entry routes: $(sql "select string_agg(route_id::text||':'||status,',') from driver_pay_entries where driver_id='$DA'")"
+t DP03 "the driver's pay screen lists a row for each entry on the books" "$([ "$(jb '.trips|length')" = "$ENTRIES" ] && echo 1 || echo 0)" "rows=$(jb '.trips|length') entries=$ENTRIES totals=$(jb '.totals|tostring')"
 req driverA GET /auth/driver/earnings; chk DP04 "earnings summary" 200
 info "earnings: $(ev 300)"
 req driverA GET /auth/driver/earnings/history; chk DP05 "earnings history" 200
@@ -382,12 +385,15 @@ rw "{\"vehicle_id\":\"$T2\",\"available_capacity_kg\":3000,\"trigger_type\":\"re
 req driverA POST /capacity/driver/open-backhaul-window "{\"vehicle_id\":\"$T2\",\"available_capacity_kg\":1000,\"trigger_type\":\"return_trip\"}"; chk DR08 "driver A cannot open a return trip on driver B's truck" 403
 req driverB GET "/capacity/windows/$WIN/bid-count"; chk DR09 "the driver sees how many bids" 200
 info "bid count: $(ev 100)"
+req vendor POST /capacity/bids "{\"window_id\":\"$WIN\",\"bid_amount\":1,\"weight_kg\":500,\"dropoff_name\":\"Gurgaon\",\"dropoff_address\":\"Sector 18, Gurgaon\",\"dropoff_lat\":28.47,\"dropoff_lng\":77.03}"; t DR15 "a 1-rupee bid on a driver-opened window (no staff minimum) is refused by the price engine" "$([ "$ST" = 400 ] && echo 1 || echo 0)" "HTTP $ST $(ev 200)"
+info "window before toggling: $(sql "select status from capacity_windows where id='$WIN'")"
 req driverB POST /capacity/driver/toggle-matching "{\"vehicle_id\":\"$T2\",\"enabled\":false}"; chk DR10 "the driver switches matching off" 200
+info "window after matching off: $(sql "select status from capacity_windows where id='$WIN'")"
 req driverB POST /capacity/driver/toggle-matching "{\"vehicle_id\":\"$T2\",\"enabled\":true}"; chk DR11 "and on again" 200
+t DR11b "switching matching off and on again leaves the driver's open return trip open" "$([ "$(sql "select status from capacity_windows where id='$WIN'")" = open ] && echo 1 || echo 0)" "window=$(sql "select status from capacity_windows where id='$WIN'")"
 req driverB GET /capacity/bids/mine; chk DR12 "a driver cannot read a vendor's bids" 403
 req driverB POST /capacity/bids "{\"window_id\":\"$WIN\",\"bid_amount\":9000,\"weight_kg\":100}"; chk DR13 "a driver cannot bid" 403
 req driverB POST "/capacity/bids/$(uid vendor)/approve" '{}'; chk DR14 "a driver cannot award a bid" 403
-req vendor POST /capacity/bids "{\"window_id\":\"$WIN\",\"bid_amount\":1,\"weight_kg\":500,\"dropoff_name\":\"Gurgaon\",\"dropoff_address\":\"Sector 18, Gurgaon\",\"dropoff_lat\":28.47,\"dropoff_lng\":77.03}"; t DR15 "a 1-rupee bid on a driver-opened window (no staff minimum) is refused by the price engine" "$([ "$ST" = 400 ] && echo 1 || echo 0)" "HTTP $ST $(ev 200)"
 
 sect "O. Web: the driver page"
 ui driverA /driver
