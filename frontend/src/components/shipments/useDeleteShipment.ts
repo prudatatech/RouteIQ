@@ -11,12 +11,16 @@ export function useDeleteShipment(shipment: ShipmentRow | null, onDeleted: () =>
   const { confirm } = useConfirm()
   const mutation = useMutation({
     mutationFn: (id: string) => shipmentsAPI.delete(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      onDeleted()
+      // The page being left must not ask for the shipment again: it is gone (404)
+      queryClient.removeQueries({ queryKey: ['shipments', 'overview', id] })
+      queryClient.removeQueries({ queryKey: ['shipment-history', id] })
+      queryClient.removeQueries({ queryKey: ['shipment', id] })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       toast.success('Shipment deleted')
-      onDeleted()
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not delete the shipment. Try again.')),
   })

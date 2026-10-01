@@ -244,14 +244,17 @@ export default function RouteDetailsPage() {
                 Mark completed
               </Button>
             )}
-            <Button
-              variant="secondary"
-              onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
-              disabled={!canRunOptimizer}
-              title={route.is_manifest ? 'A vendor load has one pickup and one drop, so there is nothing to optimize.' : undefined}
-            >
-              Run optimizer
-            </Button>
+            {/* A trip that is over has nothing left to plan */}
+            {route.status !== 'cancelled' && route.status !== 'completed' && (
+              <Button
+                variant="secondary"
+                onClick={() => navigate('/optimize', { state: { routeId: route.id } })}
+                disabled={!canRunOptimizer}
+                title={route.is_manifest ? 'A vendor load has one pickup and one drop, so there is nothing to optimize.' : undefined}
+              >
+                Run optimizer
+              </Button>
+            )}
           </div>
         }
       />

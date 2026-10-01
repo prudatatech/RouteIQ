@@ -143,7 +143,7 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
         />
       </section>
 
-      {!f.manifestOnly && !f.master && !s.vehicle_id && !bidding && (
+      {!f.manifestOnly && !f.master && !s.vehicle_id && !bidding && !['cancelled', 'delivered', 'returned', 'lost'].includes(String(s.status)) && (
         <EscalationPanel key={s.id} source={{ shipment_id: s.id }} canEscalate={s.status === 'created'} />
       )}
 

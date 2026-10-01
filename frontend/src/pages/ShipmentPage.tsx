@@ -142,7 +142,7 @@ export default function ShipmentPage() {
         actions={
           <>
             {!requestOnly && !f.manifestOnly && f.canDelete && (
-              <Button variant="danger" icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending}>Delete</Button>
+              <Button variant={s.status === 'cancelled' ? 'ghost' : 'danger'} icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending}>Delete</Button>
             )}
             {!requestOnly && !f.manifestOnly && <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => setEditing(s)}>Edit</Button>}
             <Link to={`/shipments/${s.id}/manifest`} className={buttonClasses({ variant: 'secondary' })}>
