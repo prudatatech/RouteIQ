@@ -20,7 +20,7 @@ import {
   releaseVehicleLoad, OPEN_MANIFEST_STATUSES, VEHICLE_DOWN_SOS_TYPES,
 } from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
-import { parseCoordinate } from '../core/validate';
+import { parseCoordinate, uuidParam } from '../core/validate';
 import { pathKm, type PingPoint } from '../services/odometer';
 import { evaluatePing } from '../services/alerts.service';
 import { recordGpsPoints, type GpsFix } from '../services/gps-history.service';
@@ -100,7 +100,7 @@ router.get('/:vehicle_id/history', requireAuth, async (req: Request, res: Respon
 function sosTransition(next: 'acknowledged' | 'resolved') {
   return async (req: Request, res: Response) => {
     try {
-      const { changed } = await transitionSos(req.params.id, next);
+      const { changed } = await transitionSos(uuidParam(req.params.id, 'SOS alert not found'), next);
       res.json({ success: true, status: next, changed });
     } catch (e: any) {
       sendError(req, res, e);
@@ -116,7 +116,7 @@ router.put('/sos/:id/resolve', requireAuth, requireRole(...STAFF_ROLES), sosTran
 router.post('/sos/:id/cancel', requireAuth, requireRole('driver', ...STAFF_ROLES), idempotent('sos-cancel'), async (req: Request, res: Response) => {
   try {
     const byDriver = req.user!.role === 'driver';
-    const { alert, changed } = await transitionSos(req.params.id, 'cancelled', byDriver ? { driverId: req.user!.user_id } : {});
+    const { alert, changed } = await transitionSos(uuidParam(req.params.id, 'SOS alert not found'), 'cancelled', byDriver ? { driverId: req.user!.user_id } : {});
     if (changed) {
       // A serious accident or breakdown put the truck in maintenance and the goods on hold: a false alarm undoes that
       try {

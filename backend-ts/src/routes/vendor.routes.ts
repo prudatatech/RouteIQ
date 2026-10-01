@@ -8,6 +8,7 @@ import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
 import { manifestParcelCode } from '../core/parcelCode';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
+import { parseUuid, uuidParam } from '../core/validate';
 import { rateLimitByUser } from '../core/rate-limit';
 import {
   KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
@@ -162,7 +163,7 @@ router.get('/shipment-request/pending', requireAuth, requireRole(...STAFF_ROLES)
 // Withdraw a load the vendor posted, while it has no vehicle yet
 router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
-    res.json(await vendorService.cancelRequest(req.user.user_id, req.params.id));
+    res.json(await vendorService.cancelRequest(req.user.user_id, uuidParam(req.params.id, 'Request not found')));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -172,7 +173,7 @@ router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), a
 router.put('/shipment-request/:id/approve', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const { cost, cost_per_km } = req.body ?? {};
-    const request = await vendorService.approveRequest(req.params.id, cost, cost_per_km);
+    const request = await vendorService.approveRequest(uuidParam(req.params.id, 'Request not found'), cost, cost_per_km);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -183,7 +184,7 @@ router.put('/shipment-request/:id/approve', requireAuth, requireRole(...STAFF_RO
 router.put('/shipment-request/:id/reject', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const reason = parseRejectionReason(req.body?.reason);
-    const request = await vendorService.rejectRequest(req.params.id, reason);
+    const request = await vendorService.rejectRequest(uuidParam(req.params.id, 'Request not found'), reason);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');
@@ -226,7 +227,8 @@ router.put('/shipment-request/:id/assign-vehicle', requireAuth, requireRole(...S
   try {
     const { vehicle_id, cost, cost_per_km } = req.body ?? {};
     if (typeof vehicle_id !== 'string' || !vehicle_id) throw new HttpError(400, 'vehicle_id is required');
-    const request = await vendorService.assignVehicleToRequest(req.params.id, vehicle_id, cost, cost_per_km);
+    parseUuid(vehicle_id, 'vehicle_id');
+    const request = await vendorService.assignVehicleToRequest(uuidParam(req.params.id, 'Request not found'), vehicle_id, cost, cost_per_km);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');

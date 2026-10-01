@@ -41,3 +41,23 @@ export function parseDateTime(value: unknown, label: string): string {
   if (!Number.isFinite(t)) throw new HttpError(400, `${label} must be a valid date and time`);
   return new Date(t).toISOString();
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True when `value` looks like an id from the database (a uuid). */
+export const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID_PATTERN.test(value);
+
+/**
+ * A path id that must be a uuid. Anything else cannot name a record, so it is a 404 (not found) and
+ * never reaches the database, which would answer a 500 for a malformed uuid.
+ */
+export function uuidParam(value: unknown, notFound: string): string {
+  if (!isUuid(value)) throw new HttpError(404, notFound);
+  return value;
+}
+
+/** A uuid sent in a body that must be one: a 400 naming the field when it is not. */
+export function parseUuid(value: unknown, label: string): string {
+  if (!isUuid(value)) throw new HttpError(400, `${label} is not valid`);
+  return value;
+}

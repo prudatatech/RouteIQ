@@ -11,6 +11,7 @@ import { tplService } from '../services/tpl.service';
 import { optionalAuth, requireAuth, requireRole } from '../core/auth';
 import { isStaff } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
+import { uuidParam } from '../core/validate';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { settings } from '../core/config';
 
@@ -122,7 +123,7 @@ router.get('/:id', rateLimitByIp('tpl-lookup', 60, 60), optionalAuth, async (req
 // POST /api/v1/tpl/approve/:id
 router.post('/approve/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
-    const data = await tplService.approve(req.params.id, req.user!);
+    const data = await tplService.approve(uuidParam(req.params.id, 'Application not found'), req.user!);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');
@@ -134,7 +135,7 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
   try {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     if (!reason) throw new HttpError(400, 'A reason is required');
-    const data = await tplService.reject(req.params.id, reason, req.user!);
+    const data = await tplService.reject(uuidParam(req.params.id, 'Application not found'), reason, req.user!);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');
@@ -144,6 +145,7 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
 // PATCH /api/v1/tpl/:id  — staff, or the applicant proving ownership with the PAN
 router.patch('/:id', optionalAuth, async (req, res) => {
   try {
+    uuidParam(req.params.id, 'Application not found');
     if (!isStaff(req.user)) {
       const partner = await tplService.getPartner(req.params.id);
       if (!(await panMatches(req, partner, req.body.verify_pan))) {

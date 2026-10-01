@@ -205,16 +205,16 @@ describe('every invoice stores who it is billed to (UAT-004 b, c)', () => {
   it('shows the recipient of an invoice issued before bill_to existed, from its booking or consignee, without changing the row', async () => {
     world();
     supabaseMock.rows('invoices').push(
-      { id: 'old-1', invoice_number: 'INV-202609-0001', shipment_id: ID.s1, amount: 1000, gst_rate: 0, gst_amount: 0, total: 1000, status: 'issued', issued_at: now(), vendor_id: null },
-      { id: 'old-2', invoice_number: 'INV-202609-0002', shipment_id: ID.s2, amount: 1000, gst_rate: 0, gst_amount: 0, total: 1000, status: 'issued', issued_at: now(), vendor_id: null },
+      { id: '1d000000-0000-4000-8000-000000000001', invoice_number: 'INV-202609-0001', shipment_id: ID.s1, amount: 1000, gst_rate: 0, gst_amount: 0, total: 1000, status: 'issued', issued_at: now(), vendor_id: null },
+      { id: '1d000000-0000-4000-8000-000000000002', invoice_number: 'INV-202609-0002', shipment_id: ID.s2, amount: 1000, gst_rate: 0, gst_amount: 0, total: 1000, status: 'issued', issued_at: now(), vendor_id: null },
     );
     Object.assign(one('shipments', ID.s2), { consignee_name: 'Old Consignee' });
-    expect((await get('old-1')).body.buyer).toMatchObject({ kind: 'customer', name: 'Meera Customer' });
-    expect((await get('old-2')).body.buyer).toMatchObject({ kind: 'consignee', name: 'Old Consignee', address: 'Wakad, Pune' });
+    expect((await get('1d000000-0000-4000-8000-000000000001')).body.buyer).toMatchObject({ kind: 'customer', name: 'Meera Customer' });
+    expect((await get('1d000000-0000-4000-8000-000000000002')).body.buyer).toMatchObject({ kind: 'consignee', name: 'Old Consignee', address: 'Wakad, Pune' });
     expect(supabaseMock.rows('invoices').every(i => i.bill_to === undefined)).toBe(true);
 
     const list = await request(app).get(api('/finance/invoices')).set(auth.admin());
     const names = Object.fromEntries(list.body.map((r: any) => [r.id, r.billed_to_name]));
-    expect(names).toMatchObject({ 'old-1': 'Meera Customer', 'old-2': 'Old Consignee' });
+    expect(names).toMatchObject({ '1d000000-0000-4000-8000-000000000001': 'Meera Customer', '1d000000-0000-4000-8000-000000000002': 'Old Consignee' });
   });
 });

@@ -97,7 +97,11 @@ export const settings = {
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
   POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
   // Cargo claim documents (photos, PDFs) go in the same private bucket under claims/
+  // The lowest bid (rupees) a return trip takes when staff set no price for it and the pricing engine has none either
+  CAPACITY_MIN_BID_INR: envInt('CAPACITY_MIN_BID_INR', 500),
   CLAIM_DOCUMENT_MAX_BYTES: envInt('CLAIM_DOCUMENT_MAX_BYTES', 10 * 1024 * 1024),
+  // The most a claim may ask for (rupees) on goods with no declared value to hold it to; with a declared value, that value is the ceiling
+  CLAIM_MAX_WITHOUT_DECLARED_VALUE: envInt('CLAIM_MAX_WITHOUT_DECLARED_VALUE', 100_000),
   // A delivery whose live ETA slips this many minutes past its planned arrival opens a delay case
   CARGO_DELAY_EXCEPTION_MINUTES: envInt('CARGO_DELAY_EXCEPTION_MINUTES', 120),
   VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 5 * 1024 * 1024),

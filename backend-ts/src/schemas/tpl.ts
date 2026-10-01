@@ -79,6 +79,9 @@ export function assertPartnerSettings(input: Record<string, unknown>): { sla_com
  * Company, tax and bank details of an application. Onboarding needs the company
  * name and PAN; an edit (`partial`) checks only the fields it carries.
  */
+/** A plain address check: something, an @, something, a dot, something. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function assertApplicationFields(data: Record<string, unknown>, partial = false): void {
   if (!(partial && data.companyName === undefined) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');
