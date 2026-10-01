@@ -61,8 +61,8 @@ export default function QuoteScreen({ navigation, route }: any) {
     setPickerOpen(false);
   };
 
-  // One key per booking attempt, reused when the customer taps Book again after a lost reply; a new date is a new booking.
-  const idempotencyKey = useMemo(() => newIdempotencyKey(), [date]);
+  // One key per booking attempt, reused when the customer taps Book again after a lost reply.
+  const idempotencyKey = useState(newIdempotencyKey)[0];
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookedId, setBookedId] = useState<string | null>(null);
