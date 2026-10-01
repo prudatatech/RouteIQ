@@ -58,16 +58,16 @@ Details and screenshots: [UX](findings/UX.md).
 | UX-01 | Major | UX | Public tracking `/track/:id`: A split booking shows "Booked", "Not yet assigned" and a failed-delivery history though 2 of 3 lots are delivered | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-02 | Major | UX | Vehicle page: "Nothing is expired" next to five missing documents; fuel tank 100% next to "no fuel level" | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-03 | Major | UX | Shipment page (master and lot): Contradictory lines and a wall of repeated history | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
-| UX-04 | Minor | UX | Several: Raw system text shown to users (enums, audit keys, UUIDs) | reopened | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
+| UX-04 | Minor | UX | Several: Raw system text shown to users (enums, audit keys, UUIDs) | fixed | uat/ux-fix-round4 |
 | UX-05 | Minor | UX | Several: Vocabulary slips: consignment, route, Cargo, Finance, Transship, Raise problem | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
-| UX-06 | Minor | UX | Plan a trip, Insights, trip page, Optimize: Server-setup instructions and solver jargon shown to dispatchers | reopened | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
-| UX-07 | Minor | UX | Trip page: A normal trip page logs a 503 and says "No driving route was found" | reopened | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
+| UX-06 | Minor | UX | Plan a trip, Insights, trip page, Optimize: Server-setup instructions and solver jargon shown to dispatchers | fixed | uat/ux-fix-round4 |
+| UX-07 | Minor | UX | Trip page: A normal trip page logs a 503 and says "No driving route was found" | fixed | uat/ux-fix-round4 |
 | UX-08 | Minor | UX | Today, Fleet, Trips: Counts disagree: active trips, vehicles on the road, on trip | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-09 | Minor | UX | Several: One trip, one lot, several ids and spellings | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
-| UX-10 | Minor | UX | Several: Pieces, items, pcs, "1 pcs", "1 vehicles" | reopened | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
+| UX-10 | Minor | UX | Several: Pieces, items, pcs, "1 pcs", "1 vehicles" | fixed | uat/ux-fix-round4 |
 | UX-11 | Minor | UX | Manifest, Analytics: ISO dates and unformatted numbers beside "1 Oct 2026" | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-12 | Minor | UX | All lists: Status column moves around; Vehicle column shows different things | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
-| UX-13 | Minor | UX | Lists: CSV export on some lists only | reopened | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
+| UX-13 | Minor | UX | Lists: CSV export on some lists only | fixed | uat/ux-fix-round4 |
 | UX-14 | Minor | UX | Requests, Money, KYC, Dispatch: Pages open on an empty tab while the work sits in another | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-15 | Minor | UX | Create shipment: The form opens already showing red errors | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
 | UX-16 | Minor | UX | Manager, customer: Blocked pages redirect silently | fixed | uat/ux-fix-detail, uat/ux-fix-consistency, uat/ux-fix-leftovers |
@@ -85,20 +85,20 @@ Details and screenshots: [UX](findings/UX.md).
 
 | ID | Sev | Area | Title | Status | Commit |
 | --- | --- | --- | --- | --- | --- |
-| UX-26 | Major | UX | Shipment page | fixing | |
-| UX-27 | Major | UX | Shipment history, tracking | fixing | |
-| UX-28 | Minor | UX | Shipment page | fixing | |
-| UX-29 | Minor | UX | Assign modal, wizard step 3 | fixing | |
-| UX-30 | Minor | UX | Assign modal, wizard | fixing | |
-| UX-31 | Minor | UX | Modals | fixing | |
-| UX-32 | Minor | UX | Add fuel | fixing | |
-| UX-33 | Polish | UX | Problem case page | fixing | |
-| UX-34 | Polish | UX | Notifications | fixing | |
-| UX-35 | Minor | UX | Sidebar | fixing | |
-| UX-36 | Polish | UX | Cancelled shipment, cancelled trip | fixing | |
-| UX-37 | Polish | UX | Several | fixing | |
-| UX-38 | Polish | UX | Delete shipment | fixing | |
-| UX-39 | Polish | UX | Status pills | fixing | |
+| UX-26 | Major | UX | Shipment page | fixed | uat/ux-fix-round4 |
+| UX-27 | Major | UX | Shipment history, tracking | fixed | uat/ux-fix-round4 |
+| UX-28 | Minor | UX | Shipment page | fixed | uat/ux-fix-round4 |
+| UX-29 | Minor | UX | Assign modal, wizard step 3 | fixed | uat/ux-fix-round4 |
+| UX-30 | Minor | UX | Assign modal, wizard | fixed | uat/ux-fix-round4 |
+| UX-31 | Minor | UX | Modals | fixed | uat/ux-fix-round4 |
+| UX-32 | Minor | UX | Add fuel | fixed | uat/ux-fix-round4 |
+| UX-33 | Polish | UX | Problem case page | fixed | uat/ux-fix-round4 |
+| UX-34 | Polish | UX | Notifications | fixed | uat/ux-fix-round4 |
+| UX-35 | Minor | UX | Sidebar | fixed | uat/ux-fix-round4 |
+| UX-36 | Polish | UX | Cancelled shipment, cancelled trip | fixed | uat/ux-fix-round4 |
+| UX-37 | Polish | UX | Several | fixed | uat/ux-fix-round4 |
+| UX-38 | Polish | UX | Delete shipment | fixed | uat/ux-fix-round4 |
+| UX-39 | Polish | UX | Status pills | fixed | uat/ux-fix-round4 |
 
 ### Customer, driver and vendor roles (GitHub runner)
 
