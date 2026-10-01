@@ -65,6 +65,19 @@ export function pickupDateOf(s: Pick<ShipmentRow, 'metadata'>): string | null {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null
 }
 
+/**
+ * Where the goods are collected, as a name and an address for `PlaceText`. A load a vendor bid on is
+ * stamped with the vendor's company as its origin name; the company is who sends it, not the place, so
+ * the address stands alone then.
+ */
+export function pickupPlace(s: Pick<ShipmentRow, 'origin_name' | 'origin_address' | 'capacity_bids'>): { name: string | null; address: string | null } {
+  const name = s.origin_name?.trim() || null
+  const address = s.origin_address?.trim() || null
+  const company = s.capacity_bids?.vendor_profiles?.company_name?.trim().toLowerCase()
+  if (name && company && name.toLowerCase() === company && address) return { name: null, address }
+  return { name, address }
+}
+
 export function plateOf(s: ShipmentRow): string | null {
   for (const dp of deliveryPointsOf(s)) {
     const plate = dp.route_stops?.find(rs => rs.routes?.vehicles?.plate_number)?.routes?.vehicles?.plate_number

@@ -5,7 +5,7 @@ import {
   BulkActionBar, Button, DataTable, SearchInput, StatusPill, humanize, useRowSelection, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
-import { destinationOf, deliveryPointsOf, pickupDateOf, priorityTone, shipmentStatusLabel } from '@/components/shipments/format'
+import { destinationOf, deliveryPointsOf, pickupDateOf, pickupPlace, priorityTone, shipmentStatusLabel } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { formatDate, formatKg } from '@/utils/display'
 import PlaceText from '@/components/shipments/PlaceText'
@@ -77,7 +77,7 @@ export default function NeedsVehicleTab({ rows, loading, error, onRetry, onOptim
         </div>
       ),
     },
-    { key: 'pickup', header: 'Pickup', cell: s => <Place name={s.origin_name} address={s.origin_address} />, hideBelow: 'md' },
+    { key: 'pickup', header: 'Pickup', cell: s => <Place {...pickupPlace(s)} />, hideBelow: 'md' },
     {
       key: 'destination',
       header: 'Destination',

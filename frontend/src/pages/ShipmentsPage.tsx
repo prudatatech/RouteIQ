@@ -11,7 +11,7 @@ import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import EditShipmentModal from '@/components/shipments/EditShipmentModal'
 import ShipmentDetailsDrawer from '@/components/shipments/ShipmentDetailsDrawer'
 import {
-  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, isBiddingOpen, pickupDateOf, plateOf, shipmentStatusLabel,
+  SHIPMENT_STATUSES, deliveryPointsOf, destinationOf, isBiddingOpen, pickupDateOf, pickupPlace, plateOf, shipmentStatusLabel,
 } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { shipmentsAPI } from '@/services/api'
@@ -19,6 +19,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatDate, formatKg, formatPieces } from '@/utils/display'
+import { formatAddress } from '@/utils/address'
 import { groupLots } from '@/components/cargo/lots'
 import PlaceText from '@/components/shipments/PlaceText'
 
@@ -203,8 +204,8 @@ export default function ShipmentsPage() {
     {
       key: 'pickup',
       header: 'Pickup',
-      sortValue: s => s.origin_name || s.origin_address,
-      cell: s => <PlaceCell name={s.origin_name} address={s.origin_address} />,
+      sortValue: s => formatAddress(pickupPlace(s).name, pickupPlace(s).address),
+      cell: s => <PlaceCell {...pickupPlace(s)} />,
     },
     {
       key: 'destination',
@@ -267,7 +268,7 @@ export default function ShipmentsPage() {
         tracking_id: s.tracking_id,
         lot_of: master,
         status: shipmentStatusLabel(status),
-        pickup: s.origin_name || s.origin_address || '',
+        pickup: formatAddress(pickupPlace(s).name, pickupPlace(s).address),
         destination: dest?.name || dest?.address || '',
         vehicle: plateOf(s) || '',
         driver: s.driver_name || '',

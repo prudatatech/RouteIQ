@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus, pickupDateOf, shipmentStatusLabel,
+  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus, pickupDateOf, pickupPlace, shipmentStatusLabel,
 } from './format'
 
 describe('shipment statuses', () => {
@@ -40,5 +40,22 @@ describe('destination', () => {
   it('is the last delivery point', () => {
     const s = { id: '1', tracking_id: 'RTX-1', delivery_points: [{ name: 'first' }, { name: 'final' }] }
     expect(destinationOf(s)?.name).toBe('final')
+  })
+})
+
+describe('pickup place', () => {
+  const vendor = { vendor_profiles: { company_name: 'Acme Logistics' } }
+  it('drops the vendor company that a vendor load carries as its origin name', () => {
+    expect(pickupPlace({ origin_name: 'Acme Logistics', origin_address: 'Plot 4, Bhiwandi', capacity_bids: vendor }))
+      .toEqual({ name: null, address: 'Plot 4, Bhiwandi' })
+    expect(pickupPlace({ origin_name: ' acme logistics ', origin_address: 'Plot 4, Bhiwandi', capacity_bids: vendor }).name).toBeNull()
+  })
+  it('keeps the name when it is a real place, or when the address is only the company again', () => {
+    expect(pickupPlace({ origin_name: 'Fab Hostels', origin_address: 'Fab Hostels, Kanakapura Road', capacity_bids: vendor }))
+      .toEqual({ name: 'Fab Hostels', address: 'Fab Hostels, Kanakapura Road' })
+    expect(pickupPlace({ origin_name: 'Acme Logistics', origin_address: null, capacity_bids: vendor }).name).toBe('Acme Logistics')
+  })
+  it('passes a shipment with no vendor through', () => {
+    expect(pickupPlace({ origin_name: 'Pune hub', origin_address: 'Hadapsar' })).toEqual({ name: 'Pune hub', address: 'Hadapsar' })
   })
 })
