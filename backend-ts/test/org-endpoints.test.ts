@@ -38,15 +38,15 @@ describe('GET and PATCH /org', () => {
 
   it('refuses to change what the organisation is, or whether it is approved', async () => {
     for (const body of [{ kind: 'platform' }, { status: 'active' }, { approved_by: uid('admin-a') }]) {
-      expect((await request(app).patch(api('/org')).set(as('admin-a')).send(body)).status).toBe(400);
+      expect((await request(app).patch(api('/org')).set(as('admin-a')).send(body)).status).toBe(422);
     }
     expect(supabaseMock.writes('organizations')).toHaveLength(0);
   });
 
   it('validates what it is given', async () => {
-    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({ gstin: 'nope' })).status).toBe(400);
-    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({ pincode: '12' })).status).toBe(400);
-    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({})).status).toBe(400);
+    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({ gstin: 'nope' })).status).toBe(422);
+    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({ pincode: '12' })).status).toBe(422);
+    expect((await request(app).patch(api('/org')).set(as('admin-a')).send({})).status).toBe(422);
   });
 
   it('only ever touches the organisation the person acts for', async () => {
@@ -62,7 +62,7 @@ describe('members', () => {
     const res = await request(app).get(api('/org/members')).set(as('admin-a'));
     expect(res.status).toBe(200);
     expect(res.body.map((m: any) => m.user_id).sort()).toEqual(['admin-a', 'driver-a', 'manager-a', 'super-1'].map(uid).sort());
-    expect(res.body.find((m: any) => m.user_id === uid('admin-a'))).toMatchObject({ full_name: 'Asha Alpha', role: 'admin', email: 'asha@example.test' });
+    expect(res.body.find((m: any) => m.user_id === uid('admin-a'))).toMatchObject({ name: 'Asha Alpha', role: 'admin', email: 'asha@example.test' });
     expect((await request(app).get(api('/org/members')).set(as('manager-a'))).status).toBe(403);
   });
 
@@ -79,16 +79,16 @@ describe('members', () => {
   });
 
   it('cannot be someone who has not signed up, or someone already in', async () => {
-    expect((await request(app).post(api('/org/members')).set(as('admin-a')).send({ email: 'ghost@example.test', role: 'ops' })).status).toBe(404);
+    expect((await request(app).post(api('/org/members')).set(as('admin-a')).send({ email: 'ghost@example.test', role: 'ops' })).body).toEqual({ detail: 'No account with that email or phone', field: 'email' });
     expect((await request(app).post(api('/org/members')).set(as('admin-a')).send({ email: 'ravi@example.test', role: 'ops' })).status).toBe(409);
   });
 
   it('are checked: an email or a phone, not both, and a known role', async () => {
     const send = (body: object) => request(app).post(api('/org/members')).set(as('admin-a')).send(body);
-    expect((await send({ role: 'ops' })).status).toBe(400);
-    expect((await send({ email: 'loner@example.test', phone: '+919876500009', role: 'ops' })).status).toBe(400);
-    expect((await send({ email: 'loner@example.test', role: 'emperor' })).status).toBe(400);
-    expect((await send({ email: 'not-an-email', role: 'ops' })).status).toBe(400);
+    expect((await send({ role: 'ops' })).status).toBe(422);
+    expect((await send({ email: 'loner@example.test', phone: '+919876500009', role: 'ops' })).status).toBe(422);
+    expect((await send({ email: 'loner@example.test', role: 'emperor' })).status).toBe(422);
+    expect((await send({ email: 'not-an-email', role: 'ops' })).status).toBe(422);
   });
 
   it('can be added by an ordinary member? No', async () => {
@@ -155,21 +155,21 @@ describe('registering an organisation', () => {
 
   it('is limited to the two kinds a person may start', async () => {
     for (const kind of ['platform', 'tpl_partner', 'other']) {
-      expect((await request(app).post(api('/orgs')).set(as('loner')).send({ kind, name: 'Sneaky Co' })).status).toBe(400);
+      expect((await request(app).post(api('/orgs')).set(as('loner')).send({ kind, name: 'Sneaky Co' })).status).toBe(422);
     }
-    expect((await request(app).post(api('/orgs')).set(as('loner')).send({ kind: 'vendor', name: 'x' })).status).toBe(400);
+    expect((await request(app).post(api('/orgs')).set(as('loner')).send({ kind: 'vendor', name: 'x' })).status).toBe(422);
     expect(supabaseMock.writes('organizations')).toHaveLength(0);
   });
 
   it('shows up in the creator\'s list straight away', async () => {
-    expect((await request(app).get(api('/orgs/mine')).set(as('manager-a'))).body.orgs).toHaveLength(1);
+    expect((await request(app).get(api('/orgs/mine')).set(as('manager-a'))).body).toHaveLength(1);
     const created = await request(app).post(api('/orgs')).set(as('manager-a')).send({ kind: 'vendor', name: 'Delta Traders' });
     // the mock does not embed the new organisation, so give the seat the way the database would
     const id = created.body.id;
     supabaseMock.rows('org_members').find(m => m.org_id === id)!.organizations = { id, kind: 'vendor', name: 'Delta Traders', status: 'pending' };
     const mine = await request(app).get(api('/orgs/mine')).set(as('manager-a'));
-    expect(mine.body.orgs).toContainEqual({ id, kind: 'vendor', name: 'Delta Traders', status: 'pending', role: 'owner' });
-    expect(mine.body.orgs).toHaveLength(2);
+    expect(mine.body).toContainEqual({ org: { id, kind: 'vendor', name: 'Delta Traders', status: 'pending' }, role: 'owner' });
+    expect(mine.body).toHaveLength(2);
   });
 });
 
@@ -216,7 +216,7 @@ describe('GET /admin/orgs', () => {
   });
 
   it('rejects a filter it does not know', async () => {
-    expect((await request(app).get(api('/admin/orgs?status=bogus')).set(as('super-1'))).status).toBe(400);
+    expect((await request(app).get(api('/admin/orgs?status=bogus')).set(as('super-1'))).status).toBe(422);
   });
 });
 
@@ -247,7 +247,7 @@ describe('approving, rejecting and suspending', () => {
 
   it('refuses a move the status does not allow', async () => {
     expect((await decide('suspend', PENDING)).status).toBe(409);
-    expect((await decide('reject', PENDING)).status).toBe(400);
+    expect((await decide('reject', PENDING)).status).toBe(422);
     expect((await decide('approve', ORG.companyA)).status).toBe(409);
     expect((await decide('reject', ORG.companyA, 'super-1', { reason: 'no good' })).status).toBe(409);
     expect(status(ORG.companyA)).toBe('active');
@@ -265,10 +265,10 @@ describe('approving, rejecting and suspending', () => {
     expect(status(PENDING)).toBe('pending');
   });
 
-  it('answers 404 for an unknown organisation and 400 for a reason that is too long', async () => {
+  it('answers 404 for an unknown organisation and 422 for a reason that is too long', async () => {
     expect((await decide('approve', 'a0000000-0000-4000-8000-0000000000ee')).status).toBe(404);
     expect((await decide('approve', 'nope')).status).toBe(404);
-    expect((await decide('reject', PENDING, 'super-1', { reason: 'x'.repeat(501) })).status).toBe(400);
+    expect((await decide('reject', PENDING, 'super-1', { reason: 'x'.repeat(501) })).status).toBe(422);
   });
 
   it('is audited, and a suspension takes effect on the next request of that company', async () => {
@@ -307,9 +307,9 @@ describe('a 3PL partner joining companies', () => {
   });
 
   it('must name a real, active logistic company', async () => {
-    expect((await join(ORG.vendorV)).status).toBe(400);
+    expect((await join(ORG.vendorV)).status).toBe(422);
     expect((await join('a0000000-0000-4000-8000-0000000000ff')).status).toBe(404);
-    expect((await join('nope')).status).toBe(400);
+    expect((await join('nope')).status).toBe(422);
     supabaseMock.rows('organizations').find(o => o.id === ORG.companyB)!.status = 'pending';
     expect((await join(ORG.companyB)).status).toBe(409);
   });
@@ -414,13 +414,12 @@ describe('notifications and paging', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ limit: 2, offset: 1 });
     expect(res.body.items).toHaveLength(2);
-    expect((await request(app).get(api('/admin/orgs?limit=0')).set(as('super-1'))).status).toBe(400);
+    expect((await request(app).get(api('/admin/orgs?limit=0')).set(as('super-1'))).status).toBe(422);
   });
 
   it('shows the switcher list to anyone, a non-member of any organisation included', async () => {
     const res = await request(app).get(api('/orgs/mine')).set(as('super-1'));
-    expect(res.body.is_platform_admin).toBe(true);
-    expect(res.body.orgs).toHaveLength(2);
+    expect(res.body).toHaveLength(2);
     expect((await request(app).get(api('/org')).set(as('admin-a', ORG.companyB))).status).toBe(403);
   });
 });

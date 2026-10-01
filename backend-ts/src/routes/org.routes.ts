@@ -28,7 +28,11 @@ const handle = (fn: (req: Request, res: Response) => Promise<void>): RequestHand
 
 function parse<S extends ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
   const result = schema.safeParse(input ?? {});
-  if (!result.success) throw new HttpError(400, result.error.issues[0]?.message ?? 'The request is not valid');
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const field = issue?.path.length ? String(issue.path[0]) : undefined;
+    throw new HttpError(422, issue?.message ?? 'The request is not valid', field ? { field } : undefined);
+  }
   return result.data;
 }
 
@@ -72,11 +76,7 @@ orgsRouter.use(requireAuth);
 
 // The caller's organisations, for the switcher. Empty for a customer or before organisations are set up.
 orgsRouter.get('/mine', handle(async (req, res) => {
-  res.json({
-    active_org_id: req.org?.id ?? null,
-    is_platform_admin: !!req.isPlatformAdmin,
-    orgs: (req.memberships ?? []).map(m => ({ id: m.org.id, kind: m.org.kind, name: m.org.name, status: m.org.status, role: m.role })),
-  });
+  res.json((req.memberships ?? []).map(m => ({ org: { id: m.org.id, kind: m.org.kind, name: m.org.name, status: m.org.status }, role: m.role })));
 }));
 
 orgsRouter.post('/', rateLimitByUser('org-create', 5, 60 * 60), handle(async (req, res) => {
@@ -132,7 +132,14 @@ for (const decision of ['approve', 'reject', 'suspend'] as const) {
   adminOrgsRouter.put(`/:id/${decision}`, handle(async (req, res) => {
     const id = uuidParam(req.params.id, 'Organisation not found');
     const body = parse(AdminOrgDecisionSchema, req.body);
-    const reason = decision === 'reject' ? parseRejectionReason(body.reason) : body.reason;
+    let reason = body.reason;
+    if (decision === 'reject') {
+      try {
+        reason = parseRejectionReason(body.reason);
+      } catch (e) {
+        throw e instanceof HttpError ? new HttpError(422, e.message, { field: 'reason' }) : e;
+      }
+    }
     res.json(await orgs.decideOrg(actorOf(req), id, decision, reason));
   }));
 }

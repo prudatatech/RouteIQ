@@ -61,7 +61,7 @@ export async function updateOrg(actor: AuditActor, orgId: string, input: OrgUpda
     const current = await getOrg(orgId);
     patch.profile = { ...(current.profile ?? {}), ...profile };
   }
-  if (Object.keys(patch).length === 0) throw new HttpError(400, 'Nothing to change');
+  if (Object.keys(patch).length === 0) throw new HttpError(422, 'Nothing to change');
   const { data, error } = await supabase.from('organizations').update(patch).eq('id', orgId).select(ORG_COLUMNS).maybeSingle();
   if (error) throw new Error(`Failed to update the organisation: ${error.message}`);
   if (!data) throw new HttpError(404, 'Organisation not found');
@@ -111,7 +111,7 @@ export async function listMembers(orgId: string) {
     const u = byId.get(m.user_id as string);
     return {
       user_id: m.user_id, role: m.role, status: m.status, created_at: m.created_at, invited_by: m.invited_by,
-      full_name: u?.full_name ?? null, email: u?.email ?? null, phone: u?.phone ?? null, app_role: u?.role ?? null, is_active: u?.is_active ?? null,
+      name: u?.full_name ?? null, email: u?.email ?? null, phone: u?.phone ?? null, app_role: u?.role ?? null, is_active: u?.is_active ?? null,
     };
   });
 }
@@ -137,11 +137,11 @@ function assertCanTouchRole(actorRole: OrgRole, role: OrgRole): void {
 export async function inviteMember(actor: AuditActor, actorRole: OrgRole, orgId: string, input: MemberInvite) {
   assertCanTouchRole(actorRole, input.role);
   const phone = input.phone ? normalizePhone(input.phone) : null;
-  if (input.phone && !phone) throw new HttpError(400, 'Phone number is not valid');
+  if (input.phone && !phone) throw new HttpError(422, 'Phone number is not valid', { field: 'phone' });
   const lookup = supabase.from('users').select('id, full_name, email, phone');
   const { data: users, error } = await (input.email ? lookup.eq('email', input.email) : lookup.eq('phone', phone as string)).limit(2);
   if (error) throw new Error(`Failed to look the person up: ${error.message}`);
-  if (!users || users.length === 0) throw new HttpError(404, 'No registered user has that email or phone. They need to sign up first.');
+  if (!users || users.length === 0) throw new HttpError(422, 'No account with that email or phone', { field: input.email ? 'email' : 'phone' });
   if (users.length > 1) throw new HttpError(409, 'More than one user has that phone number. Use their email instead.');
   const user = users[0];
 
@@ -156,7 +156,7 @@ export async function inviteMember(actor: AuditActor, actorRole: OrgRole, orgId:
   if (writeErr) throw new Error(`Failed to add the member: ${writeErr.message}`);
   invalidateOrgContext(user.id);
   await audit(actor, 'org.member_added', { org_id: orgId, user_id: user.id, role: input.role });
-  return { user_id: user.id, full_name: user.full_name ?? null, email: user.email ?? null, phone: user.phone ?? null, role: input.role, status: 'active' };
+  return { user_id: user.id, name: user.full_name ?? null, email: user.email ?? null, phone: user.phone ?? null, role: input.role, status: 'active' };
 }
 
 /** Change a member's role, or remove them (or bring a removed one back). The last owner cannot leave or be demoted. */
@@ -235,7 +235,7 @@ const AFFILIATION_TO: Record<AffiliationAction, string> = { approve: 'active', p
 /** A 3PL organisation asks to join a logistic company. The company approves it. */
 export async function requestAffiliation(actor: AuditActor, tplOrgId: string, companyId: string) {
   const company = await getOrg(companyId).catch(e => { if (e instanceof HttpError) throw new HttpError(404, 'Logistic company not found'); throw e; });
-  if (company.kind !== 'logistic_company') throw new HttpError(400, 'That organisation is not a logistic company');
+  if (company.kind !== 'logistic_company') throw new HttpError(422, 'That organisation is not a logistic company', { field: 'company_id' });
   if (company.status !== 'active') throw new HttpError(409, 'That company is not accepting partners right now');
 
   const { data: existing, error } = await supabase.from('tpl_affiliations').select('status').eq('company_id', companyId).eq('tpl_id', tplOrgId).maybeSingle();
