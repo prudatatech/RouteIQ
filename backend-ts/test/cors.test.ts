@@ -8,13 +8,13 @@ const preflight = (origin: string) =>
 
 describe('CORS', () => {
   it('allows the web app on its own domains', async () => {
-    for (const origin of ['https://margixindia.com', 'https://app.margixindia.com', 'https://margixindia.vercel.app']) {
+    for (const origin of ['https://margixindia.com', 'https://portal.margixindia.com', 'https://staging.margixindia.com']) {
       expect((await preflight(origin)).headers['access-control-allow-origin']).toBe(origin);
     }
   });
 
   it('refuses look-alike and plain-http origins', async () => {
-    for (const origin of ['https://evil-margixindia.vercel.app', 'https://margixindia.vercel.app.evil.com', 'http://margixindia.vercel.app']) {
+    for (const origin of ['https://margixindia.vercel.app', 'https://portal.margixindia.com.evil.com', 'http://portal.margixindia.com', 'https://evilmargixindia.com']) {
       expect((await preflight(origin)).headers['access-control-allow-origin']).toBeUndefined();
     }
   });

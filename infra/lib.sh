@@ -65,7 +65,9 @@ load_azure_env() {
   ML_APP="${APP_PREFIX}-ml"
   WEB_APP="${APP_PREFIX}-web"
   # The custom domains belong to live only.
-  if [[ "$STAGE" != live ]]; then CUSTOM_DOMAIN=""; API_DOMAIN=""; fi
+  DATA_DOMAIN="${DATA_DOMAIN:-}"
+  # The test stage uses its own names (TEST_*), never live's
+  if [[ "$STAGE" != live ]]; then CUSTOM_DOMAIN="${TEST_CUSTOM_DOMAIN:-}"; API_DOMAIN="${TEST_API_DOMAIN:-}"; DATA_DOMAIN="${TEST_DATA_DOMAIN:-}"; fi
   resolve_secrets_file
 }
 

@@ -27,13 +27,10 @@ import apiRouter from './routes';
 
 export const WS_PATH = '/api/v1/telemetry/ws';
 
-// CORS — exact origins from ALLOWED_ORIGINS, margixindia.com and its
-// subdomains over https, the web app's own Vercel production address,
-// and optional regexes in CORS_ORIGIN_PATTERNS
-// (e.g. this project's Vercel preview URLs). Clients authenticate with
-// Bearer tokens, so credentials (cookies) are not allowed cross-origin.
-/** Production address of the web app on Vercel (the project's own deployment). */
-const WEB_APP_VERCEL_HOST = 'margixindia.vercel.app';
+// CORS — exact origins from ALLOWED_ORIGINS (each stage's web app, set by infra/main.bicep),
+// margixindia.com and its subdomains over https (portal., staging., …), and optional regexes in
+// CORS_ORIGIN_PATTERNS. Clients authenticate with Bearer tokens, so credentials (cookies) are not
+// allowed cross-origin.
 
 function isAllowedOrigin(origin: string): boolean {
   if (settings.ALLOWED_ORIGINS.includes(origin)) return true;
@@ -46,7 +43,6 @@ function isAllowedOrigin(origin: string): boolean {
   if (url.protocol === 'https:' && (
     url.hostname === 'margixindia.com'
     || url.hostname.endsWith('.margixindia.com')
-    || url.hostname === WEB_APP_VERCEL_HOST
   )) {
     return true;
   }
