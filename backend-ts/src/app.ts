@@ -23,6 +23,7 @@ import { errorHandler, notFoundHandler } from './core/errors';
 import { redis } from './core/redis';
 import { supabase } from './core/supabase';
 import { wsManager } from './core/websocket';
+import { requestTiming } from './core/timing';
 import apiRouter from './routes';
 
 export const WS_PATH = '/api/v1/telemetry/ws';
@@ -81,17 +82,8 @@ export function createApp(): express.Express {
     next();
   });
 
-  // 2. Request metrics logging
-  app.use((req, res, next) => {
-    const start = Date.now();
-    res.on('finish', () => {
-      const duration = Date.now() - start;
-      if (settings.DEBUG) {
-        console.log(`${req.method} ${req.path} → ${res.statusCode} (${duration}ms)`);
-      }
-    });
-    next();
-  });
+  // 2. Request timing: Server-Timing header, per-request DB call count, SLOW log (>= 500 ms), DEBUG request log
+  app.use(requestTiming(() => settings.DEBUG));
 
   // 3. Security headers
   app.use(helmet({ contentSecurityPolicy: false }));

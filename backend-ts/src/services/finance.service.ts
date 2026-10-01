@@ -14,6 +14,7 @@
  * reported as missing, never replaced by a made-up number.
  */
 import { supabase } from '../core/supabase';
+import { memoize } from '../core/memo';
 import { manifestParcelCode } from '../core/parcelCode';
 import { indianDateKey } from '../core/istDate';
 
@@ -36,15 +37,17 @@ const num = (v: unknown) => {
 /** Runs an `in` query in chunks so a long id list does not overflow the request URL. */
 export async function selectIn<T = any>(table: string, column: string, ids: string[], columns: string, extra?: (q: any) => any): Promise<T[]> {
   const unique = [...new Set(ids.filter(Boolean))];
-  const out: T[] = [];
-  for (let i = 0; i < unique.length; i += 100) {
-    let query = supabase.from(table).select(columns).in(column, unique.slice(i, i + 100));
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+  // Chunks are independent, so they run together; the rows come back in chunk order
+  const pages = await Promise.all(chunks.map(async chunk => {
+    let query = supabase.from(table).select(columns).in(column, chunk);
     if (extra) query = extra(query);
     const { data, error } = await query;
     if (error) throw new Error(`Failed to read ${table}: ${error.message}`);
-    out.push(...((data ?? []) as T[]));
-  }
-  return out;
+    return (data ?? []) as T[];
+  }));
+  return pages.flat();
 }
 
 /** A setting stored as jsonb: a bare number, or an object like {"price": 92} / {"rate": 15}. */
@@ -60,7 +63,9 @@ function settingNumber(value: unknown): number | null {
   return null;
 }
 
-export async function getFinanceSettings(): Promise<{ fuel_price_per_litre: number | null; rate_per_km: number | null }> {
+type FinanceSettings = { fuel_price_per_litre: number | null; rate_per_km: number | null };
+
+const loadFinanceSettings = memoize(30_000, async (): Promise<FinanceSettings> => {
   const { data, error } = await supabase.from('system_settings').select('key, value').in('key', [FUEL_PRICE_KEY, RATE_PER_KM_KEY]);
   if (error) throw new Error(`Failed to read settings: ${error.message}`);
   const byKey = new Map((data ?? []).map((r: any) => [r.key, settingNumber(r.value)]));
@@ -68,12 +73,22 @@ export async function getFinanceSettings(): Promise<{ fuel_price_per_litre: numb
     fuel_price_per_litre: byKey.get(FUEL_PRICE_KEY) ?? null,
     rate_per_km: byKey.get(RATE_PER_KM_KEY) ?? null,
   };
+});
+
+/**
+ * The finance settings as they are now. `{ cached: true }` is for the profit and loss page: the same
+ * for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
+ */
+export async function getFinanceSettings(opts: { cached?: boolean } = {}): Promise<FinanceSettings> {
+  if (!opts.cached) loadFinanceSettings.clear();
+  return { ...(await loadFinanceSettings()) };
 }
 
 export async function setFuelPrice(price: number): Promise<void> {
   const { error } = await supabase
     .from('system_settings')
     .upsert({ key: FUEL_PRICE_KEY, value: { price }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  loadFinanceSettings.clear();
   if (error) throw new Error(`Failed to save fuel price: ${error.message}`);
 }
 
@@ -132,7 +147,7 @@ export async function getFinanceSummary(range: FinanceRange) {
   const inRange = (iso: string | null | undefined) => !!iso && iso >= startISO && iso < endISO;
 
   const [settings, invoiceRes, expenseRes, routeRes, tplRes] = await Promise.all([
-    getFinanceSettings(),
+    getFinanceSettings({ cached: true }),
     supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
       .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
     supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
@@ -155,10 +170,16 @@ export async function getFinanceSummary(range: FinanceRange) {
   // Where each invoice was earned: shipment -> delivery point -> route stop -> route -> vehicle
   const shipmentIds = invoices.map((i: any) => i.shipment_id).filter(Boolean);
   const manifestIds = invoices.map((i: any) => i.manifest_id).filter(Boolean);
-  const points = await selectIn<{ id: string; shipment_id: string }>('delivery_points', 'shipment_id', shipmentIds, 'id, shipment_id');
-  const stops = await selectIn<{ delivery_point_id: string; route_id: string }>('route_stops', 'delivery_point_id', points.map(p => p.id), 'delivery_point_id, route_id');
-  const manifests = await selectIn<{ id: string; vehicle_id: string | null; pickup_location: string | null; drop_location: string | null }>(
-    'cargo_manifest', 'id', manifestIds, 'id, vehicle_id, pickup_location, drop_location');
+  // The shipment chain (points then stops) and the manifests do not depend on each other
+  const [{ points, stops }, manifests] = await Promise.all([
+    (async () => {
+      const points = await selectIn<{ id: string; shipment_id: string }>('delivery_points', 'shipment_id', shipmentIds, 'id, shipment_id');
+      const stops = await selectIn<{ delivery_point_id: string; route_id: string }>('route_stops', 'delivery_point_id', points.map(p => p.id), 'delivery_point_id, route_id');
+      return { points, stops };
+    })(),
+    selectIn<{ id: string; vehicle_id: string | null; pickup_location: string | null; drop_location: string | null }>(
+      'cargo_manifest', 'id', manifestIds, 'id, vehicle_id, pickup_location, drop_location'),
+  ]);
 
   const routeByShipment = new Map<string, string>();
   const pointShipment = new Map(points.map(p => [p.id, p.shipment_id]));
@@ -367,18 +388,18 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   // A manifest without a vendor request came from a won bid and is billed on its shipment
   const manifests = (manRes.data ?? []).filter((m: any) => m.vendor_request_id && ownPart(m) && m.updated_at >= startISO && m.updated_at < endISO);
 
-  const invoiced = await Promise.all([
-    selectIn<{ shipment_id: string }>('invoices', 'shipment_id', shipments.map((s: any) => s.id), 'shipment_id', q => q.neq('status', 'void')),
-    selectIn<{ manifest_id: string }>('invoices', 'manifest_id', manifests.map((m: any) => m.id), 'manifest_id', q => q.neq('status', 'void')),
+  // The invoice, bid and vendor-request lookups do not depend on each other: one round of queries
+  const [invoiced, bids, requests] = await Promise.all([
+    Promise.all([
+      selectIn<{ shipment_id: string }>('invoices', 'shipment_id', shipments.map((s: any) => s.id), 'shipment_id', q => q.neq('status', 'void')),
+      selectIn<{ manifest_id: string }>('invoices', 'manifest_id', manifests.map((m: any) => m.id), 'manifest_id', q => q.neq('status', 'void')),
+    ]),
+    selectIn<{ id: string; bid_amount: number; status: string }>('capacity_bids', 'id', shipments.map((s: any) => s.bid_id), 'id, bid_amount, status'),
+    selectIn<{ id: string; cost: number | null }>('vendor_shipment_requests', 'id', manifests.map((m: any) => m.vendor_request_id), 'id, cost'),
   ]);
   const invoicedShipments = new Set(invoiced[0].map(i => i.shipment_id));
   const invoicedManifests = new Set(invoiced[1].map(i => i.manifest_id));
-
-  const bids = await selectIn<{ id: string; bid_amount: number; status: string }>(
-    'capacity_bids', 'id', shipments.map((s: any) => s.bid_id), 'id, bid_amount, status');
   const wonBids = new Set(bids.filter(b => b.status === 'won' && num(b.bid_amount) > 0).map(b => b.id));
-  const requests = await selectIn<{ id: string; cost: number | null }>(
-    'vendor_shipment_requests', 'id', manifests.map((m: any) => m.vendor_request_id), 'id, cost');
   const pricedRequests = new Set(requests.filter(r => num(r.cost) > 0).map(r => r.id));
 
   return [

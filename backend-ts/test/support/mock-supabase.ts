@@ -27,6 +27,7 @@
  * real API would return, so a query that names a column the database doesn't
  * have fails a test instead of quietly succeeding. See `validateRequest`.
  */
+import { clearAllMemos } from '../../src/core/memo';
 import http from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -353,6 +354,7 @@ class MockSupabase {
     this.authCalls = [];
     this.authAdmin = false;
     this.failures.clear();
+    clearAllMemos();
   }
 
   /** Live rows of a table (mutable). */

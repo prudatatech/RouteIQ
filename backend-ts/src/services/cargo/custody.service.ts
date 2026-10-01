@@ -1015,14 +1015,19 @@ export async function whereIs(c: Consignment, opts: { redacted?: boolean; user?:
     const { masterWhere } = await import('./lots.service');
     return masterWhere(c, opts);
   }
-  const vehicleId = c.holder === 'vehicle' || c.holder === 'consignor' ? c.vehicleId ?? (await plannedVehicleOf(c)) : null;
-  const vehicle = c.holder === 'vehicle' || (c.holder === 'consignor' && vehicleId) ? await vehicleSummary(vehicleId) : null;
-  let depot: WhereView['depot'] = null;
-  if (c.holder === 'hub' && c.depotId) {
-    const { data } = await supabase.from('depots').select('id, name, address').eq('id', c.depotId).maybeSingle();
-    depot = data ? { id: data.id, name: data.name ?? null, address: data.address ?? null } : null;
-  }
-  const open = await openExceptionsFor(c);
+  // The vehicle (planned vehicle, then its summary), the hub, the open cases and the lot tag are independent chains
+  const vehicleP = (async () => {
+    const vehicleId = c.holder === 'vehicle' || c.holder === 'consignor' ? c.vehicleId ?? (await plannedVehicleOf(c)) : null;
+    return c.holder === 'vehicle' || (c.holder === 'consignor' && vehicleId) ? await vehicleSummary(vehicleId) : null;
+  })();
+  const depotP = (async (): Promise<WhereView['depot']> => {
+    if (c.holder === 'hub' && c.depotId) {
+      const { data } = await supabase.from('depots').select('id, name, address').eq('id', c.depotId).maybeSingle();
+      return data ? { id: data.id, name: data.name ?? null, address: data.address ?? null } : null;
+    }
+    return null;
+  })();
+  const [vehicle, depot, open, tag] = await Promise.all([vehicleP, depotP, openExceptionsFor(c), lotTag(c)]);
   return {
     ref: refOf(c),
     code: c.code,
@@ -1048,7 +1053,7 @@ export async function whereIs(c: Consignment, opts: { redacted?: boolean; user?:
     rto: c.rto,
     on_hold_reason: opts.redacted ? null : c.onHoldReason,
     is_master: false,
-    ...(await lotTag(c)),
+    ...tag,
     eway_bill_ref: c.row.eway_bill_ref ?? null,
     eway_part_b_required: c.row.eway_part_b_required === true,
   };
@@ -1125,31 +1130,29 @@ export async function timelineOf(c: Consignment, opts: { redacted?: boolean; own
   if (error) throw new Error(`Failed to read the custody timeline: ${error.message}`);
   const rows = ((data ?? []) as any[]).sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
 
+  // Hubs, vehicles and people named on the events are read together
   const depotIds = [...new Set(rows.flatMap(r => [r.to_depot_id, r.from_depot_id]).filter(Boolean))];
-  const depots = new Map<string, string>();
-  if (depotIds.length > 0) {
-    const { data: d } = await supabase.from('depots').select('id, name').in('id', depotIds);
-    for (const row of d ?? []) depots.set(row.id, row.name);
-  }
   const vehicleIds = [...new Set(rows.flatMap(r => [r.to_vehicle_id, r.from_vehicle_id]).filter(Boolean))];
+  const people = opts.redacted ? [] : [...new Set(rows.flatMap(r => [r.recorded_by, r.driver_id]).filter(Boolean))];
+  const [depotRows, vehicleRows, userRows] = await Promise.all([
+    depotIds.length > 0 ? supabase.from('depots').select('id, name').in('id', depotIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+    vehicleIds.length > 0 ? supabase.from('vehicles').select('id, plate_number').in('id', vehicleIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+    people.length > 0 ? supabase.from('users').select('id, full_name').in('id', people).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+  ]);
+  const depots = new Map<string, string>();
+  for (const row of depotRows) depots.set(row.id, row.name);
   const plates = new Map<string, string>();
-  if (vehicleIds.length > 0) {
-    const { data: v } = await supabase.from('vehicles').select('id, plate_number').in('id', vehicleIds);
-    for (const row of v ?? []) plates.set(row.id, row.plate_number);
-  }
+  for (const row of vehicleRows) plates.set(row.id, row.plate_number);
   const names = new Map<string, string>();
-  if (!opts.redacted) {
-    const people = [...new Set(rows.flatMap(r => [r.recorded_by, r.driver_id]).filter(Boolean))];
-    if (people.length > 0) {
-      const { data: u } = await supabase.from('users').select('id, full_name').in('id', people);
-      for (const row of u ?? []) names.set(row.id, row.full_name);
-    }
-  }
+  for (const row of userRows) names.set(row.id, row.full_name);
 
-  const events = [];
-  for (const r of rows) {
-    const photos = (await Promise.all(((r.photo_paths ?? []) as string[]).map(p => signedUrl(p)))).filter((u): u is string => !!u);
-    const signature = await signedUrl(r.signature_path);
+  // Signed links for every event's photos and signature are made together
+  const events = await Promise.all(rows.map(async r => {
+    const [photoUrls, signature] = await Promise.all([
+      Promise.all(((r.photo_paths ?? []) as string[]).map(p => signedUrl(p))),
+      signedUrl(r.signature_path),
+    ]);
+    const photos = photoUrls.filter((u): u is string => !!u);
     const depotName = depots.get(r.to_depot_id) ?? depots.get(r.from_depot_id) ?? null;
     const common = {
       id: r.id,
@@ -1171,7 +1174,7 @@ export async function timelineOf(c: Consignment, opts: { redacted?: boolean; own
       lat: r.lat ?? null,
       lng: r.lng ?? null,
     };
-    events.push(opts.redacted ? common : {
+    return opts.redacted ? common : {
       ...common,
       weight_kg: r.weight_kg ?? null,
       seal_number: r.seal_number ?? null,
@@ -1182,8 +1185,8 @@ export async function timelineOf(c: Consignment, opts: { redacted?: boolean; own
       driver: r.driver_id ? { id: r.driver_id, name: names.get(r.driver_id) ?? null } : null,
       recorded_by: r.recorded_by ? { id: r.recorded_by, name: names.get(r.recorded_by) ?? null, role: r.recorded_role ?? null } : null,
       recorded_role: r.recorded_role ?? null,
-    });
-  }
+    };
+  }));
   return { events };
 }
 

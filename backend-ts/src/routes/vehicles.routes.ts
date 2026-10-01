@@ -214,13 +214,14 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
 // under `archived`).
 router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data: vehicles, error } = await supabase
-      .from('vehicles')
-      .select('id, status, plate_number');
+    // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags.
+    // The two reads are independent.
+    const [{ data: vehicles, error }, onTrip] = await Promise.all([
+      supabase.from('vehicles').select('id, status, plate_number'),
+      vehicleIdsOnActiveTrip(),
+    ]);
 
     if (error) throw error;
-    // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags
-    const onTrip = await vehicleIdsOnActiveTrip();
 
     const counts: Record<string, number> = {};
     let drafts = 0;
@@ -288,14 +289,17 @@ router.post('/register', requireAuth, requireRole('driver'), rateLimitByUser('ve
 router.get('/:vehicle_id/sos', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
-    const { data, error } = await supabase
-      .from('sos_alerts')
-      .select('id, driver_id, alert_type, description, severity, latitude, longitude, status, created_at, updated_at')
-      .eq('vehicle_id', req.params.vehicle_id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const [{ data, error }, allCounts] = await Promise.all([
+      supabase
+        .from('sos_alerts')
+        .select('id, driver_id, alert_type, description, severity, latitude, longitude, status, created_at, updated_at')
+        .eq('vehicle_id', req.params.vehicle_id)
+        .order('created_at', { ascending: false })
+        .limit(limit),
+      loadSosCounts(req.params.vehicle_id),
+    ]);
     if (error) throw error;
-    const counts = (await loadSosCounts(req.params.vehicle_id))[req.params.vehicle_id] ?? emptySosCounts();
+    const counts = allCounts[req.params.vehicle_id] ?? emptySosCounts();
     res.json({ counts, alerts: data ?? [] });
   } catch (e: any) {
     sendError(req, res, e);

@@ -286,6 +286,9 @@ export interface AlertRow {
   resolved_at: string | null;
 }
 
+/** Exactly what toAlertRow reads. */
+const ALERT_COLUMNS = 'id, vehicle_id, alert_type, severity, description, status, is_resolved, source, is_test, occurrences, details, created_at, last_seen_at, acknowledged_at, resolved_at, vehicles(plate_number)';
+
 function toAlertRow(a: any): AlertRow {
   return {
     id: a.id,
@@ -314,7 +317,7 @@ export async function listAlerts(opts: {
 }): Promise<AlertRow[]> {
   let q = supabase
     .from('maintenance_alerts')
-    .select('*, vehicles(plate_number)')
+    .select(ALERT_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 200, 500));
   if (opts.status === 'resolved') q = q.eq('is_resolved', true);
@@ -335,7 +338,7 @@ export async function acknowledgeAlert(id: string, userId: string): Promise<Aler
     .from('maintenance_alerts')
     .update({ status: 'acknowledged', acknowledged_at: new Date().toISOString(), acknowledged_by: userId })
     .eq('id', id)
-    .select('*, vehicles(plate_number)')
+    .select(ALERT_COLUMNS)
     .single();
   if (uErr) throw uErr;
   return toAlertRow(data);
@@ -349,7 +352,7 @@ export async function resolveAlert(id: string, userId: string): Promise<AlertRow
     .from('maintenance_alerts')
     .update({ is_resolved: true, status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: userId })
     .eq('id', id)
-    .select('*, vehicles(plate_number)')
+    .select(ALERT_COLUMNS)
     .single();
   if (uErr) throw uErr;
   return toAlertRow(data);

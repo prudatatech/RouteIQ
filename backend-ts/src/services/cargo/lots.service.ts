@@ -390,14 +390,19 @@ async function dropOf(l: Consignment): Promise<LotView['drop']> {
 }
 
 export async function lotView(l: Consignment, opts: { redacted?: boolean } = {}): Promise<LotView> {
-  const vehicleId = l.holder === 'vehicle' || l.holder === 'consignor' ? l.vehicleId ?? (await plannedVehicleOf(l)) : null;
-  const vehicle = vehicleId ? await vehicleSummary(vehicleId) : null;
-  let depot: LotView['depot'] = null;
-  if (l.holder === 'hub' && l.depotId) {
-    const { data } = await supabase.from('depots').select('id, name').eq('id', l.depotId).maybeSingle();
-    depot = data ? { id: data.id, name: data.name ?? null } : { id: l.depotId, name: null };
-  }
-  const open = await openExceptionsFor(l);
+  // The vehicle chain, the hub, the open cases and the drop are independent reads
+  const vehicleP = (async () => {
+    const vehicleId = l.holder === 'vehicle' || l.holder === 'consignor' ? l.vehicleId ?? (await plannedVehicleOf(l)) : null;
+    return vehicleId ? await vehicleSummary(vehicleId) : null;
+  })();
+  const depotP = (async (): Promise<LotView['depot']> => {
+    if (l.holder === 'hub' && l.depotId) {
+      const { data } = await supabase.from('depots').select('id, name').eq('id', l.depotId).maybeSingle();
+      return data ? { id: data.id, name: data.name ?? null } : { id: l.depotId, name: null };
+    }
+    return null;
+  })();
+  const [vehicle, depot, open, drop] = await Promise.all([vehicleP, depotP, openExceptionsFor(l), dropOf(l)]);
   const consignee = l.row.consignee_name || l.row.consignee_phone
     ? { name: l.row.consignee_name ?? null, phone: l.row.consignee_phone ?? null, gstin: l.row.consignee_gstin ?? null }
     : null;
@@ -414,7 +419,7 @@ export async function lotView(l: Consignment, opts: { redacted?: boolean } = {})
     weight_kg: l.weightKg,
     declared_value: numOrNull(l.row.declared_value),
     freight_share: opts.redacted ? null : numOrNull(l.row.freight_share),
-    drop: await dropOf(l),
+    drop,
     consignee,
     eway_bill_ref: l.row.eway_bill_ref ?? null,
     eway_part_b_required: l.row.eway_part_b_required === true,
@@ -492,8 +497,10 @@ async function visibleLots(lots: Consignment[], user?: TokenData | null): Promis
 /** `GET /cargo/where` for a master: the rollup, the pieces added up, and its lots. */
 export async function masterWhere(master: Consignment, opts: { redacted?: boolean; user?: TokenData | null } = {}): Promise<WhereView & { lots: LotView[]; totals: LotTotals }> {
   const all = await lotsOf(master.kind, master.id);
-  const views = await Promise.all(all.map(l => lotView(l, opts)));
-  const inCases = await lotsInOpenCases(master.kind, all);
+  const [views, inCases] = await Promise.all([
+    Promise.all(all.map(l => lotView(l, opts))),
+    lotsInOpenCases(master.kind, all),
+  ]);
   const status = rollupStatus(rollupInput(all, inCases), master.pieces);
   const holder = rollupHolder(rollupInput(all, inCases), master.pieces);
   const totals = lotTotals(master, all, views);
@@ -501,21 +508,26 @@ export async function masterWhere(master: Consignment, opts: { redacted?: boolea
 
   const vehicles = new Set(open.filter(o => o.l.holder === 'vehicle').map(o => o.l.vehicleId));
   const depots = new Set(open.filter(o => o.l.holder === 'hub').map(o => o.l.depotId));
-  let vehicle: WhereView['vehicle'] = null;
-  if (holder === 'vehicle' && vehicles.size === 1 && depots.size === 0) {
-    const v = await vehicleSummary([...vehicles][0]);
-    if (v) vehicle = { id: v.id, plate_number: v.plate_number ?? null, driver_name: opts.redacted ? null : v.driver_name ?? null, lat: v.latitude ?? null, lng: v.longitude ?? null, last_seen_at: v.last_heartbeat ?? null };
-  }
-  let depot: WhereView['depot'] = null;
-  if (holder === 'hub' && depots.size === 1 && vehicles.size === 0) {
-    const { data } = await supabase.from('depots').select('id, name, address').eq('id', [...depots][0]).maybeSingle();
-    depot = data ? { id: data.id, name: data.name ?? null, address: data.address ?? null } : null;
-  }
+  // The carrying vehicle, the hub, the open cases of the master and the lots the caller may see are independent reads
+  const vehicleP = (async (): Promise<WhereView['vehicle']> => {
+    if (holder === 'vehicle' && vehicles.size === 1 && depots.size === 0) {
+      const v = await vehicleSummary([...vehicles][0]);
+      if (v) return { id: v.id, plate_number: v.plate_number ?? null, driver_name: opts.redacted ? null : v.driver_name ?? null, lat: v.latitude ?? null, lng: v.longitude ?? null, last_seen_at: v.last_heartbeat ?? null };
+    }
+    return null;
+  })();
+  const depotP = (async (): Promise<WhereView['depot']> => {
+    if (holder === 'hub' && depots.size === 1 && vehicles.size === 0) {
+      const { data } = await supabase.from('depots').select('id, name, address').eq('id', [...depots][0]).maybeSingle();
+      return data ? { id: data.id, name: data.name ?? null, address: data.address ?? null } : null;
+    }
+    return null;
+  })();
+  const [vehicle, depot, masterCases, shown] = await Promise.all([vehicleP, depotP, openExceptionsFor(master), visibleLots(all, opts.user)]);
   const cases = new Map<string, WhereView['open_exceptions'][number]>();
-  for (const e of await openExceptionsFor(master)) cases.set(e.id, { id: e.id, code: e.code, type: e.type, severity: e.severity, status: e.status, sla_due_at: e.sla_due_at ?? null });
+  for (const e of masterCases) cases.set(e.id, { id: e.id, code: e.code, type: e.type, severity: e.severity, status: e.status, sla_due_at: e.sla_due_at ?? null });
   for (const v of views) for (const e of v.open_exceptions) cases.set(e.id, e);
 
-  const shown = await visibleLots(all, opts.user);
   const shownIds = new Set(shown.map(l => l.id));
   return {
     ref: refOf(master),
@@ -552,12 +564,16 @@ export async function masterWhere(master: Consignment, opts: { redacted?: boolea
 
 /** A master's timeline: its own events and every lot's, oldest first, each tagged with its lot. */
 export async function masterTimeline(master: Consignment, opts: { redacted?: boolean; user?: TokenData | null } = {}): Promise<{ events: any[] }> {
-  const own = await timelineOf(master, { ...opts, own: true });
+  // The master's own events and every lot's are read together (in lot order, so ties sort as before)
+  const [own, lots] = await Promise.all([
+    timelineOf(master, { ...opts, own: true }),
+    lotsOf(master.kind, master.id).then(all => visibleLots(all, opts.user)),
+  ]);
   const events: any[] = own.events.map(e => ({ ...e, lot: null }));
-  for (const l of await visibleLots(await lotsOf(master.kind, master.id), opts.user)) {
-    const t = await timelineOf(l, { ...opts, own: true });
-    for (const e of t.events) events.push({ ...e, lot: { label: l.lotLabel, code: l.code, ref: refOf(l) } });
-  }
+  const lotTimelines = await Promise.all(lots.map(l => timelineOf(l, { ...opts, own: true })));
+  lots.forEach((l, i) => {
+    for (const e of lotTimelines[i].events) events.push({ ...e, lot: { label: l.lotLabel, code: l.code, ref: refOf(l) } });
+  });
   events.sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
   return { events };
 }
@@ -567,9 +583,11 @@ export async function lotsOverview(c: Consignment, opts: { redacted?: boolean; u
   const master = await masterOf(c);
   if (!master) throw new HttpError(404, `${c.code} is not split into lots.`);
   const all = master.isMaster ? await lotsOf(master.kind, master.id) : [];
-  const shown = await visibleLots(all, opts.user);
-  const views = await Promise.all(all.map(l => lotView(l, opts)));
-  const where = master.isMaster ? await masterWhere(master, opts) : null;
+  const [shown, views, where] = await Promise.all([
+    visibleLots(all, opts.user),
+    Promise.all(all.map(l => lotView(l, opts))),
+    master.isMaster ? masterWhere(master, opts) : Promise.resolve(null),
+  ]);
   const totals = lotTotals(master, all, views);
   const shownIds = new Set(shown.map(l => l.id));
   return {

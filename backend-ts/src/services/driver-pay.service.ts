@@ -742,9 +742,10 @@ const tripRef = (e: any) => (e.route_id ? `TR-${String(e.route_id).split('-')[0]
  * their amounts and states, and their payouts. Only their own rows; void entries are left out.
  */
 export async function getDriverPay(driverId: string, now: Date = new Date()) {
-  const [entriesRes, payoutsRes] = await Promise.all([
+  const [entriesRes, payoutsRes, payoutAccount] = await Promise.all([
     supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq('driver_id', driverId).neq('status', 'void').order('trip_date', { ascending: false }).limit(500),
     supabase.from('driver_payouts').select('id, period_from, period_to, amount, method, reference, paid_at').eq('driver_id', driverId).order('paid_at', { ascending: false }).limit(50),
+    getPayoutAccount(driverId),
   ]);
   if (entriesRes.error) throw new Error(`Failed to read your pay: ${entriesRes.error.message}`);
   if (payoutsRes.error) throw new Error(`Failed to read your payouts: ${payoutsRes.error.message}`);
@@ -778,7 +779,7 @@ export async function getDriverPay(driverId: string, now: Date = new Date()) {
     this_month: { total: sum(inPeriod(monthStart)), trips: inPeriod(monthStart).length, from: monthStart },
     trips: entries.map(line),
     payouts,
-    payout_account: await getPayoutAccount(driverId),
+    payout_account: payoutAccount,
   };
 }
 

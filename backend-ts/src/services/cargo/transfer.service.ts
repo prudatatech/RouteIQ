@@ -21,10 +21,11 @@ import { ShipmentService } from '../shipment.service';
 import { releaseVehicleLoad } from '../route.service';
 import { recordJourneyAfterTransferSafe, recordShipmentLegAfterTransferSafe } from '../driver-pay.service';
 import {
-  CONDITIONS, RefSchema, addPieces, assertNotMaster, piecesHeld, piecesPatch, refColumns, reload, resolveRef, weightOf, writeConsignment,
+  CONDITIONS, MANIFEST_CUSTODY_COLUMNS, RefSchema, SHIPMENT_CUSTODY_COLUMNS, addPieces, assertNotMaster, piecesHeld, piecesPatch, refColumns, reload, resolveRef, toConsignment, weightOf, writeConsignment,
   type Actor, type Condition, type Consignment,
 } from './consignment';
 import { insertWithCode } from './exception.service';
+import { selectIn } from '../finance.service';
 import { notifyOwner, notifyStaffSafe, notifyVehicleDriver } from './notify';
 import { openDropPoints, planStopsOnVehicle, cancelOpenStops } from './replan';
 
@@ -435,37 +436,53 @@ export async function setEwayPartB(id: string, ref: unknown): Promise<any> {
   return getTransfer(id);
 }
 
-export async function getTransfer(id: string): Promise<any> {
-  const transfer = await loadTransfer(id);
-  const items = await transferItems(id);
-  const vehicleIds = [transfer.from_vehicle_id, transfer.to_vehicle_id].filter(Boolean);
-  const { data: vehicles } = await supabase.from('vehicles').select('id, plate_number, driver_name, latitude, longitude, status').in('id', vehicleIds);
-  const byId = new Map((vehicles ?? []).map((v: any) => [v.id, v]));
-  let depot = null;
-  if (transfer.to_depot_id) depot = (await supabase.from('depots').select('id, name, address, latitude, longitude').eq('id', transfer.to_depot_id).maybeSingle()).data ?? null;
-  let exception = null;
-  if (transfer.exception_id) exception = (await supabase.from('cargo_exceptions').select('id, code, type, status').eq('id', transfer.exception_id).maybeSingle()).data ?? null;
-  const itemViews = [];
-  for (const i of items) {
-    let code: string | null = null;
-    let status: string | null = null;
-    try {
-      const c = await resolveRef(i.shipment_id ? { shipment_id: i.shipment_id } : { manifest_id: i.manifest_id });
-      code = c.code;
-      status = c.rawStatus;
-    } catch {
-      // the consignment was removed; the transfer row stays for the record
-    }
-    itemViews.push({ id: i.id, ref: i.shipment_id ? { shipment_id: i.shipment_id } : { manifest_id: i.manifest_id }, code, status, pieces_planned: i.pieces_planned, pieces_out: i.pieces_out, pieces_in: i.pieces_in, condition_in: i.condition_in });
-  }
-  return {
+/**
+ * Transfers as GET /cargo/transfers/:id shows them: vehicles, hub, case and items with their codes.
+ * Whatever the transfers point at is read in one query per kind for all of them, never per transfer.
+ */
+async function transferViews(transfers: any[]): Promise<any[]> {
+  if (transfers.length === 0) return [];
+  const ids = transfers.map(t => t.id as string);
+  const vehicleIds = transfers.flatMap(t => [t.from_vehicle_id, t.to_vehicle_id]).filter(Boolean);
+  const depotIds = transfers.map(t => t.to_depot_id).filter(Boolean);
+  const exceptionIds = transfers.map(t => t.exception_id).filter(Boolean);
+
+  const [items, vehicles, depots, exceptions] = await Promise.all([
+    selectIn<any>('cargo_transfer_items', 'transfer_id', ids, '*'),
+    selectIn<any>('vehicles', 'id', vehicleIds, 'id, plate_number, driver_name, latitude, longitude, status'),
+    selectIn<any>('depots', 'id', depotIds, 'id, name, address, latitude, longitude'),
+    selectIn<any>('cargo_exceptions', 'id', exceptionIds, 'id, code, type, status'),
+  ]);
+  const [ships, loads] = await Promise.all([
+    selectIn<any>('shipments', 'id', items.map(i => i.shipment_id), SHIPMENT_CUSTODY_COLUMNS),
+    selectIn<any>('cargo_manifest', 'id', items.map(i => i.manifest_id), MANIFEST_CUSTODY_COLUMNS),
+  ]);
+  const consignments = new Map<string, Consignment>();
+  for (const r of ships) consignments.set(r.id, toConsignment('shipment', r));
+  for (const r of loads) consignments.set(r.id, toConsignment('manifest', r));
+
+  const vehicleById = new Map(vehicles.map((v: any) => [v.id, v]));
+  const depotById = new Map(depots.map((d: any) => [d.id, d]));
+  const exceptionById = new Map(exceptions.map((e: any) => [e.id, e]));
+  const itemsBy = new Map<string, any[]>();
+  for (const i of items) itemsBy.set(i.transfer_id, [...(itemsBy.get(i.transfer_id) ?? []), i]);
+
+  return transfers.map(transfer => ({
     ...transfer,
-    from_vehicle: byId.get(transfer.from_vehicle_id) ?? null,
-    to_vehicle: transfer.to_vehicle_id ? byId.get(transfer.to_vehicle_id) ?? null : null,
-    to_depot: depot,
-    exception,
-    items: itemViews,
-  };
+    from_vehicle: vehicleById.get(transfer.from_vehicle_id) ?? null,
+    to_vehicle: transfer.to_vehicle_id ? vehicleById.get(transfer.to_vehicle_id) ?? null : null,
+    to_depot: transfer.to_depot_id ? depotById.get(transfer.to_depot_id) ?? null : null,
+    exception: transfer.exception_id ? exceptionById.get(transfer.exception_id) ?? null : null,
+    // A consignment that was removed has no code or status; the transfer row stays for the record
+    items: (itemsBy.get(transfer.id) ?? []).map((i: any) => {
+      const c = consignments.get(i.shipment_id ?? i.manifest_id);
+      return { id: i.id, ref: i.shipment_id ? { shipment_id: i.shipment_id } : { manifest_id: i.manifest_id }, code: c?.code ?? null, status: c?.rawStatus ?? null, pieces_planned: i.pieces_planned, pieces_out: i.pieces_out, pieces_in: i.pieces_in, condition_in: i.condition_in };
+    }),
+  }));
+}
+
+export async function getTransfer(id: string): Promise<any> {
+  return (await transferViews([await loadTransfer(id)]))[0];
 }
 
 export async function listTransfers(filters: { status?: string }, user: TokenData): Promise<any[]> {
@@ -481,9 +498,7 @@ export async function listTransfers(filters: { status?: string }, user: TokenDat
     const mine = await getDriverVehicleIds(user.user_id);
     rows = rows.filter((t: any) => mine.includes(t.from_vehicle_id) || (t.to_vehicle_id && mine.includes(t.to_vehicle_id)));
   }
-  const out = [];
-  for (const t of rows) out.push(await getTransfer(t.id));
-  return out;
+  return transferViews(rows);
 }
 
 /** Staff see any transfer; a driver those of their own vehicle. */

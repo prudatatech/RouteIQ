@@ -11,20 +11,20 @@ const router = Router();
 // ── GET /open-loads ──
 router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
-    // Fetch shipments that have no active driver (status = 'created')
-    const { data: shipments, error } = await supabase
-      .from('shipments')
-      .select('*, delivery_points!delivery_points_shipment_id_fkey(*)')
-      .eq('status', 'created')
-      .order('created_at', { ascending: false })
-      .limit(10);
+    // Loads that have no active driver (status = 'created'), and the real market rate (₹/kg) derived from
+    // recent assigned vendor shipments (a documented default inside vendorService when there is no recent
+    // data, see getMarketRates). Independent, so read together.
+    const [{ data: shipments, error }, { avg_cost_per_kg: ratePerKg }] = await Promise.all([
+      supabase
+        .from('shipments')
+        .select('id, tracking_id, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, priority, delivery_points!delivery_points_shipment_id_fkey(name, address, latitude, longitude, demand_kg)')
+        .eq('status', 'created')
+        .order('created_at', { ascending: false })
+        .limit(10),
+      vendorService.getMarketRates(),
+    ]);
 
     if (error) throw error;
-
-    // Real market rate (₹/kg), derived from recent assigned vendor shipments
-    // (falls back to a documented default inside vendorService when there's
-    // no recent data — see getMarketRates).
-    const { avg_cost_per_kg: ratePerKg } = await vendorService.getMarketRates();
 
     // Only surface loads that have real pickup/drop-off coordinates — no
     // invented default location.

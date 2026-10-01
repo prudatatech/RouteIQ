@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
 import { listVendorLoads, vendorLoadDetail } from '../services/vendor-loads.service';
-import { getCompanyProfile } from '../services/company.service';
+import { getCachedPaymentTermsDays } from '../services/company.service';
 import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
@@ -95,7 +95,7 @@ router.get('/invoices', requireAuth, requireRole('vendor'), async (req: any, res
       .neq('status', 'void')
       .order('issued_at', { ascending: false });
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
-    const terms = (await getCompanyProfile()).payment_terms_days;
+    const terms = await getCachedPaymentTermsDays();
     const now = new Date();
     const rows = (data ?? []).map((r: any) => {
       const due = effectiveDueDate(r, terms);

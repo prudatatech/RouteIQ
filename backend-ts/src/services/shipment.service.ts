@@ -994,33 +994,38 @@ export class ShipmentService {
   }
 
   /** The columns of a shipment row as the list and the shipment page read it. */
+  /** The columns of a vendor load as the list and the shipment page read it (see mapManifestRows). */
+  private static readonly LIST_MANIFEST_SELECT = 'id, parent_manifest_id, lot_label, is_master, pieces_total, current_holder, current_vehicle_id, vendor_request_id, status, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, capacity_kg, vehicle_id, created_at, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))';
+
   private static readonly LIST_SHIPMENT_SELECT = '*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(status, routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))';
 
   /**
    * List shipments with relations.
    */
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
-    const { data, error } = await supabase
-      .from('shipments')
-      .select(ShipmentService.LIST_SHIPMENT_SELECT)
-      .order('created_at', { ascending: false })
-      .range(skip, skip + limit - 1);
+    // Shipments and vendor loads (cargo manifests, shown in the same unified list) are read together
+    const [{ data, error }, { data: manifests, error: manifestError }] = await Promise.all([
+      supabase
+        .from('shipments')
+        .select(ShipmentService.LIST_SHIPMENT_SELECT)
+        .order('created_at', { ascending: false })
+        .range(skip, skip + limit - 1),
+      supabase
+        .from('cargo_manifest')
+        .select(ShipmentService.LIST_MANIFEST_SELECT)
+        .order('created_at', { ascending: false })
+        .limit(limit),
+    ]);
 
     // Surface query errors: an empty list here hides a broken query (e.g. an ambiguous embed) as "no shipments"
     if (error) throw error;
     if (!data) return [];
-
-    const mappedShipments = await ShipmentService.mapShipmentRows(data);
-
-    // Fetch Cargo Manifests to show them in the unified list
-    const { data: manifests, error: manifestError } = await supabase
-      .from('cargo_manifest')
-      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
-      .order('created_at', { ascending: false })
-      .limit(limit);
     if (manifestError) throw manifestError;
 
-    const mappedManifests = await ShipmentService.mapManifestRows(manifests || []);
+    const [mappedShipments, mappedManifests] = await Promise.all([
+      ShipmentService.mapShipmentRows(data),
+      ShipmentService.mapManifestRows(manifests || []),
+    ]);
 
     // Combine and re-sort by created_at descending
     const combined = [...mappedShipments, ...mappedManifests].sort((a, b) =>
@@ -1049,7 +1054,7 @@ export class ShipmentService {
     }
     const { data, error } = await supabase
       .from('cargo_manifest')
-      .select('*, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))')
+      .select(ShipmentService.LIST_MANIFEST_SELECT)
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
@@ -1061,15 +1066,21 @@ export class ShipmentService {
     // A shipment opened for vendor bidding has a capacity window pointing back at it
     // (see createShipment -> openBackhaulWindow). shipments has no bidding columns.
     const biddingByShipment = new Map<string, any>();
-    if (data.length > 0) {
-      const { data: windows } = await supabase
-        .from('capacity_windows')
-        .select('fallback_shipment_id, floor_price, opens_at, closes_at, winning_bid_id')
-        .eq('trigger_type', 'superadmin_dispatch')
-        .in('fallback_shipment_id', data.map((d: any) => d.id));
-      for (const w of windows || []) {
-        if (w.fallback_shipment_id) biddingByShipment.set(w.fallback_shipment_id, w);
-      }
+    const { lotsSummaries } = await import('./cargo/lots.service');
+    const { addLotCarriers } = await import('./lot-carriers');
+    // The bidding windows and the lots of the masters are independent reads
+    const [windowsRes, shipmentLots] = await Promise.all([
+      data.length > 0
+        ? supabase
+          .from('capacity_windows')
+          .select('fallback_shipment_id, floor_price, opens_at, closes_at, winning_bid_id')
+          .eq('trigger_type', 'superadmin_dispatch')
+          .in('fallback_shipment_id', data.map((d: any) => d.id))
+        : Promise.resolve({ data: [] as any[] }),
+      lotsSummaries('shipment', data.filter((d: any) => d.is_master).map((d: any) => d.id)),
+    ]);
+    for (const w of windowsRes.data || []) {
+      if (w.fallback_shipment_id) biddingByShipment.set(w.fallback_shipment_id, w);
     }
 
     const mappedShipments = data.map((d: any) => {
@@ -1109,9 +1120,6 @@ export class ShipmentService {
     });
 
     // Masters show how their lots stand; lots name their master (docs/cargo-plan.md, Lots)
-    const { lotsSummaries } = await import('./cargo/lots.service');
-    const shipmentLots = await lotsSummaries('shipment', data.filter((d: any) => d.is_master).map((d: any) => d.id));
-    const { addLotCarriers } = await import('./lot-carriers');
     await addLotCarriers('shipment', [...shipmentLots.values()]);
     const trackingById = new Map(data.map((d: any) => [d.id, d.tracking_id]));
     for (const row of mappedShipments as any[]) {

@@ -6,6 +6,7 @@
  * payment terms (15 days): an invoice shows exactly what staff entered, and says what is missing.
  */
 import { supabase } from '../core/supabase';
+import { memoize } from '../core/memo';
 import { HttpError } from '../core/errors';
 import { checkGstin, normalizeGstin } from '../utils/gstin';
 import { stateCodeByName, stateOf } from '../core/gst';
@@ -47,7 +48,9 @@ const EMPTY: CompanyProfile = {
 
 const MAX_TEXT = 300;
 
-export async function getCompanyProfile(): Promise<CompanyProfile> {
+const SETTINGS_CACHE_MS = 30_000;
+
+const loadCompanyProfile = memoize(SETTINGS_CACHE_MS, async (): Promise<CompanyProfile> => {
   const { data, error } = await supabase.from('system_settings').select('value').eq('key', COMPANY_PROFILE_KEY).maybeSingle();
   if (error) throw new Error(`Failed to read company profile: ${error.message}`);
   const raw = ((data?.value as { value?: Record<string, unknown> } | null)?.value ?? {}) as Record<string, unknown>;
@@ -59,12 +62,29 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
   const days = Number(raw.payment_terms_days);
   if (raw.payment_terms_days != null && Number.isInteger(days) && days >= 0 && days <= 365) out.payment_terms_days = days;
   return out;
+});
+
+/**
+ * The profile as it is now. Anything that decides or snapshots something with it (invoice issuing,
+ * the invoice page, Settings) reads it this way; the read also refreshes the cache below.
+ */
+export async function getCompanyProfile(): Promise<CompanyProfile> {
+  loadCompanyProfile.clear();
+  return { ...(await loadCompanyProfile()) };
+}
+
+/**
+ * Payment terms for lists that show due dates: the same for every user and rarely changed, so read
+ * at most every 30 s (saving the profile clears it).
+ */
+export async function getCachedPaymentTermsDays(): Promise<number> {
+  return (await loadCompanyProfile()).payment_terms_days;
 }
 
 /** The payment terms new invoices are issued with. Never fails an invoice: falls back to the default. */
 export async function paymentTermsDays(): Promise<number> {
   try {
-    return (await getCompanyProfile()).payment_terms_days;
+    return await getCachedPaymentTermsDays();
   } catch (e) {
     console.error('[invoice] could not read payment terms, using the default:', e);
     return DEFAULT_PAYMENT_TERMS_DAYS;
@@ -111,6 +131,7 @@ export async function saveCompanyProfile(input: Record<string, unknown>): Promis
   const { error } = await supabase
     .from('system_settings')
     .upsert({ key: COMPANY_PROFILE_KEY, value: { value: next }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  loadCompanyProfile.clear();
   if (error) throw new Error(`Failed to save company profile: ${error.message}`);
   return next;
 }
