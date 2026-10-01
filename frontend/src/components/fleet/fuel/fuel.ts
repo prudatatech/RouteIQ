@@ -2,7 +2,7 @@ import { api } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import type { Tone } from '@/components/ui'
 
-export type FuelFlag = 'no_bill' | 'low_mileage' | 'over_tank_capacity' | 'odometer_backwards' | 'duplicate' | 'far_from_gps'
+export type FuelFlag = 'no_bill' | 'low_mileage' | 'over_tank_capacity' | 'odometer_backwards' | 'odometer_jump' | 'duplicate' | 'far_from_gps'
 export type PaymentMode = 'cash' | 'card' | 'upi' | 'fuel_card' | 'credit' | 'other'
 
 export interface FuelLog {
@@ -108,6 +108,7 @@ export const FLAG_LABELS: Record<FuelFlag, string> = {
   low_mileage: 'Low mileage',
   over_tank_capacity: 'Over tank size',
   odometer_backwards: 'Odometer went back',
+  odometer_jump: 'Odometer jumped too far since the earlier fill',
   duplicate: 'Possible duplicate',
   far_from_gps: 'Far from vehicle',
 }
@@ -117,6 +118,7 @@ export const FLAG_HINTS: Record<FuelFlag, string> = {
   low_mileage: 'Mileage over this stretch was more than 25% below this vehicle\'s recent average.',
   over_tank_capacity: 'More litres than the vehicle\'s tank holds.',
   odometer_backwards: 'The odometer reading is lower than an earlier fill. It is left out of mileage.',
+  odometer_jump: 'The odometer reading is much higher than the earlier fill. It is left out of mileage; check for a typing mistake.',
   duplicate: 'Another fill of the same size was logged within 30 minutes. It is left out of mileage.',
   far_from_gps: 'The fill location was more than 5 km from where the vehicle was at that time.',
 }
