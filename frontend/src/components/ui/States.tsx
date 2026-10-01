@@ -91,14 +91,22 @@ export function Stat({ label, value, hint, icon, tone, loading, className }: {
 }) {
   const valueTone = { default: 'text-text', success: 'text-success', warning: 'text-warning', danger: 'text-danger' }[tone ?? 'default']
   return (
-    <div className={clsx('rounded-card border border-border bg-surface p-4 sm:p-5', className)}>
+    <div className={clsx('min-w-0 rounded-card border border-border bg-surface p-4 sm:p-5', className)}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted">{label}</p>
         {icon && <span className="text-muted" aria-hidden="true">{icon}</span>}
       </div>
       {loading
         ? <Skeleton className="mt-2 h-8 w-20" />
-        : <p className={clsx('mt-1 text-2xl font-semibold tabular', valueTone)}>{value}</p>}
+        : (
+          // A long text value (a plate, a name) is smaller on a phone and cut with an ellipsis rather than pushing the page wider
+          <p
+            title={typeof value === 'string' ? value : undefined}
+            className={clsx('mt-1 truncate font-semibold tabular', typeof value === 'string' && value.length > 8 ? 'text-lg sm:text-2xl' : 'text-2xl', valueTone)}
+          >
+            {value}
+          </p>
+        )}
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </div>
   )
