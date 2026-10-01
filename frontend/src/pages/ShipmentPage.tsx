@@ -19,7 +19,7 @@ import { priorityTone, shipmentStatusLabel } from '@/components/shipments/format
 import { shipmentFlags } from '@/components/shipments/rules'
 import type { ShipmentOverview, ShipmentRow } from '@/components/shipments/types'
 import { deliveryPointsOf, destinationOf } from '@/components/shipments/format'
-import { errorMessage, formatDateTime, formatKg, formatRupees } from '@/utils/display'
+import { errorMessage, isNotFoundError, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 
 /** A shipment's own page: what is next for it, everything it links to, and the sections of the drawer. */
 export default function ShipmentPage() {
@@ -35,6 +35,7 @@ export default function ShipmentPage() {
     queryFn: () => shipmentsAPI.overview(id),
     enabled: !!id,
     refetchInterval: 30_000,
+    retry: (count, err) => !isNotFoundError(err) && count < 2,
   })
 
   // Keep the page current when the shipment, its trip or its cargo change anywhere
@@ -71,7 +72,7 @@ export default function ShipmentPage() {
 
   if (isLoading) return <Page><LoadingState label="Loading shipment…" /></Page>
   if (isError || !overview || !shipment || !step) {
-    const notFound = (error as { response?: { status?: number } } | null)?.response?.status === 404
+    const notFound = isNotFoundError(error)
     return (
       <Page>
         <PageHeader back={{ to: '/shipments', label: 'Shipments' }} title="Shipment" />

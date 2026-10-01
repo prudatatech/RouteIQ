@@ -9,7 +9,7 @@ import {
   Alert, Button, buttonClasses, Card, DetailList, EmptyState, ErrorState, Modal, Page, PageHeader, Select, Skeleton, StatusPill, Tabs, TabPanel,
   useConfirm, useTabParam, type TabItem,
 } from '@/components/ui'
-import { errorMessage, formatDateTime } from '@/utils/display'
+import { isNotFoundError, errorMessage, formatDateTime } from '@/utils/display'
 import { PersonAvatar } from '@/components/people/PersonAvatar'
 import { StatusModal } from '@/components/people/StatusModal'
 import { EditProfileModal } from '@/components/people/EditProfileModal'
@@ -25,7 +25,6 @@ import { STATUS_TONES, STAFF_ROLES, personName, roleLabel, statusLabel, type Per
 const TAB_IDS = ['overview', 'documents', 'bank', 'contacts', 'activity', 'notes', 'performance'] as const
 type TabId = typeof TAB_IDS[number]
 
-const isNotFound = (err: unknown) => (err as { response?: { status?: number } })?.response?.status === 404
 
 export default function PersonPage() {
   const { id = '' } = useParams()
@@ -33,7 +32,7 @@ export default function PersonPage() {
     queryKey: ['people', 'detail', id],
     queryFn: () => peopleAPI.get(id),
     enabled: !!id,
-    retry: (count, err) => !isNotFound(err) && count < 2,
+    retry: (count, err) => !isNotFoundError(err) && count < 2,
   })
 
   if (detail.isLoading) {
@@ -49,7 +48,7 @@ export default function PersonPage() {
     return (
       <Page>
         <PageHeader title="Person" back={{ to: '/admin/users', label: 'People' }} />
-        {isNotFound(detail.error) ? (
+        {isNotFoundError(detail.error) ? (
           <EmptyState
             title="No person profile here"
             description="This account may be a vendor or 3PL partner, whose details are reviewed under KYC review, or it no longer exists."

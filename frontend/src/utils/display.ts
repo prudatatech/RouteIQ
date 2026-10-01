@@ -131,6 +131,12 @@ export function formatRelative(value: DateInput, now: number = Date.now()): stri
   return d ? formatDistanceStrict(d, now, { addSuffix: true }) : EMPTY
 }
 
+/** The server says no record has that address: 404, or 400 for an id that is not even well formed. */
+export function isNotFoundError(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status
+  return status === 404 || status === 400
+}
+
 /** Best readable message from an API (axios) or Supabase error. */
 export function errorMessage(err: unknown, fallback: string): string {
   if (err && typeof err === 'object') {

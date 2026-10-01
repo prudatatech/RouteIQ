@@ -10,7 +10,7 @@ import {
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { usersAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import { errorMessage, formatDateTime, formatKg, formatPieces, formatRelative, formatRupees } from '@/utils/display'
+import { isNotFoundError, errorMessage, formatDateTime, formatKg, formatPieces, formatRelative, formatRupees } from '@/utils/display'
 import {
   cargoKeys, exceptionsAPI, type ClaimSummary, type ExceptionDetail, type ExceptionItem, type ExceptionStatus,
 } from '@/services/cargo'
@@ -24,7 +24,6 @@ import {
   slaState, sourceLabel, statusMoves, type ActionValues, type PanelAction,
 } from '@/components/cargo/logic'
 
-const isNotFound = (err: unknown) => (err as { response?: { status?: number } })?.response?.status === 404
 const MOVE_LABEL: Partial<Record<ExceptionStatus, string>> = {
   investigating: 'Start investigating',
   action_planned: 'Mark action planned',
@@ -38,7 +37,7 @@ export default function ExceptionCasePage() {
     queryFn: () => exceptionsAPI.get(id),
     enabled: !!id,
     refetchInterval: 30_000,
-    retry: (count, err) => !isNotFound(err) && count < 2,
+    retry: (count, err) => !isNotFoundError(err) && count < 2,
   })
 
   if (query.isLoading) {
@@ -54,7 +53,7 @@ export default function ExceptionCasePage() {
     return (
       <Page>
         <PageHeader title="Case" back={{ to: '/cargo', label: 'Problems' }} />
-        {isNotFound(query.error) || !query.isError ? (
+        {isNotFoundError(query.error) || !query.isError ? (
           <EmptyState
             icon={<ShieldQuestion size={22} />}
             title="We could not find this case"
