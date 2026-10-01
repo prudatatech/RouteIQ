@@ -1,0 +1,309 @@
+// The app's data platform for one stage, on Azure Container Apps next to the backend:
+//   <p>-gateway  public  https://<p>-gateway.<env domain>: /auth/v1 /rest/v1 /realtime/v1 /storage/v1
+//   <p>-auth     sign-in (GoTrue)          <p>-rest      REST API over Postgres (PostgREST)
+//   <p>-rt       live updates (Realtime)   <p>-storage   files (Storage API, on an Azure Files share)
+// These are the same open-source services the app was built against, so supabase-js and the backend
+// work unchanged with the gateway URL and this stage's keys. Data lives in the stage's Azure PostgreSQL
+// server (infra/database.bicep). Deployed by infra/platform.sh; secrets come from infra/platform.<stage>.env.
+param location string = 'centralindia'
+
+@description('Container Apps environment name (shared by both stages)')
+param envName string = 'margix-env'
+
+@allowed(['live', 'test'])
+param stage string = 'live'
+
+param prefix string = 'margix'
+
+@description('Postgres host, e.g. margix-test-pg.postgres.database.azure.com')
+param pgHost string
+
+@description('The stage web app URL (sign-in redirects, CORS)')
+param siteUrl string
+
+@secure()
+param jwtSecret string
+@secure()
+param anonKey string
+@secure()
+param serviceRoleKey string
+@secure()
+param authenticatorPassword string
+@secure()
+param authAdminPassword string
+@secure()
+param storageAdminPassword string
+@secure()
+param realtimeAdminPassword string
+@secure()
+param realtimeSecretKeyBase string
+
+@description('Optional SMTP for password reset emails (e.g. smtp.resend.com); empty disables mail')
+param smtpHost string = ''
+param smtpUser string = ''
+@secure()
+param smtpPass string = ''
+param smtpSender string = ''
+
+var p = stage == 'live' ? prefix : '${prefix}-test'
+var minReplicas = stage == 'live' ? 1 : 0
+var storageAccountName = take(toLower(replace('${p}files${uniqueString(resourceGroup().id, p)}', '-', '')), 24)
+
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
+  name: envName
+}
+
+// ── Files: an Azure Files share mounted into the storage service ─────────────
+resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageAccountName
+  location: location
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
+  name: '${sa.name}/default/storage'
+  properties: { shareQuota: 100 }
+}
+
+resource envStorage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
+  parent: env
+  name: '${p}-files'
+  properties: {
+    azureFile: {
+      accountName: sa.name
+      accountKey: sa.listKeys().keys[0].value
+      shareName: 'storage'
+      accessMode: 'ReadWrite'
+    }
+  }
+  dependsOn: [share]
+}
+
+var dbBase = 'postgres://{0}:{1}@${pgHost}:5432/postgres?sslmode=require'
+
+// ── Sign-in ──────────────────────────────────────────────────────────────
+resource auth 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-auth'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: false, targetPort: 9999, transport: 'http' }
+      secrets: [
+        { name: 'db-url', value: format(dbBase, 'supabase_auth_admin', uriComponent(authAdminPassword)) }
+        { name: 'jwt-secret', value: jwtSecret }
+        { name: 'smtp-pass', value: empty(smtpPass) ? 'unset' : smtpPass }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 'auth'
+        image: 'supabase/gotrue:v2.177.0'
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        env: [
+          { name: 'GOTRUE_API_HOST', value: '0.0.0.0' }
+          { name: 'GOTRUE_API_PORT', value: '9999' }
+          { name: 'API_EXTERNAL_URL', value: 'https://${p}-gateway.${env.properties.defaultDomain}/auth/v1' }
+          { name: 'GOTRUE_DB_DRIVER', value: 'postgres' }
+          { name: 'GOTRUE_DB_DATABASE_URL', secretRef: 'db-url' }
+          { name: 'GOTRUE_SITE_URL', value: siteUrl }
+          { name: 'GOTRUE_URI_ALLOW_LIST', value: '${siteUrl}/**' }
+          { name: 'GOTRUE_DISABLE_SIGNUP', value: 'false' }
+          { name: 'GOTRUE_JWT_ADMIN_ROLES', value: 'service_role' }
+          { name: 'GOTRUE_JWT_AUD', value: 'authenticated' }
+          { name: 'GOTRUE_JWT_DEFAULT_GROUP_NAME', value: 'authenticated' }
+          { name: 'GOTRUE_JWT_EXP', value: '3600' }
+          { name: 'GOTRUE_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'GOTRUE_EXTERNAL_EMAIL_ENABLED', value: 'true' }
+          { name: 'GOTRUE_EXTERNAL_PHONE_ENABLED', value: 'false' }
+          { name: 'GOTRUE_MAILER_AUTOCONFIRM', value: empty(smtpHost) ? 'true' : 'false' }
+          { name: 'GOTRUE_SMTP_HOST', value: smtpHost }
+          { name: 'GOTRUE_SMTP_PORT', value: '587' }
+          { name: 'GOTRUE_SMTP_USER', value: smtpUser }
+          { name: 'GOTRUE_SMTP_PASS', secretRef: 'smtp-pass' }
+          { name: 'GOTRUE_SMTP_ADMIN_EMAIL', value: smtpSender }
+          { name: 'GOTRUE_SMTP_SENDER_NAME', value: 'MargixIndia' }
+          { name: 'GOTRUE_MAILER_URLPATHS_RECOVERY', value: '/auth/v1/verify' }
+          { name: 'GOTRUE_MAILER_URLPATHS_CONFIRMATION', value: '/auth/v1/verify' }
+        ]
+      }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+}
+
+// ── REST API ──────────────────────────────────────────────────────────────
+resource rest 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-rest'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: false, targetPort: 3000, transport: 'http' }
+      secrets: [
+        { name: 'db-uri', value: format(dbBase, 'authenticator', uriComponent(authenticatorPassword)) }
+        { name: 'jwt-secret', value: jwtSecret }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 'rest'
+        image: 'postgrest/postgrest:v12.2.12'
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        env: [
+          { name: 'PGRST_DB_URI', secretRef: 'db-uri' }
+          { name: 'PGRST_DB_SCHEMAS', value: 'public' }
+          { name: 'PGRST_DB_ANON_ROLE', value: 'anon' }
+          { name: 'PGRST_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'PGRST_DB_USE_LEGACY_GUCS', value: 'false' }
+          { name: 'PGRST_APP_SETTINGS_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'PGRST_APP_SETTINGS_JWT_EXP', value: '3600' }
+          { name: 'PGRST_DB_POOL', value: '10' }
+        ]
+      }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+}
+
+// ── Live updates ─────────────────────────────────────────────────────────
+// Realtime picks its tenant from the first label of the Host header; the gateway calls it by its app
+// name, so the self-hosted tenant is named after the app.
+resource rt 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-rt'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: false, targetPort: 4000, transport: 'http' }
+      secrets: [
+        { name: 'db-password', value: realtimeAdminPassword }
+        { name: 'jwt-secret', value: jwtSecret }
+        { name: 'secret-key-base', value: realtimeSecretKeyBase }
+        { name: 'db-enc-key', value: take(realtimeSecretKeyBase, 16) }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 'rt'
+        image: 'supabase/realtime:v2.59.1'
+        resources: { cpu: json('0.5'), memory: '1Gi' }
+        env: [
+          { name: 'PORT', value: '4000' }
+          { name: 'DB_HOST', value: pgHost }
+          { name: 'DB_PORT', value: '5432' }
+          { name: 'DB_USER', value: 'supabase_realtime_admin' }
+          { name: 'DB_PASSWORD', secretRef: 'db-password' }
+          { name: 'DB_NAME', value: 'postgres' }
+          { name: 'DB_SSL', value: 'true' }
+          { name: 'DB_AFTER_CONNECT_QUERY', value: 'SET search_path TO _realtime' }
+          { name: 'DB_ENC_KEY', secretRef: 'db-enc-key' }
+          { name: 'API_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'SECRET_KEY_BASE', secretRef: 'secret-key-base' }
+          { name: 'ERL_AFLAGS', value: '-proto_dist inet_tcp' }
+          { name: 'DNS_NODES', value: '\'\'' }
+          { name: 'RLIMIT_NOFILE', value: '10000' }
+          { name: 'APP_NAME', value: 'realtime' }
+          { name: 'SEED_SELF_HOST', value: 'true' }
+          { name: 'SELF_HOST_TENANT_NAME', value: '${p}-rt' }
+          { name: 'RUN_JANITOR', value: 'true' }
+        ]
+      }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+}
+
+// ── Files ──────────────────────────────────────────────────────────────
+resource storage 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-storage'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: false, targetPort: 5000, transport: 'http' }
+      secrets: [
+        { name: 'db-url', value: format(dbBase, 'supabase_storage_admin', uriComponent(storageAdminPassword)) }
+        { name: 'jwt-secret', value: jwtSecret }
+        { name: 'anon-key', value: anonKey }
+        { name: 'service-key', value: serviceRoleKey }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 'storage'
+        image: 'supabase/storage-api:v1.25.7'
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        env: [
+          { name: 'ANON_KEY', secretRef: 'anon-key' }
+          { name: 'SERVICE_KEY', secretRef: 'service-key' }
+          { name: 'POSTGREST_URL', value: 'http://${p}-rest' }
+          { name: 'PGRST_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'AUTH_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'DATABASE_URL', secretRef: 'db-url' }
+          { name: 'FILE_SIZE_LIMIT', value: '52428800' }
+          { name: 'STORAGE_BACKEND', value: 'file' }
+          { name: 'FILE_STORAGE_BACKEND_PATH', value: '/var/lib/storage' }
+          { name: 'TENANT_ID', value: 'stub' }
+          { name: 'REGION', value: 'local' }
+          { name: 'GLOBAL_S3_BUCKET', value: 'stub' }
+          { name: 'ENABLE_IMAGE_TRANSFORMATION', value: 'false' }
+          { name: 'DB_INSTALL_ROLES', value: 'false' }
+        ]
+        volumeMounts: [{ volumeName: 'files', mountPath: '/var/lib/storage' }]
+      }]
+      volumes: [{ name: 'files', storageType: 'AzureFile', storageName: envStorage.name }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+}
+
+// ── Gateway: one public address, the paths supabase-js expects ──────────────
+var kongConfig = {
+  _format_version: '2.1'
+  _transform: true
+  services: [
+    { name: 'auth', url: 'http://${p}-auth', routes: [{ name: 'auth', strip_path: true, paths: ['/auth/v1/'] }], plugins: [{ name: 'cors' }] }
+    { name: 'rest', url: 'http://${p}-rest/', routes: [{ name: 'rest', strip_path: true, paths: ['/rest/v1/'] }], plugins: [{ name: 'cors' }] }
+    { name: 'realtime', url: 'http://${p}-rt/socket', routes: [{ name: 'realtime', strip_path: true, paths: ['/realtime/v1/'] }], plugins: [{ name: 'cors' }] }
+    { name: 'realtime-api', url: 'http://${p}-rt/api', routes: [{ name: 'realtime-api', strip_path: true, paths: ['/realtime/v1/api'] }], plugins: [{ name: 'cors' }] }
+    { name: 'storage', url: 'http://${p}-storage/', routes: [{ name: 'storage', strip_path: true, paths: ['/storage/v1/'] }], plugins: [{ name: 'cors' }] }
+  ]
+}
+
+resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-gateway'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: true, targetPort: 8000, transport: 'auto', allowInsecure: false }
+    }
+    template: {
+      containers: [{
+        name: 'gateway'
+        image: 'kong:2.8.1'
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        env: [
+          { name: 'KONG_DATABASE', value: 'off' }
+          { name: 'KONG_DECLARATIVE_CONFIG_STRING', value: string(kongConfig) }
+          { name: 'KONG_DNS_ORDER', value: 'LAST,A,CNAME' }
+          { name: 'KONG_PLUGINS', value: 'request-transformer,cors' }
+          { name: 'KONG_PROXY_LISTEN', value: '0.0.0.0:8000' }
+          { name: 'KONG_NGINX_PROXY_PROXY_BUFFER_SIZE', value: '160k' }
+          { name: 'KONG_NGINX_PROXY_PROXY_BUFFERS', value: '64 160k' }
+        ]
+      }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+  dependsOn: [auth, rest, rt, storage]
+}
+
+output gatewayUrl string = 'https://${gateway.properties.configuration.ingress.fqdn}'
