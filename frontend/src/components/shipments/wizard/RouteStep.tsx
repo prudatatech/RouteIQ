@@ -161,6 +161,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
           <MapView
             mode={multi ? (origin && placedDrops.length > 0 ? 'route' : 'picker') : origin && destination ? 'route' : 'picker'}
             height={260}
+            keyboardStops={false}
             onPick={multi ? (origin ? undefined : onPick) : origin && destination ? undefined : onPick}
             onPointMove={onPointMove}
             points={multi

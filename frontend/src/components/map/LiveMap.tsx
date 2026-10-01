@@ -61,7 +61,9 @@ interface OpenLoad {
   id: string
   origin_lat?: number | null
   origin_lng?: number | null
+  tracking_id?: string | null
   origin_name?: string | null
+  destination_name?: string | null
   weight_kg?: number | null
 }
 
@@ -77,6 +79,8 @@ export interface LiveMapProps {
   mode?: MapMode
   /** Hide the place search, route summary, open loads and legend (for small embedded maps). */
   compact?: boolean
+  /** false takes markers and map buttons out of the keyboard order (a list beside the map is the route). */
+  keyboardStops?: boolean
   className?: string
 }
 
@@ -115,6 +119,7 @@ export default function LiveMap({
   customPendingStops,
   mode = 'fleet',
   compact = false,
+  keyboardStops = true,
   className,
 }: LiveMapProps) {
   const mapRef = useRef<MapViewHandle>(null)
@@ -228,7 +233,8 @@ export default function LiveMap({
           id: `load-${l.id}`,
           kind: 'load' as const,
           position: { lat: Number(l.origin_lat), lng: Number(l.origin_lng) },
-          label: `Open load${l.origin_name ? ` from ${l.origin_name}` : ''}${l.weight_kg ? `, ${l.weight_kg} kg` : ''}`,
+          // The tracking ID tells the markers apart for a screen reader
+          label: `${l.tracking_id ? `${l.tracking_id}, open load` : 'Open load'}${l.origin_name ? ` from ${l.origin_name}` : ''}${l.destination_name ? ` to ${l.destination_name}` : ''}${l.weight_kg ? `, ${l.weight_kg.toLocaleString('en-IN')} kg` : ''}`,
         }]
       : []), [openLoads, compact])
 
@@ -309,6 +315,7 @@ export default function LiveMap({
     <MapView
       ref={mapRef}
       mode={mode}
+      keyboardStops={keyboardStops}
       vehicles={mapVehicles}
       route={route}
       points={loadPoints}

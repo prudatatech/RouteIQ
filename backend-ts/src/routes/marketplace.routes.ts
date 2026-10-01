@@ -38,6 +38,7 @@ router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES, 'driver'), as
         const weightKg = s.total_weight_kg || dp?.demand_kg || 100;
         return {
           id: s.id,
+          tracking_id: s.tracking_id ?? null,
           origin_name: s.origin_name || 'Warehouse Alpha',
           origin_address: s.origin_address || 'Industrial Area',
           origin_lat: s.origin_lat,

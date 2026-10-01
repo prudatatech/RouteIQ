@@ -197,7 +197,7 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
       <div className="space-y-4">
         {mapVehicles.length > 0 && (
           <div className="hidden h-44 overflow-hidden rounded-card border border-border md:block">
-            <LiveMap vehicles={mapVehicles} />
+            <LiveMap vehicles={mapVehicles} keyboardStops={false} />
           </div>
         )}
         {subject?.kind === 'vendor' ? (

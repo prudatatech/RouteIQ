@@ -171,7 +171,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
 
         {mapVehicles.length > 0 && (
           <div className="hidden h-64 overflow-hidden rounded-card border border-border sm:block">
-            <LiveMap vehicles={mapVehicles} selectedVehicleId={data.selectedVehicleId || null} onVehicleSelect={id => update({ selectedVehicleId: id })} />
+            <LiveMap keyboardStops={false} vehicles={mapVehicles} selectedVehicleId={data.selectedVehicleId || null} onVehicleSelect={id => update({ selectedVehicleId: id })} />
           </div>
         )}
 
