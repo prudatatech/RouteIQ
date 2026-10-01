@@ -70,6 +70,7 @@ describe('finding the open section', () => {
   it('puts claims under Money and the other cargo tabs under On the road', () => {
     expect(at('/money', '?tab=claims')).toEqual(['Money', 'Claims'])
     expect(at('/money')).toEqual(['Money', 'To price'])
+    expect(at('/money', '?tab=invoices')).toEqual(['Money', 'Invoices'])
     expect(at('/money', '?tab=driver-pay')).toEqual(['Money', 'Driver pay'])
     expect(at('/money/invoices/i1')).toEqual(['Money', 'Invoices'])
     expect(at('/cargo', '?tab=claims')[0]).toBe('Money')
