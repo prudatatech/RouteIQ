@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPartlyDelivered, lotLine, publicHistory, splitDestination } from './publicView'
+import { isPartlyDelivered, lotLine, partDeliveredStep, partDeliveredText, publicHistory, splitDestination } from './publicView'
 
 const at = '2026-10-01T10:00:00Z'
 
@@ -45,5 +45,24 @@ describe('splitDestination', () => {
     expect(splitDestination(null, lots, join)).toBe('Pune')
     expect(splitDestination(undefined, [{ tracking_id: 'X-A', status: 'created' }, { tracking_id: 'X-B', status: 'created' }], join)).toBe('2 delivery addresses')
     expect(splitDestination(null, [], join)).toBeNull()
+  })
+})
+
+describe('part-delivered progress', () => {
+  const lot = (status: string, label: string) => ({ tracking_id: `RTX-1-${label}`, label, status })
+  it('stays on In transit while any lot is still moving, never on Delivered', () => {
+    expect(partDeliveredStep([lot('delivered', 'A'), lot('partially_delivered', 'B'), lot('delivered', 'C')])).toBe(3)
+    expect(partDeliveredStep([lot('delivered', 'A'), lot('in_transit', 'B')])).toBe(3)
+  })
+  it('is held back by a lot that has not been picked up', () => {
+    expect(partDeliveredStep([lot('delivered', 'A'), lot('assigned', 'B')])).toBe(1)
+    expect(partDeliveredStep([lot('delivered', 'A'), lot('dispatched', 'B')])).toBe(0)
+  })
+  it('ignores cancelled lots', () => {
+    expect(partDeliveredStep([lot('cancelled', 'A'), lot('in_transit', 'B')])).toBe(3)
+  })
+  it('says how many lots are delivered', () => {
+    expect(partDeliveredText([lot('delivered', 'A'), lot('in_transit', 'B'), lot('delivered', 'C')])).toBe('Part delivered: 2 of 3 lots')
+    expect(partDeliveredText([])).toBe('Part delivered')
   })
 })

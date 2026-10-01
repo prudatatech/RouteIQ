@@ -9,7 +9,7 @@ import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { fetchTrackedRoute, type DrivingRoute } from '@/components/map/directions'
 import { formatKg, formatMinutes, formatDateTime, formatPieces } from '@/utils/display'
 import { formatAddress } from '@/utils/address'
-import { isPartlyDelivered, lotLine, publicHistory, splitDestination, type PublicDrop, type PublicLot } from './publicView'
+import { isPartlyDelivered, lotIsDone, lotLine, partDeliveredStep, partDeliveredText, publicHistory, splitDestination, type PublicDrop, type PublicLot } from './publicView'
 
 /** Vehicle fields the public tracking endpoint returns — no driver identity or phone. */
 export interface TrackedVehicle {
@@ -93,8 +93,8 @@ const STEPS = [
 
 function stepIndex(status: string | undefined) {
   if (!status) return -1
-  // Part of the booking is delivered: the bar sits on Delivered and a note says how much
-  if (isPartlyDelivered(status)) return STEPS.length - 1
+  // Part of the booking is delivered: Delivered is not reached yet, so the bar stays on In transit (a note says how much)
+  if (isPartlyDelivered(status)) return STEPS.findIndex(s => s.key === 'in_transit')
   const idx = STEPS.findIndex(s => s.key === status)
   if (idx >= 0) return idx
   // A failed delivery happens with the load already on its way, so it sits at "In transit"
@@ -165,9 +165,9 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
   const partly = isPartlyDelivered(shipment.status)
   const lots = shipment.lots ?? []
   const isSplit = lots.length > 0
-  const lotsDone = lots.filter(l => l.status === 'delivered' || l.status === 'completed').length
+  const lotsDone = lots.filter(lotIsDone).length
   const history = publicHistory(shipment.history, shipment.status)
-  const currentStepIdx = cancelled ? -1 : stepIndex(shipment.status)
+  const currentStepIdx = cancelled ? -1 : partly && isSplit ? partDeliveredStep(lots) : stepIndex(shipment.status)
 
   const vehicles: MapVehicle[] = (shipment.vehicle?.lat != null && shipment.vehicle?.lng != null)
     ? [{
@@ -208,7 +208,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
         {partly && (
           <p role="status" className="text-sm text-text">
-            Part of your shipment is delivered. The rest is still on its way.
+            <span className="font-medium">{partDeliveredText(lots)}.</span> The rest is still on its way.
           </p>
         )}
 
@@ -265,13 +265,14 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         </Card>
 
         <div className="space-y-6">
-          <Card padded>
+          {/* Part delivered: only while something is still moving and sharing its position */}
+          {!(partly && etaMinutes == null) && <Card padded>
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-text">Time to arrival</p>
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : partly ? 'Partly delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatMinutes(etaMinutes)) : '—'}
+              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatMinutes(etaMinutes)) : '—'}
             </p>
             {!delivered && !cancelled && !failed && !partly && etaMinutes == null && (
               <p className="mt-1 text-xs text-muted">Shown once a vehicle is on its way and sharing its location.</p>
@@ -279,7 +280,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
             {!delivered && !cancelled && !failed && etaMinutes != null && (
               <p className="mt-1 text-xs text-muted">An estimate from the vehicle's position now. Traffic and stops can change it.</p>
             )}
-          </Card>
+          </Card>}
 
           {isSplit ? (
             <Card padded>
