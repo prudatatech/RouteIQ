@@ -159,7 +159,7 @@ export const orgAPI = {
   update: (data: Partial<OrgProfileInput>) => api.patch('/org', data).then(r => r.data as OrgProfile),
   members: () => api.get('/org/members').then(r => (Array.isArray(r.data) ? r.data : []) as OrgMember[]),
   addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
-  updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'suspended' }) =>
+  updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
     api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
 }
 
