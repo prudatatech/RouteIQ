@@ -6,9 +6,9 @@ import toast from 'react-hot-toast'
 import { Check, MapPinOff, X } from 'lucide-react'
 import { capacityAPI } from '@/services/api'
 import {
-  Alert, Button, DataTable, DetailList, Drawer, SectionHeader, StatusPill, useConfirm, statusToLabel, type Column,
+  Alert, Button, DataTable, DetailList, Drawer, ExportCsvButton, SectionHeader, StatusPill, useConfirm, statusToLabel, type Column,
 } from '@/components/ui'
-import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees, formatTime } from '@/utils/display'
 import {
   laneText, returnTripKeys, timeLeft, useDriverConfirmations, vendorName, windowState,
   type Bid, type Board, type CapacityWindow, type DriverConfirmation, type Trip, type WindowState,
@@ -37,6 +37,16 @@ function fit(bid: Bid, window: CapacityWindow): { fits: boolean | null; text: st
   return Number(bid.weight_kg) > Number(free)
     ? { fits: false, text: `Too heavy: ${formatKg(bid.weight_kg)} for ${formatKg(free)} free` }
     : { fits: true, text: `Fits: ${formatKg(bid.weight_kg)} of ${formatKg(free)} free` }
+}
+
+// The server accepts for the driver 2 minutes after the stop reached their phone, or 15 minutes after it was sent when it never did.
+const AUTO_ACCEPT_SEEN_MS = 2 * 60_000
+const AUTO_ACCEPT_UNSEEN_MS = 15 * 60_000
+
+/** When an unanswered confirmation is accepted for the driver, or null once it has been answered. */
+const autoAcceptAt = (c: DriverConfirmation): number | null => {
+  if (c.action) return null
+  return c.delivered_at ? new Date(c.delivered_at).getTime() + AUTO_ACCEPT_SEEN_MS : new Date(c.prompted_at).getTime() + AUTO_ACCEPT_UNSEEN_MS
 }
 
 const confirmationStatus = (c: DriverConfirmation): { label: string; tone: 'success' | 'warning' | 'danger' | 'info' } => {
@@ -277,11 +287,37 @@ export default function BidsToDecideTab({ board, now, selectedBidId, onSelectBid
       ),
     },
     { key: 'sent', header: 'Sent', hideBelow: 'md', sortValue: c => new Date(c.prompted_at).getTime(), cell: c => <span title={formatDateTime(c.prompted_at)}>{formatRelative(c.prompted_at, now)}</span> },
-    { key: 'status', header: 'Status', sortValue: c => confirmationStatus(c).label, cell: c => { const s = confirmationStatus(c); return <StatusPill tone={s.tone}>{s.label}</StatusPill> } },
+    { key: 'status', header: 'Status', sortValue: c => confirmationStatus(c).label, cell: c => {
+        const s = confirmationStatus(c)
+        const at = autoAcceptAt(c)
+        return (
+          <span className="flex flex-col items-start gap-0.5">
+            <StatusPill tone={s.tone}>{s.label}</StatusPill>
+            {at != null && <span className="text-xs text-muted">{at > now ? `Accepted for the driver at ${formatTime(at)} if no answer` : 'Being accepted for the driver'}</span>}
+          </span>
+        )
+      } },
   ]
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <ExportCsvButton
+          name="bids"
+          rows={[...waiting, ...decided].map(r => ({
+            vendor: vendorName(r.bid),
+            bid: r.bid.bid_amount,
+            status: statusToLabel(r.bid.status, 'bid'),
+            truck: r.window.vehicles?.plate_number ?? '',
+            submitted: formatDateTime(r.bid.submitted_at),
+          }))}
+          columns={[
+            { key: 'vendor', header: 'Vendor' }, { key: 'bid', header: 'Bid (₹)' }, { key: 'status', header: 'Status' },
+            { key: 'truck', header: 'Truck' }, { key: 'submitted', header: 'Submitted' },
+          ]}
+        />
+      </div>
+
       <section className="space-y-3">
         <SectionHeader title="Waiting for a decision" description="Approve one bid per truck. Select a bid to see the load and the fit." />
         <DataTable
@@ -318,7 +354,7 @@ export default function BidsToDecideTab({ board, now, selectedBidId, onSelectBid
       <section className="space-y-3">
         <SectionHeader
           title="Driver confirmations"
-          description="When a bid is approved, the driver is asked to accept the new stops. If they decline, the award is cancelled and the return trip opens again; if they don’t answer within 2 minutes it is accepted automatically."
+          description="When a bid is approved, the driver is asked to accept the new stops. If they decline, the award is cancelled and the return trip opens again; if they do not answer it is accepted for them, 2 minutes after they see it or 15 minutes after it was sent if their phone is offline. The time is shown on each row."
         />
         <DataTable
           caption="Driver confirmations for approved bids"

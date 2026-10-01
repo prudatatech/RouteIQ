@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, Play, CheckCircle2 } from 'lucide-react'
 import { routesAPI, vehiclesAPI } from '@/services/api'
 import {
-  Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Tabs, TabPanel, statusToLabel, useTabParam, parseSort, serializeSort, useUrlState, type Column,
+  Button, Page, PageHeader, DataTable, StatusPill, VehicleCell, SearchInput, Tabs, TabPanel, statusToLabel, useTabParam, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
 import { tripCarries, tripCode, tripFigures, type TripLike } from '@/utils/tripFigures'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
@@ -102,10 +102,7 @@ export default function RoutesPage() {
       cell: r => {
         const vehicle = vehicleById.get(r.vehicle_id ?? '')
         return (
-          <div>
-            <div className="font-medium text-text">{vehicle?.plate_number || (r.vehicle_id ? 'Vehicle not found' : 'Unassigned')}</div>
-            {vehicle?.vehicle_model && <div className="text-xs text-muted">{vehicle.vehicle_model}</div>}
-          </div>
+          <VehicleCell plate={vehicle?.plate_number} detail={vehicle?.vehicle_model} empty={r.vehicle_id ? 'Vehicle not found' : 'Not assigned'} />
         )
       },
       sortValue: r => vehicleById.get(r.vehicle_id ?? '')?.plate_number ?? '',

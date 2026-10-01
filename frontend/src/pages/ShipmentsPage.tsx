@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Download, Plus } from 'lucide-react'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, VehicleCell, humanize, parseSort, serializeSort,
   useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
@@ -241,13 +241,7 @@ export default function ShipmentsPage() {
           return <span className="whitespace-nowrap text-muted">{plates.length === 0 ? 'Per lot' : plates.length === 1 ? <span className="font-mono text-text">{plates[0]}</span> : `${plates.length} vehicles`}</span>
         }
         const plate = plateOf(s)
-        if (!plate && !s.driver_name) return <span className="whitespace-nowrap text-muted">Not assigned</span>
-        return (
-          <div className="min-w-0 whitespace-nowrap">
-            {plate && <div className="font-mono">{plate}</div>}
-            {s.driver_name && <div className="max-w-40 truncate text-xs text-muted">{s.driver_name}</div>}
-          </div>
-        )
+        return <VehicleCell plate={plate} detail={s.driver_name} />
       },
     },
     {

@@ -6,8 +6,8 @@ import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
 import { formatPercent } from '@/components/tpl/stats'
 import {
-  BulkActionBar, Button, DataTable, IconButton, SearchInput, StatusPill, Tabs,
-  parseSort, serializeSort, useConfirm, useRowSelection, useTabParam, useUrlState,
+  BulkActionBar, Button, DataTable, ExportCsvButton, IconButton, SearchInput, StatusPill, Tabs,
+  parseSort, serializeSort, statusToLabel, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import { useAuthStore } from '@/store/authStore'
 import type { Column } from '@/components/ui'
@@ -224,6 +224,21 @@ export default function PartnersTab() {
         />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <SearchInput value={search} onChange={setSearch} placeholder="Search by name or 3PL ID" className="sm:w-64" />
+          <ExportCsvButton
+            name="3pl-partners"
+            rows={filtered.map(p => ({
+              partner: p.company_name,
+              id: p.custom_id ?? '',
+              gstin: p.gstin ?? '',
+              status: statusToLabel(p.status),
+              corridors: (p.tpl_corridors ?? []).map(c => c.corridor_name).join('; '),
+              applied: formatDate(p.created_at),
+            }))}
+            columns={[
+              { key: 'partner', header: 'Partner' }, { key: 'id', header: '3PL ID' }, { key: 'gstin', header: 'GSTIN' },
+              { key: 'status', header: 'Status' }, { key: 'corridors', header: 'Corridors' }, { key: 'applied', header: 'Applied on' },
+            ]}
+          />
           <Button variant="secondary" icon={<Plus size={16} />} onClick={() => navigate('/3pl/onboard')}>Invite a partner</Button>
         </div>
       </div>

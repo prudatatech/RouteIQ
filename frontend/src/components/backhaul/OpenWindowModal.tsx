@@ -20,7 +20,7 @@ const DURATIONS = [
   { value: '1440', label: '24 hours' },
 ]
 
-/** Shipments that are already finished cannot be offered as the reason for a return trip. */
+/** Shipments that are already finished cannot be offered as the standby for a return trip. */
 const FINISHED = new Set(['delivered', 'cancelled', 'failed'])
 
 export interface FormState { vehicle_id: string; floor_price: string; duration: string; shipment_id: string }
@@ -143,10 +143,15 @@ export default function OpenWindowModal({ open, onClose, initial }: {
           options={[
             { value: '', label: 'No shipment' },
             // A split master carries no goods of its own; its lots are offered instead
-            ...(shipments.data ?? []).filter(s => !FINISHED.has(s.status) && !isMasterRow(s)).map(s => ({
-              value: s.id,
-              label: `${s.tracking_id}${s.origin_name ? ` · ${s.origin_name}` : ''}`,
-            })),
+            // Only a shipment still waiting for a vehicle can stand by for this space; the others stay listed, greyed out, with the reason
+            ...(shipments.data ?? []).filter(s => !isMasterRow(s)).map(s => {
+              const reason = FINISHED.has(s.status) ? 'already finished' : s.status !== 'created' ? 'already has a vehicle' : null
+              return {
+                value: s.id,
+                label: `${s.tracking_id}${s.origin_name ? ` · ${s.origin_name}` : ''}${reason ? ` (${reason})` : ''}`,
+                disabled: !!reason,
+              }
+            }),
           ]}
         />
       </form>
