@@ -2,7 +2,6 @@
  * Money: invoice due dates, paying and voiding, the invoice document, its PDF and who may download it,
  * setting a price on an unpriced delivery, and the company profile the seller comes from.
  */
-import { clearAllMemos } from '../src/core/memo';
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
@@ -178,7 +177,6 @@ describe('GET /invoices/:id', () => {
     await InvoiceService.createForShipment(ID.s1);
     // The profile loses its details after the invoice was issued: the page lists what is missing
     supabaseMock.rows('system_settings').length = 0;
-    clearAllMemos(); // the company profile is cached for 30 s
     const inv = supabaseMock.rows('invoices')[0];
     inv.issued_at = new Date(Date.now() - 20 * DAY).toISOString();
     inv.due_date = new Date(Date.now() - 5 * DAY).toISOString();

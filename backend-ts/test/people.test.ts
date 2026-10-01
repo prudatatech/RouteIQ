@@ -1,4 +1,3 @@
-import { clearAllMemos } from '../src/core/memo';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
@@ -341,10 +340,8 @@ describe('dispatch warnings and dashboard', () => {
     }));
     await expect(assertDriverDispatchable(VEH)).resolves.toBeUndefined();
     supabaseMock.rows('system_settings')[0].value = { value: 'block' };
-    clearAllMemos(); // settings are cached for 30 s
     await expect(assertDriverDispatchable(VEH)).rejects.toMatchObject({ status: 409 });
     supabaseMock.rows('system_settings').push({ key: 'licence_grace_days', value: { value: 7 } });
-    clearAllMemos();
     await expect(assertDriverDispatchable(VEH)).resolves.toBeUndefined();
   });
 });

@@ -75,8 +75,12 @@ const loadFinanceSettings = memoize(30_000, async (): Promise<FinanceSettings> =
   };
 });
 
-/** Same for every user and rarely changed: read at most every 30 s; setFuelPrice clears it. */
-export async function getFinanceSettings(): Promise<FinanceSettings> {
+/**
+ * The finance settings as they are now. `{ cached: true }` is for the profit and loss page: the same
+ * for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
+ */
+export async function getFinanceSettings(opts: { cached?: boolean } = {}): Promise<FinanceSettings> {
+  if (!opts.cached) loadFinanceSettings.clear();
   return { ...(await loadFinanceSettings()) };
 }
 
@@ -143,7 +147,7 @@ export async function getFinanceSummary(range: FinanceRange) {
   const inRange = (iso: string | null | undefined) => !!iso && iso >= startISO && iso < endISO;
 
   const [settings, invoiceRes, expenseRes, routeRes, tplRes] = await Promise.all([
-    getFinanceSettings(),
+    getFinanceSettings({ cached: true }),
     supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
       .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
     supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')

@@ -241,7 +241,7 @@ export async function withDriverLicenceStatus<T extends { driver_id?: string | n
   const [docs, people, settings] = await Promise.all([
     liveDocumentsByUser(driverIds),
     selectIn<{ id: string; status: string | null }>('users', 'id', driverIds, 'id, status'),
-    getPeopleSettings(),
+    getPeopleSettings({ cached: true }),
   ]);
   const statusById = new Map(people.map(p => [p.id, p.status]));
   const today = todayKey();
@@ -309,7 +309,7 @@ export async function getPeopleAttention(limit = 10): Promise<PeopleAttention> {
   const [docs, profiles, settings] = await Promise.all([
     liveDocumentsByUser(ids),
     selectIn<{ user_id: string; no_pan_reason: string | null }>('user_profiles', 'user_id', ids, 'user_id, no_pan_reason'),
-    getPeopleSettings(),
+    getPeopleSettings({ cached: true }),
   ]);
   const noPan = new Set(profiles.filter(p => p.no_pan_reason).map(p => p.user_id));
   const today = todayKey();

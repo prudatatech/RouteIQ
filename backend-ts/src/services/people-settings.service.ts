@@ -54,8 +54,13 @@ const loadPeopleSettings = memoize(30_000, async (): Promise<PeopleSettings> => 
   return out;
 });
 
-/** Same for every user and rarely changed: read at most every 30 s; saving clears it. */
-export async function getPeopleSettings(): Promise<PeopleSettings> {
+/**
+ * The settings as they are now. Pass `{ cached: true }` from read-only screens that run on every page
+ * load: the settings are the same for every user and rarely change, so they are read at most every
+ * 30 s there (saving clears the cache). Gates such as dispatch blocking always read fresh.
+ */
+export async function getPeopleSettings(opts: { cached?: boolean } = {}): Promise<PeopleSettings> {
+  if (!opts.cached) loadPeopleSettings.clear();
   return { ...(await loadPeopleSettings()) };
 }
 

@@ -64,15 +64,27 @@ const loadCompanyProfile = memoize(SETTINGS_CACHE_MS, async (): Promise<CompanyP
   return out;
 });
 
-/** The profile is the same for every user and changes rarely: read at most every 30 s; saving clears it. */
+/**
+ * The profile as it is now. Anything that decides or snapshots something with it (invoice issuing,
+ * the invoice page, Settings) reads it this way; the read also refreshes the cache below.
+ */
 export async function getCompanyProfile(): Promise<CompanyProfile> {
+  loadCompanyProfile.clear();
   return { ...(await loadCompanyProfile()) };
+}
+
+/**
+ * Payment terms for lists that show due dates: the same for every user and rarely changed, so read
+ * at most every 30 s (saving the profile clears it).
+ */
+export async function getCachedPaymentTermsDays(): Promise<number> {
+  return (await loadCompanyProfile()).payment_terms_days;
 }
 
 /** The payment terms new invoices are issued with. Never fails an invoice: falls back to the default. */
 export async function paymentTermsDays(): Promise<number> {
   try {
-    return (await getCompanyProfile()).payment_terms_days;
+    return await getCachedPaymentTermsDays();
   } catch (e) {
     console.error('[invoice] could not read payment terms, using the default:', e);
     return DEFAULT_PAYMENT_TERMS_DAYS;

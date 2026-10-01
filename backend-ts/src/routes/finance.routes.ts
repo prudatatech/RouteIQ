@@ -13,7 +13,7 @@ import { resolveIndianDateRange, indianDateKey, indianDayStart } from '../core/i
 import { InvoiceService, announceInvoice } from '../services/invoice.service';
 import { auditService } from '../services/audit.service';
 import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
-import { getCompanyProfile, saveCompanyProfile } from '../services/company.service';
+import { getCachedPaymentTermsDays, getCompanyProfile, saveCompanyProfile } from '../services/company.service';
 import { setPriceAndInvoice } from '../services/invoice-pricing.service';
 import { partyFromSnapshot, resolveBillTo } from '../services/invoice-recipient.service';
 import { rateLimitByUser } from '../core/rate-limit';
@@ -57,11 +57,10 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
     const now = new Date();
     const monthKey = indianDateKey(now).slice(0, 7);
     const monthStart = indianDayStart(`${monthKey}-01`);
-    const [profile, { data, error }] = await Promise.all([
-      getCompanyProfile(),
+    const [terms, { data, error }] = await Promise.all([
+      getCachedPaymentTermsDays(),
       supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']),
     ]);
-    const terms = profile.payment_terms_days;
     if (error) throw new Error(`Failed to summarise invoices: ${error.message}`);
     let outstanding = 0, outstandingCount = 0, overdue = 0, overdueCount = 0, collected = 0, collectedCount = 0;
     for (const r of data ?? []) {
@@ -97,7 +96,7 @@ router.get('/invoices', async (req: Request, res: Response) => {
     const status = req.query.status;
     if (typeof status === 'string' && ['issued', 'paid', 'void'].includes(status)) query = query.eq('status', status);
     // The payment terms do not depend on the invoices: read both at once
-    const [{ data, error }, profile] = await Promise.all([query, getCompanyProfile()]);
+    const [{ data, error }, terms] = await Promise.all([query, getCachedPaymentTermsDays()]);
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
     const rows = data ?? [];
 
@@ -134,7 +133,6 @@ router.get('/invoices', async (req: Request, res: Response) => {
     const [{ tracking, manifestIds, companies, parentOf, customerOf, customerName }, billedEntries] = await Promise.all([namesP, billedP]);
     const billed = new Map<string, string | null>(billedEntries);
 
-    const terms = profile.payment_terms_days;
     const now = new Date();
     const wantRequester = req.query.requester === 'vendor' || req.query.requester === 'customer' ? req.query.requester : null;
 

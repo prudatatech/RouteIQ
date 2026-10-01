@@ -29,20 +29,22 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     const userId = req.user!.user_id;
     const { limit, offset } = parsePaging(req);
 
-    const { data, error, count } = await supabase
-      .from('notifications')
-      .select('id, title, body, type, is_read, data, created_at', { count: 'exact' })
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    // The page and the unread count are independent: one round trip
+    const [{ data, error, count }, { count: unreadCount }] = await Promise.all([
+      supabase
+        .from('notifications')
+        .select('id, title, body, type, is_read, data, created_at', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
+      supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('is_read', false),
+    ]);
 
     if (error) throw new HttpError(500, error.message);
-
-    const { count: unreadCount } = await supabase
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
 
     res.json({
       notifications: data ?? [],
