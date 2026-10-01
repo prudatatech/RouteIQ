@@ -34,6 +34,7 @@ import TrafficLayers, { TrafficLegend } from './TrafficLayers'
 import AltRoutes from './AltRoutes'
 import { LINES_SOURCE_ID, lineFeatures, linesCasingLayer, linesDashedLayer, linesSolidLayer } from './lines'
 import { clusterVehicles, type VehicleCluster } from './cluster'
+import { MapKeyboardContext } from './keyboardContext'
 import { ClusterMarker, PointMarker, StopMarker, VehicleMarker } from './markers'
 import { MapError, MapLoading, RecenterButton, StatusLegend } from './overlays'
 import type { LatLng, MapControls, MapFit, MapMode, MapViewHandle, MapViewProps } from './types'
@@ -111,6 +112,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     onSelect,
     fitPadding = 48,
     interactive = true,
+    keyboardStops = true,
     showLabels = false,
     onPick,
     onPointMove,
@@ -331,14 +333,28 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
   const center = initialCenter ?? { lng: MAP_DEFAULTS.CENTER[0], lat: MAP_DEFAULTS.CENTER[1] }
 
+  // The map's own buttons (zoom, fullscreen, recenter, attribution) leave the keyboard order too
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = rootRef.current
+    if (keyboardStops || !root) return
+    const skip = () => root.querySelectorAll<HTMLElement>('.maplibregl-ctrl button, .maplibregl-ctrl a').forEach(el => el.setAttribute('tabindex', '-1'))
+    skip()
+    const observer = new MutationObserver(skip)
+    observer.observe(root, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [keyboardStops])
+
   return (
     <div
+      ref={rootRef}
       role="region"
       aria-label={ariaLabel}
       className={clsx('relative isolate w-full overflow-hidden bg-surface-subtle', height === undefined && 'h-full min-h-80', className)}
       style={height !== undefined ? { height } : undefined}
     >
       {load.status !== 'error' || load.canRetry ? (
+        <MapKeyboardContext.Provider value={keyboardStops}>
         <Map
           key={attempt}
           ref={mapRef}
@@ -440,6 +456,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
             />
           ))}
         </Map>
+        </MapKeyboardContext.Provider>
       ) : null}
 
       {ready && showLegend && <StatusLegend vehicles={vehicles} />}

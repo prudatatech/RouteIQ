@@ -994,7 +994,7 @@ export class ShipmentService {
   }
 
   /** The columns of a shipment row as the list and the shipment page read it. */
-  private static readonly LIST_SHIPMENT_SELECT = '*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))';
+  private static readonly LIST_SHIPMENT_SELECT = '*, parcels(*), delivery_points!delivery_points_shipment_id_fkey(*, route_stops(status, routes(vehicle_id, status, vehicles(plate_number, users!vehicles_driver_id_fkey(full_name))))), shipment_logs(*), capacity_bids(bid_amount, eway_bill_ref, load_configuration, vendor_profiles(company_name, city), capacity_windows!capacity_bids_window_id_fkey(trigger_type))';
 
   /**
    * List shipments with relations.
@@ -1078,13 +1078,14 @@ export class ShipmentService {
       // Any stop with a route tells which vehicle carries it, whichever point it is on
       const activeRouteStop = deliveryPoints
         .flatMap((dp: any) => dp.route_stops || [])
-        .find((rs: any) => rs.routes && rs.routes.status !== 'cancelled');
+        .find((rs: any) => rs.routes && rs.routes.status !== 'cancelled' && rs.status !== 'cancelled');
       const vehicleInfo = activeRouteStop?.routes?.vehicles;
       let vehicleId = activeRouteStop?.routes?.vehicle_id || null;
       let driverName = vehicleInfo?.users?.full_name || null;
 
-      if (!vehicleId && d.shipment_logs) {
-        const assignedLog = d.shipment_logs.find((l: any) => l.status === 'assigned' && l.metadata_json?.vehicle_id);
+      // The log remembers a vehicle taken off the shipment since, so it counts only while the shipment still names it
+      if (!vehicleId && d.shipment_logs && d.current_vehicle_id) {
+        const assignedLog = d.shipment_logs.find((l: any) => l.status === 'assigned' && l.metadata_json?.vehicle_id === d.current_vehicle_id);
         if (assignedLog) {
           vehicleId = assignedLog.metadata_json.vehicle_id;
         }
@@ -1310,6 +1311,9 @@ export class ShipmentService {
     // anything else must follow the allowed transitions (delivered and cancelled are final).
     if (current.status === status) return ShipmentService.getShipment(shipmentId);
     const holder = current.current_holder ?? (['picked_up', 'in_transit'].includes(String(current.status)) ? 'vehicle' : 'consignor');
+    if (status === 'created' && holder !== 'consignor') {
+      throw new HttpError(409, 'These goods were already picked up, so they cannot be taken off the vehicle here. Plan a transfer to move them.');
+    }
     assertShipmentTransition(String(current.status), status, { pickedUp: holder !== 'consignor' });
 
     const updateData: Record<string, any> = { status };
@@ -1595,6 +1599,8 @@ export class ShipmentService {
   private static withoutRepeatedSplitEntries(logs: ShipmentLog[]): ShipmentLog[] {
     return logs.filter((log, i) => {
       const kind = log.metadata_json?.custody_kind;
+      // Older shipments carry a matcher entry for a load nobody was offered; it is not a hand-off to partners
+      if (log.status === 'escalated' && log.metadata_json?.engine === 'CascadeMatcher' && !(Number(log.metadata_json?.broadcast_count) > 0)) return false;
       return !((kind === 'split' || kind === 'merge') && i > 0 && logs[i - 1].status === log.status);
     });
   }

@@ -146,13 +146,16 @@ export const matchingService = {
       }
     }
 
-    // Log the escalation (hash-chain aware writer keeps `index`/`previous_hash`/`log_hash` consistent)
-    await ShipmentService.recordShipmentLog(shipmentId, 'escalated', null, null, {
-      engine: 'CascadeMatcher',
-      tier: escalationLevel,
-      broadcast_count: broadcastedTo,
-      trigger_score: score.confidenceScore
-    });
+    // Log the escalation only when partners were really offered the load (hash-chain aware writer keeps
+    // `index`/`previous_hash`/`log_hash` consistent). A shipment nobody was offered never reads "With 3PL partners".
+    if (escalationLevel === 'Tier 2' && broadcastedTo > 0) {
+      await ShipmentService.recordShipmentLog(shipmentId, 'escalated', null, null, {
+        engine: 'CascadeMatcher',
+        tier: escalationLevel,
+        broadcast_count: broadcastedTo,
+        trigger_score: score.confidenceScore
+      });
+    }
 
     return { tier: escalationLevel, broadcastedTo, confidenceScore: score.confidenceScore };
   }

@@ -238,8 +238,9 @@ function TrafficIncidentsCard() {
       <EmptyState
         compact
         icon={<CloudOff size={22} />}
-        title="Live traffic is not available"
-        description={isSuperadmin ? 'Add a TomTom key in the server settings to see accidents and closures on active trips.' : 'Your administrator can switch it on in Settings.'}
+        title="Live traffic isn't set up"
+        description={isSuperadmin ? 'Switch it on in Settings to see accidents and closures on active trips.' : 'Your administrator can switch it on in Settings.'}
+        action={isSuperadmin ? <Link to="/admin/settings" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Open Settings</Link> : undefined}
       />
     )
   } else if (list.length === 0) {

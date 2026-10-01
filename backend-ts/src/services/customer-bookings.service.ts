@@ -9,6 +9,7 @@
 import { HttpError } from '../core/errors';
 import { supabase } from '../core/supabase';
 import { indianDateKey } from '../core/istDate';
+import { formatISTDate, formatKg } from '../core/format';
 import { ShipmentCreateSchema, type DropInput } from '../schemas';
 import { computeQuote, isTodayOrLater, type QuoteInput } from './customer-booking.service';
 import { selectIn } from './finance.service';
@@ -110,7 +111,7 @@ export async function createBooking(customerId: string, input: BookingInput) {
 
   const to = input.drops && input.drops.length > 1 ? `${input.drops.length} drops` : input.drop_name;
   await notifyCustomer(data, 'Booking received', `We have your booking from ${input.pickup_name} to ${to}. Our team will confirm it soon.`, 'requested');
-  await notifyStaff('New customer booking', `${input.pickup_name} to ${input.drop_name}, ${input.weight_kg} kg, pickup ${input.date}`, data.id);
+  await notifyStaff('New customer booking', `${input.pickup_name} to ${input.drop_name}, ${formatKg(input.weight_kg)}, pickup ${formatISTDate(input.date)}`, data.id);
   return data;
 }
 
@@ -254,7 +255,7 @@ export async function confirmBooking(id: string, actor: LogActor, options: { pri
       .select(BOOKING_COLUMNS)
       .single();
     if (error || !data) throw new Error(`Failed to link shipment: ${error?.message}`);
-    await notifyCustomer(data, 'Booking confirmed', `Your booking is confirmed. Tracking ID ${trackingId}. Pickup on ${data.pickup_date}.`, 'confirmed');
+    await notifyCustomer(data, 'Booking confirmed', `Your booking is confirmed. Tracking ID ${trackingId}. Pickup on ${formatISTDate(data.pickup_date)}.`, 'confirmed');
     return data;
   } catch (e) {
     // Put the booking back so staff can try again; the shipment made so far is reused then.

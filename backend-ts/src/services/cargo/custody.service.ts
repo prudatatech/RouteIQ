@@ -1101,6 +1101,16 @@ export function describeEvent(e: { kind: string; pieces?: number | null; receive
 }
 
 /**
+ * The words for an event with its notes after them. A split or merge is described by its notes,
+ * so those are not added a second time.
+ */
+export function describeEventWithNotes(e: { kind: string; notes?: string | null; pieces?: number | null; receiver_name?: string | null; to_holder?: string | null }, depotName?: string | null): string {
+  const text = describeEvent(e, depotName);
+  const notes = e.notes?.trim();
+  return notes && !text.includes(notes) ? `${text}. ${notes}` : text;
+}
+
+/**
  * The custody timeline, oldest first, with signed links to photos and signatures. Redacted: no
  * notes, staff or driver ids. A master's timeline merges its own with its lots' (each event tagged
  * with its lot).

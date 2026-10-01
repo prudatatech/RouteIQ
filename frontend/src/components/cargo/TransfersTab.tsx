@@ -2,9 +2,10 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowRightLeft } from 'lucide-react'
-import { DataTable, Select, StatusPill, useUrlState, type Column } from '@/components/ui'
+import { DataTable, ExportCsvButton, Select, StatusPill, statusToLabel, useUrlState, type Column } from '@/components/ui'
 import { cargoKeys, transfersAPI, TRANSFER_STATUSES, type CargoTransfer, type TransferStatus } from '@/services/cargo'
-import { formatPieces, formatRelative } from '@/utils/display'
+import { formatDateTime, formatRelative, formatPieces } from '@/utils/display'
+import type { CsvColumn } from '@/utils/csv'
 import { transferItemCount } from './logic'
 
 const FILTERS = [
@@ -19,6 +20,17 @@ const pieces = (t: CargoTransfer) => t.items.reduce((total, i) => total + i.piec
 const hasMismatch = (t: CargoTransfer) => t.items.some(i => transferItemCount(i).mismatch)
 const partBDue = (t: CargoTransfer) => t.eway_part_b_required && !t.eway_part_b_ref
 const stamp = (t: CargoTransfer) => t.planned_at ?? ''
+
+const CSV_COLUMNS: CsvColumn[] = [
+  { key: 'transfer', header: 'Transfer' },
+  { key: 'status', header: 'Status' },
+  { key: 'from', header: 'From vehicle' },
+  { key: 'to', header: 'To' },
+  { key: 'shipments', header: 'Shipments' },
+  { key: 'pieces', header: 'Pieces planned' },
+  { key: 'check', header: 'Check' },
+  { key: 'created', header: 'Created' },
+]
 
 export default function TransfersTab() {
   const navigate = useNavigate()
@@ -79,15 +91,29 @@ export default function TransfersTab() {
     },
   ], [])
 
+  const csvRows = (query.data ?? []).map(t => ({
+    transfer: t.code,
+    status: statusToLabel(t.status),
+    from: t.from_vehicle?.plate_number ?? '',
+    to: t.to_vehicle?.plate_number ?? t.to_depot?.name ?? '',
+    shipments: t.items.length,
+    pieces: pieces(t),
+    check: [hasMismatch(t) ? 'Count mismatch' : '', partBDue(t) ? 'Update e-way bill' : ''].filter(Boolean).join(', '),
+    created: stamp(t) ? formatDateTime(stamp(t)) : '',
+  }))
+
   return (
     <div className="space-y-4">
-      <Select
-        label="Status"
-        value={status ?? ''}
-        onChange={e => setStatus(e.target.value)}
-        options={FILTERS}
-        className="w-full sm:w-56"
-      />
+      <div className="flex flex-wrap items-end gap-3">
+        <Select
+          label="Status"
+          value={status ?? ''}
+          onChange={e => setStatus(e.target.value)}
+          options={FILTERS}
+          className="w-full sm:w-56"
+        />
+        <span className="ml-auto"><ExportCsvButton name="transfers" rows={csvRows} columns={CSV_COLUMNS} /></span>
+      </div>
       <DataTable
         caption="Cargo transfers"
         columns={columns}

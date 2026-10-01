@@ -578,7 +578,7 @@ export async function getException(id: string) {
 
   const shipmentIds = items.map((i: any) => i.shipment_id).filter(Boolean);
   const manifestIds = items.map((i: any) => i.manifest_id).filter(Boolean);
-  const { describeEvent } = await import('./custody.service');
+  const { describeEventWithNotes } = await import('./custody.service');
   const eventRows: any[] = [];
   if (shipmentIds.length) eventRows.push(...((await supabase.from('cargo_custody_events').select('*').in('shipment_id', shipmentIds)).data ?? []));
   if (manifestIds.length) eventRows.push(...((await supabase.from('cargo_custody_events').select('*').in('manifest_id', manifestIds)).data ?? []));
@@ -586,7 +586,7 @@ export async function getException(id: string) {
   for (const e of eventRows) {
     if (e.exception_id !== id && Date.parse(e.recorded_at) < since) continue;
     timeline.push({
-      at: e.recorded_at, source: 'custody', kind: e.kind, text: describeEvent(e) + (e.notes ? `. ${e.notes}` : ''),
+      at: e.recorded_at, source: 'custody', kind: e.kind, text: describeEventWithNotes(e),
       ref: e.shipment_id ? { shipment_id: e.shipment_id } : { manifest_id: e.manifest_id }, by: e.recorded_by, role: e.recorded_role,
       data: { pieces: e.pieces, condition: e.condition, transfer_id: e.transfer_id },
     });

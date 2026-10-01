@@ -12,12 +12,11 @@ import { ConditionPill, ConsignmentLink, Steps } from '@/components/cargo/CargoB
 import { isActiveTransfer, positionOf, transferItemCount, transferSteps } from '@/components/cargo/logic'
 import { cargoKeys, transfersAPI, type CargoTransfer, type CargoVehicle, type TransferItem } from '@/services/cargo'
 import { EWAY_BILL_PORTAL_URL } from '@/config/compliance'
-import { errorMessage, formatDateTime, formatPieces } from '@/utils/display'
+import { isNotFoundError, errorMessage, formatDateTime, formatPieces } from '@/utils/display'
 
 const EWAY_REF = /^[A-Za-z0-9-]{6,40}$/
 const n = (x: number) => x.toLocaleString('en-IN')
 
-const isNotFound = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status === 404
 
 function vehicleText(v: CargoVehicle | null | undefined): string {
   if (!v) return '—'
@@ -42,7 +41,7 @@ export default function TransferPage() {
     queryFn: () => transfersAPI.get(id),
     enabled: !!id,
     refetchInterval: 30_000,
-    retry: (count, err) => !isNotFound(err) && count < 2,
+    retry: (count, err) => !isNotFoundError(err) && count < 2,
   })
 
   const done = (message: string) => {
@@ -75,7 +74,7 @@ export default function TransferPage() {
     return (
       <Page>
         <PageHeader title="Transfer" back={back} />
-        {isNotFound(query.error) || !query.isError ? (
+        {isNotFoundError(query.error) || !query.isError ? (
           <EmptyState
             icon={<ArrowRightLeft size={22} />}
             title="We could not find this transfer"

@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { Building2, Package } from 'lucide-react'
-import { Card, CardHeader, DataTable, EmptyState, ErrorState, Skeleton, StatusPill, useUrlState, type Column } from '@/components/ui'
+import { Card, CardHeader, DataTable, EmptyState, ErrorState, ExportCsvButton, Skeleton, StatusPill, statusToLabel, useUrlState, type Column } from '@/components/ui'
+import type { CsvColumn } from '@/utils/csv'
 import { formatKg } from '@/utils/display'
 import { cargoKeys, hubsAPI, type HubInventoryRow, type HubSummary } from '@/services/cargo'
 import { ConsignmentLink } from './CargoBits'
@@ -42,6 +43,16 @@ function HubCard({ hub, selected, now, onSelect }: { hub: HubSummary; selected: 
     </button>
   )
 }
+
+const HUB_CSV_COLUMNS: CsvColumn[] = [
+  { key: 'shipment', header: 'Shipment' },
+  { key: 'status', header: 'Status' },
+  { key: 'pieces', header: 'Pieces' },
+  { key: 'weight', header: 'Weight (kg)' },
+  { key: 'at_hub_for', header: 'At hub for' },
+  { key: 'next_leg', header: 'Next leg' },
+  { key: 'problems', header: 'Open problems' },
+]
 
 function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
   const inv = useQuery({ queryKey: cargoKeys.hubInventory(hub.id), queryFn: () => hubsAPI.inventory(hub.id), refetchInterval: 60_000 })
@@ -84,19 +95,32 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
     },
   ]
 
+  const csvRows = (inv.data ?? []).map(r => ({
+    shipment: consignmentCode(r),
+    status: statusToLabel(r.status, 'cargo'),
+    pieces: r.pieces,
+    weight: r.weight_kg,
+    at_hub_for: hubAgeing(r.since, now).label,
+    next_leg: r.next_leg?.label ? (r.rto ? `Back to ${r.next_leg.label}` : r.next_leg.label) : 'Not planned',
+    problems: (r.open_exceptions ?? []).map(x => x.code).join(', '),
+  }))
+
   return (
-    <DataTable
-      caption={`Shipments at ${hub.name}`}
-      columns={columns}
-      rows={inv.data ?? []}
-      rowKey={rowKey}
-      loading={inv.isLoading}
-      error={inv.isError ? 'We could not load the shipments at this hub.' : undefined}
-      onRetry={() => inv.refetch()}
-      initialSort={{ key: 'ageing', direction: 'desc' }}
-      pageSize={10}
-      empty={{ icon: <Package size={22} />, title: 'Nothing at this hub', description: 'Shipments appear here after they are checked in at the hub.' }}
-    />
+    <div className="space-y-3">
+      <div className="flex justify-end"><ExportCsvButton name={`hub-${hub.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} rows={csvRows} columns={HUB_CSV_COLUMNS} /></div>
+      <DataTable
+        caption={`Shipments at ${hub.name}`}
+        columns={columns}
+        rows={inv.data ?? []}
+        rowKey={rowKey}
+        loading={inv.isLoading}
+        error={inv.isError ? 'We could not load the shipments at this hub.' : undefined}
+        onRetry={() => inv.refetch()}
+        initialSort={{ key: 'ageing', direction: 'desc' }}
+        pageSize={10}
+        empty={{ icon: <Package size={22} />, title: 'Nothing at this hub', description: 'Shipments appear here after they are checked in at the hub.' }}
+      />
+    </div>
   )
 }
 

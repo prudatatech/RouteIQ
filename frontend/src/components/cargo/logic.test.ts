@@ -248,6 +248,11 @@ describe('pieceSummary', () => {
     expect(s.unaccounted).toBe(0)
     expect(s.overCounted).toBe(false)
   })
+  it('does not call goods nobody picked up yet not accounted for', () => {
+    const p = { total: 1, delivered: 0, damaged: 0, short: 0, returned: 0, on_board: 0 }
+    expect(pieceSummary(p).unaccounted).toBe(1)
+    expect(pieceSummary(p, { pickedUp: false }).unaccounted).toBe(0)
+  })
   it('works out on board when the backend leaves it out', () => {
     const s = pieceSummary({ total: 10, delivered: 3, damaged: 0, short: 1, returned: 0, on_board: undefined as unknown as number })
     expect(s.segments.find(x => x.key === 'on_board')?.value).toBe(6)

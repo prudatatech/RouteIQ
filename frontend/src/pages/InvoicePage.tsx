@@ -9,7 +9,7 @@ import InvoiceDocument from '@/components/money/InvoiceDocument'
 import { MarkPaidModal, VoidModal } from '@/components/money/InvoiceModals'
 import { requesterHref } from '@/components/shipments/requesterHref'
 import { downloadBlob } from '@/utils/download'
-import { errorMessage, tripNumber } from '@/utils/display'
+import { errorMessage, isNotFoundError, tripNumber } from '@/utils/display'
 import type { InvoiceDetail } from '@/utils/finance'
 
 const REQUESTER_LABEL: Record<string, string> = {
@@ -56,7 +56,7 @@ export default function InvoicePage() {
   const [paying, setPaying] = useState(false)
   const [voiding, setVoiding] = useState(false)
 
-  const query = useQuery({ queryKey: ['finance', 'invoice', id], queryFn: () => invoicesAPI.get(id), enabled: !!id })
+  const query = useQuery({ queryKey: ['finance', 'invoice', id], queryFn: () => invoicesAPI.get(id), enabled: !!id, retry: (count, err) => !isNotFoundError(err) && count < 2 })
   const inv = query.data
 
   const pdf = useMutation({
@@ -75,7 +75,7 @@ export default function InvoicePage() {
 
   if (query.isLoading) return <Page><LoadingState label="Loading invoice…" /></Page>
   if (query.isError || !inv) {
-    const notFound = (query.error as { response?: { status?: number } } | null)?.response?.status === 404
+    const notFound = isNotFoundError(query.error)
     return (
       <Page>
         <PageHeader back={{ to: '/money?tab=invoices', label: 'Money' }} title="Invoice" />

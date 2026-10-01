@@ -56,7 +56,8 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState('')
   const [meetAtVehicle, setMeetAtVehicle] = useState(kase.lat != null && kase.lng != null)
-  const set = (key: string) => (e: { target: { value: string } }) => setValues(v => ({ ...v, [key]: e.target.value }))
+  // Editing a field clears the server's earlier answer, which was about the old values
+  const set = (key: string) => (e: { target: { value: string } }) => { setServerError(''); setValues(v => ({ ...v, [key]: e.target.value })) }
   // write_off and raise_claim act on one consignment: the backend needs `ref` when the case has more than one
   const needsRef = kase.items.length > 1
   const picked = kase.items.find(i => refKey(i) === values.ref) ?? (kase.items.length === 1 ? kase.items[0] : undefined)
@@ -172,9 +173,9 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
     case 'raise_claim':
       body = (
         <div className="grid gap-4 sm:grid-cols-2">
-          {needsRef && <div className="sm:col-span-2"><ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} hint="Leave empty to claim for the first shipment of the case." /></div>}
-          <Select label="Claim for" value={values.claim_type ?? ''} onChange={set('claim_type')} placeholder="Choose" options={CLAIM_TYPES.map(t => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} error={errors.claim_type} required />
-          <Input label="Amount claimed" type="number" inputMode="decimal" min={0} step="0.01" leading="₹" value={values.claimed_amount ?? ''} onChange={set('claimed_amount')} error={errors.claimed_amount} hint="The declared value is filled in from the invoice" required />
+          {needsRef && <div className="sm:col-span-2"><ConsignmentPicker kase={kase} value={values.ref ?? ''} onChange={set('ref')} hint="Leave empty to claim for the first shipment of the case." autoFocus /></div>}
+          <Select data-autofocus={needsRef ? undefined : true} label="Claim for" value={values.claim_type ?? ''} onChange={set('claim_type')} placeholder="Choose" options={CLAIM_TYPES.map(t => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} error={errors.claim_type} required />
+          <Input label="Amount claimed" type="number" inputMode="decimal" min={0} step="0.01" leading="₹" value={values.claimed_amount ?? ''} onChange={set('claimed_amount')} error={errors.claimed_amount} hint="A claim cannot be more than the goods' declared value. With none on record, the office sets a limit." required />
         </div>
       )
       break
@@ -216,15 +217,17 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
 }
 
 /** Which consignment of a case an action is for. */
-function ConsignmentPicker({ kase, value, onChange, error, hint }: {
+function ConsignmentPicker({ kase, value, onChange, error, hint, autoFocus }: {
   kase: ExceptionDetail
   value: string
   onChange: (e: { target: { value: string } }) => void
   error?: string
   hint?: string
+  autoFocus?: boolean
 }) {
   return (
     <Select
+      data-autofocus={autoFocus ? true : undefined}
       label="Shipment"
       value={value}
       onChange={onChange}

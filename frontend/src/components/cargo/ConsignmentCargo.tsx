@@ -60,7 +60,7 @@ export function WhereCard({ where, now }: { where: WhereIsIt; now: number }) {
           {where.status === 'on_hold' && where.on_hold_reason && <p className="mt-1 text-xs text-warning">On hold: {where.on_hold_reason}</p>}
         </div>
       </div>
-      <PiecesBar pieces={where.pieces} />
+      <PiecesBar pieces={where.pieces} pickedUp={where.current_holder !== 'consignor'} />
       <DetailList
         items={[
           { label: 'Seal', value: where.seal_number ? <span className="font-mono">{where.seal_number}</span> : 'No seal recorded' },

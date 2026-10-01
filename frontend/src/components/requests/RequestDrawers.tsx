@@ -41,7 +41,7 @@ export function BookingDrawer({ booking, onClose, busy, accepting, cancelling, o
           {canCancel && <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={cancelling} onClick={() => onReject(booking)}>Reject request</Button>}
           {shipment && <LinkButton to={shipment} icon={<ExternalLink size={16} />}>Open shipment</LinkButton>}
           {booking.status === 'requested' && (
-            <Button icon={<Check size={16} />} disabled={busy} loading={accepting} onClick={() => onAccept(booking)}>Accept &amp; price</Button>
+            <Button icon={<Check size={16} />} disabled={busy} loading={accepting} onClick={() => onAccept(booking)}>Accept and price</Button>
           )}
           {canAssign && !booking.vehicle_id && (
             <Button icon={<Truck size={16} />} disabled={busy} onClick={() => onAssign(booking)}>Assign vehicle</Button>
@@ -149,7 +149,7 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
           {open && <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={rejecting} onClick={() => onReject(request)}>Reject request</Button>}
           {shipment && <LinkButton to={shipment} icon={<ExternalLink size={16} />}>Open shipment</LinkButton>}
           {request.status === 'pending' && (
-            <Button icon={<Check size={16} />} disabled={busy} loading={accepting} onClick={() => onAccept(request)}>Accept &amp; price</Button>
+            <Button icon={<Check size={16} />} disabled={busy} loading={accepting} onClick={() => onAccept(request)}>Accept and price</Button>
           )}
           {loadNeedsVehicle(request) && (
             <Button icon={<Truck size={16} />} disabled={busy} onClick={() => onAssign(request)}>Assign vehicle</Button>

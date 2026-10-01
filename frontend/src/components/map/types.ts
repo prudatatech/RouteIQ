@@ -163,6 +163,11 @@ export interface MapViewProps {
   follow?: boolean | string
   /** false turns off panning, zooming and clicking (for small previews). Default true. */
   interactive?: boolean
+  /**
+   * false takes the markers and map buttons out of the keyboard order. Use it for a map beside a list
+   * that does the same job (choose a vehicle), so the list is the keyboard route. Default true.
+   */
+  keyboardStops?: boolean
   controls?: MapControls
   /** Live traffic: flow colours and incident icons. Off by default. */
   traffic?: MapTraffic

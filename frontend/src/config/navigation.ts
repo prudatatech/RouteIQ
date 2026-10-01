@@ -21,6 +21,8 @@ export interface NavChild {
   label: string
   roles: StaffRole[]
   badge?: NavBadge
+  /** Other addresses that belong to this link (an invoice's own page lights Invoices). */
+  alsoMatch?: string[]
 }
 
 export interface NavSection {
@@ -107,7 +109,7 @@ export const navSections: NavSection[] = [
     also: ['/cargo?tab=claims'],
     children: [
       { to: '/money', label: 'To price', roles: admins, badge: 'money' },
-      { to: '/money/invoices', label: 'Invoices', roles: admins },
+      { to: '/money?tab=invoices', label: 'Invoices', roles: admins, alsoMatch: ['/money/invoices'] },
       { to: '/money?tab=driver-pay', label: 'Driver pay', roles: admins },
       { to: '/money?tab=expenses', label: 'Expenses', roles: admins },
       { to: '/money?tab=claims', label: 'Claims', roles: admins },
@@ -158,7 +160,7 @@ export function activeNav(sections: NavSection[], pathname: string, search: stri
   for (const section of sections) {
     const candidates: { link: string; child: NavChild | null }[] = [
       { link: section.to, child: null },
-      ...section.children.map(child => ({ link: child.to, child })),
+      ...section.children.flatMap(child => [child.to, ...(child.alsoMatch ?? [])].map(link => ({ link, child }))),
       ...(section.also ?? []).map(link => ({ link, child: null })),
     ]
     for (const { link, child } of candidates) {

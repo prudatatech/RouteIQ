@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { memo, useContext, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Marker, type MarkerDragEvent } from 'react-map-gl/maplibre'
 import { Bike, Boxes, Bus, Car, Flag, MapPin, Package, TriangleAlert, Truck, Warehouse, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { MAP_TONES, stopStatusStyle, vehicleStatusStyle } from '@/config/mapConfig'
 import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { POINT_TONES } from './layers'
+import { MapKeyboardContext } from './keyboardContext'
 import type { VehicleCluster } from './cluster'
 import type { LatLng, MapPoint, MapPointKind, MapRouteStop, MapVehicle } from './types'
 
@@ -26,6 +27,8 @@ const VEHICLE_ICONS: Record<string, { icon: LucideIcon; name: string }> = {
   bike: { icon: Bike, name: 'bike' },
   car: { icon: Car, name: 'car' },
 }
+
+const useMarkerTabIndex = () => (useContext(MapKeyboardContext) ? undefined : -1)
 
 /** Clicks on markers must not also count as a click on the map (picker mode). */
 const stop = (e: MouseEvent) => e.stopPropagation()
@@ -69,6 +72,7 @@ interface VehicleMarkerProps {
 }
 
 export const VehicleMarker = memo(function VehicleMarker({ vehicle, selected, showLabel, route, onSelect }: VehicleMarkerProps) {
+  const tabIndex = useMarkerTabIndex()
   const glided = useAnimatedPosition(vehicle.position, route, vehicle.instant)
   const position = vehicle.instant ? vehicle.position : glided
   const status = vehicleStatusStyle(vehicle.status)
@@ -81,6 +85,7 @@ export const VehicleMarker = memo(function VehicleMarker({ vehicle, selected, sh
     <Marker longitude={position.lng} latitude={position.lat} anchor="center" style={{ zIndex: selected ? 3 : 1 }}>
       <button
         type="button"
+        tabIndex={tabIndex}
         aria-label={`${vehicle.label}, ${vehicle.vehicle_type ? `${kind.name}, ` : ''}${status.label}`}
         aria-pressed={selected}
         title={`${vehicle.label} · ${status.label}`}
@@ -127,6 +132,7 @@ export const PointMarker = memo(function PointMarker({ point, selected, onSelect
   const tone = MAP_TONES[point.muted ? 'muted' : POINT_TONES[point.kind]]
   const Icon = kind.icon
   const pulsing = point.kind === 'incident' && point.active
+  const tabIndex = useMarkerTabIndex()
 
   return (
     <Marker
@@ -139,6 +145,7 @@ export const PointMarker = memo(function PointMarker({ point, selected, onSelect
     >
       <button
         type="button"
+        tabIndex={tabIndex}
         aria-label={point.label || kind.name}
         aria-pressed={onSelect ? selected : undefined}
         title={point.label || kind.name}
@@ -192,10 +199,12 @@ export const ClusterMarker = memo(function ClusterMarker({ cluster, onOpen }: {
   cluster: VehicleCluster
   onOpen: (cluster: VehicleCluster) => void
 }) {
+  const tabIndex = useMarkerTabIndex()
   return (
     <Marker longitude={cluster.position.lng} latitude={cluster.position.lat} anchor="center" style={{ zIndex: 2 }}>
       <button
         type="button"
+        tabIndex={tabIndex}
         aria-label={`${cluster.count} vehicles close together. Zoom in to see them.`}
         title={`${cluster.count} vehicles`}
         onClick={(e) => { stop(e); onOpen(cluster) }}

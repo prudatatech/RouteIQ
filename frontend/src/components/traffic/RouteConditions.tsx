@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { CloudRain, TriangleAlert } from 'lucide-react'
 import { describeIncident } from '@/utils/traffic'
 import { Card, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
@@ -6,6 +7,8 @@ import { formatKm } from '@/utils/display'
 import { useAuthStore } from '@/store/authStore'
 
 const SEVERITY_LABEL = ['Unknown delay', 'Minor delay', 'Moderate delay', 'Major delay', 'Road closed or major delay']
+
+const SettingsLink = () => <Link to="/admin/settings" className="font-medium text-brand hover:underline">Open Settings</Link>
 
 /** Traffic incidents and current weather for one route. Both say plainly when they are not set up. */
 export default function RouteConditions({ routeId }: { routeId: string }) {
@@ -28,7 +31,9 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
         ) : weather.isError ? (
           <ErrorState compact description="We could not load the weather. Try again in a few minutes." onRetry={() => weather.refetch()} />
         ) : !w?.available ? (
-          <p className="text-sm text-muted">{isSuperadmin ? (w?.reason ?? 'Weather is not available.') : 'Weather is not available right now.'}</p>
+          <p className="text-sm text-muted">
+            {isSuperadmin ? <>Weather isn't set up. <SettingsLink /></> : 'Weather is not available right now.'}
+          </p>
         ) : (
           <div className="space-y-1 text-sm">
             <p className="flex flex-wrap items-center gap-2 text-text">
@@ -57,7 +62,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
         ) : traffic.isError ? (
           <ErrorState compact description="We could not load traffic incidents. Try again in a few minutes." onRetry={() => traffic.refetch()} />
         ) : !traffic.data?.configured ? (
-          <p className="text-sm text-muted">Live traffic is not available. Add a TomTom key in the server settings to check active trips.</p>
+          <p className="text-sm text-muted">Live traffic isn't set up. <SettingsLink /></p>
         ) : traffic.data.incidents.length === 0 ? (
           <EmptyState compact title="No problems on this trip" description="TomTom reports nothing along the path right now." />
         ) : (

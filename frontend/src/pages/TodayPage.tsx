@@ -284,7 +284,7 @@ export default function TodayPage() {
         <Stat
           label="Vehicles on the road"
           value={live?.vehicles_on_road ?? '–'}
-          hint={vehiclesLoading ? undefined : `${liveVehicleCount} live · ${offlineVehicles.length} offline of ${activeVehicles.length} tracked`}
+          hint={vehiclesLoading ? undefined : `${activeVehicles.length.toLocaleString('en-IN')} tracked, ${liveVehicleCount.toLocaleString('en-IN')} sending a position now`}
           loading={today.isLoading}
           icon={<Truck size={18} />}
         />

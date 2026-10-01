@@ -36,10 +36,11 @@ export const MAX_PLAUSIBLE_KMPL = 100;
  * before and after it in time (or null for none). Null when the reading is fine.
  */
 export function odometerProblem(odo: number, previous: number | null, next: number | null): string | null {
-  if (previous != null && odo < previous) return `The odometer reads ${odo} km, but the fill before this one was at ${previous} km. Check the reading.`;
-  if (next != null && odo > next) return `The odometer reads ${odo} km, but a later fill was at ${next} km. Check the reading.`;
+  const km = (n: number) => `${Math.round(n).toLocaleString('en-IN')} km`;
+  if (previous != null && odo < previous) return `The odometer reads ${km(odo)}, but the fill before this one was at ${km(previous)}. Check the reading.`;
+  if (next != null && odo > next) return `The odometer reads ${km(odo)}, but a later fill was at ${km(next)}. Check the reading.`;
   if (previous != null && odo - previous > MAX_KM_BETWEEN_FILLS) {
-    return `The odometer reads ${odo} km, which is ${Math.round(odo - previous)} km after the fill before this one. More than ${MAX_KM_BETWEEN_FILLS} km between fills is not likely. Check the reading.`;
+    return `The odometer reads ${km(odo)}, which is ${km(odo - previous)} after the fill before this one. More than ${km(MAX_KM_BETWEEN_FILLS)} between fills is not likely. Check the reading.`;
   }
   return null;
 }

@@ -103,7 +103,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
         showMap={false}
         placeholder="Where is the cargo collected?"
         value={origin && { address: origin.address ?? '', lat: origin.lat, lng: origin.lng }}
-        hint="Type an address and choose it from the suggestions."
+        hint={origin ? undefined : 'Type an address and choose it from the suggestions.'}
         error={errors.origin}
         recentPlacesKey={RECENT_PLACES_KEY}
         onChange={setOrigin}
@@ -149,7 +149,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
           allowCurrentLocation={false}
           placeholder="Where is it going?"
           value={destination && { address: destination.address ?? '', lat: destination.lat, lng: destination.lng }}
-          hint="Type an address and choose it from the suggestions."
+          hint={destination ? undefined : 'Type an address and choose it from the suggestions.'}
           error={errors.destination}
           recentPlacesKey={RECENT_PLACES_KEY}
           onChange={setDestination}
@@ -161,6 +161,7 @@ export default function RouteStep({ data, update, errors }: StepProps) {
           <MapView
             mode={multi ? (origin && placedDrops.length > 0 ? 'route' : 'picker') : origin && destination ? 'route' : 'picker'}
             height={260}
+            keyboardStops={false}
             onPick={multi ? (origin ? undefined : onPick) : origin && destination ? undefined : onPick}
             onPointMove={onPointMove}
             points={multi

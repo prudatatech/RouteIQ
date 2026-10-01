@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './index.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -19,7 +19,11 @@ type MutationError = Error & {
   response?: { status?: number; data?: { detail?: string | ValidationIssue[] } }
 }
 
-const queryClient = new QueryClient({
+const queryClient: QueryClient = new QueryClient({
+  // Any change a person makes can move a queue, so the menu's counts (the shared Today query) are read again
+  mutationCache: new MutationCache({
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['ops-today'] }) },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,

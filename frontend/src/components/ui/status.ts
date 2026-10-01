@@ -29,9 +29,9 @@ const statusTone: Record<string, Tone> = {
   // Failed / blocked
   failed: 'danger', rejected: 'danger', declined: 'danger', exception: 'danger', error: 'danger',
   sos: 'danger', escrow_failed: 'danger', expired: 'danger', critical: 'danger', denied: 'danger', high: 'danger',
-  // Neutral
+  // Neutral. Cancelled is not here on purpose: next to a fresh Created shipment it must not look the same.
   taken: 'neutral', withdrawn: 'neutral', idle: 'neutral', offline: 'neutral', archived: 'neutral', draft: 'neutral', created: 'neutral', closed: 'neutral', ignored: 'neutral',
-  unknown: 'neutral', cancelled: 'neutral', void: 'neutral', optimizing: 'info', issued: 'info', low: 'info', won: 'success', lost: 'neutral',
+  unknown: 'neutral', cancelled: 'danger', void: 'neutral', optimizing: 'info', issued: 'info', low: 'info', won: 'success', lost: 'neutral',
   // Cargo custody (shipments and vendor loads), exception cases, transfers and claims
   at_hub: 'info', partially_delivered: 'warning', returning: 'warning', returned: 'neutral',
   investigating: 'warning', action_planned: 'info', filed: 'info', surveyed: 'info', settled: 'success',
@@ -98,7 +98,7 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
     pending: { tone: 'warning', label: 'New' },
     approved: { tone: 'success', label: 'Approved' },
     escalated: { tone: 'info', label: 'With 3PL partners' },
-    cancelled: { tone: 'neutral', label: 'Cancelled by vendor' },
+    cancelled: { tone: 'danger', label: 'Cancelled by vendor' },
   },
   bid: {
     pending: { tone: 'warning', label: 'Waiting' },
@@ -118,7 +118,7 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
     decide: { tone: 'warning', label: 'Needs a decision' },
     awarded: { tone: 'success', label: 'Awarded' },
     closed: { tone: 'neutral', label: 'Closed' },
-    cancelled: { tone: 'neutral', label: 'Cancelled' },
+    cancelled: { tone: 'danger', label: 'Cancelled' },
   },
   // A shipment or vendor load in the cargo custody flow. "lost" is lost goods here, not a lost bid.
   cargo: {

@@ -16,7 +16,9 @@ export function tidyNote(text: string | null | undefined): string | null {
 export function dropRepeatedSentences(text: string | null | undefined): string | null {
   if (!text) return null
   const parts = text.trim().split(/(?<=[.!?])\s+/)
-  const kept = parts.filter((p, i) => i === 0 || p.trim().toLowerCase() !== parts[i - 1].trim().toLowerCase())
+  // A full stop at the end does not make a sentence another one
+  const same = (a: string, b: string) => a.trim().replace(/[.!?]+$/, '').toLowerCase() === b.trim().replace(/[.!?]+$/, '').toLowerCase()
+  const kept = parts.filter((p, i) => i === 0 || !same(p, parts[i - 1]))
   const joined = kept.join(' ')
   // The same text written twice with no full stop between: "X X"
   const half = Math.floor(joined.length / 2)

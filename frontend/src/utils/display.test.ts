@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, pluralize, tripNumber } from './display'
+import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, isNotFoundError, serverFieldError, pluralize, tripNumber } from './display'
 
 describe('money and quantities', () => {
   it('shows whole rupees with lakh grouping and paise only when present', () => {
@@ -58,5 +58,25 @@ describe('counts and ids', () => {
   it('numbers a trip TR- plus the first block of its id', () => {
     expect(tripNumber('874fa20d-8c18-4f00-9c1d-aaaaaaaaaaaa')).toBe('TR-874FA20D')
     expect(tripNumber(null)).toBe('—')
+  })
+})
+
+describe('isNotFoundError', () => {
+  it('treats a 404 and a malformed id (400) as not found, and nothing else', () => {
+    expect(isNotFoundError({ response: { status: 404 } })).toBe(true)
+    expect(isNotFoundError({ response: { status: 400 } })).toBe(true)
+    expect(isNotFoundError({ response: { status: 500 } })).toBe(false)
+    expect(isNotFoundError(new Error('Network Error'))).toBe(false)
+    expect(isNotFoundError(null)).toBe(false)
+  })
+})
+
+describe('serverFieldError', () => {
+  it('reads the field and message the server names', () => {
+    expect(serverFieldError({ response: { data: { field: 'odometer_km', detail: 'Check the reading.' } } })).toEqual({ field: 'odometer_km', message: 'Check the reading.' })
+  })
+  it('is null when the server names no field', () => {
+    expect(serverFieldError({ response: { data: { detail: 'Nope' } } })).toBeNull()
+    expect(serverFieldError(new Error('x'))).toBeNull()
   })
 })

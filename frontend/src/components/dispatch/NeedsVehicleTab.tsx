@@ -7,7 +7,7 @@ import {
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import { destinationOf, deliveryPointsOf, pickupDateOf, pickupPlace, priorityTone, shipmentStatusLabel } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
-import { formatDate, formatKg } from '@/utils/display'
+import { formatDate, formatKg, formatPieces } from '@/utils/display'
 import PlaceText from '@/components/shipments/PlaceText'
 import { byUrgency, canPickVehicle } from './logic'
 import { EWAY_BILL_WARNING } from '@/config/compliance'
@@ -100,7 +100,7 @@ export default function NeedsVehicleTab({ rows, loading, error, onRetry, onOptim
       cell: s => (
         <div className="whitespace-nowrap tabular">
           <div>{formatKg(s.total_weight_kg) ?? '—'}</div>
-          {s.total_items != null && <div className="text-xs text-muted">{s.total_items.toLocaleString('en-IN')} {s.total_items === 1 ? 'item' : 'items'}</div>}
+          {s.total_items != null && <div className="text-xs text-muted">{formatPieces(s.total_items)}</div>}
         </div>
       ),
     },

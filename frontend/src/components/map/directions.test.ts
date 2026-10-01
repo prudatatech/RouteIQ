@@ -4,7 +4,7 @@ const post = vi.fn()
 const get = vi.fn()
 vi.mock('@/services/api', () => ({ api: { post: (...a: unknown[]) => post(...a), get: (...a: unknown[]) => get(...a) } }))
 
-import { directionsAvailable, fetchDrivingRoute, fetchFreeFlowSeconds, fetchTrackedRoute, parseDirectionsResponse } from './directions'
+import { directionsAvailable, fetchDrivingRoute, resetRoutingStatus, fetchFreeFlowSeconds, fetchTrackedRoute, parseDirectionsResponse } from './directions'
 
 const line: [number, number][] = [[77, 28], [77.1, 28], [77.2, 28], [77.3, 28], [77.4, 28]]
 
@@ -45,7 +45,22 @@ describe('backend directions response', () => {
 })
 
 describe('fetchDrivingRoute', () => {
-  beforeEach(() => { post.mockReset(); get.mockReset() })
+  beforeEach(() => { post.mockReset(); get.mockReset(); resetRoutingStatus() })
+
+  it('makes no directions call when the server says routing is off, and asks the status once', async () => {
+    get.mockResolvedValue({ data: { available: false } })
+    expect(await fetchDrivingRoute([{ lat: 21, lng: 77 }, { lat: 21.1, lng: 77.4 }])).toBeNull()
+    expect(await fetchDrivingRoute([{ lat: 22, lng: 77 }, { lat: 22.1, lng: 77.4 }])).toBeNull()
+    expect(post).not.toHaveBeenCalled()
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith('/routing/status')
+  })
+
+  it('still asks for directions when the status cannot be read (a driver)', async () => {
+    get.mockRejectedValue(Object.assign(new Error('forbidden'), { response: { status: 403 } }))
+    post.mockResolvedValue(answer())
+    expect(await fetchDrivingRoute([{ lat: 23, lng: 77 }, { lat: 23.1, lng: 77.4 }])).not.toBeNull()
+  })
 
   it('does not depend on a browser map token', () => {
     expect(directionsAvailable).toBe(true)
@@ -106,7 +121,7 @@ describe('fetchDrivingRoute', () => {
 })
 
 describe('fetchFreeFlowSeconds', () => {
-  beforeEach(() => { post.mockReset() })
+  beforeEach(() => { post.mockReset(); resetRoutingStatus() })
 
   it('asks for the route without traffic and returns its duration, cached at a coarse key', async () => {
     post.mockResolvedValue(answer({ duration_seconds: 700 }))
