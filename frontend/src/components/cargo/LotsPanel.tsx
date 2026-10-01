@@ -60,7 +60,9 @@ export default function LotsPanel({ code, cargoRef, where, figures }: {
   figures?: Omit<SplitAvailable, 'pieces'>
 }) {
   const [splitting, setSplitting] = useState(false)
-  const lots = useQuery({ queryKey: cargoKeys.lots(code), queryFn: () => lotsAPI.get(code), retry: 1 })
+  // Only a master or a lot has lots to read; asking for a plain shipment's lots would end in a 404
+  const hasLots = where.is_master || !!where.lot_label || !!where.master
+  const lots = useQuery({ queryKey: cargoKeys.lots(code), queryFn: () => lotsAPI.get(code), retry: 1, enabled: hasLots })
   const splittable = canSplit(where)
 
   if (lots.isLoading) return <Skeleton className="h-24 w-full" />

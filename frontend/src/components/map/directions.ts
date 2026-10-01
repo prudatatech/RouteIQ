@@ -30,6 +30,14 @@ const MAX_WAYPOINTS = 25
 export const directionsAvailable = true
 
 /**
+ * Whether the server said (once) that it has no directions provider. Staff pages ask
+ * `GET /routing/status` first and pass the answer on, so a server without a key is never called
+ * for every trip page.
+ */
+export interface RoutingAvailability { available?: boolean }
+export const routingOff = (status: RoutingAvailability | null | undefined): boolean => status?.available === false
+
+/**
  * How long a road route stays valid. Live traffic moves within minutes, so an old answer would
  * colour the road and promise an arrival time that are no longer true.
  */
