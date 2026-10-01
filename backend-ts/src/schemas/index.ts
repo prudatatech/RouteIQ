@@ -14,7 +14,7 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
 export const UserCreateSchema = z.object({
   email: z.string().email(),
-  full_name: z.string().min(2).max(255),
+  full_name: z.string().trim().min(2).max(255),
   password: z.string().min(8),
   role: z.enum(['superadmin', 'admin', 'manager', 'driver']).default('driver'),
 });
@@ -23,7 +23,7 @@ export type UserCreate = z.infer<typeof UserCreateSchema>;
 export const APP_ROLES = ['superadmin', 'admin', 'manager', 'driver', 'vendor'] as const;
 
 export const UserUpdateSchema = z.object({
-  full_name: z.string().optional(),
+  full_name: z.string().trim().min(1, 'full_name must not be empty').max(255).optional(),
   role: z.enum(APP_ROLES).optional(),
   is_active: z.boolean().optional(),
 });
@@ -65,7 +65,7 @@ export const VehicleCreateSchema = z.object({
   fuel_efficiency_kmpl: z.number().positive().max(100).default(12.0),
   status: z.enum(['available', 'on_route', 'idle', 'maintenance', 'offline', 'archived']).optional(),
   spark_id: z.string().max(50).optional().nullable(),
-  driver_name: z.string().max(255).optional().nullable(),
+  driver_name: z.string().trim().max(255).optional().nullable(),
   driver_phone: z.string().max(20).optional().nullable(),
   vehicle_model: z.string().max(100).optional().nullable(),
   container_length_ft: z.number().min(0).max(60).optional().nullable(),
@@ -129,7 +129,7 @@ export const VehicleUpdateSchema = z.object({
   longitude: z.number().optional().nullable(),
   driver_id: z.string().uuid().optional().nullable(),
   declared_load_percentage: z.number().min(0).max(100).optional().nullable(),
-  driver_name: z.string().max(255).optional().nullable(),
+  driver_name: z.string().trim().max(255).optional().nullable(),
   driver_phone: z.string().max(20).optional().nullable(),
   vehicle_model: z.string().max(100).optional().nullable(),
   container_length_ft: z.number().min(0).max(60).optional().nullable(),

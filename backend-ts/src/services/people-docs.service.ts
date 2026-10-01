@@ -95,6 +95,11 @@ export function isReviewSoon(doc: Pick<DocRow, 'status' | 'review_by'>, today = 
   return !!doc.review_by && doc.status !== 'rejected' && daysBetween(today, doc.review_by) <= EXPIRING_WITHIN_DAYS;
 }
 
+/** A name as shown in a notice: no stray spaces from names saved before names were trimmed on write. */
+function trimmedName(name: string | null | undefined): string | null {
+  return typeof name === 'string' ? name.trim() || null : null;
+}
+
 export interface DocSummary { required: number; verified: number; pending: number; expiring: number; expired: number; missing: number }
 
 /**
@@ -318,12 +323,12 @@ export async function getPeopleAttention(limit = 10): Promise<PeopleAttention> {
       const licence = live.find(d => d.doc_type === 'driving_licence');
       if (licence?.expires_on) {
         const info = licenceInfo(live, today, settings.licence_grace_days);
-        if (info.status === 'expired') expired.push({ user_id: person.id, full_name: person.full_name, expires_on: licence.expires_on, days_overdue: daysBetween(licence.expires_on, today) });
-        else if (info.status === 'expiring') expiring.push({ user_id: person.id, full_name: person.full_name, expires_on: licence.expires_on, days_left: daysBetween(today, licence.expires_on) });
+        if (info.status === 'expired') expired.push({ user_id: person.id, full_name: trimmedName(person.full_name), expires_on: licence.expires_on, days_overdue: daysBetween(licence.expires_on, today) });
+        else if (info.status === 'expiring') expiring.push({ user_id: person.id, full_name: trimmedName(person.full_name), expires_on: licence.expires_on, days_left: daysBetween(today, licence.expires_on) });
       }
     }
     const gaps = missingGroups(person.role, live, today, { noPan: noPan.has(person.id) });
-    if (gaps.length > 0) missing.push({ user_id: person.id, full_name: person.full_name, role: person.role, missing: gaps.map(g => GROUP_DOC_TYPE[g.key]) });
+    if (gaps.length > 0) missing.push({ user_id: person.id, full_name: trimmedName(person.full_name), role: person.role, missing: gaps.map(g => GROUP_DOC_TYPE[g.key]) });
   }
   expired.sort((a, b) => a.expires_on.localeCompare(b.expires_on));
   expiring.sort((a, b) => a.expires_on.localeCompare(b.expires_on));

@@ -492,7 +492,8 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
 
     const updates: any = {};
     if (vehicle_type) updates.vehicle_type = vehicle_type;
-    if (full_name) updates.full_name = full_name;
+    // Names are kept trimmed ("Vishal " and "Vishal" are one name)
+    if (typeof full_name === 'string' && full_name.trim()) updates.full_name = full_name.trim();
 
     if (Object.keys(updates).length === 0) {
       res.status(400).json({ detail: 'No update data provided' });
