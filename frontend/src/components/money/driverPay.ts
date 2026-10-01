@@ -40,6 +40,8 @@ export interface PayEntry {
   void_reason: string | null
   payout_id: string | null
   paid_at: string | null
+  /** The trip's own status. A cancelled trip is paid only for the leg that was driven. */
+  route_status?: string | null
 }
 
 export interface PayEntriesResponse {
@@ -67,6 +69,23 @@ export const STATUS_TONE: Record<PayStatus, 'warning' | 'info' | 'success' | 'ne
 
 export const KM_SOURCE_LABEL: Record<KmSource, string> = {
   gps: 'Driven (GPS)', planned: 'Planned route', estimated: 'Straight line', none: 'Not known',
+}
+
+/** What each way of measuring the distance means, in plain words. */
+export const KM_SOURCE_HELP: Record<KmSource, string> = {
+  gps: 'Measured from the vehicle\'s GPS positions while it drove.',
+  planned: 'The distance of the planned trip by road. It was not measured while driving.',
+  estimated: 'Straight line: the distance between the stops as a bird flies, not by road. Roads are longer, so the real distance is more.',
+  none: 'No distance could be worked out for this trip.',
+}
+
+/**
+ * A line for a trip that did not run to its end. A cancelled trip is paid for the leg the driver
+ * actually drove (up to the handover), not the whole plan; staff can adjust the amount while it is
+ * not yet paid.
+ */
+export function partTripNote(e: Pick<PayEntry, 'route_status'>): string | null {
+  return e.route_status === 'cancelled' ? 'Part trip: trip cancelled, paid for the leg driven' : null
 }
 
 export const typeLabel = (t: string | null | undefined) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Unknown type')

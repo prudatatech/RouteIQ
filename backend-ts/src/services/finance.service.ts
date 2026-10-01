@@ -88,6 +88,7 @@ interface RouteRow {
   total_distance_km: number | null;
   estimated_fuel_liters: number | null;
   completed_at: string | null;
+  status?: string | null;
 }
 
 /** Fuel litres for a route: its own estimate, else distance / the vehicle's rated km per litre. */
@@ -136,7 +137,7 @@ export async function getFinanceSummary(range: FinanceRange) {
       .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
     supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
       .gte('expense_date', fromKey).lte('expense_date', toKey),
-    supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at')
+    supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status')
       .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO),
     supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
       .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO),
@@ -167,7 +168,7 @@ export async function getFinanceSummary(range: FinanceRange) {
   }
   const knownRoutes = new Map(routes.map(r => [r.id, r]));
   const extraRouteIds = [...new Set(routeByShipment.values())].filter(id => !knownRoutes.has(id));
-  const extraRoutes = await selectIn<RouteRow>('routes', 'id', extraRouteIds, 'id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at');
+  const extraRoutes = await selectIn<RouteRow>('routes', 'id', extraRouteIds, 'id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status');
   const routeInfo = new Map<string, RouteRow>([...knownRoutes, ...extraRoutes.map(r => [r.id, r] as const)]);
   const manifestInfo = new Map(manifests.map(m => [m.id, m]));
 
@@ -273,6 +274,7 @@ export async function getFinanceSummary(range: FinanceRange) {
         route_id: id,
         plate_number: (info?.vehicle_id && vehicleInfo.get(info.vehicle_id)?.plate_number) || null,
         completed_at: info?.completed_at ?? null,
+        status: info?.status ?? null,
         distance_km: info?.total_distance_km != null ? round2(num(info.total_distance_km)) : null,
         revenue: round2(b.revenue),
         costs: round2(b.costs),

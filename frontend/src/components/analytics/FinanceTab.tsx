@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Coins, IndianRupee, Route, Scale, Truck, Wallet } from 'lucide-react'
 import {
-  Alert, Button, Card, CardHeader, DataTable, DateRangeControl, presetRange, Stat, type Column, type DateRangeValue,
+  Alert, Button, Card, CardHeader, DataTable, DateRangeControl, presetRange, Stat, statusToLabel, type Column, type DateRangeValue,
 } from '@/components/ui'
 import { formatDate, formatDay, formatRupees } from '@/utils/display'
 import { ChartCard, SimpleBarChart, SimpleLineChart } from './charts'
@@ -22,7 +22,7 @@ const routeColumns: Column<RouteRow>[] = [
     key: 'route', header: 'Trip', sortValue: r => r.plate_number ?? '',
     cell: r => (
       <Link to={`/routes/${r.route_id}`} className="font-medium text-brand hover:underline">
-        {r.plate_number ?? 'Trip'} · {r.completed_at ? formatDate(r.completed_at) : 'in progress'}
+        {r.plate_number ?? 'Trip'} · {r.completed_at ? formatDate(r.completed_at) : r.status ? statusToLabel(r.status, 'route').toLowerCase() : 'not finished'}
       </Link>
     ),
   },
