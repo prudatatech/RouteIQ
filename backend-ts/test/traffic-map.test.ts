@@ -163,10 +163,12 @@ describe('traffic flow tiles', () => {
 });
 
 describe('traffic incidents in a viewport', () => {
+  // Seen a minute ago: a refresh closes what it no longer finds by `last_seen_at < start of refresh`,
+  // which a "now" stamp from beforeEach can tie to the millisecond
   const row = (id: string, over: Record<string, unknown> = {}) => ({
     id, type: 'Accident', severity: 3, description: null, road: 'NH48', lat: 19.0, lng: 72.9, geometry: null,
     delay_seconds: 900, starts_at: '2026-09-30T05:00:00Z', ends_at: null, affected_route_ids: [], active: true,
-    first_seen_at: '2026-09-30T05:00:00Z', last_seen_at: new Date().toISOString(), ...over,
+    first_seen_at: '2026-09-30T05:00:00Z', last_seen_at: new Date(Date.now() - 60_000).toISOString(), ...over,
   });
   const tomtom = (id: string, lng: number, lat: number, category = 9) => ({
     incidents: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { id, iconCategory: category, magnitudeOfDelay: 2, delay: 600, roadNumbers: ['NH66'] } }],

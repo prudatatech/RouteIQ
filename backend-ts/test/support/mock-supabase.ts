@@ -322,16 +322,15 @@ class MockSupabase {
 
   async start(): Promise<string> {
     // Plain HTTP/1.1 keep-alive. An earlier attempt at "one connection per
-    // request" (res.shouldKeepAlive = false here, keepAlive: false on
-    // http.globalAgent) destroyed the socket the instant each response
-    // finished. That raced with the app's *actual* HTTP client — supabase-js
-    // calls fetch(), i.e. undici, which has its own connection pool entirely
-    // separate from http.globalAgent — so undici would sometimes dispatch
-    // the next request onto a socket this server had just torn down,
-    // producing "socket hang up" / ECONNRESET / an HTTP parse error at
-    // random. The real fix is on the client: see setGlobalDispatcher in
-    // test/support/setup.ts, which disables undici's connection reuse so it
-    // never has a pooled socket to race against.
+    // request" (res.shouldKeepAlive = false here) destroyed the socket the
+    // instant each response finished. That raced with the app's *actual*
+    // HTTP client — supabase-js calls fetch(), i.e. undici, which has its
+    // own connection pool — so undici would sometimes dispatch the next
+    // request onto a socket this server had just torn down, producing
+    // "socket hang up" / ECONNRESET / an HTTP parse error at random. Idle
+    // sockets are left to the default 5s `keepAliveTimeout`, which is longer
+    // than undici's 4s (see setGlobalDispatcher in test/support/setup.ts),
+    // so the client always gives up a socket before this server closes it.
     this.server = http.createServer((req, res) => this.handle(req, res));
     await new Promise<void>(resolve => this.server!.listen(0, '127.0.0.1', resolve));
     this.url = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
