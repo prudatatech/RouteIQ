@@ -87,7 +87,7 @@ try {
       try {
         if (s.click) await page.locator(s.click).first().click({ timeout: 5000 });
         else if (s.fill) await page.locator(s.fill[0]).first().fill(String(s.fill[1]), { timeout: 5000 });
-        else if (s.fillLabel) await page.getByLabel(s.fillLabel[0], { exact: true }).first().fill(String(s.fillLabel[1]), { timeout: 5000 });
+        else if (s.fillLabel) await page.getByLabel(/^\/.*\/$/.test(s.fillLabel[0]) ? new RegExp(s.fillLabel[0].slice(1, -1)) : s.fillLabel[0], { exact: true }).first().fill(String(s.fillLabel[1]), { timeout: 5000 });
         else if (s.select) await page.locator(s.select[0]).first().selectOption(String(s.select[1]), { timeout: 5000 });
         else if (s.press) await page.keyboard.press(s.press);
         else if (s.type) await page.keyboard.type(String(s.type));

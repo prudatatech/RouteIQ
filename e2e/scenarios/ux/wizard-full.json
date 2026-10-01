@@ -75,7 +75,7 @@
 },
 {
 "fillLabel": [
-"Pieces",
+"/^Pieces/",
 "0"
 ]
 },
@@ -93,19 +93,19 @@
 },
 {
 "fillLabel": [
-"Pieces",
+"/^Pieces/",
 "20"
 ]
 },
 {
 "fillLabel": [
-"Declared value (₹)",
+"/^Declared value/",
 "50000"
 ]
 },
 {
 "fillLabel": [
-"Price (₹)",
+"/^Price/",
 "9000"
 ]
 },

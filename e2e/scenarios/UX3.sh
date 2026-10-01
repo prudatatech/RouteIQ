@@ -156,7 +156,7 @@ V1=$(id "select id from vehicles where plate_number like 'MH04E2E%' order by pla
 V2=$(id "select id from vehicles where plate_number like 'MH04E2E%' order by plate_number desc limit 1")
 echo "--- assign SH3 without sending (V1)"
 api superadmin POST "/shipments/$SH3/assign" "{\"vehicle_id\":\"$V1\",\"dispatch\":false}" | head -c 300; echo
-node e2e/uat.mjs sql "select tracking_id, status, price, vehicle_id is not null as has_vehicle from shipments order by created_at desc limit 7" 2>&1 | head -14
+node e2e/uat.mjs sql "select tracking_id, status, vehicle_id is not null as has_vehicle from shipments order by created_at desc limit 7" 2>&1 | head -14
 
 echo; echo "=================== B1 queues and the Accept form"
 ui superadmin /requests "/requests?tab=accepted" "/requests?tab=all" /dispatch "/dispatch?tab=to-send" /today
@@ -183,7 +183,8 @@ ux superadmin "/shipments/$SH6" --steps $S/gap-delete.json
 ux superadmin "/shipments/$SH4"
 
 echo; echo "=================== B6 rate the driver"
-DLOT=$(id "select id from shipments where status='delivered' and vehicle_id is not null and parent_shipment_id is not null order by created_at limit 1")
+DLOT=$(id "select id from shipments where status='delivered' order by (vehicle_id is not null) desc, (parent_shipment_id is not null) desc, created_at limit 1")
+node e2e/uat.mjs sql "select tracking_id, status, vehicle_id is not null as has_vehicle, driver_rating from shipments where status='delivered'" 2>&1 | head
 echo "delivered lot with a vehicle: $DLOT"
 ux superadmin "/shipments/$DLOT" --steps $S/gap-rate.json
 ux superadmin --width 390 "/shipments/$DLOT" --steps $S/gap-rate.json --tag m
