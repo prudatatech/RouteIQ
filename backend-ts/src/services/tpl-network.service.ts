@@ -10,7 +10,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
-import { formatINR } from '../core/format';
+import { formatINR, formatKg } from '../core/format';
 import { corridorMatches, corridorRate, priceAtRate, type CorridorRate } from '../utils/corridor-match';
 import { roadKm, toPoint } from '../utils/eta';
 import { notificationService } from './notification.service';
@@ -191,7 +191,7 @@ export async function findMatchingPartners(pickup: string, drop: string, distanc
 // ── Escalation ───────────────────────────────────────────────────────
 
 async function notifyPartner(match: PartnerMatch, load: Load, price: number | null, offerId: string): Promise<void> {
-  const body = `${shortPlace(load.pickup)} to ${shortPlace(load.drop)}${load.weightKg ? `, ${load.weightKg.toLocaleString('en-IN')} kg` : ''}${price ? ` at ${inr(price)}` : ''}. Open your dashboard to accept or decline.`;
+  const body = `${shortPlace(load.pickup)} to ${shortPlace(load.drop)}${load.weightKg ? `, ${formatKg(load.weightKg)}` : ''}${price ? ` at ${inr(price)}` : ''}. Open your dashboard to accept or decline.`;
   try {
     if (match.partner.user_id) {
       await notificationService.sendNotification(match.partner.user_id, 'New load offer', body, 'tpl_offer', { offer_id: offerId, partner_id: match.partner.id });

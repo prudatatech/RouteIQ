@@ -59,6 +59,13 @@ describe('customer books a shipment', () => {
     expect(notesFor('admin-1')).toHaveLength(1);
   });
 
+  it('words the staff notification with a grouped weight and a written date, not an ISO date', async () => {
+    await post('/customer/bookings', customer(), payload({ weight_kg: 1000, date: '2026-10-01' }));
+    const body = String(notesFor('admin-1')[0].body ?? notesFor('admin-1')[0].message ?? '');
+    expect(body).toContain('1,000 kg, pickup 1 Oct 2026');
+    expect(body).not.toContain('2026-10-01');
+  });
+
   it('keeps the price empty when no rate is set', async () => {
     reset([], null);
     const res = await post('/customer/bookings', customer(), payload());
