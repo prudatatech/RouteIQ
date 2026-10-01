@@ -1,7 +1,7 @@
 import type { TodayResponse } from '@/services/api'
 
 export type QueueId =
-  | 'sos' | 'problems' | 'requests' | 'needsVehicle' | 'tripsToSend' | 'unpriced'
+  | 'sos' | 'problems' | 'requests' | 'needsVehicle' | 'tripsToSend' | 'unpriced' | 'paymentReports'
   | 'vehicleRequests' | 'documents' | 'kyc' | 'bids' | 'driverActions'
 
 export type QueueTone = 'danger' | 'warning' | 'info'
@@ -67,6 +67,13 @@ export function buildQueues(data: TodayResponse): Queue[] {
         ? `${plural(q.unpriced.no_price, 'has', 'have')} no price yet; the rest can be invoiced`
         : 'All have a price and can be invoiced',
       to: '/money?tab=to-price', cta: 'Price deliveries',
+    })
+  }
+  if (q.payment_reports) {
+    list.push({
+      id: 'paymentReports', title: 'Payments reported by customers', count: q.payment_reports.count, tone: 'warning',
+      hint: 'Customers say they paid an invoice. Check the money arrived, then confirm or reject.',
+      to: '/money?tab=invoices&reports=open', cta: 'Review payments',
     })
   }
   list.push(

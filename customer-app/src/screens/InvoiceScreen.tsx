@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
-import { Button, Card, ErrorBanner, ScreenHeader, Text } from '../components/ui';
+import { Banner, Button, Card, ErrorBanner, ScreenHeader, Text } from '../components/ui';
 import { InvoiceStatePill, invoiceDateLine } from '../components/invoice/InvoiceRow';
 import { PaymentDetailsCard } from '../components/invoice/PaymentDetailsCard';
+import { PaymentReportForm, QueryReportForm, ReportsList } from '../components/invoice/InvoiceReports';
 import { colors, fontFamily, size, space } from '../theme';
 import { api, type Invoice } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
@@ -45,6 +47,25 @@ function Details({ invoice, loading, reload, navigation, t }: { invoice: Invoice
   const [busy, setBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const paid = invoice.status === 'paid';
+  const [form, setForm] = useState<'paid' | 'ask' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const reports = useRemote(() => api.listInvoiceReports(invoice.id), `reports-${invoice.id}`, t('reports_load_failed'));
+  // A reply from MargixIndia arrives while this screen is closed: look again whenever it is shown.
+  const reloadReports = reports.reload;
+  useFocusEffect(
+    useCallback(() => {
+      reloadReports();
+    }, [reloadReports]),
+  );
+  const sent = (kind: 'paid' | 'ask') => {
+    setForm(null);
+    setNotice(t(kind === 'paid' ? 'report_sent_paid' : 'report_sent_query'));
+    reloadReports();
+  };
+  const open = (next: 'paid' | 'ask') => {
+    setNotice(null);
+    setForm(next);
+  };
 
   const openPdf = async () => {
     setBusy(true);
@@ -111,6 +132,27 @@ function Details({ invoice, loading, reload, navigation, t }: { invoice: Invoice
       </Card>
 
       {!paid ? <PaymentDetailsCard /> : null}
+
+      {notice ? <Banner tone="info" icon="check-circle" message={notice} /> : null}
+      {form === 'paid' ? <PaymentReportForm invoice={invoice} t={t} onSent={() => sent('paid')} onCancel={() => setForm(null)} /> : null}
+      {form === 'ask' ? <QueryReportForm invoice={invoice} t={t} onSent={() => sent('ask')} onCancel={() => setForm(null)} /> : null}
+      {form === null && !paid ? (
+        <Button
+          title={t('report_paid_button')}
+          icon={(color) => <Feather name="check-circle" size={size.icon.md} color={color} />}
+          onPress={() => open('paid')}
+        />
+      ) : null}
+      {form === null ? (
+        <Button
+          title={t('report_ask_button')}
+          variant="secondary"
+          icon={(color) => <Feather name="message-circle" size={size.icon.md} color={color} />}
+          onPress={() => open('ask')}
+        />
+      ) : null}
+      {reports.error && !reports.data ? <ErrorBanner message={reports.error} action={{ label: t('try_again'), onPress: reloadReports }} /> : null}
+      {reports.data ? <ReportsList reports={reports.data} t={t} /> : null}
 
       {pdfError ? <ErrorBanner message={pdfError} /> : null}
       <Button

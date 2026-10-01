@@ -265,11 +265,50 @@ class ApiClient {
     return this.request('POST', `/customer/bookings/${id}/cancel`, reason ? { reason } : {});
   }
 
+  // ── Profile ────────────────────────────────────────────────
+
+  /** The customer's billing details. Also refreshes the name kept on the phone, so the home greeting stays right. */
+  async getProfile(): Promise<CustomerProfile> {
+    const profile: CustomerProfile = await this.request('GET', '/customer/profile');
+    await this.rememberProfile(profile);
+    return profile;
+  }
+
+  /** Sends only the fields given ('' clears one). A 422 carries the server's sentence, which the request throws as the message. */
+  async updateProfile(changes: ProfileUpdate): Promise<CustomerProfile> {
+    const profile: CustomerProfile = await this.request('PATCH', '/customer/profile', changes);
+    await this.rememberProfile(profile);
+    return profile;
+  }
+
+  private async rememberProfile(profile: CustomerProfile) {
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMER_INFO);
+      const info = stored ? JSON.parse(stored) : {};
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.CUSTOMER_INFO,
+        JSON.stringify({ ...info, full_name: profile.full_name, company_name: profile.company_name, phone: profile.phone ?? info.phone }),
+      );
+    } catch {
+      // The copy on the phone only feeds the greeting; the saved profile is what matters.
+    }
+  }
+
   // ── Invoices ───────────────────────────────────────────────
 
   /** The customer's invoices (bookings and lots), newest first; void ones are not listed. */
   async listInvoices(): Promise<Invoice[]> {
     return this.request('GET', '/customer/invoices');
+  }
+
+  /** What this customer has sent about one invoice (payments they made, questions), newest first. */
+  async listInvoiceReports(invoiceId: string): Promise<InvoiceReport[]> {
+    return this.request('GET', `/customer/invoices/${invoiceId}/reports`);
+  }
+
+  /** Reports a payment or asks a question. Pass the same key when retrying after a lost reply, so only one report is created. */
+  async createInvoiceReport(invoiceId: string, input: InvoiceReportInput, idempotencyKey?: string): Promise<InvoiceReport> {
+    return this.request('POST', `/customer/invoices/${invoiceId}/reports`, input, true, false, idempotencyHeader(idempotencyKey));
   }
 
   /** Where to pay: bank and UPI details from MargixIndia's settings. `available` is false until staff have saved some. */
@@ -440,6 +479,9 @@ export interface Invoice {
   total: number | null;
   amount: number | null;
   gst_amount: number | null;
+  /** Confirmed payments so far, and what is still to pay (total minus amount_paid). */
+  amount_paid: number;
+  outstanding: number;
   issued_at: string | null;
   due_date: string | null;
   overdue: boolean;
@@ -453,6 +495,46 @@ export interface Invoice {
   pickup_name: string;
   drop_name: string;
 }
+
+/** GET /customer/profile: the billing details that appear as the buyer on invoices. */
+export interface CustomerProfile {
+  id: string;
+  phone: string | null;
+  full_name: string | null;
+  company_name: string | null;
+  gstin: string | null;
+  email: string | null;
+  billing_address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  display_name: string;
+  billing_ready: boolean;
+}
+
+/** PATCH /customer/profile: any of these; '' clears a field. */
+export type ProfileUpdate = Partial<Record<'full_name' | 'company_name' | 'gstin' | 'email' | 'billing_address' | 'city' | 'state' | 'pincode', string>>;
+
+/** One thing a customer sent about an invoice: a payment they made or a question. */
+export interface InvoiceReport {
+  id: string;
+  invoice_id: string;
+  kind: 'payment' | 'query';
+  amount: number | null;
+  paid_on: string | null;
+  method: 'upi' | 'neft' | 'rtgs' | 'imps' | 'cheque' | 'cash' | 'other' | null;
+  reference: string | null;
+  message: string | null;
+  status: 'open' | 'confirmed' | 'rejected' | 'answered';
+  staff_note: string | null;
+  handled_at: string | null;
+  created_at: string;
+}
+
+/** POST /customer/invoices/:id/reports. `paid_on` is YYYY-MM-DD. */
+export type InvoiceReportInput =
+  | { kind: 'payment'; amount: number; paid_on: string; method: NonNullable<InvoiceReport['method']>; reference?: string }
+  | { kind: 'query'; message: string };
 
 /** GET /invoices/payment-details: nothing but where to pay. */
 export interface PaymentDetails {

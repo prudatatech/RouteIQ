@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, StyleSheet, Pressable, ScrollView, DeviceEventEmitter, Platform, Modal } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,6 +9,7 @@ import { BOOKING_CREATED_EVENT, STORAGE_KEYS } from '../services/api';
 import { Button, Card, IconButton, Text } from '../components/ui';
 import { colors, elevation, radius, size, space } from '../theme';
 import { useTranslation } from '../hooks/useTranslation';
+import { greetingName } from '../utils/profile';
 
 type Coord = { latitude: number; longitude: number };
 type LoadType = 'full' | 'part';
@@ -91,15 +93,16 @@ export default function HomeScreen({ navigation }: any) {
     return () => subscription.remove();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.CUSTOMER_INFO)
-      .then((infoStr) => {
-        if (!infoStr) return;
-        const name = JSON.parse(infoStr).full_name?.split(' ')[0];
-        if (name) setCustomerName(name.charAt(0).toUpperCase() + name.slice(1));
-      })
-      .catch((e) => console.error(e));
-  }, []);
+  // The name can change on the Account tab, so read it again whenever Home is shown.
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(STORAGE_KEYS.CUSTOMER_INFO)
+        .then((infoStr) => {
+          if (infoStr) setCustomerName(greetingName(JSON.parse(infoStr)));
+        })
+        .catch((e) => console.error(e));
+    }, []),
+  );
 
   const curve = useMemo(
     () => (pickupCoord && dropoffCoord ? generateCurve(pickupCoord, dropoffCoord) : []),

@@ -15,6 +15,7 @@ const base: TodayResponse = {
     documents: { count: 0 },
     driver_actions: { count: 1 },
     unpriced: { count: 3, no_price: 2 },
+    payment_reports: { count: 2 },
     kyc: { count: 1 },
     bids: { count: 0 },
   },
@@ -24,7 +25,7 @@ const base: TodayResponse = {
 describe('the work queues', () => {
   it('run most urgent first', () => {
     expect(buildQueues(base).map(q => q.id)).toEqual([
-      'sos', 'problems', 'requests', 'needsVehicle', 'tripsToSend', 'unpriced', 'vehicleRequests', 'documents', 'kyc', 'bids', 'driverActions',
+      'sos', 'problems', 'requests', 'needsVehicle', 'tripsToSend', 'unpriced', 'paymentReports', 'vehicleRequests', 'documents', 'kyc', 'bids', 'driverActions',
     ])
   })
 
@@ -36,6 +37,7 @@ describe('the work queues', () => {
     expect(to.needsVehicle).toBe('/dispatch?tab=needs-vehicle')
     expect(to.tripsToSend).toBe('/routes?status=pending')
     expect(to.bids).toBe('/bids?tab=decide')
+    expect(to.paymentReports).toBe('/money?tab=invoices&reports=open')
   })
 
   it('open all problems when none is overdue', () => {
@@ -51,18 +53,19 @@ describe('the work queues', () => {
   })
 
   it('leave out the queues a manager does not get', () => {
-    const { unpriced, kyc, bids, ...operations } = base.queues
-    void unpriced; void kyc; void bids
+    const { unpriced, kyc, bids, payment_reports, ...operations } = base.queues
+    void unpriced; void kyc; void bids; void payment_reports
     const ids = buildQueues({ ...base, scope: 'operations', queues: operations }).map(q => q.id)
     expect(ids).not.toContain('unpriced')
     expect(ids).not.toContain('kyc')
     expect(ids).not.toContain('bids')
+    expect(ids).not.toContain('paymentReports')
     expect(ids).toContain('sos')
   })
 
   it('separate what is waiting from what is clear', () => {
     const { waiting, clear } = splitQueues(buildQueues(base))
-    expect(waiting.map(q => q.id)).toEqual(['sos', 'problems', 'requests', 'needsVehicle', 'unpriced', 'vehicleRequests', 'kyc', 'driverActions'])
+    expect(waiting.map(q => q.id)).toEqual(['sos', 'problems', 'requests', 'needsVehicle', 'unpriced', 'paymentReports', 'vehicleRequests', 'kyc', 'driverActions'])
     expect(clear.map(q => q.id)).toEqual(['tripsToSend', 'documents', 'bids'])
   })
 })

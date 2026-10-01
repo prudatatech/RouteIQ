@@ -56,7 +56,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     sos, problemsOpen, problemsOverdue, bookings, vendorLoads, shipmentsNeedVehicle, vendorLoadsNeedVehicle,
     tripsToSend, vehicleRequests, documents, driverActions,
     activeTrips, vehiclesOnRoad, routesToday, routesDoneToday,
-    kyc, bids, unpriced,
+    kyc, bids, unpriced, paymentReports,
   ] = await Promise.all([
     countOf(head('sos_alerts').in('status', [...OPEN_SOS_STATUSES]), 'open SOS alerts'),
     countOf(head('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]), 'open problems'),
@@ -77,6 +77,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     all ? countOf(head('vendor_profiles').eq('kyc_status', 'submitted'), 'KYC to review') : Promise.resolve(null),
     all ? countBidsToDecide(nowISO) : Promise.resolve(null),
     all ? unpricedDeliveries() : Promise.resolve(null),
+    all ? countOf(head('invoice_payment_reports').eq('status', 'open').eq('kind', 'payment'), 'payments reported by customers') : Promise.resolve(null),
   ]);
 
   const queues: Record<string, Record<string, number>> = {
@@ -93,6 +94,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     queues.unpriced = { count: unpriced!.count, no_price: unpriced!.no_price };
     queues.kyc = { count: kyc! };
     queues.bids = { count: bids! };
+    queues.payment_reports = { count: paymentReports! };
   }
 
   return {

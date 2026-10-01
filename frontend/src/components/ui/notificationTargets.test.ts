@@ -141,6 +141,10 @@ describe('staff notifications', () => {
     ['people_status', { count: 2, user_ids: ['u1', 'u2'] }, '/admin/users'],
     ['delivery_rated', { shipment_id: 's1', rating: 4 }, '/shipments/s1'],
     ['delivery_rated', {}, '/shipments'],
+    ['invoice_payment_reported', { invoice_id: 'i1', report_id: 'p1' }, '/money/invoices/i1'],
+    ['invoice_payment_reported', {}, '/money?tab=invoices&reports=open'],
+    ['invoice_query', { invoice_id: 'i1' }, '/money/invoices/i1'],
+    ['invoice_query', null, '/money?tab=invoices&reports=open'],
   ])('%s goes to %s', (type, data, path) => {
     expect(at(type, data, 'staff')).toBe(path)
   })

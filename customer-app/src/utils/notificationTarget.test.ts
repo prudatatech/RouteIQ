@@ -20,6 +20,12 @@ test('invoice notifications open that invoice, falling back to the booking, then
   assert.deepEqual(notificationTarget('invoice_issued', null), { screen: 'Invoices' });
 });
 
+test('replies to a payment report or a question open that invoice', () => {
+  for (const type of ['payment_report_confirmed', 'payment_report_rejected', 'invoice_query_answered']) {
+    assert.deepEqual(notificationTarget(type, { invoice_id: 'i9' }), { screen: 'Invoice', params: { id: 'i9' } });
+  }
+});
+
 test('nothing opens without the id it needs, or for an unknown type', () => {
   assert.equal(notificationTarget('booking', {}), null);
   assert.equal(notificationTarget('cargo_at_hub', { booking_id: 7 }), null);

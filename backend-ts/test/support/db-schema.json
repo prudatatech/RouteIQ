@@ -88,7 +88,13 @@
     "company_name",
     "created_at",
     "updated_at",
-    "push_token"
+    "push_token",
+    "gstin",
+    "email",
+    "billing_address",
+    "city",
+    "state",
+    "pincode"
   ],
   "delivery_points": [
     "id",
@@ -248,6 +254,23 @@
     "void_reason",
     "notes",
     "bill_to"
+  ],
+  "invoice_payment_reports": [
+    "id",
+    "invoice_id",
+    "customer_id",
+    "kind",
+    "amount",
+    "paid_on",
+    "method",
+    "reference",
+    "message",
+    "attachment_path",
+    "status",
+    "staff_note",
+    "handled_by",
+    "handled_at",
+    "created_at"
   ],
   "kyc_profiles": [
     "id",

@@ -14,7 +14,7 @@ import AssignVehicleModal, { type AssignResult } from '@/components/shipments/As
 import { AcceptBookingModal, AcceptLoadModal } from '@/components/requests/AcceptModals'
 import { BookingDrawer, LoadDrawer } from '@/components/requests/RequestDrawers'
 import {
-  SOURCES, STAGE_IDS, STAGE_LABELS, customerRow, priceText, primaryLabel, shipmentHref, shortPlace, stageCounts, vendorName, vendorRow,
+  SOURCES, STAGE_IDS, STAGE_LABELS, customerRow, priceText, primaryLabel, shipmentHref, shortPlace, stageCounts, vendorName, vendorRow, customerName,
   type RequestRow, type RequestSource, type StageId, type VendorRequest,
 } from '@/components/requests/model'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -194,7 +194,7 @@ export default function RequestsPage() {
     const early = b.status === 'requested'
     const reason = await prompt({
       title: early ? 'Reject this request?' : 'Cancel this request?',
-      message: `${b.customer?.name || b.customer?.phone || 'The customer'}’s booking from ${shortPlace(b.pickup_name)} to ${shortPlace(b.drop_name)} will be ${early ? 'rejected' : 'cancelled'}${b.shipment_id ? ' and its shipment too' : ''}. The customer is told the reason.`,
+      message: `${b.customer ? customerName(b) : 'The customer'}’s booking from ${shortPlace(b.pickup_name)} to ${shortPlace(b.drop_name)} will be ${early ? 'rejected' : 'cancelled'}${b.shipment_id ? ' and its shipment too' : ''}. The customer is told the reason.`,
       inputLabel: 'Reason',
       placeholder: early ? 'Why is this request being rejected?' : 'Why is this request being cancelled?',
       confirmLabel: early ? 'Reject request' : 'Cancel request',

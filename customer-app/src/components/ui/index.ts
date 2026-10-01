@@ -7,3 +7,4 @@ export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { Banner, ErrorBanner, OfflineBanner, type BannerProps } from './Banner';
 export { ScreenHeader, type ScreenHeaderProps } from './ScreenHeader';
 export { TextField, type TextFieldProps } from './TextField';
+export { OptionPicker, type OptionPickerProps, type PickerOption } from './OptionPicker';

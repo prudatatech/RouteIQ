@@ -31,6 +31,8 @@ Principle (workflow blueprint, principle 7): every handoff notifies and deep-lin
 | `cargo_transfer_planned`, `cargo_transfer_completed` | Transfers | `transfer_id`, `code` | `/cargo/transfers/:transfer_id` |
 | `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub`, `cargo_delivery_otp` | Custody events | `shipment_id` or `manifest_id`, `exception_id?`, `depot_id?` | case, else `/shipments/:shipment_id` |
 | `cargo_claim_update` | A claim is filed | `claim_id`, `code` | `/cargo?tab=claims&open=:claim_id` |
+| `invoice_payment_reported` | A customer says they paid an invoice (admins and superadmins) | `invoice_id`, `report_id`, `invoice_number` | `/money/invoices/:invoice_id` |
+| `invoice_query` | A customer asks about an invoice (admins and superadmins) | `invoice_id`, `report_id`, `invoice_number` | `/money/invoices/:invoice_id` |
 
 ## Vendors and 3PL partners (shipper portal)
 
@@ -59,11 +61,14 @@ Invoice ids by recipient: a vendor load carries `manifest_id` and `request_id` (
 | `booking` | Booking status changes | `booking_id`, `status` |
 | `invoice_issued` | Invoice for their booking is issued | `invoice_id`, `invoice_number`, `shipment_id`, `booking_id` |
 | `invoice_paid` | Staff mark it paid | same |
+| `payment_report_confirmed` | Staff confirm the payment the customer reported (once per report; replaces `invoice_paid` for that invoice) | `invoice_id`, `report_id`, `invoice_number` |
+| `payment_report_rejected` | Staff reject it, with the reason in the body | same |
+| `invoice_query_answered` | Staff answer the customer's question, the answer is the body | same |
 | `cargo_exception_opened`, `cargo_exception_resolved`, `cargo_transfer_completed`, `cargo_partial_delivery`, `cargo_rto_started`, `cargo_at_hub` | Their goods | `booking_id`, `shipment_id`, `code`, plus `exception_id`, `transfer_id`, `depot_id` |
 | `cargo_delivery_otp` | Delivery code sent | `booking_id`, `shipment_id`, `code`, `expires_at`, `sent_by` |
 | `cargo_claim_update` | Their claim changes status | `booking_id`, `shipment_id`, `claim_id`, `code` (claim), `consignment_code` (shipment tracking id), `status` |
 
-The customer app opens these from the in-app list and from a tapped push with the same routing: `booking` and `cargo_*` (including `cargo_delivery_otp` and `cargo_claim_update`) open the booking (`booking_id`), the delivery code card shows on it while the goods are out for delivery; `invoice_issued` and `invoice_paid` open that invoice (`invoice_id`, else the invoice list).
+The customer app opens these from the in-app list and from a tapped push with the same routing: `booking` and `cargo_*` (including `cargo_delivery_otp` and `cargo_claim_update`) open the booking (`booking_id`), the delivery code card shows on it while the goods are out for delivery; `invoice_issued`, `invoice_paid`, `payment_report_confirmed`, `payment_report_rejected` and `invoice_query_answered` open that invoice (`invoice_id`, else the invoice list).
 
 ## Drivers (driver app)
 
