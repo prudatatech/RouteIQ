@@ -142,7 +142,7 @@ function MembersCard({ orgId }: { orgId: string }) {
   const [modal, setModal] = useState<{ member: OrgMember | null } | null>(null)
 
   const toggle = useMutation({
-    mutationFn: (m: OrgMember) => orgAPI.updateMember(m.user_id, { status: m.status === 'active' ? 'suspended' : 'active' }),
+    mutationFn: (m: OrgMember) => orgAPI.updateMember(m.user_id, { status: m.status === 'active' ? 'removed' : 'active' }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['org-members', orgId] }),
     onError: err => toast.error(errorMessage(err, 'We could not change this member. Try again.')),
   })
@@ -165,7 +165,7 @@ function MembersCard({ orgId }: { orgId: string }) {
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="secondary" onClick={() => setModal({ member: m })}>Change role</Button>
           <Button size="sm" variant="secondary" loading={toggle.isPending && toggle.variables?.user_id === m.user_id} onClick={() => toggle.mutate(m)}>
-            {m.status === 'active' ? 'Suspend' : 'Reactivate'}
+            {m.status === 'active' ? 'Remove' : 'Restore'}
           </Button>
         </div>
       ),
