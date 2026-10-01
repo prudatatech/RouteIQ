@@ -323,10 +323,11 @@ export default function RequestsPage() {
     {
       key: 'route', header: 'Pickup → drop',
       cell: r => (
-        <span className="inline-flex max-w-xs items-center gap-1.5">
-          <span className="truncate" title={r.pickup}>{shortPlace(r.pickup)}</span>
+        // On a phone the places wrap instead of being cut off at the card edge
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 md:inline-flex md:max-w-xs md:flex-nowrap">
+          <span className="break-words md:truncate" title={r.pickup}>{shortPlace(r.pickup)}</span>
           <ArrowRight size={14} aria-label="to" className="shrink-0 text-muted" />
-          <span className="truncate" title={r.drop}>{shortPlace(r.drop)}</span>
+          <span className="break-words md:truncate" title={r.drop}>{shortPlace(r.drop)}</span>
         </span>
       ),
     },
@@ -345,7 +346,7 @@ export default function RequestsPage() {
     },
     {
       key: 'price', header: 'Price', align: 'right', hideBelow: 'lg', sortValue: r => r.price,
-      cell: r => <span className={r.price == null ? 'text-muted' : 'tabular'}>{priceText(r)}</span>,
+      cell: r => <span className={r.price == null ? 'whitespace-nowrap text-muted' : 'whitespace-nowrap tabular'}>{priceText(r)}</span>,
     },
     {
       key: 'age', header: 'Received', hideBelow: 'xl', sortValue: r => Date.parse(r.createdAt),

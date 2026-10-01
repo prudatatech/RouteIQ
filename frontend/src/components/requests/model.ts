@@ -221,7 +221,7 @@ export function priceText(row: Pick<RequestRow, 'price' | 'priceKind'>): string 
 }
 
 export function primaryLabel(row: Pick<RequestRow, 'action'>): string {
-  return row.action === 'accept' ? 'Accept & price' : row.action === 'assign' ? 'Assign vehicle' : 'Open shipment'
+  return row.action === 'accept' ? 'Accept and price' : row.action === 'assign' ? 'Assign vehicle' : 'Open shipment'
 }
 
 export function stageCounts(rows: RequestRow[]): Record<StageId, number> {

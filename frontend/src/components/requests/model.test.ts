@@ -49,7 +49,7 @@ describe('words on the row', () => {
   it('says what the price is', () => {
     expect(priceText({ price: 12000, priceKind: 'quoted' })).toContain('quoted')
     expect(priceText({ price: null, priceKind: 'none' })).toBe('Not priced')
-    expect(primaryLabel({ action: 'accept' })).toBe('Accept & price')
+    expect(primaryLabel({ action: 'accept' })).toBe('Accept and price')
     expect(primaryLabel({ action: 'assign' })).toBe('Assign vehicle')
     expect(primaryLabel({ action: 'open' })).toBe('Open shipment')
   })
