@@ -25,7 +25,7 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | UAT-004 | Major | FLT | Invoices issued with no seller details and "Billed to: Not recorded" (AZS-03, 17) | fixed | 467a74c |
 | UAT-005 | Major | FLT | Revenue "before GST" equals invoice totals; profit shown with no costs (AZS-15, 18) | fixed | f6eb8fd |
 | UAT-006 | Major | OPS | A split master tells staff to assign a vehicle and has no driver to rate (AZS-09) | fixed | 050ad2f |
-| UAT-007 | Major | DRV | A lot can be delivered with no pickup recorded (AZS-08) | open | |
+| UAT-007 | Major | DRV | A lot can be delivered with no pickup recorded (AZS-08) | fixed | uat/fix-round2 (4508375) |
 | UAT-008 | Major | ALL | Malformed %-escape in a URL gives a 500 on every :param route, incl. public tracking (AZP-01) | fixed | 62b1943 |
 | UAT-009 | Minor | FLT | ₹1,50,000.04: GST rounding leaves stray paise (AZS-04) | fixed | 467a74c |
 | UAT-010 | Minor | OPS | Trips list has no trip number or shipment (AZS-05) | fixed | dd146ed |
@@ -38,8 +38,8 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | UAT-017 | Minor | OPS | Live map takes ~11 s to draw (AZS-21) | fixed | f9534e2 |
 | UAT-018 | Minor | FLT | Vehicle health 100 with no inputs (AZS-22) | fixed | 49bc75c |
 | UAT-019 | Minor | ALL | Public source maps; no frame-ancestors on the web app (AZP-02, 03) | fixed | 8bd3c91 |
-| UAT-020 | Minor | ALL | Public tracking exposes internal ids, plate and live position; short CM- ids (AZP-04) | open | |
-| UAT-021 | Minor | ALL | /ready says database ok without checking; X-Request-ID echoed unchecked (AZP-05, 06) | open | |
+| UAT-020 | Minor | ALL | Public tracking exposes internal ids, plate and live position; short CM- ids (AZP-04) | fixed | uat/fix-round2 (4508375) |
+| UAT-021 | Minor | ALL | /ready says database ok without checking; X-Request-ID echoed unchecked (AZP-05, 06) | fixed | uat/fix-round2 (4508375) |
 | UAT-022 | Minor | ALL | Unknown web paths return 200 (soft 404) (AZP-07) | fixed | 8bd3c91 |
 | UAT-024 | Minor | OPS | UX: addresses print the place name twice ("Fab Hostels" then "Fab Hostels, Kanakapura Main Road…") on Shipments and in the drawer | open | |
 | UAT-025 | Minor | OPS | UX: Requests shows 0 everywhere while 6 shipments exist; staff-created shipments never appear in Requests, and the page doesn't say so | open | |
@@ -47,7 +47,39 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | UAT-027 | Minor | FLT | UX: Optimize lists "Driver licence missing" on both vehicles as the only vehicle detail, with no link to fix it | open | |
 | UAT-028 | Minor | OPS | UX: /3pl-partners silently redirects to Return trips → 3PL partners; the sidebar item and page title don't match | open | |
 | UAT-029 | Major | FLT | Driver-pay backfill counted a phantom 20,015 km first leg (TR-FCDACA90: 21,783 km instead of 1,768 km) | fixed | this commit; live entry corrected |
-| UAT-023 | Gap | ALL | No rate limit on /auth/refresh; logout doesn't revoke; robots.txt, Permissions-Policy (AZP-08, 09) | open | |
+| UAT-023 | Gap | ALL | No rate limit on /auth/refresh; logout doesn't revoke; robots.txt, Permissions-Policy (AZP-08, 09) | fixed | uat/fix-round2 (4508375) |
+
+### UI/UX review (all roles, GitHub runner)
+
+Details and screenshots: [UX](findings/UX.md).
+
+| ID | Sev | Area | Title | Status | Commit |
+| --- | --- | --- | --- | --- | --- |
+| UX-01 | Major | UX | Public tracking `/track/:id`: A split booking shows "Booked", "Not yet assigned" and a failed-delivery history though 2 of 3 lots are delivered | fixing | |
+| UX-02 | Major | UX | Vehicle page: "Nothing is expired" next to five missing documents; fuel tank 100% next to "no fuel level" | fixing | |
+| UX-03 | Major | UX | Shipment page (master and lot): Contradictory lines and a wall of repeated history | fixing | |
+| UX-04 | Minor | UX | Several: Raw system text shown to users (enums, audit keys, UUIDs) | fixing | |
+| UX-05 | Minor | UX | Several: Vocabulary slips: consignment, route, Cargo, Finance, Transship, Raise problem | fixing | |
+| UX-06 | Minor | UX | Plan a trip, Insights, trip page, Optimize: Server-setup instructions and solver jargon shown to dispatchers | fixing | |
+| UX-07 | Minor | UX | Trip page: A normal trip page logs a 503 and says "No driving route was found" | fixing | |
+| UX-08 | Minor | UX | Today, Fleet, Trips: Counts disagree: active trips, vehicles on the road, on trip | fixing | |
+| UX-09 | Minor | UX | Several: One trip, one lot, several ids and spellings | fixing | |
+| UX-10 | Minor | UX | Several: Pieces, items, pcs, "1 pcs", "1 vehicles" | fixing | |
+| UX-11 | Minor | UX | Manifest, Analytics: ISO dates and unformatted numbers beside "1 Oct 2026" | fixing | |
+| UX-12 | Minor | UX | All lists: Status column moves around; Vehicle column shows different things | fixing | |
+| UX-13 | Minor | UX | Lists: CSV export on some lists only | fixing | |
+| UX-14 | Minor | UX | Requests, Money, KYC, Dispatch: Pages open on an empty tab while the work sits in another | fixing | |
+| UX-15 | Minor | UX | Create shipment: The form opens already showing red errors | fixing | |
+| UX-16 | Minor | UX | Manager, customer: Blocked pages redirect silently | fixing | |
+| UX-17 | Minor | UX | Trip detail at 390 px: Page scrolls sideways (402 px wide) | fixing | |
+| UX-18 | Minor | UX | Menu and tabs: Same thing in two places; names that do not match the target | fixing | |
+| UX-19 | Minor | UX | Problems, transfers, lots: "Part B due", "Add" and "Count mismatch" without explanation | fixing | |
+| UX-20 | Minor | UX | Return trips: "Combine loads" inside "Combine loads"; auto-accept after 2 minutes; ineligible options | fixing | |
+| UX-21 | Minor | UX | Money, Driver pay: A cancelled trip paid in full; "Straight line"; Reports labels | fixing | |
+| UX-22 | Minor | UX | Vendor portal: Verified company with no PAN, bank or documents; onboarding reopens | fixing | |
+| UX-23 | Minor | UX | Driver `/driver`: Origin and next stop identical; Complete delivery with no trip | fixing | |
+| UX-24 | Minor | UX | SOS page, vehicle page: Eight equal buttons; Raise SOS is the loudest button on a healthy vehicle | fixing | |
+| UX-25 | Polish | UX | Several: Smaller layout and copy items | fixing | |
 
 ## Details
 
