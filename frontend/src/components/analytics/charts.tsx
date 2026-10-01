@@ -150,11 +150,12 @@ export function SimpleBarChart<T extends object>({ data, categoryKey, series, fo
 }
 
 /** One measure over time. */
-export function SimpleLineChart<T extends object>({ data, categoryKey, series, formatValue = defaultFormat, label }: {
+export function SimpleLineChart<T extends object>({ data, categoryKey, series, formatValue = defaultFormat, formatCategory, label }: {
   data: T[]
   categoryKey: keyof T & string
   series: Series
   formatValue?: (n: number) => string
+  formatCategory?: (value: string) => string
   label: string
 }) {
   return (
@@ -162,7 +163,7 @@ export function SimpleLineChart<T extends object>({ data, categoryKey, series, f
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={c.border} strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey={categoryKey} tick={axisTick} tickLine={false} axisLine={{ stroke: c.border }} minTickGap={24} />
+          <XAxis dataKey={categoryKey} tick={axisTick} tickLine={false} axisLine={{ stroke: c.border }} minTickGap={24} tickFormatter={formatCategory ? (v: string) => formatCategory(String(v)) : undefined} />
           <YAxis
             width={48}
             tick={axisTick}
