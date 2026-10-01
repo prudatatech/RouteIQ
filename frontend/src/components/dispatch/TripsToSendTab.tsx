@@ -3,7 +3,7 @@ import { ArrowRight, Play } from 'lucide-react'
 import { Button, DataTable, StatusPill, buttonClasses, type Column } from '@/components/ui'
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import { canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
-import { formatKm, formatMinutes, formatRelative } from '@/utils/display'
+import { formatKm, formatMinutes, formatRelative, tripNumber } from '@/utils/display'
 import { TRIP_SOURCE_LABEL, tripSource } from './logic'
 import { EWAY_BILL_WARNING } from '@/config/compliance'
 
@@ -128,7 +128,7 @@ export default function TripsToSendTab({ rows, loading, error, onRetry, ewayMiss
         <div className="flex flex-wrap justify-end gap-2" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           <Link to={`/routes/${t.id}`} className={buttonClasses({ variant: 'ghost', size: 'sm' })}>Open trip</Link>
           {canDispatchRoute(t) && (
-            <Button size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(t)} aria-label={`Send trip ${t.vehicles?.plate_number ?? t.id.slice(0, 8)} to the driver`}>
+            <Button size="sm" icon={<Play size={14} />} disabled={isPending} onClick={() => dispatch(t)} aria-label={`Send trip ${t.vehicles?.plate_number ?? tripNumber(t.id)} to the driver`}>
               Send to driver
             </Button>
           )}

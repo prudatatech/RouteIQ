@@ -14,7 +14,7 @@ import {
   pendingStopPoints, plansFromReorder, plansFromResult,
   type LatLng, type OptimizerEngine, type RoutePlan, type ServerRoute, type UnassignedShipment,
 } from '@/components/optimize/plan'
-import { formatMinutes, formatKm } from '@/utils/display'
+import { formatMinutes, formatKm, pluralize, tripNumber } from '@/utils/display'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert, useConfirm,
@@ -434,8 +434,8 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
   const mapDepot: LatLng | null = previewPlan ? null : result?.depot ? { lat: result.depot.latitude, lng: result.depot.longitude } : null
 
   const summaryLine = routeIdToReoptimize
-    ? `Re-optimizing trip ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
-    : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} shipments that need a vehicle.`
+    ? `Re-optimizing trip ${tripNumber(routeIdToReoptimize)}`
+    : `Evaluating ${pluralize(vehicles.length, 'vehicle')} and ${pluralize(pendingShipments.length, 'shipment')} that need a vehicle.`
 
   return (
     <Page>

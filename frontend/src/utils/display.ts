@@ -65,6 +65,22 @@ export function formatKm(km: number | string | null | undefined): string {
   return n === null ? EMPTY : `${n.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km`
 }
 
+/** "1 vehicle", "3 vehicles". Pass `many` for irregular plurals. The count gets Indian grouping. */
+export function pluralize(n: number, one: string, many: string = `${one}s`): string {
+  return `${n.toLocaleString('en-IN')} ${n === 1 ? one : many}`
+}
+
+/** "1 piece", "1,250 pieces". Pieces is the one word for a count of goods. */
+export function formatPieces(n: number | string | null | undefined): string {
+  const v = numberOf(n)
+  return v === null ? EMPTY : pluralize(v, 'piece')
+}
+
+/** TR-874FA20D: the one display number of a trip, from its id. Same everywhere a trip is named. */
+export function tripNumber(id: string | null | undefined): string {
+  return id ? `TR-${id.split('-')[0].toUpperCase().slice(0, 8)}` : EMPTY
+}
+
 /** "12 min", "1 h", "1 h 5 min". Zero or unknown shows a dash. */
 export function formatMinutes(minutes: number | null | undefined): string {
   const n = numberOf(minutes)

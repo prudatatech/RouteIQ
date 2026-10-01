@@ -9,6 +9,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useVehicleTrack } from '@/components/fleet/location/useVehicleLocation'
 import { trackCoordinates } from '@/components/fleet/location/format'
 import MapView from './MapView'
+import { tripNumber } from '@/utils/display'
 import LayerSwitcher, { type LayerOverlay } from './LayerSwitcher'
 import { useLayerPrefs } from './layerPrefs'
 import { fetchDrivingRoute, type DrivingRoute } from './directions'
@@ -342,7 +343,7 @@ export default function LiveMap({
           )}
           {selectedId && activeRoute && (
             <section aria-label="Active route" className="rounded-control border border-border bg-surface p-3 text-sm shadow-raised">
-              <p className="truncate font-medium text-text">{activeRoute.name || `Trip ${activeRoute.id.slice(0, 8)}`}</p>
+              <p className="truncate font-medium text-text">{activeRoute.name || tripNumber(activeRoute.id)}</p>
               <p className="mt-1 text-xs text-muted">
                 {remainingStops} {remainingStops === 1 ? 'stop' : 'stops'} left · {activeRoute.status === 'active' ? 'Active' : 'Pending'}
               </p>
