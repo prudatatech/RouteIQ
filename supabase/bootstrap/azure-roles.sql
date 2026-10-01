@@ -45,8 +45,6 @@ DO $$ BEGIN EXECUTE format('GRANT app_owner TO %I WITH INHERIT TRUE, SET TRUE', 
 GRANT app_owner TO service_role WITH INHERIT TRUE;
 ALTER ROLE service_role INHERIT;
 GRANT CREATE, USAGE ON SCHEMA public TO app_owner;
-GRANT USAGE ON SCHEMA extensions, auth, storage TO app_owner;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA extensions TO app_owner;
 
 -- Schemas each service owns
 CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION supabase_auth_admin;
@@ -59,6 +57,8 @@ ALTER ROLE supabase_storage_admin SET search_path = storage;
 GRANT USAGE ON SCHEMA public, extensions TO anon, authenticated, service_role, supabase_auth_admin, supabase_storage_admin;
 GRANT USAGE ON SCHEMA auth, storage TO anon, authenticated, service_role;
 GRANT USAGE ON SCHEMA realtime TO anon, authenticated, service_role;
+GRANT USAGE ON SCHEMA extensions, auth, storage TO app_owner;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA extensions TO app_owner;
 
 -- auth.uid(), auth.role() and auth.jwt() as Supabase defines them (GoTrue also creates them; same body).
 -- The public schema's policies call them, so they must exist before 01_schema.sql loads.
