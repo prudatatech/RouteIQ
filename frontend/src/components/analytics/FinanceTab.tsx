@@ -102,7 +102,7 @@ export default function FinanceTab() {
         onRetry={() => summary.refetch()}
         empty={!hasData}
         emptyTitle="No invoices or expenses in this range"
-        emptyDescription="Deliver a priced load or add an expense in Finance and it will show here."
+        emptyDescription="Deliver a priced load or add an expense in Money and it will show here."
         height="h-72"
       >
         <SimpleBarChart
@@ -125,7 +125,7 @@ export default function FinanceTab() {
             description="Recorded expenses, plus fuel estimated from trip litres"
             empty={categoryBars.length === 0}
             emptyTitle="No costs in this range"
-            emptyDescription="Add an expense in Finance to see where the money goes."
+            emptyDescription="Add an expense in Money to see where the money goes."
             height="h-64"
           >
             <SimpleBarChart

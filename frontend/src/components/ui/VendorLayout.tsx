@@ -25,7 +25,7 @@ const links = [
   { to: '/vendor/loads', label: 'My loads', requiresSignIn: true },
   { to: '/vendor/request', label: 'Post a load', requiresSignIn: true },
   { to: '/vendor/return-trips', label: 'Return trips', requiresSignIn: false },
-  { to: '/vendor/invoices', label: 'Invoices & proofs', requiresSignIn: true },
+  { to: '/vendor/invoices', label: 'Invoices and proofs', requiresSignIn: true },
   { to: '/vendor/claims', label: 'Claims', requiresSignIn: true },
   { to: '/vendor/company', label: 'Company', requiresSignIn: true },
 ]

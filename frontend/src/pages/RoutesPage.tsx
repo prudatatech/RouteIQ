@@ -73,7 +73,7 @@ export default function RoutesPage() {
 
   const tabs = STATUS_TABS.map(id => ({
     id,
-    label: id === 'all' ? 'All' : statusToLabel(id, 'route'),
+    label: id === 'all' ? 'All' : id === 'pending' ? 'To send' : statusToLabel(id, 'route'),
     count: isLoading ? undefined : id === 'all' ? routes.length : routes.filter(r => r.status === id).length,
   }))
 

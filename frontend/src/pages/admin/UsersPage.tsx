@@ -161,7 +161,8 @@ export default function UsersPage() {
     { id: 'all' as const, label: 'All', count: showCounts ? counts.all : undefined },
     { id: 'drivers' as const, label: 'Drivers', count: showCounts ? counts.drivers : undefined },
     { id: 'staff' as const, label: 'Staff', count: showCounts ? counts.staff : undefined },
-    { id: 'attention' as const, label: 'Needs attention', count: showCounts ? counts.attention : undefined },
+    // When every person needs attention the tab would repeat All, so it is left out
+    ...(showCounts && counts.attention > 0 && counts.attention === counts.all && tab !== 'attention' ? [] : [{ id: 'attention' as const, label: 'Needs attention', count: showCounts ? counts.attention : undefined }]),
     ...(myRole === 'superadmin' ? [{ id: 'vendors' as const, label: 'Vendors' }] : []),
   ]
   const filtered = !!(search || status || role)
@@ -170,7 +171,7 @@ export default function UsersPage() {
     <Page>
       <PageHeader
         title="People"
-        description="Drivers and staff: who they are, their documents, and how they work with us."
+        description={myRole === 'superadmin' ? 'Drivers, staff and vendors: who they are, their documents, and how they work with us.' : 'Drivers and staff: who they are, their documents, and how they work with us.'}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'people'} onClick={() => exportCsv('people')}>Export people</Button>

@@ -185,7 +185,7 @@ export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDet
   const dropName: string | null = drop?.name ?? drop?.address ?? null;
   const route = origin && dropName ? `${origin} to ${dropName}` : (origin ?? dropName);
   const code = overview?.code ?? null;
-  const description = ['Freight (road transport of goods)', code ? `consignment ${code}` : null, route].filter(Boolean).join(', ');
+  const description = ['Freight (road transport of goods)', code ? `shipment ${code}` : null, route].filter(Boolean).join(', ');
 
   let goods: InvoiceDetail['goods'] = [];
   if (inv.shipment_id) {

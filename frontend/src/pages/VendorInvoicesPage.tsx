@@ -117,7 +117,7 @@ export default function VendorInvoicesPage() {
   if (!isSignedIn || !isVendor) {
     return (
       <Page>
-        <PageHeader title="Invoices & proofs" description="Your invoices, and the proof of delivery for each load." />
+        <PageHeader title="Invoices and proofs" description="Your invoices, and the proof of delivery for each load." />
         <EmptyState
           title="Sign in to see your invoices"
           action={<Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/invoices')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
@@ -128,7 +128,7 @@ export default function VendorInvoicesPage() {
 
   return (
     <Page>
-      <PageHeader title="Invoices & proofs" description="An invoice is issued when your load is delivered. Each one links to its load and its proof of delivery.">
+      <PageHeader title="Invoices and proofs" description="An invoice is issued when your load is delivered. Each one links to its load and its proof of delivery.">
         <SearchInput value={search} onChange={setSearch} placeholder="Search by invoice or load" className="max-w-sm" />
       </PageHeader>
 
