@@ -30,11 +30,12 @@ const fixtures = (overrides: Record<string, unknown[]> = {}) => ({
 });
 
 describe('upcomingTrips', () => {
-  it('leaves out the trip my-route shows and lists the pending rest oldest first', () => {
+  it('leaves out the trip my-route shows and lists the other sent trips oldest first, never an unsent one', () => {
     const list = upcomingTrips([
       route('newest', '2026-09-30T10:00:00Z', 'active', ['A']),
-      route('older', '2026-09-30T09:00:00Z', 'pending', ['B', 'C']),
-      route('oldest', '2026-09-30T08:00:00Z', 'pending', ['D']),
+      route('older', '2026-09-30T09:00:00Z', 'active', ['B', 'C']),
+      route('oldest', '2026-09-30T08:00:00Z', 'active', ['D']),
+      route('unsent', '2026-09-30T07:00:00Z', 'pending', ['E']),
       { id: 'empty', status: 'pending', created_at: '2026-09-30T11:00:00Z', route_stops: [] },
     ]);
     expect(list.map(t => t.id)).toEqual(['oldest', 'older']);
@@ -42,7 +43,7 @@ describe('upcomingTrips', () => {
   });
 
   it('is empty with one trip', () => {
-    expect(upcomingTrips([route('only', '2026-09-30T10:00:00Z', 'pending', ['A'])])).toEqual([]);
+    expect(upcomingTrips([route('only', '2026-09-30T10:00:00Z', 'active', ['A'])])).toEqual([]);
   });
 });
 

@@ -380,6 +380,59 @@ export async function holdCargoOnVehicle(
   return { exception_id: row.id, code: row.code, held };
 }
 
+/**
+ * A serious SOS was cancelled as a false alarm: undo what that SOS put in place, and nothing else.
+ * The cases the SOS opened (source sos, no repair job linked) have their goods taken off hold and
+ * are closed with a note. The truck goes back to service only when it is in maintenance, no repair
+ * job is open for it and no other case still holds goods on it. The result says what was released,
+ * and an audit entry records it.
+ */
+export async function releaseSosHold(
+  alert: { id: string; vehicle_id: string | null },
+  actor: Actor | null,
+): Promise<{ vehicle_released: boolean; cases: string[]; goods: number }> {
+  const result = { vehicle_released: false, cases: [] as string[], goods: 0 };
+  if (!alert.vehicle_id) return result;
+  const vehicleId = alert.vehicle_id;
+  const { data } = await supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS).eq('sos_alert_id', alert.id).in('status', [...OPEN_EXCEPTION_STATUSES]);
+  const mine = ((data ?? []) as any[]).filter(r => r.source === 'sos' && !r.maintenance_job_id);
+
+  // The truck first: goods cannot come off hold on a vehicle that is out of service
+  const { data: vehicle } = await supabase.from('vehicles').select('status').eq('id', vehicleId).maybeSingle();
+  if (vehicle?.status === 'maintenance') {
+    const { data: jobs } = await supabase.from('vehicle_maintenance_jobs').select('id').eq('vehicle_id', vehicleId).eq('status', 'open').limit(1);
+    const { data: others } = await supabase.from('cargo_exceptions').select('id').eq('vehicle_id', vehicleId).in('status', [...OPEN_EXCEPTION_STATUSES]).in('type', ['vehicle_breakdown', 'vehicle_accident']);
+    const mineIds = new Set(mine.map(r => r.id));
+    const otherOpen = ((others ?? []) as any[]).some(r => !mineIds.has(r.id));
+    if ((jobs ?? []).length === 0 && !otherOpen) {
+      const { vehicleHasOpenWork } = await import('../route.service');
+      const next = (await vehicleHasOpenWork(vehicleId)) ? 'on_route' : 'available';
+      const { error } = await supabase.from('vehicles').update({ status: next }).eq('id', vehicleId).eq('status', 'maintenance');
+      if (error) throw new Error(`Failed to return the vehicle to service: ${error.message}`);
+      result.vehicle_released = true;
+    }
+  }
+
+  const { recordCustody } = await import('./custody.service');
+  for (const row of mine) {
+    const goods = await itemConsignments(row.id);
+    const operating = result.vehicle_released || (vehicle ? (OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status)) : false);
+    for (const { c } of goods) {
+      if (c.status !== 'on_hold' || !operating) continue;
+      await recordCustody(c, { kind: 'release_hold', notes: `The SOS was cancelled as a false alarm (case ${row.code})` }, actor, { via: 'exception', exceptionId: row.id });
+      result.goods++;
+    }
+    const stillHeld = (await itemConsignments(row.id)).some(({ c }) => c.status === 'on_hold');
+    if (stillHeld) continue;
+    await resolveRow(await loadException(row.id), 'no_action', 'The SOS was cancelled as a false alarm.', actor);
+    result.cases.push(row.code);
+  }
+  if (result.vehicle_released || result.cases.length > 0) {
+    await auditService.recordSystem('sos.cancel_released', { sos_alert_id: alert.id, vehicle_id: vehicleId, vehicle_released: result.vehicle_released, cases: result.cases, goods_released: result.goods }, 'A cancelled SOS released its hold');
+  }
+  return result;
+}
+
 /** Links a maintenance job to the hold case it caused (the job is saved after the work is released). */
 export async function linkMaintenanceJob(exceptionId: string, jobId: string): Promise<void> {
   const row = await loadException(exceptionId);

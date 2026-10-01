@@ -10,7 +10,7 @@ const adminToken = () => supabaseMock.signUserToken('admin-1');
 
 function vendorRequest(status: string) {
   return {
-    id: 'req-1',
+    id: 'a0000000-0000-4000-8000-000000000001',
     vendor_id: VENDOR,
     pickup_location: 'Bhiwandi, Maharashtra',
     pickup_lat: 19.3,
@@ -28,14 +28,14 @@ function reset(status: string) {
   supabaseMock.reset({
     users: [{ id: 'admin-1', role: 'admin', is_active: true }],
     vendor_shipment_requests: [vendorRequest(status)],
-    vehicles: [{ id: 'vehicle-1', driver_id: 'driver-1', status: 'available', capacity_kg: 1000, current_load_kg: 0, available_capacity_kg: 1000 }],
+    vehicles: [{ id: 'a0000000-0000-4000-8000-0000000000b1', driver_id: 'driver-1', status: 'available', capacity_kg: 1000, current_load_kg: 0, available_capacity_kg: 1000 }],
     cargo_manifest: [],
     notifications: [],
   });
 }
 
 const put = (path: string, body?: Record<string, unknown>) =>
-  request(app).put(`/api/v1/vendor/shipment-request/req-1/${path}`).set('Authorization', `Bearer ${adminToken()}`).send(body ?? {});
+  request(app).put(`/api/v1/vendor/shipment-request/a0000000-0000-4000-8000-000000000001/${path}`).set('Authorization', `Bearer ${adminToken()}`).send(body ?? {});
 
 describe('vendor shipment request decisions', () => {
   beforeEach(() => reset('pending'));
@@ -46,7 +46,7 @@ describe('vendor shipment request decisions', () => {
     expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', cost: 12500 });
     const note = supabaseMock.writes('notifications', 'POST').map(w => w.body).find(b => b.type === 'request_approved');
     expect(note?.body).toBe("Accepted at ₹12,500. We'll assign a truck next.");
-    expect(note?.data).toMatchObject({ request_id: 'req-1', cost: 12500 });
+    expect(note?.data).toMatchObject({ request_id: 'a0000000-0000-4000-8000-000000000001', cost: 12500 });
   });
 
   it('turns a rate per km into the accepted price', async () => {
@@ -73,7 +73,7 @@ describe('vendor shipment request decisions', () => {
 
   it('lets a manager accept a request', async () => {
     supabaseMock.rows('users').push({ id: 'manager-1', role: 'manager', is_active: true });
-    const res = await request(app).put('/api/v1/vendor/shipment-request/req-1/approve')
+    const res = await request(app).put('/api/v1/vendor/shipment-request/a0000000-0000-4000-8000-000000000001/approve')
       .set('Authorization', `Bearer ${supabaseMock.signUserToken('manager-1')}`).send({ cost: 9000 });
     expect(res.status).toBe(200);
   });
@@ -110,7 +110,7 @@ describe('vendor shipment request decisions', () => {
   });
 
   it('refuses to assign a vehicle before the request is accepted with a price', async () => {
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/Accept the request with a price first/);
     expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'pending', assigned_vehicle_id: null });
@@ -119,12 +119,12 @@ describe('vendor shipment request decisions', () => {
 
   it('assigns a vehicle once and creates one manifest entry', async () => {
     reset('approved');
-    const first = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const first = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(first.status).toBe(200);
-    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'assigned', assigned_vehicle_id: 'vehicle-1' });
+    expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'assigned', assigned_vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(supabaseMock.writes('cargo_manifest', 'POST')).toHaveLength(1);
 
-    const second = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const second = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(second.status).toBe(409);
     expect(supabaseMock.writes('cargo_manifest', 'POST')).toHaveLength(1);
   });
@@ -132,7 +132,7 @@ describe('vendor shipment request decisions', () => {
   it('releases the request when the manifest cannot be created', async () => {
     reset('approved');
     supabaseMock.fail('cargo_manifest', 'insert failed');
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(res.status).toBe(500);
     expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', assigned_vehicle_id: null });
   });
@@ -146,7 +146,7 @@ describe('vendor shipment request decisions', () => {
 
 describe('assigning a vehicle', () => {
   const vehicle = (over: Record<string, unknown> = {}) => ({
-    id: 'vehicle-1', driver_id: 'driver-1', status: 'available', capacity_kg: 1000, current_load_kg: 200, available_capacity_kg: 800, ...over,
+    id: 'a0000000-0000-4000-8000-0000000000b1', driver_id: 'driver-1', status: 'available', capacity_kg: 1000, current_load_kg: 200, available_capacity_kg: 800, ...over,
   });
   beforeEach(() => {
     reset('approved');
@@ -154,7 +154,7 @@ describe('assigning a vehicle', () => {
   });
 
   it('adds the load to the vehicle, puts it on the road and tells the driver at once (a vendor load has no trip to hold back)', async () => {
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000 });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1', cost: 9000 });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ status: 'on_route', current_load_kg: 600, available_capacity_kg: 400 });
     expect(supabaseMock.rows('vendor_shipment_requests')[0].cost).toBe(9000);
@@ -162,7 +162,7 @@ describe('assigning a vehicle', () => {
   });
 
   it('ignores a dispatch flag: assigning a vendor load always sends it', async () => {
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000, dispatch: false });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1', cost: 9000, dispatch: false });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('vehicles')[0].status).toBe('on_route');
     expect(supabaseMock.writes('notifications', 'POST').map(w => w.body).some(b => b.type === 'cargo_assigned')).toBe(true);
@@ -170,7 +170,7 @@ describe('assigning a vehicle', () => {
 
   it('refuses a load that does not fit the free capacity, without claiming the request', async () => {
     supabaseMock.rows('vehicles')[0] = vehicle({ available_capacity_kg: 300 });
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/300 kg free/);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('approved');
@@ -179,14 +179,14 @@ describe('assigning a vehicle', () => {
 
   it.each(['maintenance', 'archived'])('refuses a vehicle in %s', async status => {
     supabaseMock.rows('vehicles')[0] = vehicle({ status });
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(res.status).toBe(409);
     expect(supabaseMock.rows('vehicles')[0].status).toBe(status);
   });
 
   it('refuses a vehicle with no driver, without claiming the request', async () => {
     supabaseMock.rows('vehicles')[0] = vehicle({ driver_id: null, plate_number: 'MH01AB1234' });
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1' });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1' });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/MH01AB1234 has no driver/);
     expect(supabaseMock.rows('vendor_shipment_requests')[0]).toMatchObject({ status: 'approved', assigned_vehicle_id: null });
@@ -194,7 +194,7 @@ describe('assigning a vehicle', () => {
   });
 
   it('turns a rate per km into an amount using the road distance', async () => {
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost_per_km: 20 });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1', cost_per_km: 20 });
     expect(res.status).toBe(200);
     const stored = supabaseMock.rows('vendor_shipment_requests')[0];
     expect(stored.cost_per_km).toBe(20);
@@ -207,22 +207,22 @@ describe('assigning a vehicle', () => {
   it('asks for a flat price when there is no distance to price a rate on', async () => {
     supabaseMock.rows('vendor_shipment_requests')[0].drop_lat = null;
     supabaseMock.rows('vendor_shipment_requests')[0].drop_lng = null;
-    const res = await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost_per_km: 20 });
+    const res = await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1', cost_per_km: 20 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/flat price/);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('approved');
   });
 
   it('tells the vendor the agreed price', async () => {
-    await put('assign-vehicle', { vehicle_id: 'vehicle-1', cost: 9000 });
+    await put('assign-vehicle', { vehicle_id: 'a0000000-0000-4000-8000-0000000000b1', cost: 9000 });
     const note = supabaseMock.writes('notifications', 'POST').map(w => w.body).find(b => b.type === 'vehicle_assigned');
     expect(note?.body).toMatch(/₹9,000/);
-    expect(note?.data).toMatchObject({ request_id: 'req-1', cost: 9000 });
+    expect(note?.data).toMatchObject({ request_id: 'a0000000-0000-4000-8000-000000000001', cost: 9000 });
   });
 });
 
 describe('vendor cancelling a load', () => {
-  const cancel = (id = 'req-1', user = VENDOR) =>
+  const cancel = (id = 'a0000000-0000-4000-8000-000000000001', user = VENDOR) =>
     request(app).put(`/api/v1/vendor/shipment-request/${id}/cancel`).set('Authorization', `Bearer ${supabaseMock.signUserToken(user)}`);
   beforeEach(() => {
     reset('pending');
@@ -236,7 +236,7 @@ describe('vendor cancelling a load', () => {
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('cancelled');
     const note = supabaseMock.writes('notifications', 'POST').map(w => w.body);
-    expect(note).toEqual([expect.objectContaining({ user_id: 'admin-1', type: 'vendor_request_cancelled', data: { request_id: 'req-1' } })]);
+    expect(note).toEqual([expect.objectContaining({ user_id: 'admin-1', type: 'vendor_request_cancelled', data: { request_id: 'a0000000-0000-4000-8000-000000000001' } })]);
   });
 
   it.each(['assigned', 'escalated', 'completed', 'rejected'])('will not cancel a %s request', async status => {
@@ -248,12 +248,12 @@ describe('vendor cancelling a load', () => {
   });
 
   it('only cancels the vendor\'s own request', async () => {
-    expect((await cancel('req-1', 'vendor-2')).status).toBe(404);
+    expect((await cancel('a0000000-0000-4000-8000-000000000001', 'vendor-2')).status).toBe(404);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('pending');
   });
 
   it('is for vendors', async () => {
-    const res = await request(app).put('/api/v1/vendor/shipment-request/req-1/cancel').set('Authorization', `Bearer ${adminToken()}`);
+    const res = await request(app).put('/api/v1/vendor/shipment-request/a0000000-0000-4000-8000-000000000001/cancel').set('Authorization', `Bearer ${adminToken()}`);
     expect(res.status).toBe(403);
   });
 });
@@ -270,7 +270,7 @@ describe('the requests that need a vehicle', () => {
     supabaseMock.rows('vendor_profiles').push({ id: VENDOR, company_name: 'Acme' });
     const res = await request(app).get('/api/v1/vendor/shipment-request/pending').set('Authorization', `Bearer ${supabaseMock.signUserToken('manager-1')}`);
     expect(res.status).toBe(200);
-    expect(res.body.map((r: any) => r.id).sort()).toEqual(['req-1', 'req-2']);
+    expect(res.body.map((r: any) => r.id).sort()).toEqual(['a0000000-0000-4000-8000-000000000001', 'req-2']);
   });
 });
 
@@ -295,7 +295,7 @@ describe('telling the vendor about their load', () => {
     supabaseMock.reset({
       vendor_shipment_requests: [vendorRequest('assigned')],
       cargo_manifest: [
-        { id: 'm1', vendor_request_id: 'req-1', pickup_location: 'Bhiwandi, Maharashtra', drop_location: 'Pune, Maharashtra' },
+        { id: 'm1', vendor_request_id: 'a0000000-0000-4000-8000-000000000001', pickup_location: 'Bhiwandi, Maharashtra', drop_location: 'Pune, Maharashtra' },
         { id: 'm-bid', vendor_request_id: null },
       ],
       notifications: [],
@@ -310,7 +310,7 @@ describe('telling the vendor about their load', () => {
     expect(sent().map(n => [n.user_id, n.type])).toEqual([
       [VENDOR, 'load_picked_up'], [VENDOR, 'load_in_transit'], [VENDOR, 'request_completed'],
     ]);
-    expect(sent()[0]).toMatchObject({ data: { request_id: 'req-1' } });
+    expect(sent()[0]).toMatchObject({ data: { request_id: 'a0000000-0000-4000-8000-000000000001' } });
     expect(sent()[0].body).toMatch(/Bhiwandi to Pune/);
   });
 

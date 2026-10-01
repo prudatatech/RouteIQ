@@ -9,7 +9,7 @@ import { notificationService } from './notification.service';
 import { emailService } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
-import { assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
+import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 
 const OTP_TTL_SECONDS = 300;
@@ -109,6 +109,7 @@ export const tplService = {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+    if (!EMAIL_PATTERN.test(email)) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     const gstProblem = gstinError(gst, pan);
     if (gstProblem) throw new HttpError(400, gstProblem);
     assertApplicationFields(data);
@@ -277,40 +278,42 @@ export const tplService = {
    */
   async updateApplication(id: string, data: any) {
     const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
-    const gstProblem = gst !== undefined ? gstinError(gst, pan) : undefined;
-    if (gstProblem) throw new HttpError(400, gstProblem);
+    if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
-    const bank = await ifscColumns(bankIfsc);
 
-    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, pan_number, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
     if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+    // A GSTIN carries the PAN: check it against the new PAN, or the one on record
+    const gstProblem = gst !== undefined ? gstinError(gst, pan ?? current.pan_number) : undefined;
+    if (gstProblem) throw new HttpError(400, gstProblem);
     const existingDocuments = (current.tpl_documents as { id: string; file_url: string; doc_type: string }[] | null) ?? [];
     assertDocumentPaths(
       documents,
       [current.id, ...(current.custom_id ? [applicationFolder(current.custom_id)] : [])],
       existingDocuments.map(d => d.file_url),
     );
+    // The IFSC lookup only runs when the bank details are part of the edit
+    const bank = bankIfsc !== undefined ? await ifscColumns(bankIfsc) : { columns: {}, check: null as IfscCheck | null };
 
-    // 1. Update Partner Record
-    const { error: partnerErr } = await supabase
-      .from('tpl_partners')
-      .update({
-        custom_id: custom_id || null,
-        company_name: companyName,
+    // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details
+    const columns = {
+        ...(custom_id !== undefined ? { custom_id: custom_id || null } : {}),
+        ...(companyName !== undefined ? { company_name: companyName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
-        pan_number: pan,
+        ...(pan !== undefined ? { pan_number: pan } : {}),
         ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
-        msme_status: msmeStatus || 'Not Registered',
-        bank_account_no: bankAccount || null,
-        bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null,
+        ...(msmeStatus !== undefined ? { msme_status: msmeStatus || 'Not Registered' } : {}),
+        ...(bankAccount !== undefined ? { bank_account_no: bankAccount || null } : {}),
+        ...(bankIfsc !== undefined ? { bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null } : {}),
         ...bank.columns,
-        sla_commitment: slaCommitment || '2 Hours',
-        tax_treatment: taxTreatment || null
-      })
-      .eq('id', id)
-      .eq('status', 'pending'); // Ensure it can only be updated if pending
+        ...(slaCommitment !== undefined ? { sla_commitment: slaCommitment || '2 Hours' } : {}),
+        ...(taxTreatment !== undefined ? { tax_treatment: taxTreatment || null } : {}),
+    };
+    const { error: partnerErr } = Object.keys(columns).length === 0
+      ? { error: null }
+      : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', 'pending'); // Only a pending application can be edited
 
     if (partnerErr) throw new Error(`Failed to update 3PL partner: ${partnerErr.message}`);
 

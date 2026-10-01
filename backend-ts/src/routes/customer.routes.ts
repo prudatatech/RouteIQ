@@ -11,6 +11,7 @@ import { cancelBooking, createBooking, getCustomerBooking, listCustomerBookings 
 import { confirmReceipt, customerCargo } from '../services/cargo/customer.service';
 import { idempotent } from '../core/idempotency';
 import { DropInputSchema } from '../schemas';
+import { samePlace, validPlace } from '../core/places';
 import { listCustomerInvoices } from '../services/customer-invoices.service';
 import { clearCustomerPushToken, saveCustomerPushToken } from '../services/customer-push.service';
 
@@ -20,9 +21,21 @@ router.use(requireAuth, requireRole('customer'));
 const DATE = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a pickup date')
-  .refine((d) => !Number.isNaN(Date.parse(d)), 'Choose a valid pickup date');
+  .refine(isRealDate, { message: 'Choose a valid pickup date', params: { status: 422 } });
 
-export const QuoteSchema = z.object({
+/** True when `d` (YYYY-MM-DD) is a day that exists: 2026-11-31 is not. */
+function isRealDate(d: string): boolean {
+  const t = Date.parse(d);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;
+}
+
+/** The status a validation issue asks for (422 for a well-formed but impossible value), else 400. */
+export function issueStatus(issue: unknown): number {
+  const status = (issue as { params?: { status?: number } } | undefined)?.params?.status;
+  return status === 422 ? 422 : 400;
+}
+
+const QuoteBase = z.object({
   pickup_lat: z.number().min(-90).max(90),
   pickup_lng: z.number().min(-180).max(180),
   drop_lat: z.number().min(-90).max(90),
@@ -33,11 +46,22 @@ export const QuoteSchema = z.object({
   date: DATE,
 });
 
+type Points = { pickup_lat: number; pickup_lng: number; drop_lat: number; drop_lng: number };
+function checkPlaces(q: Points, ctx: z.RefinementCtx): void {
+  if (!validPlace(q.pickup_lat, q.pickup_lng) || !validPlace(q.drop_lat, q.drop_lng)) {
+    ctx.addIssue({ code: 'custom', message: 'Choose a pickup and a drop-off location on the map', params: { status: 422 } });
+  } else if (samePlace(q.pickup_lat, q.pickup_lng, q.drop_lat, q.drop_lng)) {
+    ctx.addIssue({ code: 'custom', message: 'The pickup and the drop-off are the same place', params: { status: 422 } });
+  }
+}
+
+export const QuoteSchema = QuoteBase.superRefine(checkPlaces);
+
 // ── POST /customer/quote ───────────────────────────────────
 router.post('/quote', rateLimitByIp('customer-quote', 60, 60 * 60), async (req: Request, res: Response) => {
   try {
     const parsed = QuoteSchema.safeParse(req.body);
-    if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
+    if (!parsed.success) throw new HttpError(issueStatus(parsed.error.issues[0]), parsed.error.issues[0].message);
     if (!isTodayOrLater(parsed.data.date)) throw new HttpError(400, 'Pickup date cannot be in the past');
     res.json(await computeQuote(parsed.data, { userId: req.user?.user_id }));
   } catch (e) {
@@ -45,7 +69,7 @@ router.post('/quote', rateLimitByIp('customer-quote', 60, 60 * 60), async (req: 
   }
 });
 
-const BookingSchema = QuoteSchema.extend({
+const BookingSchema = QuoteBase.extend({
   pickup_name: z.string().trim().min(1, 'Choose a pickup location').max(200),
   pickup_address: z.string().trim().min(1, 'Choose a pickup location').max(500),
   drop_name: z.string().trim().min(1, 'Choose a drop-off location').max(200),
@@ -57,6 +81,7 @@ const BookingSchema = QuoteSchema.extend({
    */
   drops: z.array(DropInputSchema).min(2, 'A multi-drop booking has at least two drops').max(20).optional(),
 }).superRefine((b, ctx) => {
+  checkPlaces(b, ctx);
   if (!b.drops) return;
   const named = b.drops.filter(d => d.weight_kg != null);
   if (named.length > 0 && named.length < b.drops.length) ctx.addIssue({ code: 'custom', message: 'Give the weight of every drop, or of none' });
@@ -75,10 +100,10 @@ function bookingId(req: Request): string {
 }
 
 // ── POST /customer/bookings — book a shipment ──────────────
-router.post('/bookings', rateLimitByIp('customer-booking', 30, 60 * 60), async (req: Request, res: Response) => {
+router.post('/bookings', idempotent('customer-booking'), rateLimitByIp('customer-booking', 30, 60 * 60), async (req: Request, res: Response) => {
   try {
     const parsed = BookingSchema.safeParse(req.body);
-    if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
+    if (!parsed.success) throw new HttpError(issueStatus(parsed.error.issues[0]), parsed.error.issues[0].message);
     // Each customer can send a limited number of bookings an hour.
     if (!(await consumeRateLimit(`customer-booking:user:${req.user!.user_id}`, 10, 60 * 60))) {
       throw new HttpError(429, 'You have sent a lot of bookings. Please try again in a while.');

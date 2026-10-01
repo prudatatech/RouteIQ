@@ -89,7 +89,7 @@ export async function notifyOwner(c: Pick<Consignment, 'kind' | 'id' | 'code'>, 
  * A delivery was rated. The driver hears how it went; staff hear it too when the customer rated
  * (a rating staff entered themselves needs no notice to staff). Once per shipment and rating time.
  */
-export async function notifyDeliveryRated(shipmentId: string, rating: number, opts: { driverId: string | null; byCustomer: boolean; comment?: string | null }): Promise<void> {
+export async function notifyDeliveryRated(shipmentId: string, rating: number, opts: { driverId: string | null; byCustomer: boolean; comment?: string | null; notifyStaff?: boolean }): Promise<void> {
   try {
     const { data: shipment } = await supabase.from('shipments').select('tracking_id, driver_rated_at').eq('id', shipmentId).maybeSingle();
     const code = shipment?.tracking_id ?? shipmentId;
@@ -98,7 +98,7 @@ export async function notifyDeliveryRated(shipmentId: string, rating: number, op
     if (opts.driverId) {
       await notificationService.sendNotificationOnce(opts.driverId, `You got ${rating} out of 5`, `${who} rated delivery ${code} ${rating} out of 5.`, 'delivery_rated', data, 'rated_at', 1);
     }
-    if (opts.byCustomer) {
+    if (opts.byCustomer && opts.notifyStaff !== false) {
       await notificationService.notifyStaffOnce(`Delivery rated ${rating} out of 5`, `The customer rated ${code} ${rating} out of 5${opts.comment ? `: ${opts.comment}` : ''}.`, 'delivery_rated', data, 'rated_at', 1);
     }
   } catch (e) {

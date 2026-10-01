@@ -12,18 +12,37 @@
 import { haversineKm } from './odometer';
 import { indianDateKey } from '../core/istDate';
 
-export type FuelFlag = 'no_bill' | 'low_mileage' | 'over_tank_capacity' | 'odometer_backwards' | 'duplicate' | 'far_from_gps';
+export type FuelFlag = 'no_bill' | 'low_mileage' | 'over_tank_capacity' | 'odometer_backwards' | 'odometer_jump' | 'duplicate' | 'far_from_gps';
 
-export const FUEL_FLAGS: readonly FuelFlag[] = ['no_bill', 'low_mileage', 'over_tank_capacity', 'odometer_backwards', 'duplicate', 'far_from_gps'];
+export const FUEL_FLAGS: readonly FuelFlag[] = ['no_bill', 'low_mileage', 'over_tank_capacity', 'odometer_backwards', 'odometer_jump', 'duplicate', 'far_from_gps'];
 
 export const FLAG_LABELS: Record<FuelFlag, string> = {
   no_bill: 'No bill',
   low_mileage: 'Mileage much lower than usual',
   over_tank_capacity: 'More litres than the tank holds',
   odometer_backwards: 'Odometer lower than the earlier fill',
+  odometer_jump: 'Odometer jumped too far since the earlier fill',
   duplicate: 'Possible duplicate entry',
   far_from_gps: 'Fill was far from the vehicle position',
 };
+
+/** More km than this between two fills is a mistyped reading, not a drive. */
+export const MAX_KM_BETWEEN_FILLS = 3000;
+/** A truck does not do more km per litre than this; a result above it means a wrong reading or a missing fill. */
+export const MAX_PLAUSIBLE_KMPL = 100;
+
+/**
+ * What is wrong with an odometer reading entered for a fill, given the readings of the fills just
+ * before and after it in time (or null for none). Null when the reading is fine.
+ */
+export function odometerProblem(odo: number, previous: number | null, next: number | null): string | null {
+  if (previous != null && odo < previous) return `The odometer reads ${odo} km, but the fill before this one was at ${previous} km. Check the reading.`;
+  if (next != null && odo > next) return `The odometer reads ${odo} km, but a later fill was at ${next} km. Check the reading.`;
+  if (previous != null && odo - previous > MAX_KM_BETWEEN_FILLS) {
+    return `The odometer reads ${odo} km, which is ${Math.round(odo - previous)} km after the fill before this one. More than ${MAX_KM_BETWEEN_FILLS} km between fills is not likely. Check the reading.`;
+  }
+  return null;
+}
 
 /** Rolling mileage looks at this many of the latest segments. */
 export const ROLLING_SEGMENTS = 5;
@@ -137,9 +156,11 @@ export function sortFills<T extends FuelFill>(fills: T[]): T[] {
  * one is reported in `backwards` and ignored. A full fill without a reading cannot be measured
  * from or to, so it breaks the chain.
  */
-export function computeSegments(fills: FuelFill[], skip: ReadonlySet<string> = new Set()): { segments: Segment[]; backwards: Set<string> } {
+export function computeSegments(fills: FuelFill[], skip: ReadonlySet<string> = new Set()): { segments: Segment[]; backwards: Set<string>; jumps: Set<string> } {
   const segments: Segment[] = [];
   const backwards = new Set<string>();
+  // Readings that jump too far past the last one (a typo), or segments with an impossible km per litre: flagged, kept out of the sums
+  const jumps = new Set<string>();
   let lastOdo: number | null = null;
   let anchor: { id: string; odo: number } | null = null;
   let pending: { ids: string[]; litres: number; cost: number } = { ids: [], litres: 0, cost: 0 };
@@ -150,6 +171,12 @@ export function computeSegments(fills: FuelFill[], skip: ReadonlySet<string> = n
     const odo = f.odometer_km;
     if (odo != null) {
       if (lastOdo != null && odo < lastOdo) { backwards.add(f.id); continue; }
+      if (lastOdo != null && odo - lastOdo > MAX_KM_BETWEEN_FILLS) {
+        // The reading is not trusted and is not measured from or to, but the fuel did go in the tank
+        jumps.add(f.id);
+        if (anchor) { pending.ids.push(f.id); pending.litres += f.litres; pending.cost += f.total_amount; }
+        continue;
+      }
       lastOdo = odo;
     }
     if (!f.is_full_tank) {
@@ -161,17 +188,21 @@ export function computeSegments(fills: FuelFill[], skip: ReadonlySet<string> = n
       pending.ids.push(f.id); pending.litres += f.litres; pending.cost += f.total_amount;
       const km = odo - anchor.odo;
       if (km > 0 && pending.litres > 0) {
-        segments.push({
-          anchor_id: anchor.id, closing_id: f.id, fill_ids: pending.ids,
-          distance_km: round1(km), litres: round2(pending.litres), cost: round2(pending.cost),
-          kmpl: round2(km / pending.litres), closed_at: f.filled_at,
-        });
+        if (km / pending.litres > MAX_PLAUSIBLE_KMPL) {
+          jumps.add(f.id);
+        } else {
+          segments.push({
+            anchor_id: anchor.id, closing_id: f.id, fill_ids: pending.ids,
+            distance_km: round1(km), litres: round2(pending.litres), cost: round2(pending.cost),
+            kmpl: round2(km / pending.litres), closed_at: f.filled_at,
+          });
+        }
       }
     }
     anchor = { id: f.id, odo };
     reset();
   }
-  return { segments, backwards };
+  return { segments, backwards, jumps };
 }
 
 /** Distance over litres of the given segments (a weighted average, so long runs count for more). */
@@ -236,10 +267,11 @@ export function analyzeFills(fills: FuelFill[], ctx: { tankCapacityLiters?: numb
   };
 
   const duplicates = findDuplicates(fills);
-  const { segments, backwards } = computeSegments(fills, duplicates);
+  const { segments, backwards, jumps } = computeSegments(fills, duplicates);
 
   for (const id of duplicates) flag(id, 'duplicate');
   for (const id of backwards) flag(id, 'odometer_backwards');
+  for (const id of jumps) flag(id, 'odometer_jump');
 
   const capacity = ctx.tankCapacityLiters;
   for (const f of fills) {

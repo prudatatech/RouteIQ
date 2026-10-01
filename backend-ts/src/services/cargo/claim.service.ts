@@ -94,6 +94,36 @@ export async function declaredValueOf(c: Consignment): Promise<number | null> {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/**
+ * The most a claim on these goods may ask for: what they were declared worth, or a lot's share of the
+ * booking's declared value (by pieces) when the lot has none of its own. With no declared value anywhere
+ * it is the platform limit for undeclared goods (settings.CLAIM_MAX_WITHOUT_DECLARED_VALUE).
+ */
+export async function claimCeiling(c: Consignment): Promise<{ amount: number; declared: boolean }> {
+  const own = await declaredValueOf(c);
+  if (own != null) return { amount: own, declared: true };
+  if (c.parentId && c.kind === 'shipment') {
+    const master = await resolveRef({ shipment_id: c.parentId });
+    const total = await declaredValueOf(master);
+    if (total != null && master.pieces.total && c.pieces.total) {
+      return { amount: Math.round(((total * c.pieces.total) / master.pieces.total) * 100) / 100, declared: true };
+    }
+  }
+  return { amount: settings.CLAIM_MAX_WITHOUT_DECLARED_VALUE, declared: false };
+}
+
+/** A claim cannot ask for more than the goods were worth: refused with a 422 that names the ceiling. */
+export async function assertWithinCeiling(c: Consignment, claimed: number | null | undefined): Promise<void> {
+  if (claimed == null) return;
+  const { amount, declared } = await claimCeiling(c);
+  if (claimed > amount) {
+    const money = `₹${amount.toLocaleString('en-IN')}`;
+    throw new HttpError(422, declared
+      ? `A claim cannot be more than the declared value of these goods (${money}).`
+      : `These goods have no declared value, so a claim cannot be more than ${money}. Ask the office to review a larger claim.`);
+  }
+}
+
 /** When the goods reached the end of their trip: the latest delivery, return or loss on record. */
 export async function deliveredAt(c: Consignment): Promise<string | null> {
   const column = c.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
@@ -173,6 +203,8 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
       .from('cargo_exception_items').select('id').eq('exception_id', body.exception_id).eq(c.kind === 'shipment' ? 'shipment_id' : 'manifest_id', c.id).limit(1);
     if (!item || item.length === 0) throw new HttpError(400, 'That case does not include this shipment');
   }
+
+  await assertWithinCeiling(c, body.claimed_amount);
 
   // One open claim of a type per consignment
   const { data: existing } = await supabase
@@ -268,6 +300,9 @@ export async function updateClaim(id: string, input: unknown): Promise<any> {
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
   const { status, ...fields } = parsed.data;
   const claim = await loadClaim(id);
+  if (fields.claimed_amount != null && fields.claimed_amount !== claim.claimed_amount) {
+    await assertWithinCeiling(await resolveRef(claim.shipment_id ? { shipment_id: claim.shipment_id } : { manifest_id: claim.manifest_id }), fields.claimed_amount);
+  }
   const patch: Record<string, unknown> = { ...fields, updated_at: new Date().toISOString() };
   if (status && status !== claim.status) {
     if (!(CLAIM_TRANSITIONS[claim.status] ?? []).includes(status)) {

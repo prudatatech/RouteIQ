@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { HttpError } from '../core/errors';
+import { samePlace, validPlace } from '../core/places';
 
 const GST_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/i;
@@ -115,12 +116,18 @@ export const ShipmentRequestSchema = z.object({
     .positive('Load weight must be more than 0 kg')
     .max(50000, 'Load weight can be at most 50,000 kg'),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
-}).refine(v => Buffer.byteLength(JSON.stringify(v.metadata), 'utf8') <= 20 * 1024, 'The load details are too large');
+}).refine(v => Buffer.byteLength(JSON.stringify(v.metadata), 'utf8') <= 20 * 1024, 'The load details are too large')
+  .refine(v => validPlace(v.pickup.lat, v.pickup.lng) && validPlace(v.drop.lat, v.drop.lng), { message: 'Choose a real pickup and drop-off place', params: { status: 422 } })
+  .refine(v => !samePlace(v.pickup.lat, v.pickup.lng, v.drop.lat, v.drop.lng), { message: 'The pickup and the drop-off are the same place', params: { status: 422 } });
 export type ShipmentRequestInput = z.infer<typeof ShipmentRequestSchema>;
 
-/** Turns a zod failure into the first message, as a 400. */
+/** Turns a zod failure into the first message, as a 400 (422 when the check asks for it with `params.status`). */
 export function parseBody<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, body: unknown): T {
   const parsed = schema.safeParse(body ?? {});
-  if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? 'Some details are not valid');
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const status = (issue as { params?: { status?: number } } | undefined)?.params?.status === 422 ? 422 : 400;
+    throw new HttpError(status, issue?.message ?? 'Some details are not valid');
+  }
   return parsed.data;
 }

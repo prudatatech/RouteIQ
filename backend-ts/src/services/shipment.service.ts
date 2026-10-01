@@ -1658,8 +1658,11 @@ export class ShipmentService {
   }
 
   /** Status + time only — what the public tracking page is allowed to show. */
-  private static toPublicHistory(events: ShipmentHistoryEvent[]): PublicHistoryEvent[] {
-    return events.filter(e => !e.internal).map(e => ({ status: e.status, at: e.at }));
+  private static toPublicHistory(events: ShipmentHistoryEvent[], currentStatus?: string): PublicHistoryEvent[] {
+    // Handing a booking to a partner (escalated) is an internal step: the customer reads booked, then what came of it
+    return events
+      .filter(e => !e.internal && (e.status !== 'escalated' || currentStatus === 'escalated'))
+      .map(e => ({ status: e.status, at: e.at }));
   }
 
   /**
@@ -1736,7 +1739,7 @@ export class ShipmentService {
       }
 
       const manifestEvents = await ShipmentService.buildHistoryEvents([], { ...manifest, status: trackingInfo.status });
-      trackingInfo.history = ShipmentService.toPublicHistory(manifestEvents);
+      trackingInfo.history = ShipmentService.toPublicHistory(manifestEvents, trackingInfo.status);
 
       return trackingInfo;
     }
@@ -1793,20 +1796,42 @@ export class ShipmentService {
     }
 
     const shipmentEvents = await ShipmentService.buildHistoryEvents(shipment.shipment_logs || [], shipment);
-    trackingInfo.history = ShipmentService.toPublicHistory(shipmentEvents);
+    trackingInfo.history = ShipmentService.toPublicHistory(shipmentEvents, shipment.status);
 
-    // A split booking has no vehicle or drop of its own: say how each lot stands (code, status and
-    // counts only: no ids, names or contacts).
+    // A split booking has no vehicle or drop of its own: say how each lot stands, where it goes and which
+    // truck carries it (code, status, counts, the drop's name and address, the truck's plate and type only:
+    // no ids, consignee names or contacts).
     if (shipment.is_master) {
       const { lotsSummaries } = await import('./cargo/lots.service');
+      const { addLotCarriers } = await import('./lot-carriers');
       const summary = (await lotsSummaries('shipment', [shipment.id])).get(shipment.id);
-      trackingInfo.lots = (summary?.lots ?? []).map((l: any) => ({
-        tracking_id: l.code,
-        label: l.label ?? null,
-        status: l.status,
-        pieces_total: l.pieces_total ?? null,
-        pieces_delivered: l.pieces_delivered ?? 0,
-      }));
+      const summaries = summary ? [summary] : [];
+      await addLotCarriers('shipment', summaries);
+      const lots = summary?.lots ?? [];
+      const { data: points } = lots.length
+        ? await supabase.from('delivery_points').select('shipment_id, name, address, latitude, longitude, created_at').in('shipment_id', lots.map((l: any) => l.id))
+        : { data: [] as any[] };
+      const pointOf = new Map<string, any>();
+      for (const p of [...((points ?? []) as any[])].sort((a, b) => Date.parse(a.created_at ?? '') - Date.parse(b.created_at ?? ''))) pointOf.set(p.shipment_id, p);
+      trackingInfo.lots = lots.map((l: any) => {
+        const point = pointOf.get(l.id);
+        return {
+          tracking_id: l.code,
+          label: l.label ?? null,
+          status: l.status,
+          pieces_total: l.pieces_total ?? null,
+          pieces_delivered: l.pieces_delivered ?? 0,
+          destination: point ? { name: point.name ?? null, address: point.address ?? null } : null,
+          vehicle: l.plate_number ? { plate_number: l.plate_number, type: l.vehicle_type ?? null } : null,
+        };
+      });
+      trackingInfo.drops = lots
+        .map((l: any) => pointOf.get(l.id))
+        .filter(Boolean)
+        .map((p: any) => ({ name: p.name ?? null, address: p.address ?? null }));
+      // The booking itself has no drop: the last one stands for it, for readers that only know `destination`
+      const last = [...lots].reverse().map((l: any) => pointOf.get(l.id)).find(Boolean);
+      if (!trackingInfo.destination && last) trackingInfo.destination = { name: last.name, address: last.address, lat: last.latitude, lng: last.longitude };
     }
 
     return trackingInfo;

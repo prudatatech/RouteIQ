@@ -85,7 +85,7 @@ export const SHIPMENT_CUSTODY_COLUMNS =
   'id, tracking_id, status, total_items, total_weight_kg, origin_name, origin_address, origin_lat, origin_lng, received_by, photo_url, signature_url, freight_charge, metadata, ' +
   'current_holder, current_vehicle_id, current_depot_id, pieces_total, pieces_delivered, pieces_damaged, pieces_short, pieces_returned, seal_number, ' +
   'delivery_attempts, max_delivery_attempts, delivery_otp_required, delivery_otp_hash, delivery_otp_expires_at, rto, on_hold_reason, created_at, updated_at, ' +
-  'parent_shipment_id, lot_seq, lot_label, is_master, declared_value, freight_share, consignee_name, consignee_phone, consignee_gstin, split_reason, eway_bill_ref, eway_part_b_required';
+  'parent_shipment_id, lot_seq, lot_label, is_master, declared_value, freight_share, consignee_name, consignee_phone, consignee_gstin, split_reason, eway_bill_ref, eway_part_b_required, driver_rating, driver_rating_note, driver_rated_at';
 
 export const MANIFEST_CUSTODY_COLUMNS =
   'id, vehicle_id, vendor_request_id, status, capacity_kg, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, received_by, photo_url, signature_url, ' +

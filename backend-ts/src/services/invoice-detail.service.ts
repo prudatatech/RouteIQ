@@ -9,6 +9,7 @@
  */
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
+import { isUuid } from '../core/validate';
 import { isStaff } from '../core/ownership';
 import type { TokenData } from '../core/auth';
 import { stateOf } from '../core/gst';
@@ -151,6 +152,7 @@ export async function invoiceOwnerId(inv: Pick<InvoiceRecord, 'shipment_id' | 'm
  * Anyone else gets the same 404 as a missing invoice, so ids cannot be probed.
  */
 export async function loadInvoiceFor(id: string, user: TokenData): Promise<InvoiceRecord> {
+  if (!isUuid(id)) throw new HttpError(404, 'Invoice not found');
   const { data, error } = await supabase.from('invoices').select(INVOICE_COLUMNS).eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read invoice: ${error.message}`);
   if (!data) throw new HttpError(404, 'Invoice not found');

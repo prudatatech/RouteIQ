@@ -169,8 +169,9 @@ describe('anomalies', () => {
     expect(slow.body.flags).not.toContain('low_mileage');
     const slower = await post({ litres: 45, total_amount: 4500, odometer_km: 11750, filled_at: daysAgo(6), bill_path: BILL }); // 250 km on 45 L = 5.6
     expect(slower.body.flags).toContain('low_mileage');
+    // A reading below the fill before it is refused on entry (ROL-06); the engine still flags such rows already stored
     const backwards = await post({ litres: 30, total_amount: 3000, odometer_km: 9000, filled_at: daysAgo(3), bill_path: BILL });
-    expect(backwards.body.flags).toContain('odometer_backwards');
+    expect(backwards.status).toBe(422);
     const tooMuch = await post({ litres: 130, total_amount: 13000, odometer_km: 12000, filled_at: daysAgo(2), bill_path: BILL });
     expect(tooMuch.body.flags).toContain('over_tank_capacity');
     const dup = await post({ litres: 130.2, total_amount: 13020, odometer_km: 12000, filled_at: new Date(Date.parse(tooMuch.body.filled_at) + 10 * 60_000).toISOString(), bill_path: BILL });
@@ -181,7 +182,7 @@ describe('anomalies', () => {
     expect(all.status).toBe(200);
     expect(all.body.every((r: any) => r.plate_number === 'MH12AB1234')).toBe(true);
     const ids = all.body.map((r: any) => r.id);
-    expect(ids).toEqual(expect.arrayContaining([slower.body.id, backwards.body.id, tooMuch.body.id, dup.body.id, noBill.body.id]));
+    expect(ids).toEqual(expect.arrayContaining([slower.body.id, tooMuch.body.id, dup.body.id, noBill.body.id]));
     expect(ids).not.toContain(slow.body.id);
 
     const onlyNoBill = await request(app).get('/api/v1/fleet/fuel-anomalies?type=no_bill').set(admin);
@@ -270,5 +271,49 @@ describe('permissions', () => {
     expect((await request(app).put('/api/v1/fleet/fuel-logs/00000000-0000-0000-0000-000000000000').set(admin).send({ reviewed: true })).status).toBe(404);
     expect((await request(app).delete(`/api/v1/fleet/fuel-logs/${id}`).set(admin)).status).toBe(204);
     expect(supabaseMock.rows('ai_agent_logs')[0]).toMatchObject({ action: 'fuel_log_deleted' });
+  });
+});
+
+describe('a mistyped odometer reading (ROL-06)', () => {
+  const fill = (odometer_km: number, daysBack: number, litres = 40) => post({ litres, total_amount: litres * 100, odometer_km, filled_at: daysAgo(daysBack), bill_path: BILL });
+
+  it('refuses a reading that jumps too far or goes backwards with a 422, and later fills still work', async () => {
+    expect((await fill(10000, 10)).status).toBe(201);
+    const typo = await fill(910000, 8);
+    expect(typo.status).toBe(422);
+    expect(typo.body.detail).toMatch(/Check the reading/);
+    expect((await fill(9000, 8)).status).toBe(422);
+    expect(supabaseMock.rows('vehicle_fuel_logs')).toHaveLength(1);
+    const next = await fill(10700, 6);
+    expect(next.status).toBe(201);
+    expect(next.body.mileage_kmpl).toBe(17.5);
+  });
+
+  it('never fails later fills when a bad reading is already stored: it is flagged and left out of the averages', async () => {
+    await fill(10000, 10);
+    // A row that got in before the check: a typo for 10100
+    supabaseMock.rows('vehicle_fuel_logs').push({
+      id: 'bad-row', vehicle_id: VEHICLE, filled_at: daysAgo(8), litres: 40, price_per_litre: 100, total_amount: 4000, odometer_km: 910000,
+      is_full_tank: true, payment_mode: 'cash', bill_status: 'no_bill', flags: [], created_at: daysAgo(8), updated_at: daysAgo(8),
+    });
+    const next = await fill(10700, 6);
+    expect(next.status).toBe(201);
+    expect(next.body.mileage_kmpl).toBeLessThan(100);
+    const bad = supabaseMock.rows('vehicle_fuel_logs').find(r => r.id === 'bad-row')!;
+    expect(bad.flags).toContain('odometer_jump');
+    expect(bad.mileage_kmpl ?? null).toBeNull();
+    expect((await fill(11300, 3)).status).toBe(201);
+    const stats = await request(app).get(`/api/v1/fleet/vehicles/${VEHICLE}/fuel-stats`).set(admin);
+    expect(stats.status).toBe(200);
+    expect(stats.body.rolling_avg_kmpl).toBeLessThan(100);
+  });
+
+  it('lets staff correct a bad reading and checks the correction too', async () => {
+    await fill(10000, 10);
+    const second = await fill(10400, 6);
+    expect((await request(app).put(`/api/v1/fleet/fuel-logs/${second.body.id}`).set(admin).send({ odometer_km: 990000 })).status).toBe(422);
+    const fixed = await request(app).put(`/api/v1/fleet/fuel-logs/${second.body.id}`).set(admin).send({ odometer_km: 10500 });
+    expect(fixed.status).toBe(200);
+    expect(fixed.body.odometer_km).toBe(10500);
   });
 });

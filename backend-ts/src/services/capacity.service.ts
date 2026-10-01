@@ -2,6 +2,7 @@ import axios from 'axios';
 import { supabase } from '../core/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HttpError } from '../core/errors';
+import { settings } from '../core/config';
 import { formatINR, formatKg } from '../core/format';
 import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
@@ -263,6 +264,8 @@ export const capacityService = {
       const dropAt = point(drop?.latitude, drop?.longitude);
       if (isValidPoint(dropAt)) minimum = await pricingService.minimumFor(vendorAt, dropAt, weightKg, { userId: data.vendor_id, role: 'vendor' });
     }
+    // Staff set none and the engine has no rate card: a platform minimum still keeps a 1-rupee bid out
+    if (minimum === null) minimum = settings.CAPACITY_MIN_BID_INR;
     if (minimum !== null && bidAmount < minimum) {
       throw new HttpError(400, `Bid is below the minimum bid of ${formatINR(Math.round(minimum))}`);
     }
@@ -299,7 +302,8 @@ export const capacityService = {
       const { data: open, error } = await supabase
         .from('capacity_windows').select('id').eq('vehicle_id', vehicleId).eq('status', 'open').is('winning_bid_id', null);
       if (error) throw new Error(`Failed to check existing windows: ${error.message}`);
-      for (const w of open ?? []) await this.endWindow(w.id, 'closed');
+      // A pause, not an ending: the window keeps its planned end, so "on" reopens it while that time lasts
+      for (const w of open ?? []) await this.endWindow(w.id, 'closed', { keepEnd: true });
       const { error: flagErr } = await supabase.from('vehicles').update({ bidding_window_open: false, bidding_window_closes_at: null }).eq('id', vehicleId);
       if (flagErr) throw new Error(flagErr.message);
       return;
@@ -309,7 +313,24 @@ export const capacityService = {
     // broadcast tells the vendors along the route, so the window itself stays quiet.
     const { data: vehicle } = await supabase.from('vehicles').select('latitude, longitude').eq('id', vehicleId).maybeSingle();
     if (!(await findOpenWindow(vehicleId))) {
-      await this.openWindow({ vehicleId, triggerType: 'return_trip', notifyVendors: !(vehicle?.latitude && vehicle?.longitude) });
+      // The window that "off" paused (closed, no winner, its planned end still ahead) comes back as it was, with its minimum price
+      const nowIso = new Date().toISOString();
+      const { data: paused } = await supabase
+        .from('capacity_windows').select('id, closes_at')
+        .eq('vehicle_id', vehicleId).eq('status', 'closed').is('winning_bid_id', null).gt('closes_at', nowIso)
+        .order('closes_at', { ascending: false }).limit(1);
+      const resume = (paused ?? [])[0];
+      if (resume) {
+        const { data: reopened, error: reopenErr } = await supabase
+          .from('capacity_windows').update({ status: 'open', resolved_at: null }).eq('id', resume.id).eq('status', 'closed').select('id, closes_at').maybeSingle();
+        if (reopenErr) throw new Error(`Failed to reopen the window: ${reopenErr.message}`);
+        if (reopened) {
+          await supabase.from('vehicles').update({ bidding_window_open: true, bidding_window_closes_at: reopened.closes_at }).eq('id', vehicleId);
+        }
+      }
+      if (!resume) {
+        await this.openWindow({ vehicleId, triggerType: 'return_trip', notifyVendors: !(vehicle?.latitude && vehicle?.longitude) });
+      }
     }
     let routeId;
     const { data: routes } = await supabase.from('routes').select('id').eq('vehicle_id', vehicleId).order('created_at', { ascending: false }).limit(1);
@@ -508,11 +529,12 @@ export const capacityService = {
    *   - 'cancelled': stops new bids and turns pending bids down.
    * Returns null when the window was already closed or cancelled.
    */
-  async endWindow(windowId: string, mode: 'closed' | 'cancelled') {
+  async endWindow(windowId: string, mode: 'closed' | 'cancelled', opts: { keepEnd?: boolean } = {}) {
     const nowIso = new Date().toISOString();
     const { data: window, error } = await supabase
       .from('capacity_windows')
-      .update({ status: mode, resolved_at: nowIso, closes_at: nowIso })
+      // `keepEnd` is a pause (the driver switched matching off): the planned end stays, so switching it on can reopen the window
+      .update({ status: mode, resolved_at: nowIso, ...(opts.keepEnd ? {} : { closes_at: nowIso }) })
       .eq('id', windowId)
       .eq('status', 'open')
       .select('id, vehicle_id, winning_bid_id')

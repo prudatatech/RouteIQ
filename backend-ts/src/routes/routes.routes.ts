@@ -6,7 +6,7 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheGet, cacheSet } from '../core/redis';
-import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds, isStaff } from '../core/ownership';
+import { STAFF_ROLES, canAccessRoute, assertTripSent, getDriverVehicleIds, isStaff } from '../core/ownership';
 import { RouteUpdateSchema } from '../schemas';
 import { ROUTE_STATUS_TO_MANIFEST, cancelManifest, manifestAsRoute, routeService, vehicleHasOpenWork, setOperatingVehicleStatus } from '../services/route.service';
 import { HttpError, sendError } from '../core/errors';
@@ -55,7 +55,8 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     const driverVehicleIds = req.user!.role === 'driver' ? await getDriverVehicleIds(req.user!.user_id) : null;
     if (driverVehicleIds) {
       if (driverVehicleIds.length === 0) { res.json([]); return; }
-      query = query.in('vehicle_id', driverVehicleIds);
+      // A trip dispatch has not sent yet (pending) is not the driver's to see
+      query = query.in('vehicle_id', driverVehicleIds).neq('status', 'pending');
     }
 
     if (status) query = query.eq('status', status);
@@ -114,6 +115,12 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       .select('*, vehicles(*), route_stops(*, delivery_points(*))')
       .eq('id', req.params.route_id)
       .maybeSingle();
+
+    // A trip dispatch has not sent is not the driver's to see yet
+    if (route && route.status === 'pending' && !isStaff(req.user)) {
+      res.status(404).json({ detail: 'Trip not found' });
+      return;
+    }
 
     if (!route) {
       // Try fetching from cargo_manifest
@@ -184,6 +191,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
       return;
     }
 
+    if (!isStaff(req.user)) await assertTripSent(req.params.route_id);
     const result = await routeService.changeStatus(req.params.route_id, newStatus, { actor: { id: req.user!.user_id, role: req.user!.role } });
     res.json({ id: result.id, status: result.status, vehicle_status: result.vehicle_status });
   } catch (e: any) {
