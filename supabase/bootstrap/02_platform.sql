@@ -1,11 +1,6 @@
 -- The parts of the app that live outside the public schema, so 01_schema.sql alone does not carry them.
 -- Taken from the running project on 1 Oct 2026. Idempotent.
 
--- Extensions the public schema calls (Supabase creates the "extensions" schema)
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
-CREATE EXTENSION IF NOT EXISTS moddatetime WITH SCHEMA extensions;
-
 -- A users row for every sign-up
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users

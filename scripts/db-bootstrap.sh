@@ -21,6 +21,7 @@ if [[ "$tables" != "0" ]]; then
   exit 2
 fi
 
+echo "0/4 extensions";        run -f "$B/00_extensions.sql" >/dev/null
 echo "1/4 schema";            { echo "SET check_function_bodies = false;"; cat "$B/01_schema.sql"; } | run >/dev/null
 echo "2/4 platform pieces";   run -f "$B/02_platform.sql" >/dev/null
 echo "3/4 settings defaults"; run -f "$B/03_settings.sql" >/dev/null
