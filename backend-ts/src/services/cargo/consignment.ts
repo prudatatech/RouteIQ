@@ -479,6 +479,16 @@ export async function writeConsignment(c: Consignment, patch: Record<string, unk
   if (c.kind === 'manifest' && stored !== c.rawStatus && ['delivered', 'completed', 'returned', 'cancelled', 'lost'].includes(stored)) {
     await recordTripPaySafe({ manifest_id: c.id });
   }
+  // The goods are no longer on the road: delay cases on a load close themselves (never blocks the change).
+  // A shipment's are closed by ShipmentService.afterStatusChange, which every shipment move ends in.
+  if (c.kind === 'manifest' && stored !== c.rawStatus && ['delivered', 'completed', 'returned', 'cancelled', 'lost'].includes(stored)) {
+    try {
+      const { resolveDelayCasesFor } = await import('./exception.service');
+      await resolveDelayCasesFor({ manifest_id: c.id }, stored);
+    } catch (e) {
+      console.error('[cargo] Could not close the delay cases of a settled load:', e);
+    }
+  }
   // A lot moved: its master's status and holder are worked out again from its lots
   if (c.parentId) {
     const { rollupMaster } = await import('./lots.service');

@@ -268,18 +268,44 @@ export function journeyEstimateKm(start: Pt | null, ends: Pt[]): TripKm {
 
 interface PayTarget { key: 'route_id' | 'manifest_id'; tripId: string; vehicleId: string; finishedAt: string; distance: TripKm }
 
+/**
+ * Who earns a trip on this vehicle: its driver; when the vehicle has none now (the driver was
+ * unassigned after the trip), the last driver who recorded a custody step on it.
+ */
+async function payeeOf(vehicle: { id: string; driver_id: string | null }): Promise<string | null> {
+  if (vehicle.driver_id) return vehicle.driver_id;
+  const { data } = await supabase.from('cargo_custody_events').select('driver_id, recorded_at')
+    .or(`from_vehicle_id.eq.${vehicle.id},to_vehicle_id.eq.${vehicle.id}`).not('driver_id', 'is', null).order('recorded_at', { ascending: false }).limit(1);
+  return data?.[0]?.driver_id ?? null;
+}
+
 /** Price a finished journey and save its entry (once), and tell staff once when the type has no rate. */
 async function saveEntry(t: PayTarget): Promise<{ entry: any; created: boolean } | null> {
   const { data: vehicle, error: vehicleErr } = await supabase.from('vehicles').select('id, driver_id, vehicle_type').eq('id', t.vehicleId).maybeSingle();
   if (vehicleErr) throw new Error(`Failed to read the vehicle: ${vehicleErr.message}`);
-  if (!vehicle?.driver_id) return null;
+  const driverId = vehicle ? await payeeOf(vehicle) : null;
+  if (!vehicle || !driverId) {
+    // Nobody to pay: say so once, instead of leaving the trip out of driver pay without a word
+    if (vehicle) {
+      try {
+        await notificationService.notifyStaffOnce(
+          'A finished trip has no driver to pay',
+          'A trip finished on a vehicle that has no driver assigned, so it has no driver pay entry. Assign the driver on the vehicle, then run the driver pay backfill.',
+          'driver_pay_no_driver', { vehicle_id: vehicle.id, link: '/money/driver-pay' }, 'vehicle_id', 24,
+        );
+      } catch (e) {
+        console.error('[driver-pay] Could not tell staff about the trip with no driver:', e);
+      }
+    }
+    return null;
+  }
 
   const tripDate = indianDateKey(new Date(t.finishedAt));
   const rate = pickRate(await loadRates(vehicle.vehicle_type), vehicle.vehicle_type, tripDate);
   const perTrip = rate?.per_trip_amount ?? 0;
   const perKm = rate?.per_km_amount ?? 0;
   const row = {
-    driver_id: vehicle.driver_id,
+    driver_id: driverId,
     vehicle_id: vehicle.id,
     vehicle_type: vehicle.vehicle_type ?? null,
     route_id: t.key === 'route_id' ? t.tripId : null,
@@ -493,7 +519,7 @@ export async function backfillTripPay(actor: AuditActor, fromDate: string) {
   const since = indianDayStart(fromDate).toISOString();
   const [routes, loads] = await Promise.all([
     supabase.from('routes').select('id').eq('status', 'completed').gte('completed_at', since),
-    supabase.from('cargo_manifest').select('id').eq('status', 'delivered').gte('updated_at', since),
+    supabase.from('cargo_manifest').select('id').in('status', ['delivered', 'completed']).gte('updated_at', since),
   ]);
   if (routes.error) throw new Error(`Failed to read routes: ${routes.error.message}`);
   if (loads.error) throw new Error(`Failed to read loads: ${loads.error.message}`);

@@ -1082,7 +1082,8 @@
     "notes",
     "created_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "dedupe_key"
   ],
   "cargo_exception_items": [
     "id",

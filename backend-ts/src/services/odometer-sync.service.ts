@@ -72,9 +72,18 @@ async function distanceFromJourneys(vehicleId: string, since: string): Promise<{
   let count = 0;
   let latest: string | null = null;
   const seen = (t: string | null) => { if (t && (!latest || t > latest)) latest = t; };
+  // A route planned with no distance counts the distance its driver-pay entry used (driven, else the stops in a line)
+  const unplanned = (routes.data ?? []).filter(r => !((num(r.total_distance_km) ?? 0) > 0)).map(r => r.id as string);
+  const paid = new Map<string, number>();
+  if (unplanned.length > 0) {
+    const { data: entries, error: entryErr } = await supabase.from('driver_pay_entries').select('route_id, km').in('route_id', unplanned);
+    if (entryErr) throw entryErr;
+    for (const e of entries ?? []) paid.set(e.route_id as string, num(e.km) ?? 0);
+  }
   for (const r of routes.data ?? []) {
-    const d = num(r.total_distance_km);
-    if (d != null && d > 0) { km += d; count++; seen(r.completed_at); }
+    const planned = num(r.total_distance_km) ?? 0;
+    const effective = planned > 0 ? planned : (paid.get(r.id as string) ?? 0);
+    if (effective > 0) { km += effective; count++; seen(r.completed_at); }
   }
   for (const l of loads.data ?? []) {
     const aLat = num(l.pickup_lat);
@@ -182,6 +191,18 @@ export async function syncVehicleOdometer(
     ...base, changed: added > 0, after_km: after, added_km: added, source: added > 0 ? source : 'none',
     points_used: used, points_ignored: ignored, message,
   };
+}
+
+/**
+ * A trip just finished: take its distance into the odometer now, not at the next scheduled sync.
+ * Does nothing for a vehicle with no starting reading. Never throws, so it cannot stop a trip finishing.
+ */
+export async function syncOdometerAfterTripSafe(vehicleId: string): Promise<void> {
+  try {
+    await syncVehicleOdometer(vehicleId);
+  } catch (e: any) {
+    console.error(`[odometer] Could not sync vehicle ${vehicleId} after a trip:`, e?.message ?? e);
+  }
 }
 
 /** Sync every vehicle that has a starting reading. One vehicle failing does not stop the rest. */
