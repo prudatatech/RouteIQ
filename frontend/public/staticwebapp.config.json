@@ -20,6 +20,15 @@
       "/robots.txt"
     ]
   },
+  "mimeTypes": {
+    ".geojson": "application/json"
+  },
+  "routes": [
+    {
+      "route": "/geo/*",
+      "headers": { "Cache-Control": "public, max-age=86400" }
+    }
+  ],
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
