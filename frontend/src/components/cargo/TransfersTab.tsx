@@ -6,7 +6,7 @@ import { DataTable, ExportCsvButton, Select, StatusPill, statusToLabel, useUrlSt
 import { cargoKeys, transfersAPI, TRANSFER_STATUSES, type CargoTransfer, type TransferStatus } from '@/services/cargo'
 import { formatDateTime, formatRelative, formatPieces } from '@/utils/display'
 import type { CsvColumn } from '@/utils/csv'
-import { transferItemCount } from './logic'
+import { partBDue, transferItemCount } from './logic'
 
 const FILTERS = [
   { value: '', label: 'All' },
@@ -18,7 +18,6 @@ const FILTERS = [
 
 const pieces = (t: CargoTransfer) => t.items.reduce((total, i) => total + i.pieces_planned, 0)
 const hasMismatch = (t: CargoTransfer) => t.items.some(i => transferItemCount(i).mismatch)
-const partBDue = (t: CargoTransfer) => t.eway_part_b_required && !t.eway_part_b_ref
 const stamp = (t: CargoTransfer) => t.planned_at ?? ''
 
 const CSV_COLUMNS: CsvColumn[] = [

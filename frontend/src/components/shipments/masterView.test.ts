@@ -65,6 +65,11 @@ describe('status history', () => {
     expect(entries.map(e => e.status)).toEqual(['created', 'assigned', 'created'])
   })
 
+  it('names a created entry that follows an assignment as the take-off', () => {
+    const entries = historyEntries([ev('created', '2026-09-30T13:23:00Z'), ev('assigned', '2026-09-30T13:24:00Z'), ev('created', '2026-09-30T13:50:00Z')])
+    expect(entries.map(e => e.label)).toEqual([undefined, undefined, 'Taken off vehicle'])
+  })
+
   it('keeps a repeat that is far apart or by someone else', () => {
     expect(historyEntries([ev('assigned', '2026-09-30T10:00:00Z'), ev('assigned', '2026-09-30T12:00:00Z')])).toHaveLength(2)
     expect(historyEntries([ev('created', '2026-09-30T10:00:00Z'), ev('created', '2026-09-30T10:00:10Z', { actor: { id: 'u2', name: null, role: null } })])).toHaveLength(2)

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { refreshAfterDispatchChange } from '@/utils/queueRefresh'
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
@@ -33,6 +34,7 @@ export function useRouteStatusActions() {
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['route', id] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      refreshAfterDispatchChange(queryClient)
     },
     onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to update trip status'),
   })

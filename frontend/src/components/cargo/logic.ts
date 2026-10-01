@@ -235,6 +235,10 @@ const DELIVER_TYPES: readonly ExceptionType[] = ['damage', 'shortage', 'excess',
 const LOSS_TYPES: readonly ExceptionType[] = ['damage', 'shortage', 'theft', 'vehicle_accident', 'seal_tamper', 'weather', 'other']
 const CLAIM_TYPES_FOR: readonly ExceptionType[] = ['damage', 'shortage', 'theft', 'vehicle_accident', 'seal_tamper', 'delay', 'weather', 'other']
 
+/** Part B of the e-way bill is due: the goods changed vehicle and the new reference is not saved yet. Not on a cancelled transfer. */
+export const partBDue = (t: { status: string; eway_part_b_required?: boolean | null; eway_part_b_ref?: string | null }) =>
+  !!t.eway_part_b_required && !t.eway_part_b_ref && t.status !== 'cancelled'
+
 /** A transfer that is still moving the goods blocks every other plan for them. */
 export const isActiveTransfer = (status: TransferStatus | string) => status === 'planned' || status === 'in_progress'
 

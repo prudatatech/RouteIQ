@@ -78,10 +78,13 @@ export function pickupPlace(s: Pick<ShipmentRow, 'origin_name' | 'origin_address
   return { name, address }
 }
 
+/** A stop or trip that was cancelled or released no longer puts the shipment on a vehicle. */
+const isLiveLink = (status?: string | null) => status !== 'cancelled' && status !== 'released'
+
 export function plateOf(s: ShipmentRow): string | null {
   for (const dp of deliveryPointsOf(s)) {
-    const plate = dp.route_stops?.find(rs => rs.routes?.vehicles?.plate_number)?.routes?.vehicles?.plate_number
-    if (plate) return plate
+    const stop = dp.route_stops?.find(rs => isLiveLink(rs.status) && isLiveLink(rs.routes?.status) && rs.routes?.vehicles?.plate_number)
+    if (stop?.routes?.vehicles?.plate_number) return stop.routes.vehicles.plate_number
   }
   return null
 }

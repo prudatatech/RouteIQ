@@ -9,7 +9,7 @@ import {
   buttonClasses, useConfirm, type Column,
 } from '@/components/ui'
 import { ConditionPill, ConsignmentLink, Steps } from '@/components/cargo/CargoBits'
-import { isActiveTransfer, positionOf, transferItemCount, transferSteps } from '@/components/cargo/logic'
+import { isActiveTransfer, partBDue, positionOf, transferItemCount, transferSteps } from '@/components/cargo/logic'
 import { cargoKeys, transfersAPI, type CargoTransfer, type CargoVehicle, type TransferItem } from '@/services/cargo'
 import { EWAY_BILL_PORTAL_URL } from '@/config/compliance'
 import { isNotFoundError, errorMessage, formatDateTime, formatPieces } from '@/utils/display'
@@ -254,7 +254,7 @@ export default function TransferPage() {
               actions={<a href={EWAY_BILL_PORTAL_URL} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand hover:underline">Open the e-way bill portal</a>}
             />
             <CardBody className="space-y-4">
-              {t.eway_part_b_required && !t.eway_part_b_ref ? (
+              {partBDue(t) ? (
                 <>
                   <Alert tone="warning" title="E-way bill Part B update required">
                     The goods moved to a different vehicle. Update Part B with the new vehicle number on the e-way bill portal, then save the new reference here.

@@ -6,7 +6,7 @@ import { formatDateTime, formatPieces } from '@/utils/display'
 import type { CaseTimelineEntry, CustodyEvent } from '@/services/cargo'
 import { ConditionPill } from './CargoBits'
 import { custodyKindLabel, holderLabel } from './logic'
-import { HISTORY_PREVIEW, dropRepeatedEvents, dropRepeatedSentences, tidyNote, uniqueTexts } from './custodyText'
+import { HISTORY_PREVIEW, dropRepeatedEvents, groupTimelineEntries, lotsText, dropRepeatedSentences, tidyNote, uniqueTexts } from './custodyText'
 
 /** Photo and signature thumbnails; each opens the full image in a new tab. */
 function Thumbnails({ photos, signature, label }: { photos?: string[] | null; signature?: string | null; label: string }) {
@@ -140,7 +140,8 @@ const SOURCE_LABEL: Record<string, string> = { custody: 'Custody', sos: 'SOS', m
 
 /** A case's merged timeline (custody, SOS, maintenance, actions and notes), oldest first. */
 export function CaseTimeline({ entries }: { entries: CaseTimelineEntry[] }) {
-  const ordered = [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  // One entry per handover: a split consignment writes each step once per lot
+  const ordered = groupTimelineEntries(entries)
   return (
     <div aria-label="Case history">
       <Rail
@@ -156,6 +157,11 @@ export function CaseTimeline({ entries }: { entries: CaseTimelineEntry[] }) {
                   <span className="text-sm font-medium text-text">{title}</span>
                   <span className="text-xs text-muted">{SOURCE_LABEL[e.source] ?? humanize(e.source)} · {formatDateTime(e.at)}</span>
                 </div>
+                {e.lotLabels.length > 1 && (
+                  <p className="mt-0.5 text-sm text-text">
+                    {lotsText(e.lotLabels)}{e.piecesList.length === e.lotLabels.length ? ` · ${e.piecesList.map(n => formatPieces(n)).join(' and ')}` : ''}
+                  </p>
+                )}
                 {e.note && <p className="mt-0.5 whitespace-pre-line break-words text-sm text-text">{tidyNote(dropRepeatedSentences(e.note))}</p>}
                 {who && <p className="mt-0.5 text-xs text-muted">{who}</p>}
                 <Thumbnails photos={e.photo_urls} signature={e.signature_url} label={title} />

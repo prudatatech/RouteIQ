@@ -11,7 +11,7 @@ import { Page, PageHeader, Card, Button, buttonClasses, StatusPill, Stat, Detail
 import { MapView, TripEtaCard, fetchDrivingRoute, routingOff, remainingStops, useLiveEta, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
-import { formatDateTime, formatMinutes, formatKm, tripNumber } from '@/utils/display'
+import { formatDateTime, formatMinutes, formatKm, isNotFoundError, tripNumber } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
 import { useAuthStore } from '@/store/authStore'
 import MessagesPanel from '@/components/messages/MessagesPanel'
@@ -62,10 +62,11 @@ export default function RouteDetailsPage() {
   const { confirm } = useConfirm()
   const statusActions = useRouteStatusActions()
 
-  const { data: route, isLoading, isError, refetch } = useQuery<RouteDetail>({
+  const { data: route, isLoading, isError, error, refetch } = useQuery<RouteDetail>({
     queryKey: ['route', id],
     queryFn: () => routesAPI.get(id as string),
     enabled: !!id,
+    retry: (count, err) => !isNotFoundError(err) && count < 2,
     // The vehicle marker and the live ETA follow the truck while the route is running
     refetchInterval: (query) => (query.state.data?.status === 'active' ? 20_000 : false),
   })
@@ -146,7 +147,14 @@ export default function RouteDetailsPage() {
   if (isError || !route) {
     return (
       <Page>
-        <ErrorState description="We could not load this trip. Check your connection and try again." onRetry={refetch} />
+        {isNotFoundError(error) ? (
+          <>
+            <ErrorState title="We could not find this trip" description="Nothing matches this address. Open the trip from the Trips list." />
+            <Link to="/routes" className={buttonClasses({ variant: 'secondary' })}>Back to trips</Link>
+          </>
+        ) : (
+          <ErrorState description="We could not load this trip. Check your connection and try again." onRetry={refetch} />
+        )}
       </Page>
     )
   }
@@ -331,13 +339,13 @@ export default function RouteDetailsPage() {
             {timeline.length > 0 && <Timeline events={timeline} formatAt={formatDateTime} />}
           </Card>
 
-          <Card padded className="space-y-4">
+          {!isCancelled && <Card padded className="space-y-4">
             <h2 className="text-lg font-semibold text-text">Messages</h2>
             <MessagesPanel
               target={{ route_id: route.id }}
               unavailable={route.vehicles?.driver_id ? undefined : 'No driver is assigned to this vehicle, so nobody would see a message.'}
             />
-          </Card>
+          </Card>}
 
           <Card padded className="space-y-4">
             <h2 className="text-lg font-semibold text-text">Actions</h2>
@@ -351,17 +359,18 @@ export default function RouteDetailsPage() {
                   <Button variant="secondary" icon={<Copy size={16} />} onClick={handleDuplicate}>Duplicate to return trip</Button>
                 </>
               )}
-              <Button
-                variant="danger"
-                icon={<XCircle size={16} />}
-                onClick={handleCancel}
-                disabled={!canCancel}
-                loading={updateStatusMutation.isPending}
-              >
-                {route.is_manifest ? 'Cancel load' : 'Cancel trip'}
-              </Button>
+              {canCancel && (
+                <Button
+                  variant="danger"
+                  icon={<XCircle size={16} />}
+                  onClick={handleCancel}
+                  loading={updateStatusMutation.isPending}
+                >
+                  {route.is_manifest ? 'Cancel load' : 'Cancel trip'}
+                </Button>
+              )}
               {canDelete && (
-                <Button variant="danger" icon={<Trash2 size={16} />} onClick={handleDelete} loading={deleteMutation.isPending}>
+                <Button variant="ghost" icon={<Trash2 size={16} />} onClick={handleDelete} loading={deleteMutation.isPending}>
                   Delete
                 </Button>
               )}

@@ -65,6 +65,14 @@ function dbError(action: string, error: { message: string } | null): never {
 }
 
 /** Hours in an SLA commitment such as "4 Hours"; null when there is no number. */
+/** A stop that was cancelled (the shipment was taken off its vehicle) or sits on a cancelled trip no longer puts the shipment on a trip. */
+export function hasLiveStop(stops: { status?: string | null; routes?: { status?: string | null } | { status?: string | null }[] | null }[]): boolean {
+  return stops.some(st => {
+    const trip = Array.isArray(st.routes) ? st.routes[0] : st.routes;
+    return st.status !== 'cancelled' && trip?.status !== 'cancelled';
+  });
+}
+
 export function slaHours(sla: unknown): number | null {
   if (typeof sla !== 'string') return null;
   const m = sla.match(/(\d+(?:\.\d+)?)/);
@@ -120,10 +128,10 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
   if (stops.length > 0) {
     const { data: onRoute, error: rErr } = await supabase
       .from('route_stops')
-      .select('id')
+      .select('id, status, routes(status)')
       .in('delivery_point_id', stops.map(p => p.id));
     if (rErr) dbError('Failed to check routes', rErr);
-    if ((onRoute ?? []).length > 0) throw new HttpError(409, 'This shipment is already on a trip');
+    if (hasLiveStop(onRoute ?? [])) throw new HttpError(409, 'This shipment is already on a trip');
   }
   const { data: live, error: lErr } = await supabase
     .from('tpl_orders').select('id').eq('shipment_id', id).neq('status', 'cancelled');

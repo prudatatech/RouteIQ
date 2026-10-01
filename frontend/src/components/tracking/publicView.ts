@@ -41,15 +41,15 @@ export function publicHistory(events: PublicHistoryEvent[] | null | undefined, c
   return out
 }
 
-/** A part-delivered booking sits on the Delivered step, with a note saying how much. */
+/** A part-delivered booking stays on its last shared step (In transit), with a note saying how much is delivered. */
 export const isPartlyDelivered = (status: string) => status === 'partially_delivered'
 
-const done = (l: PublicLot) => l.status === 'delivered' || l.status === 'completed'
+export const lotIsDone = (l: PublicLot) => l.status === 'delivered' || l.status === 'completed'
 
 /** "Lot A delivered", "Lot B: 23 of 25 pieces delivered", "Lot C on its way". */
 export function lotLine(l: PublicLot): string {
   const name = l.label ? `Lot ${l.label}` : l.tracking_id
-  if (done(l)) return `${name} delivered`
+  if (lotIsDone(l)) return `${name} delivered`
   const total = l.pieces_total ?? null
   const delivered = l.pieces_delivered ?? 0
   if (total != null && delivered > 0) return `${name}: ${delivered.toLocaleString('en-IN')} of ${total.toLocaleString('en-IN')} pieces delivered`
@@ -73,4 +73,30 @@ export function splitDestination(drops: PublicDrop[] | null | undefined, lots: P
   if (unique.length === 2) return `${unique[0]} and ${unique[1]}`
   if (unique.length > 2) return `${unique.length.toLocaleString('en-IN')} delivery addresses`
   return lots.length > 0 ? `${lots.length.toLocaleString('en-IN')} delivery ${lots.length === 1 ? 'address' : 'addresses'}` : null
+}
+
+/** The bar's steps in order, as the public page draws them. */
+export const PROGRESS_STEPS = ['created', 'assigned', 'picked_up', 'in_transit', 'delivered'] as const
+
+/**
+ * Where the progress bar sits for a part-delivered booking: the last step every live lot has reached,
+ * never Delivered (something is still on its way). A lot not yet picked up holds the bar back; a
+ * cancelled or returned lot does not count. Without lots the bar sits on In transit.
+ */
+export function partDeliveredStep(lots: PublicLot[]): number {
+  const inTransit = PROGRESS_STEPS.indexOf('in_transit')
+  const live = lots.filter(l => l.status !== 'cancelled' && l.status !== 'returned' && !lotIsDone(l))
+  if (live.length === 0) return inTransit
+  const steps = live.map(l => {
+    const i = (PROGRESS_STEPS as readonly string[]).indexOf(l.status)
+    // Part-delivered and failed lots are on the road; any other state (dispatched, ...) is before pickup
+    return i >= 0 ? Math.min(i, inTransit) : l.status === 'partially_delivered' || l.status === 'exception' || l.status === 'out_for_delivery' ? inTransit : 0
+  })
+  return Math.min(...steps)
+}
+
+/** "Part delivered: 2 of 3 lots", or just "Part delivered" when the booking is not split. */
+export function partDeliveredText(lots: PublicLot[]): string {
+  if (lots.length === 0) return 'Part delivered'
+  return `Part delivered: ${lots.filter(lotIsDone).length.toLocaleString('en-IN')} of ${lots.length.toLocaleString('en-IN')} lots`
 }

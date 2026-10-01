@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Pencil, Play, Trash2, Truck } from 'lucide-react'
@@ -39,8 +39,10 @@ export default function ShipmentPage() {
   })
 
   // Keep the page current when the shipment, its trip or its cargo change anywhere
+  // Not while it is being deleted: the realtime echo of the delete would refetch a shipment that is gone (404)
+  const deleting = useRef(false)
   useEffect(() => {
-    const refresh = () => queryClient.invalidateQueries({ queryKey: ['shipments', 'overview'] })
+    const refresh = () => { if (!deleting.current) queryClient.invalidateQueries({ queryKey: ['shipments', 'overview'] }) }
     const channel = openChannel(`public:shipment_page:${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, refresh)
@@ -50,6 +52,7 @@ export default function ShipmentPage() {
 
   const shipment = overview?.shipment ?? null
   const del = useDeleteShipment(shipment, () => navigate('/shipments', { replace: true }))
+  deleting.current = del.isPending
 
   const step = useMemo(() => {
     if (!overview) return null
@@ -142,7 +145,7 @@ export default function ShipmentPage() {
         actions={
           <>
             {!requestOnly && !f.manifestOnly && f.canDelete && (
-              <Button variant={s.status === 'cancelled' ? 'ghost' : 'danger'} icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending}>Delete</Button>
+              <Button variant="ghost" icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending}>Delete</Button>
             )}
             {!requestOnly && !f.manifestOnly && <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => setEditing(s)}>Edit</Button>}
             <Link to={`/shipments/${s.id}/manifest`} className={buttonClasses({ variant: 'secondary' })}>

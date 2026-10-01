@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { CustodyEvent } from '@/services/cargo'
-import { dropRepeatedEvents, dropRepeatedSentences, tidyNote, uniqueTexts } from './custodyText'
+import type { CaseTimelineEntry, CustodyEvent } from '@/services/cargo'
+import { dropRepeatedEvents, dropRepeatedSentences, groupTimelineEntries, lotsText, tidyNote, uniqueTexts } from './custodyText'
 
 const ev = (over: Partial<CustodyEvent>): CustodyEvent => ({
   id: 'e', kind: 'accepted', recorded_at: '2026-10-01T10:00:00Z', from_holder: null, to_holder: null,
@@ -45,5 +45,29 @@ describe('dropRepeatedEvents', () => {
     const b = ev({ id: '2', notes: 'Driver accepted the job' })
     const c = ev({ id: '3', kind: 'delivery' as CustodyEvent['kind'] })
     expect(dropRepeatedEvents([a, b, c, ev({ id: '4', notes: 'Driver accepted the job' })]).map(e => e.id)).toEqual(['1', '3', '4'])
+  })
+})
+
+describe('groupTimelineEntries', () => {
+  const entry = (id: string, at: string, lot: string, pieces: number, over: Partial<CaseTimelineEntry> = {}): CaseTimelineEntry => ({
+    id, at, source: 'custody', kind: 'pickup', title: 'Picked up', actor_name: 'Ravi', pieces, ref: { lot_label: lot }, ...over,
+  })
+
+  it('makes one entry per handover, naming the lots and their pieces', () => {
+    const out = groupTimelineEntries([
+      entry('1', '2026-10-01T10:00:00Z', 'A', 50),
+      entry('2', '2026-10-01T10:00:20Z', 'B', 25),
+      entry('3', '2026-10-01T12:00:00Z', 'A', 50, { kind: 'handover', title: 'Handed over' }),
+    ])
+    expect(out).toHaveLength(2)
+    expect(out[0].lotLabels).toEqual(['A', 'B'])
+    expect(out[0].piecesList).toEqual([50, 25])
+    expect(lotsText(out[0].lotLabels)).toBe('Lots A and B')
+  })
+
+  it('keeps entries that are far apart, by someone else, or not custody', () => {
+    expect(groupTimelineEntries([entry('1', '2026-10-01T10:00:00Z', 'A', 5), entry('2', '2026-10-01T10:30:00Z', 'B', 5)])).toHaveLength(2)
+    expect(groupTimelineEntries([entry('1', '2026-10-01T10:00:00Z', 'A', 5), entry('2', '2026-10-01T10:00:10Z', 'B', 5, { actor_name: 'Sam' })])).toHaveLength(2)
+    expect(groupTimelineEntries([entry('1', '2026-10-01T10:00:00Z', 'A', 5, { source: 'note' }), entry('2', '2026-10-01T10:00:10Z', 'B', 5, { source: 'note' })])).toHaveLength(2)
   })
 })

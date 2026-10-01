@@ -212,6 +212,9 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
           {canEscalate && !order && (
             preview.isLoading ? (
               <Skeleton className="h-10 w-full" />
+            ) : (preview.error as { response?: { status?: number } } | null)?.response?.status === 409 ? (
+              // The load is not free to go to a partner (taken, bidding open, ...): say so quietly, it is not a failure
+              <p className="text-sm text-muted">{errorMessage(preview.error, 'This load cannot go to a partner right now.')}</p>
             ) : preview.error ? (
               <ErrorState compact description={errorMessage(preview.error, 'We could not check which partners match.')} onRetry={() => preview.refetch()} />
             ) : newPartners.length === 0 ? (

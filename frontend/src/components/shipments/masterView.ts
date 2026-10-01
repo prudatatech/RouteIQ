@@ -99,6 +99,8 @@ export function historyEntries(events: ShipmentHistoryEvent[]): HistoryEntry[] {
       actor: e.actor,
       note: exception && e.rollup ? 'A lot has an open problem' : exception ? [e.note, 'Delivery attempt failed'].filter(Boolean).join(' · ') : e.note,
       ...(exception && e.rollup ? { label: 'Problem on a lot' } : {}),
+      // "Created" again after the first entry is the shipment going back to waiting for a vehicle
+      ...(e.status === 'created' && out.some(o => o.status !== 'created') ? { label: 'Taken off vehicle' } : {}),
     }
     const prev = out[out.length - 1]
     const same = prev

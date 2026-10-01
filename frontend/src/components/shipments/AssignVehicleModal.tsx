@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { refreshAfterDispatchChange } from '@/utils/queueRefresh'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -155,9 +156,8 @@ export default function AssignVehicleModal({ shipment = null, booking = null, lo
     } finally {
       setBusyId(null)
     }
-    for (const key of ['shipments', 'vehicles', 'fleet-summary', 'customer-bookings', 'vendor-requests', 'assign-options']) {
-      queryClient.invalidateQueries({ queryKey: [key] })
-    }
+    // A plain API call here (not a mutation), so the shared counts and the Dispatch lists are refreshed by hand, counts twice
+    refreshAfterDispatchChange(queryClient)
     if (failed.length > 0) {
       toast.error(assignedIds.length === 0 ? failed[0].message : `Assigned ${assignedIds.length}, ${failed.length} failed: ${failed.slice(0, 3).map(f => f.message).join('; ')}`)
     } else if (!sendNow && subject.kind !== 'vendor') {

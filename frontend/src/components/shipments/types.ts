@@ -5,7 +5,7 @@ export interface DeliveryPoint {
   address?: string | null
   latitude?: number | null
   longitude?: number | null
-  route_stops?: { routes?: { vehicle_id?: string | null; status?: string | null; vehicles?: { plate_number?: string | null } | null } | null }[]
+  route_stops?: { status?: string | null; routes?: { vehicle_id?: string | null; status?: string | null; vehicles?: { plate_number?: string | null } | null } | null }[]
 }
 
 export interface CapacityBidInfo {
