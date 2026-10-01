@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Approve')"},{"wait":900},{"shot":"approve"},{"press":"Escape"},{"click":"button:has-text('Change')"},{"wait":900},{"shot":"change-rate"}]

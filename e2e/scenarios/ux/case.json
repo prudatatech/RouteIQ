@@ -1,0 +1,5 @@
+[{"shot":"case"},{"click":"button:has-text('Take it')"},{"wait":900},{"shot":"take-it"},{"press":"Escape"},
+ {"click":"button:has-text('Raise claim')"},{"wait":900},{"shot":"raise-claim"},{"press":"Escape"},
+ {"click":"button:has-text('Add note')"},{"wait":900},{"shot":"add-note"},{"press":"Escape"},
+ {"click":"button:has-text('Transfer')"},{"wait":900},{"shot":"transfer"},{"press":"Escape"},
+ {"click":"button:has-text('Resolve')"},{"wait":900},{"shot":"resolve"},{"press":"Escape"}]

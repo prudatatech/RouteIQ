@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Add person')"},{"wait":800},{"shot":"add-person"},{"press":"Escape"},{"click":"button:has-text('Import')"},{"wait":800},{"shot":"import"},{"press":"Escape"},{"click":"button:has-text('Add vendor')"},{"wait":800},{"shot":"add-vendor"}]
