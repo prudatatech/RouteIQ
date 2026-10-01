@@ -46,6 +46,7 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | UAT-026 | Minor | OPS | UX: Problem cases show "RTX-…-B · 1 pcs" ("pcs" vs "piece(s)" elsewhere) and "Deadline: Overdue by 13 h 36 min" on two lines | open | |
 | UAT-027 | Minor | FLT | UX: Optimize lists "Driver licence missing" on both vehicles as the only vehicle detail, with no link to fix it | open | |
 | UAT-028 | Minor | OPS | UX: /3pl-partners silently redirects to Return trips → 3PL partners; the sidebar item and page title don't match | open | |
+| UAT-029 | Major | FLT | Driver-pay backfill counted a phantom 20,015 km first leg (TR-FCDACA90: 21,783 km instead of 1,768 km) | fixed | this commit; live entry corrected |
 | UAT-023 | Gap | ALL | No rate limit on /auth/refresh; logout doesn't revoke; robots.txt, Permissions-Policy (AZP-08, 09) | open | |
 
 ## Details

@@ -147,10 +147,11 @@ BEGIN
            (coalesce(r.completed_at, r.updated_at, r.created_at) AT TIME ZONE 'Asia/Kolkata')::date AS trip_date,
            coalesce(r.total_distance_km, 0) AS planned_km,
            (SELECT coalesce(sum(l.leg), 0) FROM (
-              SELECT 2 * 6371 * asin(least(1, sqrt(
+              -- the first stop has no previous point: NULL, not least(1, NULL) = 1 (half the globe)
+              SELECT CASE WHEN lag(dp.latitude) OVER w IS NULL THEN NULL ELSE 2 * 6371 * asin(least(1, sqrt(
                        power(sin(radians(dp.latitude - lag(dp.latitude) OVER w) / 2), 2)
                        + cos(radians(lag(dp.latitude) OVER w)) * cos(radians(dp.latitude))
-                         * power(sin(radians(dp.longitude - lag(dp.longitude) OVER w) / 2), 2)))) AS leg
+                         * power(sin(radians(dp.longitude - lag(dp.longitude) OVER w) / 2), 2)))) END AS leg
               FROM public.route_stops rs
               JOIN public.delivery_points dp ON dp.id = rs.delivery_point_id
               WHERE rs.route_id = r.id AND dp.latitude IS NOT NULL AND dp.longitude IS NOT NULL
