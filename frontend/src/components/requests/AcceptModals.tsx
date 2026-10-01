@@ -45,6 +45,7 @@ export function AcceptBookingModal({ booking, loading, onClose, onAccept }: {
       )}
     >
       <Input
+        data-autofocus
         label="Price (₹)"
         type="number"
         inputMode="decimal"
