@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { supabase } from '@/services/supabase'
+import { orgHeaders } from '@/store/orgStore'
 import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
@@ -7,6 +8,7 @@ import type { ShipmentOverview } from '@/components/shipments/types'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 
+import type { Membership, OrgMember, OrgProfile, OrgProfileInput, OrgRole } from '@/utils/orgs'
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
@@ -58,6 +60,9 @@ api.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${session.access_token}`
   }
   
+  // The organisation the person is working in; absent when none is active (older backend)
+  for (const [name, value] of Object.entries(orgHeaders())) config.headers.set(name, value)
+
   // Clean up params for ALL methods (GET, POST, etc.)
   if (config.params) {
     config.params = sanitizeParams(config.params)
@@ -148,6 +153,16 @@ export interface VehicleRequest {
 }
 
 /** Approval of vehicles registered from the driver app (admin and manager). */
+export const orgAPI = {
+  mine: () => api.get('/orgs/mine').then(r => (Array.isArray(r.data) ? r.data : []) as Membership[]),
+  get: () => api.get('/org').then(r => r.data as OrgProfile),
+  update: (data: Partial<OrgProfileInput>) => api.patch('/org', data).then(r => r.data as OrgProfile),
+  members: () => api.get('/org/members').then(r => (Array.isArray(r.data) ? r.data : []) as OrgMember[]),
+  addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
+  updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
+    api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
+}
+
 export const vehicleRequestsAPI = {
   list: () => api.get('/vehicles/requests').then(r => r.data as { pending: number; requests: VehicleRequest[] }),
   count: () => api.get('/vehicles/requests/count').then(r => r.data as { pending: number }),

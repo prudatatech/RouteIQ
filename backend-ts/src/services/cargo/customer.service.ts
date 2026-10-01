@@ -16,12 +16,28 @@ import { ownerNotice } from './exception.service';
 import { CLAIM_TYPES, claimsForBooking, createClaim } from './claim.service';
 import { notifyDeliveryRated } from './notify';
 
+/** The vehicle of the route that carried a shipment's drop (its completed stop first, else any stop). */
+async function vehicleFromRoute(shipmentId: string): Promise<string | null> {
+  const { data: points } = await supabase.from('delivery_points').select('id').eq('shipment_id', shipmentId);
+  const pointIds = (points ?? []).map((p: any) => p.id);
+  if (pointIds.length === 0) return null;
+  const { data: stops } = await supabase.from('route_stops').select('route_id, status').in('delivery_point_id', pointIds);
+  const ordered = ((stops ?? []) as any[]).sort((a, b) => Number(b.status === 'completed') - Number(a.status === 'completed'));
+  const routeIds = [...new Set(ordered.filter(s => s.status !== 'cancelled').map(s => s.route_id))];
+  if (routeIds.length === 0) return null;
+  const { data: routes } = await supabase.from('routes').select('id, vehicle_id').in('id', routeIds);
+  for (const id of routeIds) { const r = (routes ?? []).find((x: any) => x.id === id && x.vehicle_id); if (r) return r.vehicle_id; }
+  return null;
+}
+
 /** The vehicle and driver that delivered a shipment, from the delivery on record, as the rating columns. */
 async function deliveredBy(shipmentId: string): Promise<{ driverId: string | null; columns: { rated_vehicle_id: string | null; rated_driver_id: string | null } }> {
-  const { data: events } = await supabase.from('cargo_custody_events').select('kind, from_vehicle_id, recorded_at').eq('shipment_id', shipmentId).in('kind', ['delivery', 'partial_delivery']);
+  const { data: events } = await supabase.from('cargo_custody_events').select('kind, from_vehicle_id, driver_id, recorded_at').eq('shipment_id', shipmentId).in('kind', ['delivery', 'partial_delivery']);
   const last = ((events ?? []) as any[]).sort((a, b) => String(b.recorded_at).localeCompare(String(a.recorded_at)))[0];
-  const vehicleId: string | null = last?.from_vehicle_id ?? null;
-  const driverId: string | null = vehicleId ? (await supabase.from('vehicles').select('driver_id').eq('id', vehicleId).maybeSingle()).data?.driver_id ?? null : null;
+  // A single-drop booking is often delivered by marking its route stop complete, which leaves no custody
+  // delivery event: then the truck is the one on the route that stop belonged to.
+  const vehicleId: string | null = last?.from_vehicle_id ?? await vehicleFromRoute(shipmentId);
+  const driverId: string | null = (vehicleId ? (await supabase.from('vehicles').select('driver_id').eq('id', vehicleId).maybeSingle()).data?.driver_id ?? null : null) ?? last?.driver_id ?? null;
   return { driverId, columns: { rated_vehicle_id: vehicleId, rated_driver_id: driverId } };
 }
 

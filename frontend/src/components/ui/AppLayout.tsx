@@ -16,6 +16,7 @@ import { NotificationsBell } from './NotificationsBell'
 import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
 import { useDialog } from './useDialog'
+import { OrgSwitcher } from './OrgSwitcher'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 /** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
@@ -330,6 +331,7 @@ export default function AppLayout() {
         )}
       >
         <Brand collapsed={collapsed} />
+        {!collapsed && <OrgSwitcher className="shrink-0 border-b border-border px-4 py-2" />}
         {isStaff && (
           <div className={clsx('flex shrink-0 items-center gap-1 border-b border-border py-2', collapsed ? 'flex-col px-2' : 'pl-3 pr-2')}>
             <SearchButton collapsed={collapsed} onClick={() => setSearchOpen(true)} />
@@ -345,6 +347,7 @@ export default function AppLayout() {
         <IconButton label="Open menu" icon={<Menu size={20} />} onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} />
         <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
         <span className="min-w-0 flex-1 truncate text-base font-semibold">MargixIndia</span>
+        <OrgSwitcher className="min-w-0 max-w-[40%]" />
         {isStaff && (
           <>
             <IconButton label="Search" icon={<Search size={20} />} onClick={() => setSearchOpen(true)} />

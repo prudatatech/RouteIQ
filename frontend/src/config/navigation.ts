@@ -126,6 +126,7 @@ export const navSections: NavSection[] = [
     to: '/admin/settings', label: 'Settings', icon: Settings, roles: admins,
     children: [
       { to: '/admin/settings', label: 'Settings', roles: admins },
+      { to: '/admin/organisation', label: 'Organisation', roles: admins },
       { to: '/admin/audit', label: 'Audit log', roles: superadmin },
     ],
   },
