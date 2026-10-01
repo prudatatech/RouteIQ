@@ -26,6 +26,7 @@ import { setOdometerReading } from './odometer-sync.service';
 import {
   addAttachments, AttachmentInputSchema, dateOnly, recordService, ServiceItemSchema, type AttachmentRow,
 } from './service-records.service';
+import { carrierStamp } from '../core/org-context';
 
 export const MAINTENANCE_REASONS = ['scheduled_service', 'breakdown', 'accident', 'tyre', 'other'] as const;
 export type MaintenanceReason = typeof MAINTENANCE_REASONS[number];
@@ -259,6 +260,7 @@ export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSc
   const { data: job, error } = await supabase
     .from('vehicle_maintenance_jobs')
     .insert({
+      ...carrierStamp(),
       vehicle_id: vehicleId,
       status: 'open',
       reason_type: input.reason_type,

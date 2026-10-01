@@ -18,6 +18,7 @@ import { emailService, escapeHtml } from './email.service';
 import { ShipmentService } from './shipment.service';
 import { vendorService, type LoadEvent } from './vendor.service';
 import { InvoiceService } from './invoice.service';
+import { carrierStamp } from '../core/org-context';
 
 export type SourceType = 'request' | 'shipment';
 
@@ -295,6 +296,7 @@ export const tplNetworkService = {
 
     const now = new Date().toISOString();
     const rows = fresh.map(m => ({
+      ...carrierStamp(),
       partner_id: m.partner.id,
       source_type: sourceType,
       [col]: id,
@@ -520,6 +522,7 @@ export const tplNetworkService = {
     const { data: order, error: oErr } = await supabase
       .from('tpl_orders')
       .insert({
+        ...carrierStamp(),
         offer_id: offerId,
         partner_id: partner.id,
         source_type: sourceType,

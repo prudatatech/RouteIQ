@@ -6,6 +6,10 @@
 #   DATABASE_URL=postgres://… scripts/db-migrate.sh --dry-run  apply inside a transaction, then roll back
 #   DATABASE_URL=postgres://… scripts/db-migrate.sh --stamp-all record every file as applied, run nothing
 #                                                              (once, for a database already up to date)
+#   DATABASE_URL=postgres://… scripts/db-migrate.sh --stamp-through 20261001060000
+#                                                              record the files up to that version as applied
+#                                                              (a new database built from supabase/bootstrap, which
+#                                                              already contains them), leave newer ones pending
 #
 # Each file runs in its own transaction with a 5 s lock timeout, so a failure leaves nothing half done
 # and never waits behind live traffic. The URL is read from the environment and never printed.
@@ -31,6 +35,18 @@ for f in "$MIGRATIONS"/*.sql; do
   name="$(basename "$f")"
   grep -qxF "$name" <<<"$applied" || pending+=("$f")
 done
+
+# Files older than the bootstrap baseline are already in the schema; undated legacy files count as older.
+if [[ "$MODE" == "--stamp-through" ]]; then
+  through="${2:?give the last version the schema already contains}"
+  older=()
+  for f in "${pending[@]}"; do
+    name="$(basename "$f")"
+    if [[ ! "$name" =~ ^[0-9]{14}_ || ! "${name:0:14}" > "$through" ]]; then older+=("$f"); fi
+  done
+  for f in "${older[@]}"; do run -c "INSERT INTO public.app_migrations (name) VALUES ('$(basename "$f")') ON CONFLICT DO NOTHING" >/dev/null; done
+  echo "recorded ${#older[@]} files up to $through as applied (nothing was run); $((${#pending[@]} - ${#older[@]})) newer ones are pending"; exit 0
+fi
 
 if [[ ${#pending[@]} -eq 0 ]]; then echo "database is up to date"; exit 0; fi
 

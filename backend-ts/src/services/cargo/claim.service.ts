@@ -23,6 +23,7 @@ import { manifestParcelCode } from '../../core/parcelCode';
 import { RefSchema, customerOwnsShipment, manifestVendorId, refColumns, resolveRef, type Actor, type Consignment } from './consignment';
 import { insertWithCode } from './exception.service';
 import { notifyStaffSafe, notifyUserSafe, ownerRefs } from './notify';
+import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
 
 export const CLAIM_TYPES = ['damage', 'shortage', 'loss', 'theft', 'delay'] as const;
 export const CLAIM_STATUSES = ['draft', 'filed', 'surveyed', 'approved', 'rejected', 'settled', 'withdrawn'] as const;
@@ -449,6 +450,7 @@ export async function listClaims(filters: ClaimListFilters, user: TokenData): Pr
   const pages = await Promise.all(scopes.map(async scope => {
     let q = supabase.from('cargo_claims').select(CLAIM_COLUMNS);
     if (scope) q = q.or(scope);
+    else q = scopeQuery(q, OWNED.carrierAndVendor);
     if (filters.status) q = q.eq('status', filters.status);
     if (ref) q = q.eq(ref.kind === 'shipment' ? 'shipment_id' : 'manifest_id', ref.id);
     if (cursor) q = q.or(`created_at.lt."${cursor.created_at}",and(created_at.eq."${cursor.created_at}",id.lt.${cursor.id})`);
@@ -469,6 +471,8 @@ export async function listClaims(filters: ClaimListFilters, user: TokenData): Pr
 export async function getClaim(id: string, user: TokenData) {
   const claim = await loadClaim(id);
   await assertClaimAccess(user, claim);
+  // Staff see their organisation's claims only; another's is a 404
+  if (isStaff(user)) await assertVisible('cargo_claims', id, OWNED.carrierAndVendor, 'Claim not found');
   return claimView(claim);
 }
 

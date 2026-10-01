@@ -15,6 +15,10 @@ import { lotsOf } from './cargo/lots.service';
 import { resolveRef, type Consignment } from './cargo/consignment';
 import { OPEN_EXCEPTION_STATUSES } from './cargo/exception.service';
 import { customerDisplayName } from '../core/customer-name';
+import { OWNED, assertVisible, isScoped, scopeQuery } from '../core/org-scope';
+
+/** A vendor request is open to every company; only a vendor organisation is limited to its own. */
+const REQUEST_OWNED = { carrier: null, vendor: 'vendor_org_id' } as const;
 
 export interface OverviewRequester {
   /** `customer_booking`, `vendor_load` (a vendor's posted load), `vendor_bid` (won on a backhaul window) or `staff`. */
@@ -222,10 +226,15 @@ async function findOverviewTarget(ref: string): Promise<{ consignment: Consignme
 }
 
 /** The consignment (and, for a master, its lots) as one shipment page reads it. */
-export async function shipmentOverview(ref: string): Promise<ShipmentOverview> {
+/** `limitToOrg`: the shipment page asks for it, so another organisation's shipment is a 404; internal callers (an invoice) read any. */
+export async function shipmentOverview(ref: string, limitToOrg = false): Promise<ShipmentOverview> {
   const target = await findOverviewTarget(ref);
-  if ('request' in target) return requestOverview(target.request);
+  if ('request' in target) {
+    if (limitToOrg) await assertVisible('vendor_shipment_requests', target.request.id, REQUEST_OWNED, 'Shipment not found');
+    return requestOverview(target.request);
+  }
   const c = target.consignment;
+  if (limitToOrg) await assertVisible(c.kind === 'shipment' ? 'shipments' : 'cargo_manifest', c.id, OWNED.carrierAndVendor, 'Shipment not found');
   const row = await ShipmentService.getListRow(c.kind, c.id);
   if (!row) throw new HttpError(404, 'Shipment not found');
 
@@ -310,4 +319,18 @@ export async function shipmentOverview(ref: string): Promise<ShipmentOverview> {
       : null,
     price,
   };
+}
+
+/**
+ * A 404 unless the active organisation may see the shipment, vendor load or vendor request `id`
+ * (the three kinds of id the shipment endpoints take). Nothing is checked when nothing is scoped.
+ */
+export async function assertShipmentVisible(id: string): Promise<void> {
+  if (!isScoped(OWNED.carrierAndVendor) || !UUID.test(id)) return;
+  const [s, m, r] = await Promise.all([
+    scopeQuery(supabase.from('shipments').select('id').eq('id', id), OWNED.carrierAndVendor).maybeSingle(),
+    scopeQuery(supabase.from('cargo_manifest').select('id').eq('id', id), OWNED.carrierAndVendor).maybeSingle(),
+    scopeQuery(supabase.from('vendor_shipment_requests').select('id').eq('id', id), REQUEST_OWNED).maybeSingle(),
+  ]);
+  if (!s.data && !m.data && !r.data) throw new HttpError(404, 'Shipment not found');
 }

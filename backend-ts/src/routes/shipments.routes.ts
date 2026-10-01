@@ -18,7 +18,7 @@ import { sendError } from '../core/errors';
 import { rateDelivery } from '../services/driver-performance.service';
 import { getProofOfDelivery } from '../services/pod.service';
 import { isPlaceholderPlate } from '../core/vehicles';
-import { shipmentOverview } from '../services/shipment-overview.service';
+import { assertShipmentVisible, shipmentOverview } from '../services/shipment-overview.service';
 
 const router = Router();
 
@@ -104,7 +104,7 @@ router.get('/track/:tracking_id/route', rateLimitByIp('track-route', 30, 60), as
 // claims and invoice. `ref` is an id, a tracking id (RTX-…) or a load code (CM-…).
 router.get('/:ref/overview', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    res.json(await shipmentOverview(req.params.ref));
+    res.json(await shipmentOverview(req.params.ref, true));
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -117,6 +117,8 @@ router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => 
       res.status(403).json({ detail: 'Not authorized for this shipment' });
       return;
     }
+    // Staff see their organisation's shipments only; drivers and vendors passed their own access check above
+    if (isStaff(req.user)) await assertShipmentVisible(req.params.shipment_id);
     const shipment = await ShipmentService.getShipment(req.params.shipment_id);
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found' });

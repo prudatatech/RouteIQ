@@ -33,6 +33,7 @@ import { assertCanIssueInvoices, sellerStateCode, COMPANY_PROFILE_INCOMPLETE } f
 import { HttpError } from '../core/errors';
 import { fromPaise, taxLines, toPaise, type TaxBasis } from '../core/gst';
 import { resolveBillTo, snapshotOf } from './invoice-recipient.service';
+import { issuerStamp, vendorOrgOf } from '../core/org-context';
 
 const PRICE_SOURCE_BID = 'bid';
 const PRICE_SOURCE_FREIGHT = 'freight_charge';
@@ -154,11 +155,15 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
   const termsDays = company.payment_terms_days;
   const snapshot = billTo ? snapshotOf(billTo) : null;
   const { notes, ...fields } = input;
+  // The issuing company, and the vendor organisation it bills when the invoice is for a vendor
+  const billToOrg = (await vendorOrgOf(input.vendor_id)).vendor_org_id;
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = new Date();
     const { data, error } = await supabase
       .from('invoices')
       .insert({
+        ...issuerStamp(),
+        ...(billToOrg ? { bill_to_org_id: billToOrg } : {}),
         ...fields,
         ...(notes ? { notes } : {}),
         invoice_number: await nextInvoiceNumber(now),

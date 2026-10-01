@@ -24,6 +24,7 @@ import {
   FUEL_LOG_COLUMNS, PAYMENT_MODES, getFleetSummary, getVehicleStats, loadLogs, loadVehicle, newestFirst, normalizeLog, recomputeVehicle, toFill,
   type FuelLogRow, type FuelVehicle,
 } from '../services/fuel.service';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 const staff = [requireAuth, requireRole(...STAFF_ROLES)] as const;
@@ -114,6 +115,7 @@ async function writeExpense(log: FuelLogRow, userId: string): Promise<string | n
   const { data, error } = await supabase
     .from('expenses')
     .insert({
+      ...carrierStamp(),
       vehicle_id: log.vehicle_id,
       category: 'fuel',
       amount: log.total_amount,

@@ -12,6 +12,7 @@ import { ROUTE_STATUS_TO_MANIFEST, cancelManifest, manifestAsRoute, routeService
 import { HttpError, sendError } from '../core/errors';
 import { attachTripDistance } from '../services/trip-distance';
 import { OPERATING_VEHICLE_STATUSES, ROUTE_STATUSES } from '../core/transitions';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ async function attachStopShipments(routes: any[]): Promise<void> {
   }
 }
 
-const buildManifestQuery = () => supabase.from('cargo_manifest').select('*, vehicles(*)');
+const buildManifestQuery = () => scopeQuery(supabase.from('cargo_manifest').select('*, vehicles(*)'), OWNED.carrierAndVendor);
 
 // ── GET / ──────────────────────────────────────────────────
 router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
@@ -49,9 +50,9 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     const skip = parseInt(req.query.skip as string) || 0;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    let query = supabase
+    let query = scopeQuery(supabase
       .from('routes')
-      .select('*, vehicles(*), route_stops(*, delivery_points(*))');
+      .select('*, vehicles(*), route_stops(*, delivery_points(*))'), OWNED.carrier);
 
     // Drivers only see routes and manifests for their own vehicles
     const driverVehicleIds = req.user!.role === 'driver' ? await getDriverVehicleIds(req.user!.user_id) : null;
@@ -118,10 +119,11 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { data: route, error } = await supabase
+    // Another company's trip is a 404, the same as one that does not exist
+    const { data: route, error } = await scopeQuery(supabase
       .from('routes')
       .select('*, vehicles(*), route_stops(*, delivery_points(*))')
-      .eq('id', req.params.route_id)
+      .eq('id', req.params.route_id), OWNED.carrier)
       .maybeSingle();
 
     // A trip dispatch has not sent is not the driver's to see yet
@@ -132,10 +134,10 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
 
     if (!route) {
       // Try fetching from cargo_manifest
-      const { data: manifest, error: manifestErr } = await supabase
+      const { data: manifest, error: manifestErr } = await scopeQuery(supabase
         .from('cargo_manifest')
         .select('*, vehicles(*)')
-        .eq('id', req.params.route_id)
+        .eq('id', req.params.route_id), OWNED.carrierAndVendor)
         .maybeSingle();
 
       if (manifestErr || !manifest) {

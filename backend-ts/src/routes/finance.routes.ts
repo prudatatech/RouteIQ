@@ -20,11 +20,13 @@ import { idempotent } from '../core/idempotency';
 import { setPriceAndInvoice } from '../services/invoice-pricing.service';
 import { partyFromSnapshot, resolveBillTo } from '../services/invoice-recipient.service';
 import { customerDisplayName } from '../core/customer-name';
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
   EXPENSE_CATEGORIES, ExpenseCategory, getFinanceSettings, getFinanceSummary, getUnpricedDeliveries, selectIn, setFuelPrice,
 } from '../services/finance.service';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 // Money is for admin and superadmin; managers run operations only
@@ -63,7 +65,7 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
     const monthStart = indianDayStart(`${monthKey}-01`);
     const [terms, { data, error }] = await Promise.all([
       getCachedPaymentTermsDays(),
-      supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']),
+      scopeQuery(supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']), OWNED.invoice),
     ]);
     if (error) throw new Error(`Failed to summarise invoices: ${error.message}`);
     let outstanding = 0, outstandingCount = 0, overdue = 0, overdueCount = 0, collected = 0, collectedCount = 0;
@@ -95,7 +97,7 @@ router.get('/invoices', async (req: Request, res: Response) => {
     // Invoices with a report waiting are listed whatever their date: the queue must not hide an old one
     const waiting = req.query.reports === 'open';
     const { start, end } = rangeFrom(req);
-    let query = supabase.from('invoices').select(LIST_COLUMNS).order('issued_at', { ascending: false });
+    let query = scopeQuery(supabase.from('invoices').select(LIST_COLUMNS), OWNED.invoice).order('issued_at', { ascending: false });
     if (!waiting) query = query.gte('issued_at', start.toISOString()).lt('issued_at', end.toISOString());
     const status = req.query.status;
     if (typeof status === 'string' && ['issued', 'paid', 'void'].includes(status)) query = query.eq('status', status);
@@ -379,7 +381,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
     const input = await parseExpense(req.body, false);
     const { data, error } = await supabase
       .from('expenses')
-      .insert({ vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
+      .insert({ ...carrierStamp(), vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
       .select('*')
       .single();
     if (error || !data) throw new Error(`Failed to save expense: ${error?.message}`);

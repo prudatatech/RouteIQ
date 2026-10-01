@@ -269,5 +269,26 @@
         "cash",
         "bank",
         "upi"
+    ],
+    "organizations.kind": [
+        "platform",
+        "logistic_company",
+        "vendor",
+        "tpl_partner"
+    ],
+    "organizations.status": [
+        "pending",
+        "active",
+        "suspended",
+        "rejected"
+    ],
+    "org_members.role": [
+        "owner",
+        "admin",
+        "ops",
+        "finance",
+        "dispatcher",
+        "driver",
+        "member"
     ]
 }
