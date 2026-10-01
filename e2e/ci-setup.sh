@@ -3,7 +3,8 @@
 # production schema (e2e/schema.sql, schema only, no data), the storage bucket the backend uses, and
 # e2e/.env.local. Redis (margix-e2e-redis on 6380) is started by the workflow. Nothing here reaches a hosted project.
 #
-# Refresh e2e/schema.sql after new migrations from a local stack that has them:
+# Migrations dated after SCHEMA_STAMP are applied on top of the dump. To refresh the dump (then move
+# SCHEMA_STAMP to the newest migration in it), from a local stack that has them all:
 #   docker exec supabase_db_margix-e2e pg_dump -U postgres -d postgres --schema-only --schema=public --no-owner > e2e/schema.sql
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,6 +64,15 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('kyc_documents', 'kyc_doc
   ON CONFLICT (id) DO NOTHING;
 NOTIFY pgrst, 'reload schema';
 SQL
+
+# Migrations newer than the dump (it was taken after SCHEMA_STAMP), in order, as on the live project.
+SCHEMA_STAMP=20260930016300
+for f in "$REPO"/supabase/migrations/2*.sql; do
+  name="$(basename "$f")"
+  [[ "${name%%_*}" > "$SCHEMA_STAMP" ]] || continue
+  echo "applying $name"
+  docker exec -i "$DB_CONTAINER" psql -q -U postgres -d postgres -v ON_ERROR_STOP=1 < "$f"
+done
 
 bash "$HERE/setup-local.sh"
 echo "test stack ready"

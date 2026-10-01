@@ -402,7 +402,7 @@ export const InvoiceService = {
     try {
       await InvoiceService.createForManifest(manifestId);
     } catch (e) {
-      logIssueFailure(`manifest ${manifestId}`, e);
+      logIssueFailure(`load ${manifestId}`, e);
     }
   },
 };
