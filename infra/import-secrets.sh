@@ -1,18 +1,36 @@
 #!/usr/bin/env bash
-# Fill infra/secrets.env from .env files you already have (for example the backend's .env, or an
+# Fill a stage's secrets file from .env files you already have (for example the backend's .env, or an
 # export of the Railway variables), so no key has to be copied by hand.
 #
-#   ./infra/import-secrets.sh path/to/backend.env [path/to/other.env ...]
+#   ./infra/import-secrets.sh [--stage live|test] path/to/backend.env [path/to/other.env ...]
 #
-# Only keys listed in secrets.env.example are copied. A key that already has a value in
-# secrets.env is kept. Values are never printed: the script lists key names only.
+# The target is infra/secrets.<stage>.env (stage live by default, or STAGE=test). When that file does not
+# exist but the shared infra/secrets.env does, the shared file is filled, with a WARN; when neither exists
+# the stage file is created from secrets.env.example.
+# Only keys listed in secrets.env.example are copied. A key that already has a value in the
+# target is kept. Values are never printed: the script lists key names only.
 set -euo pipefail
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-INFRA_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXAMPLE="$INFRA_DIR/secrets.env.example"
-TARGET="$INFRA_DIR/secrets.env"
 
-[[ $# -ge 1 ]] || { echo "usage: $0 <source.env> [more.env ...]" >&2; exit 1; }
+files=()
+while [[ $# -gt 0 ]]; do
+  arg="$1"; shift
+  case "$arg" in
+    --stage) [[ $# -gt 0 ]] || die "--stage needs a value (live or test)"; STAGE="$1"; shift ;;
+    --stage=*) STAGE="${arg#--stage=}" ;;
+    *) files+=("$arg") ;;
+  esac
+done
+[[ "$STAGE" == live || "$STAGE" == test ]] || die "STAGE must be 'live' or 'test' (got '$STAGE')"
+resolve_secrets_file
+TARGET="$SECRETS_FILE"
+log "Stage: $STAGE, filling ${TARGET#$ROOT_DIR/}"
+
+[[ ${#files[@]} -ge 1 ]] || { echo "usage: $0 [--stage live|test] <source.env> [more.env ...]" >&2; exit 1; }
+set -- "${files[@]}"
 for src in "$@"; do [[ -f "$src" ]] || { echo "not found: $src" >&2; exit 1; }; done
 
 [[ -f "$TARGET" ]] || cp "$EXAMPLE" "$TARGET"
@@ -65,4 +83,4 @@ echo "Already set, kept:      ${#kept[@]}"
 echo "Still empty:            ${#missing[@]}"; for k in "${missing[@]+"${missing[@]}"}"; do echo "  - $k"; done
 echo
 echo "Required to start the api: SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_JWT_SECRET SECRET_KEY PEOPLE_HASH_SALT"
-echo "Fill any required key still empty in $TARGET, then tell Claude to deploy (or run ./infra/deploy.sh)."
+echo "Fill any required key still empty in $TARGET, then tell Claude to deploy (or run ./infra/deploy.sh --stage $STAGE)."

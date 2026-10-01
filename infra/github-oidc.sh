@@ -8,7 +8,9 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 REPO="${GITHUB_REPO:-prudatatech/RouteIQ}"
-BRANCH="${GITHUB_BRANCH:-main}"
+# One federated credential per deployable branch: main deploys the live stage, test deploys the test stage.
+# Credentials are bound to the branch ref (the workflow's Azure login jobs use no GitHub environment).
+BRANCHES="${GITHUB_BRANCHES:-main test}"
 
 load_azure_env
 require_az_login
@@ -24,7 +26,7 @@ if [[ -z "$(az ad sp list --filter "appId eq '$APP_ID'" --query '[0].id' -o tsv)
   az ad sp create --id "$APP_ID" -o none
 fi
 
-# Federated credentials for pushes and manual runs on the branch. GitHub sends the subject in one of
+# Federated credentials for pushes and manual runs on each branch. GitHub sends the subject in one of
 # two forms, depending on the organisation's settings: "repo:owner/repo:ref:..." or, with immutable
 # ids, "repo:owner@<id>/repo@<id>:ref:...". Register both so either works.
 add_credential() {
@@ -39,14 +41,21 @@ add_credential() {
     }" -o none
   fi
 }
-add_credential "github-${BRANCH}" "repo:$REPO:ref:refs/heads/$BRANCH"
+HAVE_GH=0
 if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  HAVE_GH=1
   OWNER_ID="$(gh api "repos/$REPO" --jq .owner.id)"; REPO_ID="$(gh api "repos/$REPO" --jq .id)"
-  add_credential "github-${BRANCH}-ids" "repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${REPO_ID}:ref:refs/heads/$BRANCH"
 fi
+for BRANCH in $BRANCHES; do
+  add_credential "github-${BRANCH}" "repo:$REPO:ref:refs/heads/$BRANCH"
+  if [[ $HAVE_GH -eq 1 ]]; then
+    add_credential "github-${BRANCH}-ids" "repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${REPO_ID}:ref:refs/heads/$BRANCH"
+  fi
+done
 
 # Pushes only swap images and upload the web app (deploy.sh --images-only), so Contributor on the
 # resource group is enough: no access to the rest of the subscription, and no secrets in GitHub.
+# Both stages live in this one resource group, so one role assignment covers live and test.
 SCOPE="/subscriptions/$SUB/resourceGroups/$RG"
 if [[ -z "$(az role assignment list --assignee "$APP_ID" --scope "$SCOPE" --role Contributor --query '[0].id' -o tsv)" ]]; then
   log "Granting Contributor on $SCOPE"
@@ -59,7 +68,7 @@ if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
   gh variable set AZURE_TENANT_ID --repo "$REPO" --body "$TENANT"
   gh variable set AZURE_SUBSCRIPTION_ID --repo "$REPO" --body "$SUB"
   log "Stored AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID as variables on $REPO."
-  log "Every push to $BRANCH that touches backend-ts, ml-service, frontend or infra now deploys to Azure."
+  log "Every push to $BRANCHES that touches backend-ts, ml-service, frontend or infra now deploys to Azure (main = live, test = test)."
 else
   echo
   echo "gh is not signed in. Add these as repository VARIABLES ($REPO > Settings > Secrets and variables > Actions > Variables):"

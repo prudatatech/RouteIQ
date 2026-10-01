@@ -1,4 +1,7 @@
 // MargixIndia on Azure. Resource-group scope; deploy.sh creates the group first.
+// Two stages share one resource group: `live` (default) owns the shared resources (logs, registry, pull
+// identity and its AcrPull role, Container Apps environment). `test` creates only its own apps and web
+// app and points at the shared ones by name, so a live deploy never changes because of test.
 // Nothing here is account-specific: names derive from `prefix`, the ACR suffix from the group id.
 targetScope = 'resourceGroup'
 
@@ -7,6 +10,10 @@ param location string = 'centralindia'
 
 @description('Static Web Apps is not offered in every region (not in Central India). Used only for the SWA resource.')
 param webLocation string = 'eastasia'
+
+@description('live owns the shared resources and keeps the plain app names (<prefix>-api ...); test adds <prefix>-test-api, -ml, -web and needs live deployed first.')
+@allowed([ 'live', 'test' ])
+param stage string = 'live'
 
 @description('Name prefix: <prefix>-api, <prefix>-ml, <prefix>-web ...')
 @minLength(2)
@@ -22,7 +29,12 @@ param mlImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Port the placeholder image listens on. Real images listen on the ports below.')
 param placeholderPort int = 80
 
-@description('Optional custom web domain (e.g. margixindia.com). Added to CORS and used as WEB_APP_URL.')
+@description('Minimum api replicas. Defaults: live 1 (see the hard requirement below), test 0 (scales to zero).')
+@minValue(0)
+@maxValue(1)
+param apiMinReplicas int = stage == 'live' ? 1 : 0
+
+@description('Optional custom web domain (e.g. margixindia.com). Live only: added to CORS and used as WEB_APP_URL.')
 param customDomain string = ''
 
 @description('Extra CORS regexes, comma separated (default: the old Vercel preview pattern, for the cutover period).')
@@ -34,6 +46,20 @@ param extraAllowedOrigins string = ''
 @description('Secret values keyed by environment variable name, built from infra/secrets.env by deploy.sh. Blank ones are omitted.')
 @secure()
 param secretValues object = {}
+
+var isLive = stage == 'live'
+// live keeps the plain names; test inserts "test": margix-test-api ...
+var appPrefix = isLive ? prefix : '${prefix}-${stage}'
+
+// Names and ids of the shared resources, computed so the test stage can use them without declaring them.
+var logsName = '${prefix}-logs'
+var acrName = take('${prefix}acr${uniqueString(resourceGroup().id)}', 50)
+var pullIdentityName = '${prefix}-pull'
+var envName = '${prefix}-env'
+// the suffix is documented both with and without a leading dot; replace() makes either form <name>.azurecr.io
+var acrLoginServer = replace('${acrName}.${environment().suffixes.acrLoginServer}', '..', '.')
+var pullIdentityId = resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', pullIdentityName)
+var envId = resourceId('Microsoft.App/managedEnvironments', envName)
 
 var apiPort = 8000
 var mlPort = 8001
@@ -67,8 +93,8 @@ var mlSecretEnv = map(mlSetKeys, e => {
 })
 
 // ---------------------------------------------------------------- observability
-resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: '${prefix}-logs'
+resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (isLive) {
+  name: logsName
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
@@ -77,8 +103,8 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 }
 
 // ---------------------------------------------------------------- registry + identity
-resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: take('${prefix}acr${uniqueString(resourceGroup().id)}', 50)
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (isLive) {
+  name: acrName
   location: location
   sku: { name: 'Basic' }
   properties: {
@@ -86,18 +112,18 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
-resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${prefix}-pull'
+resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (isLive) {
+  name: pullIdentityName
   location: location
 }
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 // Needs the deployer to be Owner or User Access Administrator on the resource group.
-resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (isLive) {
   name: guid(acr.id, pullIdentity.id, acrPullRoleId)
   scope: acr
   properties: {
-    principalId: pullIdentity.properties.principalId
+    principalId: pullIdentity!.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
   }
@@ -105,7 +131,7 @@ resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // ---------------------------------------------------------------- web (Static Web App)
 resource web 'Microsoft.Web/staticSites@2023-12-01' = {
-  name: '${prefix}-web'
+  name: '${appPrefix}-web'
   location: webLocation
   sku: {
     name: 'Free'
@@ -115,15 +141,15 @@ resource web 'Microsoft.Web/staticSites@2023-12-01' = {
 }
 
 // ---------------------------------------------------------------- container apps environment
-resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: '${prefix}-env'
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' = if (isLive) {
+  name: envName
   location: location
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logs.properties.customerId
-        sharedKey: logs.listKeys().primarySharedKey
+        customerId: logs!.properties.customerId
+        sharedKey: logs!.listKeys().primarySharedKey
       }
     }
   }
@@ -131,25 +157,25 @@ resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
 
 var registries = [
   {
-    server: acr.properties.loginServer
-    identity: pullIdentity.id
+    server: acrLoginServer
+    identity: pullIdentityId
   }
 ]
 var identityBlock = {
   type: 'UserAssigned'
   userAssignedIdentities: {
-    '${pullIdentity.id}': {}
+    '${pullIdentityId}': {}
   }
 }
 
 // ---------------------------------------------------------------- ml service
 resource ml 'Microsoft.App/containerApps@2024-03-01' = {
-  name: '${prefix}-ml'
+  name: '${appPrefix}-ml'
   location: location
   identity: identityBlock
-  dependsOn: [ acrPull ]
+  dependsOn: [ acrPull, env ]   // both exist only in the live stage; test relies on live having been deployed
   properties: {
-    managedEnvironmentId: env.id
+    managedEnvironmentId: envId
     configuration: {
       registries: registries
       secrets: mlSecrets
@@ -177,26 +203,28 @@ resource ml 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // ---------------------------------------------------------------- api (backend-ts)
-var webOrigin = empty(customDomain) ? 'https://${web.properties.defaultHostname}' : 'https://${customDomain}'
+// Each stage allows its own web app. The custom domain and margixindia.com are live only.
+var stageDomain = isLive ? customDomain : ''
+var webOrigin = empty(stageDomain) ? 'https://${web.properties.defaultHostname}' : 'https://${stageDomain}'
 var allowedOrigins = join(filter([
   'https://${web.properties.defaultHostname}'
-  empty(customDomain) ? '' : 'https://${customDomain}'
-  'https://margixindia.com'
-  'https://www.margixindia.com'
+  empty(stageDomain) ? '' : 'https://${stageDomain}'
+  isLive ? 'https://margixindia.com' : ''
+  isLive ? 'https://www.margixindia.com' : ''
   extraAllowedOrigins
 ], o => !empty(o)), ',')
 var corsPatterns = join(filter([
-  '^https://(www\\.)?margixindia\\.com$'
+  isLive ? '^https://(www\\.)?margixindia\\.com$' : ''
   extraCorsPatterns
 ], p => !empty(p)), ',')
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
-  name: '${prefix}-api'
+  name: '${appPrefix}-api'
   location: location
   identity: identityBlock
-  dependsOn: [ acrPull ]
+  dependsOn: [ acrPull, env ]
   properties: {
-    managedEnvironmentId: env.id
+    managedEnvironmentId: envId
     configuration: {
       registries: registries
       secrets: apiSecrets
@@ -248,14 +276,16 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
       // A second replica would run every job twice, split rate-limit counters (silently
       // doubling the limits) and reject OTPs that were issued by the other replica.
       // Do not raise maxReplicas or add scale rules until that state moves to a shared store (Upstash Redis or Supabase).
-      scale: { minReplicas: 1, maxReplicas: 1 }
+      // Live: min 1. Test defaults to min 0 (sleeps when idle; max stays 1 for the same reason).
+      scale: { minReplicas: apiMinReplicas, maxReplicas: 1 }
     }
   }
 }
 
 output resourceGroupName string = resourceGroup().name
-output acrName string = acr.name
-output acrLoginServer string = acr.properties.loginServer
+output stage string = stage
+output acrName string = acrName
+output acrLoginServer string = acrLoginServer
 output apiName string = api.name
 output apiFqdn string = api.properties.configuration.ingress.fqdn
 output mlName string = ml.name

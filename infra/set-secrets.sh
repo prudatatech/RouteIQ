@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
-# Applies infra/secrets.env to the running container apps without a full deploy.
+# Applies the stage's secrets file to the running container apps without a full deploy.
+#   ./infra/set-secrets.sh                 live: infra/secrets.live.env (falls back to secrets.env with a WARN)
+#   ./infra/set-secrets.sh --stage test    test: infra/secrets.test.env (falls back to secrets.env with a WARN); also STAGE=test
 # Values are never printed. Blank keys are skipped with a warning. Keys starting VITE_ stay local.
-# secrets.env stays the source of truth: deploy.sh applies the same file, so a later deploy
+# The file stays the source of truth: deploy.sh applies the same file, so a later deploy
 # will not undo what you set here as long as you keep the file in sync.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+while [[ $# -gt 0 ]]; do
+  arg="$1"; shift
+  case "$arg" in
+    --stage) [[ $# -gt 0 ]] || die "--stage needs a value (live or test)"; STAGE="$1"; shift ;;
+    --stage=*) STAGE="${arg#--stage=}" ;;
+    -h|--help) sed -n '2,6p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) die "unknown flag: $arg (use --stage live|test)" ;;
+  esac
+done
+
 load_azure_env
 require_az_login
-[[ -f "$SECRETS_FILE" ]] || die "infra/secrets.env not found. Copy infra/secrets.env.example and fill it in."
+log "Stage: $STAGE ($API_APP, $ML_APP), secrets from ${SECRETS_FILE#$ROOT_DIR/}"
+[[ -f "$SECRETS_FILE" ]] || die "${SECRETS_FILE#$ROOT_DIR/} not found. Copy infra/secrets.env.example to it and fill it in."
 
 ML_KEYS=" SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY "
 

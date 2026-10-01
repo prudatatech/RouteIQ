@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # One-command, idempotent deploy of MargixIndia to Azure.
-#   ./infra/deploy.sh                 everything
+#   ./infra/deploy.sh                 everything (stage live)
+#   ./infra/deploy.sh --stage test    the test stage: margix-test-api / -ml / -web in the same resource group,
+#                                     sharing the registry, logs, pull identity and environment (also STAGE=test).
+#                                     Live must have been deployed once first: it creates the shared resources.
 #   ./infra/deploy.sh --only-infra    resource group, Bicep, budget; no images, no web
 #   ./infra/deploy.sh --images-only   build + push images, swap them in, deploy the web; keeps the secrets
 #                                     and settings already in Azure (used by GitHub Actions on push)
@@ -15,8 +18,11 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SKIP_WEB=0; SKIP_API=0; ONLY_INFRA=0; IMAGES_ONLY=0; PICK_API=0; PICK_ML=0; PICK_WEB=0
-for arg in "$@"; do
+while [[ $# -gt 0 ]]; do
+  arg="$1"; shift
   case "$arg" in
+    --stage) [[ $# -gt 0 ]] || die "--stage needs a value (live or test)"; STAGE="$1"; shift ;;
+    --stage=*) STAGE="${arg#--stage=}" ;;
     --skip-web) SKIP_WEB=1 ;;
     --skip-api) SKIP_API=1 ;;
     --only-infra) ONLY_INFRA=1 ;;
@@ -24,8 +30,8 @@ for arg in "$@"; do
     --api-only) PICK_API=1 ;;
     --ml-only) PICK_ML=1 ;;
     --web-only) PICK_WEB=1 ;;
-    -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}"; exit 0 ;;
-    *) die "unknown flag: $arg (use --skip-web, --skip-api, --only-infra, --images-only, --api-only, --ml-only, --web-only)" ;;
+    -h|--help) sed -n '2,14p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) die "unknown flag: $arg (use --stage, --skip-web, --skip-api, --only-infra, --images-only, --api-only, --ml-only, --web-only)" ;;
   esac
 done
 
@@ -45,6 +51,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # 1 + 2. login and subscription
 load_azure_env
 require_az_login
+log "Stage: $STAGE (apps: $API_APP, $ML_APP, $WEB_APP in $RG)"
 [[ ${#PREFIX} -ge 2 && ${#PREFIX} -le 12 ]] || die "PREFIX must be 2 to 12 characters"
 
 # 3. resource providers (not needed to swap images: the infra already exists)
@@ -80,7 +87,7 @@ print(json.dumps(d))' > "$out"
       echo '{}' > "$out"
     fi )
   if [[ ! -f "$SECRETS_FILE" ]]; then
-    warn "infra/secrets.env not found: apps will start without secrets (fill it in, then run set-secrets.sh)"
+    warn "infra/secrets.${STAGE}.env not found: apps will start without secrets (fill it in, then run set-secrets.sh --stage $STAGE)"
   fi
   SECRET_PARAMS_FILE="$out"
 }
@@ -89,14 +96,17 @@ current_image() { # app -> image currently deployed, or empty
   az containerapp show -g "$RG" -n "$1" --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || true
 }
 
+# live keeps the original deployment name; test has its own so each stage's outputs stay separate.
+if [[ "$STAGE" == live ]]; then DEPLOYMENT_NAME="${PREFIX}-main"; else DEPLOYMENT_NAME="${PREFIX}-${STAGE}-main"; fi
+
 deploy_bicep() { # api image, ml image
   log "Deploying infra/main.bicep (api=$1, ml=$2)"
   az deployment group create \
     --resource-group "$RG" \
-    --name "${PREFIX}-main" \
+    --name "$DEPLOYMENT_NAME" \
     --template-file "$INFRA_DIR/main.bicep" \
     --parameters \
-      prefix="$PREFIX" location="$LOCATION" webLocation="$WEB_LOCATION" \
+      stage="$STAGE" prefix="$PREFIX" location="$LOCATION" webLocation="$WEB_LOCATION" \
       apiImage="$1" mlImage="$2" customDomain="$CUSTOM_DOMAIN" \
       secretValues=@"$SECRET_PARAMS_FILE" \
     --only-show-errors -o none
@@ -105,7 +115,7 @@ deploy_bicep() { # api image, ml image
 # All deployment outputs come from one az call (each az call costs seconds).
 OUTPUTS_JSON=""
 out() {
-  [[ -n "$OUTPUTS_JSON" ]] || OUTPUTS_JSON="$(az deployment group show -g "$RG" -n "${PREFIX}-main" --query properties.outputs -o json 2>/dev/null || true)"
+  [[ -n "$OUTPUTS_JSON" ]] || OUTPUTS_JSON="$(az deployment group show -g "$RG" -n "$DEPLOYMENT_NAME" --query properties.outputs -o json 2>/dev/null || true)"
   printf '%s' "$OUTPUTS_JSON" | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get(sys.argv[1],{}).get("value",""))
 except Exception: print("")' "$1"
@@ -116,11 +126,16 @@ if [[ $IMAGES_ONLY -eq 1 ]]; then
   log "Images only: reading $RG from the last infra deployment"
   ACR_NAME="$(out acrName)"; ACR_SERVER="$(out acrLoginServer)"
   API_FQDN="$(out apiFqdn)"; WEB_HOST="$(out webHostname)"
-  [[ -n "$ACR_SERVER" && -n "$API_FQDN" ]] || die "no infra deployment found in $RG: run ./infra/deploy.sh once first"
+  [[ -n "$ACR_SERVER" && -n "$API_FQDN" ]] || die "no infra deployment found for stage $STAGE in $RG: run ./infra/deploy.sh --stage $STAGE once first"
 else
 # 5. resource group + infra, keeping whatever image is already running
 log "Resource group $RG in $LOCATION"
 az group create --name "$RG" --location "$LOCATION" --only-show-errors -o none
+if [[ "$STAGE" != live ]]; then
+  # The test stage reuses the registry, logs, pull identity and environment that the live deploy creates.
+  az containerapp env show -g "$RG" -n "${PREFIX}-env" >/dev/null 2>&1 \
+    || die "shared resources not found in $RG (${PREFIX}-env): run ./infra/deploy.sh (live) once first"
+fi
 build_secret_params
 API_IMAGE="$(current_image "$API_APP")"; API_IMAGE="${API_IMAGE:-$PLACEHOLDER_IMAGE}"
 ML_IMAGE="$(current_image "$ML_APP")";  ML_IMAGE="${ML_IMAGE:-$PLACEHOLDER_IMAGE}"
@@ -132,8 +147,10 @@ ACR_SERVER="$(out acrLoginServer)"
 API_FQDN="$(out apiFqdn)"
 WEB_HOST="$(out webHostname)"
 
-# Budget (subscription scope). Created once; skipped when it exists. Not every offer supports budgets.
-if [[ -n "$BUDGET_EMAIL" ]]; then
+# Budget (subscription scope, shared). Created once by the live stage; skipped when it exists. Not every offer supports budgets.
+if [[ "$STAGE" != live ]]; then
+  :
+elif [[ -n "$BUDGET_EMAIL" ]]; then
   if az consumption budget show --budget-name "${PREFIX}-budget" >/dev/null 2>&1; then
     log "Budget ${PREFIX}-budget already exists"
   else
@@ -164,8 +181,8 @@ NEW_API_IMAGE=""; NEW_ML_IMAGE=""
 # backend-ts and ml-service exit at start-up without Supabase credentials, so rolling real images
 # before secrets exist would only crash-loop. Keep the placeholder until they are filled in.
 if [[ $IMAGES_ONLY -eq 0 && $DO_API$DO_ML != 00 && ( -z "$(secret_value SUPABASE_URL)" || -z "$(secret_value SUPABASE_SERVICE_ROLE_KEY)" ) ]]; then
-  warn "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing in infra/secrets.env: skipping the api and ml images."
-  warn "Fill infra/secrets.env, then run ./infra/deploy.sh again (or with --skip-web)."
+  warn "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing in ${SECRETS_FILE#$ROOT_DIR/}: skipping the api and ml images."
+  warn "Fill it in, then run ./infra/deploy.sh --stage $STAGE again (or with --skip-web)."
   DO_API=0; DO_ML=0
 fi
 
@@ -217,10 +234,12 @@ if [[ $DO_WEB -eq 1 ]]; then
   log "Building frontend against $API_URL"
   ( cd "$ROOT_DIR/frontend"
     npm ci
-    # Azure is the LIVE environment: build against the live Supabase project when its public URL and
-    # publishable key are given (GitHub variables LIVE_SUPABASE_URL / LIVE_SUPABASE_PUBLISHABLE_KEY).
-    # Shell variables beat frontend/.env.production, which names the TEST project.
-    if [[ -n "${LIVE_SUPABASE_URL:-}" && -n "${LIVE_SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+    # live: build against the live Supabase project when its public URL and publishable key are given
+    # (GitHub variables LIVE_SUPABASE_URL / LIVE_SUPABASE_PUBLISHABLE_KEY). Shell variables beat
+    # frontend/.env.production, which names the TEST project: the test stage always uses that file.
+    if [[ "$STAGE" != live ]]; then
+      log "Web app uses frontend/.env.production (the test Supabase project)"
+    elif [[ -n "${LIVE_SUPABASE_URL:-}" && -n "${LIVE_SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
       log "Web app uses the live Supabase project $LIVE_SUPABASE_URL"
       export VITE_SUPABASE_URL="$LIVE_SUPABASE_URL" VITE_SUPABASE_DIRECT_URL="$LIVE_SUPABASE_URL"
       export VITE_SUPABASE_ANON_KEY="$LIVE_SUPABASE_PUBLISHABLE_KEY" VITE_SUPABASE_PUBLISHABLE_KEY="$LIVE_SUPABASE_PUBLISHABLE_KEY"
@@ -287,4 +306,4 @@ log "Done."
 echo "  API:  https://$API_FQDN   (health: /health)"
 echo "  ML:   internal only"
 echo "  Web:  https://$WEB_HOST"
-[[ -f "$SECRETS_FILE" ]] || echo "  Next: cp infra/secrets.env.example infra/secrets.env, fill it in, run ./infra/set-secrets.sh"
+[[ -f "$SECRETS_FILE" ]] || echo "  Next: cp infra/secrets.env.example infra/secrets.$STAGE.env, fill it in, run ./infra/set-secrets.sh --stage $STAGE"
