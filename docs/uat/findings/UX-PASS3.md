@@ -6,7 +6,7 @@ Runs (branch `uat/ux-pass3`; shot names are in `e2e/shots/` of each run's `uat` 
 - R1 `36854541152`, `e2e/scenarios/UX4.sh` (about 11 min). Story 75 of 75. Part V creates its own data (a waiting booking and five accepted ones) and verifies the fixes; part S sweeps; part C greps everything printed for failed requests, sideways scroll and wording slips.
 - R2 `36856370153`, `e2e/scenarios/UX4b.sh`: the transfer page, which R1's id lookup missed.
 
-Coverage: 255 page loads. Superadmin at 1440 px on every staff page and tab, and at 390 px on 40 pages with the sideways-scroll check; manager on the main pages (1440 and 390); vendor portal (1440 and 390); `/driver` as two drivers at 390; public tracking (a whole booking, a lot, a fresh shipment, a bad id) at 390 and 1440. New steps: `p3-*.json` in `e2e/scenarios/ux/`.
+Coverage: 255 page loads. Superadmin at 1440 px on every staff page and tab, and at 390 px on every staff page with the sideways-scroll check (61 page loads at 390 px in all roles); manager on the main pages (1440 and 390); vendor portal (1440 and 390); `/driver` as two drivers at 390; public tracking (a whole booking, a lot, a fresh shipment, a bad id) at 390 and 1440. New steps: `p3-*.json` in `e2e/scenarios/ux/`.
 
 Test-harness note, not an app bug: the "Take off vehicle" probe for goods already picked up sets `current_holder='vehicle'` on an assigned shipment in the database, because the story has no live in-transit shipment left to use.
 
@@ -56,7 +56,7 @@ Test-harness note, not an app bug: the "Take off vehicle" probe for goods alread
 | UX-47 | Polish | Shipment page | History after a take-off says "Created" again; a solid red Delete is the strongest button on every ordinary shipment |
 
 ### UX-40 · Minor · Shipment page, 3PL partners · "Something went wrong: This shipment is already on a trip" on a shipment just taken off its vehicle
-- **Screenshot:** R1 `superadmin-shipments_93a298f7_24..._-off-taken_off.png` (the 3PL block at the bottom), `..-hold-end.png`
+- **Screenshot:** R1 `superadmin-shipments_93a298f7_..-off-taken_off.png` (the 3PL block at the bottom), `..-hold-end.png`
 - **What's wrong:** After Take off vehicle (and again after Hold, on a fresh page load) the 3PL partners block shows a red "Something went wrong / This shipment is already on a trip / Try again", and the console logs `409 GET /tpl-network/escalations/preview?shipment_id=...`. The page itself says "No trip yet" and the DB has no live stop.
 - **Why it confuses:** It reads as a failure of the page, and "already on a trip" contradicts the banner and the Related card. A plain created shipment (`..._d69be506_..-new-end.png`) shows "No partner covers this trip" instead.
 - **Fix:** In the escalation preview (`backend-ts`, `tpl-network` routes), ignore route stops whose status is `cancelled` and trips that are cancelled, the same filter UX-26 added elsewhere. In the UI, show a 409 there as a short muted line, not the error card.
