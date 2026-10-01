@@ -57,7 +57,7 @@ PG_SERVER="$P-pg"
 log "PostgreSQL server $PG_SERVER"
 IP="$(curl -4 -s ifconfig.me || true)"
 PG_HOST="$(az deployment group create -g "$RG" -n "$PG_SERVER" --template-file "$INFRA_DIR/database.bicep" \
-  --parameters serverName="$PG_SERVER" location="$LOCATION" adminLogin="$PG_ADMIN_USER" adminPassword="$PG_ADMIN_PASSWORD" setupClientIp="$IP" \
+  --parameters serverName="$PG_SERVER" location="$LOCATION" adminLogin="$PG_ADMIN_USER" adminPassword="$PG_ADMIN_PASSWORD" setupClientIp="$IP" skuName="$PG_SKU" \
   --only-show-errors --query properties.outputs.host.value -o tsv)"
 if [[ "$(az postgres flexible-server parameter show -g "$RG" -s "$PG_SERVER" -n wal_level --query isConfigPendingRestart -o tsv)" == "true" ]]; then
   log "Restarting $PG_SERVER for logical replication"; az postgres flexible-server restart -g "$RG" -n "$PG_SERVER" -o none
