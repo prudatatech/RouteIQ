@@ -7,6 +7,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { settings } from './config';
 import WebSocket from 'ws';
+import { timedFetch } from './timing';
 
 // Polyfill WebSocket globally for Node.js < 22
 // @ts-ignore — global.WebSocket typing mismatch is harmless
@@ -28,6 +29,8 @@ export const supabase: SupabaseClient = createClient(
       autoRefreshToken: false,
       persistSession: false,
     },
+    // Counts and times every database call against the request that made it (Server-Timing, SLOW log)
+    global: { fetch: timedFetch() },
     realtime: {
       params: { eventsPerSecond: 2 },
     },
