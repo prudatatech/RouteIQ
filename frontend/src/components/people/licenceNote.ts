@@ -9,3 +9,8 @@ export const LICENCE_NOTE: Record<'expired' | 'expiring' | 'missing', { text: st
   expiring: { text: 'Licence expiring soon', tone: 'warning' },
   missing: { text: 'Licence not on file', tone: 'warning' },
 }
+
+/** The note for a driver's licence status, or null when the licence is fine or unknown. */
+export function licenceNote(status: string | null | undefined) {
+  return status === 'expired' || status === 'expiring' || status === 'missing' ? LICENCE_NOTE[status] : null
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LICENCE_NOTE } from './licenceNote'
+import { LICENCE_NOTE, licenceNote } from './licenceNote'
 
 // The status wording these are the heads-up form of (components/people/docs.ts), kept here as plain tones
 const LICENCE_WARNING = { expired: { tone: 'danger' }, expiring: { tone: 'warning' }, missing: { tone: 'warning' } } as const
@@ -12,5 +12,14 @@ describe('licence wording in the vehicle list', () => {
   })
   it('says "not on file" rather than a verdict that clashes with "can take this"', () => {
     expect(LICENCE_NOTE.missing.text).toBe('Licence not on file')
+  })
+})
+
+describe('licenceNote', () => {
+  it('gives the heads-up wording for a problem and nothing for a valid or unknown licence', () => {
+    expect(licenceNote('missing')?.text).toBe('Licence not on file')
+    expect(licenceNote('expired')?.tone).toBe('danger')
+    expect(licenceNote('valid')).toBeNull()
+    expect(licenceNote(null)).toBeNull()
   })
 })
