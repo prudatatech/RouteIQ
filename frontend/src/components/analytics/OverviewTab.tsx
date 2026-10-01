@@ -5,7 +5,8 @@ import { analyticsAPI } from '@/services/api'
 import { Alert, Button, DateRangeControl, presetRange, Stat, type DateRangeValue } from '@/components/ui'
 import { ChartCard, SimpleBarChart } from './charts'
 import { formatNumber } from './format'
-import { useFinanceSummary } from './useFinanceSummary'
+import { useFinanceSummary, type FinanceSummary } from './useFinanceSummary'
+import CostsNote from './CostsNote'
 import { formatDay, formatRupees } from '@/utils/display'
 
 interface FleetOverview {
@@ -15,6 +16,8 @@ interface FleetOverview {
   idle_vehicles: number
   total_vehicles: number
   fleet_utilisation_pct: number | null
+  /** Shipments and vendor loads delivered; a consignment split into lots counts once. */
+  delivered_drops: number
   total_distance_km: number
   backhaul_loads_today: number
   backhaul_revenue: number
@@ -27,6 +30,13 @@ interface DayActivity {
 }
 
 const REFRESH_MS = 60_000
+
+/** Under Revenue: how many invoices, and what GST came on top of them (or that none was charged). */
+const revenueHint = (fin: FinanceSummary) => {
+  if (fin.invoice_count === 0) return 'No invoices in this range'
+  const invoices = `${formatNumber(fin.invoice_count)} invoice${fin.invoice_count === 1 ? '' : 's'}`
+  return fin.gst_collected > 0 ? `${invoices}, taxable value. GST ${formatRupees(Math.round(fin.gst_collected))} is extra` : `${invoices}, taxable value. No GST charged on them`
+}
 
 /** The selected range's numbers and daily trips/deliveries within it. */
 export default function OverviewTab() {
@@ -73,11 +83,13 @@ export default function OverviewTab() {
             hint={ov && ov.total_distance_km > 0 ? `${formatNumber(ov.total_distance_km)} km planned` : 'No distance planned yet'}
           />
           <Stat
-            label="Deliveries"
+            label="Shipments delivered"
             icon={<PackageCheck size={18} />}
             loading={loading}
             value={formatNumber(ov?.deliveries_today)}
-            hint="Shipments marked delivered"
+            hint={ov && ov.delivered_drops !== ov.deliveries_today
+              ? `${formatNumber(ov.delivered_drops)} drops, counting each lot of a split shipment`
+              : 'Shipments and vendor loads. A split shipment counts once'}
           />
           <Stat
             label="Vehicles on trip"
@@ -102,14 +114,16 @@ export default function OverviewTab() {
         </section>
       )}
 
+      {!finance.isError && <CostsNote status={fin?.costs_status} />}
+
       {!finance.isError && (
         <section aria-label={`Money for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <Stat
-            label="Revenue"
+            label="Revenue before GST"
             icon={<IndianRupee size={18} />}
             loading={finance.isLoading}
             value={fin ? formatRupees(Math.round(fin.revenue)) : '—'}
-            hint={fin ? (fin.invoice_count > 0 ? `${formatNumber(fin.invoice_count)} invoice${fin.invoice_count === 1 ? '' : 's'}, before GST` : 'No invoices in this range') : undefined}
+            hint={fin ? revenueHint(fin) : undefined}
           />
           <Stat
             label="Costs"
@@ -123,8 +137,8 @@ export default function OverviewTab() {
             icon={<Scale size={18} />}
             loading={finance.isLoading}
             value={fin ? formatRupees(Math.round(fin.net_profit)) : '—'}
-            tone={fin ? (fin.net_profit < 0 ? 'danger' : fin.net_profit > 0 ? 'success' : 'default') : 'default'}
-            hint="Revenue minus costs"
+            tone={fin ? (fin.net_profit < 0 ? 'danger' : fin.net_profit > 0 && fin.costs_status.complete ? 'success' : 'default') : 'default'}
+            hint={fin && !fin.costs_status.complete ? 'Costs incomplete, see above' : 'Revenue minus costs'}
           />
           <Stat
             label="Profit per truck"
@@ -138,7 +152,7 @@ export default function OverviewTab() {
 
       <ChartCard
         title="Trips and deliveries"
-        description={`Trips dispatched and shipments delivered each day, ${rangeLabel}`}
+        description={`Trips dispatched and shipments delivered each day (a split shipment counts once), ${rangeLabel}`}
         loading={activity.isLoading}
         error={activity.isError}
         onRetry={() => activity.refetch()}

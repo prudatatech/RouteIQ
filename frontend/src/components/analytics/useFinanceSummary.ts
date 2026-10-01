@@ -3,7 +3,9 @@ import { financeAPI } from '@/services/api'
 
 export interface FinanceSummary {
   range: { from: string; to: string }
+  /** The taxable value of the invoices in the range: before GST. */
   revenue: number
+  revenue_basis: 'taxable_value'
   gst_collected: number
   outstanding: number
   invoice_count: number
@@ -12,6 +14,14 @@ export interface FinanceSummary {
     recorded: number
     fuel_estimated: number
     by_category: { category: string; label: string; amount: number; estimated: boolean }[]
+  }
+  /** Whether the costs behind net_profit are complete, and what is missing when they are not. */
+  costs_status: {
+    complete: boolean
+    fuel_price_missing: boolean
+    trips_without_costs: number
+    trips_completed: number
+    note: string | null
   }
   net_profit: number
   active_trucks: number

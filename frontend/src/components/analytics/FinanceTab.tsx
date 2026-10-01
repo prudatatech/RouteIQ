@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Coins, IndianRupee, Route, Scale, Truck, Wallet } from 'lucide-react'
 import {
-  Alert, Button, Card, CardHeader, DataTable, DateRangeControl, presetRange, Stat, buttonClasses, type Column, type DateRangeValue,
+  Alert, Button, Card, CardHeader, DataTable, DateRangeControl, presetRange, Stat, type Column, type DateRangeValue,
 } from '@/components/ui'
 import { formatDate, formatDay, formatRupees } from '@/utils/display'
 import { ChartCard, SimpleBarChart, SimpleLineChart } from './charts'
 import { formatNumber } from './format'
 import { useFinanceSummary, type FinanceSummary } from './useFinanceSummary'
+import CostsNote from './CostsNote'
 
 type RouteRow = FinanceSummary['routes'][number]
 type VehicleRow = FinanceSummary['vehicles'][number]
@@ -72,29 +73,17 @@ export default function FinanceTab() {
         </Alert>
       )}
 
-      {s?.fuel.price_missing && (
-        <Alert
-          tone="warning"
-          title="Fuel price is not set"
-          action={<Link to="/admin/settings" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Set fuel price</Link>}
-        >
-          Fuel for completed trips is left out of costs until there is a price per litre. Recorded fuel expenses are still counted.
-        </Alert>
-      )}
-      {s && !s.fuel.price_missing && s.fuel.routes_without_fuel_data > 0 && (
-        <Alert tone="info" title={`${s.fuel.routes_without_fuel_data} completed ${s.fuel.routes_without_fuel_data === 1 ? 'trip has' : 'trips have'} no fuel estimate`}>
-          There is no distance or fuel figure for {s.fuel.routes_without_fuel_data === 1 ? 'it' : 'them'}. Add a fuel expense to count the cost.
-        </Alert>
-      )}
+      <CostsNote status={s?.costs_status} />
 
       <section aria-label={`Profit and loss for ${rangeLabel}`} className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
-        <Stat label="Revenue" icon={<IndianRupee size={18} />} loading={loading} value={s ? money(s.revenue) : '—'}
-          hint={s ? (s.invoice_count > 0 ? `${formatNumber(s.invoice_count)} invoice${s.invoice_count === 1 ? '' : 's'}, before GST` : 'No invoices in this range') : undefined} />
+        <Stat label="Revenue before GST" icon={<IndianRupee size={18} />} loading={loading} value={s ? money(s.revenue) : '—'}
+          hint={s ? (s.invoice_count === 0 ? 'No invoices in this range'
+            : `${formatNumber(s.invoice_count)} invoice${s.invoice_count === 1 ? '' : 's'}, taxable value. ${s.gst_collected > 0 ? `GST ${money(s.gst_collected)} is extra` : 'No GST charged on them'}`) : undefined} />
         <Stat label="Costs" icon={<Wallet size={18} />} loading={loading} value={s ? money(s.costs.total) : '—'}
           hint={s ? (s.costs.fuel_estimated > 0 ? `Includes ${money(s.costs.fuel_estimated)} estimated fuel` : 'Recorded expenses') : undefined} />
         <Stat label="Net profit" icon={<Scale size={18} />} loading={loading} value={s ? money(s.net_profit) : '—'}
-          tone={s ? (s.net_profit < 0 ? 'danger' : s.net_profit > 0 ? 'success' : 'default') : 'default'}
-          hint="Revenue minus costs" />
+          tone={s ? (s.net_profit < 0 ? 'danger' : s.net_profit > 0 && s.costs_status.complete ? 'success' : 'default') : 'default'}
+          hint={s && !s.costs_status.complete ? 'Costs incomplete, see above' : 'Revenue minus costs'} />
         <Stat label="Profit per truck" icon={<Truck size={18} />} loading={loading}
           value={s?.profit_per_truck != null ? money(s.profit_per_truck) : '—'}
           hint={s ? (s.active_trucks > 0 ? `Across ${formatNumber(s.active_trucks)} truck${s.active_trucks === 1 ? '' : 's'} that worked` : 'No truck activity in this range') : undefined} />
@@ -102,7 +91,7 @@ export default function FinanceTab() {
           value={s?.cost_per_km != null ? formatRupees(s.cost_per_km) : '—'}
           hint={s ? (s.distance_km > 0 ? `Over ${formatNumber(Math.round(s.distance_km))} km of completed trips` : 'No completed trips with distance') : undefined} />
         <Stat label="Not yet paid" icon={<Coins size={18} />} loading={loading} value={s ? money(s.outstanding) : '—'}
-          tone={s && s.outstanding > 0 ? 'warning' : 'default'} hint="Issued invoices, with GST" />
+          tone={s && s.outstanding > 0 ? 'warning' : 'default'} hint="Issued invoices, with GST included" />
       </section>
 
       <ChartCard
@@ -121,8 +110,8 @@ export default function FinanceTab() {
           categoryKey="date"
           formatCategory={formatDay}
           formatValue={money}
-          series={[{ key: 'revenue', label: 'Revenue' }, { key: 'costs', label: 'Costs' }]}
-          label={`Revenue and costs per day. Revenue ${s ? money(s.revenue) : ''}, costs ${s ? money(s.costs.total) : ''}.`}
+          series={[{ key: 'revenue', label: 'Revenue before GST' }, { key: 'costs', label: 'Costs' }]}
+          label={`Revenue before GST and costs per day. Revenue ${s ? money(s.revenue) : ''}, costs ${s ? money(s.costs.total) : ''}.`}
         />
       </ChartCard>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { toCsv } from './csv'
-import { EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, categoryLabel, paymentMethodLabel, expenseCsvRows, invoiceCsvRows, type Expense, type Invoice } from './finance'
+import { INVOICE_PROFILE_MESSAGE, invoiceBlockers, isCompanyProfileError, EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, categoryLabel, paymentMethodLabel, expenseCsvRows, invoiceCsvRows, type Expense, type Invoice } from './finance'
 
 const expense: Expense = {
   id: 'e1', vehicle_id: 'v1', route_id: null, plate_number: 'MH12AB1234', category: 'toll', amount: 400.5,
@@ -35,5 +35,25 @@ describe('payment methods', () => {
   it('names the four offline ways an invoice is paid', () => {
     expect(['bank', 'upi', 'cash', 'cheque'].map(paymentMethodLabel)).toEqual(['Bank transfer', 'UPI', 'Cash', 'Cheque'])
     expect(paymentMethodLabel(null)).toBe('')
+  })
+})
+
+describe('invoiceBlockers', () => {
+  it('lists what the company details still need before an invoice can be issued', () => {
+    expect(invoiceBlockers({ legal_name: null, gstin: null, state: null })).toEqual(['company name', 'GSTIN', 'state'])
+    expect(invoiceBlockers({ legal_name: 'Margix', gstin: null, state: null })).toEqual(['GSTIN', 'state'])
+    expect(invoiceBlockers({ legal_name: ' ', gstin: '27AAPFU0939F1ZV', state: null })).toEqual(['company name'])
+  })
+
+  it('counts a GSTIN as naming the state, and an entered state as enough on its own', () => {
+    expect(invoiceBlockers({ legal_name: 'Margix', gstin: '27AAPFU0939F1ZV', state: null })).toEqual([])
+    expect(invoiceBlockers({ legal_name: 'Margix', gstin: 'XX', state: 'Maharashtra' })).toEqual([])
+    expect(invoiceBlockers(undefined)).toEqual([])
+  })
+
+  it('recognises the refusal the server sends when the company details are missing', () => {
+    expect(isCompanyProfileError({ response: { status: 409, data: { code: 'company_profile_incomplete', detail: INVOICE_PROFILE_MESSAGE } } })).toBe(true)
+    expect(isCompanyProfileError({ response: { status: 409, data: { detail: 'This delivery already has an invoice' } } })).toBe(false)
+    expect(isCompanyProfileError(null)).toBe(false)
   })
 })

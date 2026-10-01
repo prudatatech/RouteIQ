@@ -1,20 +1,26 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IndianRupee, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { financeAPI } from '@/services/api'
 import { Alert, Button, DataTable, Input, Modal, StatusPill, type Column, type DateRangeValue } from '@/components/ui'
 import { errorMessage, formatDate } from '@/utils/display'
+import { invoiceBlockers, isCompanyProfileError } from '@/utils/finance'
+import CompanyProfileAlert from './CompanyProfileAlert'
 import { useUnpriced, type Unpriced } from './useUnpriced'
 
-function SetPriceModal({ target, onClose, onDone }: { target: Unpriced | null; onClose: () => void; onDone: (invoiceNumber: string | null) => void }) {
+function SetPriceModal({ target, onClose, onDone, onBlocked }: { target: Unpriced | null; onClose: () => void; onDone: (invoiceNumber: string | null) => void; onBlocked: () => void }) {
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | undefined>()
   const save = useMutation({
     mutationFn: (value: number) => financeAPI.setPrice({ kind: target!.kind, id: target!.id, amount: value }),
     onSuccess: data => { setAmount(''); onDone(data.invoice_number) },
-    onError: err => setError(errorMessage(err, 'We could not save this price. Try again.')),
+    onError: err => {
+      // Nothing was saved: close the form and let the page explain what Settings still needs
+      if (isCompanyProfileError(err)) { setAmount(''); onBlocked(); onClose(); return }
+      setError(errorMessage(err, 'We could not save this price. Try again.'))
+    },
   })
 
   const submit = () => {
@@ -60,11 +66,18 @@ export default function ToPriceTab({ range }: { range: DateRangeValue }) {
   const list = useUnpriced(range)
   const [pricing, setPricing] = useState<Unpriced | null>(null)
   const [issued, setIssued] = useState<string | null>(null)
+  // The company details decide whether an invoice can be issued at all; the server has the last word
+  const company = useQuery({ queryKey: ['finance', 'company'], queryFn: () => financeAPI.company() })
+  const [refused, setRefused] = useState(false)
+  const missing = invoiceBlockers(company.data)
 
   const create = useMutation({
     mutationFn: (u: Unpriced) => financeAPI.createInvoice(u.kind === 'shipment' ? { shipment_id: u.id } : { manifest_id: u.id }),
-    onSuccess: () => { toast.success('Invoice issued'); queryClient.invalidateQueries({ queryKey: ['finance'] }); queryClient.invalidateQueries({ queryKey: ['ops'] }) },
-    onError: err => toast.error(errorMessage(err, 'We could not create this invoice. Try again.')),
+    onSuccess: () => { setRefused(false); toast.success('Invoice issued'); queryClient.invalidateQueries({ queryKey: ['finance'] }); queryClient.invalidateQueries({ queryKey: ['ops'] }) },
+    onError: err => {
+      if (isCompanyProfileError(err)) setRefused(true)
+      else toast.error(errorMessage(err, 'We could not create this invoice. Try again.'))
+    },
   })
 
   const rows = list.data ?? []
@@ -103,6 +116,7 @@ export default function ToPriceTab({ range }: { range: DateRangeValue }) {
 
   return (
     <div className="space-y-4">
+      {(missing.length > 0 || refused) && <CompanyProfileAlert missing={missing} />}
       {issued !== null && (
         <Alert tone="success" title={issued} action={<Button size="sm" variant="ghost" onClick={() => setIssued(null)}>Dismiss</Button>}>
           The customer or vendor is told. Open it from the Invoices tab.
@@ -119,7 +133,7 @@ export default function ToPriceTab({ range }: { range: DateRangeValue }) {
         initialSort={{ key: 'delivered', direction: 'desc' }}
         empty={{ title: 'Everything delivered in this range has an invoice', description: 'A delivery shows up here when it is delivered without a price.' }}
       />
-      <SetPriceModal target={pricing} onClose={() => setPricing(null)} onDone={onPriced} />
+      <SetPriceModal target={pricing} onClose={() => setPricing(null)} onDone={onPriced} onBlocked={() => setRefused(true)} />
     </div>
   )
 }
