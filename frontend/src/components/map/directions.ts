@@ -110,7 +110,35 @@ export function isNoRoute(error: unknown): boolean {
   return status === 503 || status === 404
 }
 
+/** How long the answer to "can the server draw road routes at all" is kept. */
+const ROUTING_STATUS_MS = 10 * 60_000
+let routingStatusAsked: { at: number; off: Promise<boolean> } | null = null
+
+/**
+ * Asks `GET /routing/status` once (staff only; a driver or a failed call counts as "unknown", so
+ * directions are tried) and tells whether the server has no directions provider. A page that
+ * knows routing is off never calls `POST /routing/directions`, which would only answer 503.
+ */
+export function routingIsOff(): Promise<boolean> {
+  if (!routingStatusAsked || Date.now() - routingStatusAsked.at > ROUTING_STATUS_MS) {
+    const off = (async () => {
+      try {
+        const res = await api.get('/routing/status')
+        return routingOff(res?.data as RoutingAvailability | undefined)
+      } catch {
+        return false
+      }
+    })()
+    routingStatusAsked = { at: Date.now(), off }
+  }
+  return routingStatusAsked.off
+}
+
+/** Forgets what was learnt about routing (for tests). */
+export function resetRoutingStatus(): void { routingStatusAsked = null }
+
 async function requestDirections(waypoints: LatLng[], traffic: boolean): Promise<DrivingRoute | null> {
+  if (await routingIsOff()) return null
   try {
     const res = await api.post('/routing/directions', {
       waypoints: waypoints.slice(0, MAX_WAYPOINTS).map((p) => ({ lat: p.lat, lng: p.lng })),
