@@ -72,7 +72,9 @@ function signBackendToken(data: { sub: string; role: string }, type: 'access' | 
     user_metadata: { role: data.role },
     type,
   };
-  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn, issuer: BACKEND_TOKEN_ISSUER });
+  // A refresh token is unique, so revoking one at logout never revokes another issued in the same second
+  const jwtid = type === 'refresh' ? crypto.randomUUID() : undefined;
+  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn, issuer: BACKEND_TOKEN_ISSUER, ...(jwtid ? { jwtid } : {}) });
 }
 
 /** Access token for phone-OTP users (drivers, customers). */

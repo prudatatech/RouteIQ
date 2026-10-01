@@ -70,3 +70,19 @@ dropped.
   it needs Realtime authorization (private channels) in the Supabase project.
 - The public shipment tracking endpoint (`GET /shipments/track/:tracking_id`)
   is rate limited per IP; the tracking id is the secret, as with a courier.
+- Logout revokes the refresh token only when the client sends it
+  (`POST /auth/logout` with `refresh_token`): its hash is kept in the shared
+  cache (Redis) until the token would have expired, and `/auth/refresh` refuses
+  it. Gaps: (1) the apps do not send the token on logout yet, so nothing is
+  revoked in practice until they do; (2) with no Redis configured the list is
+  per process, and if Redis is down the check fails open; (3) access tokens are
+  stateless and stay valid until they expire (minutes); (4) a refresh does not
+  rotate or revoke the token it replaces. A durable fix is a token version on
+  `users` checked by `/auth/refresh` and `authenticateToken`.
+- Rate limits count in Redis; when Redis errors, `cacheIncr` falls back to a
+  per-process counter, so with several replicas a limit applies per replica.
+- Public tracking ids: loads are tracked by `CM-` plus 8 hex characters (32 bits
+  of the load's UUID), which is guessable by a patient attacker beyond the 60
+  requests per minute per IP limit. The public answer now carries no internal
+  id and shows the truck's position only while the goods are on the road, but
+  the id format itself should become a longer random code or a share token.
