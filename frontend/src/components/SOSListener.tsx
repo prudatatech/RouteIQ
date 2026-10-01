@@ -9,7 +9,7 @@ import { Button, Modal } from '@/components/ui'
 import { telemetryAPI } from '@/services/api'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { sosSeverityLabel, sosStatusOf, sosTypeLabel } from '@/utils/sos'
-import { formatTime } from '@/utils/display'
+import { formatPieces, formatTime, pluralize } from '@/utils/display'
 import { OPEN_EXCEPTION_FILTER, cargoKeys, exceptionsAPI } from '@/services/cargo'
 import { OnBoardList } from '@/components/cargo/OnBoardList'
 import { onBoardTotals, useOnBoard } from '@/components/cargo/useOnBoard'
@@ -92,7 +92,7 @@ function SosCargo({ alert, onCase }: { alert: SosAlert; onCase: (id: string | nu
   return (
     <div className="space-y-1 border-t border-border pt-3">
       <p className="font-medium text-text">
-        On board: {totals.consignments.toLocaleString('en-IN')} {totals.consignments === 1 ? 'consignment' : 'consignments'}, {totals.pieces.toLocaleString('en-IN')} pieces
+        On board: {pluralize(totals.consignments, 'shipment')}, {formatPieces(totals.pieces)}
       </p>
       <OnBoardList items={items.slice(0, CARGO_ROWS)} compact />
       {items.length > CARGO_ROWS && <p className="text-xs text-muted">+{(items.length - CARGO_ROWS).toLocaleString('en-IN')} more</p>}

@@ -3,6 +3,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import { ChevronDown, Search, X } from 'lucide-react'
+import { formatDate } from '@/utils/display'
 
 export const controlClasses =
   'block w-full rounded-control border bg-surface px-3 text-base sm:text-sm text-text placeholder:text-placeholder ' +
@@ -70,8 +71,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { label, hint, error, required, hideLabel, className, inputClassName, leading, trailing, id, ...props },
   ref,
 ) {
+  // A native date box follows the browser's locale (10/01/2026 is 1 Oct or 10 Jan); say the date in words.
+  const typed = props.type === 'date' && typeof props.value === 'string' && props.value ? formatDate(props.value) : null
+  const shownHint = typed ? (hint ? <>{hint} <span className="whitespace-nowrap">({typed})</span></> : typed) : hint
   return (
-    <Field label={label} hint={hint} error={error} required={required} hideLabel={hideLabel} className={className} id={id}>
+    <Field label={label} hint={shownHint} error={error} required={required} hideLabel={hideLabel} className={className} id={id}>
       {control => (
         <div className="relative">
           {leading && (

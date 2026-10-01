@@ -3,7 +3,7 @@
  * next action per load, and the action items on top. The backend (GET /vendor/loads) decides the
  * stage; this file only words it and decides what the vendor should do next.
  */
-import { formatRupees } from '@/utils/display'
+import { formatPieces, formatRupees } from '@/utils/display'
 import type { KycStatus } from './vendorContext'
 
 export const LOAD_STAGES = ['waiting', 'accepted', 'assigned', 'on_the_way', 'delivered', 'closed'] as const
@@ -313,7 +313,7 @@ export function priceText(load: Pick<VendorLoad, 'price' | 'price_source'>): str
 }
 
 export function piecesText(pieces: number | null): string | null {
-  return pieces == null ? null : `${pieces.toLocaleString('en-IN')} ${pieces === 1 ? 'piece' : 'pieces'}`
+  return pieces == null ? null : formatPieces(pieces)
 }
 
 /** The live tracking page of a load: open to anyone with the code, so a vendor can share it with the receiver. */

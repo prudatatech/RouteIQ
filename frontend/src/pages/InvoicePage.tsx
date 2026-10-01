@@ -9,7 +9,7 @@ import InvoiceDocument from '@/components/money/InvoiceDocument'
 import { MarkPaidModal, VoidModal } from '@/components/money/InvoiceModals'
 import { requesterHref } from '@/components/shipments/requesterHref'
 import { downloadBlob } from '@/utils/download'
-import { errorMessage } from '@/utils/display'
+import { errorMessage, tripNumber } from '@/utils/display'
 import type { InvoiceDetail } from '@/utils/finance'
 
 const REQUESTER_LABEL: Record<string, string> = {
@@ -42,7 +42,7 @@ function Related({ inv }: { inv: InvoiceDetail }) {
             : <span>{requester.name ?? inv.buyer.name ?? '—'}</span>)
           : <span className="text-muted">{inv.buyer.name ?? 'Created by staff'}</span>)}
         {item('Trip', trip
-          ? <span className="inline-flex flex-wrap items-center gap-2"><Link to={`/routes/${trip.id}`} className={linkClass}>Trip {trip.id.slice(0, 8).toUpperCase()}</Link><StatusPill status={trip.status} kind="route" /></span>
+          ? <span className="inline-flex flex-wrap items-center gap-2"><Link to={`/routes/${trip.id}`} className={linkClass}>{tripNumber(trip.id)}</Link><StatusPill status={trip.status} kind="route" /></span>
           : <span className="text-muted">No trip yet</span>)}
       </dl>
     </section>

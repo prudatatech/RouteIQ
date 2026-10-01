@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin } from 'lucide-react'
-import { vehiclesAPI, telemetryWS, shipmentsAPI } from '@/services/api'
+import { vehiclesAPI, telemetryWS, shipmentsAPI, routesAPI } from '@/services/api'
 import { formatRelative } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput,
@@ -137,6 +137,12 @@ export default function FleetPage() {
     queryFn: () => shipmentsAPI.list() as Promise<AllocatedShipment[]>,
   })
 
+  const { data: routes = [] } = useQuery<{ id: string; vehicle_id?: string | null; status: string }[]>({
+    queryKey: ['routes'],
+    queryFn: () => routesAPI.list({ limit: 200 }) as Promise<{ id: string; vehicle_id?: string | null; status: string }[]>,
+  })
+  const onTripIds = useMemo(() => new Set(routes.filter(r => r.status === 'active' && r.vehicle_id).map(r => r.vehicle_id as string)), [routes])
+
   const vehicles = useMemo(() => {
     const allocated = new Map<string, number>()
     for (const s of shipments) {
@@ -147,9 +153,11 @@ export default function FleetPage() {
     }
     return rawVehicles.map(v => ({
       ...v,
+      // "On trip" is one rule everywhere (Today, this list, the summary): a trip in progress
+      status: onTripIds.has(v.id) && (v.status === 'idle' || v.status === 'available') ? 'on_route' : v.status,
       allocated_load_kg: allocated.has(v.id) ? allocated.get(v.id) : null
     }))
-  }, [rawVehicles, shipments])
+  }, [rawVehicles, shipments, onTripIds])
 
   const { data: summary } = useQuery({
     queryKey: ['fleet-summary'],

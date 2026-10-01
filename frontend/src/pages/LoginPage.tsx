@@ -316,7 +316,7 @@ export default function LoginPage() {
     reset: 'Save new password',
   }
   const subtitle = {
-    'sign-in': audience === 'staff' ? 'For operations staff and drivers.' : 'For vendors and 3PL partners.',
+    'sign-in': audience === 'staff' ? 'For operations staff and drivers. Customers use the MargixIndia app, or can track a shipment from the tracking page.' : 'For vendors and 3PL partners.',
     'sign-up': 'Find truck capacity, post loads and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',

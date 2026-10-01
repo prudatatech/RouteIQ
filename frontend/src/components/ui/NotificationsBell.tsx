@@ -189,7 +189,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
                             {t.sender_name || 'Driver'}{t.count > 1 ? ` (${t.count} new)` : ''}
                           </span>
                         </span>
-                        <span className="w-full truncate text-xs text-muted">{t.last_body}</span>
+                        <span className="line-clamp-2 w-full break-words text-xs text-muted">{t.last_body}</span>
                         <span className="text-xs text-muted">{formatRelative(t.last_at)}</span>
                       </button>
                     </li>
@@ -228,7 +228,7 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
                       {!n.is_read && <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-fill" />}
                       <span className="truncate text-sm font-medium text-text">{n.title}</span>
                     </span>
-                    <span className="w-full truncate text-xs text-muted">{n.body}</span>
+                    <span className="line-clamp-2 w-full break-words text-xs text-muted">{n.body}</span>
                     <span className="text-xs text-muted">{formatRelative(n.created_at)}</span>
                   </button>
                 </li>

@@ -8,6 +8,7 @@ import {
 } from '@/components/ui'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import { downloadCsv, toCsv } from '@/utils/csv'
+import { auditActionLabel, auditSourceLabel } from '@/utils/auditLabels'
 
 /** Entries fetched per page from the server. */
 const PAGE_SIZE = 100
@@ -24,8 +25,8 @@ interface AuditEntry {
 const ALL = ''
 
 /** Distinct values of a column as select options. */
-const optionsFor = (values: (string | null)[]) =>
-  [...new Set(values.filter((v): v is string => !!v))].sort().map(v => ({ value: v, label: humanize(v) }))
+const optionsFor = (values: (string | null)[], label: (v: string) => string = humanize) =>
+  [...new Set(values.filter((v): v is string => !!v))].sort().map(v => ({ value: v, label: label(v) }))
 
 export default function AuditLogPage() {
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
@@ -50,7 +51,7 @@ export default function AuditLogPage() {
 
   const all = useMemo(() => logs.data?.items ?? [], [logs.data])
   const statusOptions = useMemo(() => optionsFor(all.map(l => l.status)), [all])
-  const agentOptions = useMemo(() => optionsFor(all.map(l => l.agent)), [all])
+  const agentOptions = useMemo(() => optionsFor(all.map(l => l.agent), auditSourceLabel), [all])
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -70,11 +71,16 @@ export default function AuditLogPage() {
     {
       key: 'agent', header: 'Source', hideBelow: 'md',
       sortValue: l => l.agent ?? '',
-      cell: l => (l.agent ? humanize(l.agent) : '—'),
+      cell: l => auditSourceLabel(l.agent),
     },
     {
       key: 'action', header: 'What happened',
-      cell: l => <span className="line-clamp-2">{l.action || '—'}</span>,
+      cell: l => (
+        <span className="line-clamp-2">
+          {auditActionLabel(l.action)}
+          {l.result && !l.result.startsWith('{') && <span className="text-muted">: {l.result}</span>}
+        </span>
+      ),
     },
     {
       key: 'status', header: 'Result',
@@ -86,8 +92,8 @@ export default function AuditLogPage() {
   const exportCsv = () => {
     const csv = toCsv(rows.map(l => ({
       when: formatDateTime(l.timestamp),
-      source: l.agent ? humanize(l.agent) : '',
-      action: l.action || '',
+      source: auditSourceLabel(l.agent),
+      action: auditActionLabel(l.action),
       result: l.status || '',
     })), [
       { key: 'when', header: 'When' },
@@ -102,7 +108,7 @@ export default function AuditLogPage() {
     <Page>
       <PageHeader
         title="Audit log"
-        description="Actions the system has taken automatically, newest first."
+        description="Everything staff and the system changed, newest first."
         actions={<Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>}
       >
         <div className="flex flex-col gap-3">
@@ -162,8 +168,8 @@ export default function AuditLogPage() {
             columns={1}
             items={[
               { label: 'Result', value: <StatusPill status={selected.status} /> },
-              { label: 'Source', value: selected.agent ? humanize(selected.agent) : '—' },
-              { label: 'Action taken', value: selected.action || '—' },
+              { label: 'Source', value: auditSourceLabel(selected.agent) },
+              { label: 'Action taken', value: auditActionLabel(selected.action) },
               { label: 'Outcome', value: <span className="whitespace-pre-wrap">{selected.result || '—'}</span> },
             ]}
           />

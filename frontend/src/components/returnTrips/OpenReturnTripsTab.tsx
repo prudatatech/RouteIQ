@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { Plus } from 'lucide-react'
 import { capacityAPI } from '@/services/api'
 import {
-  Button, DataTable, SectionHeader, StatusPill, useConfirm, statusToLabel, type Column,
+  Button, DataTable, SectionHeader, StatusPill, humanize, useConfirm, statusToLabel, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 import {
@@ -32,7 +32,7 @@ function TruckCell({ row }: { row: Row }) {
       {v?.id
         ? <Link to={`/fleet/${encodeURIComponent(v.id)}`} className={`${link} font-mono`}>{v.plate_number ?? 'Truck'}</Link>
         : <span className="font-mono">Vehicle not found</span>}
-      <p className="text-xs text-muted">{[v?.vehicle_type, row.window.trigger_type ? triggerLabel[row.window.trigger_type] ?? row.window.trigger_type : null].filter(Boolean).join(' · ')}</p>
+      <p className="text-xs text-muted">{[v?.vehicle_type ? humanize(v.vehicle_type) : null, row.window.trigger_type ? triggerLabel[row.window.trigger_type] ?? row.window.trigger_type : null].filter(Boolean).join(' · ')}</p>
     </div>
   )
 }

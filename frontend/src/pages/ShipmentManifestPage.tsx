@@ -11,7 +11,7 @@ import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, haversineKm } from '@/components/shipments/format'
 import { emailError, indianMobileError } from '@/utils/validators'
 import ParcelLabel from '@/components/shipments/ParcelLabel'
-import { formatDate, formatKg, formatRupees } from '@/utils/display'
+import { formatDate, formatKg, formatKm, formatRupees } from '@/utils/display'
 
 type Meta = Record<string, unknown>
 
@@ -163,7 +163,7 @@ export default function ShipmentManifestPage() {
     ? (() => {
       const d = new Date(shipment.created_at || Date.now())
       d.setHours(d.getHours() + distance / 40)
-      return `${d.toISOString().split('T')[0]} (Est.)`
+      return `${formatDate(d)} (Est.)`
     })()
     : null
 
@@ -191,7 +191,7 @@ export default function ShipmentManifestPage() {
     { path: 'dispatch_date', label: 'Dispatch date', type: 'date', value: pick('dispatch_date', shipment.created_at ? shipment.created_at.split('T')[0] : null) },
     { path: 'reporting_date', label: 'Reporting date', type: 'date', value: pick('reporting_date', null) },
     { path: 'eta_details.eta_text', label: 'Estimated arrival', value: pick('eta_details.eta_text', estimatedArrival) },
-    { path: 'eta_details.distance_km', label: 'Distance (km)', value: pick('eta_details.distance_km', distance ? distance.toFixed(1) : null) },
+    { path: 'eta_details.distance_km', label: editing ? 'Distance (km)' : 'Distance', value: pick('eta_details.distance_km', distance ? distance.toFixed(1) : null) },
   ]
   const category = shipment.parcels?.[0]?.category
   const cargo: FieldDef[] = [
@@ -211,6 +211,13 @@ export default function ShipmentManifestPage() {
 
   const change = (path: string, value: unknown) => setDraft(prev => setPath(prev, path, value))
 
+  // Read-only view: dates and distances use the shared formats (the edit boxes keep the raw value).
+  const shownValue = (f: FieldDef) => {
+    if (!f.value) return f.value
+    if (f.type === 'date') return formatDate(f.value)
+    if (f.path === 'eta_details.distance_km' && Number.isFinite(Number(f.value))) return formatKm(f.value)
+    return f.value
+  }
   const renderFields = (fields: FieldDef[], columns: 1 | 2 | 3 = 2) => editing ? (
     <div className={columns === 1 ? 'grid gap-4' : columns === 3 ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'grid gap-4 sm:grid-cols-2'}>
       {fields.map(f => (
@@ -225,7 +232,7 @@ export default function ShipmentManifestPage() {
       ))}
     </div>
   ) : (
-    <DetailList columns={columns} items={fields.map(f => ({ label: f.label, value: f.value }))} />
+    <DetailList columns={columns} items={fields.map(f => ({ label: f.label, value: shownValue(f) }))} />
   )
 
   const startEdit = () => { setDraft(saved); setEditing(true) }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Check, FileText, Trash2, Upload } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
@@ -436,6 +436,11 @@ export default function VendorDocumentsPage() {
     )
   }
 
+  // A company that is already verified or in review has done its setup: send it to Company, not an empty wizard
+  if (mode === 'onboarding' && hasProfile && (kycStatus === 'approved' || kycStatus === 'submitted')) {
+    return <Navigate to="/vendor/company" replace />
+  }
+
   if (loadFailed && !hasProfile) {
     return (
       <Page>
@@ -491,7 +496,7 @@ export default function VendorDocumentsPage() {
       )}
 
       {readOnly ? (
-        <ReadOnlySummary form={form} otherDocs={otherDocs} onView={openViewer} />
+        <ReadOnlySummary form={form} otherDocs={otherDocs} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
       ) : (
         <Card padded className="space-y-6">
           <Stepper current={step} onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
@@ -732,20 +737,22 @@ function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }:
   )
 }
 
-function ReadOnlySummary({ form, otherDocs, onView, compact }: {
+function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
   form: KycFormData
   otherDocs: DocRef[]
   onView: (path: string, name: string) => void
+  /** Opens the form so an empty field can be filled in. */
+  onAdd?: () => void
   compact?: boolean
 }) {
-  const rows: [string, string][] = [
-    ['Company name', form.name || '—'],
-    ['Vendor type', form.vendorType || '—'],
-    ['PAN', form.panNumber || '—'],
-    ['GST number', form.gstNumber || '—'],
-    ['Contact', [form.contactPerson, form.mobileNumber, form.emailAddress].filter(Boolean).join(' · ') || '—'],
-    ['Registered address', [form.addressLine1, form.city, form.state, form.postalCode].filter(Boolean).join(', ') || '—'],
-    ['Bank account', form.bankAccountNumber ? `${form.bankName || ''} · ${form.bankAccountNumber}` : '—'],
+  const rows: [string, string | null][] = [
+    ['Company name', form.name || null],
+    ['Vendor type', form.vendorType || null],
+    ['PAN', form.panNumber || null],
+    ['GST number', form.gstNumber || null],
+    ['Contact', [form.contactPerson, form.mobileNumber, form.emailAddress].filter(Boolean).join(' · ') || null],
+    ['Registered address', [form.addressLine1, form.city, form.state, form.postalCode].filter(Boolean).join(', ') || null],
+    ['Bank account', form.bankAccountNumber ? `${form.bankName || ''} · ${form.bankAccountNumber}` : null],
   ]
   const uploaded = Object.entries(form.docUrls).filter(([, path]) => path)
 
@@ -755,14 +762,24 @@ function ReadOnlySummary({ form, otherDocs, onView, compact }: {
         {rows.map(([label, value]) => (
           <div key={label} className="min-w-0">
             <dt className="text-xs text-muted">{label}</dt>
-            <dd className="mt-0.5 break-words text-sm text-text">{value}</dd>
+            <dd className="mt-0.5 break-words text-sm text-text">
+              {value ?? (
+                <span className="text-muted">
+                  Not provided
+                  {onAdd && <> · <button type="button" onClick={onAdd} className="font-medium text-brand hover:underline">Add</button></>}
+                </span>
+              )}
+            </dd>
           </div>
         ))}
       </dl>
       <div>
         <p className="text-xs text-muted">Documents</p>
         {uploaded.length === 0 && otherDocs.length === 0 ? (
-          <p className="mt-1 text-sm text-text">No documents uploaded yet.</p>
+          <p className="mt-1 text-sm text-muted">
+            No documents uploaded yet.
+            {onAdd && <> <button type="button" onClick={onAdd} className="font-medium text-brand hover:underline">Add documents</button></>}
+          </p>
         ) : (
           <ul className="mt-1 flex flex-wrap gap-2">
             {DOC_FIELDS.filter(f => form.docUrls[f.key]).map(f => (

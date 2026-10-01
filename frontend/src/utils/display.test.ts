@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatPieces, formatRupees, formatTime } from './display'
+import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, pluralize, tripNumber } from './display'
 
 describe('money and quantities', () => {
   it('shows whole rupees with lakh grouping and paise only when present', () => {
@@ -43,11 +43,20 @@ describe('dates in India time', () => {
   })
 })
 
-describe('formatPieces', () => {
-  it('uses the singular for one', () => {
+describe('counts and ids', () => {
+  it('pluralises with Indian grouping', () => {
+    expect(pluralize(1, 'vehicle')).toBe('1 vehicle')
+    expect(pluralize(0, 'vehicle')).toBe('0 vehicles')
+    expect(pluralize(1500, 'shipment')).toBe('1,500 shipments')
+    expect(pluralize(2, 'has', 'have')).toBe('2 have')
+  })
+  it('says pieces, singular for one', () => {
     expect(formatPieces(1)).toBe('1 piece')
-    expect(formatPieces(0)).toBe('0 pieces')
-    expect(formatPieces(1500)).toBe('1,500 pieces')
+    expect(formatPieces('100')).toBe('100 pieces')
     expect(formatPieces(null)).toBe('—')
+  })
+  it('numbers a trip TR- plus the first block of its id', () => {
+    expect(tripNumber('874fa20d-8c18-4f00-9c1d-aaaaaaaaaaaa')).toBe('TR-874FA20D')
+    expect(tripNumber(null)).toBe('—')
   })
 })

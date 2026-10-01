@@ -30,7 +30,7 @@ export default function PoolTools() {
 
   const views: TabItem<PoolView>[] = [
     { id: 'loads', label: 'Open loads', count: loads.data?.length },
-    { id: 'plan', label: 'Combine loads' },
+    { id: 'plan', label: 'Plan' },
     { id: 'match', label: 'Match a return load' },
     { id: 'price', label: 'Price a load' },
     { id: 'delivery', label: 'Confirm delivery' },
@@ -38,7 +38,7 @@ export default function PoolTools() {
 
   return (
     <div className="space-y-6">
-      <Tabs tabs={views} value={view} onChange={setView} label="Combine loads tools" />
+      <Tabs tabs={views} value={view} onChange={setView} label="Tools for combining loads" />
       <TabPanel id={view}>
         {view === 'loads' && <OpenLoadsTab />}
         {view === 'plan' && <PoolLoadsTab />}

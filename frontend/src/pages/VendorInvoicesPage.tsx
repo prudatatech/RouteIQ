@@ -9,9 +9,9 @@ import { useVendorContext } from '@/components/vendor/vendorContext'
 import HowToPay from '@/components/vendor/HowToPay'
 import { daysSince, invoiceLoadId, loadPath, overdueText, type VendorInvoice } from '@/components/vendor/loads'
 import {
-  Alert, Button, buttonClasses, DataTable, EmptyState, Page, PageHeader, SearchInput, Stat, StatusPill, Tabs, useTabParam, type Column, type TabItem,
+  Button, buttonClasses, DataTable, EmptyState, Page, PageHeader, SearchInput, Stat, StatusPill, Tabs, useTabParam, type Column, type TabItem,
 } from '@/components/ui'
-import { errorMessage, formatDate, formatRupees } from '@/utils/display'
+import { errorMessage, formatDate, formatRupees, pluralize } from '@/utils/display'
 
 const isUnpaid = (i: VendorInvoice) => i.status !== 'paid' && i.status !== 'void'
 const FILTERS = ['all', 'unpaid', 'paid'] as const
@@ -51,6 +51,8 @@ export default function VendorInvoicesPage() {
   const owed = unpaid.reduce((s, i) => s + (Number(i.total) || 0), 0)
   const now = Date.now()
   const oldest = unpaid.reduce<number | null>((max, i) => Math.max(max ?? 0, daysSince(i.issued_at, now) ?? 0), null)
+  // The earliest due date among unpaid invoices, so the card says when, not just how long ago
+  const nextDue = unpaid.map(i => i.due_date).filter((d): d is string => !!d).sort()[0] ?? null
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -117,7 +119,7 @@ export default function VendorInvoicesPage() {
   if (!isSignedIn || !isVendor) {
     return (
       <Page>
-        <PageHeader title="Invoices & proofs" description="Your invoices, and the proof of delivery for each load." />
+        <PageHeader title="Invoices and proofs" description="Your invoices, and the proof of delivery for each load." />
         <EmptyState
           title="Sign in to see your invoices"
           action={<Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/invoices')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
@@ -128,7 +130,7 @@ export default function VendorInvoicesPage() {
 
   return (
     <Page>
-      <PageHeader title="Invoices & proofs" description="An invoice is issued when your load is delivered. Each one links to its load and its proof of delivery.">
+      <PageHeader title="Invoices and proofs" description="An invoice is issued when your load is delivered. Each one links to its load and its proof of delivery.">
         <SearchInput value={search} onChange={setSearch} placeholder="Search by invoice or load" className="max-w-sm" />
       </PageHeader>
 
@@ -139,16 +141,11 @@ export default function VendorInvoicesPage() {
           className="col-span-2 sm:col-span-1"
           label="Oldest unpaid"
           loading={invoices.isLoading}
-          value={oldest === null ? '—' : oldest === 0 ? 'Today' : `${oldest} ${oldest === 1 ? 'day' : 'days'}`}
+          value={oldest === null ? '—' : oldest === 0 ? 'Issued today' : pluralize(oldest, 'day') + ' old'}
+          hint={nextDue ? `Due ${formatDate(nextDue)}` : undefined}
           tone={oldest !== null && oldest > 0 ? 'warning' : 'default'}
         />
       </div>
-
-      {unpaid.length > 0 && (
-        <Alert tone="info" title="Payments are made offline">
-          MargixIndia marks an invoice as paid once your payment is received. Quote the invoice number when you pay.
-        </Alert>
-      )}
 
       {unpaid.length > 0 && <HowToPay invoiceNumber={unpaid.length === 1 ? unpaid[0].invoice_number : undefined} />}
 

@@ -3,6 +3,7 @@
  * Pure rules, covered by tripFigures.test.ts.
  */
 import { manifestTrackingId } from '@/components/shipments/format'
+import { tripNumber } from './display'
 import { getRouteDistance, getRouteDuration, type RouteLike } from './routeHelpers'
 
 export interface TripLike extends RouteLike {
@@ -16,7 +17,7 @@ export interface TripLike extends RouteLike {
 
 /** TR-XXXXXXXX for a trip, CM-XXXXXXXX for a vendor load (which is its own trip). */
 export const tripCode = (t: Pick<TripLike, 'id' | 'is_manifest'>) =>
-  t.is_manifest ? manifestTrackingId(t.id) : `TR-${t.id.split('-')[0].toUpperCase()}`
+  t.is_manifest ? manifestTrackingId(t.id) : tripNumber(t.id)
 
 /** The shipments and lots a trip carries, each once, in stop order. A vendor load carries itself. */
 export function tripCarries(t: TripLike): string[] {

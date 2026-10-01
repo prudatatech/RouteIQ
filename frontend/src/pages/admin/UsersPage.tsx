@@ -116,7 +116,7 @@ export default function UsersPage() {
   const counts = useMemo(() => Object.fromEntries(TAB_IDS.map(t => [t, all.filter(p => inTab(p, t)).length])) as Record<TabId, number>, [all])
   const rows = useMemo(() => all.filter(p => inTab(p, tab) && (!role || p.role === role)), [all, tab, role])
 
-  const columns: Column<PersonRow>[] = [
+  const allColumns: Column<PersonRow>[] = [
     {
       key: 'name', header: 'Name', sortValue: p => personName(p).toLowerCase(),
       cell: p => (
@@ -129,14 +129,14 @@ export default function UsersPage() {
         </div>
       ),
     },
+    {
+      key: 'status', header: 'Status', sortValue: p => p.status,
+      cell: p => <StatusPill tone={STATUS_TONES[p.status] ?? 'neutral'}>{statusLabel(p.status)}</StatusPill>,
+    },
     { key: 'role', header: 'Role', sortValue: p => roleLabel(p.role), cell: p => roleLabel(p.role) },
     {
       key: 'code', header: 'Employee code', hideBelow: 'lg', sortValue: p => p.employee_code ?? '',
       cell: p => p.employee_code ? <span className="font-mono text-xs">{p.employee_code}</span> : <span className="text-muted">Not set</span>,
-    },
-    {
-      key: 'status', header: 'Status', sortValue: p => p.status,
-      cell: p => <StatusPill tone={STATUS_TONES[p.status] ?? 'neutral'}>{statusLabel(p.status)}</StatusPill>,
     },
     {
       key: 'docs', header: 'Documents', sortValue: p => p.doc_summary ? p.doc_summary.verified / Math.max(1, p.doc_summary.required) : -1,
@@ -156,12 +156,17 @@ export default function UsersPage() {
     },
   ]
 
+  // A column that says the same for every person (nobody has a code, nobody has signed in) is left out
+  const columns = allColumns.filter(c =>
+    !(all.length > 0 && ((c.key === 'code' && all.every(p => !p.employee_code)) || (c.key === 'login' && all.every(p => !p.last_login)))))
+
   const showCounts = tab !== 'vendors' && !people.isLoading
   const tabs = [
     { id: 'all' as const, label: 'All', count: showCounts ? counts.all : undefined },
     { id: 'drivers' as const, label: 'Drivers', count: showCounts ? counts.drivers : undefined },
     { id: 'staff' as const, label: 'Staff', count: showCounts ? counts.staff : undefined },
-    { id: 'attention' as const, label: 'Needs attention', count: showCounts ? counts.attention : undefined },
+    // When every person needs attention the tab would repeat All, so it is left out
+    ...(showCounts && counts.attention > 0 && counts.attention === counts.all && tab !== 'attention' ? [] : [{ id: 'attention' as const, label: 'Needs attention', count: showCounts ? counts.attention : undefined }]),
     ...(myRole === 'superadmin' ? [{ id: 'vendors' as const, label: 'Vendors' }] : []),
   ]
   const filtered = !!(search || status || role)
@@ -170,7 +175,7 @@ export default function UsersPage() {
     <Page>
       <PageHeader
         title="People"
-        description="Drivers and staff: who they are, their documents, and how they work with us."
+        description={myRole === 'superadmin' ? 'Drivers, staff and vendors: who they are, their documents, and how they work with us.' : 'Drivers and staff: who they are, their documents, and how they work with us.'}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'people'} onClick={() => exportCsv('people')}>Export people</Button>

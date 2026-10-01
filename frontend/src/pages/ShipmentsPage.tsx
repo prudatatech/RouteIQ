@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Download, Plus } from 'lucide-react'
 import {
-  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, humanize, parseSort, serializeSort,
+  Button, DataTable, Page, PageHeader, SearchInput, StatusPill, Tabs, VehicleCell, humanize, parseSort, serializeSort,
   useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
@@ -18,7 +18,7 @@ import { shipmentsAPI } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
 import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
-import { formatDate, formatKg } from '@/utils/display'
+import { formatDate, formatKg, formatPieces } from '@/utils/display'
 import { groupLots } from '@/components/cargo/lots'
 import PlaceText from '@/components/shipments/PlaceText'
 
@@ -63,7 +63,7 @@ function LotRows({ lots, selectedId, onOpen }: { lots: ShipmentRow[]; selectedId
                 {[l.consignee_name, dest?.name && dest.name !== l.consignee_name ? dest.name : dest?.address].filter(Boolean).join(' · ') || <span className="text-muted">No drop</span>}
               </span>
               <span className="min-w-0 truncate text-muted">
-                {(l.pieces_total ?? l.total_items) != null ? `${(l.pieces_total ?? l.total_items)!.toLocaleString('en-IN')} pcs · ` : ''}{lotHolder(l)}
+                {(l.pieces_total ?? l.total_items) != null ? `${formatPieces(l.pieces_total ?? l.total_items)} · ` : ''}{lotHolder(l)}
               </span>
             </button>
           </li>
@@ -236,13 +236,7 @@ export default function ShipmentsPage() {
           return <span className="whitespace-nowrap text-muted">{plates.length === 0 ? 'Per lot' : plates.length === 1 ? <span className="font-mono text-text">{plates[0]}</span> : `${plates.length} vehicles`}</span>
         }
         const plate = plateOf(s)
-        if (!plate && !s.driver_name) return <span className="whitespace-nowrap text-muted">Not assigned</span>
-        return (
-          <div className="min-w-0 whitespace-nowrap">
-            {plate && <div className="font-mono">{plate}</div>}
-            {s.driver_name && <div className="max-w-40 truncate text-xs text-muted">{s.driver_name}</div>}
-          </div>
-        )
+        return <VehicleCell plate={plate} detail={s.driver_name} />
       },
     },
     {
@@ -255,7 +249,7 @@ export default function ShipmentsPage() {
       cell: s => (
         <div className="whitespace-nowrap tabular">
           <div>{formatKg(s.total_weight_kg) ?? '—'}</div>
-          {s.total_items != null && <div className="text-xs text-muted">{s.total_items.toLocaleString('en-IN')} {s.total_items === 1 ? 'item' : 'items'}</div>}
+          {s.total_items != null && <div className="text-xs text-muted">{formatPieces(s.total_items)}</div>}
         </div>
       ),
     },
@@ -291,7 +285,7 @@ export default function ShipmentsPage() {
       { key: 'vehicle', header: 'Vehicle' },
       { key: 'driver', header: 'Driver' },
       { key: 'load_kg', header: 'Load (kg)' },
-      { key: 'items', header: 'Items' },
+      { key: 'items', header: 'Pieces' },
       { key: 'created_at', header: 'Created at' },
       { key: 'pickup_date', header: 'Pickup date' },
     ])

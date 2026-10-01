@@ -80,20 +80,20 @@ export interface EngineInfo {
   tone: Tone
 }
 
-export function engineInfo(engine: OptimizerEngine | undefined, matrixSource?: string | null): EngineInfo | null {
+export function engineInfo(engine: OptimizerEngine | undefined, _matrixSource?: string | null): EngineInfo | null {
   switch (engine) {
     case 'ml-service':
-      return { title: 'ML service', detail: 'Planned by the Python optimizer (OR-Tools or the genetic algorithm).', tone: 'success' }
+      return { title: 'Planning service', detail: 'Planned by the trip planning service.', tone: 'success' }
     case 'fallback-road-matrix':
       return {
-        title: 'Built-in solver, road distances',
-        detail: `The ML service was not reachable, so the trips were planned here using road distances and times from ${matrixSource === 'tomtom' ? 'TomTom' : 'Mapbox'}.`,
+        title: 'Built-in planner, road distances',
+        detail: 'The planning service was not reachable, so the trips were planned here using road distances and times.',
         tone: 'info',
       }
     case 'fallback-estimated':
       return {
-        title: 'Built-in solver, estimated distances',
-        detail: 'The ML service was not reachable and no road-routing key is available, so distances are straight lines x 1.3. Treat the kilometres as estimates.',
+        title: 'Built-in planner, estimated distances',
+        detail: 'The planning service was not reachable and road distances are not available, so distances are estimates. Treat the kilometres as approximate.',
         tone: 'warning',
       }
     default:

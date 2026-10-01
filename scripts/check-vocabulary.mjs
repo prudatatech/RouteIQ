@@ -31,6 +31,10 @@ const BANNED = [
   [/shipment requests?/i, 'request'],
   [/incidents?/i, 'problem (traffic incident stays)'],
   [/transshipments?/i, 'transfer'],
+  [/transship(?:s|ped|ping)?/i, 'transfer ("Plan a transfer")'],
+  [/raise problem/i, 'Raise a problem'],
+  [/(?:in|to|under) finance/i, 'Money (the Finance page is now Money)'],
+  [/(?:in|to|under) cargo/i, 'Problems (the module is Problems, not Cargo)'],
 ];
 const BANNED_RE = new RegExp(`\\b(?:${BANNED.map(([r]) => r.source).join('|')})\\b`, 'gi');
 

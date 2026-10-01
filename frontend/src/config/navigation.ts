@@ -91,7 +91,7 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    to: '/return-trips', label: 'Return trips & 3PL', icon: Waypoints, roles: admins, badge: 'returnTrips',
+    to: '/return-trips', label: 'Return trips', icon: Waypoints, roles: admins, badge: 'returnTrips',
     // A partner's own page is under /3pl-partners; it belongs to this section too
     also: ['/3pl-partners'],
     children: [
@@ -219,6 +219,18 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
 }
 
 /** Pages that draw edge to edge (maps) instead of inside the standard content width. */
+/** The menu name of the page at an address ("Money" for /money/invoices), or null when it is not in the menu. */
+export function pageNameFor(pathname: string): string | null {
+  let best: { name: string; length: number } | null = null
+  for (const section of navSections) {
+    for (const { link, name } of [{ link: section.to, name: section.label }, ...section.children.map(c => ({ link: c.to, name: section.label }))]) {
+      const path = link.split('?')[0]
+      if ((pathname === path || pathname.startsWith(`${path}/`)) && path.length > (best?.length ?? 0)) best = { name, length: path.length }
+    }
+  }
+  return best?.name ?? null
+}
+
 export const fullBleedPaths = ['/live-map']
 
 export const trackingPageLink = { to: '/track', label: 'Customer tracking page', icon: ClipboardList }

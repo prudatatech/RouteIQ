@@ -3,6 +3,7 @@ import { describeIncident } from '@/utils/traffic'
 import { Card, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
 import { useRouteIncidents, useRouteWeather } from './hooks'
 import { formatKm } from '@/utils/display'
+import { useAuthStore } from '@/store/authStore'
 
 const SEVERITY_LABEL = ['Unknown delay', 'Minor delay', 'Moderate delay', 'Major delay', 'Road closed or major delay']
 
@@ -11,6 +12,8 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
   const traffic = useRouteIncidents(routeId)
   const weather = useRouteWeather(routeId)
   const w = weather.data
+  // Server-key instructions are for the superadmin; everyone else gets a plain line or nothing.
+  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
 
   return (
     <Card padded className="space-y-5">
@@ -25,7 +28,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
         ) : weather.isError ? (
           <ErrorState compact description="We could not load the weather. Try again in a few minutes." onRetry={() => weather.refetch()} />
         ) : !w?.available ? (
-          <p className="text-sm text-muted">{w?.reason ?? 'Weather is not available.'}</p>
+          <p className="text-sm text-muted">{isSuperadmin ? (w?.reason ?? 'Weather is not available.') : 'Weather is not available right now.'}</p>
         ) : (
           <div className="space-y-1 text-sm">
             <p className="flex flex-wrap items-center gap-2 text-text">
@@ -44,6 +47,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
         )}
       </section>
 
+      {(isSuperadmin || traffic.isLoading || traffic.isError || traffic.data?.configured) && (
       <section aria-labelledby="route-traffic-heading" className="space-y-2 border-t border-border pt-4">
         <h3 id="route-traffic-heading" className="flex items-center gap-2 text-sm font-medium text-text">
           <TriangleAlert size={16} aria-hidden="true" /> Traffic incidents on this trip
@@ -53,7 +57,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
         ) : traffic.isError ? (
           <ErrorState compact description="We could not load traffic incidents. Try again in a few minutes." onRetry={() => traffic.refetch()} />
         ) : !traffic.data?.configured ? (
-          <p className="text-sm text-muted">Traffic incidents are off. Add a TomTom key to check active trips.</p>
+          <p className="text-sm text-muted">Live traffic is not available. Add a TomTom key in the server settings to check active trips.</p>
         ) : traffic.data.incidents.length === 0 ? (
           <EmptyState compact title="No problems on this trip" description="TomTom reports nothing along the path right now." />
         ) : (
@@ -67,6 +71,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
           </ul>
         )}
       </section>
+      )}
     </Card>
   )
 }

@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase'
 import { bookingsAPI, vendorAPI, type CustomerBooking } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
+  useConfirm, useOpenOnWork, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { buttonClasses } from '@/components/ui/buttonStyles'
 import AssignVehicleModal, { type AssignResult } from '@/components/shipments/AssignVehicleModal'
@@ -98,6 +98,8 @@ export default function RequestsPage() {
   const every = useMemo(() => [...allBookings.map(customerRow), ...allLoads.map(vendorRow)], [allBookings, allLoads])
   const inSource = useMemo(() => every.filter(r => source === 'all' || r.source === source), [every, source])
   const counts = useMemo(() => stageCounts(inSource), [inSource])
+  // Open on the first stage that has requests, not on an empty "To accept"
+  useOpenOnWork(['accept', 'accepted', 'progress', 'done'] as const, bookings.isLoading || loads.isLoading ? {} : counts, tab, setTab)
   const sourceCounts = useMemo(() => ({ all: every.length, customer: allBookings.length, vendor: allLoads.length }), [every.length, allBookings.length, allLoads.length])
 
   const rows = useMemo(() => {
@@ -346,7 +348,7 @@ export default function RequestsPage() {
       cell: r => <span className={r.price == null ? 'text-muted' : 'tabular'}>{priceText(r)}</span>,
     },
     {
-      key: 'age', header: 'Age', hideBelow: 'xl', sortValue: r => Date.parse(r.createdAt),
+      key: 'age', header: 'Received', hideBelow: 'xl', sortValue: r => Date.parse(r.createdAt),
       cell: r => <span title={formatDateTime(r.createdAt)}>{formatRelative(r.createdAt)}</span>,
     },
     {
@@ -421,6 +423,10 @@ export default function RequestsPage() {
           </div>
         </div>
       </PageHeader>
+
+      <p className="text-sm text-muted">
+        Shipments that staff create go straight to <Link to="/shipments" className="font-medium text-brand hover:underline">Shipments</Link> and do not appear here.
+      </p>
 
       {next && (
         <Alert

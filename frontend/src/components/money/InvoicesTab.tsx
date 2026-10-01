@@ -5,7 +5,7 @@ import { Download } from 'lucide-react'
 import { financeAPI } from '@/services/api'
 import { Button, Checkbox, DataTable, SearchInput, Select, Stat, StatusPill, type Column, type DateRangeValue } from '@/components/ui'
 import { downloadCsv, toCsv } from '@/utils/csv'
-import { formatDate, formatRupees } from '@/utils/display'
+import { formatDate, formatRupees, pluralize } from '@/utils/display'
 import { INVOICE_CSV_COLUMNS, invoiceCsvRows, type Invoice, type InvoiceSummary } from '@/utils/finance'
 
 const STATUS_OPTIONS = [
@@ -49,13 +49,22 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
       key: 'number', header: 'Invoice', sortValue: i => i.invoice_number,
       cell: i => <Link to={`/money/invoices/${i.id}`} className="font-mono text-sm font-medium text-brand hover:underline" onClick={e => e.stopPropagation()}>{i.invoice_number}</Link>,
     },
+    {
+      key: 'status', header: 'Status', sortValue: i => i.status,
+      cell: i => (
+        <span className="block">
+          <StatusPill status={i.status} />
+          {i.paid_at && <span className="mt-0.5 block text-xs text-muted">Paid {formatDate(i.paid_at)}</span>}
+        </span>
+      ),
+    },
     { key: 'issued', header: 'Issued', hideBelow: 'md', sortValue: i => i.issued_at, cell: i => formatDate(i.issued_at) },
     {
       key: 'due', header: 'Due', sortValue: i => i.due_date ?? '',
       cell: i => (
         <span className="block">
           {i.due_date ? formatDate(i.due_date) : '—'}
-          {i.overdue && <span className="mt-0.5 block text-xs font-medium text-danger">Overdue {i.days_overdue} {i.days_overdue === 1 ? 'day' : 'days'}</span>}
+          {i.overdue && <span className="mt-0.5 block text-xs font-medium text-danger">Overdue {pluralize(i.days_overdue ?? 0, 'day')}</span>}
         </span>
       ),
     },
@@ -70,15 +79,6 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
       ),
     },
     { key: 'total', header: 'Total', align: 'right', sortValue: i => i.total, cell: i => <span className="tabular font-medium">{formatRupees(i.total)}</span> },
-    {
-      key: 'status', header: 'Status', sortValue: i => i.status,
-      cell: i => (
-        <span className="block">
-          <StatusPill status={i.status} />
-          {i.paid_at && <span className="mt-0.5 block text-xs text-muted">Paid {formatDate(i.paid_at)}</span>}
-        </span>
-      ),
-    },
   ]
 
   const exportCsv = () => downloadCsv(`invoices-${range.from}-to-${range.to}.csv`, toCsv(invoiceCsvRows(rows), INVOICE_CSV_COLUMNS))

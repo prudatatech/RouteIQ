@@ -11,6 +11,7 @@ import { OPEN_SOS_STATUSES } from './sos.service';
 import { OPEN_EXCEPTION_STATUSES } from './cargo/exception.service';
 import { countVehicleRequests } from './vehicle-approval.service';
 import { getUnpricedDeliveries } from './finance.service';
+import { vehicleIdsOnActiveTrip } from './vehicle-activity';
 
 /** Notification types a driver's refused action or a flagged stop sends to staff. */
 export const DRIVER_ACTION_NOTIFICATION_TYPES = ['driver_action_rejected', 'stop_flagged'] as const;
@@ -70,7 +71,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     countOf(head('user_documents').eq('status', 'pending').is('archived_at', null), 'documents to review'),
     countOf(head('notifications').eq('user_id', userId).eq('is_read', false).in('type', [...DRIVER_ACTION_NOTIFICATION_TYPES]), 'driver actions'),
     countOf(head('routes').eq('status', 'active'), 'active trips'),
-    countOf(head('vehicles').eq('status', 'on_route'), 'vehicles on the road'),
+    vehicleIdsOnActiveTrip().then(ids => ids.size),
     countOf(head('routes').gte('created_at', todayISO), 'trips today'),
     countOf(head('routes').eq('status', 'completed').gte('created_at', todayISO), 'trips completed today'),
     all ? countOf(head('vendor_profiles').eq('kyc_status', 'submitted'), 'KYC to review') : Promise.resolve(null),

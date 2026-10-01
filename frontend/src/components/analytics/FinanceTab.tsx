@@ -118,7 +118,7 @@ export default function FinanceTab() {
       {hasData && (
         <div className="grid gap-6 xl:grid-cols-2">
           <ChartCard title="Net profit by day" description="Revenue minus costs. Below zero means a loss." height="h-64">
-            <SimpleLineChart data={chartDays} categoryKey="date" series={{ key: 'profit', label: 'Profit' }} formatValue={money} label="Net profit per day" />
+            <SimpleLineChart data={chartDays} categoryKey="date" formatCategory={formatDay} series={{ key: 'profit', label: 'Profit' }} formatValue={money} label="Net profit per day" />
           </ChartCard>
           <ChartCard
             title="Costs by category"

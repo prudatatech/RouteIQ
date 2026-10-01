@@ -38,7 +38,7 @@ beforeEach(() => {
     ],
     invoices: [],
     routes: [
-      { id: 'r1', status: 'pending', created_at: NOW }, { id: 'r2', status: 'active', created_at: NOW },
+      { id: 'r1', status: 'pending', created_at: NOW }, { id: 'r2', status: 'active', vehicle_id: 'veh3', created_at: NOW },
       { id: 'r3', status: 'completed', created_at: NOW }, { id: 'r4', status: 'completed', created_at: NOW },
     ],
     vehicles: [

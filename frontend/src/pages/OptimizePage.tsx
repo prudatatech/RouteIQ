@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Eye, Navigation, RotateCw, Sparkles, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { optimizationAPI, vehiclesAPI, routesAPI, analyticsAPI, api } from '@/services/api'
 import { getRouteDistance, getRouteDuration, getRouteFuel } from '@/utils/routeHelpers'
 import { isDraftVehicle } from '@/utils/vehicles'
-import { licenceSuffix } from '@/components/people/docs'
+import { licenceWarning } from '@/components/people/docs'
 import type { MapRouteStop, MapVehicle } from '@/components/map'
 import { OptimizeMap } from '@/components/optimize/OptimizeMap'
 import { EngineBanner, RouteSummaryLine, SavingsStats, UnassignedList } from '@/components/optimize/ResultPanels'
@@ -14,7 +14,7 @@ import {
   pendingStopPoints, plansFromReorder, plansFromResult,
   type LatLng, type OptimizerEngine, type RoutePlan, type ServerRoute, type UnassignedShipment,
 } from '@/components/optimize/plan'
-import { formatMinutes, formatKm } from '@/utils/display'
+import { formatMinutes, formatKm, pluralize, tripNumber } from '@/utils/display'
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, StatusPill, Checkbox, Select, Stat,
   EmptyState, LoadingState, Alert, useConfirm,
@@ -24,8 +24,8 @@ import type { ShipmentRow } from '@/components/shipments/types'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
-  { value: 'ortools', label: 'OR-Tools', description: 'Constraint programming solver' },
-  { value: 'ga', label: 'Genetic algorithm', description: 'Evolutionary search' },
+  { value: 'ortools', label: 'Standard planner', description: 'Plans with OR-Tools, the default.' },
+  { value: 'ga', label: 'Alternative planner', description: 'Plans with a genetic algorithm. Try it if the standard plan is not good enough.' },
 ] as const
 
 // Names for the algorithm the backend reports it ran, including its greedy fallback.
@@ -43,6 +43,7 @@ interface Vehicle {
   latitude?: number | null
   longitude?: number | null
   driver_licence_status?: 'valid' | 'expiring' | 'expired' | 'missing' | null
+  driver_id?: string | null
 }
 
 interface DeliveryPoint {
@@ -434,8 +435,8 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
   const mapDepot: LatLng | null = previewPlan ? null : result?.depot ? { lat: result.depot.latitude, lng: result.depot.longitude } : null
 
   const summaryLine = routeIdToReoptimize
-    ? `Re-optimizing trip ${routeIdToReoptimize.slice(0, 8).toUpperCase()}`
-    : `Evaluating ${vehicles.length.toLocaleString('en-IN')} vehicles and ${pendingShipments.length.toLocaleString('en-IN')} shipments that need a vehicle.`
+    ? `Re-optimizing trip ${tripNumber(routeIdToReoptimize)}`
+    : `Evaluating ${pluralize(vehicles.length, 'vehicle')} and ${pluralize(pendingShipments.length, 'shipment')} that need a vehicle.`
 
   return (
     <Page>
@@ -496,7 +497,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
                 {considerWeather && (
                   <div className="space-y-2 pl-6">
                     <p className="text-xs text-muted">
-                      {manualWeather ? 'Using the level you choose below.' : 'Uses live conditions from OpenWeather where the vehicles are. With no live data, weather does not change the result.'}
+                      {manualWeather ? 'Using the level you choose below.' : 'Uses live weather where the vehicles are. With no live data, weather does not change the result.'}
                     </p>
                     <Checkbox label="Set the weather level myself" checked={manualWeather} onChange={e => setManualWeather(e.target.checked)} />
                     {manualWeather && (
@@ -518,7 +519,19 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
                     {vehicles.map(v => (
                       <Checkbox
                         key={v.id}
-                        label={`${v.plate_number || 'Unnamed vehicle'}${licenceSuffix(v.driver_licence_status)}`}
+                        label={(
+                          <>
+                            {v.plate_number || 'Unnamed vehicle'}
+                            {licenceWarning(v.driver_licence_status) && (
+                              <>
+                                {' · '}
+                                {v.driver_id
+                                  ? <Link to={`/admin/users/${encodeURIComponent(v.driver_id)}?tab=documents`} className="text-brand hover:underline">{licenceWarning(v.driver_licence_status)!.text}</Link>
+                                  : licenceWarning(v.driver_licence_status)!.text}
+                              </>
+                            )}
+                          </>
+                        )}
                         checked={effectiveVehicleIds.has(v.id)}
                         onChange={() => toggleVehicle(v.id)}
                       />
@@ -600,7 +613,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
             <CardHeader title="Result" />
             <CardBody>
               {isPending ? (
-                <LoadingState label="Running the solver…" />
+                <LoadingState label="Planning the trips…" />
               ) : !result ? (
                 <EmptyState compact title="No result yet" description="Run an optimization to see trips here." />
               ) : (

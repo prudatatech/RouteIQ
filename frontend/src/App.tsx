@@ -1,12 +1,13 @@
 import { Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import toast, { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
 import { Button, ConfirmProvider, EmptyState, LoadingState, Spinner } from '@/components/ui'
 import { Lock } from 'lucide-react'
+import { pageNameFor } from '@/config/navigation'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { inboxLink, type RequestSource } from '@/components/requests/model'
@@ -145,6 +146,15 @@ function NoAccess() {
   )
 }
 
+/** Sends a signed-in user home from a page their role cannot open, and says why. */
+function BlockedRedirect({ to, from }: { to: string; from: string }) {
+  useEffect(() => {
+    const name = pageNameFor(from)
+    toast.error(`You don't have access to this page${name ? ` (${name})` : ''}. Ask an administrator if you need it.`, { id: 'page-blocked' })
+  }, [from])
+  return <Navigate to={to} replace />
+}
+
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const location = useLocation()
   const token = useAuthStore(s => s.token)
@@ -174,7 +184,7 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
     // Accounts with no area in the web app (no role, customers) would
     // otherwise bounce between redirects forever.
     if (!home || home === location.pathname) return <NoAccess />
-    return <Navigate to={home} replace />
+    return <BlockedRedirect to={home} from={location.pathname} />
   }
 
   return <>{children}</>
