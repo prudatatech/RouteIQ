@@ -24,6 +24,7 @@ import { isRealPosition, recordGpsPoints } from '../services/gps-history.service
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
 import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
+import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
 
 const router = Router();
 
@@ -215,9 +216,11 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
   try {
     const { data: vehicles, error } = await supabase
       .from('vehicles')
-      .select('status, plate_number');
+      .select('id, status, plate_number');
 
     if (error) throw error;
+    // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags
+    const onTrip = await vehicleIdsOnActiveTrip();
 
     const counts: Record<string, number> = {};
     let drafts = 0;
@@ -227,7 +230,8 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
         if (!(isTempPlate(v.plate_number) && v.status === 'archived')) drafts++;
         continue;
       }
-      counts[v.status] = (counts[v.status] || 0) + 1;
+      const status = onTrip.has(v.id) && WORKING_STATUSES.includes(v.status) ? 'on_route' : v.status;
+      counts[status] = (counts[status] || 0) + 1;
     }
 
     const archived = counts['archived'] || 0;

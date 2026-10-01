@@ -56,6 +56,37 @@ interface DriverActionRow {
   created_at: string
 }
 
+/** One row of a "needs attention" list. */
+function AttentionRow({ item }: { item: AttentionItem }) {
+  return (
+        <div className="flex items-start gap-3 px-4 py-3">
+          <span
+            className={clsx(
+              'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+              ['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger',
+            )}
+            aria-hidden="true"
+          >
+            {item.kind === 'licence-expired' || item.kind === 'licence-expiring' || item.kind === 'documents'
+              ? <FileWarning size={16} />
+              : item.kind === 'alarm' ? <AlertCircle size={16} />
+              : item.kind === 'offline' ? <WifiOff size={16} />
+              : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-text">{item.title}</p>
+            <p className="mt-0.5 break-words text-xs text-muted">{item.subtitle}</p>
+            {item.time && <p className="mt-0.5 text-xs text-muted">{item.time}</p>}
+          </div>
+          <div className="flex shrink-0 flex-col items-end">
+            {item.actions.map(a => (
+              <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>{a.label}</Button>
+            ))}
+          </div>
+        </div>
+  )
+}
+
 /** One "Needs attention" row for all open fleet alarms: the count, the kinds, and a link to Fleet > Alerts. */
 function alarmItem(alarms: FleetAlert[], open: () => void): AttentionItem {
   const byType = new Map<string, number>()
@@ -232,6 +263,11 @@ export default function TodayPage() {
     })
   }
 
+  // Documents belong to people, not to the fleet: they get their own card
+  const PEOPLE_KINDS: AttentionItem['kind'][] = ['licence-expired', 'licence-expiring', 'documents']
+  const fleetItems = attentionItems.filter(i => !PEOPLE_KINDS.includes(i.kind))
+  const peopleItems = attentionItems.filter(i => PEOPLE_KINDS.includes(i.kind))
+
   const queues = today.data ? splitQueues(buildQueues(today.data)) : null
   const live = today.data?.live
 
@@ -309,23 +345,12 @@ export default function TodayPage() {
         </section>
       )}
 
-      {queues && queues.clear.length > 0 && (
-        <Card>
-          <CardHeader title="Nothing waiting" description="These queues are empty." />
-          <ul className="divide-y divide-border">
-            {queues.clear.map(q => (
-              <li key={q.id}>
-                <Link
-                  to={q.to}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:px-6"
-                >
-                  <span className="min-w-0 truncate text-text">{q.title}</span>
-                  <span className="shrink-0 text-muted tabular">0</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+      {queues && queues.waiting.length > 0 && queues.clear.length > 0 && (
+        <p className="text-sm text-muted">
+          Nothing else waiting: {queues.clear.map((q, i) => (
+            <span key={q.id}>{i > 0 && ', '}<Link to={q.to} className="text-brand hover:underline">{q.title}</Link></span>
+          ))}.
+        </p>
       )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
@@ -341,39 +366,13 @@ export default function TodayPage() {
         <Card className="flex flex-col overflow-hidden">
           <CardHeader
             title="Fleet needs attention"
-            actions={attentionItems.length > 0 && <StatusPill tone="danger" dot={false}>{attentionItems.length}</StatusPill>}
+            actions={fleetItems.length > 0 && <StatusPill tone="danger" dot={false}>{fleetItems.length}</StatusPill>}
           />
           <div className="max-h-[420px] flex-1 divide-y divide-border overflow-y-auto">
-            {attentionItems.length === 0 ? (
+            {fleetItems.length === 0 ? (
               <EmptyState compact icon={<Activity size={22} />} title="All clear" description="No fleet issues need attention right now." />
             ) : (
-              attentionItems.map(item => (
-                <div key={item.id} className="flex items-start gap-3 px-4 py-3">
-                  <span
-                    className={clsx(
-                      'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                      ['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger',
-                    )}
-                    aria-hidden="true"
-                  >
-                    {item.kind === 'licence-expired' || item.kind === 'licence-expiring' || item.kind === 'documents'
-                      ? <FileWarning size={16} />
-                      : item.kind === 'alarm' ? <AlertCircle size={16} />
-                      : item.kind === 'offline' ? <WifiOff size={16} />
-                      : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-text">{item.title}</p>
-                    <p className="mt-0.5 break-words text-xs text-muted">{item.subtitle}</p>
-                    {item.time && <p className="mt-0.5 text-xs text-muted">{item.time}</p>}
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end">
-                    {item.actions.map(a => (
-                      <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>{a.label}</Button>
-                    ))}
-                  </div>
-                </div>
-              ))
+              fleetItems.map(item => <AttentionRow key={item.id} item={item} />)
             )}
           </div>
           {rerouteCount > 0 && (
@@ -385,6 +384,15 @@ export default function TodayPage() {
           )}
         </Card>
       </div>
+
+      {peopleItems.length > 0 && (
+        <Card className="overflow-hidden">
+          <CardHeader title="People need attention" actions={<StatusPill tone="warning" dot={false}>{peopleItems.length}</StatusPill>} />
+          <div className="divide-y divide-border">
+            {peopleItems.map(item => <AttentionRow key={item.id} item={item} />)}
+          </div>
+        </Card>
+      )}
     </Page>
   )
 }
