@@ -17,7 +17,40 @@ Subscription: <prefix>-budget with alerts at 50 / 100 / 150
 ```
 
 Files: `main.bicep` (resources), `budget.bicep` (subscription budget), `azure.env` (shared settings, committed), `azure.local.env` (this account's subscription and alert email, gitignored),
-`secrets.env.example` (every key, with where to get it), `deploy.sh`, `set-secrets.sh`, `github-oidc.sh`.
+`secrets.env.example` (every key, with where to get it; copy per stage to `secrets.live.env` / `secrets.test.env`), `deploy.sh`, `set-secrets.sh`, `github-oidc.sh`.
+
+## Stages: live and test
+
+One resource group (`<prefix>-rg`) holds two stages. They share the registry, `<prefix>-logs`, the
+`<prefix>-pull` identity (and its AcrPull role) and `<prefix>-env`; each has its own apps:
+
+| Stage | api | ml | web |
+|---|---|---|---|
+| `live` (default) | `margix-api` | `margix-ml` | `margix-web` |
+| `test` | `margix-test-api` | `margix-test-ml` | `margix-test-web` |
+
+Select with `--stage test` or `STAGE=test`; without it every command means live. Images use the same
+repositories (`margix-api`, `margix-ml`) and the git sha as tag, so one image can run in both stages.
+
+```bash
+./infra/deploy.sh                     # live: shared resources + margix-*
+./infra/deploy.sh --stage test        # test: margix-test-* only (needs live deployed once first)
+./infra/set-secrets.sh --stage test
+./infra/import-secrets.sh --stage test path/to/backend.env
+```
+
+Secrets are per stage: `secrets.live.env` and `secrets.test.env` (both gitignored). A stage without its own file
+falls back to `secrets.env` with a warning. The test API scales 0 to 1 (min 0 by default), serves CORS for its own web app only
+and talks to its own ml app. The test web app is built from `frontend/.env.production` (the test Supabase project);
+the custom domains and the budget belong to live. GitHub deploys `test` and `main` branches to their stages
+(`./infra/github-oidc.sh` registers both branches).
+
+Promote an image tested on test to live without rebuilding:
+
+```bash
+IMG=$(az containerapp show -g margix-rg -n margix-test-api --query 'properties.template.containers[0].image' -o tsv)
+az containerapp update -g margix-rg -n margix-api --image "$IMG"      # same for margix-ml / margix-test-ml
+```
 
 ## Prerequisites
 
