@@ -1,6 +1,7 @@
 import type { CustodyEvent } from '@/services/cargo'
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+// vocab-ok: matches the old "route" word in stored history text
 const TRIP_ID = new RegExp(`\\b(?:route|trip)\\s+(${UUID})\\b`, 'gi')
 
 /** "Accepted route 874fa20d-8c18-…" becomes "Accepted trip 874FA20D": a person never reads a raw id. */
