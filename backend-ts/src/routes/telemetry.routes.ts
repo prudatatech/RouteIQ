@@ -739,7 +739,7 @@ router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route')
       const { data: already } = await supabase
         .from('cargo_custody_events').select('id').eq(column, c.id).eq('kind', 'accepted').eq('driver_id', actor.id).limit(1);
       if (already && already.length > 0) continue;
-      await recordCustody(c, { kind: 'accepted', notes: `Accepted route ${route_id}` }, actor, { via: 'accept_route' });
+      await recordCustody(c, { kind: 'accepted', notes: `Accepted trip TR-${String(route_id).split('-')[0].toUpperCase()}` }, actor, { via: 'accept_route' });
       accepted++;
     }
     res.json({ route_id, accepted });

@@ -6,6 +6,13 @@ import { Clock, Search } from 'lucide-react'
 import { searchAPI, type SearchResultItem, type SearchResults } from '@/services/api'
 import { Modal } from './Modal'
 import { Spinner } from './Spinner'
+import { statusToLabel } from './status'
+
+/** The search API returns "partially_delivered · Bhiwandi warehouse"; show the status as its label. */
+function readableSublabel(text: string): string {
+  const [first, ...rest] = text.split(' · ')
+  return /^[a-z]+(_[a-z]+)*$/.test(first) ? [statusToLabel(first), ...rest].join(' · ') : text
+}
 
 const RECENT_KEY = 'recent_searches'
 const MAX_RECENT = 5
@@ -203,7 +210,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                         )}
                       >
                         <span className="truncate font-medium">{item.label}</span>
-                        {item.sublabel && <span className="truncate text-xs text-muted">{item.sublabel}</span>}
+                        {item.sublabel && <span className="truncate text-xs text-muted">{readableSublabel(item.sublabel)}</span>}
                       </button>
                     </li>
                   )
