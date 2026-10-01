@@ -10,6 +10,7 @@ import { STAFF_ROLES, canAccessRoute, getDriverVehicleIds, isStaff } from '../co
 import { RouteUpdateSchema } from '../schemas';
 import { ROUTE_STATUS_TO_MANIFEST, cancelManifest, manifestAsRoute, routeService, vehicleHasOpenWork, setOperatingVehicleStatus } from '../services/route.service';
 import { HttpError, sendError } from '../core/errors';
+import { attachTripDistance } from '../services/trip-distance';
 import { OPERATING_VEHICLE_STATUSES, ROUTE_STATUSES } from '../core/transitions';
 
 const router = Router();
@@ -57,6 +58,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
       result.sort((x: any, y: any) => Date.parse(y.created_at ?? '') - Date.parse(x.created_at ?? ''));
     }
 
+    await attachTripDistance(result);
     res.json(result);
   } catch (e: any) {
     sendError(req, res, e);
@@ -102,6 +104,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       }
 
       const formattedManifest = { ...manifestAsRoute(manifest), logs: (manifest as any).logs || [] };
+      await attachTripDistance([formattedManifest]);
 
       res.json(formattedManifest);
       return;
@@ -123,6 +126,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
+    await attachTripDistance([route]);
     res.json(route);
   } catch (e: any) {
     sendError(req, res, e);

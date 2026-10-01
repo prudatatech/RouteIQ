@@ -16,6 +16,7 @@ import { isDispatchable } from '../core/vehicles';
 import { notificationService } from './notification.service';
 import { stampPlannedArrivals } from './driver-performance.service';
 import { recordTripPaySafe } from './driver-pay.service';
+import { syncOdometerAfterTripSafe } from './odometer-sync.service';
 import type { CargoHoldContext } from './shipment.service';
 
 /** Sets a vehicle's status unless it is in maintenance or archived (those are changed by staff only). */
@@ -407,7 +408,11 @@ export const routeService = {
     }
 
     // The driver earns the trip when it is finished (once: a retry finds the entry)
-    if (next === 'completed') await recordTripPaySafe({ route_id: route.id });
+    if (next === 'completed') {
+      await recordTripPaySafe({ route_id: route.id });
+      // ...and its distance goes onto the vehicle's odometer, from the same distance (when a reading exists)
+      await syncOdometerAfterTripSafe(route.vehicle_id);
+    }
 
     const { data: after } = await supabase.from('vehicles').select('status').eq('id', route.vehicle_id).maybeSingle();
     return { id: route.id, status: next, vehicle_status: after?.status ?? vehicle?.status ?? null, changed: true };
