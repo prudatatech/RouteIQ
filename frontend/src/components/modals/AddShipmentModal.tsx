@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ArrowLeft, ArrowRight, Minimize2, Package, X } from 'lucide-react'
@@ -26,6 +26,9 @@ export default function AddShipmentModal() {
   // Steps the user has tried to leave; their errors show from then on.
   const [attempted, setAttempted] = useState<Set<StepId>>(new Set())
   const body = useRef<HTMLDivElement>(null)
+
+  // Errors belong to one sitting: closing the window, or a new one opening, starts with none showing
+  useEffect(() => { if (!isModalOpen) setAttempted(new Set()) }, [isModalOpen])
 
   const step = STEPS[stepIndex].id
   const errors = attempted.has(step) ? validateStep(step, formData) : {}
