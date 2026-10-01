@@ -333,12 +333,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
   const routeForVehicle = route && route.coordinates.length > 1 ? route.coordinates : undefined
   const center = initialCenter ?? { lng: MAP_DEFAULTS.CENTER[0], lat: MAP_DEFAULTS.CENTER[1] }
 
-  // The map's own buttons (zoom, fullscreen, recenter, attribution) leave the keyboard order too
+  // The map's own canvas and buttons (zoom, fullscreen, recenter, attribution) and the controls laid over it
+  // (Layers, place search, links) leave the keyboard order too: the list beside the map is the keyboard route
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const root = rootRef.current
     if (keyboardStops || !root) return
-    const skip = () => root.querySelectorAll<HTMLElement>('.maplibregl-ctrl button, .maplibregl-ctrl a').forEach(el => el.setAttribute('tabindex', '-1'))
+    const skip = () => root.querySelectorAll<HTMLElement>(KEYBOARD_SKIP_SELECTOR).forEach(el => el.setAttribute('tabindex', '-1'))
     skip()
     const observer = new MutationObserver(skip)
     observer.observe(root, { childList: true, subtree: true })
@@ -467,5 +468,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(props, 
     </div>
   )
 })
+
+/** What leaves the Tab order when a map has `keyboardStops` off: the canvas, every control and everything laid over the map. */
+export const KEYBOARD_SKIP_SELECTOR = 'canvas, a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 export default MapView
