@@ -7,6 +7,9 @@
  *     delivered (their agreed amount, by delivery date)
  *   - fuel estimate: litres x the fuel price setting, for completed routes that
  *     have no fuel expense recorded against them or their vehicle in the range
+ * Revenue is the taxable value (before GST); the GST on those invoices is reported next to it, never inside it.
+ * When costs are incomplete (no fuel price, or completed trips with no cost recorded) the summary says so in
+ * `costs_status`, so profit is never shown as if it were complete.
  * Anything that cannot be worked out (no fuel price set, no distance) is
  * reported as missing, never replaced by a made-up number.
  */
@@ -96,6 +99,30 @@ function routeLitres(route: RouteRow, kmpl: number | null): number | null {
   return null;
 }
 
+export interface CostsStatus {
+  complete: boolean;
+  fuel_price_missing: boolean;
+  /** Completed trips in the range with no expense, and no fuel estimate, against them. */
+  trips_without_costs: number;
+  trips_completed: number;
+  /** One line to show next to profit, e.g. "Costs incomplete: fuel price not set; 7 trips have no costs". Null when complete. */
+  note: string | null;
+}
+
+/** Whether the costs behind a profit figure are complete, and the sentence that says what is missing. */
+export function costsIncomplete(fuelPriceMissing: boolean, tripsWithoutCosts: number, tripsCompleted: number): CostsStatus {
+  const reasons: string[] = [];
+  if (fuelPriceMissing) reasons.push('fuel price not set');
+  if (tripsWithoutCosts > 0) reasons.push(`${tripsWithoutCosts} ${tripsWithoutCosts === 1 ? 'trip has' : 'trips have'} no costs`);
+  return {
+    complete: reasons.length === 0,
+    fuel_price_missing: fuelPriceMissing,
+    trips_without_costs: tripsWithoutCosts,
+    trips_completed: tripsCompleted,
+    note: reasons.length ? `Costs incomplete: ${reasons.join('; ')}` : null,
+  };
+}
+
 export async function getFinanceSummary(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
@@ -167,6 +194,11 @@ export async function getFinanceSummary(range: FinanceRange) {
     if (fuelPrice != null) fuelEstimateByRoute.set(r.id, round2(litres * fuelPrice));
   }
   const fuelEstimated = round2([...fuelEstimateByRoute.values()].reduce((s, v) => s + v, 0));
+
+  // Completed trips with nothing recorded against them: no expense on the trip, none on its vehicle in this range, no fuel estimate
+  const expenseRoutes = new Set(expenses.map((e: any) => e.route_id).filter(Boolean));
+  const expenseVehicles = new Set(expenses.map((e: any) => e.vehicle_id).filter(Boolean));
+  const tripsWithoutCosts = routes.filter(r => !expenseRoutes.has(r.id) && !(r.vehicle_id && expenseVehicles.has(r.vehicle_id)) && !fuelEstimateByRoute.has(r.id)).length;
 
   // Totals
   const revenue = round2(invoices.reduce((s: number, i: any) => s + num(i.amount), 0));
@@ -276,9 +308,12 @@ export async function getFinanceSummary(range: FinanceRange) {
   }
 
   const activeTrucks = vehicleRows.length;
+  const costsStatus = costsIncomplete(fuelPrice == null, tripsWithoutCosts, routes.length);
   return {
     range: { from: fromKey, to: toKey },
     revenue,
+    /** `revenue` is the taxable value of the invoices, before GST. */
+    revenue_basis: 'taxable_value' as const,
     gst_collected: gst,
     outstanding,
     invoice_count: invoices.length,
@@ -292,6 +327,7 @@ export async function getFinanceSummary(range: FinanceRange) {
         { category: 'fuel_estimated', label: 'Fuel (estimated)', amount: fuelEstimated, estimated: true },
       ],
     },
+    costs_status: costsStatus,
     net_profit: netProfit,
     active_trucks: activeTrucks,
     profit_per_truck: activeTrucks > 0 ? round2(netProfit / activeTrucks) : null,
