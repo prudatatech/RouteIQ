@@ -184,6 +184,7 @@ export interface QueueCounts {
   kyc?: { count: number }
   bids?: { count: number }
   unpriced?: { count: number }
+  payment_reports?: { count: number }
 }
 
 /** Menu badge counts from the Today queues (plus 3PL applications, which have no queue on Today). */
@@ -216,7 +217,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     returnTrips: bids + pendingPartners,
     bids,
     pendingPartners,
-    money: n(queues?.unpriced),
+    money: n(queues?.unpriced) + n(queues?.payment_reports),
   }
 }
 

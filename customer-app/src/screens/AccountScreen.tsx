@@ -7,12 +7,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, STORAGE_KEYS } from '../services/api';
 import { pushPermission, requestPushPermission, type PushPermission } from '../services/push';
 import { Button, Card, ScreenHeader, Text } from '../components/ui';
+import { ProfileCard } from '../components/account/ProfileCard';
+import { isPlaceholderName } from '../utils/profile';
 import LanguagePicker from '../components/LanguagePicker';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, radius, size, space } from '../theme';
 
 interface CustomerInfo {
   full_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
 }
 
@@ -54,13 +57,13 @@ export default function AccountScreen({ navigation }: any) {
     ]);
   };
 
-  const name = info?.full_name?.trim();
+  const name = (isPlaceholderName(info?.full_name) ? '' : info?.full_name?.trim()) || info?.company_name?.trim();
   const phone = info?.phone?.trim();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader title={t('tab_account')} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Card style={styles.profile}>
           <View style={styles.avatar} accessible={false}>
             <Feather name="user" size={size.icon.lg} color={colors.accent} />
@@ -76,6 +79,8 @@ export default function AccountScreen({ navigation }: any) {
             ) : null}
           </View>
         </Card>
+
+        <ProfileCard />
 
         {permission ? (
           <Card style={styles.notifications}>

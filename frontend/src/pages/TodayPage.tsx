@@ -142,7 +142,7 @@ export default function TodayPage() {
 
   // One request for every queue count; the menu badges read the same query.
   const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, refetchInterval: 30_000 })
-  useRealtimeRefresh('today_page', ['sos_alerts', 'cargo_exceptions', 'customer_bookings', 'vendor_shipment_requests', 'shipments', 'routes', 'vehicles', 'user_documents', 'capacity_bids', 'invoices'], [['ops-today']])
+  useRealtimeRefresh('today_page', ['sos_alerts', 'cargo_exceptions', 'customer_bookings', 'vendor_shipment_requests', 'shipments', 'routes', 'vehicles', 'user_documents', 'capacity_bids', 'invoices', 'invoice_payment_reports'], [['ops-today']])
 
   // The driver actions queue is the caller's own unread notifications, so the items can be opened from here.
   const driverActions = useQuery<DriverActionRow[]>({

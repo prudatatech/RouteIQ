@@ -1,6 +1,7 @@
 import type { CustomerBooking } from '@/services/api'
 import type { Tone } from '@/components/ui'
 import { formatRupees } from '@/utils/display'
+import { customerLabel } from '@/utils/customerProfile'
 
 /**
  * A Request is demand we have not moved yet: a customer booking or a vendor's load. This file puts both in
@@ -117,7 +118,8 @@ export interface RequestRow {
 
 export const shortPlace = (place: string | null | undefined) => (place ?? '').split(',')[0].trim() || '—'
 
-export const customerName = (b: CustomerBooking) => b.customer?.name || b.customer?.phone || 'Customer'
+/** Company, else the person's name, else "Customer 7701" from the phone (the server sends this as `customer.name`). */
+export const customerName = (b: CustomerBooking) => customerLabel(b.customer)
 export const vendorName = (r: VendorRequest) => r.vendor?.company_name || 'Unnamed vendor'
 
 function bookingStatus(b: CustomerBooking): { label: string; tone: Tone } {

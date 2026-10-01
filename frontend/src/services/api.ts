@@ -4,7 +4,8 @@ import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
-import type { CompanyProfile, InvoiceDetail, InvoiceSummary } from '@/utils/finance'
+import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
+import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
@@ -188,6 +189,8 @@ export interface TodayResponse {
     documents: { count: number }
     driver_actions: { count: number }
     unpriced?: { count: number; no_price: number }
+    /** Payments customers say they made, waiting to be confirmed or rejected (admin and superadmin). */
+    payment_reports?: { count: number }
     kyc?: { count: number }
     bids?: { count: number }
   }
@@ -570,15 +573,29 @@ export interface ExpenseInput {
   receipt_path?: string | null
 }
 
+/** A fresh key per attempt, so a double click is applied once and a later retry is not mistaken for it. */
+const reportKey = (prefix: string) =>
+  `${prefix}-${(typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`}`
+
 /** Invoices, expenses, fuel price and profit and loss (staff). */
 export const financeAPI = {
   summary: (range: DateParams) => api.get('/finance/summary', { params: range }).then(r => r.data),
   unpriced: (range: DateParams) => api.get('/finance/unpriced', { params: range }).then(r => ensureArray(r.data)),
-  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
+  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string; reports?: 'open' }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
   createInvoice: (target: { shipment_id: string } | { manifest_id: string }) => api.post('/finance/invoices', target).then(r => r.data),
   invoiceSummary: () => api.get('/finance/invoices/summary').then(r => r.data as InvoiceSummary),
   /** Offline payment: staff record how and when the money arrived. */
   payInvoice: (id: string, data: { method: string; reference?: string; paid_on?: string }) => api.put(`/finance/invoices/${id}/pay`, data).then(r => r.data),
+  /** Customers' payment reports and questions on invoices (admin and superadmin). */
+  invoiceReports: (params: { status?: InvoiceReportStatus; kind?: InvoiceReportKind; invoice_id?: string }) =>
+    api.get('/finance/invoice-reports', { params }).then(r => ensureArray(r.data) as InvoiceReport[]),
+  /** Marks the invoice paid. `method` is needed when the customer's method was "other". A part payment is refused (409). */
+  confirmInvoiceReport: (id: string, data: { method?: string; reference?: string; paid_on?: string; note?: string }) =>
+    api.post(`/finance/invoice-reports/${id}/confirm`, data, { headers: { 'Idempotency-Key': reportKey(`confirm-${id}`) } }).then(r => r.data as { report: InvoiceReport; recorded: unknown }),
+  rejectInvoiceReport: (id: string, reason: string) =>
+    api.post(`/finance/invoice-reports/${id}/reject`, { reason }, { headers: { 'Idempotency-Key': reportKey(`reject-${id}`) } }).then(r => r.data as InvoiceReport),
+  answerInvoiceReport: (id: string, answer: string) =>
+    api.post(`/finance/invoice-reports/${id}/answer`, { answer }, { headers: { 'Idempotency-Key': reportKey(`answer-${id}`) } }).then(r => r.data as InvoiceReport),
   voidInvoice: (id: string, reason: string) => api.put(`/finance/invoices/${id}/void`, { reason }).then(r => r.data),
   /** Sets the price of a delivery that has none and issues its invoice. */
   setPrice: (data: { kind: 'shipment' | 'manifest'; id: string; amount: number }) =>
@@ -638,7 +655,8 @@ export interface CustomerBooking {
   cancelled_by: 'customer' | 'staff' | null
   cancel_reason: string | null
   created_at: string
-  customer: { name: string | null; phone: string | null; company: string | null } | null
+  /** `name` is already the display name: company, else the person's name, else "Customer 7701" from the phone. */
+  customer: { id?: string; name: string | null; full_name?: string | null; phone: string | null; company: string | null } | null
 }
 
 /** Bookings made by customers in the mobile app. */
@@ -648,6 +666,11 @@ export const bookingsAPI = {
   confirm: (id: string, price?: number | null) => api.post(`/bookings/${id}/confirm`, price == null ? {} : { price }).then(r => r.data),
   assign: (id: string, vehicle_id: string, dispatch = false) => api.post(`/bookings/${id}/assign`, { vehicle_id, dispatch }).then(r => r.data),
   cancel: (id: string, reason: string) => api.post(`/bookings/${id}/cancel`, { reason }).then(r => r.data),
+  /** A customer's details for invoices (any staff role). */
+  customerProfile: (customerId: string) => api.get(`/bookings/customers/${encodeURIComponent(customerId)}/profile`).then(r => r.data as CustomerProfile),
+  /** Sends only the fields that changed; an empty string clears one. A bad value is a 422 with a plain message. */
+  saveCustomerProfile: (customerId: string, data: CustomerProfileInput) =>
+    api.patch(`/bookings/customers/${encodeURIComponent(customerId)}/profile`, data).then(r => r.data as CustomerProfile),
 }
 
 export interface ChatMessage {

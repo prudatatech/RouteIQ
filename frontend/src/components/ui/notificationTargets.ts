@@ -47,6 +47,8 @@ const request = (source: 'customer' | 'vendor', key: 'booking_id' | 'request_id'
   return id ? `/requests?open=${encodeURIComponent(id)}&source=${source}` : `/requests?source=${source}`
 }
 
+const invoiceReport: Resolver = d => (str(d.invoice_id) ? `/money/invoices/${encodeURIComponent(str(d.invoice_id)!)}` : '/money?tab=invoices&reports=open')
+
 const STAFF: Record<string, Resolver> = {
   sos: d => withOpen('/emergency', d.alert_id),
   vendor_request: request('vendor', 'request_id'),
@@ -93,6 +95,9 @@ const STAFF: Record<string, Resolver> = {
   cargo_at_hub: d => (str(d.depot_id) ? `/cargo?tab=hubs&hub=${encodeURIComponent(str(d.depot_id)!)}` : cargoConsignment(d)),
   cargo_delivery_otp: cargoConsignment,
   cargo_claim_update: d => withOpen('/cargo?tab=claims', d.claim_id),
+  // A customer reported a payment or asked about an invoice: open that invoice, else the invoices with an open report
+  invoice_payment_reported: invoiceReport,
+  invoice_query: invoiceReport,
   driver_action_rejected: d => (str(d.route_id) ? `/routes/${str(d.route_id)}` : cargoConsignment(d)),
 }
 

@@ -8,7 +8,8 @@ import VendorLoadCargo from '@/components/cargo/VendorLoadCargo'
 import { supabase } from '@/services/supabase'
 import type { CustomerBooking } from '@/services/api'
 import { formatDate, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
-import { bookingNeedsVehicle, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
+import { CustomerDetailsBlock } from './CustomerProfileEditor'
+import { bookingNeedsVehicle, customerName, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
 
 /** Link that looks like a secondary button. */
 function LinkButton({ to, icon, children }: { to: string; icon?: React.ReactNode; children: React.ReactNode }) {
@@ -34,7 +35,7 @@ export function BookingDrawer({ booking, onClose, busy, accepting, cancelling, o
     <Drawer
       open={!!booking}
       onClose={onClose}
-      title={booking ? (booking.customer?.name || 'Customer booking') : 'Booking'}
+      title={booking ? (booking.customer ? customerName(booking) : 'Customer booking') : 'Booking'}
       description={booking ? `${shortPlace(booking.pickup_name)} to ${shortPlace(booking.drop_name)}` : undefined}
       footer={booking && (canCancel || canAssign || shipment) ? (
         <>
@@ -85,7 +86,7 @@ export function BookingDrawer({ booking, onClose, busy, accepting, cancelling, o
 
           <DetailList
             items={[
-              { label: 'Customer', value: [booking.customer?.name, booking.customer?.phone, booking.customer?.company].filter(Boolean).join(' · ') || 'Not given' },
+              { label: 'Customer', value: [booking.customer ? customerName(booking) : null, booking.customer?.phone].filter(Boolean).join(' · ') || 'Not given' },
               { label: 'Pickup', value: booking.pickup_address },
               { label: 'Drop-off', value: booking.drop_address },
               { label: 'Pickup date', value: formatDate(`${booking.pickup_date}T12:00:00+05:30`) },
@@ -96,6 +97,8 @@ export function BookingDrawer({ booking, onClose, busy, accepting, cancelling, o
               ...(booking.tracking_id ? [{ label: 'Tracking ID', value: shipment ? <Link to={shipment} className="font-mono underline">{booking.tracking_id}</Link> : <span className="font-mono">{booking.tracking_id}</span> }] : []),
             ]}
           />
+
+          <CustomerDetailsBlock customerId={booking.customer?.id ?? booking.customer_id} />
         </div>
       )}
     </Drawer>

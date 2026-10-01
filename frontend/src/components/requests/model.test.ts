@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CustomerBooking } from '@/services/api'
-import { customerRow, inboxLink, priceText, primaryLabel, shipmentHref, stageCounts, stageFromOldTab, vendorRow, type VendorRequest } from './model'
+import { customerName, customerRow, inboxLink, priceText, primaryLabel, shipmentHref, stageCounts, stageFromOldTab, vendorRow, type VendorRequest } from './model'
 
 const booking = (over: Partial<CustomerBooking> = {}): CustomerBooking => ({
   id: 'b1', customer_id: 'c1', pickup_name: 'Bhiwandi, MH', pickup_address: 'Bhiwandi, Maharashtra', drop_name: 'Pune, MH', drop_address: 'Pune, Maharashtra',
@@ -68,5 +68,21 @@ describe('old links land on the right filter', () => {
     expect(inboxLink('vendor', '?open=abc')).toBe('/requests?source=vendor&open=abc')
     expect(inboxLink('customer', '?tab=cancelled&q=asha')).toBe('/requests?source=customer&tab=closed&q=asha')
     expect(inboxLink('customer', '')).toBe('/requests?source=customer')
+  })
+})
+
+describe('what a customer is called', () => {
+  it('shows the display name the server sends, which is the company when there is one', () => {
+    expect(customerName(booking({ customer: { id: 'c1', name: 'Rao Traders', full_name: 'Asha Rao', phone: '+919800000001', company: 'Rao Traders' } }))).toBe('Rao Traders')
+    expect(customerName(booking())).toBe('Asha Rao')
+  })
+
+  it('prefers the company over the name when the name is all that is sent', () => {
+    expect(customerName(booking({ customer: { name: 'Asha Rao', phone: '+919800000001', company: 'Rao Traders' } }))).toBe('Rao Traders')
+  })
+
+  it('falls back to the phone, then a plain word', () => {
+    expect(customerName(booking({ customer: { name: null, phone: '+919800007701', company: null } }))).toBe('Customer 7701')
+    expect(customerName(booking({ customer: null }))).toBe('Customer')
   })
 })

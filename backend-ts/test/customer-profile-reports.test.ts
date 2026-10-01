@@ -352,3 +352,13 @@ describe('PATCH /customer/profile leaves the fields that were not sent alone', (
     expect(res.body).toMatchObject({ company_name: 'Rao Traders', city: 'Mumbai', gstin: GSTIN_MH });
   });
 });
+
+describe('GET /customer/invoices carries what is still outstanding', () => {
+  it('is the total for an issued invoice and nothing for a paid one', async () => {
+    world({ invoices: [invoice(INV, ID.s1), invoice(OTHER_INV, ID.s1, { status: 'paid', paid_at: new Date().toISOString() })] });
+    const res = await request(app).get(api('/customer/invoices')).set(auth.customer());
+    const by = (id: string) => res.body.find((i: any) => i.id === id);
+    expect(by(INV)).toMatchObject({ amount_paid: 0, outstanding: 1180 });
+    expect(by(OTHER_INV)).toMatchObject({ amount_paid: 1180, outstanding: 0 });
+  });
+});
