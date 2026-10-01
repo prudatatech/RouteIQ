@@ -123,6 +123,8 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'GOTRUE_JWT_AUD', value: 'authenticated' }
           { name: 'GOTRUE_JWT_DEFAULT_GROUP_NAME', value: 'authenticated' }
           { name: 'GOTRUE_JWT_EXP', value: '3600' }
+          // Must equal the backend's SUPABASE_URL + /auth/v1, which it checks on every staff token
+          { name: 'GOTRUE_JWT_ISSUER', value: 'https://${gatewayHost}/auth/v1' }
           { name: 'GOTRUE_JWT_SECRET', secretRef: 'jwt-secret' }
           { name: 'GOTRUE_EXTERNAL_EMAIL_ENABLED', value: 'true' }
           { name: 'GOTRUE_EXTERNAL_PHONE_ENABLED', value: 'false' }

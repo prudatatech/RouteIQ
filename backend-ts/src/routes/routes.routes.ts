@@ -39,6 +39,8 @@ async function attachStopShipments(routes: any[]): Promise<void> {
   }
 }
 
+const buildManifestQuery = () => supabase.from('cargo_manifest').select('*, vehicles(*)');
+
 // ── GET / ──────────────────────────────────────────────────
 router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
   try {
@@ -64,27 +66,33 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 
     query = query.order('created_at', { ascending: false }).range(skip, skip + limit - 1);
 
-    const { data: routes, error } = await query;
-    if (error) throw error;
-
-    const result = routes ? [...routes] : [];
-    await attachStopShipments(result);
-
-    // Vendor loads (cargo manifests) are routes too: listed with the same statuses, filter and vehicle
+    // Vendor loads (cargo manifests) are routes too: listed with the same statuses, filter and vehicle.
+    // They do not depend on the routes, so both are read together.
     let manifestStatuses: string[] | null = null;
     if (status) manifestStatuses = ROUTE_STATUS_TO_MANIFEST[status] ?? [];
-    if (!manifestStatuses || manifestStatuses.length > 0) {
-      let manifestQuery = supabase.from('cargo_manifest').select('*, vehicles(*)');
+    const withManifests = !manifestStatuses || manifestStatuses.length > 0;
+    let manifestQuery = null as ReturnType<typeof buildManifestQuery> | null;
+    if (withManifests) {
+      manifestQuery = buildManifestQuery();
       if (driverVehicleIds) manifestQuery = manifestQuery.in('vehicle_id', driverVehicleIds);
       if (vehicleId) manifestQuery = manifestQuery.eq('vehicle_id', vehicleId);
       if (manifestStatuses) manifestQuery = manifestQuery.in('status', manifestStatuses);
-      const { data: manifests, error: manifestsErr } = await manifestQuery;
-      if (manifestsErr) throw manifestsErr;
-      for (const manifest of manifests ?? []) result.push(manifestAsRoute(manifest));
-      result.sort((x: any, y: any) => Date.parse(y.created_at ?? '') - Date.parse(x.created_at ?? ''));
     }
+    const [{ data: routes, error }, manifestRes] = await Promise.all([
+      query,
+      manifestQuery ?? Promise.resolve({ data: null, error: null }),
+    ]);
+    if (error) throw error;
+    if (manifestRes.error) throw manifestRes.error;
 
-    await attachTripDistance(result);
+    const result = routes ? [...routes] : [];
+    // Stop shipment names and finished-trip distances are independent of each other
+    const stopShipmentsDone = attachStopShipments([...result]); // routes only, never the loads pushed below
+
+    for (const manifest of manifestRes.data ?? []) result.push(manifestAsRoute(manifest));
+    if (withManifests) result.sort((x: any, y: any) => Date.parse(y.created_at ?? '') - Date.parse(x.created_at ?? ''));
+
+    await Promise.all([stopShipmentsDone, attachTripDistance(result)]);
     res.json(result);
   } catch (e: any) {
     sendError(req, res, e);
@@ -142,9 +150,7 @@ router.get('/:route_id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    await attachStopShipments([route]);
-
-    await attachTripDistance([route]);
+    await Promise.all([attachStopShipments([route]), attachTripDistance([route])]);
     res.json(route);
   } catch (e: any) {
     sendError(req, res, e);

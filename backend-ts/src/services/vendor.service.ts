@@ -818,12 +818,20 @@ export const vendorService = {
    */
   async getMarketRates() {
     // Average over recent priced loads: assigned ones and delivered ones (a delivery writes `completed`)
-    const { data: recent } = await supabase
-      .from('vendor_shipment_requests')
-      .select('cost, cost_per_km, required_capacity_kg')
-      .in('status', ['assigned', 'assigned_to_partner', 'completed', 'fulfilled'])
-      .order('updated_at', { ascending: false })
-      .limit(20);
+    // The recent loads and the fleet count do not depend on each other: one round trip
+    const [{ data: recent }, { count: fleetCount }] = await Promise.all([
+      supabase
+        .from('vendor_shipment_requests')
+        .select('cost, cost_per_km, required_capacity_kg')
+        .in('status', ['assigned', 'assigned_to_partner', 'completed', 'fulfilled'])
+        .order('updated_at', { ascending: false })
+        .limit(20),
+      // Count active fleet vehicles
+      supabase
+        .from('vehicles')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['available', 'on_route', 'idle']),
+    ]);
 
     let avgCostPerKm = 18; // Default ₹18/km
     let avgCostPerKg = 2.5; // Default ₹2.5/kg
@@ -840,12 +848,6 @@ export const vendorService = {
       }
       totalAssigned = recent.length;
     }
-
-    // Count active fleet vehicles
-    const { count: fleetCount } = await supabase
-      .from('vehicles')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['available', 'on_route', 'idle']);
 
     return {
       avg_cost_per_km: avgCostPerKm,

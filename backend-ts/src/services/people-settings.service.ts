@@ -5,6 +5,7 @@
  */
 import crypto from 'crypto';
 import { supabase } from '../core/supabase';
+import { memoize } from '../core/memo';
 import { settings as appSettings } from '../core/config';
 import { HttpError } from '../core/errors';
 
@@ -36,7 +37,7 @@ const NUMBER_LIMITS: Record<'licence_grace_days' | 'document_retention_days' | '
 
 const KEYS = Object.keys(DEFAULTS) as Array<keyof PeopleSettings>;
 
-export async function getPeopleSettings(): Promise<PeopleSettings> {
+const loadPeopleSettings = memoize(30_000, async (): Promise<PeopleSettings> => {
   const out: PeopleSettings = { ...DEFAULTS };
   const { data, error } = await supabase.from('system_settings').select('key, value').in('key', KEYS);
   if (error) throw new Error(`Failed to read settings: ${error.message}`);
@@ -51,6 +52,16 @@ export async function getPeopleSettings(): Promise<PeopleSettings> {
     }
   }
   return out;
+});
+
+/**
+ * The settings as they are now. Pass `{ cached: true }` from read-only screens that run on every page
+ * load: the settings are the same for every user and rarely change, so they are read at most every
+ * 30 s there (saving clears the cache). Gates such as dispatch blocking always read fresh.
+ */
+export async function getPeopleSettings(opts: { cached?: boolean } = {}): Promise<PeopleSettings> {
+  if (!opts.cached) loadPeopleSettings.clear();
+  return { ...(await loadPeopleSettings()) };
 }
 
 /** Validates and stores the given settings; unknown keys are a 400. */
@@ -70,6 +81,7 @@ export async function savePeopleSettings(patch: Record<string, unknown>): Promis
   }
   if (rows.length === 0) throw new HttpError(400, 'No settings to update');
   const { error } = await supabase.from('system_settings').upsert(rows, { onConflict: 'key' });
+  loadPeopleSettings.clear();
   if (error) throw new Error(`Failed to save settings: ${error.message}`);
   return getPeopleSettings();
 }

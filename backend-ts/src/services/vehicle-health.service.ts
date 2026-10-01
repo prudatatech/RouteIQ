@@ -187,19 +187,19 @@ export async function loadFleetHealth(vehicleId?: string, now: Date = new Date()
     .from('vehicles')
     .select('id, plate_number, status, odometer_km, rc_expiry, insurance_expiry, fitness_expiry, permit_expiry, puc_expiry, fuel_level_pct, fuel_reported_at, last_heartbeat, last_sync');
   if (vehicleId) vq = vq.eq('id', vehicleId);
-  const { data: vehicles, error } = await vq;
-  if (error) throw error;
-  const rows = ((vehicles ?? []) as HealthVehicleRow[]).filter(v => vehicleId || v.status !== 'archived');
-  if (rows.length === 0) return [];
-
   const since = new Date(now.getTime() - ALARM_WINDOW_DAYS * 86_400_000).toISOString();
   let aq = supabase.from('maintenance_alerts').select('vehicle_id, alert_type, severity').eq('is_test', false).gte('created_at', since);
   if (vehicleId) aq = aq.eq('vehicle_id', vehicleId);
-  const [plans, alertsRes, limits] = await Promise.all([
+  // None of the four reads needs another's result: one round trip
+  const [{ data: vehicles, error }, plans, alertsRes, limits] = await Promise.all([
+    vq,
     loadPlans(vehicleId ? [vehicleId] : undefined),
     aq,
     getAlertThresholds(),
   ]);
+  if (error) throw error;
+  const rows = ((vehicles ?? []) as HealthVehicleRow[]).filter(v => vehicleId || v.status !== 'archived');
+  if (rows.length === 0) return [];
   if (alertsRes.error) throw alertsRes.error;
 
   const alertsBy = new Map<string, HealthAlert[]>();

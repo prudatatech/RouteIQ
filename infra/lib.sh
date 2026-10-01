@@ -67,7 +67,8 @@ load_azure_env() {
   # The custom domains belong to live only.
   DATA_DOMAIN="${DATA_DOMAIN:-}"
   # The test stage uses its own names (TEST_*), never live's
-  if [[ "$STAGE" != live ]]; then CUSTOM_DOMAIN="${TEST_CUSTOM_DOMAIN:-}"; API_DOMAIN="${TEST_API_DOMAIN:-}"; DATA_DOMAIN="${TEST_DATA_DOMAIN:-}"; fi
+  PG_SKU="${PG_SKU:-Standard_B1ms}"
+  if [[ "$STAGE" != live ]]; then PG_SKU="${TEST_PG_SKU:-Standard_B1ms}"; CUSTOM_DOMAIN="${TEST_CUSTOM_DOMAIN:-}"; API_DOMAIN="${TEST_API_DOMAIN:-}"; DATA_DOMAIN="${TEST_DATA_DOMAIN:-}"; fi
   resolve_secrets_file
 }
 

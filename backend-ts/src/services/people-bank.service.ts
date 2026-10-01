@@ -170,9 +170,12 @@ export interface PayoutAccount {
  * to the driver.
  */
 export async function getPayoutAccount(userId: string, at: Date = new Date()): Promise<PayoutAccount | null> {
-  const profile = await getProfile(userId);
+  // Independent reads; a partner's accounts are simply not used
+  const [profile, { data, error }] = await Promise.all([
+    getProfile(userId),
+    supabase.from('user_bank_accounts').select('*').eq('user_id', userId),
+  ]);
   if (profile?.employer_type === 'partner') return null;
-  const { data, error } = await supabase.from('user_bank_accounts').select('*').eq('user_id', userId);
   if (error) throw new Error(`Failed to read bank accounts: ${error.message}`);
   const rows = data ?? [];
   const inEffect = (r: Record<string, any>) => !r.effective_from || Date.parse(r.effective_from) <= at.getTime();

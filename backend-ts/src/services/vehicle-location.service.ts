@@ -38,19 +38,20 @@ const newest = <T extends Record<string, any>>(rows: T[] | null, key: string): T
   (rows ?? []).slice().sort((a, b) => Date.parse(b[key]) - Date.parse(a[key]))[0] ?? null;
 
 export async function getVehicleLocation(vehicleId: string, now: number = Date.now()): Promise<VehicleLocation> {
-  const { data: vehicle, error } = await supabase
-    .from('vehicles')
-    .select('id, plate_number, status, latitude, longitude, last_heartbeat, last_sync, current_location_name, spark_id')
-    .eq('id', vehicleId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!vehicle) throw new HttpError(404, 'Vehicle not found');
-
-  const [limits, telemetryRes, pointRes] = await Promise.all([
+  // The vehicle, the limits and the newest readings are independent: one round trip
+  const [vehicleRes, limits, telemetryRes, pointRes] = await Promise.all([
+    supabase
+      .from('vehicles')
+      .select('id, plate_number, status, latitude, longitude, last_heartbeat, last_sync, current_location_name, spark_id')
+      .eq('id', vehicleId)
+      .maybeSingle(),
     getAlertThresholds(),
     supabase.from('telemetry').select('speed_kmph, heading, timestamp').eq('vehicle_id', vehicleId).order('timestamp', { ascending: false }).limit(1),
     supabase.from('gps_points').select('accuracy, recorded_at').eq('vehicle_id', vehicleId).order('recorded_at', { ascending: false }).limit(1),
   ]);
+  const { data: vehicle, error } = vehicleRes;
+  if (error) throw error;
+  if (!vehicle) throw new HttpError(404, 'Vehicle not found');
   if (telemetryRes.error) throw telemetryRes.error;
   if (pointRes.error) throw pointRes.error;
 

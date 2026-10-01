@@ -114,15 +114,13 @@ const one = <T>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? 
 const placeOf = (dp: any): string | null => dp?.name || dp?.address || null;
 
 export async function getVehicleActivity(vehicleId: string, now: number = Date.now()): Promise<VehicleActivity> {
-  const { data: vehicle, error: vErr } = await supabase
-    .from('vehicles')
-    .select('id, plate_number, status, latitude, longitude, last_heartbeat, last_sync, current_location_name, capacity_kg, current_load_kg, declared_load_percentage')
-    .eq('id', vehicleId)
-    .maybeSingle();
-  if (vErr) throw vErr;
-  if (!vehicle) throw new HttpError(404, 'Vehicle not found');
-
-  const [limits, routesRes, manifestsRes] = await Promise.all([
+  // The vehicle, the limits and its work are independent reads: one round trip
+  const [vehicleRes, limits, routesRes, manifestsRes] = await Promise.all([
+    supabase
+      .from('vehicles')
+      .select('id, plate_number, status, latitude, longitude, last_heartbeat, last_sync, current_location_name, capacity_kg, current_load_kg, declared_load_percentage')
+      .eq('id', vehicleId)
+      .maybeSingle(),
     getAlertThresholds(),
     supabase
       .from('routes')
@@ -135,13 +133,22 @@ export async function getVehicleActivity(vehicleId: string, now: number = Date.n
       .eq('vehicle_id', vehicleId)
       .eq('status', 'in_transit'),
   ]);
+  const { data: vehicle, error: vErr } = vehicleRes;
+  if (vErr) throw vErr;
+  if (!vehicle) throw new HttpError(404, 'Vehicle not found');
   if (routesRes.error) throw routesRes.error;
   if (manifestsRes.error) throw manifestsRes.error;
 
-  // Shipments on the active routes' stops, by tracking id
+  const live = isLive(vehicle, limits.gps_lost_minutes, now);
+
+  // Shipments on the active routes' stops (by tracking id) and, for a live vehicle, where it has stayed
+  // (from the GPS history) do not depend on each other
   const stopPoints = (routesRes.data ?? []).flatMap((r: any) => (r.route_stops ?? []).map((s: any) => ({ routeId: r.id as string, dp: one<any>(s.delivery_points) })));
   const shipmentIds = stopPoints.map(s => s.dp?.shipment_id).filter(Boolean) as string[];
-  const shipments = shipmentIds.length ? await selectIn<any>('shipments', 'id', shipmentIds, 'id, tracking_id') : [];
+  const [shipments, track] = await Promise.all([
+    shipmentIds.length ? selectIn<any>('shipments', 'id', shipmentIds, 'id, tracking_id') : Promise.resolve([] as any[]),
+    live ? loadTrack(vehicleId, new Date(now - HISTORY_HOURS * 3_600_000), new Date(now), 1000) : Promise.resolve(null),
+  ]);
   const trackingById = new Map(shipments.map(s => [s.id as string, s.tracking_id as string]));
 
   const jobs: ActivityJob[] = [];
@@ -181,7 +188,6 @@ export async function getVehicleActivity(vehicleId: string, now: number = Date.n
     });
   }
 
-  const live = isLive(vehicle, limits.gps_lost_minutes, now);
   const seen = lastSeenMs(vehicle);
   const lastSeenAt = seen != null ? new Date(seen).toISOString() : null;
   const manifestKg = jobs.filter(j => j.kind === 'manifest').reduce((sum, j) => sum + (j.weight_kg ?? 0), 0);
@@ -197,8 +203,7 @@ export async function getVehicleActivity(vehicleId: string, now: number = Date.n
   // Where it has stayed, from the GPS history
   let stationary: VehicleActivity['stationary'] = null;
   let lastMovedAt: string | null = null;
-  if (live) {
-    const track = await loadTrack(vehicleId, new Date(now - HISTORY_HOURS * 3_600_000), new Date(now), 1000);
+  if (track) {
     const found = stationarySince(track.points.map(p => ({ lat: p.lat, lng: p.lng, at: p.at })));
     if (found) {
       stationary = { since: found.since, minutes: Math.max(0, Math.round((now - Date.parse(found.since)) / 60_000)), at_least: found.atLeast };

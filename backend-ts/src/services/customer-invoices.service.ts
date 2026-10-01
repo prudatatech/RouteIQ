@@ -7,7 +7,7 @@
  */
 import { supabase } from '../core/supabase';
 import { selectIn } from './finance.service';
-import { getCompanyProfile } from './company.service';
+import { getCachedPaymentTermsDays } from './company.service';
 import { effectiveDueDate, overdueDays } from './invoice-detail.service';
 
 const LIST_COLUMNS = 'id, invoice_number, shipment_id, amount, gst_amount, total, status, issued_at, due_date, paid_at, payment_method, payment_reference';
@@ -35,7 +35,7 @@ export async function listCustomerInvoices(customerId: string) {
   }
 
   const invoices = await selectIn<any>('invoices', 'shipment_id', [...bookingOf.keys()], LIST_COLUMNS, (q) => q.neq('status', 'void').is('vendor_id', null));
-  const terms = (await getCompanyProfile()).payment_terms_days;
+  const terms = await getCachedPaymentTermsDays();
   const now = new Date();
   return invoices
     .map((inv) => {

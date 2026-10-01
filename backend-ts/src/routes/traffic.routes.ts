@@ -14,7 +14,6 @@ import { STAFF_ROLES } from '../core/ownership';
 import { sendError } from '../core/errors';
 import { settings } from '../core/config';
 import { supabase } from '../core/supabase';
-import { rateLimitByUser } from '../core/rate-limit';
 import { getLastTrafficRun, isTrafficConfigured, refreshTrafficIncidents } from '../services/traffic.service';
 import { incidentsInBbox, parseBbox } from '../services/traffic-area.service';
 import {
@@ -60,8 +59,14 @@ router.get('/incidents', requireAuth, requireRole(...STAFF_ROLES), async (req: R
   }
 });
 
-router.get('/tile-token', requireAuth, requireRole(...STAFF_ROLES), rateLimitByUser('traffic-tile-token', 30, 60), (req: Request, res: Response) => {
+router.get('/tile-token', requireAuth, requireRole(...STAFF_ROLES), (req: Request, res: Response) => {
   try {
+    // In-process counter, like the tiles: this endpoint touches no database, so a shared-cache
+    // round trip (Redis over the network) per call would be most of its time
+    if (!tileRateLimit(`token:${req.user!.user_id}`, 30, 60)) {
+      res.status(429).json({ detail: 'Too many requests. Please try again later.' });
+      return;
+    }
     if (!isTrafficTilesConfigured()) {
       res.json({ configured: false, token: null, expires_in: 0 });
       return;
