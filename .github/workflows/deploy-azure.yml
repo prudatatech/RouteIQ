@@ -1,5 +1,7 @@
 name: Deploy to Azure
-# Runs on every push to main that touches the apps or infra, and by hand from the Actions tab.
+# Runs on every push to test or main that touches the apps, infra or migrations, and by hand from the
+# Actions tab. The branch picks the stage: test deploys margix-test-api / -ml / -web, main deploys the live
+# margix-api / -ml / -web, both in the same resource group (infra/deploy.sh --stage).
 #
 # It builds only what changed and deploys the parts in parallel (infra/deploy.sh --images-only):
 #   backend-ts/**  -> api job  (build + push the image, roll margix-api)
@@ -7,7 +9,8 @@ name: Deploy to Azure
 #   frontend/**    -> web job  (build and upload the web app)
 #   infra/** or this workflow -> all three
 #   run by hand    -> all three, or the ones ticked in the form
-# Docker layers and npm packages are cached between runs. Secrets and settings stay in Azure, where
+# The first job applies pending supabase/migrations to that stage's database (GitHub environment "test"
+# or "production", secret DATABASE_URL). Docker layers and npm packages are cached between runs. Secrets and settings stay in Azure, where
 # infra/set-secrets.sh put them, so GitHub never holds an API key. Changes to main.bicep or secrets are
 # applied by running ./infra/deploy.sh or ./infra/set-secrets.sh from a signed-in machine.
 #
@@ -17,8 +20,8 @@ name: Deploy to Azure
 
 on:
   push:
-    branches: [main]
-    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**', 'supabase/migrations/**', '.github/workflows/deploy-azure.yml']
+    branches: [test, main]
+    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**', 'supabase/migrations/**', 'scripts/db-migrate.sh', '.github/workflows/deploy-azure.yml']
   workflow_dispatch:
     inputs:
       api:
@@ -39,27 +42,33 @@ permissions:
   contents: read
   actions: read
 
+env:
+  # main is live; test (and anything else run by hand) is the test stage.
+  STAGE: ${{ github.ref_name == 'main' && 'live' || 'test' }}
+
 jobs:
-  # LIVE database first: pending supabase/migrations files, dry-run then applied (scripts/db-migrate.sh).
-  # A failure stops the deploy before any app changes. Skipped until the production DATABASE_URL secret
-  # is set. Only this job uses the "production" environment: the Azure jobs keep their branch-based login.
+  # The stage's database first: pending supabase/migrations files, dry-run then applied (scripts/db-migrate.sh).
+  # A failure stops the deploy before any app changes. Skipped until the environment's DATABASE_URL secret
+  # is set. Only this job uses a GitHub environment ("production" on main, "test" on test): the Azure
+  # jobs must NOT, because their federated credential is bound to the branch ref, not to an environment.
   migrate:
     if: ${{ vars.AZURE_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'test' }}
     concurrency:
-      group: db-migrate-live
+      group: db-migrate-${{ github.ref_name == 'main' && 'live' || 'test' }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Apply pending migrations to the live database
+      - name: Apply pending migrations to the ${{ github.ref_name == 'main' && 'live' || 'test' }} database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [[ -z "$DATABASE_URL" ]]; then
-            echo "::notice::No DATABASE_URL secret in the production environment yet; no migrations applied."
+            echo "::notice::No DATABASE_URL secret in the ${{ github.ref_name == 'main' && 'production' || 'test' }} environment yet; no migrations applied."
             exit 0
           fi
+          sudo apt-get install -y -qq postgresql-client >/dev/null 2>&1 || true
           bash scripts/db-migrate.sh --dry-run
           bash scripts/db-migrate.sh
 
@@ -89,10 +98,10 @@ jobs:
             exit 0
           fi
           usable() { [[ -n "$1" && ! "$1" =~ ^0+$ ]] && git cat-file -e "$1^{commit}" 2>/dev/null && git merge-base --is-ancestor "$1" "$GITHUB_SHA"; }
-          # Compare with the last commit that deployed successfully, so a failed deploy is retried by the
-          # next push; fall back to the commit before this push. No usable base (first push, force push,
+          # Compare with the last commit that deployed successfully ON THIS BRANCH (test and main deploy
+          # different stages), so a failed deploy is retried by the next push; fall back to the commit before this push. No usable base (first push, force push,
           # history gone) means deploy everything.
-          base="$(gh run list --workflow deploy-azure.yml --branch main --status success --limit 1 \
+          base="$(gh run list --workflow deploy-azure.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 \
                     --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
           usable "$base" || base="$BEFORE"
           if usable "$base"; then
@@ -116,7 +125,7 @@ jobs:
     if: ${{ needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-azure-api
+      group: deploy-azure-${{ github.ref_name == 'main' && 'live' || 'test' }}-api
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -128,15 +137,15 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Build, push and roll margix-api
-        run: ./infra/deploy.sh --images-only --api-only
+      - name: Build, push and roll the api (margix-api live, margix-test-api test)
+        run: ./infra/deploy.sh --stage "$STAGE" --images-only --api-only
 
   ml:
     needs: [migrate, changes]
     if: ${{ needs.changes.outputs.ml == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-azure-ml
+      group: deploy-azure-${{ github.ref_name == 'main' && 'live' || 'test' }}-ml
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -147,15 +156,15 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Build, push and roll margix-ml
-        run: ./infra/deploy.sh --images-only --ml-only
+      - name: Build, push and roll the ml service (margix-ml live, margix-test-ml test)
+        run: ./infra/deploy.sh --stage "$STAGE" --images-only --ml-only
 
   web:
     needs: [migrate, changes]
     if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-azure-web
+      group: deploy-azure-${{ github.ref_name == 'main' && 'live' || 'test' }}-web
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -171,8 +180,8 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Build and upload the web app
         env:
-          # The live Supabase project's public URL and publishable key (repository variables). Unset, the
-          # build falls back to frontend/.env.production, which is the TEST project.
+          # The live Supabase project's public URL and publishable key (repository variables), used by the
+          # live stage only. The test stage always builds with frontend/.env.production (the TEST project).
           LIVE_SUPABASE_URL: ${{ vars.LIVE_SUPABASE_URL }}
           LIVE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LIVE_SUPABASE_PUBLISHABLE_KEY }}
-        run: ./infra/deploy.sh --images-only --web-only
+        run: ./infra/deploy.sh --stage "$STAGE" --images-only --web-only
