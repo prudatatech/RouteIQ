@@ -9,10 +9,10 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | --- | --- | --- |
 | Azure public (no sign-in) | 1 Oct 2026 | |
 | Azure staff screens (superadmin) | 1 Oct 2026 | |
-| CUST | | |
+| CUST | 1 Oct 2026 (GitHub runner) | |
 | OPS | | |
-| DRV | | |
-| VND | | |
+| DRV | 1 Oct 2026 (GitHub runner) | |
+| VND | 1 Oct 2026 (GitHub runner) | |
 | FLT | | |
 
 ## Summary
@@ -80,6 +80,32 @@ Details and screenshots: [UX](findings/UX.md).
 | UX-23 | Minor | UX | Driver `/driver`: Origin and next stop identical; Complete delivery with no trip | fixing | |
 | UX-24 | Minor | UX | SOS page, vehicle page: Eight equal buttons; Raise SOS is the loudest button on a healthy vehicle | fixing | |
 | UX-25 | Polish | UX | Several: Smaller layout and copy items | fixing | |
+
+### Customer, driver and vendor roles (GitHub runner)
+
+Details: [ROLES](findings/ROLES.md). Permissions held in every check (about 790).
+
+| ID | Sev | Area | Title | Status | Commit |
+| --- | --- | --- | --- | --- | --- |
+| ROL-01 | Major | ROLES | A booking ignores its Idempotency-Key: a retry books twice | fixing | |
+| ROL-02 | Major | ROLES | The cargo view never shows the rating given, so the app asks the customer to rate again | fixing | |
+| ROL-03 | Major | ROLES | A rating on a multi-drop booking is stored with no driver or truck: the driver is never told | fixing | |
+| ROL-04 | Major | ROLES | A trip assigned but not sent is already shown to the driver, who can accept and start it | fixing | |
+| ROL-05 | Major | ROLES | Cancelling a serious SOS leaves the truck in maintenance and the goods on hold | fixing | |
+| ROL-06 | Major | ROLES | One mistyped odometer reading makes every later fuel log for that truck fail with 500 | fixing | |
+| ROL-07 | Major | ROLES | The tracking link of a multi-drop booking shows no destination and "Carrier: Not yet assigned" after delivery | fixing | |
+| ROL-08 | Minor | ROLES | Malformed ids give 500 on several routes instead of 404 | fixing | |
+| ROL-09 | Minor | ROLES | A pickup date that does not exist (2026-11-31) gives 500 | fixing | |
+| ROL-10 | Minor | ROLES | Same pickup and drop, or 0,0, is accepted for a quote and for a vendor load | fixing | |
+| ROL-11 | Minor | ROLES | A claim has no ceiling: 99,999,999 rupees on a 2,000-rupee lot was filed | fixing | |
+| ROL-12 | Minor | ROLES | A cancelled booking's public history reads "With 3PL partners" | fixing | |
+| ROL-13 | Minor | ROLES | `PATCH /tpl/:id` replaces instead of patching: the partner ID, MSME status and tax treatment are wiped | fixing | |
+| ROL-14 | Minor | ROLES | 3PL onboarding accepts a malformed email address | fixing | |
+| ROL-15 | Minor | ROLES | Switching return-trip matching off closes the open window and switching it on does not reopen it | fixing | |
+| ROL-16 | Minor | ROLES | The web driver page shows the first drop as the trip's "Origin" | fixing | |
+| ROL-17 | Minor | ROLES | A 1-rupee bid was accepted on a driver-opened return trip (no price from the engine) | fixing | |
+| ROL-18 | Gap | ROLES | A customer has no name, company or account page: every customer is "Customer 7701" | open | |
+| ROL-19 | Gap | ROLES | A customer can read and download invoices but cannot report a payment or question one | open | |
 
 ## Details
 
