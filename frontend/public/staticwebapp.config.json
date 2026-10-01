@@ -21,6 +21,9 @@
     ]
   },
   "globalHeaders": {
-    "X-Content-Type-Options": "nosniff"
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Content-Security-Policy": "frame-ancestors 'self'",
+    "Permissions-Policy": "camera=(self), microphone=(self), geolocation=(self)"
   }
 }

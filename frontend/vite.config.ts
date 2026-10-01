@@ -76,7 +76,8 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      // No error tracker uploads maps, so none are published (UAT-019).
+      sourcemap: false,
       rollupOptions: {
         output: {
           // Only core React libs are force-grouped: they're needed by the entry on every
