@@ -348,7 +348,7 @@ export default function RequestsPage() {
       cell: r => <span className={r.price == null ? 'text-muted' : 'tabular'}>{priceText(r)}</span>,
     },
     {
-      key: 'age', header: 'Age', hideBelow: 'xl', sortValue: r => Date.parse(r.createdAt),
+      key: 'age', header: 'Received', hideBelow: 'xl', sortValue: r => Date.parse(r.createdAt),
       cell: r => <span title={formatDateTime(r.createdAt)}>{formatRelative(r.createdAt)}</span>,
     },
     {

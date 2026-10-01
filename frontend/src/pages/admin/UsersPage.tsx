@@ -116,7 +116,7 @@ export default function UsersPage() {
   const counts = useMemo(() => Object.fromEntries(TAB_IDS.map(t => [t, all.filter(p => inTab(p, t)).length])) as Record<TabId, number>, [all])
   const rows = useMemo(() => all.filter(p => inTab(p, tab) && (!role || p.role === role)), [all, tab, role])
 
-  const columns: Column<PersonRow>[] = [
+  const allColumns: Column<PersonRow>[] = [
     {
       key: 'name', header: 'Name', sortValue: p => personName(p).toLowerCase(),
       cell: p => (
@@ -129,14 +129,14 @@ export default function UsersPage() {
         </div>
       ),
     },
+    {
+      key: 'status', header: 'Status', sortValue: p => p.status,
+      cell: p => <StatusPill tone={STATUS_TONES[p.status] ?? 'neutral'}>{statusLabel(p.status)}</StatusPill>,
+    },
     { key: 'role', header: 'Role', sortValue: p => roleLabel(p.role), cell: p => roleLabel(p.role) },
     {
       key: 'code', header: 'Employee code', hideBelow: 'lg', sortValue: p => p.employee_code ?? '',
       cell: p => p.employee_code ? <span className="font-mono text-xs">{p.employee_code}</span> : <span className="text-muted">Not set</span>,
-    },
-    {
-      key: 'status', header: 'Status', sortValue: p => p.status,
-      cell: p => <StatusPill tone={STATUS_TONES[p.status] ?? 'neutral'}>{statusLabel(p.status)}</StatusPill>,
     },
     {
       key: 'docs', header: 'Documents', sortValue: p => p.doc_summary ? p.doc_summary.verified / Math.max(1, p.doc_summary.required) : -1,
@@ -155,6 +155,10 @@ export default function UsersPage() {
       cell: p => p.last_login ? formatRelative(p.last_login) : <span className="text-muted">Never</span>,
     },
   ]
+
+  // A column that says the same for every person (nobody has a code, nobody has signed in) is left out
+  const columns = allColumns.filter(c =>
+    !(all.length > 0 && ((c.key === 'code' && all.every(p => !p.employee_code)) || (c.key === 'login' && all.every(p => !p.last_login)))))
 
   const showCounts = tab !== 'vendors' && !people.isLoading
   const tabs = [

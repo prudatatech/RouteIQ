@@ -64,7 +64,7 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
       cell: i => (
         <span className="block">
           {i.due_date ? formatDate(i.due_date) : '—'}
-          {i.overdue && <span className="mt-0.5 block text-xs font-medium text-danger">Overdue {pluralize(i.days_overdue, 'day')}</span>}
+          {i.overdue && <span className="mt-0.5 block text-xs font-medium text-danger">Overdue {pluralize(i.days_overdue ?? 0, 'day')}</span>}
         </span>
       ),
     },
