@@ -6,7 +6,7 @@ import { routesAPI, vehiclesAPI } from '@/services/api'
 import {
   Button, Page, PageHeader, DataTable, StatusPill, SearchInput, Tabs, TabPanel, statusToLabel, useTabParam, parseSort, serializeSort, useUrlState, type Column,
 } from '@/components/ui'
-import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
+import { tripCarries, tripCode, tripFigures, type TripLike } from '@/utils/tripFigures'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatMinutes, formatRelative, formatKm } from '@/utils/display'
@@ -19,14 +19,14 @@ interface Vehicle {
   longitude?: number | null
 }
 
-interface RouteRow extends RouteLike {
-  id: string
-  is_manifest?: boolean
-  status: string
+interface RouteRow extends TripLike {
   vehicle_id?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
+
+/** How many shipment codes a row names before "+ more". */
+const CARRIES_SHOWN = 2
 
 const STATUS_TABS = ['all', 'pending', 'optimizing', 'active', 'completed', 'cancelled'] as const
 type StatusTab = typeof STATUS_TABS[number]
@@ -64,7 +64,10 @@ export default function RoutesPage() {
       .filter(r => {
         if (!needle) return true
         const vehicle = vehicleById.get(r.vehicle_id ?? '')
-        return r.id.toLowerCase().includes(needle) || (vehicle?.plate_number ?? '').toLowerCase().includes(needle)
+        return r.id.toLowerCase().includes(needle)
+          || tripCode(r).toLowerCase().includes(needle)
+          || (vehicle?.plate_number ?? '').toLowerCase().includes(needle)
+          || tripCarries(r).some(code => code.toLowerCase().includes(needle))
       })
   }, [routes, status, q, vehicleById])
 
@@ -75,6 +78,24 @@ export default function RoutesPage() {
   }))
 
   const columns: Column<RouteRow>[] = [
+    {
+      key: 'trip',
+      header: 'Trip',
+      cell: r => {
+        const carries = tripCarries(r)
+        return (
+          <div className="min-w-0">
+            <div className="whitespace-nowrap font-mono font-medium text-text">{tripCode(r)}</div>
+            {carries.length > 0 && (
+              <div className="max-w-56 truncate text-xs text-muted" title={carries.join(', ')}>
+                {carries.slice(0, CARRIES_SHOWN).join(', ')}{carries.length > CARRIES_SHOWN ? ` + ${(carries.length - CARRIES_SHOWN).toLocaleString('en-IN')} more` : ''}
+              </div>
+            )}
+          </div>
+        )
+      },
+      sortValue: r => tripCode(r),
+    },
     {
       key: 'vehicle',
       header: 'Vehicle',
@@ -107,13 +128,24 @@ export default function RoutesPage() {
       key: 'distance',
       header: 'Distance / ETA',
       cell: r => {
-        const full = withVehicle(r)
-        const distance = getRouteDistance(full)
-        if (distance <= 0) return <span className="text-muted">—</span>
-        const duration = getRouteDuration(full, distance)
-        return <span>{formatKm(distance)} · {formatMinutes(duration)}</span>
+        const f = tripFigures(withVehicle(r))
+        if (f.kind === 'none') return <span className="text-muted">—</span>
+        const km = f.distanceKm != null ? formatKm(f.distanceKm) : null
+        if (f.kind === 'actual') {
+          return (
+            <div className="whitespace-nowrap">
+              <div>Took {formatMinutes(f.durationMinutes ?? 0)}</div>
+              {km && <div className="text-xs text-muted">{km} planned</div>}
+            </div>
+          )
+        }
+        const parts = [km, f.durationMinutes != null ? formatMinutes(f.durationMinutes) : null].filter(Boolean).join(' · ')
+        return <span className={f.distanceIsPlanned ? 'whitespace-nowrap text-muted' : 'whitespace-nowrap'}>{f.distanceIsPlanned ? `Planned ${parts}` : parts}</span>
       },
-      sortValue: r => getRouteDistance(withVehicle(r)),
+      sortValue: r => {
+        const f = tripFigures(withVehicle(r))
+        return f.kind === 'none' ? 0 : f.distanceKm ?? 0
+      },
       hideBelow: 'md',
     },
     {
@@ -163,24 +195,29 @@ export default function RoutesPage() {
   const exportCsv = () => {
     const csv = toCsv(rows.map(r => {
       const vehicle = vehicleById.get(r.vehicle_id ?? '')
-      const full = withVehicle(r)
-      const distance = getRouteDistance(full)
+      const f = tripFigures(withVehicle(r))
       return {
-        route_id: r.id.slice(0, 8).toUpperCase(),
+        trip: tripCode(r),
+        carries: tripCarries(r).join(' '),
         vehicle: vehicle?.plate_number || '',
         status: statusToLabel(r.status, 'route'),
         stops: r.route_stops?.length ?? 0,
-        distance_km: distance > 0 ? distance.toFixed(1) : '',
-        eta: distance > 0 ? formatMinutes(getRouteDuration(full, distance)) : '',
+        distance_km: f.kind !== 'none' && f.distanceKm != null ? f.distanceKm.toFixed(1) : '',
+        distance_basis: f.kind !== 'none' && f.distanceKm != null ? (f.distanceIsPlanned || f.kind === 'planned' ? 'planned' : 'actual') : '',
+        duration: f.kind === 'none' || f.durationMinutes == null ? '' : formatMinutes(f.durationMinutes),
+        duration_basis: f.kind === 'none' ? '' : f.kind === 'actual' ? 'actual' : 'planned',
         updated_at: r.updated_at ?? r.created_at ?? '',
       }
     }), [
-      { key: 'route_id', header: 'Trip' },
+      { key: 'trip', header: 'Trip' },
+      { key: 'carries', header: 'Shipments' },
       { key: 'vehicle', header: 'Vehicle' },
       { key: 'status', header: 'Status' },
       { key: 'stops', header: 'Stops' },
       { key: 'distance_km', header: 'Distance (km)' },
-      { key: 'eta', header: 'ETA' },
+      { key: 'distance_basis', header: 'Distance basis' },
+      { key: 'duration', header: 'Time' },
+      { key: 'duration_basis', header: 'Time basis' },
       { key: 'updated_at', header: 'Updated at' },
     ])
     downloadCsv(`routes-${new Date().toISOString().slice(0, 10)}.csv`, csv)
@@ -195,7 +232,7 @@ export default function RoutesPage() {
       >
         <div className="space-y-4">
           <Tabs label="Filter trips by status" tabs={tabs} value={status} onChange={setStatus} />
-          <SearchInput value={q} onChange={setQ} placeholder="Search by vehicle or trip ID" className="max-w-sm" />
+          <SearchInput value={q} onChange={setQ} placeholder="Search by trip, vehicle or shipment" className="max-w-sm" />
         </div>
       </PageHeader>
 

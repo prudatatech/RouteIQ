@@ -5,11 +5,14 @@ import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/rout
 import { canDispatchRoute, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatKm, formatMinutes, formatRelative } from '@/utils/display'
 import { TRIP_SOURCE_LABEL, tripSource } from './logic'
+import { EWAY_BILL_WARNING } from '@/config/compliance'
 
 interface TripStop {
   id: string
   sequence: number
   delivery_points?: { name?: string | null; address?: string | null; latitude?: number | null; longitude?: number | null } | null
+  /** The shipment (or lot) this stop delivers. */
+  shipment?: { id: string; tracking_id?: string | null } | null
 }
 
 /** A trip as GET /routes returns it: the vehicle and its stops come with it. */
@@ -53,8 +56,10 @@ function StopsSummary({ stops }: { stops: TripStop[] }) {
  * Trips waiting to be sent: planned by the optimizer or the route planner, pending, and not yet
  * with the driver. Sending one puts the vehicle on route and tells the driver, with a link to it.
  */
-export default function TripsToSendTab({ rows, loading, error, onRetry }: {
+export default function TripsToSendTab({ rows, loading, error, onRetry, ewayMissing }: {
   rows: TripRow[]
+  /** Trip id to the shipments on it that are over the e-way bill value with no number; a warning only. */
+  ewayMissing?: Map<string, string[]>
   loading: boolean
   error: boolean
   onRetry: () => void
@@ -80,7 +85,19 @@ export default function TripsToSendTab({ rows, loading, error, onRetry }: {
         ? <span className="whitespace-nowrap text-text">{t.vehicles.driver_name}</span>
         : <StatusPill tone="warning" dot={false}>No driver</StatusPill>,
     },
-    { key: 'stops', header: 'Stops', cell: t => <StopsSummary stops={t.route_stops ?? []} /> },
+    {
+      key: 'stops',
+      header: 'Stops',
+      cell: t => (
+        <div className="space-y-1">
+          <StopsSummary stops={t.route_stops ?? []} />
+          {ewayMissing?.has(t.id) && (
+            <StatusPill tone="warning" dot={false}>{EWAY_BILL_WARNING}</StatusPill>
+          )}
+          {ewayMissing?.has(t.id) && <div className="text-xs text-muted">{ewayMissing.get(t.id)!.join(', ')}</div>}
+        </div>
+      ),
+    },
     {
       key: 'distance',
       header: 'Distance and time',

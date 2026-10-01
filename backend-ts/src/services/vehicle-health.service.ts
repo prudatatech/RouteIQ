@@ -9,8 +9,11 @@
  *
  * A check whose inputs are missing is "unknown" and takes nothing off: no service
  * plan or no usable baseline, no document dates, a vehicle that has never reported,
- * or no fuel level from a real device in the last 48 hours. If every check is
- * unknown the score is null. Test alarms never count.
+ * or no fuel level from a real device in the last 48 hours. Alarms and fuel only
+ * show how the vehicle is behaving; they say nothing about its condition. So the
+ * score is null ("Not enough data") unless Service or Documents is known: a truck
+ * with no odometer, service plan or document dates is not "100, Good" just because
+ * it has had no alarms. Test alarms never count.
  */
 import { supabase } from '../core/supabase';
 import { getAlertThresholds } from './alert-settings.service';
@@ -167,7 +170,8 @@ export function computeHealth(
 
   const checks = [service, documents, alarms, fuel];
   const known = checks.filter(c => c.state !== 'unknown');
-  const score = known.length === 0 ? null : Math.max(0, 100 - known.reduce((s, c) => s + c.penalty, 0));
+  const hasCondition = service.state !== 'unknown' || documents.state !== 'unknown';
+  const score = !hasCondition ? null : Math.max(0, 100 - known.reduce((s, c) => s + c.penalty, 0));
   const band: HealthBand = score == null ? 'unknown' : score >= 80 ? 'good' : score >= 50 ? 'attention' : 'poor';
   issues.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'critical' ? -1 : 1));
 

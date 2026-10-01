@@ -116,6 +116,23 @@ describe('GET /shipments/:id/history', () => {
     ]);
   });
 
+  it('leaves out a split entry that repeats the status before it, and flags a rolled-up status', async () => {
+    reset('exception');
+    const log = (index: number, status: string, at: string, meta: Record<string, unknown>) => ({
+      id: `log-${index}`, shipment_id: 'ship-1', status, location_lat: null, location_lng: null,
+      timestamp: at, index, previous_hash: 'x', log_hash: 'y', metadata_json: meta,
+    });
+    supabaseMock.rows('shipment_logs').push(
+      log(0, 'created', '2026-09-01T10:00:00.000Z', {}),
+      log(1, 'created', '2026-09-01T10:00:20.000Z', { custody_kind: 'split' }),
+      log(2, 'exception', '2026-09-01T10:06:00.000Z', { rollup: true, lots: 3 }),
+    );
+    const res = await getHistory('ship-1');
+    expect(res.body.events.map((e: { status: string }) => e.status)).toEqual(['created', 'exception']);
+    expect(res.body.events[1].rollup).toBe(true);
+    expect(res.body.events[0].rollup).toBeUndefined();
+  });
+
   it('returns 404 for an unknown shipment', async () => {
     reset('created');
     const res = await getHistory('does-not-exist');

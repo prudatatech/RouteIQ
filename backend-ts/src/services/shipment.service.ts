@@ -71,6 +71,8 @@ export interface ShipmentHistoryEvent {
   location: { lat: number; lng: number } | null;
   /** An automatic action on a cargo case: shown to staff, never on the public tracking page. */
   internal?: boolean;
+  /** A master's status that was worked out from its lots (not a delivery attempt of its own). */
+  rollup?: boolean;
 }
 
 /** The public-safe cut of a history event: status and time only. */
@@ -1105,6 +1107,8 @@ export class ShipmentService {
     // Masters show how their lots stand; lots name their master (docs/cargo-plan.md, Lots)
     const { lotsSummaries } = await import('./cargo/lots.service');
     const shipmentLots = await lotsSummaries('shipment', data.filter((d: any) => d.is_master).map((d: any) => d.id));
+    const { addLotCarriers } = await import('./lot-carriers');
+    await addLotCarriers('shipment', [...shipmentLots.values()]);
     const trackingById = new Map(data.map((d: any) => [d.id, d.tracking_id]));
     for (const row of mappedShipments as any[]) {
       if (row.is_master) row.lots_summary = shipmentLots.get(row.id) ?? { count: 0, delivered_lots: 0, pieces_delivered: 0, lots: [] };
@@ -1117,6 +1121,8 @@ export class ShipmentService {
   private static async mapManifestRows(manifests: any[]): Promise<any[]> {
     const { lotsSummaries } = await import('./cargo/lots.service');
     const manifestLots = await lotsSummaries('manifest', manifests.filter((m: any) => m.is_master).map((m: any) => m.id));
+    const { addLotCarriers } = await import('./lot-carriers');
+    await addLotCarriers('manifest', [...manifestLots.values()]);
     const mappedManifests = manifests.map((m: any) => ({
       id: m.id,
       tracking_id: m.parent_manifest_id && m.lot_label ? `${manifestParcelCode(m.parent_manifest_id)}-${m.lot_label}` : manifestParcelCode(m.id),
@@ -1578,13 +1584,25 @@ export class ShipmentService {
     return null;
   }
 
+  /**
+   * Splitting or merging a consignment writes a log entry with the status it already had (it stays
+   * in the hash chain and the custody log). In the status history that reads as the same status
+   * twice (Created, Created), so an entry that repeats the one before it is left out.
+   */
+  private static withoutRepeatedSplitEntries(logs: ShipmentLog[]): ShipmentLog[] {
+    return logs.filter((log, i) => {
+      const kind = log.metadata_json?.custody_kind;
+      return !((kind === 'split' || kind === 'merge') && i > 0 && logs[i - 1].status === log.status);
+    });
+  }
+
   /** Builds the staff-facing history from real `shipment_logs` rows, resolving actor names. */
   private static async buildHistoryEvents(
     logs: ShipmentLog[],
     record: { status: string; created_at: string; updated_at?: string | null; received_by?: string | null }
   ): Promise<ShipmentHistoryEvent[]> {
     if (logs.length > 0) {
-      logs = [...logs].sort((a, b) => a.index - b.index);
+      logs = ShipmentService.withoutRepeatedSplitEntries([...logs].sort((a, b) => a.index - b.index));
       const actorIds = Array.from(
         new Set(logs.map(l => l.metadata_json?.actor_id).filter((id): id is string => typeof id === 'string'))
       );
@@ -1613,6 +1631,7 @@ export class ShipmentService {
           note,
           location: log.location_lat != null && log.location_lng != null ? { lat: log.location_lat, lng: log.location_lng } : null,
           ...(typeof meta.case_note === 'string' ? { internal: true } : {}),
+          ...(meta.rollup === true ? { rollup: true } : {}),
         };
       });
     }

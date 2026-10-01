@@ -4,6 +4,7 @@ import { StatusPill, humanize } from '@/components/ui'
 import { exceptionTypeLabel } from '@/components/cargo/logic'
 import { formatKm, formatRupees } from '@/utils/display'
 import { plateOf } from './format'
+import { carrierText, lotCarriers } from './masterView'
 import { requesterHref } from './requesterHref'
 import type { ShipmentOverview } from './types'
 
@@ -66,17 +67,28 @@ export default function RelatedLinks({ overview: o }: { overview: ShipmentOvervi
           </Item>
         )}
 
-        <Item label="Vehicle">
-          {o.vehicle && plate
-            ? <Link to={`/fleet/${o.vehicle.id}`} className={`${linkClass} font-mono`}>{plate}</Link>
-            : <span className="text-muted">Not assigned</span>}
-        </Item>
+        {s.is_master === true ? (
+          // A split master holds no goods: the vehicles and drivers are on its lots
+          <Item label="Per lot">
+            {lotCarriers(s).length > 0
+              ? lotCarriers(s).map(c => <div key={`${c.plate}-${c.driver}`} className="font-mono">{carrierText(c)}</div>)
+              : <span className="text-muted">No vehicle on a lot yet</span>}
+          </Item>
+        ) : (
+          <>
+            <Item label="Vehicle">
+              {o.vehicle && plate
+                ? <Link to={`/fleet/${o.vehicle.id}`} className={`${linkClass} font-mono`}>{plate}</Link>
+                : <span className="text-muted">Not assigned</span>}
+            </Item>
 
-        <Item label="Driver">
-          {o.driver
-            ? <Link to={`/admin/users/${o.driver.id}`} className={linkClass}>{o.driver.name ?? 'Open driver'}</Link>
-            : <span className="text-muted">{o.vehicle ? 'The vehicle has no driver' : 'Not assigned'}</span>}
-        </Item>
+            <Item label="Driver">
+              {o.driver
+                ? <Link to={`/admin/users/${o.driver.id}`} className={linkClass}>{o.driver.name ?? 'Open driver'}</Link>
+                : <span className="text-muted">{o.vehicle ? 'The vehicle has no driver' : 'Not assigned'}</span>}
+            </Item>
+          </>
+        )}
 
         {(o.master || lots.length > 0) && (
           <Item label={o.master ? 'Lot of' : `Lots (${lots.length.toLocaleString('en-IN')})`}>

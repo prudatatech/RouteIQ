@@ -219,6 +219,28 @@ describe('GET /routes with vendor loads', () => {
   });
 });
 
+describe('GET /routes names the shipments a trip carries', () => {
+  it('puts the shipment (or lot) tracking id on each stop of the list', async () => {
+    reset({
+      routes: [{
+        id: 'route-1', vehicle_id: 'veh-1', status: 'completed', created_at: '2026-09-01T10:00:00Z',
+        route_stops: [
+          { id: 'st-1', sequence: 1, status: 'completed', delivery_points: { id: 'dp-1', shipment_id: 'ship-a', name: 'Patna' } },
+          { id: 'st-2', sequence: 2, status: 'completed', delivery_points: { id: 'dp-2', shipment_id: 'ship-b', name: 'Ranchi' } },
+        ],
+      }],
+      shipments: [
+        { id: 'ship-a', tracking_id: 'RTX-AAAA1111-A' },
+        { id: 'ship-b', tracking_id: 'RTX-AAAA1111-B' },
+      ],
+    });
+    const res = await request(app).get('/api/v1/routes').set(staff());
+    expect(res.status).toBe(200);
+    const stops = res.body.find((r: any) => r.id === 'route-1').route_stops;
+    expect(stops.map((st: any) => st.shipment?.tracking_id).sort()).toEqual(['RTX-AAAA1111-A', 'RTX-AAAA1111-B']);
+  });
+});
+
 describe('route status changes', () => {
   const patch = (status: string, id = 'route-1', auth = staff()) =>
     request(app).patch(`/api/v1/routes/${id}/status`).set(auth).send({ status });
