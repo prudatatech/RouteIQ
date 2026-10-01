@@ -26,4 +26,4 @@ echo "1/4 schema";            { echo "SET check_function_bodies = false;"; cat "
 echo "2/4 platform pieces";   run -f "$B/02_platform.sql" >/dev/null
 echo "3/4 settings defaults"; run -f "$B/03_settings.sql" >/dev/null
 echo "4/4 migrations record"; PSQL="$PSQL" DATABASE_URL="$DATABASE_URL" "$ROOT/scripts/db-migrate.sh" --stamp-all
-echo "done: schema version $(ls "$ROOT/supabase/migrations" | tail -1)"
+echo "done: up to $(ls "$ROOT/supabase/migrations" | grep "^[0-9]\{14\}_" | tail -1)"
