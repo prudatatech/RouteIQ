@@ -155,6 +155,17 @@ test('within 200 m of a drop: deliver the lots there', () => {
   assert.deepEqual(action.kind === 'deliver' && action.lots, lots);
 });
 
+test('a drop whose goods were never picked up asks for the pickup first, not the delivery', () => {
+  const s = stop(1, { parcel: { kind: 'shipment', code: 'RTX-NEW111', status: 'assigned', purpose: 'delivery' } });
+  const at = { routeData: route([s]), currentLoc: { lat: 19.1, lng: 73 } };
+  assert.equal(kind({ ...at }), 'pickup_first');
+  // on board, or picked up on this phone (even if still queued): delivery is offered
+  assert.equal(kind({ ...at, onBoard: [item({ code: 'rtx-new111', status: 'in_transit' })] }), 'deliver');
+  assert.equal(kind({ ...at, pickedUpCodes: new Set(['RTX-NEW111']) }), 'deliver');
+  // a stop with no status never blocks
+  assert.equal(kind({ routeData: route([stop(1, { parcel: { kind: 'shipment', code: 'RTX-X' } })]), currentLoc: { lat: 19.1, lng: 73 } }), 'deliver');
+});
+
 test('a returnable consignment that is not on board is a return pickup, but only once the on-board list is known', () => {
   const s = stop(1, { parcel: { kind: 'shipment', code: 'RTX-RET111', status: 'at_hub', purpose: 'delivery' } });
   assert.equal(kind({ routeData: route([s]), currentLoc: { lat: 10, lng: 70 } }), 'return_pickup');
