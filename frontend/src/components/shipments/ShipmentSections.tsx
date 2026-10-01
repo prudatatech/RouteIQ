@@ -182,7 +182,9 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })
       queryClient.invalidateQueries({ queryKey: ['cargo'] })
-      toast.success(`Status changed to ${shipmentStatusLabel(status).toLowerCase()}`)
+      // The stop leaves its trip and the vehicle is free again
+      queryClient.invalidateQueries({ queryKey: ['routes'] })
+      toast.success(status === 'created' ? 'Taken off its vehicle. It needs a vehicle again.' : `Status changed to ${shipmentStatusLabel(status).toLowerCase()}`)
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not change the status. Try again.')),
   })
@@ -223,7 +225,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
   const unassignShipment = async () => {
     const ok = await confirm({
       title: `Take ${s.tracking_id} off its vehicle?`,
-      message: 'The shipment goes back to created, its stop leaves the trip and the driver is told. You can assign it again.',
+      message: 'The shipment goes back to Needs a vehicle, its stop leaves the trip and the driver is told. You can assign it again. If the goods were already picked up, plan a transfer instead.',
       confirmLabel: 'Take off vehicle',
     })
     if (ok) statusMutation.mutate({ id: s.id, status: 'created' })

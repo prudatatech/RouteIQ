@@ -84,7 +84,9 @@ async function tripOf(c: Consignment, row: Record<string, any>): Promise<{ trip:
   const dpIds = ((row.delivery_points ?? []) as any[]).map(d => d.id).filter(Boolean);
   if (dpIds.length === 0) return { trip: null, vehicleId: c.vehicleId };
   const { data: myStops } = await supabase.from('route_stops').select('id, route_id, delivery_point_id, sequence, status').in('delivery_point_id', dpIds);
-  const routeIds = [...new Set((myStops ?? []).map((s: any) => s.route_id))];
+  // A stop taken off the trip (the shipment was released or cancelled) no longer links the shipment to it
+  const liveStops = (myStops ?? []).filter((s: any) => s.status !== 'cancelled');
+  const routeIds = [...new Set(liveStops.map((s: any) => s.route_id))];
   if (routeIds.length === 0) return { trip: null, vehicleId: c.vehicleId };
   const { data: routes } = await supabase
     .from('routes').select('id, status, vehicle_id, depot_id, plan, total_distance_km, created_at').in('id', routeIds).neq('status', 'cancelled');
