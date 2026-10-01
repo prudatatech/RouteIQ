@@ -1068,7 +1068,6 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         await recordCustody({ shipment_id: dp.shipment_id }, input, actor, {
           via: 'complete_stop',
           stopId: stop_id,
-          impliedPickup: true,
           legacyEvidence,
           logMetadata: {
             ...(parcelVerified !== undefined ? { parcel_verified: parcelVerified } : {}),

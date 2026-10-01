@@ -166,6 +166,13 @@ describe('complete-stop and my-route use the scan', () => {
     const log = supabaseMock.rows('shipment_logs').find(l => l.status === 'delivered')!;
     expect(log.metadata_json.parcel_verified).toBe(true);
 
+    // The goods of stop-1 were never picked up: the delivery is refused until the pickup is recorded
+    const early = await request(app)
+      .post('/api/v1/telemetry/driver-ping/complete-stop')
+      .set(bearer('driver-1'))
+      .send({ stop_id: 'stop-1', received_by: 'A. Gupta' });
+    expect(early.status).toBe(409);
+    supabaseMock.rows('shipments').find(s => s.id === 's1')!.status = 'picked_up';
     const other = await request(app)
       .post('/api/v1/telemetry/driver-ping/complete-stop')
       .set(bearer('driver-1'))

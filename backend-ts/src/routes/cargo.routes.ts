@@ -422,6 +422,14 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent(
       return;
     }
 
+    // Staff may deliver goods nobody picked up, with a reason; the pickup is back-filled and flagged
+    const allowWithoutPickup = req.body.allow_without_pickup === true;
+    const pickupReason = typeof req.body.pickup_reason === 'string' ? req.body.pickup_reason.trim() : '';
+    if (allowWithoutPickup && pickupReason.length < 3) {
+      res.status(400).json({ detail: 'Give a reason (pickup_reason, at least 3 characters) for delivering without a recorded pickup' });
+      return;
+    }
+
     const { data: shipment, error } = await supabase
       .from('shipments')
       .select('id, status')
@@ -449,7 +457,7 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent(
         reason: reason || null, notes: reason ? `Proof of delivery confirmed by staff: ${reason}` : 'Proof of delivery confirmed by staff',
       },
       { id: req.user!.user_id, role: req.user!.role },
-      { via: 'verify_pod', impliedPickup: true },
+      { via: 'verify_pod', ...(allowWithoutPickup ? { backfillPickup: { reason: pickupReason } } : {}) },
     );
 
     res.json({
