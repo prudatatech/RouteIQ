@@ -171,7 +171,7 @@ export function loadText(load: VehicleActivity['load']): string | null {
 export function activitySentence(a: VehicleActivity, now: number = Date.now()): string {
   const where = a.place_name ? ` at ${a.place_name}` : ''
   if (a.state === 'offline') {
-    return a.last_seen_at ? `Offline, last heard from ${formatRelative(a.last_seen_at, now)}` : 'Offline, has never sent a position'
+    return a.last_seen_at ? `Offline, last heard from ${formatRelative(a.last_seen_at, now)}` : 'Never reported a position'
   }
   if (a.state === 'carrying') {
     return a.since ? `Carrying a load since ${formatDateTime(a.since)}` : 'Carrying a load'

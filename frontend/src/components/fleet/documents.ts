@@ -18,3 +18,13 @@ export function vehicleDocuments(v: Vehicle): DocRow[] {
     { key: 'puc', name: 'Pollution certificate (PUC)', number: v.puc_number ?? null, expiry: v.puc_expiry ?? null, url: v.puc_document_url ?? null },
   ]
 }
+
+/** The documents with neither an expiry date nor a file on record: nothing is known about them. */
+export function missingDocuments(v: Vehicle): DocRow[] {
+  return vehicleDocuments(v).filter(d => !d.expiry && !d.url)
+}
+
+/** "5 documents not uploaded" / "1 document not uploaded", or null when every document is on file. */
+export function missingDocumentsText(count: number): string | null {
+  return count > 0 ? `${count.toLocaleString('en-IN')} ${count === 1 ? 'document' : 'documents'} not uploaded` : null
+}
