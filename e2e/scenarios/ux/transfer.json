@@ -1,0 +1,2 @@
+[{"click":"button:has-text('Plan a transfer')"},{"wait":800},{"shot":"plan-transfer"},
+ {"click":"[role=dialog] button >> nth=-1"},{"wait":500},{"shot":"plan-transfer-empty-submit"}]

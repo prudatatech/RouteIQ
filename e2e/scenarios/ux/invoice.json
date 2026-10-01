@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Void')"},{"wait":800},{"shot":"void"},{"press":"Escape"},{"click":"button:has-text('Mark paid')"},{"wait":800},{"shot":"mark-paid"}]

@@ -1,0 +1,1 @@
+[{"shot":"drawer"},{"click":"button:has-text('Assign vehicle')"},{"wait":1200},{"shot":"drawer-assign"}]

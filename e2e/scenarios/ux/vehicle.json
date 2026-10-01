@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Raise SOS')"},{"wait":800},{"shot":"raise-sos"},{"press":"Escape"},{"click":"button:has-text('Move to maintenance')"},{"wait":800},{"shot":"to-maint"},{"press":"Escape"},{"click":"button:has-text('Edit')"},{"wait":900},{"shot":"edit"}]

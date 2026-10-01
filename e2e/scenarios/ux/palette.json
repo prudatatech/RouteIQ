@@ -1,0 +1,1 @@
+[{"press":"Control+k"},{"wait":600},{"shot":"p-empty"},{"fill":["input[type=search]","RTX"]},{"wait":1500},{"shot":"p-rtx"},{"fill":["input[type=search]","zzzqqq"]},{"wait":1500},{"shot":"p-none"},{"fill":["input[type=search]","Sunil"]},{"wait":1500},{"shot":"p-person"}]

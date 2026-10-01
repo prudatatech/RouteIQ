@@ -1,0 +1,2 @@
+[{"click":"button:has-text('Open a return trip')"},{"wait":800},{"shot":"open-return"},
+ {"click":"[role=dialog] button >> nth=-1"},{"wait":500},{"shot":"open-return-empty-submit"}]

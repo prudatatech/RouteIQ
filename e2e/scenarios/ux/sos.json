@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Resolve')"},{"wait":800},{"shot":"resolve"},{"press":"Escape"},{"click":"button:has-text('False alarm')"},{"wait":800},{"shot":"false-alarm"},{"press":"Escape"},{"click":"button:has-text('Return to service')"},{"wait":800},{"shot":"return-service"}]

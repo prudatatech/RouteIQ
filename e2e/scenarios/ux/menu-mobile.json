@@ -1,0 +1,1 @@
+[{"click":"[aria-label=Menu], button:has(svg.lucide-menu)"},{"wait":600},{"shot":"menu"}]

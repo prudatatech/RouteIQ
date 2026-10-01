@@ -1,0 +1,8 @@
+[{"click":"button:has-text('Change vehicle')"},{"wait":1200},{"shot":"change-vehicle"},{"press":"Escape"},
+ {"click":"button:has-text('Raise problem')"},{"wait":900},{"shot":"raise-problem"},{"press":"Escape"},
+ {"click":"button:has-text('Hold')"},{"wait":900},{"shot":"hold"},{"press":"Escape"},
+ {"click":"button:has-text('Cancel shipment')"},{"wait":900},{"shot":"cancel-shipment"},{"press":"Escape"},
+ {"click":"button:has-text('Take off vehicle')"},{"wait":900},{"shot":"take-off"},{"press":"Escape"},
+ {"click":"button:has-text('Delete')"},{"wait":900},{"shot":"delete"},{"press":"Escape"},
+ {"click":"button:has-text('Record pickup')"},{"wait":900},{"shot":"record-pickup"},{"press":"Escape"},
+ {"click":"button:has-text('Edit')"},{"wait":900},{"shot":"edit"},{"press":"Escape"}]
