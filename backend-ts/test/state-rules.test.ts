@@ -94,7 +94,10 @@ describe('PATCH /routes/:id/status', () => {
     expect((await patch('active')).status).toBe(409);
   });
 
-  it('lets a driver start their own route but nothing else', async () => {
+  it('lets a driver start their own sent route but nothing else; an unsent (pending) trip is not theirs yet', async () => {
+    expect((await patch('active', driverAuth())).status).toBe(409);
+    expect(supabaseMock.rows('routes')[0].status).toBe('pending');
+    reset({ routes: [{ id: 'route-1', vehicle_id: 'veh-1', status: 'active', started_at: null }] });
     expect((await patch('active', driverAuth())).status).toBe(200);
     reset();
     expect((await patch('cancelled', driverAuth())).status).toBe(403);
@@ -113,7 +116,13 @@ describe('POST /telemetry/driver-ping/start-route', () => {
   const start = (route_id: unknown, auth = driverAuth()) =>
     request(app).post('/api/v1/telemetry/driver-ping/start-route').set(auth).send({ route_id });
 
-  it('starts a pending route once and accepts a retry', async () => {
+  it('refuses a pending (unsent) trip', async () => {
+    expect((await start('route-1')).status).toBe(409);
+    expect(supabaseMock.rows('routes')[0].status).toBe('pending');
+  });
+
+  it('starts a sent route once and accepts a retry', async () => {
+    reset({ routes: [{ id: 'route-1', vehicle_id: 'veh-1', status: 'active', started_at: null }] });
     expect((await start('route-1')).status).toBe(200);
     expect((await start('route-1')).status).toBe(200);
     expect(supabaseMock.rows('routes')[0].status).toBe('active');

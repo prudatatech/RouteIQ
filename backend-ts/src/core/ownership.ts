@@ -8,6 +8,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from './supabase';
 import { TokenData } from './auth';
+import { HttpError } from './errors';
 
 /** Roles with fleet-wide access. Pass to requireRole(...STAFF_ROLES); superadmin always passes. */
 export const STAFF_ROLES = ['admin', 'manager'] as const;
@@ -165,4 +166,13 @@ export function requireVehicleAccess(getVehicleId: (req: Request) => string | un
       next(e);
     }
   };
+}
+
+/**
+ * A trip dispatch assigned without sending stays pending: the driver cannot see, accept or start it
+ * until dispatch sends it (which makes it active). A vendor load is not a trip of this kind.
+ */
+export async function assertTripSent(routeId: string): Promise<void> {
+  const { data: route } = await supabase.from('routes').select('status').eq('id', routeId).maybeSingle();
+  if (route?.status === 'pending') throw new HttpError(409, 'Dispatch has not sent this trip yet.');
 }

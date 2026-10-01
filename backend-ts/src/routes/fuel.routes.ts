@@ -19,9 +19,9 @@ import { idempotent } from '../core/idempotency';
 import { auditService } from '../services/audit.service';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import { cacheDeletePattern } from '../core/redis';
-import { FUEL_FLAGS, FuelInputError, resolveAmounts, type FuelFlag } from '../services/fuel-engine';
+import { FUEL_FLAGS, FuelInputError, analyzeFills, odometerProblem, resolveAmounts, type FuelFlag } from '../services/fuel-engine';
 import {
-  FUEL_LOG_COLUMNS, PAYMENT_MODES, getFleetSummary, getVehicleStats, loadLogs, loadVehicle, newestFirst, normalizeLog, recomputeVehicle,
+  FUEL_LOG_COLUMNS, PAYMENT_MODES, getFleetSummary, getVehicleStats, loadLogs, loadVehicle, newestFirst, normalizeLog, recomputeVehicle, toFill,
   type FuelLogRow, type FuelVehicle,
 } from '../services/fuel.service';
 
@@ -88,6 +88,25 @@ function checkFilledAt(iso: string, req: Request): void {
   const at = Date.parse(iso);
   if (at > Date.now() + FUTURE_SLACK_MS) throw new HttpError(400, 'The fill date cannot be in the future');
   if (!isStaff(req.user) && at < Date.now() - DRIVER_BACKDATE_MS) throw new HttpError(400, 'Fill-ups older than 7 days must be entered by the office');
+}
+
+/**
+ * Refuses (422) an odometer reading that cannot be right: below the fill before it, above the fill after it, or
+ * further than a truck drives between fills. Fills already flagged as wrong readings are not measured against, so
+ * one bad row never blocks the fills after it; staff correct or delete it (PUT or DELETE /fleet/fuel-logs/:id).
+ */
+async function assertOdometer(vehicleId: string, odometer: number, filledAt: string, excludeId?: string): Promise<void> {
+  const at = Date.parse(filledAt);
+  const logs = await loadLogs(vehicleId);
+  // Judge the stored readings afresh, so a bad row that was saved before this check existed is skipped too
+  const analysis = analyzeFills(logs.map(toFill));
+  const trusted = logs.filter(l =>
+    l.id !== excludeId && l.odometer_km != null
+    && !analysis.annotations.get(l.id)!.flags.some(f => f === 'odometer_backwards' || f === 'odometer_jump' || f === 'duplicate'));
+  const before = trusted.filter(l => Date.parse(l.filled_at) <= at).sort((a, b) => Date.parse(b.filled_at) - Date.parse(a.filled_at))[0];
+  const after = trusted.filter(l => Date.parse(l.filled_at) > at).sort((a, b) => Date.parse(a.filled_at) - Date.parse(b.filled_at))[0];
+  const problem = odometerProblem(odometer, before?.odometer_km ?? null, after?.odometer_km ?? null);
+  if (problem) throw new HttpError(422, problem);
 }
 
 /** The fuel expense that lets finance see the real fuel cost. Failing to write it does not lose the fill. */
@@ -170,6 +189,7 @@ router.post('/vehicles/:id/fuel-logs', requireAuth, idempotent('fuel_log'), asyn
     checkFilledAt(filledAt, req);
     if ((b.fill_latitude == null) !== (b.fill_longitude == null)) throw new HttpError(400, 'Send both the latitude and the longitude of the fill');
     if (b.bill_path) await assertBillUploaded(b.bill_path);
+    if (b.odometer_km != null) await assertOdometer(vehicle.id, b.odometer_km, filledAt);
 
     const { data, error } = await supabase
       .from('vehicle_fuel_logs')
@@ -261,7 +281,10 @@ router.put('/fuel-logs/:logId', ...staff, async (req: Request, res: Response) =>
       Object.assign(patch, amountsOrThrow(input));
     }
     if (b.filled_at !== undefined) { checkFilledAt(b.filled_at, req); patch.filled_at = b.filled_at; }
-    if (b.odometer_km !== undefined) patch.odometer_km = b.odometer_km;
+    if (b.odometer_km !== undefined) {
+      if (b.odometer_km != null) await assertOdometer(existing.vehicle_id, b.odometer_km, b.filled_at ?? existing.filled_at, existing.id);
+      patch.odometer_km = b.odometer_km;
+    }
     if (b.is_full_tank !== undefined) patch.is_full_tank = b.is_full_tank;
     if (b.station_name !== undefined) patch.station_name = b.station_name || null;
     if (b.payment_mode !== undefined) patch.payment_mode = b.payment_mode;

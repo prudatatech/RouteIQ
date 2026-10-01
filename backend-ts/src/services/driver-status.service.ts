@@ -30,9 +30,10 @@ interface RouteRow {
 }
 
 /**
- * The trips waiting behind the one my-route returns. my-route shows the newest active or
- * pending route that has stops, so that one is left out; the rest are listed oldest first,
- * as they were sent. A stop dispatch cancelled does not count.
+ * The trips waiting behind the one my-route returns. my-route shows the newest sent (active) trip
+ * that has stops, so that one is left out; the rest are listed oldest first, as they were sent.
+ * A trip still pending has not been sent, so the driver does not see it. A stop dispatch cancelled
+ * does not count.
  */
 export function upcomingTrips(rows: RouteRow[]): UpcomingTrip[] {
   const withStops = rows
@@ -41,7 +42,7 @@ export function upcomingTrips(rows: RouteRow[]): UpcomingTrip[] {
     .sort((a, b) => Date.parse(b.created_at ?? '') - Date.parse(a.created_at ?? ''));
   return withStops
     .slice(1)
-    .filter(r => r.status === 'pending')
+    .filter(r => r.status === 'active')
     .reverse()
     .map(r => ({ id: r.id, stops: r.stops.length, first_stop: r.stops[0].delivery_points?.name ?? null, created_at: r.created_at ?? null }));
 }
@@ -70,7 +71,7 @@ export async function loadDriverStatus(driverId: string): Promise<DriverStatus> 
         .from('routes')
         .select('id, status, created_at, route_stops(status, sequence, delivery_points(name))')
         .eq('vehicle_id', vehicle.id)
-        .in('status', ['active', 'pending'])
+        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(10),
     ]);

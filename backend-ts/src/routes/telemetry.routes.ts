@@ -5,7 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
-import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, canAccessRouteStop, canAccessManifest } from '../core/ownership';
+import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, assertTripSent, canAccessRouteStop, canAccessManifest } from '../core/ownership';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
 import { TelemetryCreateSchema } from '../schemas';
@@ -17,7 +17,7 @@ import { HttpError, sendError } from '../core/errors';
 import { notificationService } from '../services/notification.service';
 import {
   routeService, setOperatingVehicleStatus, holdVehicleAfterSos, manifestRouteStops, operatingStatusFor,
-  releaseVehicleLoad, OPEN_MANIFEST_STATUSES,
+  releaseVehicleLoad, OPEN_MANIFEST_STATUSES, VEHICLE_DOWN_SOS_TYPES,
 } from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
 import { parseCoordinate } from '../core/validate';
@@ -117,6 +117,18 @@ router.post('/sos/:id/cancel', requireAuth, requireRole('driver', ...STAFF_ROLES
   try {
     const byDriver = req.user!.role === 'driver';
     const { alert, changed } = await transitionSos(req.params.id, 'cancelled', byDriver ? { driverId: req.user!.user_id } : {});
+    if (changed) {
+      // A serious accident or breakdown put the truck in maintenance and the goods on hold: a false alarm undoes that
+      try {
+        const { data: full } = await supabase.from('sos_alerts').select('alert_type, severity').eq('id', alert.id).maybeSingle();
+        if (full?.severity === 'serious' && (VEHICLE_DOWN_SOS_TYPES as readonly string[]).includes(String(full.alert_type))) {
+          const { releaseSosHold } = await import('../services/cargo/exception.service');
+          await releaseSosHold(alert, { id: req.user!.user_id, role: req.user!.role });
+        }
+      } catch (e) {
+        console.error('[telemetry] Releasing the hold of a cancelled SOS failed:', e);
+      }
+    }
     if (changed && byDriver) {
       try {
         const { data: vehicle } = alert.vehicle_id
@@ -730,6 +742,7 @@ router.post('/driver-ping/accept-route', requireAuth, idempotent('accept-route')
       res.status(403).json({ detail: 'Not authorized for this trip' });
       return;
     }
+    await assertTripSent(route_id);
     const actor = { id: req.user!.user_id, role: req.user!.role };
     let accepted = 0;
     for (const ref of await routeConsignments(route_id)) {
@@ -775,6 +788,7 @@ router.post('/driver-ping/start-route', requireAuth, async (req: Request, res: R
       }
       await setOperatingVehicleStatus(manifest.vehicle_id, 'on_route');
     } else {
+      await assertTripSent(route_id);
       await routeService.changeStatus(route_id, 'active');
     }
 
@@ -1199,7 +1213,8 @@ router.get('/driver-ping/my-route', requireAuth, async (req: Request, res: Respo
       .from('routes')
       .select('*, route_stops(*, delivery_points(*)), depots(*)')
       .eq('vehicle_id', vehicle.id)
-      .in('status', ['active', 'pending'])
+      // A pending trip has not been sent by dispatch yet: the driver sees it only once it is active
+      .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
