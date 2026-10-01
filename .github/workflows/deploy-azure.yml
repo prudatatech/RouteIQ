@@ -18,7 +18,7 @@ name: Deploy to Azure
 on:
   push:
     branches: [main]
-    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**', '.github/workflows/deploy-azure.yml']
+    paths: ['backend-ts/**', 'ml-service/**', 'frontend/**', 'infra/**', 'supabase/migrations/**', '.github/workflows/deploy-azure.yml']
   workflow_dispatch:
     inputs:
       api:
@@ -40,6 +40,29 @@ permissions:
   actions: read
 
 jobs:
+  # LIVE database first: pending supabase/migrations files, dry-run then applied (scripts/db-migrate.sh).
+  # A failure stops the deploy before any app changes. Skipped until the production DATABASE_URL secret
+  # is set. Only this job uses the "production" environment: the Azure jobs keep their branch-based login.
+  migrate:
+    if: ${{ vars.AZURE_CLIENT_ID != '' }}
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: db-migrate-live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply pending migrations to the live database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "::notice::No DATABASE_URL secret in the production environment yet; no migrations applied."
+            exit 0
+          fi
+          bash scripts/db-migrate.sh --dry-run
+          bash scripts/db-migrate.sh
+
   changes:
     if: ${{ vars.AZURE_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
@@ -89,7 +112,7 @@ jobs:
           { echo "api=$api"; echo "ml=$ml"; echo "web=$web"; } >> "$GITHUB_OUTPUT"
 
   api:
-    needs: changes
+    needs: [migrate, changes]
     if: ${{ needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
@@ -109,7 +132,7 @@ jobs:
         run: ./infra/deploy.sh --images-only --api-only
 
   ml:
-    needs: changes
+    needs: [migrate, changes]
     if: ${{ needs.changes.outputs.ml == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
@@ -128,7 +151,7 @@ jobs:
         run: ./infra/deploy.sh --images-only --ml-only
 
   web:
-    needs: changes
+    needs: [migrate, changes]
     if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
@@ -147,4 +170,9 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Build and upload the web app
+        env:
+          # The live Supabase project's public URL and publishable key (repository variables). Unset, the
+          # build falls back to frontend/.env.production, which is the TEST project.
+          LIVE_SUPABASE_URL: ${{ vars.LIVE_SUPABASE_URL }}
+          LIVE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LIVE_SUPABASE_PUBLISHABLE_KEY }}
         run: ./infra/deploy.sh --images-only --web-only

@@ -19,7 +19,11 @@ PSQL="${PSQL:-psql}"
 
 run() { $PSQL "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -At "$@"; }
 
-run -c "CREATE TABLE IF NOT EXISTS public.app_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());" >/dev/null
+run >/dev/null <<'SQL'
+CREATE TABLE IF NOT EXISTS public.app_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE public.app_migrations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.app_migrations FROM anon, authenticated;
+SQL
 applied="$(run -c "SELECT name FROM public.app_migrations")"
 
 pending=()

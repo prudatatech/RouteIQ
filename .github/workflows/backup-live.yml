@@ -1,0 +1,49 @@
+name: Live database backup
+# Every night: a full dump of the LIVE database (public, auth and storage schemas, with data), encrypted
+# with BACKUP_PASSPHRASE and kept as a workflow artifact for 30 days. The repository is public, so the
+# dump is never stored unencrypted. It is plain pg_dump output: it restores into any Postgres or Supabase,
+# on any cloud (docs/DEPLOYMENT.md, "Restore a backup").
+#
+# Secrets in the "production" environment: DATABASE_URL (the live database) and BACKUP_PASSPHRASE.
+# Skipped, with a notice, until both are set.
+on:
+  schedule:
+    - cron: '30 20 * * *'   # 02:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Dump and encrypt
+        id: dump
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [[ -z "$DATABASE_URL" || -z "$BACKUP_PASSPHRASE" ]]; then
+            echo "::notice::DATABASE_URL or BACKUP_PASSPHRASE is not set in the production environment; no backup taken."
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          set -euo pipefail
+          name="margix-live-$(date -u +%Y%m%dT%H%M%SZ)"
+          docker run --rm -e PGURL="$DATABASE_URL" postgres:17-alpine \
+            sh -c 'pg_dump "$PGURL" --format=custom --no-owner --no-privileges --schema=public --schema=auth --schema=storage' > "$name.dump"
+          test -s "$name.dump"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 -o "$name.dump.gpg" "$name.dump"
+          rm -f "$name.dump"
+          echo "file=$name.dump.gpg" >> "$GITHUB_OUTPUT"
+          ls -lh "$name.dump.gpg"
+      - name: Keep the backup
+        if: steps.dump.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-db-backup
+          path: ${{ steps.dump.outputs.file }}
+          retention-days: 30
+          if-no-files-found: error

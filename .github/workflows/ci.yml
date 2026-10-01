@@ -1,10 +1,11 @@
 name: margixindia CI
 
-# Verification only. Deploys are handled by the hosting platforms
-# (backend-ts and ml-service on Railway, frontend on Vercel).
+# Verification only. It runs on every push to test and main and on every pull request; a pull request
+# into main cannot merge until it passes (branch protection). Deploys: test -> Vercel and Railway,
+# main -> Azure (deploy-azure.yml). See docs/DEPLOYMENT.md, "Environments".
 on:
   push:
-    branches: [main]
+    branches: [main, test]
   pull_request:
   workflow_dispatch:   # run the checks on any branch from the Actions tab or `gh workflow run ci.yml --ref <branch>`
 

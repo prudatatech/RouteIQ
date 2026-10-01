@@ -217,6 +217,16 @@ if [[ $DO_WEB -eq 1 ]]; then
   log "Building frontend against $API_URL"
   ( cd "$ROOT_DIR/frontend"
     npm ci
+    # Azure is the LIVE environment: build against the live Supabase project when its public URL and
+    # publishable key are given (GitHub variables LIVE_SUPABASE_URL / LIVE_SUPABASE_PUBLISHABLE_KEY).
+    # Shell variables beat frontend/.env.production, which names the TEST project.
+    if [[ -n "${LIVE_SUPABASE_URL:-}" && -n "${LIVE_SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+      log "Web app uses the live Supabase project $LIVE_SUPABASE_URL"
+      export VITE_SUPABASE_URL="$LIVE_SUPABASE_URL" VITE_SUPABASE_DIRECT_URL="$LIVE_SUPABASE_URL"
+      export VITE_SUPABASE_ANON_KEY="$LIVE_SUPABASE_PUBLISHABLE_KEY" VITE_SUPABASE_PUBLISHABLE_KEY="$LIVE_SUPABASE_PUBLISHABLE_KEY"
+    else
+      warn "LIVE_SUPABASE_URL is not set: the web app is built against frontend/.env.production (the TEST project)"
+    fi
     VITE_API_URL="$API_URL" npm run build )
   log "Deploying frontend to Static Web App $WEB_APP"
   # The token is fetched now and handed over through the environment: never written to disk.
