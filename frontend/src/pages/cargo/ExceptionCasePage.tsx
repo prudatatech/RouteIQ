@@ -20,7 +20,7 @@ import { CaseTimeline } from '@/components/cargo/CustodyTimeline'
 import ExceptionActionModal from '@/components/cargo/ExceptionActionModal'
 import { ClaimDrawerById } from '@/components/cargo/ClaimDrawer'
 import {
-  ACTION_META, PANEL_ACTIONS, claimTypeLabel, exceptionActions, exceptionTypeLabel, isActiveTransfer, positionOf, resolutionLabel,
+  ACTION_META, PANEL_ACTIONS, claimTypeLabel, exceptionActions, exceptionTypeLabel, isActiveTransfer, isOpenException, positionOf, resolutionLabel,
   slaState, sourceLabel, statusMoves, type ActionValues, type PanelAction,
 } from '@/components/cargo/logic'
 
@@ -224,11 +224,14 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
               label: 'Owner',
               value: (
                 <span className="flex flex-wrap items-center gap-2">
-                  {kase.owner_id ? <span>{kase.owner?.full_name ?? 'Assigned'}{kase.owner_id === myId ? ' (you)' : ''}</span> : <span className="text-warning">Unassigned</span>}
-                  {kase.owner_id !== myId && myId && (
+                  {kase.owner_id ? <span>{kase.owner?.full_name ?? 'Assigned'}{kase.owner_id === myId ? ' (you)' : ''}</span> : <span className={isOpenException(kase.status) ? 'text-warning' : 'text-muted'}>Unassigned</span>}
+                  {/* A resolved or closed case no longer needs an owner */}
+                  {isOpenException(kase.status) && kase.owner_id !== myId && myId && (
                     <Button size="sm" variant="secondary" icon={<UserCheck size={14} />} disabled={act.isPending} onClick={takeOwnership}>Take it</Button>
                   )}
-                  <Button size="sm" variant="ghost" icon={<UserPlus size={14} />} onClick={() => setAssigning(true)}>Assign</Button>
+                  {isOpenException(kase.status) && (
+                    <Button size="sm" variant="ghost" icon={<UserPlus size={14} />} onClick={() => setAssigning(true)}>Assign</Button>
+                  )}
                 </span>
               ),
             },

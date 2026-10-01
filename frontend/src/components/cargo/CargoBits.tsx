@@ -81,10 +81,16 @@ export function PiecesBar({ pieces, className }: { pieces: Pieces; className?: s
 }
 
 /**
- * Horizontal steps that wrap on narrow screens: done (tick), current (filled), to do (empty),
+ * Horizontal steps that wrap on narrow screens: done (tick, or its number when `numbered`), current (filled), to do (empty),
  * stopped (cross, for cancelled, rejected or withdrawn).
  */
-export function Steps({ steps, label, className }: { steps: { key: string; label: string; state: StepState }[]; label: string; className?: string }) {
+export function Steps({ steps, label, className, numbered = false }: {
+  steps: { key: string; label: string; state: StepState }[]
+  label: string
+  className?: string
+  /** Show the step number in every circle, done ones included, instead of a tick. */
+  numbered?: boolean
+}) {
   return (
     <ol aria-label={label} className={clsx('flex flex-wrap items-center gap-x-2 gap-y-2', className)}>
       {steps.map((step, i) => (
@@ -99,7 +105,7 @@ export function Steps({ steps, label, className }: { steps: { key: string; label
             )}
             aria-hidden="true"
           >
-            {step.state === 'done' ? <Check size={14} /> : step.state === 'stopped' ? <X size={14} /> : i + 1}
+            {step.state === 'done' && !numbered ? <Check size={14} /> : step.state === 'stopped' ? <X size={14} /> : i + 1}
           </span>
           <span className={clsx('text-sm', step.state === 'todo' ? 'text-muted' : 'font-medium text-text')}>
             {step.label}

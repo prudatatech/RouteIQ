@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { AlertTriangle, ShieldCheck, X } from 'lucide-react'
 import {
-  Button, Checkbox, DataTable, SearchInput, Select, Stat, StatusPill, buttonClasses, statusToLabel, useUrlState, type Column,
+  Button, Checkbox, DataTable, ExportCsvButton, SearchInput, Select, Stat, StatusPill, buttonClasses, statusToLabel, useUrlState, type Column,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
-import { formatPieces, formatRelative } from '@/utils/display'
+import { formatDateTime, formatPieces, formatRelative } from '@/utils/display'
+import type { CsvColumn } from '@/utils/csv'
 import {
   EXCEPTION_STATUSES, EXCEPTION_TYPES, OPEN_EXCEPTION_FILTER, SEVERITIES, cargoKeys, exceptionsAPI, type CargoException, type ExceptionFilters,
 } from '@/services/cargo'
@@ -24,6 +25,19 @@ function casePosition(e: CargoException) {
   if (e.lat != null && e.lng != null && !(e.lat === 0 && e.lng === 0)) return { lat: e.lat, lng: e.lng }
   return positionOf(e.vehicle)
 }
+
+const CSV_COLUMNS: CsvColumn[] = [
+  { key: 'case', header: 'Case' },
+  { key: 'type', header: 'Type' },
+  { key: 'severity', header: 'Severity' },
+  { key: 'status', header: 'Status' },
+  { key: 'deadline', header: 'Deadline' },
+  { key: 'shipments', header: 'Shipments' },
+  { key: 'pieces', header: 'Pieces affected' },
+  { key: 'vehicle', header: 'Vehicle' },
+  { key: 'owner', header: 'Owner' },
+  { key: 'raised', header: 'Raised' },
+]
 
 /** The exception queue: open cases ordered by deadline, with filters and a map. */
 export default function ExceptionsTab() {
@@ -142,6 +156,19 @@ export default function ExceptionsTab() {
     },
   ]
 
+  const csvRows = rows.map(e => ({
+    case: e.code,
+    type: exceptionTypeLabel(e.type),
+    severity: SEVERITY_LABELS[e.severity] ?? e.severity,
+    status: statusToLabel(e.status, 'case'),
+    deadline: isOpenException(e.status) && e.sla_due_at ? formatDateTime(e.sla_due_at) : '',
+    shipments: e.items.map(consignmentCode).join(' '),
+    pieces: e.items.reduce((n, i) => n + (i.pieces_affected ?? 0), 0),
+    vehicle: e.vehicle?.plate_number ?? '',
+    owner: e.owner_id ? (e.owner?.full_name ?? 'Assigned') : 'Unassigned',
+    raised: formatDateTime(e.created_at),
+  }))
+
   const hasFilters = !!(type || severity || overdue || vehicleId || search || status !== ACTIVE)
 
   return (
@@ -192,6 +219,7 @@ export default function ExceptionsTab() {
             Clear filters
           </Button>
         )}
+        <span className="ml-auto"><ExportCsvButton name="cases" rows={csvRows} columns={CSV_COLUMNS} /></span>
       </div>
 
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_400px]">

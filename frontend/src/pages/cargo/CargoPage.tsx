@@ -1,17 +1,26 @@
 import { useState } from 'react'
+import { Navigate, useLocation } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { Button, Page, PageHeader, TabPanel, Tabs, useTabParam, type TabItem } from '@/components/ui'
 import ExceptionsTab from '@/components/cargo/ExceptionsTab'
 import TransfersTab from '@/components/cargo/TransfersTab'
 import HubsTab from '@/components/cargo/HubsTab'
-import ClaimsTab from '@/components/cargo/ClaimsTab'
 import RaiseExceptionModal from '@/components/cargo/RaiseExceptionModal'
 
-const TAB_IDS = ['exceptions', 'transfers', 'hubs', 'claims'] as const
+const TAB_IDS = ['exceptions', 'transfers', 'hubs'] as const
 type TabId = (typeof TAB_IDS)[number]
 
-/** The cargo control tower: exception cases, transfers between vehicles, hub stock and claims. */
+/**
+ * Problems: cases, transfers between vehicles and hub stock. Claims live in Money, one place for the
+ * table; the old /cargo?tab=claims links (with ?open=) still land on it.
+ */
 export default function CargoPage() {
+  const { search } = useLocation()
+  if (new URLSearchParams(search).get('tab') === 'claims') return <Navigate to={`/money${search}`} replace />
+  return <ProblemsPage />
+}
+
+function ProblemsPage() {
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'exceptions')
   const [raising, setRaising] = useState(false)
 
@@ -19,7 +28,6 @@ export default function CargoPage() {
     { id: 'exceptions', label: 'Problems' },
     { id: 'transfers', label: 'Transfers' },
     { id: 'hubs', label: 'Hubs' },
-    { id: 'claims', label: 'Claims' },
   ]
 
   return (
@@ -35,7 +43,6 @@ export default function CargoPage() {
         {tab === 'exceptions' && <ExceptionsTab />}
         {tab === 'transfers' && <TransfersTab />}
         {tab === 'hubs' && <HubsTab />}
-        {tab === 'claims' && <ClaimsTab />}
       </TabPanel>
       {raising && <RaiseExceptionModal open onClose={() => setRaising(false)} />}
     </Page>

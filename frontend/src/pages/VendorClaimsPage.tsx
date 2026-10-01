@@ -28,7 +28,7 @@ function ClaimDetail({ claim, loadId, onClose, onChanged }: { claim: CargoClaim;
       footer={<Button onClick={onClose}>Close</Button>}
     >
       <div className="space-y-5">
-        <Steps steps={claimSteps(claim.status)} label="Claim progress" />
+        <Steps steps={claimSteps(claim.status)} label="Claim progress" numbered />
         <p className="text-sm text-text">{claimStatusText(claim)}</p>
         <DetailList
           items={[
