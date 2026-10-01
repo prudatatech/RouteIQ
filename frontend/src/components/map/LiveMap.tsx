@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { marketplaceAPI, routesAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
@@ -336,7 +337,7 @@ export default function LiveMap({
           {isStaff && routeIncidents && (routeIncidents.configured || isSuperadmin) && (
             <p className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-muted shadow-raised">
               {!routeIncidents.configured
-                ? 'Live traffic is not available. Add a TomTom key in the server settings.'
+                ? <>Live traffic isn't set up. <Link to="/admin/settings" className="font-medium text-brand hover:underline">Open Settings</Link></>
                 : routeIncidents.incidents.length === 0
                   ? 'No traffic incidents on active trips.'
                   : `${routeIncidents.incidents.length.toLocaleString('en-IN')} traffic ${routeIncidents.incidents.length === 1 ? 'incident' : 'incidents'} on active trips.`}

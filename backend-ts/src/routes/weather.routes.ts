@@ -51,7 +51,7 @@ router.get('/route/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (
     const point = path.length === 1 ? path[0] : midpoint(path[0], path[path.length - 1]);
     const w = await getWeather(point);
     if (!w.configured) {
-      res.json({ configured: false, available: false, reason: 'Weather is not set up. Add an OpenWeather key to turn it on.' });
+      res.json({ configured: false, available: false, reason: 'Weather isn\'t set up.' });
     } else if (!isConditions(w)) {
       res.json({ configured: true, available: false, reason: 'The weather service did not answer. Try again in a few minutes.' });
     } else {

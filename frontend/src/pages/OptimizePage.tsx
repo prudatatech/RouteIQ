@@ -24,16 +24,16 @@ import type { ShipmentRow } from '@/components/shipments/types'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
-  { value: 'ortools', label: 'Standard planner', description: 'Plans with OR-Tools, the default.' },
-  { value: 'ga', label: 'Alternative planner', description: 'Plans with a genetic algorithm. Try it if the standard plan is not good enough.' },
+  { value: 'ortools', label: 'Best route (exact)', description: 'The default. Works out the cheapest way to cover the stops.', technical: 'OR-Tools' },
+  { value: 'ga', label: 'Best route (fast search)', description: 'Try it if the first plan is not good enough.', technical: 'Genetic algorithm' },
 ] as const
 
 // Names for the algorithm the backend reports it ran, including its greedy fallback.
 const ALGORITHM_LABELS: Record<string, string> = {
-  ortools: 'OR-Tools',
-  ga: 'Genetic algorithm',
-  greedy: 'Greedy (fallback)',
-  'cheapest-insertion+2opt': 'Cheapest insertion + 2-opt (built in)',
+  ortools: 'Best route (exact)',
+  ga: 'Best route (fast search)',
+  greedy: 'Quick plan (fallback)',
+  'cheapest-insertion+2opt': 'Quick plan (built in)',
 }
 
 interface Vehicle {
@@ -452,12 +452,13 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
           {!routeIdToReoptimize && (
             <Card padded className="space-y-5">
               <div>
-                <h2 className="mb-2 text-sm font-medium text-text">Algorithm</h2>
-                <div role="radiogroup" aria-label="Algorithm" className="space-y-2">
+                <h2 className="mb-2 text-sm font-medium text-text">How to plan</h2>
+                <div role="radiogroup" aria-label="How to plan" className="space-y-2">
                   {ALGORITHM_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
+                      title={opt.technical}
                       role="radio"
                       aria-checked={algorithm === opt.value}
                       onClick={() => setAlgorithm(opt.value)}
@@ -626,7 +627,7 @@ export default function OptimizePage({ embedded = false, initialShipmentIds, onR
                     <Stat label="ETA" value={formatMinutes(result.new_eta_minutes ?? result.routes?.[0]?.total_duration_minutes ?? 0)} />
                     <Stat label="Fuel" value={`${(result.total_fuel_liters ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} L`} />
                     <Stat label="Savings" value={result.estimated_savings_pct != null ? `${result.estimated_savings_pct.toFixed(1)}%` : '—'} />
-                    <Stat label="Algorithm used" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
+                    <Stat label="Planned with" value={result.algorithm ? (ALGORITHM_LABELS[result.algorithm] ?? result.algorithm) : '—'} />
                   </div>
 
                   <SavingsStats
