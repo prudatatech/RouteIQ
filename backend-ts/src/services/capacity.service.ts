@@ -904,7 +904,7 @@ export const capacityService = {
 
       notify(() => notificationService.sendNotification(
         bid.vendor_id,
-        'Approved',
+        'Bid approved',
         `Your bid of ${formatINR(bid.bid_amount)} for ${formatKg(bid.weight_kg)} was approved. The truck has been routed to your pickup.`,
         'bid_accepted',
         { bid_id: bid.id, shipment_id: shipmentId, window_id: windowId }
@@ -921,7 +921,7 @@ export const capacityService = {
       for (const lost of losingBids ?? []) {
         notify(() => notificationService.sendNotification(
           lost.vendor_id,
-          'Not selected',
+          'Bid not selected',
           'Another bid was accepted for this truck. Watch Live Corridors for new capacity.',
           'bid_lost',
           { bid_id: lost.id }

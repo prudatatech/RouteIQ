@@ -424,6 +424,10 @@ export default function RequestsPage() {
         </div>
       </PageHeader>
 
+      <p className="text-sm text-muted">
+        Shipments that staff create go straight to <Link to="/shipments" className="font-medium text-brand hover:underline">Shipments</Link> and do not appear here.
+      </p>
+
       {next && (
         <Alert
           tone="success"

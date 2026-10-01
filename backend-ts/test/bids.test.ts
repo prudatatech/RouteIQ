@@ -271,7 +271,7 @@ describe('awarding a bid', () => {
     const types = supabaseMock.rows('notifications').map(n => `${n.user_id}:${n.type}`).sort();
     expect(types).toEqual(['driver-1:cargo_assigned', 'vendor-1:bid_accepted', 'vendor-2:bid_lost']);
     const titles = Object.fromEntries(supabaseMock.rows('notifications').map(n => [n.type, n.title]));
-    expect(titles).toMatchObject({ bid_accepted: 'Approved', bid_lost: 'Not selected' });
+    expect(titles).toMatchObject({ bid_accepted: 'Bid approved', bid_lost: 'Bid not selected' });
     expect(supabaseMock.rows('notifications').find(n => n.type === 'bid_accepted')?.body).toContain('₹1,500 for 500 kg');
   });
 
