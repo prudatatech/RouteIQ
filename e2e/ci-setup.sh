@@ -23,7 +23,7 @@ EOF
 
 (cd "$HERE" && supabase start -x studio,edge-runtime,logflare,vector,imgproxy,supavisor,postgres-meta,mailpit)
 
-psql_db() { docker exec -i "$DB_CONTAINER" psql -q -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"; }
+psql_db() { docker exec -i "$DB_CONTAINER" psql -q -U supabase_admin -d postgres -v ON_ERROR_STOP=1 "$@"; }  # owns the default privileges in the dump
 
 # The dump is the public schema only; its functions call these extensions.
 psql_db <<'SQL'
