@@ -11,6 +11,10 @@ import { InvoiceService } from '../src/services/invoice.service';
 import { rupeesInWords } from '../src/core/words';
 import { ID, auth, cargoWorld, one } from './support/cargo-world';
 
+/** Today's date in India (the app's calendar), not UTC: the two differ between 18:30 and 24:00 UTC. */
+const indiaDay = (offsetDays = 0) => new Date(Date.now() + 5.5 * 3_600_000 + offsetDays * 86_400_000).toISOString().slice(0, 10);
+
+
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
 const DAY = 86_400_000;
@@ -82,7 +86,7 @@ describe('paying and voiding', () => {
   const void_ = (body: object) => request(app).put(api(`/finance/invoices/${id}/void`)).set(auth.admin()).send(body);
 
   it('records method, reference and date, and tells the vendor', async () => {
-    const res = await pay({ method: 'upi', reference: 'UTR 4455', paid_on: new Date().toISOString().slice(0, 10) });
+    const res = await pay({ method: 'upi', reference: 'UTR 4455', paid_on: indiaDay() });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('invoices')[0]).toMatchObject({ status: 'paid', payment_method: 'upi', payment_reference: 'UTR 4455' });
     expect(supabaseMock.rows('invoices')[0].paid_at).toBeTruthy();
@@ -100,7 +104,7 @@ describe('paying and voiding', () => {
   });
 
   it('keeps an earlier payment date the staff entered', async () => {
-    const day = new Date(Date.now() - 0).toISOString().slice(0, 10);
+    const day = indiaDay();
     const res = await pay({ method: 'cheque', reference: '000123', paid_on: day });
     expect(res.status).toBe(200);
     expect(res.body.payment_reference).toBe('000123');

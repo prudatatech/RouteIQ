@@ -23,6 +23,7 @@ import { sendSms, smsConfigured } from '../services/sms.service';
 import { notificationService } from '../services/notification.service';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 
@@ -552,6 +553,7 @@ router.put('/driver/profile', requireAuth, async (req: Request, res: Response) =
     if (!existingVehicle) {
       // Create a new vehicle for the driver
       const { error: insertErr } = await supabase.from('vehicles').insert({
+        ...carrierStamp(),
         id: uuidv4(),
         plate_number: `TEMP-${userId.substring(0, 6).toUpperCase()}`,
         vehicle_type: normalizedEnumType || 'truck', // Must be valid enum

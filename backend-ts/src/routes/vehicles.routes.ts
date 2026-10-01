@@ -25,6 +25,8 @@ import { closeOpenJobsForVehicle } from '../services/maintenance.service';
 import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
 import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
+import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeKey, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
@@ -109,12 +111,12 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     // Scope the key: drivers get only their own vehicles
     const isDriver = req.user!.role === 'driver';
     const cacheKey = isDriver
-      ? `vehicles:list:driver:${req.user!.user_id}:${skip}:${limit}`
-      : `vehicles:list:staff:${status}:${skip}:${limit}`;
+      ? `vehicles:list:driver:${req.user!.user_id}:${scopeKey()}:${skip}:${limit}`
+      : `vehicles:list:staff:${scopeKey()}:${status}:${skip}:${limit}`;
     const cached = await cacheGet(cacheKey);
     if (cached) { res.json(cached); return; }
 
-    let query = supabase.from('vehicles').select('*');
+    let query = scopeQuery(supabase.from('vehicles').select('*'), OWNED.carrier);
 
     if (isDriver) {
       query = query.eq('driver_id', req.user!.user_id);
@@ -148,7 +150,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       return;
     }
 
-    const insertData: any = { ...parsed.data };
+    const insertData: any = { ...carrierStamp(), ...parsed.data };
 
     // If driver details are provided, link (or create) the driver user.
     // A saved draft (archived) is not assigned to anyone yet, so it links no driver.
@@ -217,7 +219,7 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
     // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags.
     // The two reads are independent.
     const [{ data: vehicles, error }, onTrip] = await Promise.all([
-      supabase.from('vehicles').select('id, status, plate_number'),
+      scopeQuery(supabase.from('vehicles').select('id, status, plate_number'), OWNED.carrier),
       vehicleIdsOnActiveTrip(),
     ]);
 
@@ -402,10 +404,11 @@ router.get('/:vehicle_id', requireAuth, async (req: Request, res: Response) => {
       res.status(403).json({ detail: 'Not authorized to view this vehicle' });
       return;
     }
-    const { data: vehicle, error } = await supabase
+    // Another company's vehicle is a 404, the same as one that does not exist
+    const { data: vehicle, error } = await scopeQuery(supabase
       .from('vehicles')
       .select('*')
-      .eq('id', req.params.vehicle_id)
+      .eq('id', req.params.vehicle_id), OWNED.carrier)
       .single();
 
     if (error || !vehicle) {
@@ -630,6 +633,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     const body = description || (byDriver ? 'Driver triggered SOS emergency alert' : 'Staff raised an SOS emergency alert');
 
     const { data: alert, error } = await supabase.from('sos_alerts').insert({
+      ...carrierStamp(),
       driver_id: byDriver ? req.user!.user_id : (vehicle?.driver_id ?? null),
       vehicle_id: req.params.vehicle_id,
       alert_type: alertType,

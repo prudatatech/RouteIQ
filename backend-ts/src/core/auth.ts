@@ -17,6 +17,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtHeader, JwtPayload, SignOptions } from 'jsonwebtoken';
 import { settings } from './config';
 import { supabase } from './supabase';
+import { attachOrgContext, isOrgBlocked } from './org-context';
+import { HttpError } from './errors';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -276,10 +278,28 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   try {
     req.user = await authenticateToken(token);
-    next();
   } catch (err) {
     if (err instanceof AuthError || err instanceof jwt.JsonWebTokenError) {
       res.status(401).json({ detail: 'Invalid or expired token' });
+      return;
+    }
+    console.error('[Auth] Verification error:', err);
+    res.status(503).json({ detail: 'Authentication temporarily unavailable' });
+    return;
+  }
+
+  try {
+    // Which organisation the caller acts for (X-Org-Id, else their only or first company)
+    const ctx = await attachOrgContext(req, req.user.user_id, req.user.role);
+    // A suspended or rejected organisation can still see itself (/org, /orgs) but does no work
+    if (isOrgBlocked(ctx) && !req.originalUrl.startsWith('/api/v1/org')) {
+      res.status(403).json({ detail: `Your organisation is ${ctx.org!.status}. Contact the platform team.` });
+      return;
+    }
+    next();
+  } catch (err) {
+    if (err instanceof HttpError) {
+      res.status(err.status).json({ detail: err.message });
       return;
     }
     console.error('[Auth] Verification error:', err);

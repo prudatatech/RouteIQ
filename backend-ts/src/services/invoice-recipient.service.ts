@@ -16,7 +16,8 @@
  * so history is not rewritten.
  */
 import { supabase } from '../core/supabase';
-import { stateOf } from '../core/gst';
+import { GST_STATES, stateCodeByName, stateOf } from '../core/gst';
+import { customerDisplayName } from '../core/customer-name';
 import { finalDeliveryPoint } from '../core/destination';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
 import type { InvoiceParty } from './invoice-detail.service';
@@ -53,8 +54,23 @@ async function vendorParty(vendorId: string): Promise<InvoiceParty> {
 }
 
 async function customerParty(customerId: string): Promise<InvoiceParty> {
-  const { data: customer } = await supabase.from('customers').select('id, full_name, company_name, phone').eq('id', customerId).maybeSingle();
-  return { ...UNKNOWN_PARTY, kind: 'customer', id: customerId, name: clean(customer?.company_name) ?? clean(customer?.full_name), phone: customer?.phone ?? null };
+  const { data: customer } = await supabase
+    .from('customers').select('id, full_name, company_name, phone, gstin, email, billing_address, city, state, pincode').eq('id', customerId).maybeSingle();
+  const gstin = gstinOf(customer?.gstin);
+  // The customer's own profile: the GSTIN names the state, else the state they chose. Nothing is invented
+  // for a field they have not filled in, so a customer with no GSTIN is still billed with the place of supply unknown.
+  const fromGstin = stateOf(gstin);
+  const chosen = clean(customer?.state);
+  const chosenCode = stateCodeByName(chosen);
+  const stateCode = fromGstin.code ?? chosenCode;
+  const address = [customer?.billing_address, customer?.city, chosenCode ? GST_STATES[chosenCode] : chosen, customer?.pincode]
+    .map(clean).filter(Boolean).join(', ') || null;
+  return {
+    ...UNKNOWN_PARTY, kind: 'customer', id: customerId,
+    name: customer ? customerDisplayName(customer) : null,
+    gstin, address, phone: customer?.phone ?? null, email: clean(customer?.email),
+    state_code: stateCode, state: fromGstin.name ?? (chosenCode ? GST_STATES[chosenCode] : null),
+  };
 }
 
 /** The consignee of a shipment or lot, with the address of its drop. Null when no consignee is named. */

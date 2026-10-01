@@ -102,6 +102,7 @@ describe('menu badge counts', () => {
     kyc: { count: 3 },
     bids: { count: 2 },
     unpriced: { count: 9 },
+    payment_reports: { count: 2 },
   }
 
   it('turns the Today queues into counts for sections and links', () => {
@@ -112,7 +113,7 @@ describe('menu badge counts', () => {
       fleet: 1, vehicleRequests: 1,
       people: 10, documents: 7, kyc: 3,
       returnTrips: 6, bids: 2, pendingPartners: 4,
-      money: 9,
+      money: 11,
     })
   })
 

@@ -10,17 +10,23 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { resolveIndianDateRange, indianDateKey, indianDayStart } from '../core/istDate';
-import { InvoiceService, announceInvoice } from '../services/invoice.service';
+import { InvoiceService } from '../services/invoice.service';
+import { markInvoicePaid, parsePayment } from '../services/invoice-payment.service';
 import { auditService } from '../services/audit.service';
 import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
 import { getCachedPaymentTermsDays, getCompanyProfile, saveCompanyProfile } from '../services/company.service';
+import { answerReport, confirmReport, listReports, openReportCounts, rejectReport } from '../services/invoice-reports.service';
+import { idempotent } from '../core/idempotency';
 import { setPriceAndInvoice } from '../services/invoice-pricing.service';
 import { partyFromSnapshot, resolveBillTo } from '../services/invoice-recipient.service';
+import { customerDisplayName } from '../core/customer-name';
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
   EXPENSE_CATEGORIES, ExpenseCategory, getFinanceSettings, getFinanceSummary, getUnpricedDeliveries, selectIn, setFuelPrice,
 } from '../services/finance.service';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 // Money is for admin and superadmin; managers run operations only
@@ -59,7 +65,7 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
     const monthStart = indianDayStart(`${monthKey}-01`);
     const [terms, { data, error }] = await Promise.all([
       getCachedPaymentTermsDays(),
-      supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']),
+      scopeQuery(supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']), OWNED.invoice),
     ]);
     if (error) throw new Error(`Failed to summarise invoices: ${error.message}`);
     let outstanding = 0, outstandingCount = 0, overdue = 0, overdueCount = 0, collected = 0, collectedCount = 0;
@@ -73,7 +79,9 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
       }
     }
     const round = (n: number) => Math.round(n * 100) / 100;
+    const reports = await openReportCounts();
     res.json({
+      open_reports: reports.open, open_payment_reports: reports.payments, open_query_reports: reports.queries,
       outstanding: round(outstanding), outstanding_count: outstandingCount,
       overdue: round(overdue), overdue_count: overdueCount,
       collected_this_month: round(collected), collected_count: collectedCount,
@@ -86,13 +94,11 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
 
 router.get('/invoices', async (req: Request, res: Response) => {
   try {
+    // Invoices with a report waiting are listed whatever their date: the queue must not hide an old one
+    const waiting = req.query.reports === 'open';
     const { start, end } = rangeFrom(req);
-    let query = supabase
-      .from('invoices')
-      .select(LIST_COLUMNS)
-      .gte('issued_at', start.toISOString())
-      .lt('issued_at', end.toISOString())
-      .order('issued_at', { ascending: false });
+    let query = scopeQuery(supabase.from('invoices').select(LIST_COLUMNS), OWNED.invoice).order('issued_at', { ascending: false });
+    if (!waiting) query = query.gte('issued_at', start.toISOString()).lt('issued_at', end.toISOString());
     const status = req.query.status;
     if (typeof status === 'string' && ['issued', 'paid', 'void'].includes(status)) query = query.eq('status', status);
     // The payment terms do not depend on the invoices: read both at once
@@ -117,9 +123,9 @@ router.get('/invoices', async (req: Request, res: Response) => {
       const parentOf = new Map(shipments.map(s => [s.id, s.parent_shipment_id]));
       const bookingShipmentIds = [...new Set(customerRows.flatMap((r: any) => [r.shipment_id, parentOf.get(r.shipment_id) ?? null]).filter(Boolean) as string[])];
       const bookings = await selectIn<{ shipment_id: string; customer_id: string }>('customer_bookings', 'shipment_id', bookingShipmentIds, 'shipment_id, customer_id');
-      const customers = await selectIn<{ id: string; full_name: string | null; company_name: string | null }>('customers', 'id', bookings.map(b => b.customer_id), 'id, full_name, company_name');
+      const customers = await selectIn<{ id: string; full_name: string | null; company_name: string | null; phone: string | null }>('customers', 'id', bookings.map(b => b.customer_id), 'id, full_name, company_name, phone');
       const customerOf = new Map(bookings.map(b => [b.shipment_id, b.customer_id]));
-      const customerName = new Map(customers.map(c => [c.id, c.company_name || c.full_name || null]));
+      const customerName = new Map(customers.map(c => [c.id, customerDisplayName(c)]));
       return { tracking, manifestIds, companies, parentOf, customerOf, customerName };
     })();
 
@@ -136,6 +142,11 @@ router.get('/invoices', async (req: Request, res: Response) => {
     const now = new Date();
     const wantRequester = req.query.requester === 'vendor' || req.query.requester === 'customer' ? req.query.requester : null;
 
+    // Reports from the customer that staff have not handled yet, per invoice
+    const openReports = await selectIn<{ invoice_id: string; kind: string }>('invoice_payment_reports', 'invoice_id', rows.map((r: any) => r.id), 'invoice_id, kind', (q) => q.eq('status', 'open'));
+    const openOf = new Map<string, number>();
+    for (const r of openReports) openOf.set(r.invoice_id, (openOf.get(r.invoice_id) ?? 0) + 1);
+
     const out = rows.map(({ bill_to: _stored, ...r }: any) => {
       const customerId = r.shipment_id ? (customerOf.get(r.shipment_id) ?? customerOf.get(parentOf.get(r.shipment_id) ?? '') ?? null) : null;
       const requesterType = r.vendor_id ? 'vendor' : customerId ? 'customer' : 'staff';
@@ -151,11 +162,13 @@ router.get('/invoices', async (req: Request, res: Response) => {
         requester_type: requesterType,
         requester_name: r.vendor_id ? (companies.get(r.vendor_id) ?? null) : customerId ? (customerName.get(customerId) ?? null) : null,
         billed_to_name: billed.get(r.id) ?? null,
+        open_reports: openOf.get(r.id) ?? 0,
       };
     });
     res.json(out
       .filter(r => !wantRequester || r.requester_type === wantRequester)
-      .filter(r => req.query.overdue !== '1' || r.overdue));
+      .filter(r => req.query.overdue !== '1' || r.overdue)
+      .filter(r => req.query.reports !== 'open' || r.open_reports > 0));
   } catch (e) {
     sendError(req, res, e);
   }
@@ -186,40 +199,21 @@ router.post('/invoices', async (req: Request, res: Response) => {
   }
 });
 
-const PAYMENT_METHODS = ['bank', 'upi', 'cash', 'cheque'] as const;
-
-/** Reads and checks what staff record when money arrives: method, an optional reference, the date received. */
-function parsePayment(body: any, issuedAt: string | null): { method: string; reference: string | null; paidAt: string } {
-  const method = body?.method;
-  if (!(PAYMENT_METHODS as readonly string[]).includes(method)) throw new HttpError(400, 'Choose how it was paid: bank, UPI, cash or cheque');
-  const reference = typeof body?.reference === 'string' ? body.reference.trim() : '';
-  if (reference.length > 100) throw new HttpError(400, 'The reference can be at most 100 characters');
-  const today = indianDateKey(new Date());
-  const paidOn = body?.paid_on === undefined || body?.paid_on === '' ? today : body.paid_on;
-  if (!validDate(paidOn)) throw new HttpError(400, 'Enter the date the money was received');
-  if (paidOn > today) throw new HttpError(400, 'The payment date cannot be in the future');
-  if (issuedAt && paidOn < indianDateKey(new Date(issuedAt))) throw new HttpError(400, 'The payment date cannot be before the invoice date');
-  return { method, reference: reference || null, paidAt: paidOn === today ? new Date().toISOString() : indianDayStart(paidOn).toISOString() };
-}
-
 async function moveInvoice(req: Request, res: Response, to: 'paid' | 'void') {
   try {
-    const now = new Date().toISOString();
-    let patch: Record<string, unknown>;
     if (to === 'paid') {
       const { data: inv } = await supabase.from('invoices').select('issued_at').eq('id', req.params.id).maybeSingle();
-      const p = parsePayment(req.body, inv?.issued_at ?? null);
-      patch = { status: 'paid', paid_at: p.paidAt, payment_method: p.method, payment_reference: p.reference, updated_at: now };
-    } else {
-      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
-      if (reason.length < 3) throw new HttpError(400, 'Say why this invoice is voided');
-      if (reason.length > 300) throw new HttpError(400, 'The reason can be at most 300 characters');
-      patch = { status: 'void', voided_at: now, void_reason: reason, updated_at: now };
+      res.json(await markInvoicePaid(String(req.params.id), parsePayment(req.body, inv?.issued_at ?? null), req.user!));
+      return;
     }
-    // Paid needs an issued invoice; void needs one that is not paid yet
+    const now = new Date().toISOString();
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (reason.length < 3) throw new HttpError(400, 'Say why this invoice is voided');
+    if (reason.length > 300) throw new HttpError(400, 'The reason can be at most 300 characters');
+    // Void needs an invoice that is not paid yet
     const { data, error } = await supabase
       .from('invoices')
-      .update(patch)
+      .update({ status: 'void', voided_at: now, void_reason: reason, updated_at: now })
       .eq('id', req.params.id)
       .eq('status', 'issued')
       .select('*')
@@ -230,16 +224,37 @@ async function moveInvoice(req: Request, res: Response, to: 'paid' | 'void') {
       if (!existing) throw new HttpError(404, 'Invoice not found');
       throw new HttpError(409, `Invoice is already ${existing.status}`);
     }
-    if (to === 'paid') await announceInvoice(data.id, 'paid');
-    await auditService.record('staff-console', req.user!, `invoice_${to}`, {
-      invoice_id: data.id, invoice_number: data.invoice_number ?? null, total: data.total ?? null,
-      ...(to === 'paid' ? { method: data.payment_method, reference: data.payment_reference } : { reason: data.void_reason }),
+    await auditService.record('staff-console', req.user!, 'invoice_void', {
+      invoice_id: data.id, invoice_number: data.invoice_number ?? null, total: data.total ?? null, reason: data.void_reason,
     });
     res.json(data);
   } catch (e) {
     sendError(req, res, e);
   }
 }
+// ── Customer reports: payments they say they made, and questions about an invoice ──
+router.get('/invoice-reports', async (req: Request, res: Response) => {
+  try {
+    const one = (v: unknown, allowed: string[]) => (typeof v === 'string' && allowed.includes(v) ? v : undefined);
+    res.json(await listReports({
+      status: one(req.query.status, ['open', 'confirmed', 'rejected', 'answered']),
+      kind: one(req.query.kind, ['payment', 'query']),
+      invoiceId: typeof req.query.invoice_id === 'string' ? req.query.invoice_id : undefined,
+    }));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+router.post('/invoice-reports/:id/confirm', idempotent('invoice-report-confirm'), async (req, res) => {
+  try { res.json(await confirmReport(String(req.params.id), req.user!, req.body)); } catch (e) { sendError(req, res, e); }
+});
+router.post('/invoice-reports/:id/reject', idempotent('invoice-report-reject'), async (req, res) => {
+  try { res.json(await rejectReport(String(req.params.id), req.user!, req.body)); } catch (e) { sendError(req, res, e); }
+});
+router.post('/invoice-reports/:id/answer', idempotent('invoice-report-answer'), async (req, res) => {
+  try { res.json(await answerReport(String(req.params.id), req.user!, req.body)); } catch (e) { sendError(req, res, e); }
+});
+
 router.put('/invoices/:id/pay', (req, res) => moveInvoice(req, res, 'paid'));
 router.put('/invoices/:id/void', (req, res) => moveInvoice(req, res, 'void'));
 
@@ -366,7 +381,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
     const input = await parseExpense(req.body, false);
     const { data, error } = await supabase
       .from('expenses')
-      .insert({ vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
+      .insert({ ...carrierStamp(), vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
       .select('*')
       .single();
     if (error || !data) throw new Error(`Failed to save expense: ${error?.message}`);

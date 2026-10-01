@@ -111,3 +111,27 @@ describe('the rating of a delivered booking', () => {
     expect(told(ID.admin)).toHaveLength(1);
   });
 });
+
+describe('CR10b: the rating of a single-drop booking', () => {
+  const SINGLE = ID.s1;
+  beforeEach(() => {
+    invalidateDriverVehicles();
+    // Delivered by completing its route stop: no custody delivery event, the shipment holds no truck any more
+    supabaseMock.reset(cargoWorld({
+      shipments: [shipmentRow(SINGLE, { status: 'delivered', current_holder: 'consignee', current_vehicle_id: null })],
+      customer_bookings: [{ id: ID.booking1, customer_id: ID.customer, shipment_id: SINGLE, tracking_id: 'RTX-SINGLE', status: 'delivered', pickup_name: 'Bhiwandi', drop_name: 'Pune', created_at: NOW, updated_at: NOW }],
+      cargo_custody_events: [],
+      delivery_points: [{ id: ID.dp1, shipment_id: SINGLE, name: 'Pune', address: 'Pune', latitude: 18.5, longitude: 73.8, demand_kg: 1000, status: 'delivered', created_at: NOW }],
+      route_stops: [{ id: ID.stop1, route_id: ID.route1, delivery_point_id: ID.dp1, sequence: 1, status: 'completed' }],
+      routes: [{ id: ID.route1, vehicle_id: ID.v1, status: 'completed', started_at: NOW, created_at: NOW }],
+    }));
+  });
+
+  it('stores the truck and driver that delivered it and tells that driver once', async () => {
+    const res = await request(app).post(api(`/customer/bookings/${ID.booking1}/confirm-receipt`)).set(auth.customer()).send({ rating: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ rating: 5, comment: null, claim: null });
+    expect(one('shipments', SINGLE)).toMatchObject({ driver_rating: 5, rated_vehicle_id: ID.v1, rated_driver_id: ID.driver1 });
+    expect(notesFor(ID.driver1).filter(n => n.type === 'delivery_rated')).toHaveLength(1);
+  });
+});

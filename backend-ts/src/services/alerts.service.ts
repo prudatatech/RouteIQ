@@ -17,6 +17,7 @@ import { notificationService } from './notification.service';
 import { getAlertThresholds } from './alert-settings.service';
 import { haversineKm } from './odometer';
 import { lastSeenMs } from '../core/vehicles';
+import { carrierStamp } from '../core/org-context';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -89,6 +90,7 @@ export async function raiseAlert(input: RaiseAlertInput): Promise<RaiseAlertResu
   const { data: created, error } = await supabase
     .from('maintenance_alerts')
     .insert({
+      ...carrierStamp(),
       vehicle_id: input.vehicleId,
       alert_type: input.type,
       severity,

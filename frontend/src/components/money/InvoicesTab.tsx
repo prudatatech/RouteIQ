@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
+import { Download, MessageSquareWarning } from 'lucide-react'
 import { financeAPI } from '@/services/api'
 import { Button, Checkbox, DataTable, SearchInput, Select, Stat, StatusPill, type Column, type DateRangeValue } from '@/components/ui'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatDate, formatRupees, pluralize } from '@/utils/display'
-import { INVOICE_CSV_COLUMNS, invoiceCsvRows, type Invoice, type InvoiceSummary } from '@/utils/finance'
+import { INVOICE_CSV_COLUMNS, invoiceCsvRows, invoiceListParams, type Invoice, type InvoiceSummary } from '@/utils/finance'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -27,12 +27,20 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
   const [requester, setRequester] = useState('')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [search, setSearch] = useState('')
+  // /money?tab=invoices&reports=open opens on the invoices a customer has reported on
+  const [params, setParams] = useSearchParams()
+  const reportsOnly = params.get('reports') === 'open'
+  const setReportsOnly = (on: boolean) => setParams(prev => {
+    const next = new URLSearchParams(prev)
+    if (on) next.set('reports', 'open'); else next.delete('reports')
+    return next
+  }, { replace: true })
 
   const invoices = useQuery<Invoice[]>({
-    queryKey: ['finance', 'invoices', range.from, range.to, status, requester, overdueOnly],
-    queryFn: () => financeAPI.invoices({
-      from: range.from, to: range.to, status: status || undefined, requester: requester || undefined, overdue: overdueOnly ? '1' : undefined,
-    }) as Promise<Invoice[]>,
+    queryKey: ['finance', 'invoices', reportsOnly ? 'reports' : range.from, reportsOnly ? '' : range.to, status, requester, overdueOnly],
+    queryFn: () => financeAPI.invoices(invoiceListParams({
+      from: range.from, to: range.to, status, requester, overdue: overdueOnly, reportsOnly,
+    })) as Promise<Invoice[]>,
   })
   const summary = useQuery<InvoiceSummary>({ queryKey: ['finance', 'invoice-summary'], queryFn: () => financeAPI.invoiceSummary() })
 
@@ -40,8 +48,8 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
     const q = search.trim().toLowerCase()
     return (invoices.data ?? []).filter(i => !q || [i.invoice_number, i.reference, i.requester_name, i.billed_to_name].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [invoices.data, search])
-  const filtered = !!(status || requester || overdueOnly || search)
-  const clear = () => { setStatus(''); setRequester(''); setOverdueOnly(false); setSearch('') }
+  const filtered = !!(status || requester || overdueOnly || search || reportsOnly)
+  const clear = () => { setStatus(''); setRequester(''); setOverdueOnly(false); setSearch(''); setReportsOnly(false) }
   const s = summary.data
 
   const columns: Column<Invoice>[] = [
@@ -54,6 +62,7 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
       cell: i => (
         <span className="block">
           <StatusPill status={i.status} />
+          {(i.open_reports ?? 0) > 0 && <span className="mt-0.5 block text-xs font-medium text-warning">{pluralize(i.open_reports ?? 0, 'customer report')} open</span>}
           {i.paid_at && <span className="mt-0.5 block text-xs text-muted">Paid {formatDate(i.paid_at)}</span>}
         </span>
       ),
@@ -98,10 +107,20 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
         <SearchInput value={search} onChange={setSearch} label="Search invoices" placeholder="Search number, delivery or name" className="sm:w-72" />
         <Select label="Status" hideLabel className="sm:w-44" value={status} onChange={e => setStatus(e.target.value)} options={STATUS_OPTIONS} />
         <Select label="Requester" hideLabel className="sm:w-44" value={requester} onChange={e => setRequester(e.target.value)} options={REQUESTER_OPTIONS} />
+        <Button
+          variant={reportsOnly ? 'primary' : 'secondary'}
+          aria-pressed={reportsOnly}
+          icon={<MessageSquareWarning size={16} />}
+          onClick={() => setReportsOnly(!reportsOnly)}
+        >
+          Customer reports{summary.data?.open_reports != null ? ` (${summary.data.open_reports})` : ''}
+        </Button>
         <Checkbox label="Overdue only" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} />
         {filtered && <Button variant="ghost" onClick={clear}>Clear filters</Button>}
         <Button className="sm:ml-auto" variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
       </div>
+
+      {reportsOnly && <p className="text-sm text-muted">Showing every invoice with an open customer report, whatever its date.</p>}
 
       <DataTable
         caption="Invoices"

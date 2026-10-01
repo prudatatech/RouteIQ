@@ -60,10 +60,14 @@ describe('customer books a shipment', () => {
   });
 
   it('words the staff notification with a grouped weight and a written date, not an ISO date', async () => {
-    await post('/customer/bookings', customer(), payload({ weight_kg: 1000, date: '2026-10-01' }));
+    // A pickup a few days ahead in India's calendar, so the test never dates itself into the past
+    const day = new Date(Date.now() + 5.5 * 3_600_000 + 3 * 86_400_000);
+    const iso = day.toISOString().slice(0, 10);
+    const written = `${day.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()]} ${day.getUTCFullYear()}`;
+    await post('/customer/bookings', customer(), payload({ weight_kg: 1000, date: iso }));
     const body = String(notesFor('admin-1')[0].body ?? notesFor('admin-1')[0].message ?? '');
-    expect(body).toContain('1,000 kg, pickup 1 Oct 2026');
-    expect(body).not.toContain('2026-10-01');
+    expect(body).toContain(`1,000 kg, pickup ${written}`);
+    expect(body).not.toContain(iso);
   });
 
   it('keeps the price empty when no rate is set', async () => {

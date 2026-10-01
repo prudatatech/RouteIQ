@@ -12,6 +12,7 @@ import { gstinError, normalizeGstin } from '../utils/gstin';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
+import { vendorOrgOf, carrierStamp, ownersOf } from '../core/org-context';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
 function cleanVendorGstin(raw: unknown): string {
@@ -286,6 +287,7 @@ export const vendorService = {
     };
 
     const { data, error } = await supabase.from('vendor_shipment_requests').insert({
+      ...(await vendorOrgOf(vendorId)),
       vendor_id: vendorId,
       pickup_location: pickup.address,
       pickup_lat: pickup.lat,
@@ -699,6 +701,8 @@ export const vendorService = {
 
     // Insert into cargo_manifest
     const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
+      ...carrierStamp(),
+      ...ownersOf(req),
       vehicle_id: vehicleId,
       vendor_request_id: requestId,
       pickup_location: req.pickup_location,

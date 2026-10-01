@@ -31,6 +31,7 @@ import { loadShipmentParcels, wasDeliveryScanned } from '../services/parcel.serv
 import { isPodPathFor } from '../services/pod.service';
 import { recordCustody, DELIVERY_FAILURE_REASONS, type CustodyInput } from '../services/cargo/custody.service';
 import { CONDITIONS, codeOf, resolveRef } from '../services/cargo/consignment';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 
@@ -179,6 +180,7 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByU
     }
 
     const { data: created, error: sosErr } = await supabase.from('sos_alerts').insert({
+      ...carrierStamp(),
       vehicle_id: vehicle.id,
       driver_id: userId,
       latitude: lat,

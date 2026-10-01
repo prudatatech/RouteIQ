@@ -42,8 +42,13 @@ export async function listCustomerInvoices(customerId: string) {
       const booking = bookingOf.get(inv.shipment_id);
       const due = effectiveDueDate(inv, terms);
       const late = overdueDays(inv, due, now);
+      const total = Number(inv.total ?? inv.amount ?? 0);
+      // Invoices are paid in full, so nothing is recorded until then: paid means all of it, issued means none
+      const amountPaid = inv.status === 'paid' ? total : 0;
       return {
         ...inv,
+        amount_paid: amountPaid,
+        outstanding: Math.max(0, Math.round((total - amountPaid) * 100) / 100),
         due_date: due,
         overdue: late > 0,
         days_overdue: late,

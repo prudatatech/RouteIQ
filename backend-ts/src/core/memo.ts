@@ -8,6 +8,11 @@
 type Clearable = { clear(): void };
 const registry = new Set<Clearable>();
 
+/** Registers any cache with a clear() so clearAllMemos() empties it too (tests rely on it between fixtures). */
+export function registerClearable(c: Clearable): void {
+  registry.add(c);
+}
+
 export interface Memo<T> {
   (): Promise<T>;
   clear(): void;

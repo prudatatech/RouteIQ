@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, CheckCircle2, Download } from 'lucide-react'
+import { Ban, CheckCircle2, Download, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { invoicesAPI } from '@/services/api'
 import { Alert, Button, EmptyState, ErrorState, LoadingState, Page, PageHeader, StatusPill } from '@/components/ui'
 import InvoiceDocument from '@/components/money/InvoiceDocument'
+import InvoiceReports from '@/components/money/InvoiceReports'
+import { CustomerProfileEditor } from '@/components/requests/CustomerProfileEditor'
 import { MarkPaidModal, VoidModal } from '@/components/money/InvoiceModals'
 import { requesterHref } from '@/components/shipments/requesterHref'
 import { downloadBlob } from '@/utils/download'
@@ -55,6 +57,7 @@ export default function InvoicePage() {
   const queryClient = useQueryClient()
   const [paying, setPaying] = useState(false)
   const [voiding, setVoiding] = useState(false)
+  const [editingBuyer, setEditingBuyer] = useState(false)
 
   const query = useQuery({ queryKey: ['finance', 'invoice', id], queryFn: () => invoicesAPI.get(id), enabled: !!id, retry: (count, err) => !isNotFoundError(err) && count < 2 })
   const inv = query.data
@@ -94,6 +97,9 @@ export default function InvoicePage() {
         description={inv.status === 'issued' ? 'Waiting for payment. Mark it paid when the money arrives.' : undefined}
         actions={(
           <>
+            {inv.buyer.kind === 'customer' && inv.buyer.id && (
+              <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => setEditingBuyer(true)}>Edit customer details</Button>
+            )}
             <Button variant="secondary" icon={<Download size={16} />} loading={pdf.isPending} onClick={() => pdf.mutate()}>Download PDF</Button>
             {inv.status === 'issued' && (
               <>
@@ -117,7 +123,11 @@ export default function InvoicePage() {
 
       <InvoiceDocument inv={inv} />
       <Related inv={inv} />
+      <InvoiceReports invoiceId={inv.id} />
 
+      {inv.buyer.kind === 'customer' && inv.buyer.id && (
+        <CustomerProfileEditor customerId={inv.buyer.id} open={editingBuyer} onClose={() => setEditingBuyer(false)} />
+      )}
       <MarkPaidModal invoice={inv} open={paying} onClose={() => setPaying(false)} onDone={() => changed('Invoice marked as paid')} />
       <VoidModal invoice={inv} open={voiding} onClose={() => setVoiding(false)} onDone={() => changed('Invoice voided')} />
     </Page>

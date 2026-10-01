@@ -44,6 +44,8 @@ export interface Invoice {
   /** The party the invoice is billed to (stored on the invoice, or looked up from the delivery for older ones). */
   billed_to_name?: string | null
   payment_method?: string | null
+  /** Customer reports (payments or questions) still waiting on staff. */
+  open_reports?: number
 }
 
 /** What the server says when an invoice is refused for want of seller details (409). */
@@ -85,6 +87,10 @@ export interface InvoiceSummary {
   collected_this_month: number
   collected_count: number
   month: string
+  /** Customer reports waiting on staff: all, payments, and questions. */
+  open_reports?: number
+  open_payment_reports?: number
+  open_query_reports?: number
 }
 
 export interface CompanyProfile {
@@ -197,4 +203,72 @@ export function invoiceCsvRows(invoices: Invoice[]) {
     status: i.status,
     paid: i.paid_at ? i.paid_at.slice(0, 10) : '',
   }))
+}
+
+
+export type InvoiceReportKind = 'payment' | 'query'
+export type InvoiceReportStatus = 'open' | 'confirmed' | 'rejected' | 'answered'
+
+/** A customer's report on an invoice (GET /finance/invoice-reports): money they say they paid, or a question. */
+export interface InvoiceReport {
+  id: string
+  invoice_id: string
+  customer_id: string
+  kind: InvoiceReportKind
+  amount: number | null
+  paid_on: string | null
+  /** As the customer chose it: upi, neft, rtgs, imps, cheque, cash or other. */
+  method: string | null
+  reference: string | null
+  message: string | null
+  status: InvoiceReportStatus
+  staff_note: string | null
+  handled_by: string | null
+  handled_at: string | null
+  created_at: string
+  invoice_number: string | null
+  invoice_total: number | null
+  invoice_status: string | null
+  customer_name: string | null
+  customer_phone: string | null
+}
+
+const CUSTOMER_METHOD_LABELS: Record<string, string> = {
+  upi: 'UPI', neft: 'NEFT', rtgs: 'RTGS', imps: 'IMPS', cheque: 'Cheque', cash: 'Cash', other: 'Other', bank: 'Bank transfer',
+}
+
+/** The way a customer said they paid, in words. */
+export const reportMethodLabel = (method: string | null | undefined) => (method ? (CUSTOMER_METHOD_LABELS[method] ?? method) : '')
+
+/** The recorded method that matches what the customer said (NEFT, RTGS and IMPS are bank transfers); "other" has none and must be chosen. */
+export function recordedMethodFor(method: string | null | undefined): 'bank' | 'upi' | 'cash' | 'cheque' | null {
+  switch (method) {
+    case 'upi': return 'upi'
+    case 'cash': return 'cash'
+    case 'cheque': return 'cheque'
+    case 'neft': case 'rtgs': case 'imps': case 'bank': return 'bank'
+    default: return null
+  }
+}
+
+export const REPORT_STATUS_LABELS: Record<InvoiceReportStatus, string> = {
+  open: 'Waiting for you', confirmed: 'Confirmed', rejected: 'Rejected', answered: 'Answered',
+}
+
+/** Reports that still need staff, oldest first so the longest wait is on top. */
+export const sortReports = (reports: InvoiceReport[]): InvoiceReport[] =>
+  [...reports].sort((a, b) => {
+    const open = Number(b.status === 'open') - Number(a.status === 'open')
+    if (open) return open
+    return a.status === 'open' ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)
+  })
+
+/** The query string for the invoices list: open reports ignore the date range, as the server does. */
+export function invoiceListParams(f: { from?: string; to?: string; status?: string; requester?: string; overdue?: boolean; reportsOnly?: boolean }) {
+  return {
+    ...(f.reportsOnly ? { reports: 'open' as const } : { from: f.from, to: f.to }),
+    status: f.status || undefined,
+    requester: f.requester || undefined,
+    overdue: f.overdue ? '1' : undefined,
+  }
 }

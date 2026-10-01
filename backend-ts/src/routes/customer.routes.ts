@@ -13,6 +13,8 @@ import { idempotent } from '../core/idempotency';
 import { DropInputSchema } from '../schemas';
 import { samePlace, validPlace } from '../core/places';
 import { listCustomerInvoices } from '../services/customer-invoices.service';
+import { getCustomerProfile, updateCustomerProfile } from '../services/customer-profile.service';
+import { createReport, listCustomerReports } from '../services/invoice-reports.service';
 import { clearCustomerPushToken, saveCustomerPushToken } from '../services/customer-push.service';
 
 const router = Router();
@@ -167,6 +169,42 @@ router.get('/invoices', async (req: Request, res: Response) => {
   try {
     res.setHeader('Cache-Control', 'private, no-store');
     res.json(await listCustomerInvoices(req.user!.user_id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET and PATCH /customer/profile — my name, company, GSTIN and billing address ──
+router.get('/profile', async (req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(await getCustomerProfile(req.user!.user_id));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+router.patch('/profile', rateLimitByIp('customer-profile', 60, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    res.json(await updateCustomerProfile(req.user!.user_id, req.body));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Reporting a payment or asking about an invoice ──
+router.get('/invoices/:id/reports', async (req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(await listCustomerReports(req.user!.user_id, String(req.params.id)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+router.post('/invoices/:id/reports', idempotent('customer-invoice-report'), async (req: Request, res: Response) => {
+  try {
+    res.status(201).json(await createReport(req.user!.user_id, String(req.params.id), req.body));
   } catch (e) {
     sendError(req, res, e);
   }

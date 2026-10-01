@@ -23,6 +23,8 @@ import {
 } from './consignment';
 import { notifyOwner, notifyStaffSafe } from './notify';
 import { estimateMinutes, openDropPoints, planStopsOnVehicle } from './replan';
+import { carrierStamp, vendorOrgOf } from '../../core/org-context';
+import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
 
 export const EXCEPTION_TYPES = [
   'vehicle_accident', 'vehicle_breakdown', 'damage', 'shortage', 'excess', 'theft', 'refused', 'undeliverable', 'delay', 'seal_tamper', 'weather', 'other',
@@ -99,8 +101,13 @@ export function makeCode(prefix: 'EXC' | 'TRF' | 'CLM'): string {
 
 /** Inserts a row whose `code` must be unique, trying new codes on the rare clash. */
 export async function insertWithCode(table: 'cargo_exceptions' | 'cargo_transfers' | 'cargo_claims', prefix: 'EXC' | 'TRF' | 'CLM', row: Record<string, unknown>, columns = '*'): Promise<any> {
+  // The company running the case; a claim a vendor raises also names the vendor's organisation
+  const owners = {
+    ...carrierStamp(),
+    ...(table === 'cargo_claims' && row.raised_by_role === 'vendor' ? await vendorOrgOf(row.raised_by as string | undefined) : {}),
+  };
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data, error } = await supabase.from(table).insert({ ...row, code: makeCode(prefix) }).select(columns).single();
+    const { data, error } = await supabase.from(table).insert({ ...owners, ...row, code: makeCode(prefix) }).select(columns).single();
     if (!error && data) return data;
     // The same problem is already open (the partial unique index on dedupe_key): not a code clash
     if (error?.code === '23505' && /dedupe_key/.test(`${error.message ?? ''} ${(error as any).details ?? ''}`)) throw new DuplicateCaseError();
@@ -492,7 +499,7 @@ export interface ExceptionFilters {
 }
 
 export async function listExceptions(filters: ExceptionFilters) {
-  let q = supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS).order('created_at', { ascending: false }).limit(300);
+  let q = scopeQuery(supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS), OWNED.carrier).order('created_at', { ascending: false }).limit(300);
   if (filters.status) {
     const statuses = filters.status.split(',').map(s => s.trim()).filter(Boolean);
     if (statuses.some(s => !(EXCEPTION_STATUSES as readonly string[]).includes(s))) throw new HttpError(400, `status must be among: ${EXCEPTION_STATUSES.join(', ')}`);
@@ -571,6 +578,8 @@ async function ownerNames(ids: (string | null | undefined)[]): Promise<Map<strin
 
 /** The case with its items, merged timeline (custody, SOS, maintenance, notes), transfers and claims. */
 export async function getException(id: string) {
+  // Another company's case is a 404, the same as one that does not exist
+  await assertVisible('cargo_exceptions', id, OWNED.carrier, 'Cargo case not found');
   // The case, its items, and the transfers and claims filed on it are separate reads
   const [row, items, { data: transferRows }, { data: claims }] = await Promise.all([
     loadException(id),

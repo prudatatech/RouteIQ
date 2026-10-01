@@ -28,6 +28,7 @@ import { insertWithCode } from './exception.service';
 import { selectIn } from '../finance.service';
 import { notifyOwner, notifyStaffSafe, notifyVehicleDriver } from './notify';
 import { openDropPoints, planStopsOnVehicle, cancelOpenStops } from './replan';
+import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
 
 export const PlanTransferSchema = z.object({
   exception_id: z.string().uuid().nullable().optional(),
@@ -487,6 +488,7 @@ export async function getTransfer(id: string): Promise<any> {
 
 export async function listTransfers(filters: { status?: string }, user: TokenData): Promise<any[]> {
   let q = supabase.from('cargo_transfers').select(TRANSFER_COLUMNS).order('planned_at', { ascending: false }).limit(200);
+  if (isStaff(user)) q = scopeQuery(q, OWNED.carrier);
   if (filters.status) {
     if (!(TRANSFER_STATUSES as readonly string[]).includes(filters.status)) throw new HttpError(400, `status must be one of: ${TRANSFER_STATUSES.join(', ')}`);
     q = q.eq('status', filters.status);
@@ -503,6 +505,8 @@ export async function listTransfers(filters: { status?: string }, user: TokenDat
 
 /** Staff see any transfer; a driver those of their own vehicle. */
 export async function assertCanSeeTransfer(user: TokenData, id: string): Promise<void> {
+  // Another company's transfer is a 404, the same as one that does not exist
+  if (isStaff(user)) await assertVisible('cargo_transfers', id, OWNED.carrier, 'Transfer not found');
   const t = await loadTransfer(id);
   await assertDriverOf(user, [t.from_vehicle_id, t.to_vehicle_id], 'drivers of the two vehicles');
 }

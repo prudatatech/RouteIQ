@@ -25,5 +25,7 @@ echo "0/4 extensions";        run -f "$B/00_extensions.sql" >/dev/null
 echo "1/4 schema";            { echo "SET check_function_bodies = false;"; cat "$B/01_schema.sql"; } | run >/dev/null
 echo "2/4 platform pieces";   run -f "$B/02_platform.sql" >/dev/null
 echo "3/4 settings defaults"; run -f "$B/03_settings.sql" >/dev/null
-echo "4/4 migrations record"; PSQL="$PSQL" DATABASE_URL="$DATABASE_URL" "$ROOT/scripts/db-migrate.sh" --stamp-all
-echo "done: up to $(ls "$ROOT/supabase/migrations" | grep "^[0-9]\{14\}_" | tail -1)"
+# 01_schema.sql contains the migrations up to BASELINE; later ones are applied by scripts/db-migrate.sh
+BASELINE="$(tr -d '[:space:]' < "$B/BASELINE")"
+echo "4/4 migrations record (up to $BASELINE)"; PSQL="$PSQL" DATABASE_URL="$DATABASE_URL" "$ROOT/scripts/db-migrate.sh" --stamp-through "$BASELINE"
+echo "done: schema as of $BASELINE; run scripts/db-migrate.sh for anything newer"

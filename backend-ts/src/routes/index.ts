@@ -47,6 +47,7 @@ import driverRoutes from './driver.routes';
 import messagesRoutes from './messages.routes';
 import peopleRoutes from './people.routes';
 import opsRoutes from './ops.routes';
+import { adminOrgsRouter, orgRouter, orgsRouter, tplAffiliationsRouter } from './org.routes';
 
 const apiRouter = Router();
 
@@ -69,6 +70,7 @@ apiRouter.use('/spark-gps', sparkGpsRoutes);
 apiRouter.use('/marketplace', marketplaceRoutes);
 apiRouter.use('/capacity', capacityRoutes);
 apiRouter.use('/vendor', vendorRoutes);
+apiRouter.use('/tpl/affiliations', tplAffiliationsRouter);
 apiRouter.use('/tpl', tplRoutes);
 apiRouter.use('/tpl-network', tplNetworkRoutes);
 apiRouter.use('/gstin', gstinRoutes);
@@ -92,5 +94,8 @@ apiRouter.use('/driver', driverRoutes);
 apiRouter.use('/messages', messagesRoutes);
 apiRouter.use('/people', peopleRoutes);
 apiRouter.use('/ops', opsRoutes);
+apiRouter.use('/orgs', orgsRouter);
+apiRouter.use('/org', orgRouter);
+apiRouter.use('/admin/orgs', adminOrgsRouter);
 
 export default apiRouter;

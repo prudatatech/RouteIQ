@@ -36,6 +36,7 @@ import {
 } from './people-profile.service';
 import { findDocumentDuplicate, listDocuments } from './people-documents.service';
 import { getPayoutAccount, listBankAccounts, listContacts, listNotes } from './people-bank.service';
+import { memberOrgId } from '../core/org-scope';
 
 /** Placeholder sign-in email driver OTP login uses for a phone. Never shown as the person's email. */
 export const driverEmailFor = (phone: string): string => `driver_${phone.replace(/\+/g, '')}@${DRIVER_EMAIL_DOMAIN}`;
@@ -70,11 +71,15 @@ async function fetchAllUsers(roles: string[], status?: string): Promise<PersonRo
   const out: PersonRow[] = [];
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
-    let query = supabase.from('users').select(PERSON_COLUMNS).in('role', roles);
+    // Only the active organisation's members (nobody is left out before organisations are set up)
+    const orgId = memberOrgId();
+    let query = supabase.from('users').select(orgId ? `${PERSON_COLUMNS}, org_members!inner(org_id, status)` : PERSON_COLUMNS).in('role', roles);
+    if (orgId) query = query.eq('org_members.org_id', orgId).eq('org_members.status', 'active');
     if (status) query = query.eq('status', status);
     const { data, error } = await query.order('full_name', { ascending: true }).order('id', { ascending: true }).range(from, from + pageSize - 1);
     if (error) throw new Error(`Failed to read people: ${error.message}`);
-    out.push(...((data ?? []) as PersonRow[]));
+    // The membership was only joined to filter on: it is not part of the person
+    out.push(...((data ?? []) as unknown as Array<PersonRow & { org_members?: unknown }>).map(({ org_members: _members, ...person }) => person as PersonRow));
     if (!data || data.length < pageSize) break;
   }
   return out;

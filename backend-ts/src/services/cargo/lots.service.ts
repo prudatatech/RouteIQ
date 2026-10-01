@@ -35,6 +35,7 @@ import {
 } from './consignment';
 import { openExceptionsFor, piecesView, recordLotEvent, timelineOf, type PiecesView, type WhereView } from './custody.service';
 import { cancelOpenStops, openDropPoints, planStopsOnVehicle } from './replan';
+import { carrierStamp, ownersOf } from '../../core/org-context';
 
 export const SPLIT_REASONS = ['multi_drop', 'partial_transfer', 'hub_crossdock', 'partial_delivery_remainder', 'manual'] as const;
 export type SplitReason = typeof SPLIT_REASONS[number];
@@ -890,6 +891,8 @@ export async function splitConsignment(
   const ids = lots.map(() => crypto.randomUUID());
   const rows = lots.map((l, i) => {
     const common: Record<string, any> = {
+      ...carrierStamp(),
+      ...ownersOf(masterRow),
       id: ids[i],
       status: c.kind === 'shipment' ? startStatus : manifestStatusFor(startStatus),
       current_holder: c.holder,
@@ -1314,6 +1317,7 @@ export async function createMultiDrop(input: ShipmentCreate, actor: LogActor | n
   const id = crypto.randomUUID();
   const trackingId = input.tracking_id || `RTX-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
   const { error } = await supabase.from('shipments').insert({
+    ...carrierStamp(),
     id,
     tracking_id: trackingId,
     priority: input.priority,
