@@ -137,7 +137,7 @@ BEGIN
   WITH finished AS (
     SELECT r.id AS route_id,
            v.id AS vehicle_id,
-           v.vehicle_type,
+           v.vehicle_type::text AS vehicle_type,
            coalesce(
              v.driver_id,
              (SELECT ev.driver_id FROM public.cargo_custody_events ev
@@ -225,7 +225,7 @@ BEGIN
     GROUP BY j.master_id, j.vehicle_id, j.start_lat, j.start_lng
   ),
   finished AS (
-    SELECT j.master_id, v.id AS vehicle_id, v.vehicle_type,
+    SELECT j.master_id, v.id AS vehicle_id, v.vehicle_type::text AS vehicle_type,
            coalesce(
              v.driver_id,
              (SELECT ev.driver_id FROM public.cargo_custody_events ev
