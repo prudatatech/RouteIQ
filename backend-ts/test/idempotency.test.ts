@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 import { invalidateDriverVehicles } from '../src/core/ownership';
@@ -33,6 +34,7 @@ function fixtures() {
     vendor_shipment_requests: [],
     shipment_logs: [],
     invoices: [],
+    system_settings: [COMPANY_SETTING],
     sos_alerts: [],
     idempotency_keys: [],
   };

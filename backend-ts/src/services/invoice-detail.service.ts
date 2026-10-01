@@ -11,25 +11,19 @@ import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { isStaff } from '../core/ownership';
 import type { TokenData } from '../core/auth';
+import { stateOf } from '../core/gst';
 import { indianDateKey } from '../core/istDate';
 import { rupeesInWords } from '../core/words';
 import { finalDeliveryPoint } from '../core/destination';
 import { getCompanyProfile, companyGaps, type CompanyProfile } from './company.service';
+import { resolveBillTo, partyFromSnapshot } from './invoice-recipient.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
 import { shipmentOverview } from './shipment-overview.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const DAY_MS = 86_400_000;
 
-/** GST state codes (the first two digits of a GSTIN). */
-export const GST_STATES: Record<string, string> = {
-  '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana',
-  '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh', '13': 'Nagaland',
-  '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
-  '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat', '26': 'Dadra and Nagar Haveli and Daman and Diu',
-  '27': 'Maharashtra', '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry',
-  '35': 'Andaman and Nicobar Islands', '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh', '97': 'Other Territory',
-};
+export { GST_STATES } from '../core/gst';
 
 export interface InvoiceRecord {
   id: string;
@@ -51,10 +45,12 @@ export interface InvoiceRecord {
   payment_reference: string | null;
   void_reason: string | null;
   price_source: string | null;
+  /** The billed party as it was when the invoice was issued (null on invoices issued before it was stored). */
+  bill_to?: unknown;
 }
 
 export const INVOICE_COLUMNS =
-  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source';
+  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source, bill_to';
 
 /**
  * The due date shown for an invoice: the one saved on issue, or (for invoices issued before due dates
@@ -76,7 +72,7 @@ export function overdueDays(inv: Pick<InvoiceRecord, 'status'>, dueDate: string 
 }
 
 export interface InvoiceParty {
-  kind: 'vendor' | 'customer' | 'unknown';
+  kind: 'vendor' | 'customer' | 'consignee' | 'unknown';
   id: string | null;
   name: string | null;
   gstin: string | null;
@@ -120,12 +116,6 @@ export interface InvoiceDetail extends InvoiceRecord {
   };
 }
 
-/** The state a GSTIN was issued in, from its first two digits. */
-const stateOf = (gstin: string | null) => {
-  const code = gstin && /^\d{2}/.test(gstin) ? gstin.slice(0, 2) : null;
-  return { code, name: code ? (GST_STATES[code] ?? null) : null };
-};
-
 export function computeTax(amount: number, rate: number, gstAmount: number, sellerState: string | null, buyerState: string | null): InvoiceTax {
   if (!(rate > 0) || !(gstAmount > 0)) return { basis: 'none', rate: 0, cgst: 0, sgst: 0, igst: 0, total: 0, note: null };
   if (sellerState && buyerState) {
@@ -143,34 +133,9 @@ export function computeTax(amount: number, rate: number, gstAmount: number, sell
   };
 }
 
+/** The billed party: the one stored on the invoice when it was issued, else looked up from the records it points at. */
 async function buyerOf(inv: InvoiceRecord): Promise<InvoiceParty> {
-  const unknown: InvoiceParty = { kind: 'unknown', id: null, name: null, gstin: null, address: null, phone: null, email: null, state_code: null, state: null };
-
-  if (inv.vendor_id) {
-    const [{ data: profile }, { data: user }] = await Promise.all([
-      supabase.from('vendor_profiles').select('id, company_name, gst_number, address, city').eq('id', inv.vendor_id).maybeSingle(),
-      supabase.from('users').select('email, phone').eq('id', inv.vendor_id).maybeSingle(),
-    ]);
-    const gstin = profile?.gst_number ? String(profile.gst_number).trim().toUpperCase() : null;
-    const { code, name } = stateOf(gstin);
-    return {
-      kind: 'vendor', id: inv.vendor_id, name: profile?.company_name ?? null, gstin,
-      address: [profile?.address, profile?.city].filter(Boolean).join(', ') || null,
-      phone: user?.phone ?? null, email: user?.email ?? null, state_code: code, state: name,
-    };
-  }
-
-  if (inv.shipment_id) {
-    const owner = await bookingCustomer(inv.shipment_id);
-    if (owner) {
-      const { data: customer } = await supabase.from('customers').select('id, full_name, company_name, phone').eq('id', owner.customer_id).maybeSingle();
-      return {
-        ...unknown, kind: 'customer', id: owner.customer_id, name: customer?.company_name || customer?.full_name || null,
-        phone: customer?.phone ?? null,
-      };
-    }
-  }
-  return unknown;
+  return partyFromSnapshot(inv.bill_to) ?? (await resolveBillTo(inv));
 }
 
 /** The customer, or vendor, that may open this invoice (never anyone else). */

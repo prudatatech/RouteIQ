@@ -38,7 +38,7 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (invoices.data ?? []).filter(i => !q || [i.invoice_number, i.reference, i.requester_name].some(v => (v ?? '').toLowerCase().includes(q)))
+    return (invoices.data ?? []).filter(i => !q || [i.invoice_number, i.reference, i.requester_name, i.billed_to_name].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [invoices.data, search])
   const filtered = !!(status || requester || overdueOnly || search)
   const clear = () => { setStatus(''); setRequester(''); setOverdueOnly(false); setSearch('') }
@@ -61,10 +61,10 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
     },
     { key: 'ref', header: 'Delivery', hideBelow: 'xl', sortValue: i => i.reference ?? '', cell: i => i.reference ?? '—' },
     {
-      key: 'billed', header: 'Billed to', hideBelow: 'md', sortValue: i => i.requester_name ?? '',
+      key: 'billed', header: 'Billed to', hideBelow: 'md', sortValue: i => i.requester_name ?? i.billed_to_name ?? '',
       cell: i => (
         <span className="block min-w-0">
-          <span className="block truncate">{i.requester_name ?? 'Not recorded'}</span>
+          <span className="block truncate">{i.requester_name ?? i.billed_to_name ?? 'Not recorded'}</span>
           {i.requester_type && i.requester_type !== 'staff' && <span className="text-xs capitalize text-muted">{i.requester_type}</span>}
         </span>
       ),

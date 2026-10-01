@@ -360,7 +360,15 @@ export const tplNetworkService = {
     if (request.status === 'completed') {
       const { data: delivered } = await supabase
         .from('tpl_orders').select('id').eq('request_id', requestId).eq('status', 'delivered');
-      if ((delivered ?? []).length > 0) invoice = (await InvoiceService.createForRequest(requestId)).status;
+      if ((delivered ?? []).length > 0) {
+        try {
+          invoice = (await InvoiceService.createForRequest(requestId)).status;
+        } catch (e) {
+          // The price is saved; the invoice waits until the company profile is complete
+          if (!(e instanceof HttpError) || e.status !== 409) throw e;
+          invoice = 'blocked';
+        }
+      }
     }
     return { request_id: requestId, cost, invoice };
   },

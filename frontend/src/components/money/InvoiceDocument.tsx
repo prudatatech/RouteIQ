@@ -45,8 +45,9 @@ export default function InvoiceDocument({ inv }: { inv: InvoiceDetail }) {
         <Party
           title="Billed to"
           name={b.name}
-          missing="Buyer not recorded"
+          missing="No recipient on record for this delivery"
           lines={[
+            b.kind === 'consignee' ? 'Consignee on the shipment' : null,
             b.address,
             b.gstin ? `GSTIN ${b.gstin}${b.state ? ` · ${b.state} (${b.state_code})` : ''}` : 'No GSTIN on record',
             [b.phone, b.email].filter(Boolean).join(' · '),

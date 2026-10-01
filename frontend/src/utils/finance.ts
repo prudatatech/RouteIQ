@@ -41,7 +41,30 @@ export interface Invoice {
   days_overdue?: number
   requester_type?: 'vendor' | 'customer' | 'staff'
   requester_name?: string | null
+  /** The party the invoice is billed to (stored on the invoice, or looked up from the delivery for older ones). */
+  billed_to_name?: string | null
   payment_method?: string | null
+}
+
+/** What the server says when an invoice is refused for want of seller details (409). */
+export const INVOICE_PROFILE_MESSAGE = 'Set your company name, GSTIN and state in Settings before issuing invoices'
+
+/**
+ * What is missing from the company details before any invoice can be issued: a name, a GSTIN and a state
+ * (a GSTIN names its state). The server enforces it; this lets the page say so before a click is wasted.
+ */
+export function invoiceBlockers(c: Pick<CompanyProfile, 'legal_name' | 'gstin' | 'state'> | null | undefined): string[] {
+  if (!c) return []
+  const missing: string[] = []
+  if (!c.legal_name?.trim()) missing.push('company name')
+  if (!c.gstin?.trim()) missing.push('GSTIN')
+  if (!c.state?.trim() && !/^\d{2}/.test(c.gstin?.trim() ?? '')) missing.push('state')
+  return missing
+}
+
+/** True when an API error is the refusal to issue an invoice until the company details are set. */
+export function isCompanyProfileError(err: unknown): boolean {
+  return (err as { response?: { status?: number; data?: { code?: unknown } } } | null)?.response?.data?.code === 'company_profile_incomplete'
 }
 
 export const PAYMENT_METHODS = [
@@ -105,7 +128,7 @@ export interface InvoiceDetail {
   seller: CompanyProfile & { state_code: string | null; state_name: string | null }
   seller_gaps: string[]
   buyer: {
-    kind: 'vendor' | 'customer' | 'unknown'
+    kind: 'vendor' | 'customer' | 'consignee' | 'unknown'
     id: string | null
     name: string | null
     gstin: string | null

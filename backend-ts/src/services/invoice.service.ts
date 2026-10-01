@@ -17,6 +17,10 @@
  * invoiced too, for its price or freight_share; the short and refused pieces are written on the
  * invoice's notes so a claim can offset it. One that still holds pieces waits until it settles.
  * Every invoice is issued with a due date: the payment terms in Settings (company profile), 15 days by default.
+ * No invoice is issued until the company profile has a name, GSTIN and state (409): the seller must be
+ * on it. Delivery is never held up by this; the delivery waits under "To price" until Settings is filled in.
+ * Every invoice stores who it is billed to (`bill_to`, see invoice-recipient.service.ts) and its GST in
+ * integer paise: one rounding step per tax line, total = taxable value + tax lines exactly (core/gst.ts).
  * With no price no invoice is written; the delivery shows up under "unpriced
  * deliveries" in Finance instead. Money is rupees; the amount is before GST.
  */
@@ -25,9 +29,11 @@ import { haversineKm, isValidPoint, ROAD_FACTOR } from './geo';
 import { formatINR } from '../core/format';
 import { notificationService } from './notification.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
-import { paymentTermsDays } from './company.service';
+import { assertCanIssueInvoices, sellerStateCode, COMPANY_PROFILE_INCOMPLETE } from './company.service';
+import { HttpError } from '../core/errors';
+import { fromPaise, taxLines, toPaise, type TaxBasis } from '../core/gst';
+import { resolveBillTo, snapshotOf } from './invoice-recipient.service';
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
 const PRICE_SOURCE_BID = 'bid';
 const PRICE_SOURCE_FREIGHT = 'freight_charge';
 const PRICE_SOURCE_REQUEST = 'vendor_request';
@@ -137,9 +143,16 @@ export async function announceInvoice(invoiceId: string, event: 'issued' | 'paid
 
 /** Inserts the invoice, retrying with a fresh number if two deliveries raced for the same one. */
 async function insertInvoice(input: NewInvoice): Promise<string> {
-  const amount = round2(input.amount);
-  const gstAmount = round2((amount * input.gst_rate) / 100);
-  const termsDays = await paymentTermsDays();
+  const company = await assertCanIssueInvoices();
+  const billTo = await resolveBillTo(input).catch(() => null);
+  const sellerState = sellerStateCode(company);
+  const buyerState = billTo?.state_code ?? null;
+  const basis: TaxBasis = !(input.gst_rate > 0) ? 'none' : sellerState && buyerState ? (sellerState === buyerState ? 'intra' : 'inter') : 'unknown';
+  const lines = taxLines(toPaise(input.amount), input.gst_rate, basis);
+  const amount = fromPaise(lines.taxable);
+  const gstAmount = fromPaise(lines.tax);
+  const termsDays = company.payment_terms_days;
+  const snapshot = billTo ? snapshotOf(billTo) : null;
   const { notes, ...fields } = input;
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = new Date();
@@ -151,7 +164,8 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
         invoice_number: await nextInvoiceNumber(now),
         amount,
         gst_amount: gstAmount,
-        total: round2(amount + gstAmount),
+        total: fromPaise(lines.total),
+        ...(snapshot ? { bill_to: snapshot } : {}),
         currency: 'INR',
         status: 'issued',
         issued_at: now.toISOString(),
@@ -183,6 +197,15 @@ export function partialDeliveryNote(row: { pieces_total?: unknown; pieces_delive
   if (short > 0) parts.push(`${short} short`);
   if (refused > 0) parts.push(`${refused} refused or returned`);
   return `Partial delivery: ${parts.join(', ')}. A claim for the missing pieces can offset this invoice.`;
+}
+
+/** A delivery whose invoice could not be issued: an incomplete company profile is expected, anything else is logged as an error. */
+function logIssueFailure(what: string, e: unknown): void {
+  if (e instanceof HttpError && e.extra?.code === COMPANY_PROFILE_INCOMPLETE) {
+    console.warn(`[invoice] ${what} not invoiced yet: ${e.message}`);
+    return;
+  }
+  console.error(`[invoice] ${what}:`, e);
 }
 
 export const InvoiceService = {
@@ -363,7 +386,7 @@ export const InvoiceService = {
     try {
       await InvoiceService.createForShipment(shipmentId);
     } catch (e) {
-      console.error(`[invoice] shipment ${shipmentId}:`, e);
+      logIssueFailure(`shipment ${shipmentId}`, e);
     }
   },
 
@@ -371,7 +394,7 @@ export const InvoiceService = {
     try {
       await InvoiceService.createForRequest(requestId);
     } catch (e) {
-      console.error(`[invoice] request ${requestId}:`, e);
+      logIssueFailure(`request ${requestId}`, e);
     }
   },
 
@@ -379,7 +402,7 @@ export const InvoiceService = {
     try {
       await InvoiceService.createForManifest(manifestId);
     } catch (e) {
-      console.error(`[invoice] manifest ${manifestId}:`, e);
+      logIssueFailure(`manifest ${manifestId}`, e);
     }
   },
 };

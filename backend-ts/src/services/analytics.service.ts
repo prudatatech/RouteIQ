@@ -16,8 +16,13 @@ export class AnalyticsService {
    * When each delivery happened in `[startISO, endISO)`: shipments by the time their `delivered`
    * status was logged (a later edit to the row does not move it; a shipment with no log at all falls back
    * to its last update), plus vendor loads (cargo manifests) delivered in the range.
+   *
+   * What is counted depends on `unit`. A consignment split into lots is one shipment with its lots under it:
+   *   - `shipments` (the default): a split counts once, as its master, when the whole of it is delivered;
+   *     its lots are not counted on top. This is the figure Analytics calls "Shipments delivered".
+   *   - `drops`: each lot counts on its own, and the master does not. A consignment that was never split is one drop.
    */
-  static async deliveryTimes(startISO: string, endISO: string): Promise<string[]> {
+  static async deliveryTimes(startISO: string, endISO: string, unit: 'shipments' | 'drops' = 'shipments'): Promise<string[]> {
     const { data: logs, error: logErr } = await supabase
       .from('shipment_logs')
       .select('shipment_id, timestamp')
@@ -28,17 +33,27 @@ export class AnalyticsService {
     const times = new Map<string, string>();
     for (const l of logs || []) if (!times.has(l.shipment_id)) times.set(l.shipment_id, l.timestamp);
 
+    // `shipments` keeps masters and plain shipments (no parent); `drops` keeps lots and plain shipments (no master)
+    const counted = (r: { is_master?: boolean | null; parent_shipment_id?: string | null }) =>
+      unit === 'shipments' ? !r.parent_shipment_id : r.is_master !== true;
+    if (times.size > 0) {
+      const logged = await selectIn<{ id: string; is_master: boolean | null; parent_shipment_id: string | null }>('shipments', 'id', [...times.keys()], 'id, is_master, parent_shipment_id');
+      const byId = new Map(logged.map(r => [r.id, r]));
+      for (const id of [...times.keys()]) {
+        const row = byId.get(id);
+        if (row && !counted(row)) times.delete(id);
+      }
+    }
+
     // Delivered shipments changed in range that have no delivered log at all (older data)
     const { data: recent, error: recentErr } = await supabase
       .from('shipments')
-      .select('id, updated_at')
+      .select('id, updated_at, is_master, parent_shipment_id')
       .eq('status', 'delivered')
-      // A split consignment is counted by its lots, never also as its master
-      .neq('is_master', true)
       .gte('updated_at', startISO)
       .lt('updated_at', endISO);
     if (recentErr) throw recentErr;
-    const unlogged = (recent || []).filter((r: any) => !times.has(r.id));
+    const unlogged = (recent || []).filter((r: any) => counted(r) && !times.has(r.id));
     if (unlogged.length > 0) {
       const logged = await selectIn<{ shipment_id: string }>('shipment_logs', 'shipment_id', unlogged.map((r: any) => r.id), 'shipment_id', q => q.eq('status', 'delivered'));
       const hasLog = new Set(logged.map(l => l.shipment_id));
@@ -47,13 +62,15 @@ export class AnalyticsService {
 
     const { data: manifests, error: manifestErr } = await supabase
       .from('cargo_manifest')
-      .select('id, updated_at')
+      .select('id, updated_at, is_master, parent_manifest_id')
       .in('status', ['delivered', 'completed'])
-      .neq('is_master', true)
       .gte('updated_at', startISO)
       .lt('updated_at', endISO);
     if (manifestErr) throw manifestErr;
-    for (const m of manifests || []) times.set(`manifest:${m.id}`, m.updated_at);
+    for (const m of manifests || []) {
+      const keep = unit === 'shipments' ? !m.parent_manifest_id : m.is_master !== true;
+      if (keep) times.set(`manifest:${m.id}`, m.updated_at);
+    }
     return [...times.values()];
   }
 
@@ -72,10 +89,12 @@ export class AnalyticsService {
       { data: vehicleRows },
       { count: tripsToday },
       deliveredTimes,
+      droppedTimes,
     ] = await Promise.all([
       supabase.from('vehicles').select('plate_number, status'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
       AnalyticsService.deliveryTimes(startISO, endISO),
+      AnalyticsService.deliveryTimes(startISO, endISO, 'drops'),
     ]);
     const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived' && v.status !== 'pending_approval');
     const totalVehicles = fleet.length;
@@ -106,7 +125,10 @@ export class AnalyticsService {
     // always ₹0 or invented.
     return {
       trips_today: tripsToday || 0,
+      // Shipments and vendor loads delivered; a consignment split into lots counts once (as its master)
       deliveries_today: deliveredTimes.length,
+      // The same deliveries counted per drop: each lot of a split on its own
+      delivered_drops: droppedTimes.length,
       running_vehicles: runningVehicles,
       idle_vehicles: idleVehicles,
       total_vehicles: totalVehicles,

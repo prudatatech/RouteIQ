@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { AnalyticsService } from '../src/services/analytics.service';
 import { InvoiceService } from '../src/services/invoice.service';
@@ -70,6 +71,7 @@ describe('vendor-load invoices', () => {
     cargo_manifest: [manifest],
     vendor_shipment_requests: [{ id: 'r1', vendor_id: 'v1', cost: null, cost_per_km: null, metadata: {}, ...requestRow }],
     invoices: [],
+    system_settings: [COMPANY_SETTING],
   });
 
   it('bills the agreed cost with the GST rate the vendor entered', async () => {

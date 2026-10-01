@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { computeStats, groupEarnings, slaHours } from '../src/services/tpl-network.service';
 import { matchingService } from '../src/services/matching.service';
@@ -51,6 +52,7 @@ function fixtures(overrides: Record<string, Record<string, unknown>[]> = {}) {
     shipment_logs: [],
     delivery_points: [],
     route_stops: [],
+    system_settings: [COMPANY_SETTING],
     ...overrides,
   };
 }
