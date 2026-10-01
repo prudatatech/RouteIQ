@@ -14,6 +14,7 @@ import { ShipmentCreateSchema, type DropInput } from '../schemas';
 import { computeQuote, isTodayOrLater, type QuoteInput } from './customer-booking.service';
 import { selectIn } from './finance.service';
 import { notificationService } from './notification.service';
+import { customerDisplayName, givenName } from '../core/customer-name';
 import { ShipmentService, type LogActor } from './shipment.service';
 
 export const BOOKING_STATUSES = ['requested', 'confirmed', 'assigned', 'in_transit', 'delivered', 'cancelled'] as const;
@@ -49,6 +50,12 @@ async function notifyCustomer(booking: { id: string; customer_id: string }, titl
   } catch (e) {
     console.error('Booking notification failed:', e);
   }
+}
+
+/** Who booked, as staff know them (company, name, or the phone-based label), ready to start a sentence. Empty when the customer cannot be read. */
+async function bookedBy(customerId: string): Promise<string> {
+  const { data } = await supabase.from('customers').select('full_name, company_name, phone').eq('id', customerId).maybeSingle();
+  return data ? `${customerDisplayName(data)}: ` : '';
 }
 
 async function notifyStaff(title: string, body: string, bookingId: string) {
@@ -111,7 +118,7 @@ export async function createBooking(customerId: string, input: BookingInput) {
 
   const to = input.drops && input.drops.length > 1 ? `${input.drops.length} drops` : input.drop_name;
   await notifyCustomer(data, 'Booking received', `We have your booking from ${input.pickup_name} to ${to}. Our team will confirm it soon.`, 'requested');
-  await notifyStaff('New customer booking', `${input.pickup_name} to ${input.drop_name}, ${formatKg(input.weight_kg)}, pickup ${formatISTDate(input.date)}`, data.id);
+  await notifyStaff('New customer booking', `${await bookedBy(customerId)}${input.pickup_name} to ${input.drop_name}, ${formatKg(input.weight_kg)}, pickup ${formatISTDate(input.date)}`, data.id);
   return data;
 }
 
@@ -163,7 +170,7 @@ export async function listAllBookings(status?: string) {
   const withStatus = await withShipmentStatus(rows);
   return withStatus.map((r: any) => {
     const c = byId.get(r.customer_id);
-    return { ...r, customer: c ? { name: c.full_name, phone: c.phone, company: c.company_name } : null };
+    return { ...r, customer: c ? { id: c.id, name: customerDisplayName(c), full_name: givenName(c.full_name), phone: c.phone, company: c.company_name } : null };
   });
 }
 
@@ -318,7 +325,7 @@ export async function cancelBooking(id: string, by: { role: 'customer' | 'staff'
   if (by.role === 'staff') {
     await notifyCustomer(updated, 'Booking cancelled', `Your booking was cancelled${reason ? `: ${reason}` : '.'}`, 'cancelled');
   } else {
-    await notifyStaff('Customer cancelled a booking', `${booking.pickup_name} to ${booking.drop_name}${booking.tracking_id ? `, ${booking.tracking_id}` : ''}`, id);
+    await notifyStaff('Customer cancelled a booking', `${await bookedBy(booking.customer_id)}${booking.pickup_name} to ${booking.drop_name}${booking.tracking_id ? `, ${booking.tracking_id}` : ''}`, id);
     await notifyCustomer(updated, 'Booking cancelled', 'Your booking has been cancelled.', 'cancelled');
   }
   return updated;

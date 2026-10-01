@@ -14,6 +14,7 @@ import { ShipmentService } from './shipment.service';
 import { lotsOf } from './cargo/lots.service';
 import { resolveRef, type Consignment } from './cargo/consignment';
 import { OPEN_EXCEPTION_STATUSES } from './cargo/exception.service';
+import { customerDisplayName } from '../core/customer-name';
 
 export interface OverviewRequester {
   /** `customer_booking`, `vendor_load` (a vendor's posted load), `vendor_bid` (won on a backhaul window) or `staff`. */
@@ -138,9 +139,9 @@ async function requesterOf(c: Consignment, row: Record<string, any>): Promise<{ 
 
   const { data: booking } = await supabase.from('customer_bookings').select('id, customer_id, status').eq('shipment_id', ownerId).maybeSingle();
   if (booking) {
-    const { data: customer } = await supabase.from('customers').select('full_name, company_name').eq('id', booking.customer_id).maybeSingle();
+    const { data: customer } = await supabase.from('customers').select('full_name, company_name, phone').eq('id', booking.customer_id).maybeSingle();
     return {
-      requester: { kind: 'customer_booking', id: booking.id, name: customer?.company_name || customer?.full_name || null, status: booking.status ?? null },
+      requester: { kind: 'customer_booking', id: booking.id, name: customer ? customerDisplayName(customer) : null, status: booking.status ?? null },
       requestCost: null,
     };
   }

@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
+import { auditService } from '../services/audit.service';
+import { getCustomerProfile, updateCustomerProfile } from '../services/customer-profile.service';
 import { assignBooking, BOOKING_STATUSES, cancelBooking, confirmBooking, listAllBookings } from '../services/customer-bookings.service';
 
 const router = Router();
@@ -25,6 +27,32 @@ router.get('/', async (req: Request, res: Response) => {
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     if (status && !(BOOKING_STATUSES as readonly string[]).includes(status)) throw new HttpError(400, 'Unknown status');
     res.json(await listAllBookings(status));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+// ── GET and PATCH /bookings/customers/:id/profile — a customer's details, for staff ──
+function customerId(req: Request): string {
+  const id = String(req.params.id);
+  if (!UUID.test(id)) throw new HttpError(404, 'Customer not found');
+  return id;
+}
+
+router.get('/customers/:id/profile', async (req: Request, res: Response) => {
+  try {
+    res.json(await getCustomerProfile(customerId(req)));
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
+
+router.patch('/customers/:id/profile', async (req: Request, res: Response) => {
+  try {
+    const id = customerId(req);
+    const profile = await updateCustomerProfile(id, req.body);
+    await auditService.record('staff-console', req.user!, 'customer_profile_updated', { customer_id: id, fields: Object.keys(req.body ?? {}) });
+    res.json(profile);
   } catch (e) {
     sendError(req, res, e);
   }

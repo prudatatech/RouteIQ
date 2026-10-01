@@ -66,3 +66,26 @@ The customer and vendor apps get the invoice id from the `invoice_issued` and `i
 ### The customer's own invoice list
 
 `GET /api/v1/customer/invoices` (customer only) lists the invoices of the caller's bookings, lots included, newest first. Void invoices and ones billed to a vendor are left out, so every row can be downloaded with `GET /invoices/:id/pdf`. Each row has `id`, `invoice_number`, `status`, `total`, `amount`, `gst_amount`, `issued_at`, `due_date`, `overdue`, `days_overdue`, `paid_at`, `payment_method`, `payment_reference`, `shipment_id`, `booking_id`, `tracking_id`, `pickup_name` and `drop_name`. `GET /customer/bookings` rows also carry `rated` (the delivery has been rated).
+
+### A customer's profile and the buyer on their invoices
+
+`GET` and `PATCH /api/v1/customer/profile` (customer only) read and save `full_name`, `company_name`, `gstin`, `email`, `billing_address`, `city`, `state` and `pincode`. Values are trimmed; an empty value clears a field; a field not sent is left alone; anything else is a 400. A bad value is a 422 with a plain message: the GSTIN needs the right format and check character, the PIN code 6 digits, the state must be one of the GST states, and the GSTIN's state must be the state given. The reply adds `display_name` (company, else name, else "Customer 7701" from the phone) and `billing_ready` (GSTIN, address and state on record). Staff read and edit any customer with `GET` and `PATCH /api/v1/bookings/customers/:id/profile` (the booking list's `customer.id`).
+
+A new invoice is billed to the company name (else the name) with the GSTIN and the address (address, city, state, PIN code). The place of supply is the GSTIN's state, else the state the customer chose, and decides CGST + SGST or IGST. A customer with neither is billed with the place of supply unknown, as before. Invoices already issued keep the buyer they were issued with.
+
+### Reporting a payment or asking about an invoice
+
+The customer, on an invoice of their own that is not void (`GET` and `POST /api/v1/customer/invoices/:id/reports`):
+
+- `{ kind: 'payment', amount, paid_on, method: upi|neft|rtgs|imps|cheque|cash|other, reference }`. The amount cannot be more than what is due (422), nor can the date be in the future or before the invoice date. A UTR or cheque number is needed except for cash and other. An invoice that is already paid takes no payment report. The same reference is not taken twice while the first is open.
+- `{ kind: 'query', message }`, 3 to 1000 characters; allowed on a paid invoice too.
+
+Another customer's invoice, one billed to a vendor, and an unknown one are all 404; a void invoice is 409. Reports are kept in `invoice_payment_reports` (status `open`, then `confirmed` or `rejected` for a payment, `answered` for a query). Proof files are not attached yet (`attachment_path` is reserved).
+
+Staff (admin, superadmin), under `/api/v1/finance`:
+
+- `GET /invoice-reports?status=&kind=&invoice_id=` lists them with the invoice number, total and the customer's name. `GET /invoices?reports=open` lists the invoices with an open report (whatever their date) and every invoice row carries `open_reports`. `GET /invoices/summary` adds `open_reports`, `open_payment_reports` and `open_query_reports`.
+- `POST /invoice-reports/:id/confirm` `{ method?, reference?, paid_on?, note? }` marks the invoice paid through the same path as `PUT /invoices/:id/pay` (so the audit entry and totals are the same), with the customer's reference and date. Repeating it records nothing twice. An invoice already marked paid only has the report confirmed. Invoices have no part payments, so a report below the amount due is refused (409): reject it, or record the payment when the rest arrives. A transfer is recorded as `bank`; "other" needs the method chosen (`method`).
+- `POST /invoice-reports/:id/reject` `{ reason }` and `POST /invoice-reports/:id/answer` `{ answer }` close a payment or a query; the customer is told.
+
+Today's "waiting on you" list has `queues.payment_reports.count`, the open payment reports.
