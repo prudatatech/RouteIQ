@@ -1,0 +1,1 @@
+[{"shot": "delivered"}, {"click": "button[aria-label^='4 of 5']"}, {"fillLabel": ["Note (optional)", "Reached on time, careful with the boxes"]}, {"shot": "rate-filled"}, {"tabs": 4}, {"click": "button:has-text('rating')"}, {"wait": 1200}, {"shot": "rate-saved"}]

@@ -1,0 +1,1 @@
+[{"click": "button:has-text('Delete')"}, {"wait": 700}, {"shot": "delete-confirm"}, {"active": 1}, {"click": "[role=dialog] button:has-text('Delete shipment')"}, {"wait": 1800}, {"shot": "delete-done"}]

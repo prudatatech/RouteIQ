@@ -1,0 +1,1 @@
+[{"shot": "queue"}, {"click": "button:has-text('Accept & price')"}, {"wait": 800}, {"shot": "accept-form"}, {"active": 1}, {"tabs": 6}, {"fill": ["[role=dialog] input", "-5"]}, {"click": "[role=dialog] button[type=submit]"}, {"wait": 500}, {"shot": "accept-bad-price"}, {"say": "[role=dialog]"}, {"press": "Escape"}, {"wait": 400}, {"active": 1}]
