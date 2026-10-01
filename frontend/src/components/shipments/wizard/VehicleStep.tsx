@@ -167,7 +167,7 @@ export default function VehicleStep({ data, update, errors }: StepProps) {
             error={errors.vehicle}
           />
         )}
-        {selected?.driver_licence_status && <div><DriverLicenceBadge status={selected.driver_licence_status} /></div>}
+        {selected?.driver_licence_status && <div><DriverLicenceBadge variant="choice" status={selected.driver_licence_status} /></div>}
 
         {mapVehicles.length > 0 && (
           <div className="hidden h-64 overflow-hidden rounded-card border border-border sm:block">

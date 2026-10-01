@@ -84,7 +84,7 @@ export default function VehiclePicker({ vehicles, pickup, weightKg, selectedId, 
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="font-mono font-medium text-text">{v.plate_number}</span>
               <StatusPill status={v.status} />
-              <DriverLicenceBadge status={v.driver_licence_status} />
+              <DriverLicenceBadge variant="choice" status={v.driver_licence_status} />
             </span>
             <span className="flex flex-wrap gap-x-3 text-muted">
               {a.distanceKm !== null && <span className="tabular">{formatKm(a.distanceKm)} from pickup{eta ? ` · about ${formatMinutes(eta)} drive` : ''}</span>}

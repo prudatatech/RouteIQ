@@ -251,7 +251,7 @@ function VehicleRow({ a, weightKg, busy, disabled, onAssign }: { a: VehicleAsses
             <span className="truncate">{v.driver_id ? (v.driver_name || 'Driver assigned') : 'No driver'}</span>
           </p>
           <div className="flex flex-wrap gap-1.5">
-            <DriverLicenceBadge status={v.driver_licence_status} />
+            <DriverLicenceBadge variant="choice" status={v.driver_licence_status} />
             {a.problems > 0 && (
               <StatusPill tone="danger" dot={false}>
                 <AlertTriangle size={12} aria-hidden="true" className="mr-1" />{a.problems} open {a.problems === 1 ? 'problem' : 'problems'}
