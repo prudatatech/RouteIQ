@@ -10,7 +10,7 @@ import {
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { usersAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import { isNotFoundError, errorMessage, formatDateTime, formatKg, formatPieces, formatRelative, formatRupees } from '@/utils/display'
+import { isNotFoundError, errorMessage, formatDateTime, formatKg, formatMinutes, formatPieces, formatRelative, formatRupees } from '@/utils/display'
 import {
   cargoKeys, exceptionsAPI, type ClaimSummary, type ExceptionDetail, type ExceptionItem, type ExceptionStatus,
 } from '@/services/cargo'
@@ -180,7 +180,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
             <SeverityPill severity={kase.severity} />
           </span>
         )}
-        description={`${exceptionTypeLabel(kase.type)} · ${sourceLabel(kase.source ?? 'manual')} · raised ${formatRelative(kase.created_at, now)}`}
+        description={`${exceptionTypeLabel(kase.type)} · raised ${formatRelative(kase.created_at, now)}`}
         actions={(
           <>
             {statusMoves(kase.status).map(to => (
@@ -377,7 +377,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
                       <li key={r.vehicle.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                         <span className="min-w-0 text-sm">
                           <span className="font-mono font-medium text-text">{i + 1}. {r.vehicle.plate_number}</span>
-                          <span className="text-muted"> · {r.distance_km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km · {formatKg(r.free_kg)} free{r.eta_minutes ? ` · ${Math.round(r.eta_minutes)} min away` : ''}</span>
+                          <span className="text-muted"> · {r.distance_km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km · {formatKg(r.free_kg)} free{r.eta_minutes ? ` · ${formatMinutes(r.eta_minutes)} away` : ''}</span>
                         </span>
                         <Button
                           size="sm"

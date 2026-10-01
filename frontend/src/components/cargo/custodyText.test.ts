@@ -22,6 +22,9 @@ describe('dropRepeatedSentences', () => {
   it('keeps one of a repeated sentence', () => {
     expect(dropRepeatedSentences('Lot A: 50 of the 100 pieces. Lot A: 50 of the 100 pieces.')).toBe('Lot A: 50 of the 100 pieces.')
   })
+  it('treats a repeat without its full stop as the same sentence', () => {
+    expect(dropRepeatedSentences('Lot B: 25 of the 100 pieces (one lot per drop). Lot B: 25 of the 100 pieces (one lot per drop)')).toBe('Lot B: 25 of the 100 pieces (one lot per drop).')
+  })
   it('keeps different sentences', () => {
     expect(dropRepeatedSentences('One. Two.')).toBe('One. Two.')
   })
