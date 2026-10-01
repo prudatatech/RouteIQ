@@ -70,3 +70,17 @@ describe('taking a shipment off its vehicle', () => {
     expect(supabaseMock.rows('route_stops').every(s => s.status === 'pending')).toBe(true);
   });
 });
+
+describe('the history of a new shipment', () => {
+  it('leaves out an old matcher entry that offered the load to nobody', async () => {
+    reset({});
+    supabaseMock.rows('shipment_logs').push(
+      { id: 'log-0', shipment_id: SHIP, status: 'created', index: 0, metadata_json: {}, timestamp: NOW },
+      { id: 'log-e', shipment_id: SHIP, status: 'escalated', index: 1, metadata_json: { engine: 'CascadeMatcher', tier: 'Tier 0', broadcast_count: 0 }, timestamp: NOW },
+    );
+    supabaseMock.rows('shipment_logs').find(l => l.id === 'log-1')!.index = 2;
+    const res = await request(app).get(`/api/v1/shipments/${SHIP}/history`).set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body.events.map((e: any) => e.status)).toEqual(['created', 'assigned']);
+  });
+});

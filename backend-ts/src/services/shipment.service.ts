@@ -1599,6 +1599,8 @@ export class ShipmentService {
   private static withoutRepeatedSplitEntries(logs: ShipmentLog[]): ShipmentLog[] {
     return logs.filter((log, i) => {
       const kind = log.metadata_json?.custody_kind;
+      // Older shipments carry a matcher entry for a load nobody was offered; it is not a hand-off to partners
+      if (log.status === 'escalated' && log.metadata_json?.engine === 'CascadeMatcher' && !(Number(log.metadata_json?.broadcast_count) > 0)) return false;
       return !((kind === 'split' || kind === 'merge') && i > 0 && logs[i - 1].status === log.status);
     });
   }
