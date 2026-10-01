@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCheck, FileText, Fuel, Paperclip, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui'
 import { ChartCard, SimpleLineChart } from '@/components/analytics/charts'
 import { apiErrorMessage } from '@/components/fleet/health'
-import { formatDateTime, formatDay, formatRupees } from '@/utils/display'
+import { formatDateTime, formatDay, formatRupees, serverFieldError } from '@/utils/display'
 import {
   BILL_TYPES, FLAG_HINTS, FLAG_LABELS, MAX_BILL_BYTES, PAYMENT_LABELS, deriveAmounts, flagTone, formatKmpl, fuelAPI, fuelKeys,
   openBill, sendableAmounts, uploadBill,
@@ -214,6 +214,7 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
   const [bill, setBill] = useState<File | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState('')
+  const odometerRef = useRef<HTMLInputElement>(null)
 
   // The vehicle's own odometer prefills the reading; it shares its cache with the health panel
   const health = useQuery({ queryKey: ['fleet-vehicle-health', vehicleId], queryFn: () => fleetAPI.vehicleHealth(vehicleId) as Promise<{ odometer_km: number | null }> })
@@ -245,7 +246,16 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
       toast.success(log.bill_status === 'with_bill' ? 'Fuel logged with bill' : 'Fuel logged without a bill. It will be shown for review.')
       onSaved()
     },
-    onError: err => setFormError(apiErrorMessage(err, err instanceof Error && !('response' in err) ? err.message : 'We could not save this fill-up. Try again.')),
+    onError: err => {
+      // A problem with the reading belongs on the Odometer field, which takes the focus
+      const field = serverFieldError(err)
+      if (field?.field === 'odometer_km') {
+        setErrors(e => ({ ...e, odometer: field.message }))
+        odometerRef.current?.focus()
+        return
+      }
+      setFormError(apiErrorMessage(err, err instanceof Error && !('response' in err) ? err.message : 'We could not save this fill-up. Try again.'))
+    },
   })
 
   const submit = () => {
@@ -302,8 +312,9 @@ function AddFuelForm({ vehicleId, onClose, onSaved }: { vehicleId: string; onClo
           min="0"
           trailing="km"
           hint={odometer == null && vehicleOdo ? 'Filled in from the vehicle. Change it to the dashboard reading.' : undefined}
+          ref={odometerRef}
           value={odometerValue}
-          onChange={e => setOdometer(e.target.value)}
+          onChange={e => { setOdometer(e.target.value); setErrors(er => ({ ...er, odometer: '' })) }}
           error={errors.odometer}
         />
         <Input label="Station or place" maxLength={120} value={station} onChange={e => setStation(e.target.value)} hint="Optional" />

@@ -172,6 +172,9 @@ describe('anomalies', () => {
     // A reading below the fill before it is refused on entry (ROL-06); the engine still flags such rows already stored
     const backwards = await post({ litres: 30, total_amount: 3000, odometer_km: 9000, filled_at: daysAgo(3), bill_path: BILL });
     expect(backwards.status).toBe(422);
+    // The answer names the field and groups the km the way the table does
+    expect(backwards.body.field).toBe('odometer_km');
+    expect(backwards.body.detail).toMatch(/reads 9,000 km, but the fill before this one was at 11,750 km/);
     const tooMuch = await post({ litres: 130, total_amount: 13000, odometer_km: 12000, filled_at: daysAgo(2), bill_path: BILL });
     expect(tooMuch.body.flags).toContain('over_tank_capacity');
     const dup = await post({ litres: 130.2, total_amount: 13020, odometer_km: 12000, filled_at: new Date(Date.parse(tooMuch.body.filled_at) + 10 * 60_000).toISOString(), bill_path: BILL });

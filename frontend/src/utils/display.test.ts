@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, isNotFoundError, pluralize, tripNumber } from './display'
+import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, isNotFoundError, serverFieldError, pluralize, tripNumber } from './display'
 
 describe('money and quantities', () => {
   it('shows whole rupees with lakh grouping and paise only when present', () => {
@@ -68,5 +68,15 @@ describe('isNotFoundError', () => {
     expect(isNotFoundError({ response: { status: 500 } })).toBe(false)
     expect(isNotFoundError(new Error('Network Error'))).toBe(false)
     expect(isNotFoundError(null)).toBe(false)
+  })
+})
+
+describe('serverFieldError', () => {
+  it('reads the field and message the server names', () => {
+    expect(serverFieldError({ response: { data: { field: 'odometer_km', detail: 'Check the reading.' } } })).toEqual({ field: 'odometer_km', message: 'Check the reading.' })
+  })
+  it('is null when the server names no field', () => {
+    expect(serverFieldError({ response: { data: { detail: 'Nope' } } })).toBeNull()
+    expect(serverFieldError(new Error('x'))).toBeNull()
   })
 })

@@ -137,6 +137,13 @@ export function isNotFoundError(err: unknown): boolean {
   return status === 404 || status === 400
 }
 
+/** The form field a server error is about (`field` in the answer), with its message, or null when it names none. */
+export function serverFieldError(err: unknown): { field: string; message: string } | null {
+  const data = (err as { response?: { data?: { field?: unknown; detail?: unknown; error?: unknown } } } | null)?.response?.data
+  const message = typeof data?.detail === 'string' ? data.detail : typeof data?.error === 'string' ? data.error : ''
+  return typeof data?.field === 'string' && data.field && message ? { field: data.field, message } : null
+}
+
 /** Best readable message from an API (axios) or Supabase error. */
 export function errorMessage(err: unknown, fallback: string): string {
   if (err && typeof err === 'object') {

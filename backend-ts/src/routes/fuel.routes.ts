@@ -106,7 +106,7 @@ async function assertOdometer(vehicleId: string, odometer: number, filledAt: str
   const before = trusted.filter(l => Date.parse(l.filled_at) <= at).sort((a, b) => Date.parse(b.filled_at) - Date.parse(a.filled_at))[0];
   const after = trusted.filter(l => Date.parse(l.filled_at) > at).sort((a, b) => Date.parse(a.filled_at) - Date.parse(b.filled_at))[0];
   const problem = odometerProblem(odometer, before?.odometer_km ?? null, after?.odometer_km ?? null);
-  if (problem) throw new HttpError(422, problem);
+  if (problem) throw new HttpError(422, problem, { field: 'odometer_km' });
 }
 
 /** The fuel expense that lets finance see the real fuel cost. Failing to write it does not lose the fill. */
