@@ -85,7 +85,7 @@ Details and screenshots: [UX](findings/UX.md).
 
 | ID | Sev | Area | Title | Status | Commit |
 | --- | --- | --- | --- | --- | --- |
-| UX-26 | Major | UX | Shipment page | reopened | pass 3 |
+| UX-26 | Major | UX | Shipment page | fixed | uat/ux-fix-round5 |
 | UX-27 | Major | UX | Shipment history, tracking | fixed | uat/ux-fix-round4 |
 | UX-28 | Minor | UX | Shipment page | fixed | uat/ux-fix-round4 |
 | UX-29 | Minor | UX | Assign modal, wizard step 3 | fixed | uat/ux-fix-round4 |
@@ -94,24 +94,24 @@ Details and screenshots: [UX](findings/UX.md).
 | UX-32 | Minor | UX | Add fuel | fixed | uat/ux-fix-round4 |
 | UX-33 | Polish | UX | Problem case page | fixed | uat/ux-fix-round4 |
 | UX-34 | Polish | UX | Notifications | fixed | uat/ux-fix-round4 |
-| UX-35 | Minor | UX | Sidebar | reopened | pass 3 |
+| UX-35 | Minor | UX | Sidebar | fixed | uat/ux-fix-round5 |
 | UX-36 | Polish | UX | Cancelled shipment, cancelled trip | fixed | uat/ux-fix-round4 |
 | UX-37 | Polish | UX | Several | fixed | uat/ux-fix-round4 |
-| UX-38 | Polish | UX | Delete shipment | reopened | pass 3 |
+| UX-38 | Polish | UX | Delete shipment | fixed | uat/ux-fix-round5 |
 | UX-39 | Polish | UX | Status pills | fixed | uat/ux-fix-round4 |
 
 **Pass 3** ([UX-PASS3](findings/UX-PASS3.md)): 16 of 19 verified, 3 reopened (UX-26, 35, 38); no console errors or overflow in 255 page loads; new:
 
 | ID | Sev | Area | Title | Status | Commit |
 | --- | --- | --- | --- | --- | --- |
-| UX-40 | Minor | UX | Shipment page, 3PL partners: "Something went wrong: This shipment is already on a trip" on a shipment just taken off its vehicle | fixing | |
-| UX-41 | Minor | UX | Trip page: A trip id that does not exist says "Check your connection" | fixing | |
-| UX-42 | Minor | UX | Public tracking: A part-delivered booking ticks every step and says "Time to arrival: Partly delivered" | fixing | |
-| UX-43 | Polish | UX | Problem case page, transfer: Timeline repeats each handover once per lot; "Part B due" on a completed transfer | fixing | |
-| UX-44 | Polish | UX | Cancelled shipment, cancelled trip: Prompts that no longer apply; red Delete on a trip | fixing | |
-| UX-45 | Polish | UX | Plan a trip: A superadmin is told to "ask an administrator to add a TomTom or Mapbox key to the server" | fixing | |
-| UX-46 | Polish | UX | Assign modal, wizard step 3: Map canvas, attribution, Layers and place search still come before the vehicle list | fixing | |
-| UX-47 | Polish | UX | Shipment page: History after a take-off says "Created" again; a solid red Delete is the strongest button on every ordinary shipment | fixing | |
+| UX-40 | Minor | UX | Shipment page, 3PL partners: "Something went wrong: This shipment is already on a trip" on a shipment just taken off its vehicle | fixed | uat/ux-fix-round5 |
+| UX-41 | Minor | UX | Trip page: A trip id that does not exist says "Check your connection" | fixed | uat/ux-fix-round5 |
+| UX-42 | Minor | UX | Public tracking: A part-delivered booking ticks every step and says "Time to arrival: Partly delivered" | fixed | uat/ux-fix-round5 |
+| UX-43 | Polish | UX | Problem case page, transfer: Timeline repeats each handover once per lot; "Part B due" on a completed transfer | fixed | uat/ux-fix-round5 |
+| UX-44 | Polish | UX | Cancelled shipment, cancelled trip: Prompts that no longer apply; red Delete on a trip | fixed | uat/ux-fix-round5 |
+| UX-45 | Polish | UX | Plan a trip: A superadmin is told to "ask an administrator to add a TomTom or Mapbox key to the server" | fixed | uat/ux-fix-round5 |
+| UX-46 | Polish | UX | Assign modal, wizard step 3: Map canvas, attribution, Layers and place search still come before the vehicle list | fixed | uat/ux-fix-round5 |
+| UX-47 | Polish | UX | Shipment page: History after a take-off says "Created" again; a solid red Delete is the strongest button on every ordinary shipment | fixed | uat/ux-fix-round5 |
 
 ### Customer, driver and vendor roles (GitHub runner)
 
