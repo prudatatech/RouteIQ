@@ -217,7 +217,7 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
 }
 
 /** Which consignment of a case an action is for. */
-function ConsignmentPicker({ kase, value, onChange, error, hint }: {
+function ConsignmentPicker({ kase, value, onChange, error, hint, autoFocus }: {
   kase: ExceptionDetail
   value: string
   onChange: (e: { target: { value: string } }) => void

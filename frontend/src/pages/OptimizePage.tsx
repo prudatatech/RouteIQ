@@ -24,14 +24,14 @@ import type { ShipmentRow } from '@/components/shipments/types'
 
 // Algorithms the ML service actually runs (ml-service/main.py SUPPORTED_ALGORITHMS).
 const ALGORITHM_OPTIONS = [
-  { value: 'ortools', label: 'Best route (exact)', description: 'The default. Works out the cheapest way to cover the stops.', technical: 'OR-Tools' },
-  { value: 'ga', label: 'Best route (fast search)', description: 'Try it if the first plan is not good enough.', technical: 'Genetic algorithm' },
+  { value: 'ortools', label: 'Best route (exact)', description: 'The default. Works out the cheapest way to cover the stops.', technical: 'OR-Tools' },  // vocab-ok: the plain names dispatch asked for
+  { value: 'ga', label: 'Best route (fast search)', description: 'Try it if the first plan is not good enough.', technical: 'Genetic algorithm' },  // vocab-ok: the plain names dispatch asked for
 ] as const
 
 // Names for the algorithm the backend reports it ran, including its greedy fallback.
 const ALGORITHM_LABELS: Record<string, string> = {
-  ortools: 'Best route (exact)',
-  ga: 'Best route (fast search)',
+  ortools: 'Best route (exact)',  // vocab-ok: the plain names dispatch asked for
+  ga: 'Best route (fast search)',  // vocab-ok: the plain names dispatch asked for
   greedy: 'Quick plan (fallback)',
   'cheapest-insertion+2opt': 'Quick plan (built in)',
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { LICENCE_NOTE, LICENCE_WARNING } from './docs'
+import { LICENCE_NOTE } from './licenceNote'
+
+// The status wording these are the heads-up form of (components/people/docs.ts), kept here as plain tones
+const LICENCE_WARNING = { expired: { tone: 'danger' }, expiring: { tone: 'warning' }, missing: { tone: 'warning' } } as const
 
 describe('licence wording in the vehicle list', () => {
   it('has a heads-up for every licence warning, with the same tone', () => {

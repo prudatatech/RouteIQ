@@ -1,5 +1,6 @@
 import { StatusPill } from '@/components/ui'
-import { LICENCE_NOTE, licenceWarning } from './docs'
+import { licenceWarning } from './docs'
+import { LICENCE_NOTE } from './licenceNote'
 import type { DriverLicenceStatus } from './types'
 
 /**

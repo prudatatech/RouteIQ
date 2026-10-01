@@ -1,10 +1,11 @@
-import { createContext, memo, useContext, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { memo, useContext, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Marker, type MarkerDragEvent } from 'react-map-gl/maplibre'
 import { Bike, Boxes, Bus, Car, Flag, MapPin, Package, TriangleAlert, Truck, Warehouse, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { MAP_TONES, stopStatusStyle, vehicleStatusStyle } from '@/config/mapConfig'
 import { animateMarkerAlongRoute } from '@/utils/mapAnimation'
 import { POINT_TONES } from './layers'
+import { MapKeyboardContext } from './keyboardContext'
 import type { VehicleCluster } from './cluster'
 import type { LatLng, MapPoint, MapPointKind, MapRouteStop, MapVehicle } from './types'
 
@@ -27,11 +28,6 @@ const VEHICLE_ICONS: Record<string, { icon: LucideIcon; name: string }> = {
   car: { icon: Car, name: 'car' },
 }
 
-/**
- * Whether the markers are keyboard stops. A map beside a list that does the same job (choose a
- * vehicle) turns this off, so the list is the way through and the keyboard does not cross the markers first.
- */
-export const MapKeyboardContext = createContext(true)
 const useMarkerTabIndex = () => (useContext(MapKeyboardContext) ? undefined : -1)
 
 /** Clicks on markers must not also count as a click on the map (picker mode). */
