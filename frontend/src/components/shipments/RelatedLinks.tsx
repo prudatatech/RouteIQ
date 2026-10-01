@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { StatusPill, humanize } from '@/components/ui'
 import { exceptionTypeLabel } from '@/components/cargo/logic'
-import { formatKm, formatRupees } from '@/utils/display'
+import { formatKm, formatRupees, tripNumber } from '@/utils/display'
 import { plateOf } from './format'
 import { carrierText, lotCarriers } from './masterView'
 import { requesterHref } from './requesterHref'
@@ -54,7 +54,7 @@ export default function RelatedLinks({ overview: o }: { overview: ShipmentOvervi
             {o.trip ? (
               <>
                 <Link to={`/routes/${o.trip.id}`} className={linkClass}>
-                  Trip {o.trip.id.slice(0, 8).toUpperCase()}
+                  {tripNumber(o.trip.id)}
                 </Link>
                 <div className="text-xs text-muted">
                   {TRIP_SOURCE_LABEL[o.trip.source]} · {o.trip.stop_count.toLocaleString('en-IN')} {o.trip.stop_count === 1 ? 'stop' : 'stops'}

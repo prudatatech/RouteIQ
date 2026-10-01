@@ -11,7 +11,7 @@ import { Page, PageHeader, Card, Button, buttonClasses, StatusPill, Stat, Detail
 import { MapView, TripEtaCard, fetchDrivingRoute, routingOff, remainingStops, useLiveEta, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
-import { formatDateTime, formatMinutes, formatKm } from '@/utils/display'
+import { formatDateTime, formatMinutes, formatKm, tripNumber } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
 import { useAuthStore } from '@/store/authStore'
 import MessagesPanel from '@/components/messages/MessagesPanel'
@@ -151,7 +151,6 @@ export default function RouteDetailsPage() {
     )
   }
 
-  const shortId = route.id.slice(0, 8).toUpperCase()
   const isCompleted = route.status === 'completed' || route.status === 'delivered'
   const isCancelled = route.status === 'cancelled'
   // A vendor load has one pickup and one drop: there is nothing to optimize, and it is cancelled, not deleted
@@ -191,7 +190,7 @@ export default function RouteDetailsPage() {
       title: route.is_manifest ? 'Cancel this load?' : 'Cancel this trip?',
       message: route.is_manifest
         ? "The vendor's request goes back to approved so it can be assigned again, the vehicle gets its capacity back and the driver is told."
-        : 'The vehicle and driver will no longer see this trip as active.',
+        : 'The vehicle and driver will no longer see this trip as active. Its shipments go back to Needs a vehicle.',
       confirmLabel: route.is_manifest ? 'Cancel load' : 'Cancel trip',
       tone: 'danger',
     })
@@ -217,7 +216,7 @@ export default function RouteDetailsPage() {
     <Page>
       <PageHeader
         back={{ to: '/routes', label: 'Back to trips' }}
-        title={<span className="inline-flex flex-wrap items-center gap-3">Trip {shortId} <StatusPill status={route.status} kind="route" /></span>}
+        title={<span className="inline-flex flex-wrap items-center gap-3">{tripNumber(route.id)} <StatusPill status={route.status} kind="route" /></span>}
         description={(
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {route.created_at && <span>Created {formatDistanceToNow(new Date(route.created_at), { addSuffix: true })}</span>}
