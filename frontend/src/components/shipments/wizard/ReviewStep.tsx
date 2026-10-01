@@ -68,7 +68,7 @@ export default function ReviewStep({ data, goTo }: { data: DraftShipmentData; go
           items={[
             { label: 'Type', value: cargoName },
             { label: 'Priority', value: humanize(data.priority || 'medium') },
-            { label: 'Items', value: Number(data.total_items).toLocaleString('en-IN') },
+            { label: 'Pieces', value: Number(data.total_items).toLocaleString('en-IN') },
             { label: 'Weight', value: formatKg(Number(data.total_weight_kg)) },
             { label: 'Package size', value: `${data.length_cm} × ${data.width_cm} × ${data.height_cm} cm` },
             { label: 'Chargeable weight', value: formatKg(chargeableKg(data)) },
