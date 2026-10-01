@@ -18,10 +18,11 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
+import { OrgSync } from '@/components/OrgSync'
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -40,6 +41,7 @@ const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
 const SettingsPage = adminSettings.Component
+const OrganisationPage = adminOrganisation.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
@@ -251,6 +253,7 @@ export default function App() {
 
   return (
     <>
+      <OrgSync />
       <Toaster
         position="top-center"
         toastOptions={{
@@ -455,6 +458,11 @@ export default function App() {
             <Route path="admin/settings" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <SettingsPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/organisation" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <OrganisationPage />
               </PrivateRoute>
             } />
             <Route path="admin/users" element={
