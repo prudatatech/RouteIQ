@@ -556,18 +556,22 @@ export async function listEntries(filters: EntryFilters) {
   const { data, error } = await q;
   if (error) throw new Error(`Failed to read driver pay: ${error.message}`);
   const entries = data ?? [];
-  const [drivers, vehicles, payouts] = await Promise.all([
+  const [drivers, vehicles, payouts, trips] = await Promise.all([
     selectIn<any>('users', 'id', entries.map((e: any) => e.driver_id), 'id, full_name, phone'),
     selectIn<any>('vehicles', 'id', entries.map((e: any) => e.vehicle_id), 'id, plate_number'),
     selectIn<any>('driver_payouts', 'id', entries.map((e: any) => e.payout_id), 'id, paid_at, method, reference'),
+    selectIn<any>('routes', 'id', entries.map((e: any) => e.route_id), 'id, status'),
   ]);
   const driverById = new Map(drivers.map(d => [d.id, d]));
   const plateById = new Map(vehicles.map(v => [v.id, v.plate_number]));
   const payoutById = new Map(payouts.map(p => [p.id, p]));
+  const tripStatusById = new Map(trips.map(t => [t.id, t.status as string]));
   const rows = entries.map((e: any) => ({
     ...toEntry(e),
     driver_name: driverById.get(e.driver_id)?.full_name ?? null,
     plate_number: plateById.get(e.vehicle_id) ?? null,
+    // A trip cancelled after a handover is still paid for the leg that was driven
+    route_status: e.route_id ? tripStatusById.get(e.route_id) ?? null : null,
     paid_at: payoutById.get(e.payout_id)?.paid_at ?? null,
     payout_method: payoutById.get(e.payout_id)?.method ?? null,
   }));

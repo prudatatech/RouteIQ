@@ -17,7 +17,7 @@ import { StatusPill } from '@/components/ui/StatusPill'
 import { Select } from '@/components/ui/Field'
 import { EmptyState } from '@/components/ui/States'
 import { useConfirm } from '@/components/ui'
-import { formatMinutes, formatTime } from '@/utils/display'
+import { formatKg, formatKm, formatMinutes, formatTime } from '@/utils/display'
 
 type Point = { x: number; y: number }
 type ShiftStatus = 'offline' | 'on_duty' | 'on_mission'
@@ -288,9 +288,16 @@ export default function DriverPage() {
     queryFn: () => api.get('/depots/').then(r => r.data),
     enabled: !!activeRoute?.depot_id,
   })
-  const routeOrigin = activeRoute?.depot_id
+  // Without a depot the first stop is a drop or the pickup itself, so the start comes from its shipment's pickup
+  const firstShipmentId: string | undefined = pointOf(stops[0])?.shipment_id ?? undefined
+  const { data: firstShipment } = useQuery({
+    queryKey: ['shipment', firstShipmentId],
+    queryFn: () => shipmentsAPI.get(firstShipmentId!),
+    enabled: !!firstShipmentId && !activeRoute?.depot_id,
+  })
+  const routeOrigin: string | null = (activeRoute?.depot_id
     ? depots.find(d => d.id === activeRoute.depot_id)?.name
-    : pointOf(stops[0])?.name
+    : firstShipment?.origin_name || firstShipment?.origin_address) || null
 
   // Shipment behind the current stop, for cargo and consignee details
   const currentShipmentId: string | undefined = currentPoint?.shipment_id ?? undefined
@@ -407,47 +414,67 @@ export default function DriverPage() {
 
   const renderHome = () => (
     <div className="space-y-4 pb-24">
-      <Card padded className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted">MargixIndia driver</p>
-            <h1 className="text-lg font-semibold text-text">Welcome, {me?.full_name || 'Driver'}</h1>
-          </div>
-          <StatusPill tone={shiftStatus === 'offline' ? 'neutral' : 'success'}>{shiftStatus === 'offline' ? 'Offline' : 'Online'}</StatusPill>
-        </div>
-        {vehicle?.plate_number && (
-          <p className="text-sm text-muted">Vehicle: <span className="font-medium text-text">{vehicle.plate_number}</span></p>
-        )}
-      </Card>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold text-text">Welcome, {me?.full_name || 'Driver'}</h1>
+        <StatusPill tone={shiftStatus === 'offline' ? 'neutral' : 'success'}>{shiftStatus === 'offline' ? 'Offline' : 'Online'}</StatusPill>
+      </div>
 
       <Card padded className="space-y-4">
         <h2 className="text-sm font-medium text-text">Current trip</h2>
         {activeRoute ? (
           <>
-            <div className="relative space-y-6 border-l-2 border-border pl-4">
-              <div className="relative">
-                <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-brand-fill" aria-hidden="true" />
-                <p className="text-sm font-medium text-text">{routeOrigin || '—'}</p>
-                <p className="text-xs text-muted">Origin</p>
-              </div>
-              <div className="relative">
-                <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-brand" aria-hidden="true" />
-                <p className="text-sm font-medium text-text">{currentPoint?.name || (stops.length > 0 ? 'All stops completed' : '—')}</p>
-                <p className="text-xs text-muted">Next stop</p>
-              </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted">{currentPoint ? 'Next stop' : 'Trip'}</p>
+              <p className="text-lg font-semibold text-text">{currentPoint?.name || (stops.length > 0 ? 'All stops completed' : '—')}</p>
+              {vehicle?.plate_number && <p className="text-sm text-muted">Vehicle {vehicle.plate_number}</p>}
             </div>
+            {routeOrigin && routeOrigin !== currentPoint?.name && (
+              <p className="text-sm text-muted">Starts from <span className="font-medium text-text">{routeOrigin}</span></p>
+            )}
             <DetailList
               columns={2}
               items={[
                 { label: 'ETA', value: computedDuration > 0 ? formatMinutes(computedDuration) : '—' },
-                { label: 'Distance', value: computedDist > 0 ? `${computedDist.toFixed(1)} km` : '—' },
+                { label: 'Distance', value: computedDist > 0 ? formatKm(computedDist) : '—' },
               ]}
             />
+            <div className="grid grid-cols-2 gap-3">
+              {shiftStatus !== 'on_mission' ? (
+                <Button icon={<Play size={16} />} onClick={startTrip}>{shiftStatus === 'offline' ? 'Go online' : 'Start trip'}</Button>
+              ) : (
+                <Button variant="secondary" icon={<Pause size={16} />} onClick={pauseTrip}>Pause trip</Button>
+              )}
+              {currentStop && (
+                <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => setActiveTab('deliveries')}>Complete delivery</Button>
+              )}
+            </div>
           </>
         ) : (
-          <p className="text-sm text-muted">No active trips assigned.</p>
+          <>
+            <p className="text-sm text-muted">No active trips assigned.</p>
+            {shiftStatus === 'offline' && (
+              <Button variant="secondary" icon={<Play size={16} />} onClick={startTrip}>Go online</Button>
+            )}
+          </>
         )}
       </Card>
+
+      {currentStop && (
+        <Card padded className="space-y-3">
+          <h2 className="text-sm font-medium text-text">Cargo details</h2>
+          <DetailList
+            columns={2}
+            items={[
+              ...(currentShipment?.tracking_id ? [{ label: 'Shipment', value: currentShipment.tracking_id }] : []),
+              ...(currentShipment?.total_weight_kg || currentPoint?.demand_kg
+                ? [{ label: 'Weight', value: formatKg(currentShipment?.total_weight_kg || currentPoint?.demand_kg) }]
+                : []),
+              ...(currentShipment?.metadata?.productCategory ? [{ label: 'Type', value: currentShipment.metadata.productCategory }] : []),
+              { label: 'Stops left', value: pendingStopCount },
+            ]}
+          />
+        </Card>
+      )}
 
       <Card padded className="space-y-3">
         <h2 className="text-sm font-medium text-text">Live vehicle status</h2>
@@ -464,39 +491,6 @@ export default function DriverPage() {
             { label: 'Last update', value: lastUpdate ? formatTime(lastUpdate, { seconds: true }) : '—' },
           ]}
         />
-      </Card>
-
-      {currentStop && (
-        <Card padded className="space-y-3">
-          <h2 className="text-sm font-medium text-text">Cargo details</h2>
-          <DetailList
-            columns={2}
-            items={[
-              ...(currentShipment?.tracking_id ? [{ label: 'Shipment', value: currentShipment.tracking_id }] : []),
-              ...(currentShipment?.total_weight_kg || currentPoint?.demand_kg
-                ? [{ label: 'Weight', value: `${currentShipment?.total_weight_kg || currentPoint?.demand_kg} kg` }]
-                : []),
-              ...(currentShipment?.metadata?.productCategory ? [{ label: 'Type', value: currentShipment.metadata.productCategory }] : []),
-              { label: 'Stops left', value: pendingStopCount },
-            ]}
-          />
-        </Card>
-      )}
-
-      <Card padded className="space-y-3">
-        <h2 className="text-sm font-medium text-text">Actions</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {shiftStatus !== 'on_mission' ? (
-            <Button variant="secondary" icon={<Play size={16} />} onClick={startTrip}>
-              {shiftStatus === 'offline' ? 'Go online' : 'Start trip'}
-            </Button>
-          ) : (
-            <Button variant="secondary" icon={<Pause size={16} />} onClick={pauseTrip}>Pause trip</Button>
-          )}
-          <Button variant="secondary" icon={<CheckCircle2 size={16} />} onClick={() => setActiveTab('deliveries')}>
-            Complete delivery
-          </Button>
-        </div>
       </Card>
     </div>
   )
@@ -641,7 +635,7 @@ export default function DriverPage() {
   return (
     <div className="relative mx-auto min-h-screen bg-bg text-text sm:max-w-md sm:border-x sm:border-border">
       <div className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-surface px-4">
-        <h1 className="text-base font-semibold text-text">MargixIndia <span className="text-sm font-normal text-muted">Driver</span></h1>
+        <p className="text-base font-semibold text-text">MargixIndia <span className="text-sm font-normal text-muted">Driver</span></p>
         <Button variant="ghost" size="sm" icon={<LogOut size={16} aria-hidden="true" />} onClick={signOut}>Sign out</Button>
       </div>
 
@@ -655,7 +649,7 @@ export default function DriverPage() {
 
       <div className="sticky bottom-0 z-50 flex h-20 items-center justify-around border-t border-border bg-surface px-2">
         <TabButton active={activeTab === 'home'} icon={<Home size={22} aria-hidden="true" />} label="Home" onClick={() => setActiveTab('home')} />
-        <TabButton active={activeTab === 'nav'} icon={<MapIcon size={22} aria-hidden="true" />} label="Nav" onClick={() => setActiveTab('nav')} />
+        <TabButton active={activeTab === 'nav'} icon={<MapIcon size={22} aria-hidden="true" />} label="Navigate" onClick={() => setActiveTab('nav')} />
         <TabButton active={activeTab === 'deliveries'} icon={<Package size={22} aria-hidden="true" />} label="Deliveries" onClick={() => setActiveTab('deliveries')} />
         <TabButton active={activeTab === 'alerts'} icon={<Bell size={22} aria-hidden="true" />} label="Alerts" onClick={() => setActiveTab('alerts')} />
         <TabButton active={activeTab === 'profile'} icon={<User size={22} aria-hidden="true" />} label="Profile" onClick={() => setActiveTab('profile')} />

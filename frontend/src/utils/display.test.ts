@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime } from './display'
+import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatPieces, formatRupees, formatTime } from './display'
 
 describe('money and quantities', () => {
   it('shows whole rupees with lakh grouping and paise only when present', () => {
@@ -40,5 +40,14 @@ describe('dates in India time', () => {
   it('shows a dash for missing or invalid dates', () => {
     expect(formatDate(null)).toBe('—')
     expect(formatDateTime('not a date')).toBe('—')
+  })
+})
+
+describe('formatPieces', () => {
+  it('uses the singular for one', () => {
+    expect(formatPieces(1)).toBe('1 piece')
+    expect(formatPieces(0)).toBe('0 pieces')
+    expect(formatPieces(1500)).toBe('1,500 pieces')
+    expect(formatPieces(null)).toBe('—')
   })
 })

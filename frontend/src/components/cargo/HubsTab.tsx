@@ -9,6 +9,7 @@ import { cargoKeys, hubsAPI, type HubInventoryRow, type HubSummary } from '@/ser
 import { ConsignmentLink } from './CargoBits'
 import { useNow } from './useNow'
 import { consignmentCode, exceptionTypeLabel, hubAgeing } from './logic'
+import { stripLeadingName } from '@/utils/address'
 
 const rowKey = (r: HubInventoryRow) => r.shipment_id ?? r.manifest_id ?? r.tracking_id ?? ''
 
@@ -62,7 +63,7 @@ function Inventory({ hub, now }: { hub: HubSummary; now: number }) {
         return (
           <span className="break-words">
             {r.rto ? `Back to ${leg.label}` : leg.label}
-            {leg.address && leg.address !== leg.label && <span className="block text-xs text-muted">{leg.address}</span>}
+            {stripLeadingName(leg.label, leg.address) && <span className="block text-xs text-muted">{stripLeadingName(leg.label, leg.address)}</span>}
           </span>
         )
       },

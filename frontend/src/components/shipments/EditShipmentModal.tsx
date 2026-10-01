@@ -68,7 +68,7 @@ export default function EditShipmentModal({ shipment, onClose }: { shipment: Shi
         <Select label="Priority" value={priority} onChange={e => setPriority(e.target.value)} options={priorityOptions} />
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            label="Items"
+            label="Pieces"
             type="number"
             inputMode="numeric"
             min={1}

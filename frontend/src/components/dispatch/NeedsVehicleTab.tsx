@@ -8,19 +8,14 @@ import AssignVehicleModal from '@/components/shipments/AssignVehicleModal'
 import { destinationOf, deliveryPointsOf, pickupDateOf, priorityTone, shipmentStatusLabel } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
 import { formatDate, formatKg } from '@/utils/display'
+import PlaceText from '@/components/shipments/PlaceText'
 import { byUrgency, canPickVehicle } from './logic'
 import { EWAY_BILL_WARNING } from '@/config/compliance'
 import { missingEwayBill } from '@/components/shipments/masterView'
 
-function Place({ name, address }: { name?: string | null; address?: string | null }) {
-  if (!name && !address) return <span className="text-muted">—</span>
-  return (
-    <div className="min-w-0 max-w-56">
-      <div className="truncate">{name || address}</div>
-      {name && address && address !== name && <div className="truncate text-xs text-muted">{address}</div>}
-    </div>
-  )
-}
+const Place = ({ name, address }: { name?: string | null; address?: string | null }) => (
+  <PlaceText name={name} address={address} truncate className="max-w-56" />
+)
 
 /**
  * Shipments and lots that are accepted and have no trip. Each row assigns a vehicle in the shared

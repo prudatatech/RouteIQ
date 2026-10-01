@@ -63,7 +63,7 @@ export default function GpsReadout({ location, place, placeLoading, now = Date.n
                   <StatusPill tone={location.live ? 'success' : 'neutral'} dot={false}>{location.live ? 'Live' : 'Not reporting'}</StatusPill>
                 </span>
               )
-              : 'Never',
+              : 'Never reported a position',
           },
         ]}
       />

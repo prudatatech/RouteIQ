@@ -10,7 +10,7 @@ import {
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { usersAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
-import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { errorMessage, formatDateTime, formatKg, formatPieces, formatRelative, formatRupees } from '@/utils/display'
 import {
   cargoKeys, exceptionsAPI, type ClaimSummary, type ExceptionDetail, type ExceptionItem, type ExceptionStatus,
 } from '@/services/cargo'
@@ -44,7 +44,7 @@ export default function ExceptionCasePage() {
   if (query.isLoading) {
     return (
       <Page>
-        <PageHeader title={<Skeleton className="h-8 w-48" />} back={{ to: '/cargo', label: 'Cargo' }} />
+        <PageHeader title={<Skeleton className="h-8 w-48" />} back={{ to: '/cargo', label: 'Problems' }} />
         <Skeleton className="h-28 w-full" />
         <div className="grid gap-4 lg:grid-cols-3"><Skeleton className="h-72 lg:col-span-2" /><Skeleton className="h-72" /></div>
       </Page>
@@ -53,7 +53,7 @@ export default function ExceptionCasePage() {
   if (!query.data) {
     return (
       <Page>
-        <PageHeader title="Case" back={{ to: '/cargo', label: 'Cargo' }} />
+        <PageHeader title="Case" back={{ to: '/cargo', label: 'Problems' }} />
         {isNotFound(query.error) || !query.isError ? (
           <EmptyState
             icon={<ShieldQuestion size={22} />}
@@ -173,7 +173,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
   return (
     <Page>
       <PageHeader
-        back={{ to: '/cargo', label: 'Cargo' }}
+        back={{ to: '/cargo', label: 'Problems' }}
         title={(
           <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-3">
             <span className="font-mono">{kase.code}</span>
@@ -251,7 +251,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
                   ? <Link to={`/fleet/${kase.vehicle_id}?tab=maintenance`} className="text-brand hover:underline">Maintenance job</Link>
                   : sourceLabel(kase.source ?? 'manual'),
             },
-            { label: 'Goods affected', value: `${totalPieces.toLocaleString('en-IN')} pieces${totalKg > 0 ? `, ${formatKg(totalKg)}` : ''} in ${kase.items.length.toLocaleString('en-IN')} ${kase.items.length === 1 ? 'consignment' : 'consignments'}` },
+            { label: 'Goods affected', value: `${formatPieces(totalPieces)}${totalKg > 0 ? `, ${formatKg(totalKg)}` : ''} in ${kase.items.length.toLocaleString('en-IN')} ${kase.items.length === 1 ? 'shipment' : 'shipments'}` },
             ...(kase.resolution ? [{ label: 'Outcome', value: `${resolutionLabel(kase.resolution)}${kase.resolved_at ? `, ${formatDateTime(kase.resolved_at)}` : ''}` }] : []),
           ]}
         />
@@ -284,7 +284,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
           <Card>
             <CardHeader title="Transfers" />
             {kase.transfers.length === 0 ? (
-              <EmptyState compact icon={<ArrowRightLeft size={22} />} title="No transfers" description="Transship or Move to hub plans one." />
+              <EmptyState compact icon={<ArrowRightLeft size={22} />} title="No transfers" description="Plan a transfer to a vehicle, or move the goods to a hub." />
             ) : (
               <ul className="divide-y divide-border">
                 {kase.transfers.map(t => (
@@ -382,7 +382,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
                           variant={pickedRelief === r.vehicle.id ? 'primary' : 'secondary'}
                           onClick={() => setAction({ name: 'transship', preset: { to_vehicle_id: r.vehicle.id } })}
                         >
-                          Transship
+                          Plan transfer
                         </Button>
                       </li>
                     ))}

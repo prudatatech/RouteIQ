@@ -19,7 +19,7 @@ export function SlaBadge({ dueAt, status, now, className }: { dueAt: string | nu
   return (
     <StatusPill tone={sla.tone} dot={false} className={clsx('tabular', className)}>
       <Clock size={12} aria-hidden="true" />
-      <span>{sla.state === 'none' ? sla.label : <><span className="sr-only">Deadline: </span>{sla.label}</>}</span>
+      <span className="whitespace-nowrap">{sla.label}</span>
     </StatusPill>
   )
 }

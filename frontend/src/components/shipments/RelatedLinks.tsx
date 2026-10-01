@@ -32,7 +32,6 @@ const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Trip planner', ven
 export default function RelatedLinks({ overview: o }: { overview: ShipmentOverview }) {
   const s = o.shipment
   const requesterLink = requesterHref(o.requester)
-  const lots = s.lots_summary?.lots ?? []
   const plate = o.vehicle?.plate_number ?? plateOf(s)
   // A vendor request that has no load yet has no trip, cargo record or invoice to link to
   const requestOnly = o.kind === 'request'
@@ -90,16 +89,10 @@ export default function RelatedLinks({ overview: o }: { overview: ShipmentOvervi
           </>
         )}
 
-        {(o.master || lots.length > 0) && (
-          <Item label={o.master ? 'Lot of' : `Lots (${lots.length.toLocaleString('en-IN')})`}>
-            {o.master
-              ? <Link to={`/shipments/${o.master.id}`} className={`${linkClass} font-mono`}>{o.master.tracking_id}</Link>
-              : lots.map(l => (
-                <div key={l.id}>
-                  <Link to={`/shipments/${l.id}`} className={`${linkClass} font-mono`}>{l.code}</Link>
-                  <span className="text-xs text-muted"> · {humanize(l.status)}</span>
-                </div>
-              ))}
+        {/* A master's lots are listed once, in the Lots panel above */}
+        {o.master && (
+          <Item label="Lot of">
+            <Link to={`/shipments/${o.master.id}`} className={`${linkClass} font-mono`}>{o.master.tracking_id}</Link>
           </Item>
         )}
 
@@ -146,7 +139,7 @@ export default function RelatedLinks({ overview: o }: { overview: ShipmentOvervi
                     <div className="text-xs text-muted">{o.invoice.total != null ? `${formatRupees(o.invoice.total)} · ` : ''}{humanize(o.invoice.status)}</div>
                   </>
                 )
-                : <span className="text-muted">{o.price != null && o.price > 0 ? `Not issued yet · ${formatRupees(o.price)}` : 'No price, so no invoice'}</span>}
+                : <span className="text-muted">{s.is_master === true ? 'Invoiced per lot' : o.price != null && o.price > 0 ? `Not issued yet · ${formatRupees(o.price)}` : 'No price, so no invoice'}</span>}
             </Item>
           </>
         )}

@@ -1795,6 +1795,20 @@ export class ShipmentService {
     const shipmentEvents = await ShipmentService.buildHistoryEvents(shipment.shipment_logs || [], shipment);
     trackingInfo.history = ShipmentService.toPublicHistory(shipmentEvents);
 
+    // A split booking has no vehicle or drop of its own: say how each lot stands (code, status and
+    // counts only: no ids, names or contacts).
+    if (shipment.is_master) {
+      const { lotsSummaries } = await import('./cargo/lots.service');
+      const summary = (await lotsSummaries('shipment', [shipment.id])).get(shipment.id);
+      trackingInfo.lots = (summary?.lots ?? []).map((l: any) => ({
+        tracking_id: l.code,
+        label: l.label ?? null,
+        status: l.status,
+        pieces_total: l.pieces_total ?? null,
+        pieces_delivered: l.pieces_delivered ?? 0,
+      }));
+    }
+
     return trackingInfo;
   }
 }

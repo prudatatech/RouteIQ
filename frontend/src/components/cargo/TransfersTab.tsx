@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowRightLeft } from 'lucide-react'
 import { DataTable, Select, StatusPill, useUrlState, type Column } from '@/components/ui'
 import { cargoKeys, transfersAPI, TRANSFER_STATUSES, type CargoTransfer, type TransferStatus } from '@/services/cargo'
-import { formatRelative } from '@/utils/display'
+import { formatPieces, formatRelative } from '@/utils/display'
 import { transferItemCount } from './logic'
 
 const FILTERS = [
@@ -46,7 +46,7 @@ export default function TransfersTab() {
     },
     {
       key: 'items', header: 'Shipments', hideBelow: 'md', align: 'right', sortValue: pieces,
-      cell: t => <span className="tabular">{t.items.length.toLocaleString('en-IN')} · {pieces(t).toLocaleString('en-IN')} pcs</span>,
+      cell: t => <span className="tabular">{t.items.length.toLocaleString('en-IN')} · {formatPieces(pieces(t))}</span>,
     },
     {
       key: 'flags', header: 'Check',
@@ -56,8 +56,16 @@ export default function TransfersTab() {
         if (!mismatch && !due) return <span className="text-muted">—</span>
         return (
           <span className="inline-flex flex-wrap gap-1">
-            {mismatch && <StatusPill tone="danger">Count mismatch</StatusPill>}
-            {due && <StatusPill tone="warning">Part B due</StatusPill>}
+            {mismatch && (
+              <StatusPill tone={t.status === 'completed' ? 'warning' : 'danger'} title="The pieces counted do not match the pieces planned or handed over. A shortage problem is opened when fewer pieces arrive than left.">
+                {t.status === 'completed' ? 'Counts differed' : 'Count mismatch'}
+              </StatusPill>
+            )}
+            {due && (
+              <StatusPill tone="warning" title="The goods moved to another vehicle, so the vehicle number on the e-way bill (Part B) must be updated on the e-way bill portal.">
+                Update e-way bill
+              </StatusPill>
+            )}
           </span>
         )
       },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canApprove, canChange, canPay, payoutSummary, rateOn, tripRef, typeLabel, type PayEntry, type PayRate } from './driverPay'
+import { KM_SOURCE_HELP, canApprove, canChange, canPay, partTripNote, payoutSummary, rateOn, tripRef, typeLabel, type PayEntry, type PayRate } from './driverPay'
 
 const rate = (over: Partial<PayRate>): PayRate => ({
   id: 'r', vehicle_type: 'truck', per_trip_amount: 500, per_km_amount: 10, effective_from: '2026-01-01', active: true, superseded_on: null, state: 'current', ...over,
@@ -50,5 +50,18 @@ describe('labels', () => {
     expect(tripRef(entry({ manifest_id: 'ffee0011-0000' }))).toBe('CM-FFEE0011')
     expect(typeLabel('truck')).toBe('Truck')
     expect(typeLabel(null)).toBe('Unknown type')
+  })
+})
+
+
+describe('part-trip pay', () => {
+  it('explains a cancelled trip and nothing else', () => {
+    expect(partTripNote({ route_status: 'cancelled' })).toMatch(/Part trip/)
+    expect(partTripNote({ route_status: 'completed' })).toBeNull()
+    expect(partTripNote({})).toBeNull()
+  })
+  it('explains every way the distance is measured', () => {
+    expect(KM_SOURCE_HELP.estimated).toMatch(/not by road/)
+    expect(Object.keys(KM_SOURCE_HELP).sort()).toEqual(['estimated', 'gps', 'none', 'planned'])
   })
 })

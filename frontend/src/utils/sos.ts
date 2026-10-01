@@ -77,3 +77,18 @@ export function sosHeadline(alert: { alert_type?: string | null; severity?: stri
 export function sosHoldsVehicle(alert: { alert_type?: string | null; severity?: string | null }): boolean {
   return alert.severity === 'serious' && (alert.alert_type === 'breakdown' || alert.alert_type === 'accident')
 }
+
+/** The one step an open alert asks for next: acknowledge it, then resolve it. Closed alerts ask for nothing. */
+export type SosNextStep = 'acknowledge' | 'resolve' | null
+
+export const sosNextStep = (status: string | null | undefined): SosNextStep => {
+  const s = sosStatusOf(status)
+  return s === 'active' ? 'acknowledge' : s === 'acknowledged' ? 'resolve' : null
+}
+
+/**
+ * Whether "Return to service" is offered for an alert: only once the alert is closed, because while
+ * it is open the vehicle is still held for the emergency.
+ */
+export const canOfferReturnToService = (status: string | null | undefined, vehicleInMaintenance: boolean): boolean =>
+  vehicleInMaintenance && !isOpenSos(status)

@@ -57,3 +57,14 @@ export function tripFigures(t: TripLike): TripFigures {
   if (km == null) return { kind: 'none' }
   return { kind: 'planned', distanceKm: km, durationMinutes: plannedMinutes, distanceIsPlanned: t.status === 'completed' || t.status === 'cancelled' }
 }
+
+/** How a trip's `distance_km` was worked out, as the routes API reports it (`distance_basis`). */
+export type DistanceBasis = 'actual' | 'planned' | 'estimated' | 'none'
+
+/** "289.3 km", "289.3 km (planned)", "289.3 km (straight line)": the distance with how it was worked out, or a dash. */
+export function distanceWithBasis(km: number | null | undefined, basis: DistanceBasis | null | undefined, format: (km: number) => string): string {
+  if (km == null || !(km > 0) || basis === 'none' || !basis) return km != null && km > 0 && !basis ? format(km) : '—'
+  if (basis === 'planned') return `${format(km)} (planned)`
+  if (basis === 'estimated') return `${format(km)} (straight line)`
+  return format(km)
+}

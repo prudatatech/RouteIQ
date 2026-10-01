@@ -20,21 +20,16 @@ import { useDraftStore } from '@/store/draftStore'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatDate, formatKg } from '@/utils/display'
 import { groupLots } from '@/components/cargo/lots'
+import PlaceText from '@/components/shipments/PlaceText'
 
 const TAB_IDS = ['all', ...SHIPMENT_STATUSES] as const
 type TabId = (typeof TAB_IDS)[number]
 /** Cargo custody states are rare; their tabs show only while something is in them (or they are open). */
 const QUIET_TABS: readonly TabId[] = ['at_hub', 'out_for_delivery', 'on_hold', 'partially_delivered', 'returning', 'returned', 'lost']
 
-function PlaceCell({ name, address }: { name?: string | null; address?: string | null }) {
-  if (!name && !address) return <span className="text-muted">—</span>
-  return (
-    <div className="min-w-0 max-w-44 2xl:max-w-64">
-      <div className="truncate">{name || address}</div>
-      {name && address && address !== name && <div className="truncate text-xs text-muted">{address}</div>}
-    </div>
-  )
-}
+const PlaceCell = ({ name, address }: { name?: string | null; address?: string | null }) => (
+  <PlaceText name={name} address={address} truncate className="max-w-44 2xl:max-w-64" />
+)
 
 /** One row of the list: a shipment, or a split master with its lots. */
 interface ListRow extends ShipmentRow {
