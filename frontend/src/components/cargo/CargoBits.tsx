@@ -52,8 +52,8 @@ const segmentFill: Record<string, string> = {
 }
 
 /** Where a consignment's pieces are: a stacked bar with a legend. Colour is never the only cue. */
-export function PiecesBar({ pieces, className }: { pieces: Pieces; className?: string }) {
-  const s = pieceSummary(pieces)
+export function PiecesBar({ pieces, pickedUp, className }: { pieces: Pieces; /** False while the goods are still with the sender: nothing is "not accounted for" yet. */ pickedUp?: boolean; className?: string }) {
+  const s = pieceSummary(pieces, { pickedUp })
   const base = Math.max(s.total ?? 0, s.segments.reduce((n, x) => n + x.value, 0)) || 1
   return (
     <div className={clsx('space-y-2', className)}>

@@ -68,6 +68,11 @@ describe('nextStep', () => {
     expect(step({ status: 'on_hold', onHoldReason: 'Road closed' })).toMatchObject({ headline: 'On hold', detail: 'Road closed' })
   })
 
+  it('a hold before pickup stays in dispatch and offers to release the hold', () => {
+    expect(step({ status: 'on_hold', holder: 'consignor' })).toMatchObject({ stage: 'dispatch', action: { kind: 'open_cargo', label: 'Release hold' } })
+    expect(step({ status: 'on_hold', holder: 'vehicle' })).toMatchObject({ stage: 'on_the_road', action: { label: 'Release or move it' } })
+  })
+
   it('a split master points at its lots', () => {
     const s = step({ status: 'in_transit', isMaster: true, lots: { count: 3, delivered: 1 } })
     expect(s).toMatchObject({ headline: 'Split into 3 lots · 1 delivered', action: { kind: 'open_lots' } })

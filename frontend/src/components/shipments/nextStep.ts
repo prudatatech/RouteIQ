@@ -178,7 +178,10 @@ export function nextStep(f: NextStepFacts): NextStep {
     case 'at_hub':
       return step({ stage: 'on_the_road', tone: 'warning', headline: 'At a hub', detail: 'Waiting for a vehicle to take it on.', action: { kind: 'open_cargo', label: 'Plan the onward move' } })
     case 'on_hold':
-      return step({ stage: 'on_the_road', tone: 'warning', headline: 'On hold', detail: f.onHoldReason ?? null, action: { kind: 'open_cargo', label: 'Release or move it' } })
+      // Held before pickup: it never left the sender, so it is still in dispatch and there is only a hold to release
+      return f.holder === 'consignor'
+        ? step({ stage: 'dispatch', tone: 'warning', headline: 'On hold', detail: f.onHoldReason ?? null, action: { kind: 'open_cargo', label: 'Release hold' } })
+        : step({ stage: 'on_the_road', tone: 'warning', headline: 'On hold', detail: f.onHoldReason ?? null, action: { kind: 'open_cargo', label: 'Release or move it' } })
     case 'returning':
       return step({ stage: 'on_the_road', tone: 'warning', headline: `Returning to the sender${plate ? ` with ${plate}` : ''}`, waitingOn: 'the driver' })
     case 'exception':

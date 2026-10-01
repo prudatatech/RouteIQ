@@ -468,7 +468,7 @@ export interface PieceSummary {
 }
 
 /** Splits a consignment's pieces into delivered, on board, returned and short, for bars and text. */
-export function pieceSummary(p: Pieces): PieceSummary {
+export function pieceSummary(p: Pieces, opts: { pickedUp?: boolean } = {}): PieceSummary {
   const onBoard = onBoardCount(p)
   const segments: PieceSegment[] = ([
     { key: 'delivered', label: 'Delivered', value: p.delivered, tone: 'success' },
@@ -478,7 +478,8 @@ export function pieceSummary(p: Pieces): PieceSummary {
   ] as PieceSegment[]).filter(s => s.value > 0)
   const counted = p.delivered + onBoard + p.returned + p.short
   const total = p.total
-  const unaccounted = total == null ? 0 : Math.max(0, total - counted)
+  // Goods nobody has picked up yet are with the sender, not missing
+  const unaccounted = total == null || opts.pickedUp === false ? 0 : Math.max(0, total - counted)
   const overCounted = total != null && counted > total
   const n = (x: number) => x.toLocaleString('en-IN')
   const headline = total == null
