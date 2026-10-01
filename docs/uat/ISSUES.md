@@ -41,6 +41,11 @@ Status: `open` → `fixing` → `fixed` (in a commit) → `verified` (re-tested)
 | UAT-020 | Minor | ALL | Public tracking exposes internal ids, plate and live position; short CM- ids (AZP-04) | open | |
 | UAT-021 | Minor | ALL | /ready says database ok without checking; X-Request-ID echoed unchecked (AZP-05, 06) | open | |
 | UAT-022 | Minor | ALL | Unknown web paths return 200 (soft 404) (AZP-07) | open | |
+| UAT-024 | Minor | OPS | UX: addresses print the place name twice ("Fab Hostels" then "Fab Hostels, Kanakapura Main Road…") on Shipments and in the drawer | open | |
+| UAT-025 | Minor | OPS | UX: Requests shows 0 everywhere while 6 shipments exist; staff-created shipments never appear in Requests, and the page doesn't say so | open | |
+| UAT-026 | Minor | OPS | UX: Problem cases show "RTX-…-B · 1 pcs" ("pcs" vs "piece(s)" elsewhere) and "Deadline: Overdue by 13 h 36 min" on two lines | open | |
+| UAT-027 | Minor | FLT | UX: Optimize lists "Driver licence missing" on both vehicles as the only vehicle detail, with no link to fix it | open | |
+| UAT-028 | Minor | OPS | UX: /3pl-partners silently redirects to Return trips → 3PL partners; the sidebar item and page title don't match | open | |
 | UAT-023 | Gap | ALL | No rate limit on /auth/refresh; logout doesn't revoke; robots.txt, Permissions-Policy (AZP-08, 09) | open | |
 
 ## Details
