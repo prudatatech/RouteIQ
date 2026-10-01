@@ -6,7 +6,7 @@ const labels = (role: string) => menuFor(role).map(s => s.label)
 describe('the staff menu', () => {
   it('has the eleven sections in the order the work happens', () => {
     expect(labels('superadmin')).toEqual([
-      'Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips & 3PL', 'Money', 'Reports', 'Settings',
+      'Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips', 'Money', 'Reports', 'Settings',
     ])
   })
 
@@ -77,11 +77,11 @@ describe('finding the open section', () => {
   })
 
   it('opens the right Return trips link for each tab, and keeps a partner page in the section', () => {
-    expect(at('/return-trips')).toEqual(['Return trips & 3PL', 'Open return trips'])
-    expect(at('/return-trips', '?tab=bids')).toEqual(['Return trips & 3PL', 'Bids to decide'])
-    expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips & 3PL', 'Combine loads'])
-    expect(at('/return-trips', '?tab=partners&status=active')).toEqual(['Return trips & 3PL', '3PL partners'])
-    expect(at('/3pl-partners/p1')).toEqual(['Return trips & 3PL', null])
+    expect(at('/return-trips')).toEqual(['Return trips', 'Open return trips'])
+    expect(at('/return-trips', '?tab=bids')).toEqual(['Return trips', 'Bids to decide'])
+    expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips', 'Combine loads'])
+    expect(at('/return-trips', '?tab=partners&status=active')).toEqual(['Return trips', '3PL partners'])
+    expect(at('/3pl-partners/p1')).toEqual(['Return trips', null])
   })
 
   it('matches nothing for an unknown page', () => {
