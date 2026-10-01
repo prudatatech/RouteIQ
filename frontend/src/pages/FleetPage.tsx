@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin } from 'lucide-react'
 import { vehiclesAPI, telemetryWS, shipmentsAPI, routesAPI } from '@/services/api'
 import { formatRelative } from '@/utils/display'
 import {
   Page, PageHeader, Button, IconButton, DataTable, StatusPill, SearchInput,
-  Tabs, TabPanel, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
+  Tabs, TabPanel, VehicleCell, buttonClasses, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
 } from '@/components/ui'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
@@ -15,7 +15,6 @@ import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { fleetAPI } from '@/services/api'
 import AlertsView from '@/components/fleet/AlertsView'
-import FleetAnalyticsView from '@/components/fleet/FleetAnalyticsView'
 import ServiceDueView from '@/components/fleet/ServiceDueView'
 import LoadBar from '@/components/fleet/LoadBar'
 import CargoChips from '@/components/fleet/CargoChips'
@@ -30,7 +29,7 @@ import { MaintenanceNote } from '@/components/fleet/maintenance/MaintenanceNote'
 import { useOpenMaintenanceJobs } from '@/components/fleet/maintenance/useOpenMaintenanceJobs'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
-const VIEW_IDS = ['vehicles', 'analytics', 'alerts', 'service'] as const
+const VIEW_IDS = ['vehicles', 'alerts', 'service'] as const
 
 // The backend's /vehicles/summary groups "idle" and "available" into one count, so
 // they share a single filter tab here rather than showing a fabricated split.
@@ -167,6 +166,11 @@ export default function FleetPage() {
   // Opened from a link elsewhere (global search, insights, fleet health): ?open=<vehicle id> goes
   // straight to that vehicle's page. On the Alerts view the same param names an alert instead.
   const openId = searchParams.get('open')
+  // The fleet-wide numbers moved to Reports > Analytics; old links to the Analytics tab follow them.
+  const analyticsLink = searchParams.get('tab') === 'analytics'
+  useEffect(() => {
+    if (analyticsLink) navigate('/analytics?tab=fleet', { replace: true })
+  }, [analyticsLink, navigate])
   useEffect(() => {
     if (openId && view !== 'alerts') navigate(`/fleet/${openId}`, { replace: true })
   }, [openId, view, navigate])
@@ -240,8 +244,7 @@ export default function FleetPage() {
       sortValue: v => v.plate_number,
       cell: v => (
         <div className="min-w-[8rem] max-w-[13rem]">
-          <p className="truncate font-medium text-text">{v.plate_number}</p>
-          <p className="truncate text-xs text-muted" title={v.vehicle_model || humanize(v.vehicle_type)}>{v.vehicle_model || humanize(v.vehicle_type)}</p>
+          <VehicleCell plate={v.plate_number} detail={v.vehicle_model || humanize(v.vehicle_type)} />
           {/* Wide screens have their own Driver column */}
           <p className="truncate hidden text-xs text-muted md:block 2xl:hidden" title={v.driver_name ?? undefined}>{v.driver_name || 'No driver'}</p>
           {v.status === 'archived' && v.rejection_reason && <p className="line-clamp-2 text-xs text-danger" title={v.rejection_reason}>Rejected: {v.rejection_reason}</p>}
@@ -387,7 +390,6 @@ export default function FleetPage() {
 
   const viewTabs: TabItem<(typeof VIEW_IDS)[number]>[] = [
     { id: 'vehicles', label: 'Vehicles' },
-    { id: 'analytics', label: 'Analytics' },
     { id: 'alerts', label: 'Alerts', count: alertSummary.data ? alertSummary.data.open + alertSummary.data.acknowledged : undefined },
     { id: 'service', label: 'Service due', count: serviceDue.data?.length },
   ]
@@ -442,6 +444,9 @@ export default function FleetPage() {
         description={summary ? `${counts.all.toLocaleString('en-IN')} ${counts.all === 1 ? 'vehicle' : 'vehicles'} in your fleet.` : 'Every vehicle, its load, its health and where it is.'}
         actions={(
           <>
+            {(role === 'admin' || role === 'superadmin') && (
+              <Link to="/analytics?tab=fleet" className={buttonClasses({ variant: 'secondary' })}><BarChart2 size={16} aria-hidden="true" /> Fleet analytics</Link>
+            )}
             <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
             {role !== 'driver' && (
               <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button>
@@ -474,7 +479,6 @@ export default function FleetPage() {
       </PageHeader>
 
       <TabPanel id={view}>
-      {view === 'analytics' && <FleetAnalyticsView />}
       {view === 'alerts' && (
         <AlertsView
           openId={openId}
