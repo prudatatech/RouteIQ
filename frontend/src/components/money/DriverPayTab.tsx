@@ -4,12 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, BadgeIndianRupee, CheckCheck, Plus, SlidersHorizontal, Trash2, WalletCards } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
-  Alert, BulkActionBar, Button, DataTable, DateRangeControl, IconButton, Input, Modal, Select, SectionHeader, Stat, StatusPill, Textarea,
+  Alert, BulkActionBar, Button, DataTable, DateRangeControl, ExportCsvButton, IconButton, Input, Modal, Select, SectionHeader, Stat, StatusPill, Textarea,
   presetRange, todayIST, useConfirm, useRowSelection, type Column, type DateRangeValue,
 } from '@/components/ui'
 import { errorMessage, formatDate, formatRupees } from '@/utils/display'
 import {
-  KM_SOURCE_HELP, KM_SOURCE_LABEL, METHOD_LABEL, PAY_VEHICLE_TYPES, STATUS_LABEL, STATUS_TONE, canApprove, canChange, canPay, partTripNote, payoutSummary, tripRef,
+  KM_SOURCE_HELP, KM_SOURCE_LABEL, METHOD_LABEL, PAY_VEHICLE_TYPES, STATUS_LABEL, STATUS_TONE, canApprove, canChange, canPay, partTripNote, PAY_CSV_COLUMNS, payCsvRow, payoutSummary, tripRef,
   typeLabel, type PayEntry, type PayRate, type PayoutMethod,
 } from './driverPay'
 import { driverPayAPI } from './driverPayApi'
@@ -26,7 +26,7 @@ const STATUS_OPTIONS = [
 /**
  * Driver pay: what each vehicle type pays per trip and per km, what drivers earned on each trip,
  * approval, corrections, and paying a driver (cash, bank or UPI, outside the app).
- * Self-contained: the Money section shows it as a tab, and it also has its own page at /money/driver-pay.
+ * Self-contained: the Money section shows it as a tab (the old /money/driver-pay address opens that tab).
  */
 export default function DriverPayTab() {
   const queryClient = useQueryClient()
@@ -166,6 +166,9 @@ export default function DriverPayTab() {
             options={[{ value: '', label: 'All drivers' }, ...drivers.map(([id, name]) => ({ value: id, label: name }))]} />
           <Select label="State" hideLabel className="sm:w-48" value={status} onChange={e => setStatus(e.target.value)} options={STATUS_OPTIONS} />
           {filtered && <Button variant="ghost" onClick={() => { setStatus(''); setDriverId('') }}>Clear filters</Button>}
+          <span className="sm:ml-auto">
+            <ExportCsvButton name="driver-pay" rows={rows.map(e => payCsvRow(e, formatDate(e.paid_at)))} columns={PAY_CSV_COLUMNS} />
+          </span>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { KM_SOURCE_HELP, canApprove, canChange, canPay, partTripNote, payoutSummary, rateOn, tripRef, typeLabel, type PayEntry, type PayRate } from './driverPay'
+import { KM_SOURCE_HELP, canApprove, canChange, canPay, partTripNote, payCsvRow, payoutSummary, rateOn, tripRef, typeLabel, type PayEntry, type PayRate } from './driverPay'
 
 const rate = (over: Partial<PayRate>): PayRate => ({
   id: 'r', vehicle_type: 'truck', per_trip_amount: 500, per_km_amount: 10, effective_from: '2026-01-01', active: true, superseded_on: null, state: 'current', ...over,
@@ -63,5 +63,16 @@ describe('part-trip pay', () => {
   it('explains every way the distance is measured', () => {
     expect(KM_SOURCE_HELP.estimated).toMatch(/not by road/)
     expect(Object.keys(KM_SOURCE_HELP).sort()).toEqual(['estimated', 'gps', 'none', 'planned'])
+  })
+})
+
+describe('payCsvRow', () => {
+  it('writes a trip as one row with plain numbers', () => {
+    const row = payCsvRow(entry({ route_id: 'abcd1234-0000', km: 289.26, adjustments: [{ amount: 100, reason: 'toll', by: 'u', at: '' }, { amount: -25.5, reason: 'fine', by: 'u', at: '' }], amount: 1574.5 }), '')
+    expect(row).toMatchObject({ trip: 'TR-ABCD1234', driver: 'Ravi', vehicle: 'MH12', vehicle_type: 'Truck', km: 289.3, adjustments: 74.5, pay: 1574.5, state: 'Awaiting approval', paid_on: '' })
+  })
+  it('shows the payment date only for a paid trip', () => {
+    expect(payCsvRow(entry({ status: 'paid', paid_at: '2026-09-20T05:00:00Z' }), '20 Sep 2026').paid_on).toBe('20 Sep 2026')
+    expect(payCsvRow(entry({ status: 'approved' }), '20 Sep 2026').paid_on).toBe('')
   })
 })

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -8,6 +9,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { messagesAPI, type UnreadThread } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { IconButton } from './Button'
+import { anchorPanel, type PanelPosition } from './anchorPanel'
 import { Spinner } from './Spinner'
 import { notificationPath, type NotificationAudience } from './notificationTargets'
 import { formatRelative } from '@/utils/display'
@@ -24,6 +26,9 @@ interface NotificationRow {
 
 const LIST_LIMIT = 20
 const MESSAGE_THREADS_SHOWN = 5
+const PANEL_WIDTH = 320
+/** Tailwind's `lg`: the sidebar bell opens to the right of its button, every other bell to the left. */
+const LG = 1024
 
 /** Where an unread thread takes staff: the route page, or the shipment's drawer. */
 const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : `/shipments/${encodeURIComponent(String(t.shipment_id))}`)
@@ -44,6 +49,21 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
   const [loadFailed, setLoadFailed] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const [position, setPosition] = useState<PanelPosition | null>(null)
+
+  // Anchor the panel under the bell with fixed placement, so the sidebar cannot clip it
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const align = placement === 'left' && window.innerWidth >= LG ? 'start' : 'end'
+      setPosition(anchorPanel(rect, window.innerWidth, PANEL_WIDTH, align))
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open, placement])
 
   // Unread messages from drivers count towards the badge too
   const messagesUnread = useQuery({
@@ -151,15 +171,13 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
         {unread > 0 ? `${unread} unread notification${unread === 1 ? '' : 's'} or message${unread === 1 ? '' : 's'}` : ''}
       </span>
 
-      {open && (
+      {open && position && createPortal(
         <div
           ref={panelRef}
           role="region"
           aria-label="Notifications"
-          className={clsx(
-            'absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-card border border-border bg-surface shadow-dialog',
-            placement === 'left' && 'lg:left-0 lg:right-auto',
-          )}
+          style={{ top: position.top, left: position.left, width: position.width }}
+          className="fixed z-40 rounded-card border border-border bg-surface shadow-dialog"
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-text">Notifications</p>
@@ -235,7 +253,8 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
               ))}
             </ul>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

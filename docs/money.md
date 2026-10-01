@@ -11,8 +11,8 @@ Payments are offline for now (docs/workflow-blueprint.html, Decisions). Invoices
 | To price | Delivered shipments and vendor loads with no invoice. **Set price** saves the price and issues the invoice at once. A row that already has a price shows **Issue invoice** instead. |
 | Invoices | Filter by status, requester type (vendor or customer), overdue and period. Shows outstanding, overdue and collected this month. A row opens the invoice page. |
 | Expenses | The expense log (moved from Finance). |
-| Claims | The cargo claims list. |
-| Driver pay | Links to `/money/driver-pay`. |
+| Claims | The cargo claims list, with Export CSV. This is the one place for claims; `/cargo?tab=claims` opens it here. |
+| Driver pay | Pay rates, each finished trip, approval and payouts, with Export CSV. The old `/money/driver-pay` address opens this tab. |
 
 `/money/invoices/:id` shows the invoice as a GST tax invoice, with **Mark paid** (method, reference, date received), **Void** (with a reason) and **Download PDF**. It links to the shipment (`/shipments/:id`), the requester and the trip. The shipment page's invoice link opens this page.
 

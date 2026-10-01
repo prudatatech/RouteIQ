@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { Button, Page, PageHeader, TabPanel, Tabs, useTabParam, type TabItem } from '@/components/ui'
@@ -7,7 +7,7 @@ import PoolTools from '@/components/backhaul/PoolTools'
 import OpenReturnTripsTab from '@/components/returnTrips/OpenReturnTripsTab'
 import BidsToDecideTab from '@/components/returnTrips/BidsToDecideTab'
 import PartnersTab from '@/components/tpl/PartnersTab'
-import { returnTripKeys, useReturnTripsBoard, windowState } from '@/components/returnTrips/data'
+import { returnTripKeys, useReturnTripsBoard } from '@/components/returnTrips/data'
 import { useNow } from '@/hooks/useNow'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 
@@ -17,6 +17,7 @@ export type ReturnTripTab = typeof RETURN_TRIP_TABS[number]
 /**
  * Return trips: spare truck space in one place. Open return trips vendors can bid on, the bids waiting for a
  * decision, the loads to pool or match, and the 3PL partners who carry what the fleet can't.
+ * Tabs carry no counts: only two of the four could have one. The sidebar badge shows the bids waiting.
  * A link with `?open=<bid, return trip or partner id>` goes to the right tab and opens that item.
  */
 export default function ReturnTripsPage() {
@@ -59,21 +60,9 @@ export default function ReturnTripsPage() {
     setTab('bids')
   }
 
-  const counts = useMemo(() => {
-    const data = board.data
-    if (!data) return { open: undefined, bids: undefined }
-    const windows = new Map(data.windows.map(w => [w.id, w]))
-    const open = data.windows.filter(w => windowState(w, data.bids.filter(b => b.window_id === w.id), now) === 'open').length
-    const bids = data.bids.filter(b => {
-      const w = windows.get(b.window_id)
-      return b.status === 'pending' && w && !w.winning_bid_id && w.status !== 'cancelled'
-    }).length
-    return { open, bids }
-  }, [board.data, now])
-
   const tabs: TabItem<ReturnTripTab>[] = [
-    { id: 'open', label: 'Open return trips', count: counts.open },
-    { id: 'bids', label: 'Bids to decide', count: counts.bids },
+    { id: 'open', label: 'Open return trips' },
+    { id: 'bids', label: 'Bids to decide' },
     { id: 'pool', label: 'Combine loads' },
     { id: 'partners', label: '3PL partners' },
   ]

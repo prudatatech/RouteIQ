@@ -10,7 +10,7 @@ const ev = (over: Partial<CustodyEvent>): CustodyEvent => ({
 
 describe('tidyNote', () => {
   it('turns a raw trip id into a short code', () => {
-    expect(tidyNote('Accepted route 874fa20d-8c18-47d6-ab70-a272f200e7ea')).toBe('Accepted trip 874FA20D')
+    expect(tidyNote('Accepted route 874fa20d-8c18-47d6-ab70-a272f200e7ea')).toBe('Accepted TR-874FA20D')
   })
   it('is null for nothing', () => {
     expect(tidyNote('  ')).toBeNull()

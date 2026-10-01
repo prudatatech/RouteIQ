@@ -1,4 +1,5 @@
 import type { CustodyEvent } from '@/services/cargo'
+import { tripNumber } from '@/utils/display'
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 // vocab-ok: matches the old "route" word in stored history text
@@ -7,7 +8,7 @@ const TRIP_ID = new RegExp(`\\b(?:route|trip)\\s+(${UUID})\\b`, 'gi')
 /** "Accepted route 874fa20d-8c18-…" becomes "Accepted trip 874FA20D": a person never reads a raw id. */
 export function tidyNote(text: string | null | undefined): string | null {
   if (!text) return null
-  const out = text.replace(TRIP_ID, (_m, id: string) => `trip ${id.slice(0, 8).toUpperCase()}`).trim()
+  const out = text.replace(TRIP_ID, (_m, id: string) => tripNumber(id)).trim()
   return out || null
 }
 

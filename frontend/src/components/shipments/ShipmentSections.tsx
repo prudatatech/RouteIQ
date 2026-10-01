@@ -8,7 +8,7 @@ import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
-import { apiErrorMessage, deliveryPointsOf, destinationOf, isBiddingOpen, isCargoManifest, pickupDateOf, plateOf, shipmentStatusLabel } from './format'
+import { apiErrorMessage, deliveryPointsOf, destinationOf, isBiddingOpen, isCargoManifest, pickupDateOf, pickupPlace, plateOf, shipmentStatusLabel } from './format'
 import { shipmentFlags } from './rules'
 import { carrierText, historyEntries, lotCarriers, masterDestinationText, missingEwayBill } from './masterView'
 import { EWAY_BILL_WARNING } from '@/config/compliance'
@@ -76,7 +76,7 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
         <DetailList
           columns={1}
           items={[
-            { label: 'Pickup', value: s.origin_name || s.origin_address ? <PlaceText name={s.origin_name} address={s.origin_address} /> : null },
+            { label: 'Pickup', value: s.origin_name || s.origin_address ? <PlaceText {...pickupPlace(s)} /> : null },
             {
               label: 'Destination',
               value: masterDestination

@@ -1,3 +1,6 @@
+import { tripNumber } from '@/utils/display'
+import { manifestTrackingId } from '@/components/shipments/format'
+
 /**
  * Driver pay (staff): the types the backend returns and the small rules the
  * Driver pay tab shows. Pay is a fixed amount per trip plus a rate per km, per vehicle type.
@@ -111,7 +114,43 @@ export function payoutSummary(entries: PayEntry[]): { total: number; driverIds: 
 
 /** A short code for the trip: TR-XXXXXXXX for a route, CM-XXXXXXXX for a vendor load. */
 export function tripRef(e: Pick<PayEntry, 'route_id' | 'manifest_id'>): string {
-  if (e.route_id) return `TR-${e.route_id.split('-')[0].toUpperCase()}`
-  if (e.manifest_id) return `CM-${e.manifest_id.split('-')[0].toUpperCase()}`
+  if (e.route_id) return tripNumber(e.route_id)
+  if (e.manifest_id) return manifestTrackingId(e.manifest_id)
   return 'Trip'
+}
+
+/** The columns of the Driver pay CSV, in the order an accountant reads them. */
+export const PAY_CSV_COLUMNS = [
+  { key: 'trip_date', header: 'Trip date' },
+  { key: 'driver', header: 'Driver' },
+  { key: 'trip', header: 'Trip' },
+  { key: 'vehicle', header: 'Vehicle' },
+  { key: 'vehicle_type', header: 'Vehicle type' },
+  { key: 'km', header: 'Distance (km)' },
+  { key: 'km_basis', header: 'Distance basis' },
+  { key: 'per_trip', header: 'Per trip (₹)' },
+  { key: 'per_km', header: 'Per km (₹)' },
+  { key: 'adjustments', header: 'Adjustments (₹)' },
+  { key: 'pay', header: 'Pay (₹)' },
+  { key: 'state', header: 'State' },
+  { key: 'paid_on', header: 'Paid on' },
+]
+
+/** One trip's pay as a CSV row; `paidOn` is the formatted payment date, passed in so this stays free of date formats. */
+export function payCsvRow(e: PayEntry, paidOn: string): Record<string, string | number> {
+  return {
+    trip_date: e.trip_date,
+    driver: e.driver_name ?? 'Unnamed driver',
+    trip: tripRef(e),
+    vehicle: e.plate_number ?? '',
+    vehicle_type: typeLabel(e.vehicle_type),
+    km: Math.round(e.km * 10) / 10,
+    km_basis: KM_SOURCE_LABEL[e.km_source],
+    per_trip: e.per_trip_amount,
+    per_km: e.per_km_amount,
+    adjustments: Math.round(e.adjustments.reduce((n, a) => n + a.amount, 0) * 100) / 100,
+    pay: e.amount,
+    state: STATUS_LABEL[e.status],
+    paid_on: e.status === 'paid' ? paidOn : '',
+  }
 }

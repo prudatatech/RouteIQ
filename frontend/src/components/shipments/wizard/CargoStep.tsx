@@ -72,7 +72,7 @@ export default function CargoStep({ data, update, errors }: StepProps) {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Input
-          label="Items"
+          label="Pieces"
           type="number"
           inputMode="numeric"
           min={1}

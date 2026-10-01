@@ -113,7 +113,7 @@ function ClaimForm({ claim }: { claim: CargoClaim }) {
 
   return (
     <div className="space-y-6">
-      <Steps steps={claimSteps(claim.status)} label="Claim progress" />
+      <Steps steps={claimSteps(claim.status)} label="Claim progress" numbered />
 
       {claim.exception_id && (
         <p className="text-sm">Raised from <Link to={`/cargo/exceptions/${claim.exception_id}`} className="text-brand hover:underline">the problem case</Link>.</p>

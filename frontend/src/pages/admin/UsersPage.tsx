@@ -6,7 +6,7 @@ import { Building2, Download, Upload, UserPlus, UsersRound } from 'lucide-react'
 import { usersAPI, authAPI, peopleAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import {
-  Button, buttonClasses, DataTable, Input, Modal, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
+  Button, buttonClasses, DataTable, Input, Modal, MoreMenu, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
   parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate, formatRelative } from '@/utils/display'
@@ -178,10 +178,15 @@ export default function UsersPage() {
         description={myRole === 'superadmin' ? 'Drivers, staff and vendors: who they are, their documents, and how they work with us.' : 'Drivers and staff: who they are, their documents, and how they work with us.'}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'people'} onClick={() => exportCsv('people')}>Export people</Button>
-            <Button variant="secondary" icon={<Download size={16} />} loading={exporting === 'expiring'} onClick={() => exportCsv('expiring')}>Expiring documents</Button>
-            {canAdd && <Button variant="secondary" icon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Import</Button>}
-            {myRole === 'superadmin' && <Button variant="secondary" icon={<Building2 size={16} />} onClick={() => setVendorOpen(true)}>Add vendor</Button>}
+            {/* One main action; exports, import and the vendor form sit in the menu */}
+            <MoreMenu
+              items={[
+                { label: exporting === 'people' ? 'Exporting people…' : 'Export people', icon: <Download size={16} />, disabled: exporting !== null, onSelect: () => exportCsv('people') },
+                { label: exporting === 'expiring' ? 'Exporting documents…' : 'Export expiring documents', icon: <Download size={16} />, disabled: exporting !== null, onSelect: () => exportCsv('expiring') },
+                ...(canAdd ? [{ label: 'Import people', icon: <Upload size={16} />, onSelect: () => setImportOpen(true) }] : []),
+                ...(myRole === 'superadmin' ? [{ label: 'Add vendor', icon: <Building2 size={16} />, onSelect: () => setVendorOpen(true) }] : []),
+              ]}
+            />
             {canAdd && <Button icon={<UserPlus size={16} />} onClick={() => setAddOpen(true)}>Add person</Button>}
           </div>
         }

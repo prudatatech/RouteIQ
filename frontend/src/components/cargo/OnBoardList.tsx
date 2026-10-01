@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { PackageOpen } from 'lucide-react'
 import { Card, CardHeader, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
-import { formatKg } from '@/utils/display'
+import { formatKg, formatPieces, pluralize } from '@/utils/display'
 import type { OnBoardItem } from '@/services/cargo'
 import { onBoardTotals, useOnBoard } from './useOnBoard'
 import { ConsignmentLink } from './CargoBits'
@@ -38,8 +38,9 @@ export function OnBoardList({ items, compact, className }: { items: OnBoardItem[
               )}
             </div>
             <div className="shrink-0 text-sm tabular text-text sm:text-right">
-              {item.pieces_on_board.toLocaleString('en-IN')}
-              {item.pieces_total != null && item.pieces_total !== item.pieces_on_board ? ` of ${item.pieces_total.toLocaleString('en-IN')}` : ''} pcs
+              {item.pieces_total != null && item.pieces_total !== item.pieces_on_board
+                ? `${item.pieces_on_board.toLocaleString('en-IN')} of ${formatPieces(item.pieces_total)}`
+                : formatPieces(item.pieces_on_board)}
               <span className="text-muted"> · {formatKg(item.weight_kg)}</span>
             </div>
           </li>
@@ -59,7 +60,7 @@ export function OnBoardCard({ vehicleId, className, description }: { vehicleId: 
       <CardHeader
         title="Cargo on board"
         description={description ?? (items.length > 0
-          ? `${totals.consignments.toLocaleString('en-IN')} ${totals.consignments === 1 ? 'consignment' : 'consignments'}, ${totals.pieces.toLocaleString('en-IN')} pieces, ${formatKg(totals.weightKg)}`
+          ? `${pluralize(totals.consignments, 'shipment')}, ${formatPieces(totals.pieces)}, ${formatKg(totals.weightKg)}`
           : 'Goods the vehicle is holding right now')}
       />
       <div className="px-4 sm:px-6">
