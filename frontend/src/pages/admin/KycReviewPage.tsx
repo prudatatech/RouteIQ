@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, DataTable, DetailList, Drawer, IfscVerifiedHint, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
-  buttonClasses, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
+  buttonClasses, parseSort, serializeSort, useConfirm, useOpenOnWork, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
@@ -144,6 +144,8 @@ export default function KycReviewPage() {
     for (const v of all) c[v.kyc_status]++
     return c
   }, [all])
+
+  useOpenOnWork(['submitted', 'approved', 'rejected', 'pending'] as const, vendors.isLoading ? {} : counts, tab, setTab)
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()

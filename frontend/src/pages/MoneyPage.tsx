@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { financeAPI } from '@/services/api'
+import type { InvoiceSummary } from '@/utils/finance'
 import {
-  DateRangeControl, Page, PageHeader, presetRange, TabPanel, Tabs, useTabParam, type DateRangeValue, type TabItem,
+  DateRangeControl, Page, PageHeader, presetRange, TabPanel, Tabs, useOpenOnWork, useTabParam, type DateRangeValue, type TabItem,
 } from '@/components/ui'
 import ToPriceTab from '@/components/money/ToPriceTab'
 import { useUnpriced } from '@/components/money/useUnpriced'
@@ -21,6 +24,12 @@ export default function MoneyPage() {
   const [range, setRange] = useState<DateRangeValue>({ preset: '30d', ...presetRange('30d') })
   // Shares its query with the To price tab, so the count on the tab is the list below it
   const unpriced = useUnpriced(range)
+  // The same query Invoices uses for its totals, so the tab count is what the tab shows
+  const invoiceSummary = useQuery<InvoiceSummary>({ queryKey: ['finance', 'invoice-summary'], queryFn: () => financeAPI.invoiceSummary() })
+  useOpenOnWork(['to-price', 'invoices'] as const, {
+    'to-price': unpriced.isLoading ? undefined : unpriced.data?.length ?? 0,
+    invoices: invoiceSummary.isLoading ? undefined : invoiceSummary.data?.outstanding_count ?? 0,
+  }, tab, setTab)
 
   const tabs: TabItem<TabId>[] = [
     { id: 'to-price', label: 'To price', count: unpriced.data?.length },

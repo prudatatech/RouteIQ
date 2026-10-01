@@ -7,7 +7,7 @@ import { supabase } from '@/services/supabase'
 import { bookingsAPI, vendorAPI, type CustomerBooking } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
+  useConfirm, useOpenOnWork, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { buttonClasses } from '@/components/ui/buttonStyles'
 import AssignVehicleModal, { type AssignResult } from '@/components/shipments/AssignVehicleModal'
@@ -98,6 +98,8 @@ export default function RequestsPage() {
   const every = useMemo(() => [...allBookings.map(customerRow), ...allLoads.map(vendorRow)], [allBookings, allLoads])
   const inSource = useMemo(() => every.filter(r => source === 'all' || r.source === source), [every, source])
   const counts = useMemo(() => stageCounts(inSource), [inSource])
+  // Open on the first stage that has requests, not on an empty "To accept"
+  useOpenOnWork(['accept', 'accepted', 'progress', 'done'] as const, bookings.isLoading || loads.isLoading ? {} : counts, tab, setTab)
   const sourceCounts = useMemo(() => ({ all: every.length, customer: allBookings.length, vendor: allLoads.length }), [every.length, allBookings.length, allLoads.length])
 
   const rows = useMemo(() => {

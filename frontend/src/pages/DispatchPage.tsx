@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Page, PageHeader, TabPanel, Tabs, useTabParam } from '@/components/ui'
+import { Page, PageHeader, TabPanel, Tabs, useOpenOnWork, useTabParam } from '@/components/ui'
 import { routesAPI, shipmentsAPI } from '@/services/api'
 import { openChannel, supabase } from '@/services/supabase'
 import NeedsVehicleTab from '@/components/dispatch/NeedsVehicleTab'
@@ -53,6 +53,11 @@ export default function DispatchPage() {
   const needing = useMemo(() => (shipments.data ?? []).filter(needsVehicle), [shipments.data])
   // A vendor load is its own trip and is started by its driver, so it is not sent from here
   const toSend = useMemo(() => (trips.data ?? []).filter(t => t.status === 'pending' && !t.is_manifest), [trips.data])
+
+  useOpenOnWork(['needs-vehicle', 'to-send'] as const, {
+    'needs-vehicle': shipments.isLoading ? undefined : needing.length,
+    'to-send': trips.isLoading ? undefined : toSend.length,
+  }, tab, setTab)
 
   const ewayMissing = useMemo(() => tripsMissingEwayBill(toSend, shipments.data ?? []), [toSend, shipments.data])
 
