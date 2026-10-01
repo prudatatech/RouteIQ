@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 import { indianDateKey } from '../src/core/istDate';
@@ -53,7 +54,7 @@ function reset(extra: Record<string, any[]> = {}) {
       { id: OTHER_VEHICLE, plate_number: 'MH04AB9999', vehicle_type: 'truck', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: 'driver-2' },
     ],
     notifications: [], invoices: [], shipment_hsn: [], capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [],
-    system_settings: [{ key: 'rate_per_km', value: { rate: 20 } }],
+    system_settings: [{ key: 'rate_per_km', value: { rate: 20 } }, COMPANY_SETTING],
     ...extra,
   });
 }

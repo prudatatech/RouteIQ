@@ -8,6 +8,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { checkGstin, normalizeGstin } from '../utils/gstin';
+import { stateCodeByName, stateOf } from '../core/gst';
 
 export const COMPANY_PROFILE_KEY = 'company_profile';
 export const DEFAULT_PAYMENT_TERMS_DAYS = 15;
@@ -122,6 +123,34 @@ export function companyGaps(c: CompanyProfile): string[] {
   if (!c.address) gaps.push('address');
   if (!c.sac_code) gaps.push('SAC code');
   return gaps;
+}
+
+export const COMPANY_PROFILE_INCOMPLETE = 'company_profile_incomplete';
+export const INVOICE_PROFILE_MESSAGE = 'Set your company name, GSTIN and state in Settings before issuing invoices';
+
+/**
+ * What must be on record before any invoice is issued: the seller's name and GSTIN, and the state they
+ * are in (the GSTIN's state code counts, since it names the state; it decides CGST + SGST or IGST).
+ */
+export function invoiceBlockers(c: CompanyProfile): string[] {
+  const missing: string[] = [];
+  if (!c.legal_name) missing.push('company name');
+  if (!c.gstin) missing.push('GSTIN');
+  if (!c.state && !stateOf(c.gstin).code) missing.push('state');
+  return missing;
+}
+
+/** The seller's GST state code, from the GSTIN or else the state named in Settings. */
+export const sellerStateCode = (c: CompanyProfile): string | null => stateOf(c.gstin).code ?? stateCodeByName(c.state);
+
+/** Refuses (409, with the link target for the web) unless the company profile can stand as the seller. Returns the profile. */
+export async function assertCanIssueInvoices(): Promise<CompanyProfile> {
+  const company = await getCompanyProfile();
+  const missing = invoiceBlockers(company);
+  if (missing.length > 0) {
+    throw new HttpError(409, INVOICE_PROFILE_MESSAGE, { code: COMPANY_PROFILE_INCOMPLETE, missing, settings_path: '/admin/settings' });
+  }
+  return company;
 }
 
 /** The only part of the company profile a vendor or customer may see: where to pay. */

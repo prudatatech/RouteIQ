@@ -11,6 +11,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { InvoiceService } from './invoice.service';
+import { assertCanIssueInvoices } from './company.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -64,6 +65,8 @@ async function priceManifest(id: string, amount: number): Promise<void> {
 /** Sets the price, then issues the invoice through the invoice service. Returns the invoice. */
 export async function setPriceAndInvoice(target: PriceTarget, rawAmount: unknown): Promise<{ invoice_id: string; invoice_number: string | null; amount: number }> {
   const amount = parseAmount(rawAmount);
+  // Refuse before the price is saved: a price saved with no invoice behind it would sit unseen
+  await assertCanIssueInvoices();
   const column = target.kind === 'shipment' ? 'shipment_id' : 'manifest_id';
   const { data: existing } = await supabase.from('invoices').select('id, invoice_number').eq(column, target.id).neq('status', 'void').maybeSingle();
   if (existing) throw new HttpError(409, `This delivery already has invoice ${existing.invoice_number ?? existing.id}`);

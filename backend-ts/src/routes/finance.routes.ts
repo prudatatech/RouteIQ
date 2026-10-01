@@ -15,6 +15,7 @@ import { auditService } from '../services/audit.service';
 import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
 import { getCompanyProfile, saveCompanyProfile } from '../services/company.service';
 import { setPriceAndInvoice } from '../services/invoice-pricing.service';
+import { partyFromSnapshot, resolveBillTo } from '../services/invoice-recipient.service';
 import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
@@ -48,7 +49,7 @@ router.get('/unpriced', async (req: Request, res: Response) => {
 });
 
 // ── Invoices ───────────────────────────────────────────────
-const LIST_COLUMNS = 'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, payment_method, price_source';
+const LIST_COLUMNS = 'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, payment_method, price_source, bill_to';
 
 /** Money owed and money in: what is outstanding now, and what was collected in the current India month. */
 router.get('/invoices/summary', async (req: Request, res: Response) => {
@@ -118,7 +119,15 @@ router.get('/invoices', async (req: Request, res: Response) => {
     const now = new Date();
     const wantRequester = req.query.requester === 'vendor' || req.query.requester === 'customer' ? req.query.requester : null;
 
-    const out = rows.map((r: any) => {
+    // The billed party: the one stored on the invoice, else (older invoices) looked up from the delivery
+    const billed = new Map<string, string | null>(await Promise.all(rows.map(async (r: any) => {
+      const stored = partyFromSnapshot(r.bill_to);
+      if (stored) return [r.id, stored.name] as const;
+      if (r.vendor_id || !r.shipment_id) return [r.id, null] as const;
+      return [r.id, (await resolveBillTo(r).catch(() => null))?.name ?? null] as const;
+    })));
+
+    const out = rows.map(({ bill_to: _stored, ...r }: any) => {
       const customerId = r.shipment_id ? (customerOf.get(r.shipment_id) ?? customerOf.get(parentOf.get(r.shipment_id) ?? '') ?? null) : null;
       const requesterType = r.vendor_id ? 'vendor' : customerId ? 'customer' : 'staff';
       const due = effectiveDueDate(r, terms);
@@ -132,6 +141,7 @@ router.get('/invoices', async (req: Request, res: Response) => {
         vendor_name: r.vendor_id ? (companies.get(r.vendor_id) ?? null) : null,
         requester_type: requesterType,
         requester_name: r.vendor_id ? (companies.get(r.vendor_id) ?? null) : customerId ? (customerName.get(customerId) ?? null) : null,
+        billed_to_name: billed.get(r.id) ?? null,
       };
     });
     res.json(out

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { InvoiceService } from '../src/services/invoice.service';
 import { indianDateKey } from '../src/core/istDate';
@@ -29,7 +30,7 @@ function baseFixtures(extra: Record<string, any[]> = {}) {
     vendor_profiles: [{ id: 'vendor-1', company_name: 'Acme Logistics' }, { id: 'vendor-2', company_name: 'Other Co' }],
     shipments: [], shipment_hsn: [], shipment_logs: [], delivery_points: [], route_stops: [], routes: [], vehicles: [],
     capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [],
-    invoices: [], expenses: [], system_settings: [], ...extra,
+    invoices: [], expenses: [], system_settings: [COMPANY_SETTING], ...extra,
   };
 }
 

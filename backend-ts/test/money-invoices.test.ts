@@ -57,7 +57,8 @@ describe('due date on issue', () => {
   });
 
   it('defaults to 15 days when no terms are set, and follows a changed setting', async () => {
-    world({ system_settings: [] });
+    const { payment_terms_days: _terms, ...noTerms } = COMPANY;
+    world({ system_settings: [{ key: 'company_profile', value: { value: noTerms } }] });
     deliver('shipments', ID.s1);
     await InvoiceService.createForShipment(ID.s1);
     expect(Date.parse(supabaseMock.rows('invoices')[0].due_date) - Date.parse(supabaseMock.rows('invoices')[0].issued_at)).toBe(15 * DAY);
@@ -143,19 +144,17 @@ describe('GET /invoices/:id', () => {
   });
 
   it('uses IGST for a buyer in another state, and says so when the place of supply is not known', async () => {
-    world();
-    deliver('cargo_manifest', ID.m1);
-    one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 18 } };
-    await InvoiceService.createForManifest(ID.m1);
-    const id = supabaseMock.rows('invoices')[0].id;
-
-    supabaseMock.rows('vendor_profiles')[0].gst_number = BUYER_GSTIN_GJ;
-    expect((await get(id)).body.tax).toMatchObject({ basis: 'inter', igst: 1440, cgst: 0, sgst: 0 });
-
-    supabaseMock.rows('vendor_profiles')[0].gst_number = null;
-    const unknown = await get(id);
-    expect(unknown.body.tax).toMatchObject({ basis: 'unknown', total: 1440 });
-    expect(unknown.body.tax.note).toMatch(/place of supply/);
+    // The recipient and the tax split are fixed when the invoice is issued
+    for (const [gstin, expected] of [[BUYER_GSTIN_GJ, { basis: 'inter', igst: 1440, cgst: 0, sgst: 0 }], [null, { basis: 'unknown', total: 1440 }]] as const) {
+      world();
+      deliver('cargo_manifest', ID.m1);
+      one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 18 } };
+      supabaseMock.rows('vendor_profiles')[0].gst_number = gstin;
+      await InvoiceService.createForManifest(ID.m1);
+      const res = await get(supabaseMock.rows('invoices')[0].id);
+      expect(res.body.tax).toMatchObject(expected);
+      if (!gstin) expect(res.body.tax.note).toMatch(/place of supply/);
+    }
   });
 
   it('shows a customer invoice with the HSN lines of the goods and the trip', async () => {
@@ -173,9 +172,11 @@ describe('GET /invoices/:id', () => {
   });
 
   it('flags an issued invoice past its due date, and lists what is missing from the company profile', async () => {
-    world({ system_settings: [] });
+    world();
     deliver('shipments', ID.s1);
     await InvoiceService.createForShipment(ID.s1);
+    // The profile loses its details after the invoice was issued: the page lists what is missing
+    supabaseMock.rows('system_settings').length = 0;
     const inv = supabaseMock.rows('invoices')[0];
     inv.issued_at = new Date(Date.now() - 20 * DAY).toISOString();
     inv.due_date = new Date(Date.now() - 5 * DAY).toISOString();

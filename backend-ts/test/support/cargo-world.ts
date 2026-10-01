@@ -65,6 +65,12 @@ export function manifestRow(id: string, over: Row = {}): Row {
   };
 }
 
+/** Seller details on record, so deliveries in a test world can be invoiced (invoices need a name, GSTIN and state). */
+export const COMPANY_SETTING = {
+  key: 'company_profile',
+  value: { value: { legal_name: 'Margix Logistics Pvt Ltd', gstin: '27AAPFU0939F1ZV', state: 'Maharashtra' } },
+};
+
 export function cargoWorld(over: Record<string, Row[]> = {}): Record<string, Row[]> {
   return {
     users: [
@@ -107,7 +113,7 @@ export function cargoWorld(over: Record<string, Row[]> = {}): Record<string, Row
     shipment_hsn: [{ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', declared_value: 200000 }, { id: 'h2', shipment_id: ID.s1, hsn_code: '8528', declared_value: 50000 }],
     sos_alerts: [], vehicle_maintenance_jobs: [], shipment_logs: [], notifications: [], invoices: [], parcel_scans: [],
     cargo_custody_events: [], cargo_exceptions: [], cargo_exception_items: [], cargo_transfers: [], cargo_transfer_items: [], cargo_claims: [],
-    capacity_bids: [], capacity_windows: [], idempotency_keys: [], system_settings: [], driver_confirmations: [],
+    capacity_bids: [], capacity_windows: [], idempotency_keys: [], system_settings: [COMPANY_SETTING], driver_confirmations: [],
     vehicle_service_attachments: [],
     ...over,
   };

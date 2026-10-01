@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
+import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { InvoiceService } from '../src/services/invoice.service';
 
@@ -17,7 +18,7 @@ function reset(shipments: Record<string, unknown>[], extra: Record<string, any[]
     users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: 'vendor-1', role: 'vendor', is_active: true }],
     shipments,
     shipment_hsn: [], shipment_logs: [], delivery_points: [], parcels: [], route_stops: [], routes: [], vehicles: [],
-    capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [], invoices: [], ...extra,
+    capacity_bids: [], capacity_windows: [], cargo_manifest: [], vendor_shipment_requests: [], invoices: [], system_settings: [COMPANY_SETTING], ...extra,
   });
 }
 
