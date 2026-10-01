@@ -1,0 +1,9 @@
+{
+  "name": "margix-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Local end-to-end and UAT tools. See README.md.",
+  "devDependencies": {
+    "playwright": "^1.50.1"
+  }
+}
