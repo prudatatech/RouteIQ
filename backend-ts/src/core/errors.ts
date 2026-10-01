@@ -51,7 +51,22 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     res.status(400).json({ detail: 'Malformed JSON body' });
     return;
   }
+  // A bad percent-escape in the URL (/track/%ZZ): Express throws a URIError (status 400) while decoding
+  // a :param. The client's mistake, not ours.
+  if (isMalformedUrl(err)) {
+    res.status(400).json({ detail: 'Malformed URL' });
+    return;
+  }
   sendError(req, res, err);
+}
+
+/** True for a URI decode failure that Express raised: a URIError, or a non-HttpError 4xx whose message says it could not decode. */
+function isMalformedUrl(err: unknown): boolean {
+  if (err instanceof HttpError || typeof err !== 'object' || err === null) return false;
+  if (err instanceof URIError) return true;
+  const e = err as { status?: unknown; statusCode?: unknown; message?: unknown };
+  const status = Number(e.status ?? e.statusCode);
+  return status >= 400 && status < 500 && /decode/i.test(String(e.message ?? ''));
 }
 
 /** 404 for unmatched routes. */
