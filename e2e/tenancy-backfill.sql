@@ -74,7 +74,7 @@ SELECT pg_temp.expect((SELECT status = 'active' AND name = 'Acme Traders' AND gs
 SELECT pg_temp.expect((SELECT status = 'pending' FROM public.organizations WHERE kind = 'vendor' AND profile ->> 'legacy_user_id' = '00000000-0000-4000-8000-0000000000b1'), 'vendor not yet approved: pending');
 SELECT pg_temp.expect((SELECT count(*) FROM public.org_members m JOIN public.organizations o ON o.id = m.org_id
                        WHERE o.kind = 'vendor' AND m.role = 'owner' AND m.user_id::text = o.profile ->> 'legacy_user_id') = 2, 'each vendor user owns their organisation');
-SELECT pg_temp.expect((SELECT vendor_org_id = app.vendor_org_of('00000000-0000-4000-8000-0000000000a1') FROM public.vendor_shipment_requests), 'the vendor\'s request carries its organisation');
+SELECT pg_temp.expect((SELECT vendor_org_id = app.vendor_org_of('00000000-0000-4000-8000-0000000000a1') FROM public.vendor_shipment_requests), 'the vendor request carries its organisation');
 SELECT pg_temp.expect((SELECT vendor_org_id = app.vendor_org_of('00000000-0000-4000-8000-0000000000a1') FROM public.cargo_manifest), 'the load of that request carries it too');
 SELECT pg_temp.expect((SELECT bill_to_org_id = app.vendor_org_of('00000000-0000-4000-8000-0000000000a1') FROM public.invoices), 'the invoice is billed to the vendor organisation');
 
@@ -83,7 +83,7 @@ SELECT pg_temp.expect((SELECT count(*) FROM public.organizations WHERE kind = 't
 SELECT pg_temp.expect((SELECT a.status = 'active' FROM public.tpl_affiliations a JOIN public.organizations o ON o.id = a.tpl_id WHERE o.name = 'Tiny Transport' AND a.company_id = app.default_company_org_id()), 'approved partner: active affiliation to the company');
 SELECT pg_temp.expect((SELECT a.status = 'pending' FROM public.tpl_affiliations a JOIN public.organizations o ON o.id = a.tpl_id WHERE o.name = 'Waiting Carriers'), 'pending partner: pending affiliation');
 SELECT pg_temp.expect((SELECT status = 'active' FROM public.organizations WHERE name = 'Tiny Transport') AND (SELECT status = 'pending' FROM public.organizations WHERE name = 'Waiting Carriers'), '3PL organisation status follows the partner');
-SELECT pg_temp.expect((SELECT m.role = 'owner' FROM public.org_members m JOIN public.organizations o ON o.id = m.org_id WHERE o.name = 'Tiny Transport'), 'the partner\'s user owns the 3PL organisation');
+SELECT pg_temp.expect((SELECT m.role = 'owner' FROM public.org_members m JOIN public.organizations o ON o.id = m.org_id WHERE o.name = 'Tiny Transport'), 'the partner user owns the 3PL organisation');
 
 -- 6. Memberships by role
 SELECT pg_temp.expect((SELECT count(*) FROM public.org_members WHERE user_id = '00000000-0000-4000-8000-000000000001' AND role = 'owner'
