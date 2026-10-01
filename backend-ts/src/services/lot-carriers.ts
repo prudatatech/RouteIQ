@@ -28,9 +28,12 @@ export async function addLotCarriers(kind: 'shipment' | 'manifest', summaries: S
   const ewayOf = new Map<string, string>();
 
   if (kind === 'shipment') {
-    const { data: own } = await supabase.from('shipments').select('id, eway_bill_ref').in('id', lotIds);
+    // The lots' own rows and their drops do not depend on each other
+    const [{ data: own }, { data: points }] = await Promise.all([
+      supabase.from('shipments').select('id, eway_bill_ref').in('id', lotIds),
+      supabase.from('delivery_points').select('id, shipment_id, name, address, created_at').in('shipment_id', lotIds),
+    ]);
     for (const r of (own ?? []) as any[]) if (r.eway_bill_ref) ewayOf.set(r.id, r.eway_bill_ref);
-    const { data: points } = await supabase.from('delivery_points').select('id, shipment_id, name, address, created_at').in('shipment_id', lotIds);
     const pointRows = ((points ?? []) as any[]).sort((a, b) => Date.parse(a.created_at ?? '') - Date.parse(b.created_at ?? ''));
     for (const p of pointRows) dropOf.set(p.shipment_id, p.name || p.address || '');
     const pointIds = pointRows.map(p => p.id);

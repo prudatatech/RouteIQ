@@ -81,14 +81,16 @@ async function refreshArea(box: Bbox): Promise<'fetched' | 'failed'> {
     console.warn('[traffic] TomTom area request failed:', (e as Error).message);
     return 'failed';
   }
-  for (const inc of incidents) {
+  if (incidents.length > 0) {
+    // One upsert for the whole batch, not one call per incident.
     // affected_route_ids is left alone: the route monitor owns it
-    const { error } = await supabase.from('traffic_incidents').upsert({
+    const seenAt = new Date().toISOString();
+    const { error } = await supabase.from('traffic_incidents').upsert([...new Map(incidents.map(inc => [inc.id, inc])).values()].map(inc => ({
       id: inc.id, type: inc.type, severity: inc.severity, description: inc.description, road: inc.road,
       lat: inc.lat, lng: inc.lng, geometry: inc.geometry, delay_seconds: inc.delay_seconds,
-      starts_at: inc.starts_at, ends_at: inc.ends_at, active: true, last_seen_at: new Date().toISOString(),
-    });
-    if (error) console.error('[traffic] Could not store incident:', error.message);
+      starts_at: inc.starts_at, ends_at: inc.ends_at, active: true, last_seen_at: seenAt,
+    })));
+    if (error) console.error('[traffic] Could not store incidents:', error.message);
   }
   const [minLng, minLat, maxLng, maxLat] = box;
   const { error } = await supabase.from('traffic_incidents').update({ active: false })

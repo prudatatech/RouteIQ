@@ -306,12 +306,12 @@ export async function getPeopleAttention(limit = 10): Promise<PeopleAttention> {
   if (error) throw new Error(`Failed to read people: ${error.message}`);
   const people = users ?? [];
   const ids = people.map(p => p.id as string);
-  const [docs, profiles] = await Promise.all([
+  const [docs, profiles, settings] = await Promise.all([
     liveDocumentsByUser(ids),
     selectIn<{ user_id: string; no_pan_reason: string | null }>('user_profiles', 'user_id', ids, 'user_id, no_pan_reason'),
+    getPeopleSettings(),
   ]);
   const noPan = new Set(profiles.filter(p => p.no_pan_reason).map(p => p.user_id));
-  const settings = await getPeopleSettings();
   const today = todayKey();
 
   const expired: PeopleAttention['expired_licences'] = [];

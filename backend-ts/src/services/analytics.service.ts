@@ -90,33 +90,25 @@ export class AnalyticsService {
       { count: tripsToday },
       deliveredTimes,
       droppedTimes,
+      { data: routesToday },
+      { data: backhaulData },
     ] = await Promise.all([
       supabase.from('vehicles').select('plate_number, status'),
       supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
       AnalyticsService.deliveryTimes(startISO, endISO),
       AnalyticsService.deliveryTimes(startISO, endISO, 'drops'),
+      // Planned distance of the routes dispatched in range
+      supabase.from('routes').select('total_distance_km').in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
+      // Backhaul revenue: agreed cost of vendor loads assigned or completed in range
+      supabase.from('vendor_shipment_requests').select('cost').in('status', ['completed', 'assigned']).gte('created_at', startISO).lt('created_at', endISO),
     ]);
     const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived' && v.status !== 'pending_approval');
     const totalVehicles = fleet.length;
     const runningVehicles = fleet.filter((v: any) => v.status === 'on_route').length;
     const idleVehicles = fleet.filter((v: any) => v.status === 'idle' || v.status === 'available').length;
 
-    // Planned distance of the routes dispatched in range
-    const { data: routesToday } = await supabase
-      .from('routes')
-      .select('total_distance_km')
-      .in('status', ['active', 'completed'])
-      .gte('created_at', startISO)
-      .lt('created_at', endISO);
     const totalDistanceToday = (routesToday || []).reduce((s: number, r: any) => s + (r.total_distance_km || 0), 0);
 
-    // Backhaul revenue: agreed cost of vendor loads assigned or completed in range
-    const { data: backhaulData } = await supabase
-      .from('vendor_shipment_requests')
-      .select('cost')
-      .in('status', ['completed', 'assigned'])
-      .gte('created_at', startISO)
-      .lt('created_at', endISO);
     const backhaulLoads = (backhaulData || []).filter((b: any) => b.cost != null);
     const backhaulRevenue = backhaulLoads.reduce((s: number, b: any) => s + (b.cost || 0), 0);
 
@@ -186,22 +178,34 @@ export class AnalyticsService {
   static async getLiveInsights(): Promise<Record<string, any>[]> {
     const insights: Record<string, any>[] = [];
 
-    // 1. Delay risk from active routes
-    const { data: activeRoutes } = await supabase
-      .from('routes')
-      .select('*, vehicles(*), route_stops(*, delivery_points(*))')
-      .eq('status', 'active');
+    // The three sources do not depend on each other: read them together
+    const [routesRes, idleRes, suggestionsRaw] = await Promise.all([
+      // Only what the insights read: the plate, and each stop's status, order and position
+      supabase
+        .from('routes')
+        .select('id, vehicle_id, vehicles(plate_number), route_stops(status, sequence, delivery_points(latitude, longitude))')
+        .eq('status', 'active'),
+      supabase.from('vehicles').select('id, plate_number, updated_at').eq('status', 'idle'),
+      cacheGet<any[]>('active_reroute_suggestions'),
+    ]);
+    const activeRoutes = routesRes.data as any[] | null;
+
+    // 1. Delay risk from active routes. The latest position of every vehicle is read at once, not one route at a time
+    const vehicleIds = [...new Set((activeRoutes ?? []).map((r: any) => r.vehicle_id).filter(Boolean))] as string[];
+    const latestByVehicle = new Map<string, any>();
+    await Promise.all(vehicleIds.map(async id => {
+      const { data } = await supabase
+        .from('telemetry')
+        .select('latitude, longitude, speed_kmph')
+        .eq('vehicle_id', id)
+        .order('timestamp', { ascending: false })
+        .limit(1);
+      if (data?.[0]) latestByVehicle.set(id, data[0]);
+    }));
 
     if (activeRoutes) {
       for (const route of activeRoutes) {
-        const { data: telemetryData } = await supabase
-          .from('telemetry')
-          .select('*')
-          .eq('vehicle_id', route.vehicle_id)
-          .order('timestamp', { ascending: false })
-          .limit(1);
-
-        const latestTelemetry = telemetryData?.[0];
+        const latestTelemetry = latestByVehicle.get(route.vehicle_id);
         if (!latestTelemetry) continue;
 
         const pendingStops = (route.route_stops || [])
@@ -249,10 +253,7 @@ export class AnalyticsService {
     }
 
     // 2. Idle vehicle alerts (vehicles with 'idle' status for extended time)
-    const { data: idleVehicles } = await supabase
-      .from('vehicles')
-      .select('id, plate_number, updated_at')
-      .eq('status', 'idle');
+    const idleVehicles = idleRes.data;
 
     // A TEMP-/DRFT- placeholder is not a real vehicle, so it is never reported as idle
     for (const v of (idleVehicles || []).filter((x: any) => !isPlaceholderPlate(x.plate_number))) {
@@ -273,7 +274,7 @@ export class AnalyticsService {
     }
 
     // 3. Reroute suggestions from Redis cache
-    const suggestions = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
+    const suggestions = suggestionsRaw || [];
     for (const s of suggestions) {
       const fromTraffic = s.source === 'traffic';
       const saved = typeof s.saved_minutes === 'number' && s.saved_minutes > 0 ? s.saved_minutes : null;
@@ -343,33 +344,44 @@ export class AnalyticsService {
   // ACTIVE MISSIONS
   // ──────────────────────────────────────────────────────────────────────────
   static async getActiveMissions(): Promise<Record<string, any>[]> {
-    const { data: activeRoutes } = await supabase
-      .from('routes')
-      .select('*, vehicles(*), route_stops(*, delivery_points(*))')
-      .in('status', ['active', 'pending']);
+    const [routesRes, suggestionsRaw] = await Promise.all([
+      supabase
+        .from('routes')
+        .select('id, vehicle_id, status, vehicles(plate_number, last_sync), route_stops(status)')
+        .in('status', ['active', 'pending']),
+      cacheGet<any[]>('active_reroute_suggestions'),
+    ]);
+    const activeRoutes = routesRes.data as any[] | null;
 
     if (!activeRoutes) return [];
+    const suggestions = suggestionsRaw || [];
 
     const missions: Record<string, any>[] = [];
     const seenVehicles = new Set<string>();
 
-    for (const route of activeRoutes) {
-      if (seenVehicles.has(route.vehicle_id)) continue;
+    // One mission per vehicle; the latest position of each is read together, not one vehicle at a time
+    const firstRoutes = activeRoutes.filter((route: any) => {
+      if (seenVehicles.has(route.vehicle_id)) return false;
       seenVehicles.add(route.vehicle_id);
-
-      const { data: telData } = await supabase
+      return true;
+    });
+    const telemetryOf = new Map<string, any>();
+    await Promise.all(firstRoutes.map(async (route: any) => {
+      const { data } = await supabase
         .from('telemetry')
-        .select('*')
+        .select('latitude, longitude, speed_kmph')
         .eq('vehicle_id', route.vehicle_id)
         .order('timestamp', { ascending: false })
         .limit(1);
+      telemetryOf.set(route.vehicle_id, data?.[0]);
+    }));
 
-      const tele = telData?.[0];
+    for (const route of firstRoutes) {
+      const tele = telemetryOf.get(route.vehicle_id);
       const stops = route.route_stops || [];
       const pending = stops.filter((s: any) => s.status === 'pending');
       const completed = stops.filter((s: any) => s.status === 'completed');
 
-      const suggestions = (await cacheGet<any[]>('active_reroute_suggestions')) || [];
       const vehicleSuggestion = suggestions.find((s) => s.vehicle_id === route.vehicle_id);
 
       let aiScore = 98.4 - pending.length * 0.2;
@@ -413,10 +425,17 @@ export class AnalyticsService {
 
     const vehicleIds = vehicles.map(v => v.id);
 
-    const { data: routesData, error: routesErr } = await supabase
-      .from('routes')
-      .select('vehicle_id, status, total_distance_km')
-      .in('vehicle_id', vehicleIds);
+    const driverIds = vehicles.map(v => v.driver_id).filter(Boolean) as string[];
+    // Routes, drivers and the driver stats depend only on the vehicles: read them together
+    const [{ data: routesData, error: routesErr }, { data: usersData }, stats] = await Promise.all([
+      supabase.from('routes').select('vehicle_id, status, total_distance_km').in('vehicle_id', vehicleIds),
+      driverIds.length > 0
+        ? supabase.from('users').select('id, full_name, email').in('id', driverIds)
+        : Promise.resolve({ data: [] as any[] }),
+      // Only figures that exist in the data: on-time % from planned vs actual stop
+      // arrival, rating from staff ratings. Both are null until there is data.
+      getVehicleDriverStats(vehicleIds),
+    ]);
     if (routesErr) throw routesErr;
 
     const routesByVehicle: Record<string, any[]> = {};
@@ -424,19 +443,8 @@ export class AnalyticsService {
       (routesByVehicle[r.vehicle_id] ||= []).push(r);
     });
 
-    const driverIds = vehicles.map(v => v.driver_id).filter(Boolean) as string[];
     const usersMap: Record<string, any> = {};
-    if (driverIds.length > 0) {
-      const { data: usersData } = await supabase
-        .from('users')
-        .select('id, full_name, email')
-        .in('id', driverIds);
-      (usersData || []).forEach(u => { usersMap[u.id] = u; });
-    }
-
-    // Only figures that exist in the data: on-time % from planned vs actual stop
-    // arrival, rating from staff ratings. Both are null until there is data.
-    const stats = await getVehicleDriverStats(vehicleIds);
+    (usersData || []).forEach((u: any) => { usersMap[u.id] = u; });
 
     return vehicles.map((v: any) => {
       const vRoutes = routesByVehicle[v.id] || [];
