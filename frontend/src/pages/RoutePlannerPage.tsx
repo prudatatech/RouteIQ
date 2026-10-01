@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { AlertTriangle, Copy, ExternalLink, Navigation, Sparkles, Truck } from 'lucide-react'
@@ -257,7 +257,9 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
 
       {routingUnavailable && (
         <Alert tone="danger" title="Trip planning is not available">
-          {isSuperadmin ? statusQ.data?.message : 'Your administrator can switch it on in Settings.'}
+          {isSuperadmin
+            ? <>Trip planning isn't set up. <Link to="/admin/settings" className="font-medium underline">Open Settings</Link></>
+            : 'Your administrator can switch it on in Settings.'}
         </Alert>
       )}
       {statusQ.data?.available && !statusQ.data.truck_routing && (
