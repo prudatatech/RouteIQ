@@ -189,6 +189,8 @@ describe('the cascade matcher (tier 2)', () => {
     const result = await matchingService.cascadeEscalation(SHIP);
     expect(result).toMatchObject({ tier: 'Tier 2', broadcastedTo: 0 });
     expect(supabaseMock.rows('tpl_offers')).toEqual([]);
+    // Nobody was offered the load, so the history never says "With 3PL partners"
+    expect(supabaseMock.rows('shipment_logs').filter(l => l.status === 'escalated')).toEqual([]);
   });
 
   it('creates offers on the same corridor match when automatic escalation is on', async () => {
