@@ -477,11 +477,11 @@ ALTER TABLE public.tpl_affiliations ENABLE ROW LEVEL SECURITY;
 -- backend (service role).
 DROP POLICY IF EXISTS organizations_read ON public.organizations;
 CREATE POLICY organizations_read ON public.organizations FOR SELECT TO authenticated
-  USING (id = ANY ((SELECT app.member_org_ids())) OR id = ANY ((SELECT app.affiliated_org_ids())) OR (SELECT app.is_platform_admin()));
+  USING (id = ANY ((SELECT app.member_org_ids())::uuid[]) OR id = ANY ((SELECT app.affiliated_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()));
 DROP POLICY IF EXISTS organizations_update_admin ON public.organizations;
 CREATE POLICY organizations_update_admin ON public.organizations FOR UPDATE TO authenticated
-  USING (id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))))
-  WITH CHECK (id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))));
+  USING (id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[]))
+  WITH CHECK (id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[]));
 DROP POLICY IF EXISTS organizations_platform ON public.organizations;
 CREATE POLICY organizations_platform ON public.organizations FOR ALL TO authenticated
   USING ((SELECT app.is_platform_admin())) WITH CHECK ((SELECT app.is_platform_admin()));
@@ -489,13 +489,13 @@ CREATE POLICY organizations_platform ON public.organizations FOR ALL TO authenti
 -- Members read each other; owners and admins manage members (only an owner touches an owner)
 DROP POLICY IF EXISTS org_members_read ON public.org_members;
 CREATE POLICY org_members_read ON public.org_members FOR SELECT TO authenticated
-  USING (org_id = ANY ((SELECT app.member_org_ids())) OR (SELECT app.is_platform_admin()));
+  USING (org_id = ANY ((SELECT app.member_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()));
 DROP POLICY IF EXISTS org_members_manage ON public.org_members;
 CREATE POLICY org_members_manage ON public.org_members FOR ALL TO authenticated
-  USING (org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[])))
-         AND (role <> 'owner' OR org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner']::public.org_role[])))))
-  WITH CHECK (org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[])))
-              AND (role <> 'owner' OR org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner']::public.org_role[])))));
+  USING (org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[])
+         AND (role <> 'owner' OR org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner']::public.org_role[]))::uuid[])))
+  WITH CHECK (org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[])
+              AND (role <> 'owner' OR org_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner']::public.org_role[]))::uuid[])));
 DROP POLICY IF EXISTS org_members_platform ON public.org_members;
 CREATE POLICY org_members_platform ON public.org_members FOR ALL TO authenticated
   USING ((SELECT app.is_platform_admin())) WITH CHECK ((SELECT app.is_platform_admin()));
@@ -504,14 +504,14 @@ CREATE POLICY org_members_platform ON public.org_members FOR ALL TO authenticate
 -- admin decides; platform admins do anything
 DROP POLICY IF EXISTS tpl_affiliations_read ON public.tpl_affiliations;
 CREATE POLICY tpl_affiliations_read ON public.tpl_affiliations FOR SELECT TO authenticated
-  USING (company_id = ANY ((SELECT app.member_org_ids())) OR tpl_id = ANY ((SELECT app.member_org_ids())) OR (SELECT app.is_platform_admin()));
+  USING (company_id = ANY ((SELECT app.member_org_ids())::uuid[]) OR tpl_id = ANY ((SELECT app.member_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()));
 DROP POLICY IF EXISTS tpl_affiliations_request ON public.tpl_affiliations;
 CREATE POLICY tpl_affiliations_request ON public.tpl_affiliations FOR INSERT TO authenticated
-  WITH CHECK (status = 'pending' AND tpl_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))));
+  WITH CHECK (status = 'pending' AND tpl_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[]));
 DROP POLICY IF EXISTS tpl_affiliations_decide ON public.tpl_affiliations;
 CREATE POLICY tpl_affiliations_decide ON public.tpl_affiliations FOR UPDATE TO authenticated
-  USING (company_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))))
-  WITH CHECK (company_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))));
+  USING (company_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[]))
+  WITH CHECK (company_id = ANY ((SELECT app.org_ids_with_role(ARRAY['owner', 'admin']::public.org_role[]))::uuid[]));
 DROP POLICY IF EXISTS tpl_affiliations_platform ON public.tpl_affiliations;
 CREATE POLICY tpl_affiliations_platform ON public.tpl_affiliations FOR ALL TO authenticated
   USING ((SELECT app.is_platform_admin())) WITH CHECK ((SELECT app.is_platform_admin()));
@@ -528,87 +528,87 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.organizations, public.org_members
 -- until orders are routed to companies in Phase 2.
 DROP POLICY IF EXISTS vehicles_select ON public.vehicles;
 CREATE POLICY vehicles_select ON public.vehicles FOR SELECT TO authenticated
-  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin()))) OR (driver_id = auth.uid()));
+  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()))) OR (driver_id = auth.uid()));
 
 DROP POLICY IF EXISTS shipments_select_staff ON public.shipments;
 CREATE POLICY shipments_select_staff ON public.shipments FOR SELECT TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR vendor_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR vendor_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS routes_select ON public.routes;
 CREATE POLICY routes_select ON public.routes FOR SELECT TO authenticated
-  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)));
+  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)));
 
 DROP POLICY IF EXISTS cargo_manifest_select ON public.cargo_manifest;
 CREATE POLICY cargo_manifest_select ON public.cargo_manifest FOR SELECT TO authenticated
-  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR vendor_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)) OR (vendor_request_id IN ( SELECT vendor_shipment_requests.id
+  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR vendor_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)) OR (vendor_request_id IN ( SELECT vendor_shipment_requests.id
    FROM public.vendor_shipment_requests
   WHERE (vendor_shipment_requests.vendor_id = auth.uid()))));
 
 DROP POLICY IF EXISTS capacity_windows_select ON public.capacity_windows;
 CREATE POLICY capacity_windows_select ON public.capacity_windows FOR SELECT TO authenticated
-  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)) OR ((( SELECT public.current_app_role() AS current_app_role) = 'vendor'::text) AND (id IN ( SELECT public.vendor_visible_window_ids() AS vendor_visible_window_ids))));
+  USING ((( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()))) OR (vehicle_id IN ( SELECT public.my_vehicle_ids() AS my_vehicle_ids)) OR ((( SELECT public.current_app_role() AS current_app_role) = 'vendor'::text) AND (id IN ( SELECT public.vendor_visible_window_ids() AS vendor_visible_window_ids))));
 
 DROP POLICY IF EXISTS sos_alerts_select_staff ON public.sos_alerts;
 CREATE POLICY sos_alerts_select_staff ON public.sos_alerts FOR SELECT TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS cargo_claims_staff ON public.cargo_claims;
 CREATE POLICY cargo_claims_staff ON public.cargo_claims TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR vendor_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR vendor_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR vendor_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR vendor_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS cargo_exceptions_staff ON public.cargo_exceptions;
 CREATE POLICY cargo_exceptions_staff ON public.cargo_exceptions TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS cargo_transfers_staff ON public.cargo_transfers;
 CREATE POLICY cargo_transfers_staff ON public.cargo_transfers TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS expenses_staff ON public.expenses;
 CREATE POLICY expenses_staff ON public.expenses TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS vehicle_maintenance_jobs_staff ON public.vehicle_maintenance_jobs;
 CREATE POLICY vehicle_maintenance_jobs_staff ON public.vehicle_maintenance_jobs TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS tpl_offers_staff_all ON public.tpl_offers;
 CREATE POLICY tpl_offers_staff_all ON public.tpl_offers TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 DROP POLICY IF EXISTS tpl_orders_staff_all ON public.tpl_orders;
 CREATE POLICY tpl_orders_staff_all ON public.tpl_orders TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 -- Invoices: the vendor reads the ones billed to them (as before); staff the ones their company issued
 DROP POLICY IF EXISTS invoices_select ON public.invoices;
 CREATE POLICY invoices_select ON public.invoices FOR SELECT TO authenticated
-  USING ((vendor_id = auth.uid()) OR (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin()))));
+  USING ((vendor_id = auth.uid()) OR (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin()))));
 DROP POLICY IF EXISTS invoices_write_staff ON public.invoices;
 CREATE POLICY invoices_write_staff ON public.invoices TO authenticated
-  USING (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT public.is_staff() AS is_staff) AND (issuer_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 -- Driver pay is for admins; now for admins of the owning company
 DROP POLICY IF EXISTS driver_pay_entries_admin ON public.driver_pay_entries;
 CREATE POLICY driver_pay_entries_admin ON public.driver_pay_entries TO authenticated
-  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 DROP POLICY IF EXISTS driver_pay_rates_admin ON public.driver_pay_rates;
 CREATE POLICY driver_pay_rates_admin ON public.driver_pay_rates TO authenticated
-  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 DROP POLICY IF EXISTS driver_payouts_admin ON public.driver_payouts;
 CREATE POLICY driver_payouts_admin ON public.driver_payouts TO authenticated
-  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())))
-  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())) OR (SELECT app.is_platform_admin())));
+  USING (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())))
+  WITH CHECK (( SELECT COALESCE((public.current_app_role() = ANY (ARRAY['superadmin'::text, 'admin'::text])), false) AS "coalesce") AND (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) OR (SELECT app.is_platform_admin())));
 
 RESET ROLE;
 NOTIFY pgrst, 'reload schema';
