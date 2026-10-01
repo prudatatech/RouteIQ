@@ -8,7 +8,7 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import {
   Alert, Button, Card, CardBody, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, TabPanel, Tabs,
-  buttonClasses, humanize, useConfirm, useTabParam, type TabItem,
+  MoreMenu, buttonClasses, humanize, useConfirm, useTabParam, type TabItem,
 } from '@/components/ui'
 import { formatDateTime, formatKg, formatRelative } from '@/utils/display'
 import { expiryStatus } from '@/utils/documentExpiry'
@@ -188,7 +188,10 @@ export default function VehicleDetailPage() {
                 )}
                 <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => setEditing(true)}>Edit</Button>
                 {!draft && vehicle.status !== 'archived' && (
-                  <Button variant="ghost" icon={<ShieldAlert size={16} />} onClick={() => setSosOpen(true)}>Raise SOS for this vehicle</Button>
+                  <MoreMenu
+                    buttonLabel="More actions"
+                    items={[{ label: 'Raise SOS for this vehicle', icon: <ShieldAlert size={16} />, tone: 'danger', onSelect: () => setSosOpen(true) }]}
+                  />
                 )}
               </>
             )}
