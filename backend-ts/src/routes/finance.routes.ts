@@ -57,8 +57,11 @@ router.get('/invoices/summary', async (req: Request, res: Response) => {
     const now = new Date();
     const monthKey = indianDateKey(now).slice(0, 7);
     const monthStart = indianDayStart(`${monthKey}-01`);
-    const terms = (await getCompanyProfile()).payment_terms_days;
-    const { data, error } = await supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']);
+    const [profile, { data, error }] = await Promise.all([
+      getCompanyProfile(),
+      supabase.from('invoices').select('id, status, total, amount, issued_at, due_date, paid_at').in('status', ['issued', 'paid']),
+    ]);
+    const terms = profile.payment_terms_days;
     if (error) throw new Error(`Failed to summarise invoices: ${error.message}`);
     let outstanding = 0, outstandingCount = 0, overdue = 0, overdueCount = 0, collected = 0, collectedCount = 0;
     for (const r of data ?? []) {
@@ -93,39 +96,47 @@ router.get('/invoices', async (req: Request, res: Response) => {
       .order('issued_at', { ascending: false });
     const status = req.query.status;
     if (typeof status === 'string' && ['issued', 'paid', 'void'].includes(status)) query = query.eq('status', status);
-    const { data, error } = await query;
+    // The payment terms do not depend on the invoices: read both at once
+    const [{ data, error }, profile] = await Promise.all([query, getCompanyProfile()]);
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
     const rows = data ?? [];
 
-    const [shipments, manifests, vendors] = await Promise.all([
-      selectIn<{ id: string; tracking_id: string; parent_shipment_id: string | null }>('shipments', 'id', rows.map((r: any) => r.shipment_id), 'id, tracking_id, parent_shipment_id'),
-      selectIn<{ id: string }>('cargo_manifest', 'id', rows.map((r: any) => r.manifest_id), 'id'),
-      selectIn<{ id: string; company_name: string }>('vendor_profiles', 'id', rows.map((r: any) => r.vendor_id), 'id, company_name'),
-    ]);
-    const tracking = new Map(shipments.map(s => [s.id, s.tracking_id]));
-    const manifestIds = new Set(manifests.map(m => m.id));
-    const companies = new Map(vendors.map(v => [v.id, v.company_name]));
+    // The names behind the invoices (shipments, loads, vendors, then the customers of the bookings) and the
+    // billed party of each invoice are separate chains: they run side by side
+    const namesP = (async () => {
+      const [shipments, manifests, vendors] = await Promise.all([
+        selectIn<{ id: string; tracking_id: string; parent_shipment_id: string | null }>('shipments', 'id', rows.map((r: any) => r.shipment_id), 'id, tracking_id, parent_shipment_id'),
+        selectIn<{ id: string }>('cargo_manifest', 'id', rows.map((r: any) => r.manifest_id), 'id'),
+        selectIn<{ id: string; company_name: string }>('vendor_profiles', 'id', rows.map((r: any) => r.vendor_id), 'id, company_name'),
+      ]);
+      const tracking = new Map(shipments.map(s => [s.id, s.tracking_id]));
+      const manifestIds = new Set(manifests.map(m => m.id));
+      const companies = new Map(vendors.map(v => [v.id, v.company_name]));
 
-    // Deliveries billed to a customer (no vendor on the invoice): the customer whose booking it is
-    const customerRows = rows.filter((r: any) => !r.vendor_id && r.shipment_id);
-    const parentOf = new Map(shipments.map(s => [s.id, s.parent_shipment_id]));
-    const bookingShipmentIds = [...new Set(customerRows.flatMap((r: any) => [r.shipment_id, parentOf.get(r.shipment_id) ?? null]).filter(Boolean) as string[])];
-    const bookings = await selectIn<{ shipment_id: string; customer_id: string }>('customer_bookings', 'shipment_id', bookingShipmentIds, 'shipment_id, customer_id');
-    const customers = await selectIn<{ id: string; full_name: string | null; company_name: string | null }>('customers', 'id', bookings.map(b => b.customer_id), 'id, full_name, company_name');
-    const customerOf = new Map(bookings.map(b => [b.shipment_id, b.customer_id]));
-    const customerName = new Map(customers.map(c => [c.id, c.company_name || c.full_name || null]));
-
-    const terms = (await getCompanyProfile()).payment_terms_days;
-    const now = new Date();
-    const wantRequester = req.query.requester === 'vendor' || req.query.requester === 'customer' ? req.query.requester : null;
+      // Deliveries billed to a customer (no vendor on the invoice): the customer whose booking it is
+      const customerRows = rows.filter((r: any) => !r.vendor_id && r.shipment_id);
+      const parentOf = new Map(shipments.map(s => [s.id, s.parent_shipment_id]));
+      const bookingShipmentIds = [...new Set(customerRows.flatMap((r: any) => [r.shipment_id, parentOf.get(r.shipment_id) ?? null]).filter(Boolean) as string[])];
+      const bookings = await selectIn<{ shipment_id: string; customer_id: string }>('customer_bookings', 'shipment_id', bookingShipmentIds, 'shipment_id, customer_id');
+      const customers = await selectIn<{ id: string; full_name: string | null; company_name: string | null }>('customers', 'id', bookings.map(b => b.customer_id), 'id, full_name, company_name');
+      const customerOf = new Map(bookings.map(b => [b.shipment_id, b.customer_id]));
+      const customerName = new Map(customers.map(c => [c.id, c.company_name || c.full_name || null]));
+      return { tracking, manifestIds, companies, parentOf, customerOf, customerName };
+    })();
 
     // The billed party: the one stored on the invoice, else (older invoices) looked up from the delivery
-    const billed = new Map<string, string | null>(await Promise.all(rows.map(async (r: any) => {
+    const billedP = Promise.all(rows.map(async (r: any) => {
       const stored = partyFromSnapshot(r.bill_to);
       if (stored) return [r.id, stored.name] as const;
       if (r.vendor_id || !r.shipment_id) return [r.id, null] as const;
       return [r.id, (await resolveBillTo(r).catch(() => null))?.name ?? null] as const;
-    })));
+    }));
+    const [{ tracking, manifestIds, companies, parentOf, customerOf, customerName }, billedEntries] = await Promise.all([namesP, billedP]);
+    const billed = new Map<string, string | null>(billedEntries);
+
+    const terms = profile.payment_terms_days;
+    const now = new Date();
+    const wantRequester = req.query.requester === 'vendor' || req.query.requester === 'customer' ? req.query.requester : null;
 
     const out = rows.map(({ bill_to: _stored, ...r }: any) => {
       const customerId = r.shipment_id ? (customerOf.get(r.shipment_id) ?? customerOf.get(parentOf.get(r.shipment_id) ?? '') ?? null) : null;

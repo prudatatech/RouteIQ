@@ -521,21 +521,27 @@ export async function listExceptions(filters: ExceptionFilters) {
   if (filters.overdue) rows = rows.filter(r => slaView(r, now).overdue);
   if (rows.length === 0) return [];
 
-  const { data: allItems } = await supabase.from('cargo_exception_items').select('*').in('exception_id', rows.map(r => r.id));
-  const views = await itemViews(allItems ?? []);
+  // The items (and their views), the vehicles and the owners do not depend on each other
+  const vehicleIds = [...new Set(rows.map(r => r.vehicle_id).filter(Boolean))];
+  const [{ allItems, views }, vehicleRows, owners] = await Promise.all([
+    (async () => {
+      const { data } = await supabase.from('cargo_exception_items').select('*').in('exception_id', rows.map(r => r.id));
+      const allItems = data ?? [];
+      return { allItems, views: await itemViews(allItems) };
+    })(),
+    vehicleIds.length
+      ? supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).in('id', vehicleIds).then(({ data }) => (data ?? []) as any[])
+      : Promise.resolve([] as any[]),
+    ownerNames(rows.map(r => r.owner_id)),
+  ]);
   const itemsBy = new Map<string, any[]>();
-  (allItems ?? []).forEach((item: any, i: number) => {
+  allItems.forEach((item: any, i: number) => {
     const list = itemsBy.get(item.exception_id) ?? [];
     list.push(views[i]);
     itemsBy.set(item.exception_id, list);
   });
-  const vehicleIds = [...new Set(rows.map(r => r.vehicle_id).filter(Boolean))];
   const vehicles = new Map<string, any>();
-  if (vehicleIds.length) {
-    const { data: v } = await supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).in('id', vehicleIds);
-    for (const row of (v ?? []) as any[]) vehicles.set(row.id, row);
-  }
-  const owners = await ownerNames(rows.map(r => r.owner_id));
+  for (const row of vehicleRows) vehicles.set(row.id, row);
   return rows.map(r => {
     const { notes: _notes, ...rest } = r;
     const vehicle = r.vehicle_id ? vehicles.get(r.vehicle_id) ?? null : null;
@@ -565,9 +571,37 @@ async function ownerNames(ids: (string | null | undefined)[]): Promise<Map<strin
 
 /** The case with its items, merged timeline (custody, SOS, maintenance, notes), transfers and claims. */
 export async function getException(id: string) {
-  const row = await loadException(id);
-  const items = await exceptionItems(id);
-  const views = await itemViews(items);
+  // The case, its items, and the transfers and claims filed on it are separate reads
+  const [row, items, { data: transferRows }, { data: claims }] = await Promise.all([
+    loadException(id),
+    exceptionItems(id),
+    supabase.from('cargo_transfers').select('id, planned_at').eq('exception_id', id),
+    supabase.from('cargo_claims').select('id, code, claim_type, status, claimed_amount, approved_amount, settled_amount, shipment_id, manifest_id, created_at').eq('exception_id', id),
+  ]);
+
+  const shipmentIds = items.map((i: any) => i.shipment_id).filter(Boolean);
+  const manifestIds = items.map((i: any) => i.manifest_id).filter(Boolean);
+  const { describeEventWithNotes } = await import('./custody.service');
+  const { getTransfer } = await import('./transfer.service');
+  const orderedTransfers = [...((transferRows ?? []) as any[])].sort((a, b) => String(a.planned_at).localeCompare(String(b.planned_at)));
+
+  // Everything that hangs off the case is read at once: item views, custody events, the SOS alert,
+  // the maintenance job, the vehicle, and each transfer as GET /cargo/transfers/:id shows it
+  const [views, shipmentEvents, manifestEvents, sosRes, jobRes, vehicleRes, transfers] = await Promise.all([
+    itemViews(items),
+    shipmentIds.length ? supabase.from('cargo_custody_events').select('*').in('shipment_id', shipmentIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+    manifestIds.length ? supabase.from('cargo_custody_events').select('*').in('manifest_id', manifestIds).then(r => r.data ?? []) : Promise.resolve([] as any[]),
+    row.sos_alert_id
+      ? supabase.from('sos_alerts').select('id, alert_type, severity, status, description, created_at, updated_at').eq('id', row.sos_alert_id).maybeSingle()
+      : Promise.resolve({ data: null as any }),
+    row.maintenance_job_id
+      ? supabase.from('vehicle_maintenance_jobs').select('id, status, reason_type, workshop, expected_return_date, opened_at, closed_at').eq('id', row.maintenance_job_id).maybeSingle()
+      : Promise.resolve({ data: null as any }),
+    row.vehicle_id
+      ? supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).eq('id', row.vehicle_id).maybeSingle()
+      : Promise.resolve({ data: null as any }),
+    Promise.all(orderedTransfers.map(t => getTransfer(t.id))),
+  ]);
 
   const timeline: { at: string; source: string; kind: string; text: string; ref?: unknown; by?: string | null; role?: string | null; data?: unknown }[] = [];
   timeline.push({ at: row.created_at, source: 'case', kind: 'opened', text: row.description ?? 'Case opened' });
@@ -576,12 +610,7 @@ export async function getException(id: string) {
   }
   if (row.resolved_at) timeline.push({ at: row.resolved_at, source: 'case', kind: 'resolved', text: `Resolved: ${String(row.resolution ?? '').replace(/_/g, ' ')}${row.resolution_note ? `. ${row.resolution_note}` : ''}`, by: row.resolved_by });
 
-  const shipmentIds = items.map((i: any) => i.shipment_id).filter(Boolean);
-  const manifestIds = items.map((i: any) => i.manifest_id).filter(Boolean);
-  const { describeEventWithNotes } = await import('./custody.service');
-  const eventRows: any[] = [];
-  if (shipmentIds.length) eventRows.push(...((await supabase.from('cargo_custody_events').select('*').in('shipment_id', shipmentIds)).data ?? []));
-  if (manifestIds.length) eventRows.push(...((await supabase.from('cargo_custody_events').select('*').in('manifest_id', manifestIds)).data ?? []));
+  const eventRows: any[] = [...shipmentEvents, ...manifestEvents];
   const since = Date.parse(row.created_at) - 24 * 3600_000;
   for (const e of eventRows) {
     if (e.exception_id !== id && Date.parse(e.recorded_at) < since) continue;
@@ -591,38 +620,15 @@ export async function getException(id: string) {
       data: { pieces: e.pieces, condition: e.condition, transfer_id: e.transfer_id },
     });
   }
-  let sos: any = null;
-  if (row.sos_alert_id) {
-    const { data } = await supabase.from('sos_alerts').select('id, alert_type, severity, status, description, created_at, updated_at').eq('id', row.sos_alert_id).maybeSingle();
-    sos = data ?? null;
-    if (sos) timeline.push({ at: sos.created_at, source: 'sos', kind: 'sos_raised', text: `SOS (${String(sos.alert_type ?? 'emergency').replace(/_/g, ' ')}${sos.severity ? `, ${sos.severity}` : ''}): ${sos.description ?? ''}`.trim() });
-  }
-  let job: any = null;
-  if (row.maintenance_job_id) {
-    const { data } = await supabase.from('vehicle_maintenance_jobs').select('id, status, reason_type, workshop, expected_return_date, opened_at, closed_at').eq('id', row.maintenance_job_id).maybeSingle();
-    job = data ?? null;
-    if (job) {
-      timeline.push({ at: job.opened_at, source: 'maintenance', kind: 'maintenance_opened', text: `Moved to maintenance (${String(job.reason_type).replace(/_/g, ' ')}${job.workshop ? ` at ${job.workshop}` : ''})${job.expected_return_date ? `, expected back ${job.expected_return_date}` : ''}` });
-      if (job.closed_at) timeline.push({ at: job.closed_at, source: 'maintenance', kind: 'maintenance_closed', text: 'Returned to service' });
-    }
+  const sos: any = sosRes.data ?? null;
+  if (sos) timeline.push({ at: sos.created_at, source: 'sos', kind: 'sos_raised', text: `SOS (${String(sos.alert_type ?? 'emergency').replace(/_/g, ' ')}${sos.severity ? `, ${sos.severity}` : ''}): ${sos.description ?? ''}`.trim() });
+  const job: any = jobRes.data ?? null;
+  if (job) {
+    timeline.push({ at: job.opened_at, source: 'maintenance', kind: 'maintenance_opened', text: `Moved to maintenance (${String(job.reason_type).replace(/_/g, ' ')}${job.workshop ? ` at ${job.workshop}` : ''})${job.expected_return_date ? `, expected back ${job.expected_return_date}` : ''}` });
+    if (job.closed_at) timeline.push({ at: job.closed_at, source: 'maintenance', kind: 'maintenance_closed', text: 'Returned to service' });
   }
   timeline.sort((a, b) => String(a.at).localeCompare(String(b.at)));
-
-  const [{ data: transferRows }, { data: claims }] = await Promise.all([
-    supabase.from('cargo_transfers').select('id, planned_at').eq('exception_id', id),
-    supabase.from('cargo_claims').select('id, code, claim_type, status, claimed_amount, approved_amount, settled_amount, shipment_id, manifest_id, created_at').eq('exception_id', id),
-  ]);
-  // Transfers as GET /cargo/transfers/:id shows them: vehicles, hub and items with their codes
-  const { getTransfer } = await import('./transfer.service');
-  const transfers = [];
-  for (const t of [...((transferRows ?? []) as any[])].sort((a, b) => String(a.planned_at).localeCompare(String(b.planned_at)))) {
-    transfers.push(await getTransfer(t.id));
-  }
-  let vehicle = null;
-  if (row.vehicle_id) {
-    const { data } = await supabase.from('vehicles').select(CASE_VEHICLE_COLUMNS).eq('id', row.vehicle_id).maybeSingle();
-    vehicle = data ?? null;
-  }
+  const vehicle = vehicleRes.data ?? null;
   // Names for the owner and for whoever acted on the case (the timeline's `by` ids)
   const names = await ownerNames([row.owner_id, ...timeline.map(t => t.by)]);
   const named = timeline.map(t => (t.by ? { ...t, by_name: names.get(t.by) ?? null } : { ...t, by_name: null }));

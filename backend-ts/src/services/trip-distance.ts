@@ -52,11 +52,13 @@ export async function attachTripDistance(rows: any[]): Promise<void> {
   const byRoute = new Map<string, any>();
   const byLoad = new Map<string, any>();
   try {
-    if (routeIds.length > 0) {
-      for (const e of await selectIn<any>('driver_pay_entries', 'route_id', routeIds, 'route_id, km, km_source')) byRoute.set(e.route_id, e);
-    }
-    // A load is paid per journey, keyed on its master and vehicle: look for the load itself and for its master
-    if (loadIds.length > 0) await loadEntries(finished, loadIds, byLoad);
+    // Routes and loads are looked up together. A load is paid per journey, keyed on its master and vehicle:
+    // look for the load itself and for its master
+    const [routeEntries] = await Promise.all([
+      routeIds.length > 0 ? selectIn<any>('driver_pay_entries', 'route_id', routeIds, 'route_id, km, km_source') : Promise.resolve([] as any[]),
+      loadIds.length > 0 ? loadEntries(finished, loadIds, byLoad) : Promise.resolve(),
+    ]);
+    for (const e of routeEntries) byRoute.set(e.route_id, e);
   } catch (e) {
     // The distance is still shown from the plan or the stops; a pay lookup must not break the trip list
     console.error('[trip-distance] Could not read the pay entries:', e);
