@@ -17,14 +17,20 @@ share nothing: separate databases, servers, keys and schedulers.
 
 | Part | **Test** (branch `test`) | **Live** (branch `main`) |
 |---|---|---|
-| Web app (`frontend/`) | Vercel `prudatas-projects/margixindia`: https://margixindia.vercel.app | Azure Static Web App `margix-web`: https://gentle-plant-0cd625000.5.azurestaticapps.net |
-| Backend, WebSocket, scheduler (`backend-ts/`) | Railway: https://routeiq-production-7034.up.railway.app | Azure Container App `margix-api`: https://margix-api.graywave-14c2046e.centralindia.azurecontainerapps.io |
-| Route optimizer (`ml-service/`) | Railway | Azure Container App `margix-ml` (internal, scales to zero) |
+| Web app (`frontend/`) | Azure Static Web App `margix-test-web` (Vercel is being retired, see "Retiring Vercel and Railway" below) | Azure Static Web App `margix-web`: https://gentle-plant-0cd625000.5.azurestaticapps.net |
+| Backend, WebSocket, scheduler (`backend-ts/`) | Azure Container App `margix-test-api` (scales 0 to 1; Railway is being retired) | Azure Container App `margix-api`: https://margix-api.graywave-14c2046e.centralindia.azurecontainerapps.io |
+| Route optimizer (`ml-service/`) | Azure Container App `margix-test-ml` (internal) | Azure Container App `margix-ml` (internal, scales to zero) |
 | Database, sign-in, storage, realtime | Supabase project `plutdajzefwtpgofpqlk` | its own Supabase project (`margix-live`), set up from `supabase/bootstrap/` |
 | Driver and customer apps (Expo EAS) | channel `preview` | channel `production` |
 | Deploys when | a push to `test` | a push to `main` (only through a pull request from `test`) |
-| Database changes applied by | `.github/workflows/db-migrate.yml` | the first job of `.github/workflows/deploy-azure.yml` |
+| Database changes applied by | the first job (`migrate`, environment `test`) of `.github/workflows/deploy-azure.yml` | the same job on `main` (environment `production`) |
 | Backups | Supabase's own | Supabase's own **plus** a nightly encrypted dump (`backup-live.yml`, 30 days) |
+
+Both stages are one Azure deployment: the same resource group, container registry, log workspace, pull
+identity and Container Apps environment, with separate apps (`margix-test-*` and `margix-*`). Deploy a stage
+with `./infra/deploy.sh --stage test` (default `live`); see [`infra/README.md`](../infra/README.md).
+The test URLs are printed by `./infra/deploy.sh --stage test` (the table shows names, since the addresses
+exist only after its first run).
 
 Azure details: subscription `1c904442-…902c` (account `kushagratiwari252@gmail.com`), resource group
 `margix-rg` in Central India (the Static Web App record sits in East Asia), budget `margix-budget` ($200,
@@ -38,12 +44,24 @@ account without touching the data, and a dump restores into any Postgres or self
 **Why the backend runs as exactly one copy per environment.** The scheduler, rate limits, map tile cache
 and login codes live in the server's memory. Don't raise `maxReplicas` until that state moves to Redis.
 
+### Retiring Vercel and Railway
+
+Once the test stage runs on Azure and has been checked (web loads, sign-in works, `/health` of
+`margix-test-api` answers, a migration reached the test database), stop the old test hosts. These are your
+steps, not automatic:
+
+1. In Vercel, open the project `margixindia` → Settings → Git → Disconnect the repository (or delete the project).
+2. In Railway, open the project → Settings → disconnect the GitHub repo from each service, then remove the services.
+3. Remove the Vercel pattern from CORS (`extraCorsPatterns` in `infra/main.bicep`) and update anything that still points at the old test URLs (Supabase Auth redirect URLs, the UAT runner, EAS `preview` API address).
+
+The old live-era `margixindia.com` site is a separate matter (§4.5).
+
 ---
 
 ## 2. How a change reaches users
 
 1. **Work on `test`** (directly, or on a short branch merged into `test` by a pull request). Each push:
-   CI runs, Vercel and Railway deploy the test servers, and new migrations go to the test database.
+   CI runs, and `deploy-azure.yml` migrates the test database and rolls `margix-test-*` on Azure.
 2. **Check it on the test servers** (and with the UAT runner, §7).
 3. **Release:** open a pull request **`test` → `main`**. CI must pass before it can merge (branch
    protection). Merging deploys live: the live database is migrated first, then the backend, optimizer
@@ -85,11 +103,15 @@ privileges, see the file header) and keep `02_platform.sql` in step with realtim
 
 | Where | Test | Live |
 |---|---|---|
-| Backend keys | Railway service variables | `infra/secrets.env` → `./infra/set-secrets.sh` (Azure) |
-| Web app Supabase address | `frontend/.env.production` and Vercel variables | GitHub variables `LIVE_SUPABASE_URL`, `LIVE_SUPABASE_PUBLISHABLE_KEY` |
+| Backend keys | `infra/secrets.test.env` → `./infra/set-secrets.sh --stage test` (Azure `margix-test-*`) | `infra/secrets.live.env` → `./infra/set-secrets.sh` (Azure `margix-*`) |
+| Web app Supabase address | `frontend/.env.production` (the test stage always builds with it) | GitHub variables `LIVE_SUPABASE_URL`, `LIVE_SUPABASE_PUBLISHABLE_KEY` |
 | Database URL for migrations | GitHub environment `test`, secret `DATABASE_URL` | GitHub environment `production`, secret `DATABASE_URL` |
 | Backup passphrase | | GitHub environment `production`, secret `BACKUP_PASSPHRASE` |
 | Driver and customer apps | EAS environment `preview` | EAS environment `production` |
+
+Both secrets files are gitignored. A stage without its own file falls back to the shared `infra/secrets.env`
+with a warning (loud for live, which must not run on test keys); create `secrets.live.env` and `secrets.test.env`
+and retire `secrets.env`.
 
 Each environment has its own `SECRET_KEY`, `PEOPLE_HASH_SALT` and Supabase keys. Use separate Redis
 databases, and SMS test credentials on test where the provider offers them, so test never messages real
@@ -179,7 +201,7 @@ Settings:
 
 ### 4.4 Automatic deploys from GitHub
 
-`.github/workflows/deploy-azure.yml` runs on every push to `main` that touches `backend-ts/`, `ml-service/`, `frontend/` or `infra/`. You can also run it by hand from the Actions tab, where you can untick the parts you don't want. It works out what changed since the last successful deploy (or deploys everything when it can't tell, such as on a force push) and runs only the needed jobs, at the same time:
+`.github/workflows/deploy-azure.yml` runs on every push to `test` (stage test) or `main` (stage live) that touches `backend-ts/`, `ml-service/`, `frontend/`, `infra/` or `supabase/migrations/`. It compares with the last successful run on the same branch, and its Azure login jobs use no GitHub environment because the federated credentials are bound to the branch refs `main` and `test` (`./infra/github-oidc.sh` registers both). You can also run it by hand from the Actions tab, where you can untick the parts you don't want. It works out what changed since the last successful deploy (or deploys everything when it can't tell, such as on a force push) and runs only the needed jobs, at the same time:
 
 | Changed | Job | What it does |
 |---|---|---|
