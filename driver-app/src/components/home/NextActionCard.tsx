@@ -34,6 +34,8 @@ interface NextActionCardProps {
   onRecordPickup: (stop: RouteStop | null) => void;
   onDepart: (items: OnBoardItem[]) => void;
   onOpenReturnPickup: () => void;
+  /** Goods at this drop were never picked up: open the pickup form for them. */
+  onPickupFirst: (stop: RouteStop) => void;
   onOpenHubDrop: () => void;
   onOpenCargoCheck: () => void;
   onCallDispatch: () => void;
@@ -243,6 +245,16 @@ export default function NextActionCard(props: NextActionCardProps) {
         <Hero icon={ion('arrow-undo-outline')} title={name ? `${t('na2_return_title')}: ${name}` : t('na2_return_title')} lines={[fill(t('na2_return_desc'), { code: action.code })]}>
           <Button title={t('na2_return_btn')} onPress={props.onOpenReturnPickup} icon={icon('arrow-undo-outline')} />
           <Button title={t('na_navigate')} variant="ghost" onPress={() => props.onNavigate(action.stop)} icon={icon('navigate')} />
+        </Hero>
+      );
+    }
+
+    case 'pickup_first': {
+      const name = action.stop.delivery_point?.name || `${t('stop')} ${action.stop.sequence}`;
+      return (
+        <Hero tone="warning" icon={ion('clipboard-outline')} title={t('na3_pickup_first_title')} lines={[fill(t('na3_pickup_first_desc'), { code: action.code }), name]}>
+          <Button title={t('na2_pickup_btn')} onPress={() => props.onPickupFirst(action.stop)} icon={icon('clipboard-outline')} />
+          <Button title={t('issue_btn')} variant="secondary" onPress={() => props.onReportIssue(action.stop)} icon={icon('warning-outline')} />
         </Hero>
       );
     }

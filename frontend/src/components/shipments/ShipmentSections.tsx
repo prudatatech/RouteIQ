@@ -373,7 +373,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
           {f.master
             ? <p className="text-sm text-muted">{OPEN_A_LOT}</p>
             : !s.vehicle_id && <p className="text-sm text-muted">Assign a vehicle to see where this shipment is.</p>}
-          {showMap && <InlineTrackingMap trackingId={s.tracking_id} />}
+          {showMap && <InlineTrackingMap trackingId={s.tracking_id} vehicleId={s.vehicle_id} />}
         </Section>
       )}
     </>

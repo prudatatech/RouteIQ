@@ -188,6 +188,15 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     },
     [openModal],
   );
+  // Goods that were never picked up cannot be delivered: open the pickup form for them first
+  const openPickupFor = useCallback(
+    (stop: RouteStop) => {
+      const code = stop.parcel?.code;
+      if (code) setPickupItems((cur) => (cur.some((i) => i.code === code) ? cur : [...cur, { code, ref: manifestRefOfStop(stop.id) ?? code }]));
+      openModal({ kind: 'pickup' });
+    },
+    [openModal],
+  );
   const openIssue = useCallback((stop: RouteStop) => openModal({ kind: 'issue', stop, lots: lotsAtDrop.current(stop) }), [openModal]);
 
   // Arrival is shown by the next-action card; the phone just buzzes once per stop.
@@ -266,6 +275,9 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     startTracking: tracking.start,
     openPod,
     openIssue,
+    openPickupFor,
+    onBoard: onBoard.data ?? null,
+    pickedUpCodes: scans.pickedUp,
     showBackhaulPopup: showBackhaul,
   });
 
@@ -306,13 +318,14 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
     dispatchIssues: status.dispatchIssues,
     upcoming: status.upcoming,
     pickupWaiting: pickupItems.length,
+    pickedUpCodes: scans.pickedUp,
     lotsAt: (stop) =>
       dropLotsFor(stop, route, onBoard.items).map((l) => ({ code: l.code, pieces: l.pieces, label: l.lot.label, consigneeName: l.lot.consigneeName })),
   });
 
   // Stops the card does not show, in order: the rest of the trip under it
   const cardStop =
-    nextAction.kind === 'go_to_stop' || nextAction.kind === 'deliver' || nextAction.kind === 'return_pickup'
+    nextAction.kind === 'go_to_stop' || nextAction.kind === 'deliver' || nextAction.kind === 'return_pickup' || nextAction.kind === 'pickup_first'
       ? nextAction.stop
       : nextAction.kind === 'record_pickup'
         ? nextAction.stop
@@ -970,6 +983,7 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
                 onRecordPickup: (stop) => (stop ? actions.confirmAtStop(stop) : openModal({ kind: 'pickup' })),
                 onDepart: depart,
                 onOpenReturnPickup: () => openModal({ kind: 'returnPickup' }),
+                onPickupFirst: openPickupFor,
                 onOpenHubDrop: () => openModal({ kind: 'hubDrop' }),
                 onOpenCargoCheck: () => openModal({ kind: 'cargoCheck' }),
                 onCallDispatch: dispatch.callDispatch,

@@ -21,6 +21,7 @@ import { authenticateToken } from './core/auth';
 import { isStaff } from './core/ownership';
 import { errorHandler, notFoundHandler } from './core/errors';
 import { redis } from './core/redis';
+import { supabase } from './core/supabase';
 import { wsManager } from './core/websocket';
 import apiRouter from './routes';
 
@@ -52,6 +53,21 @@ function isAllowedOrigin(origin: string): boolean {
   return settings.CORS_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
 }
 
+// ── Helpers ────────────────────────────────────────────────
+const READY_TIMEOUT_MS = 2000;
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+
+/** The client's X-Request-ID when it is 1 to 64 letters, digits or hyphens; otherwise a new UUID. */
+export function requestIdFrom(header: string | string[] | undefined): string {
+  return typeof header === 'string' && REQUEST_ID_PATTERN.test(header) ? header : uuidv4();
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms); });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
 // ── Express app ────────────────────────────────────────────
 export function createApp(): express.Express {
   const app = express();
@@ -61,9 +77,10 @@ export function createApp(): express.Express {
 
   // ── Middleware (order matters — outermost first) ──────────
 
-  // 1. Request ID — adds X-Request-ID header to every response
+  // 1. Request ID — adds X-Request-ID header to every response. A client's id is kept only when it
+  // is a plain id; anything else (markup, long or non-ASCII values) is replaced, so logs cannot be forged.
   app.use((req, res, next) => {
-    const requestId = req.headers['x-request-id'] as string || uuidv4();
+    const requestId = requestIdFrom(req.headers['x-request-id']);
     res.setHeader('X-Request-ID', requestId);
     next();
   });
@@ -82,6 +99,11 @@ export function createApp(): express.Express {
 
   // 3. Security headers
   app.use(helmet({ contentSecurityPolicy: false }));
+  // The API never needs the camera, microphone or location of whoever opens it in a browser
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
 
   // 4. CORS
   app.use(cors({
@@ -122,14 +144,16 @@ export function createApp(): express.Express {
     });
   });
 
+  // Ready only when the database answers (and Redis, when it is configured), each within 2 s
   app.get('/ready', async (_req, res) => {
-    try {
-      if (redis) await redis.ping();
-      res.json({ status: 'ready', redis: 'ok', database: 'ok' });
-    } catch (e: any) {
-      console.error('[ready] Redis ping failed:', e);
-      res.status(503).json({ status: 'not_ready' });
-    }
+    const check = (work: PromiseLike<unknown>): Promise<boolean> =>
+      withTimeout(Promise.resolve(work), READY_TIMEOUT_MS).then(() => true, (e: unknown) => { console.error('[ready] dependency check failed:', e); return false; });
+    const [database, cache] = await Promise.all([
+      check(Promise.resolve(supabase.from('users').select('id').limit(1)).then(({ error }) => { if (error) throw new Error(error.message); })),
+      redis ? check(redis.ping()) : Promise.resolve(true),
+    ]);
+    const body = { status: database && cache ? 'ready' : 'not_ready', database: database ? 'ok' : 'down', redis: redis ? (cache ? 'ok' : 'down') : 'not_configured' };
+    res.status(database && cache ? 200 : 503).json(body);
   });
 
   // ── Fallthrough handlers (must be registered last) ─────────

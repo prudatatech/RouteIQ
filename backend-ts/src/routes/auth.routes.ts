@@ -413,12 +413,20 @@ router.post('/customer/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async
   }
 });
 
+/** Cache key of a revoked refresh token: its hash, never the token itself. */
+const revokedKey = (token: string) => `revoked-refresh:${crypto.createHash('sha256').update(token).digest('hex')}`;
+
 // ── POST /refresh ──────────────────────────────────────────
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', rateLimitByIp('refresh', 60, 600), async (req: Request, res: Response) => {
   try {
     const token = req.body.refresh_token;
-    if (!token) {
+    if (!token || typeof token !== 'string') {
       res.status(400).json({ detail: 'refresh_token required' });
+      return;
+    }
+    // A refresh token revoked by logout is refused for the rest of its life
+    if (await cacheGet(revokedKey(token))) {
+      res.status(401).json({ detail: 'Invalid or expired token' });
       return;
     }
 
@@ -459,8 +467,22 @@ router.post('/refresh', async (req: Request, res: Response) => {
 });
 
 // ── POST /logout ───────────────────────────────────────────
-router.post('/logout', (_req: Request, res: Response) => {
-  res.json({ message: 'Logged out successfully' });
+// Access tokens are stateless and stay valid until they expire (minutes). When the client sends its
+// refresh token, that token is revoked in the shared cache (Redis; per process when Redis is not
+// configured) so a stolen copy cannot mint new tokens. See docs/security-notes.md.
+router.post('/logout', async (req: Request, res: Response) => {
+  try {
+    const token = req.body?.refresh_token;
+    if (typeof token === 'string' && token) {
+      // Only a genuine, unexpired refresh token is stored; anything else is ignored
+      await authenticateToken(token, 'refresh')
+        .then(() => cacheSet(revokedKey(token), 1, settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60))
+        .catch(() => undefined);
+    }
+    res.json({ message: 'Logged out successfully' });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
 });
 
 // ── PUT /driver/profile ────────────────────────────────────

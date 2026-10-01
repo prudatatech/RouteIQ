@@ -16,7 +16,6 @@ interface PublicTracking {
   origin_lng?: number | null
   destination?: { lat?: number | null; lng?: number | null } | null
   vehicle?: {
-    id?: string
     plate_number?: string
     status?: string
     lat?: number | null
@@ -38,7 +37,7 @@ function nextStop(track: PublicTracking): LiveMapStop[] | undefined {
 }
 
 /** Tracking map for one shipment, shown inside a shipment row. */
-export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { trackingId: string, allVehicles?: LiveMapVehicle[] }) {
+export default function InlineTrackingMap({ trackingId, vehicleId, allVehicles = [] }: { trackingId: string, /** The shipment's own vehicle (the public tracking answer carries no internal ids). */ vehicleId?: string | null, allVehicles?: LiveMapVehicle[] }) {
   const { data: trackInfo, isLoading, isError } = useQuery({
     queryKey: ['trackPublicly', trackingId],
     queryFn: () => shipmentsAPI.trackPublicly(trackingId) as Promise<PublicTracking>,
@@ -71,12 +70,16 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
   }
 
   const vehicle = trackInfo?.vehicle
-  if (!trackInfo || !vehicle?.id) {
+  if (!trackInfo || !vehicle) {
     return <div className="flex h-64 items-center justify-center rounded-card bg-surface-subtle text-sm text-muted">No driver assigned yet.</div>
+  }
+  // The public answer gives a position only while the goods are on the road
+  if (vehicle.lat == null || vehicle.lng == null) {
+    return <div className="flex h-64 items-center justify-center rounded-card bg-surface-subtle text-sm text-muted">The live position shows once the goods are out for delivery or in transit.</div>
   }
 
   const activeVehicle: LiveMapVehicle = {
-    id: vehicle.id,
+    id: vehicleId ?? vehicle.plate_number ?? 'vehicle',
     plate_number: vehicle.plate_number ?? 'Vehicle',
     status: vehicle.status ?? 'on_route',
     latitude: vehicle.lat,
@@ -88,9 +91,10 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
   const mapVehicles = allVehicles.some(v => v.id === activeVehicle.id) ? allVehicles : [activeVehicle]
 
   const handleCallDriver = async () => {
+    if (!vehicleId) return
     try {
       setIsCalling(true)
-      await telemetryAPI.callDriver(activeVehicle.id)
+      await telemetryAPI.callDriver(vehicleId)
       toast.success('Calling the driver app')
     } catch (e: unknown) {
       toast.error(`Could not call the driver: ${e instanceof Error ? e.message : 'unknown error'}`)
@@ -121,7 +125,7 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
             <div className="text-xs text-muted">No traffic delay</div>
           )}
         </div>
-        <button
+        {vehicleId && <button
           type="button"
           onClick={handleCallDriver}
           disabled={isCalling}
@@ -129,7 +133,7 @@ export default function InlineTrackingMap({ trackingId, allVehicles = [] }: { tr
         >
           {isCalling ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Smartphone size={14} aria-hidden />}
           {isCalling ? 'Calling…' : 'Call driver'}
-        </button>
+        </button>}
       </div>
     </div>
   )

@@ -116,7 +116,7 @@ describe('confirming a customer booking', () => {
     await post(`/bookings/${BOOKING}/confirm`);
     const id = supabaseMock.rows('shipments')[0].id;
     const { recordCustody } = await import('../src/services/cargo/custody.service');
-    await recordCustody({ shipment_id: id }, { kind: 'delivery', receiver_name: 'Ravi', reason: 'Confirmed on the phone' }, { id: 'admin-1', role: 'admin' }, { via: 'verify_pod', impliedPickup: true });
+    await recordCustody({ shipment_id: id }, { kind: 'delivery', receiver_name: 'Ravi', reason: 'Confirmed on the phone' }, { id: 'admin-1', role: 'admin' }, { via: 'verify_pod', backfillPickup: { reason: 'Handed over before the app was used' } });
     expect(supabaseMock.rows('invoices')).toHaveLength(1);
     expect(supabaseMock.rows('invoices')[0]).toMatchObject({ shipment_id: id, amount: 2400, price_source: 'freight_charge' });
   });
@@ -376,7 +376,7 @@ describe('staff cancel or deliver a shipment on a route', () => {
   });
 
   it('completes its stops when dispatch confirms the delivery', async () => {
-    const res = await post('/cargo/verify-pod', { tracking_id: 'RTX-AAAA1111', recipient_name: 'Ravi', reason: 'Confirmed on the phone' });
+    const res = await post('/cargo/verify-pod', { tracking_id: 'RTX-AAAA1111', recipient_name: 'Ravi', reason: 'Confirmed on the phone', allow_without_pickup: true, pickup_reason: 'Handed over before the app was used' });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('route_stops').every(s => s.status === 'completed' && s.actual_arrival_at)).toBe(true);
     expect(one('routes', 'route-1').status).toBe('completed');

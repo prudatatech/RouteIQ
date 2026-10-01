@@ -71,13 +71,20 @@ export interface CustodyInput {
   next_status?: 'in_transit' | 'out_for_delivery' | null;
 }
 
+/** What a delivery of goods nobody picked up is refused with. */
+export const NEVER_PICKED_UP = 'Record the pickup (pieces and condition) before the delivery. These goods were never picked up.';
+
 export type CustodyVia =
   | 'api' | 'complete_stop' | 'parcel_scan' | 'verify_pod' | 'start_route' | 'accept_route' | 'exception' | 'transfer' | 'tpl' | 'system';
 
 export interface CustodyOptions {
   via?: CustodyVia;
-  /** Goods never picked up are delivered: record the pickup first (complete-stop, verify-pod). */
-  impliedPickup?: boolean;
+  /**
+   * Staff override: goods never picked up may be delivered. A pickup flagged `backfilled` is recorded
+   * first, with the staff member's reason, and a problem note (type other) tells dispatch.
+   * Without it a delivery (or a delivery attempt) of goods never picked up is refused with 409.
+   */
+  backfillPickup?: { reason: string };
   /** complete-stop without an outcome: the driver app's older evidence rules (no photo needed). */
   legacyEvidence?: boolean;
   exceptionId?: string | null;
@@ -227,6 +234,24 @@ async function logShipment(c: Consignment, status: string, event: Record<string,
     },
     actor ? { id: actor.id, role: actor.role } : null,
   );
+}
+
+/** Records the pickup a staff override delivers without, flagged backfilled, and opens a note for dispatch. */
+async function backfillPickup(c: Consignment, input: CustodyInput, actor: Actor | null, reason: string): Promise<Consignment> {
+  const text = reason.trim().slice(0, 300);
+  await recordCustody(
+    c,
+    { kind: 'pickup', lat: input.lat, lng: input.lng, notes: `Back-filled: no pickup was recorded before the delivery. Reason: ${text}`.slice(0, 500) },
+    actor,
+    { via: 'system', logMetadata: { backfilled: true, backfill_reason: text } },
+  );
+  const after = await reload(c);
+  await openCustodyException(after, 'other', {
+    severity: 'low',
+    description: `Delivered with no pickup recorded. Staff back-filled the pickup (backfilled: true). Reason: ${text}`,
+    lat: input.lat, lng: input.lng, source: 'custody',
+  }, actor);
+  return after;
 }
 
 async function openCustodyException(
@@ -492,9 +517,8 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
     case 'delivery':
     case 'partial_delivery': {
       if (!wasPickedUp(c)) {
-        if (!opts.impliedPickup) throw new HttpError(409, 'Record the pickup before the delivery.');
-        await recordCustody(c, { kind: 'pickup', lat: input.lat, lng: input.lng, notes: 'Recorded with the delivery; no separate pickup was recorded.' }, actor, { via: via === 'api' ? 'system' : via });
-        c = await reload(c);
+        if (!opts.backfillPickup) throw new HttpError(409, NEVER_PICKED_UP);
+        c = await backfillPickup(c, input, actor, opts.backfillPickup.reason);
       }
       if (!['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered'].includes(c.status)) {
         throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')} and can't be delivered.`);
@@ -605,9 +629,8 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         throw new HttpError(400, `reason must be one of: ${DELIVERY_FAILURE_REASONS.join(', ')}`);
       }
       if (!wasPickedUp(c)) {
-        if (!opts.impliedPickup) throw new HttpError(409, 'These goods were never picked up, so a delivery could not be attempted.');
-        await recordCustody(c, { kind: 'pickup', lat: input.lat, lng: input.lng, notes: 'Recorded with the delivery attempt; no separate pickup was recorded.' }, actor, { via: via === 'api' ? 'system' : via });
-        c = await reload(c);
+        if (!opts.backfillPickup) throw new HttpError(409, NEVER_PICKED_UP);
+        c = await backfillPickup(c, input, actor, opts.backfillPickup.reason);
       }
       if (!['picked_up', 'in_transit', 'out_for_delivery', 'exception', 'partially_delivered'].includes(c.status)) {
         throw new HttpError(409, `This shipment is ${c.status.replace(/_/g, ' ')}, so no delivery was due.`);

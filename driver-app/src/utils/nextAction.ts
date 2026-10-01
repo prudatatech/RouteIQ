@@ -17,6 +17,7 @@
  *  9. start_trip         the trip is accepted but not started
  * 10. enable_tracking    the trip runs and live tracking is off
  * 11. return_pickup      the next stop's goods are at a hub or in a case and not on board: collect them
+ * 11b. pickup_first   the drop's goods were never picked up: record the pickup before the delivery
  * 12. deliver            at a drop (within 200 m): record the delivery, lot by lot
  *     go_to_stop         on the way to the next pending stop (a pickup or a drop)
  * 13. hub_drop           the trip is done but goods are still on board: drop them at a hub
@@ -71,6 +72,8 @@ export interface NextActionInput {
   upcoming: UpcomingTrip[];
   /** Parcels scanned at a pickup whose details are not recorded yet. */
   pickupWaiting: number;
+  /** Codes (any case) whose pickup the driver has already recorded on this phone, even if still queued. */
+  pickedUpCodes?: ReadonlySet<string>;
   /** The lots to hand over at a stop. */
   lotsAt: (stop: RouteStop) => StopLot[];
 }
@@ -90,6 +93,7 @@ export type NextAction =
   | { kind: 'start_trip'; route: DriverRoute; stops: number }
   | { kind: 'enable_tracking'; route: DriverRoute; stop: RouteStop }
   | { kind: 'return_pickup'; stop: RouteStop; code: string }
+  | { kind: 'pickup_first'; stop: RouteStop; code: string; index: number; total: number }
   | { kind: 'deliver'; stop: RouteStop; lots: StopLot[]; index: number; total: number }
   | { kind: 'go_to_stop'; stop: RouteStop; pickup: boolean; distanceM: number | null; index: number; total: number }
   | { kind: 'hub_drop'; items: OnBoardItem[] }
@@ -99,6 +103,25 @@ export type NextAction =
 /** A vendor load's pickup stop, or a stop the server typed as a pickup. */
 export const isPickupStop = (stop: RouteStop | null | undefined): boolean =>
   stop?.stop_type === 'pickup' || stop?.parcel?.purpose === 'pickup';
+
+/** Statuses of goods still with the sender: they have not been picked up. */
+const NOT_PICKED_UP = ['created', 'assigned', 'scheduled'];
+
+/**
+ * A drop whose goods the server still has with the sender, and that the driver has neither on board
+ * nor recorded a pickup for on this phone. Delivering it would be refused (409), so the app sends
+ * the driver to record the pickup first. Unknown data never blocks: a stop with no status passes.
+ */
+export function needsPickupFirst(stop: RouteStop, onBoard: readonly OnBoardItem[] | null, pickedUpCodes?: ReadonlySet<string>): boolean {
+  if (isPickupStop(stop)) return false;
+  const code = stop.parcel?.code;
+  const status = stop.parcel?.status;
+  if (!code || !status || !NOT_PICKED_UP.includes(status)) return false;
+  const upper = code.toUpperCase();
+  if (onBoard?.some((i) => i.code.toUpperCase() === upper)) return false;
+  if (pickedUpCodes && [...pickedUpCodes].some((c) => c.toUpperCase() === upper)) return false;
+  return true;
+}
 
 /** Consignment statuses off the vehicle that a return pickup can collect (backend: return_pickup). */
 const RETURNABLE = ['at_hub', 'exception', 'partially_delivered'];
@@ -171,6 +194,7 @@ export function getNextAction(input: NextActionInput): NextAction {
       return { kind: 'return_pickup', stop, code };
     }
     if (step.kind === 'arrived') {
+      if (code && needsPickupFirst(stop, onBoard, input.pickedUpCodes)) return { kind: 'pickup_first', stop, code, index, total: counts.total };
       if (pickup) {
         return {
           kind: 'record_pickup',

@@ -15,6 +15,8 @@ import { actionQueue, type FailureReasonCode, type Payloads } from '../services/
 import { manifestRefOfStop, type ConsignmentInfo, type ConsignmentRef } from '../services/cargo';
 import { openCaseCodes, sendCustody } from '../services/cargoActions';
 import type { DeliveryOutcome } from '../screens/cargo/DeliveryScreen';
+import { needsPickupFirst } from '../utils/nextAction';
+import type { OnBoardItem } from '../services/cargo';
 import { useTranslation } from './useTranslation';
 import { fill } from '../locales';
 
@@ -30,6 +32,11 @@ interface Options {
   openPod: (stop: RouteStop) => void;
   /** Open the delivery sheet for a stop, on "not delivered". */
   openIssue: (stop: RouteStop) => void;
+  /** Open the pickup form for a stop whose goods were never picked up. */
+  openPickupFor: (stop: RouteStop) => void;
+  /** What is on the vehicle (null until known) and the codes whose pickup this phone already recorded. */
+  onBoard?: readonly OnBoardItem[] | null;
+  pickedUpCodes?: ReadonlySet<string>;
   /** Show the live backhaul offers popup. */
   showBackhaulPopup: () => void;
 }
@@ -44,6 +51,9 @@ export function useRouteActions({
   startTracking,
   openPod,
   openIssue,
+  openPickupFor,
+  onBoard = null,
+  pickedUpCodes,
   showBackhaulPopup,
 }: Options) {
   const { t } = useTranslation();
@@ -124,7 +134,20 @@ export function useRouteActions({
     [currentLoc, t],
   );
 
-  const confirmAtStop = useCallback((stop: RouteStop) => atStop(stop, () => openPod(stop)), [atStop, openPod]);
+  // A drop is only offered once its goods were picked up: the server refuses a delivery before that
+  const confirmAtStop = useCallback(
+    (stop: RouteStop) => {
+      if (needsPickupFirst(stop, onBoard, pickedUpCodes)) {
+        Alert.alert(t('na3_pickup_first_title'), fill(t('na3_pickup_first_desc'), { code: stop.parcel?.code ?? '' }), [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('na2_pickup_btn'), onPress: () => openPickupFor(stop) },
+        ]);
+        return;
+      }
+      atStop(stop, () => openPod(stop));
+    },
+    [atStop, openPod, openPickupFor, onBoard, pickedUpCodes, t],
+  );
 
   /** Opens the reason form; submitIssue sends it. */
   const failStop = openIssue;
