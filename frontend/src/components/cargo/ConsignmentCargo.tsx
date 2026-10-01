@@ -18,6 +18,7 @@ import {
 import { consignmentActions, exceptionTypeLabel, holderLabel } from './logic'
 import LotsPanel from './LotsPanel'
 import type { SplitAvailable } from './lots'
+import { stripLeadingName } from '@/utils/address'
 
 const HOLDER_ICON = { consignor: User, vehicle: Truck, hub: Warehouse, consignee: PackageCheck } as const
 
@@ -37,11 +38,13 @@ export function WhereCard({ where, now }: { where: WhereIsIt; now: number }) {
       </span>
     )
     : where.current_holder === 'hub' && where.depot
-      ? <span><span className="font-medium">{where.depot.name}</span>{where.depot.address && <span className="block text-xs text-muted">{where.depot.address}</span>}</span>
+      ? <span><span className="font-medium">{where.depot.name}</span>{stripLeadingName(where.depot.name, where.depot.address) && <span className="block text-xs text-muted">{stripLeadingName(where.depot.name, where.depot.address)}</span>}</span>
       : null
   const attempts = where.delivery_attempts > 0 || where.max_delivery_attempts
     ? `${where.delivery_attempts.toLocaleString('en-IN')}${where.max_delivery_attempts ? ` of ${where.max_delivery_attempts.toLocaleString('en-IN')}` : ''}`
     : 'None yet'
+
+  const settled = ['delivered', 'returned', 'lost', 'cancelled'].includes(where.status)
 
   return (
     <div className="space-y-4 rounded-control border border-border p-4">
@@ -61,8 +64,9 @@ export function WhereCard({ where, now }: { where: WhereIsIt; now: number }) {
       <DetailList
         items={[
           { label: 'Seal', value: where.seal_number ? <span className="font-mono">{where.seal_number}</span> : 'No seal recorded' },
-          { label: 'Delivery attempts', value: attempts },
-          ...(where.delivery_otp_required ? [{ label: 'Delivery OTP', value: 'Required at delivery' }] : []),
+          // Attempts and the delivery code only matter while goods are still to be handed over
+          ...(settled ? [] : [{ label: 'Delivery attempts', value: attempts }]),
+          ...(!settled && where.delivery_otp_required ? [{ label: 'Delivery OTP', value: 'Required at delivery' }] : []),
         ]}
       />
       {where.open_exceptions.length > 0 && (
@@ -162,7 +166,7 @@ export default function ConsignmentCargo({ code, cargoRef, figures }: { code: st
     can.hold && <Button key="hold" size="sm" variant="secondary" icon={<Hand size={14} />} onClick={() => setModal('hold')}>Hold</Button>,
     can.release && <Button key="release" size="sm" variant="secondary" icon={<Hand size={14} />} loading={custody.isPending && custody.variables?.kind === 'release_hold'} onClick={release}>Release hold</Button>,
     can.startReturn && <Button key="return" size="sm" variant="secondary" icon={<Undo2 size={14} />} onClick={() => setModal('return')}>Start return</Button>,
-    can.raiseException && <Button key="raise" size="sm" variant="ghost" icon={<AlertTriangle size={14} />} onClick={() => setModal('raise')}>Raise problem</Button>,
+    can.raiseException && <Button key="raise" size="sm" variant="ghost" icon={<AlertTriangle size={14} />} onClick={() => setModal('raise')}>Raise a problem</Button>,
   ].filter(Boolean)
 
   const common = { cargoRef, code, where: w, onClose: () => setModal(null) }

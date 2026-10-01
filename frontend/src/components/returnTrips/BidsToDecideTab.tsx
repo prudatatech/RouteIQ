@@ -14,6 +14,7 @@ import {
   type Bid, type Board, type CapacityWindow, type DriverConfirmation, type Trip, type WindowState,
 } from './data'
 import VendorLocationModal, { type MissingLocation } from './VendorLocationModal'
+import { stripLeadingName } from '@/utils/address'
 
 interface Row {
   bid: Bid
@@ -433,7 +434,7 @@ function BidDrawer({ row, busy, onClose, onApprove, onReject, onSetLocation }: {
               {
                 label: 'Drop-off',
                 value: bid.delivery_points
-                  ? <>{bid.delivery_points.name}{bid.delivery_points.address && bid.delivery_points.address !== bid.delivery_points.name && <span className="block text-xs text-muted">{bid.delivery_points.address}</span>}</>
+                  ? <>{bid.delivery_points.name}{stripLeadingName(bid.delivery_points.name, bid.delivery_points.address) && <span className="block text-xs text-muted">{stripLeadingName(bid.delivery_points.name, bid.delivery_points.address)}</span>}</>
                   : 'Not given',
               },
               { label: 'E-way bill', value: bid.eway_bill_ref ? <span className="font-mono">{bid.eway_bill_ref}</span> : 'Not provided' },

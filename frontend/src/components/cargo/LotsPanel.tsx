@@ -10,7 +10,8 @@ import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { AlertTriangle, ArrowUpLeft, Combine, FileText, MapPin, Split, User } from 'lucide-react'
 import { Alert, Button, ErrorState, Input, Skeleton, StatusPill, toneClasses, useConfirm } from '@/components/ui'
-import { errorMessage } from '@/utils/display'
+import { errorMessage, formatPieces } from '@/utils/display'
+import { formatAddress } from '@/utils/address'
 import { cargoKeys, lotsAPI, type CargoRef, type Lot, type LotTotals, type LotsView, type WhereIsIt } from '@/services/cargo'
 import { consignmentHref } from './logic'
 import { accountedPieces, canSplit, heldPieces, lotKey, lotPlace, mergeCheck, progressSegments, roundTo, type SplitAvailable } from './lots'
@@ -213,6 +214,7 @@ function LotItem({ lot, current, merging, checked, disabled, disabledReason, onT
   onOpen: () => void
 }) {
   const place = lotPlace(lot)
+  const dropText = formatAddress(lot.drop?.name, lot.drop?.address)
   const total = lot.pieces.total
   const cases = lot.open_exceptions
   const reasonId = `lot-why-${lotKey(lot)}`
@@ -242,14 +244,14 @@ function LotItem({ lot, current, merging, checked, disabled, disabledReason, onT
             {current && <span className="text-xs text-muted">(this one)</span>}
           </div>
           <p className="text-sm text-text">
-            <span className="tabular">{total != null ? `${n(total)} ${total === 1 ? 'piece' : 'pieces'}` : 'Pieces not counted'}</span>
+            <span className="tabular">{total != null ? formatPieces(total) : 'Pieces not counted'}</span>
             <span className="text-muted"> · {lot.status === 'delivered' ? 'delivered' : place.text}</span>
             {lot.pieces.delivered > 0 && lot.status !== 'delivered' && <span className="text-muted"> · {n(lot.pieces.delivered)} delivered</span>}
           </p>
           {(lot.drop || lot.consignee) && (
             <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
               {lot.consignee?.name && <span className="inline-flex min-w-0 items-center gap-1"><User size={12} aria-hidden="true" /> <span className="break-words">{lot.consignee.name}</span></span>}
-              {lot.drop && <span className="inline-flex min-w-0 items-center gap-1"><MapPin size={12} aria-hidden="true" /> <span className="break-words">{lot.drop.name || lot.drop.address}</span></span>}
+              {lot.drop && dropText !== lot.consignee?.name && <span className="inline-flex min-w-0 items-center gap-1"><MapPin size={12} aria-hidden="true" /> <span className="break-words">{dropText}</span></span>}
             </p>
           )}
           <LotEway lot={lot} />
@@ -287,6 +289,8 @@ function LotEway({ lot }: { lot: Lot }) {
   })
   if (!ref) return null
   const settled = ['delivered', 'returned', 'lost', 'cancelled'].includes(lot.status)
+  // A finished lot with no e-way bill has nothing left to ask
+  if (settled && !lot.eway_bill_ref) return null
 
   if (editing) {
     return (
@@ -317,11 +321,15 @@ function LotEway({ lot }: { lot: Lot }) {
     <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
       <FileText size={12} aria-hidden="true" />
       {lot.eway_bill_ref ? <span>E-way bill <span className="font-mono text-text">{lot.eway_bill_ref}</span></span> : <span>No e-way bill</span>}
-      {lot.eway_part_b_required && <StatusPill tone="warning" dot={false}>Part B due</StatusPill>}
+      {lot.eway_part_b_required && !settled && (
+        <StatusPill tone="warning" dot={false} title="The goods changed vehicle. Update the vehicle number on the e-way bill (Part B) on the e-way bill portal.">
+          Update vehicle on e-way bill
+        </StatusPill>
+      )}
       {!settled && needsEwayBill(lot.declared_value, lot.eway_bill_ref) && <StatusPill tone="warning" dot={false}>{EWAY_BILL_WARNING}</StatusPill>}
       {!settled && (
         <button type="button" onClick={() => setEditing(true)} className="font-medium text-brand hover:underline">
-          {lot.eway_bill_ref ? 'Change' : 'Add'}
+          {lot.eway_bill_ref ? 'Change e-way bill' : 'Add e-way bill'}
         </button>
       )}
     </p>

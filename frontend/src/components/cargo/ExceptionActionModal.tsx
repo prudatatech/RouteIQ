@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { Truck } from 'lucide-react'
 import { Alert, Button, Checkbox, EmptyState, ErrorState, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 import { depotsAPI } from '@/services/api'
-import { errorMessage, formatKg, formatKm, formatMinutes } from '@/utils/display'
+import { errorMessage, formatKg, formatKm, formatMinutes, formatPieces } from '@/utils/display'
 import {
   CLAIM_TYPES, CONDITION_CODES, RESOLUTIONS, cargoKeys, exceptionsAPI, type ClaimType, type ExceptionDetail, type ExceptionType, type ReliefVehicle,
 } from '@/services/cargo'
@@ -229,7 +229,7 @@ function ConsignmentPicker({ kase, value, onChange, error, hint }: {
       value={value}
       onChange={onChange}
       placeholder="Choose"
-      options={kase.items.map(i => ({ value: refKey(i), label: `${consignmentCode(i)}${i.pieces_held != null ? ` · ${i.pieces_held.toLocaleString('en-IN')} pcs held` : ''}` }))}
+      options={kase.items.map(i => ({ value: refKey(i), label: `${consignmentCode(i)}${i.pieces_held != null ? ` · ${formatPieces(i.pieces_held)} held` : ''}` }))}
       error={error}
       hint={hint}
       required={!hint}
