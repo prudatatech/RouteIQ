@@ -261,7 +261,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
         </Alert>
       )}
       {statusQ.data?.available && !statusQ.data.truck_routing && (
-        <Alert tone="warning" title="Truck restrictions will not be considered">{isSuperadmin ? statusQ.data.message : 'Routes are planned without height, weight and length limits for now.'}</Alert>
+        <Alert tone="warning" title="Truck restrictions will not be considered">{isSuperadmin ? statusQ.data.message : 'Trips are planned without height, weight and length limits for now.'}</Alert>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
