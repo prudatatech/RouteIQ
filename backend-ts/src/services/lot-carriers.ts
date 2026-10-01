@@ -8,17 +8,17 @@ import { supabase } from '../core/supabase';
 
 type Lot = { id: string; [key: string]: unknown };
 type Summary = { lots: Lot[] };
-type Carrier = { plate_number: string | null; driver_name: string | null };
+type Carrier = { plate_number: string | null; driver_name: string | null; vehicle_type: string | null };
 
 async function vehiclesById(ids: string[]): Promise<Map<string, Carrier>> {
   const out = new Map<string, Carrier>();
   if (ids.length === 0) return out;
-  const { data } = await supabase.from('vehicles').select('id, plate_number, driver_name').in('id', ids);
-  for (const v of (data ?? []) as any[]) out.set(v.id, { plate_number: v.plate_number ?? null, driver_name: v.driver_name ?? null });
+  const { data } = await supabase.from('vehicles').select('id, plate_number, driver_name, vehicle_type').in('id', ids);
+  for (const v of (data ?? []) as any[]) out.set(v.id, { plate_number: v.plate_number ?? null, driver_name: v.driver_name ?? null, vehicle_type: v.vehicle_type ?? null });
   return out;
 }
 
-/** Adds `plate_number`, `driver_name`, `drop` and `eway_bill_ref` to every lot of the given summaries. */
+/** Adds `plate_number`, `driver_name`, `vehicle_type`, `drop` and `eway_bill_ref` to every lot of the given summaries. */
 export async function addLotCarriers(kind: 'shipment' | 'manifest', summaries: Summary[]): Promise<void> {
   const lots = summaries.flatMap(s => s.lots);
   if (lots.length === 0) return;
@@ -59,6 +59,7 @@ export async function addLotCarriers(kind: 'shipment' | 'manifest', summaries: S
     const v = vehicles.get(vehicleOf.get(l.id) ?? '');
     l.plate_number = v?.plate_number ?? null;
     l.driver_name = v?.driver_name ?? null;
+    l.vehicle_type = v?.vehicle_type ?? null;
     l.drop = dropOf.get(l.id) || null;
     l.eway_bill_ref = ewayOf.get(l.id) || null;
   }
