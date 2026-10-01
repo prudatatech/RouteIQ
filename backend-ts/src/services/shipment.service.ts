@@ -232,6 +232,9 @@ export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActo
 /** The vehicle classes the database knows (vehicles.vehicle_type). */
 const VEHICLE_CLASSES = ['truck', 'van', 'bike', 'car'] as const;
 
+/** A shipment's live position is public only while it is on the road. */
+const PUBLIC_LIVE_STATUSES = ['out_for_delivery', 'in_transit'];
+
 export class ShipmentService {
   /**
    * Records a tamper-evident log for a shipment status change.
@@ -1660,7 +1663,24 @@ export class ShipmentService {
   }
 
   /**
-   * Public tracking — no auth required.
+   * The truck a public tracking page may show: the plate and type, so the receiver recognises it,
+   * and its live position only while the goods are on the road (out for delivery or in transit),
+   * never before pickup and never after delivery. No internal ids.
+   */
+  private static publicVehicle(v: Record<string, any>, status: string): Record<string, any> {
+    const live = PUBLIC_LIVE_STATUSES.includes(status);
+    return {
+      plate_number: v.plate_number,
+      type: v.vehicle_type,
+      status: v.status,
+      lat: live ? v.latitude ?? null : null,
+      lng: live ? v.longitude ?? null : null,
+    };
+  }
+
+  /**
+   * Public tracking — no auth required. The public tracking code is the only identifier in the
+   * answer: no shipment or vehicle UUID, no contact, price or driver details.
    */
   static async getPublicTracking(trackingId: string): Promise<Record<string, any> | null> {
     if (trackingId.startsWith('CM-')) {
@@ -1683,7 +1703,6 @@ export class ShipmentService {
       if (!manifest) return null;
 
       const trackingInfo: Record<string, any> = {
-        id: manifest.id,
         tracking_id: trackingId,
         status: manifest.status === 'scheduled' ? 'created' : manifest.status,
         priority: null,
@@ -1705,20 +1724,15 @@ export class ShipmentService {
 
       if (manifest.vehicles) {
         const v = manifest.vehicles;
-        trackingInfo.vehicle = {
-          id: v.id,
-          plate_number: v.plate_number,
-          type: v.vehicle_type,
-          status: v.status,
-          lat: v.latitude,
-          lng: v.longitude,
-        };
+        trackingInfo.vehicle = ShipmentService.publicVehicle(v, trackingInfo.status);
 
         // Next stop: pickup until the load is in transit, then the drop.
         const target = manifest.status === 'in_transit'
           ? { lat: manifest.drop_lat, lng: manifest.drop_lng }
           : { lat: manifest.pickup_lat, lng: manifest.pickup_lng };
-        trackingInfo.eta_minutes = estimateEtaMinutes(v.latitude, v.longitude, target.lat, target.lng);
+        if (PUBLIC_LIVE_STATUSES.includes(trackingInfo.status)) {
+          trackingInfo.eta_minutes = estimateEtaMinutes(v.latitude, v.longitude, target.lat, target.lng);
+        }
       }
 
       const manifestEvents = await ShipmentService.buildHistoryEvents([], { ...manifest, status: trackingInfo.status });
@@ -1738,7 +1752,6 @@ export class ShipmentService {
     const dp = finalDeliveryPoint<any>(shipment.delivery_points);
 
     const trackingInfo: Record<string, any> = {
-      id: shipment.id,
       tracking_id: shipment.tracking_id,
       status: shipment.status,
       priority: shipment.priority,
@@ -1769,18 +1782,11 @@ export class ShipmentService {
         const route = stop.routes;
         const vehicle = route.vehicles;
         if (vehicle) {
-          trackingInfo.vehicle = {
-            id: vehicle.id,
-            plate_number: vehicle.plate_number,
-            type: vehicle.vehicle_type,
-            status: vehicle.status,
-            lat: vehicle.latitude,
-            lng: vehicle.longitude,
-          };
+          trackingInfo.vehicle = ShipmentService.publicVehicle(vehicle, shipment.status);
         }
         // The route's total duration is not an arrival time; estimate from where the
         // vehicle is now to this shipment's drop point instead.
-        if (route.status === 'active' && vehicle) {
+        if (route.status === 'active' && vehicle && PUBLIC_LIVE_STATUSES.includes(shipment.status)) {
           trackingInfo.eta_minutes = estimateEtaMinutes(vehicle.latitude, vehicle.longitude, dp.latitude, dp.longitude);
         }
       }
