@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Button, Card, EmptyState, ErrorBanner, ScreenHeader, StatusPill, Text } from '../components/ui';
 import { colors, radius, size, space } from '../theme';
 import { askForPushAfterBooking } from '../services/push';
-import { api, BOOKING_CREATED_EVENT, type BookingDrop, type Quote } from '../services/api';
+import { api, BOOKING_CREATED_EVENT, newIdempotencyKey, type BookingDrop, type Quote } from '../services/api';
 import { useRemote } from '../hooks/useRemote';
 import { dayKey, formatDay, formatINR, formatNumber } from '../utils/format';
 import { useTranslation, type TranslateFn } from '../hooks/useTranslation';
@@ -61,6 +61,8 @@ export default function QuoteScreen({ navigation, route }: any) {
     setPickerOpen(false);
   };
 
+  // One key per booking attempt, reused when the customer taps Book again after a lost reply; a new date is a new booking.
+  const idempotencyKey = useMemo(() => newIdempotencyKey(), [date]);
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookedId, setBookedId] = useState<string | null>(null);
@@ -83,7 +85,7 @@ export default function QuoteScreen({ navigation, route }: any) {
         drop_name: placeName(dropAddress),
         drop_address: dropAddress,
         ...(drops ? { drops } : {}),
-      });
+      }, idempotencyKey);
       setBookedId(created.id);
       DeviceEventEmitter.emit(BOOKING_CREATED_EVENT);
       // The right moment to offer notifications: the customer now has a booking to hear about (asked once, see services/push.ts).

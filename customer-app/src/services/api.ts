@@ -249,8 +249,8 @@ class ApiClient {
   // ── Bookings ───────────────────────────────────────────────
 
   /** The price is worked out again on the server; the app never sends one. */
-  async createBooking(input: BookingRequest): Promise<Booking> {
-    return this.request('POST', '/customer/bookings', input);
+  async createBooking(input: BookingRequest, idempotencyKey?: string): Promise<Booking> {
+    return this.request('POST', '/customer/bookings', input, true, false, idempotencyHeader(idempotencyKey));
   }
 
   async listBookings(): Promise<Booking[]> {
@@ -872,7 +872,7 @@ const timeOf = (e: CustodyEvent) => (e.recorded_at ? new Date(e.recorded_at).get
 /**
  * GET /customer/bookings/:id/cargo: `{ booking_id, shipment_id, tracking_id, where, timeline,
  * pod: { received_by, photo_url, signature_url, signature_data } | null, exceptions, claims,
- * rating: { rating } | null, lots }`. A master's own `pod` is null (each lot has its own), and its
+ * rating: { rating, comment, rated_at } | null, lots }`. A master's own `pod` is null (each lot has its own), and its
  * `claims` are the master's and every lot's, each lot's tagged with `lot_code`.
  */
 export function normaliseBookingCargo(raw: unknown): BookingCargo {
@@ -901,7 +901,7 @@ export function normaliseBookingCargo(raw: unknown): BookingCargo {
       .map(normaliseClaim)
       .filter((c): c is Claim => c !== null),
     delivery_otp: where?.delivery_otp_required ? { required: true, sent_at: null } : null,
-    receipt: rating != null ? { rating, confirmed_at: null } : null,
+    receipt: rating != null ? { rating, confirmed_at: asString(asObject(d.rating)?.rated_at) ?? null } : null,
     lots,
   };
 }
