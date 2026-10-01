@@ -6,6 +6,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # run the checks on any branch from the Actions tab or `gh workflow run ci.yml --ref <branch>`
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,6 +52,7 @@ jobs:
         run: node ../design/check-contrast.mjs
       - run: npx tsc --noEmit
       - run: npm run lint
+      - run: npx vitest run
       - name: No retired words in user-visible text
         run: npm run check:vocabulary
       - run: npm run build
