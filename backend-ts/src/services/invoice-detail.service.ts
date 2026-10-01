@@ -20,6 +20,7 @@ import { getCompanyProfile, companyGaps, type CompanyProfile } from './company.s
 import { resolveBillTo, partyFromSnapshot } from './invoice-recipient.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
 import { shipmentOverview } from './shipment-overview.service';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const DAY_MS = 86_400_000;
@@ -153,7 +154,8 @@ export async function invoiceOwnerId(inv: Pick<InvoiceRecord, 'shipment_id' | 'm
  */
 export async function loadInvoiceFor(id: string, user: TokenData): Promise<InvoiceRecord> {
   if (!isUuid(id)) throw new HttpError(404, 'Invoice not found');
-  const { data, error } = await supabase.from('invoices').select(INVOICE_COLUMNS).eq('id', id).maybeSingle();
+  // Another organisation's invoice is the same 404 as a missing one
+  const { data, error } = await scopeQuery(supabase.from('invoices').select(INVOICE_COLUMNS).eq('id', id), OWNED.invoice).maybeSingle();
   if (error) throw new Error(`Failed to read invoice: ${error.message}`);
   if (!data) throw new HttpError(404, 'Invoice not found');
   const inv = data as InvoiceRecord;

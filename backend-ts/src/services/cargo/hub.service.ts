@@ -9,10 +9,11 @@ import { HttpError } from '../../core/errors';
 import { piecesHeld, refOf, toConsignment, weightOf, SHIPMENT_CUSTODY_COLUMNS, MANIFEST_CUSTODY_COLUMNS, type Consignment } from './consignment';
 import { openExceptionsFor } from './custody.service';
 import { openDropPoints } from './replan';
+import { OWNED, scopeQuery } from '../../core/org-scope';
 
 async function goodsAtHubs(depotId?: string): Promise<Consignment[]> {
-  let ships = supabase.from('shipments').select(SHIPMENT_CUSTODY_COLUMNS).eq('current_holder', 'hub');
-  let loads = supabase.from('cargo_manifest').select(MANIFEST_CUSTODY_COLUMNS).eq('current_holder', 'hub');
+  let ships = scopeQuery(supabase.from('shipments').select(SHIPMENT_CUSTODY_COLUMNS).eq('current_holder', 'hub'), OWNED.carrierAndVendor);
+  let loads = scopeQuery(supabase.from('cargo_manifest').select(MANIFEST_CUSTODY_COLUMNS).eq('current_holder', 'hub'), OWNED.carrierAndVendor);
   if (depotId) {
     ships = ships.eq('current_depot_id', depotId);
     loads = loads.eq('current_depot_id', depotId);
@@ -43,7 +44,7 @@ async function arrivals(goods: Consignment[], depotId?: string): Promise<Map<str
 }
 
 export async function listHubs() {
-  const { data: depots, error } = await supabase.from('depots').select('id, name, address, latitude, longitude').order('name', { ascending: true });
+  const { data: depots, error } = await scopeQuery(supabase.from('depots').select('id, name, address, latitude, longitude'), OWNED.carrier).order('name', { ascending: true });
   if (error) throw new Error(`Failed to read hubs: ${error.message}`);
   const goods = await goodsAtHubs();
   const since = await arrivals(goods);
@@ -63,7 +64,7 @@ export async function listHubs() {
 }
 
 export async function hubInventory(depotId: string) {
-  const { data: depot } = await supabase.from('depots').select('id, name, address, latitude, longitude').eq('id', depotId).maybeSingle();
+  const { data: depot } = await scopeQuery(supabase.from('depots').select('id, name, address, latitude, longitude').eq('id', depotId), OWNED.carrier).maybeSingle();
   if (!depot) throw new HttpError(404, 'Hub not found');
   const goods = await goodsAtHubs(depotId);
   const since = await arrivals(goods, depotId);

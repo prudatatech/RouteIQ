@@ -20,6 +20,7 @@ import { notificationService } from './notification.service';
 import { selectIn } from './finance.service';
 import { getPayoutAccount } from './people-bank.service';
 import { cleanPathKm, haversineKm, roundKm } from './odometer';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const PAY_VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'] as const;
 export const PAY_STATUSES = ['earned', 'approved', 'paid', 'void'] as const;
@@ -80,7 +81,7 @@ const toRate = (r: any): PayRate => ({
 });
 
 async function loadRates(vehicleType?: string): Promise<PayRate[]> {
-  let q = supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').eq('active', true);
+  let q = scopeQuery(supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').eq('active', true), OWNED.carrier);
   if (vehicleType) q = q.eq('vehicle_type', vehicleType);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to read pay rates: ${error.message}`);
@@ -103,7 +104,7 @@ const validDate = (v: unknown, name: string): string => {
 
 /** Every rate, newest start first, with the day each one is replaced (`superseded_on`), for the rates editor. */
 export async function listRates(includeWithdrawn = false) {
-  let q = supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active, created_by, created_at');
+  let q = scopeQuery(supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active, created_by, created_at'), OWNED.carrier);
   if (!includeWithdrawn) q = q.eq('active', true);
   const { data, error } = await q.order('effective_from', { ascending: false });
   if (error) throw new Error(`Failed to read pay rates: ${error.message}`);
@@ -543,7 +544,7 @@ export interface EntryFilters { driver_id?: string; status?: string; from?: stri
 
 /** Entries for the console, newest trip first, with the driver's name, the plate and the trip they came from. */
 export async function listEntries(filters: EntryFilters) {
-  let q = supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).order('trip_date', { ascending: false }).limit(LIST_LIMIT);
+  let q = scopeQuery(supabase.from('driver_pay_entries').select(ENTRY_COLUMNS), OWNED.carrier).order('trip_date', { ascending: false }).limit(LIST_LIMIT);
   if (filters.driver_id) q = q.eq('driver_id', filters.driver_id);
   if (filters.status) {
     if (!(PAY_STATUSES as readonly string[]).includes(filters.status)) throw new HttpError(400, `status must be one of ${PAY_STATUSES.join(', ')}`);
@@ -717,7 +718,7 @@ const formatRupees = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFra
 
 /** Payouts, newest first, optionally for one driver. */
 export async function listPayouts(driverId?: string) {
-  let q = supabase.from('driver_payouts').select('id, driver_id, period_from, period_to, amount, method, reference, note, paid_at, paid_by').order('paid_at', { ascending: false }).limit(200);
+  let q = scopeQuery(supabase.from('driver_payouts').select('id, driver_id, period_from, period_to, amount, method, reference, note, paid_at, paid_by'), OWNED.carrier).order('paid_at', { ascending: false }).limit(200);
   if (driverId) q = q.eq('driver_id', driverId);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to read payouts: ${error.message}`);
