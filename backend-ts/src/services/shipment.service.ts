@@ -16,6 +16,7 @@ import { notificationService } from './notification.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return "Pending";
@@ -1009,14 +1010,14 @@ export class ShipmentService {
   static async listShipments(skip: number = 0, limit: number = 100): Promise<Shipment[]> {
     // Shipments and vendor loads (cargo manifests, shown in the same unified list) are read together
     const [{ data, error }, { data: manifests, error: manifestError }] = await Promise.all([
-      supabase
+      scopeQuery(supabase
         .from('shipments')
-        .select(ShipmentService.LIST_SHIPMENT_SELECT)
+        .select(ShipmentService.LIST_SHIPMENT_SELECT), OWNED.carrierAndVendor)
         .order('created_at', { ascending: false })
         .range(skip, skip + limit - 1),
-      supabase
+      scopeQuery(supabase
         .from('cargo_manifest')
-        .select(ShipmentService.LIST_MANIFEST_SELECT)
+        .select(ShipmentService.LIST_MANIFEST_SELECT), OWNED.carrierAndVendor)
         .order('created_at', { ascending: false })
         .limit(limit),
     ]);
