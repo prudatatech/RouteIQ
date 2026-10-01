@@ -14,7 +14,7 @@ beforeEach(() => {
       { id: 'super-1', role: 'superadmin', is_active: true },
       { id: 'manager-1', role: 'manager', is_active: true },
     ],
-    vendor_shipment_requests: [{ id: 'req-1', vendor_id: 'vendor-1', status: 'pending', pickup_location: 'A', drop_location: 'B' }],
+    vendor_shipment_requests: [{ id: '7d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d', vendor_id: 'vendor-1', status: 'pending', pickup_location: 'A', drop_location: 'B' }],
     notifications: [],
   });
 });
@@ -46,7 +46,7 @@ describe('what a manager can do in operations', () => {
   });
 
   it('accepts and rejects vendor loads', async () => {
-    const rejected = await request(app).put('/api/v1/vendor/shipment-request/req-1/reject').set(as('manager-1')).send({ reason: 'No truck on this lane this week' });
+    const rejected = await request(app).put('/api/v1/vendor/shipment-request/7d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d/reject').set(as('manager-1')).send({ reason: 'No truck on this lane this week' });
     expect(rejected.status).toBe(200);
   });
 });
