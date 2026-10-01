@@ -41,13 +41,29 @@ The app shell (`AppLayout`, `VendorLayout`) already provides the page width and 
 | Status of anything | `StatusPill status={row.status}`; colours and labels live in `components/ui/status.ts`. Pass `kind` (`route`, `booking`, `request`, `bid`, `kyc`, `window`) when the same value means something different on that record |
 | Money, weight, distance, time, dates | `formatRupees`, `formatKg`, `formatKm`, `formatMinutes`, `formatDate`, `formatDateTime`, `formatTime` from `@/utils/display` (India time, whole rupees); never a local formatter |
 | Lists of records | `DataTable` (sorting, paging, loading, empty, error, phone layout) |
-| Record details | `Drawer` + `DetailList` |
+| Record details | `Drawer` + `DetailList` (see "Page or drawer" below) |
+| The Vehicle column | `VehicleCell`: plate first, driver or model under it |
+| Export button on a list | `ExportCsvButton`, right of the filters |
+| One main action and a few more | `MoreMenu` for the rest, never a row of equal buttons |
+| Counts, trip numbers, pieces | `pluralize`, `formatPieces`, `tripNumber` from `@/utils/display` |
 | Dialogs | `Modal`; `useConfirm()` for confirm and prompt; never `alert`, `confirm` or `prompt` |
 | Tabs | `Tabs` + `useTabParam` so the tab is in the URL |
 | Boxes | `Card` (`padded`), `CardHeader`, `CardBody` |
 | Numbers at the top of a page | `Stat` (real values only; show `loading` while fetching) |
 | Loading, empty, error | `LoadingState`, `Skeleton`, `EmptyState`, `ErrorState`, `Alert` |
 | Maps | `MapView` from `@/components/map` (see its README) |
+
+## Page or drawer
+
+When a row is clicked:
+
+- **A record with its own address opens that page.** Trips, Fleet vehicles, People, Problems cases, Transfers, Invoices and 3PL partners each have a route (`/routes/:id`, `/fleet/:id` and so on), so their rows navigate to it. Keep the link in the identifier cell too, so it opens in a new tab.
+- **A record with no page of its own opens a drawer** (Claims, KYC reviews, Alerts, Bids, Audit entries). The drawer is a quick look with the actions; do not add a route only to avoid one.
+- **A working queue opens a drawer that ends in "Open full page"** (Shipments, Requests). Staff triage many rows in a row there, and the drawer keeps the list in place.
+
+## Columns
+
+Identifier first, then status, then from and to, vehicle (`VehicleCell`), amount, date and the actions last. Status is the second column on every list.
 
 ## Rules the linter enforces
 
