@@ -7,7 +7,8 @@
 #      another database with --copy-from <postgres URL> (auth users with their password hashes, then
 #      every public table, triggers paused)
 #   4. platform pieces: sign-up trigger, storage bucket and policy, realtime publication
-#   5. every current migration recorded in public.app_migrations (scripts/db-migrate.sh --stamp-all)
+#   5. the migrations the schema already contains (up to supabase/bootstrap/BASELINE) recorded in public.app_migrations;
+#      the deploy's migrate job applies anything newer
 #
 #   ./infra/platform-db.sh --stage live
 #   ./infra/platform-db.sh --stage test --copy-from "$(cat ~/.routeiq/db_url)"
@@ -108,7 +109,9 @@ log "5/5 migrations record"
 # One statement for all files (a container per file would be slow and heavy on a laptop)
 if [[ -z "$COPY_FROM" ]]; then
   { echo "INSERT INTO public.app_migrations (name) VALUES"
-    ls "$ROOT_DIR/supabase/migrations/"*.sql | xargs -n1 basename | sed "s/.*/('&')/" | paste -sd, -
+    # only what 01_schema.sql already contains (supabase/bootstrap/BASELINE); newer files are for scripts/db-migrate.sh
+    base="$(tr -d '[:space:]' < "$ROOT_DIR/supabase/bootstrap/BASELINE")"
+    ls "$ROOT_DIR/supabase/migrations/"*.sql | xargs -n1 basename | awk -v base="$base" '!/^[0-9]+_/ || substr($0,1,14) <= base' | sed "s/.*/('&')/" | paste -sd, -
     echo "ON CONFLICT DO NOTHING;"; } | "${PG[@]}" >/dev/null
 fi
 echo "SELECT count(*) || ' tables, ' || (SELECT count(*) FROM pg_policies WHERE schemaname = 'public') || ' policies, ' || (SELECT count(*) FROM auth.users) || ' users' FROM pg_tables WHERE schemaname = 'public'" | "${PG[@]}" -At
