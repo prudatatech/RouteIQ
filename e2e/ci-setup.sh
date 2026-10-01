@@ -36,7 +36,25 @@ SQL
 grep -vE '^\\(restrict|unrestrict) ' "$HERE/schema.sql" | psql_db
 
 # The dump carries production's own grants, so permission bugs show up here too; only the bucket is added.
+# Objects belong to postgres, as in production, so migrations can be applied as postgres afterwards.
 psql_db <<'SQL'
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.oid::regclass AS obj, c.relkind FROM pg_class c
+           WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r','v','m','S','p') LOOP
+    EXECUTE format('ALTER %s %s OWNER TO postgres',
+      CASE r.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END, r.obj);
+  END LOOP;
+  FOR r IN SELECT p.oid::regprocedure AS obj FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace LOOP
+    EXECUTE format('ALTER ROUTINE %s OWNER TO postgres', r.obj);
+  END LOOP;
+  FOR r IN SELECT t.oid::regtype AS obj FROM pg_type t
+           WHERE t.typnamespace = 'public'::regnamespace AND t.typtype IN ('e','d','c') AND t.typrelid = 0 LOOP
+    EXECUTE format('ALTER TYPE %s OWNER TO postgres', r.obj);
+  END LOOP;
+  ALTER SCHEMA public OWNER TO postgres;
+END $$;
 INSERT INTO storage.buckets (id, name, public) VALUES ('kyc_documents', 'kyc_documents', false)
   ON CONFLICT (id) DO NOTHING;
 NOTIFY pgrst, 'reload schema';
