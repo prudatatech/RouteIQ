@@ -1,0 +1,81 @@
+name: UAT
+# Runs the whole platform on a GitHub runner against a throwaway Supabase (production schema, no data),
+# so multi-account UAT needs nothing on a developer's machine and never touches a hosted database.
+#
+#   gh workflow run uat.yml --ref <branch> [-f script=e2e/scenarios/OPS.sh]
+#
+# Steps: build the test stack (e2e/ci-setup.sh), start the backend (:8011) and web app (:5174), run the
+# 75-step story (node e2e/run.mjs --reset), then the optional scenario script, which can use
+# e2e/uat.mjs and e2e/ui.mjs. Everything printed, the screenshots and the logs are kept as the run's
+# "uat" artifact: gh run download <run-id> -n uat
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: Scenario script to run after the story (path in the repo), empty for none
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6380:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend-ts/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Install
+        run: |
+          (cd backend-ts && npm ci --no-audit --no-fund) &
+          (cd frontend && npm ci --no-audit --no-fund) &
+          (cd e2e && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium) &
+          wait
+      - name: Build the test stack
+        run: bash e2e/ci-setup.sh
+      - name: Start the backend and web app
+        run: |
+          mkdir -p e2e/out
+          nohup bash e2e/start-backend.sh > e2e/out/backend.log 2>&1 &
+          nohup bash e2e/start-web.sh > e2e/out/web.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf -o /dev/null http://localhost:8011/health && break; sleep 2; done
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:5174 && break; sleep 2; done
+          curl -sf -o /dev/null http://localhost:8011/health || { tail -50 e2e/out/backend.log; exit 1; }
+      - name: Story (75 steps)
+        id: story
+        continue-on-error: true
+        run: node e2e/run.mjs --reset 2>&1 | tee e2e/out/story.txt; exit "${PIPESTATUS[0]}"
+      - name: Scenario
+        if: ${{ inputs.script != '' }}
+        continue-on-error: true
+        env:
+          SCRIPT: ${{ inputs.script }}
+        run: bash "$SCRIPT" 2>&1 | tee e2e/out/scenario.txt
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uat
+          retention-days: 7
+          path: |
+            e2e/out/
+            e2e/shots/
+            e2e/results.json
+      - name: Fail if the story failed
+        if: ${{ steps.story.outcome == 'failure' }}
+        run: exit 1
