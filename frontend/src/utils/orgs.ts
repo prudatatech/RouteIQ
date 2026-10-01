@@ -62,7 +62,7 @@ export interface OrgProfile extends Partial<OrgProfileInput> {
 
 export interface OrgMember {
   user_id: string
-  name?: string | null
+  full_name?: string | null
   email?: string | null
   phone?: string | null
   role: OrgRole

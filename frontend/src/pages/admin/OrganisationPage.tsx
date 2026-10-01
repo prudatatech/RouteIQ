@@ -114,7 +114,7 @@ function MemberModal({ open, onClose, member, orgId }: { open: boolean; onClose:
       open={open}
       onClose={onClose}
       title={editing ? 'Change role' : 'Add member'}
-      description={editing ? (member.name || member.email || member.phone || undefined) : 'Add a person by email or phone. They must already have an account.'}
+      description={editing ? (member.full_name || member.email || member.phone || undefined) : 'Add a person by email or phone. They must already have an account.'}
       onSubmit={() => {
         if (!editing && !contact.trim()) { setError('Enter an email or phone'); return }
         setError(undefined)
@@ -149,11 +149,11 @@ function MembersCard({ orgId }: { orgId: string }) {
 
   const columns: Column<OrgMember>[] = [
     {
-      key: 'person', header: 'Person', sortValue: m => m.name || m.email || m.phone,
+      key: 'person', header: 'Person', sortValue: m => m.full_name || m.email || m.phone,
       cell: m => (
         <div className="min-w-0">
-          <div className="truncate font-medium">{m.name || m.email || m.phone || m.user_id}</div>
-          {m.name && <div className="truncate text-xs text-muted">{m.email || m.phone}</div>}
+          <div className="truncate font-medium">{m.full_name || m.email || m.phone || m.user_id}</div>
+          {m.full_name && <div className="truncate text-xs text-muted">{m.email || m.phone}</div>}
         </div>
       ),
     },
