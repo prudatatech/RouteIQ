@@ -16,8 +16,8 @@ function useSubmitKey() {
 
 /** "I have paid": tells MargixIndia about a payment so staff can check it and mark the invoice paid. */
 export function PaymentReportForm({ invoice, t, onSent, onCancel }: { invoice: Invoice; t: TranslateFn; onSent: () => void; onCancel: () => void }) {
-  const due = invoice.total;
-  const [amount, setAmount] = useState(due != null ? String(due) : '');
+  const due = invoice.outstanding;
+  const [amount, setAmount] = useState(String(due));
   const [paidOn, setPaidOn] = useState(() => dayKey(0));
   const [method, setMethod] = useState<ReportMethod>('upi');
   const [reference, setReference] = useState('');
@@ -37,7 +37,7 @@ export function PaymentReportForm({ invoice, t, onSent, onCancel }: { invoice: I
     paidOn: paidOnError(paidOn.trim(), dayKey(0), istDay(invoice.issued_at)),
     reference: referenceError(reference, method),
   };
-  const msg = (k: keyof typeof errors) => (showErrors && errors[k] ? t(errors[k] as string, { max: due != null ? formatINR(due) : '' }) : undefined);
+  const msg = (k: keyof typeof errors) => (showErrors && errors[k] ? t(errors[k] as string, { max: formatINR(due) }) : undefined);
   const needsReference = !METHODS_WITHOUT_REFERENCE.includes(method);
 
   const send = async () => {

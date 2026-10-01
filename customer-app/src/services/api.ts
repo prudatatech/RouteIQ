@@ -479,6 +479,9 @@ export interface Invoice {
   total: number | null;
   amount: number | null;
   gst_amount: number | null;
+  /** Confirmed payments so far, and what is still to pay (total minus amount_paid). */
+  amount_paid: number;
+  outstanding: number;
   issued_at: string | null;
   due_date: string | null;
   overdue: boolean;
