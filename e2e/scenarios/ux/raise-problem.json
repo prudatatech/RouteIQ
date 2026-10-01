@@ -1,0 +1,2 @@
+[{"click":"button:has-text('Raise a problem')"},{"wait":800},{"shot":"raise"},
+ {"click":"[role=dialog] button >> nth=-1"},{"wait":500},{"shot":"raise-empty-submit"}]

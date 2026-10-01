@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Accept')"},{"wait":900},{"shot":"accept-modal"}]

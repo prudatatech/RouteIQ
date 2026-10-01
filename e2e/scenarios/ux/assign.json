@@ -1,0 +1,2 @@
+[{"click":"button:has-text('Assign vehicle')"},{"wait":1200},{"shot":"assign-modal"},
+ {"click":"[role=dialog] button >> nth=-1"},{"wait":600},{"shot":"assign-modal-submit-empty"}]

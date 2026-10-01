@@ -1,0 +1,2 @@
+[{"click":"button:has-text('Add expense')"},{"wait":800},{"shot":"add-expense"},
+ {"click":"[role=dialog] button >> nth=-1"},{"wait":500},{"shot":"add-expense-empty-submit"}]

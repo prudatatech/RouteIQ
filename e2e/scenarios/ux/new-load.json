@@ -1,0 +1,1 @@
+[{"click":"button:has-text('Post'), button[type=submit]"},{"wait":700},{"shot":"submit-empty"}]
