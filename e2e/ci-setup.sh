@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the throwaway test stack on a GitHub runner (.github/workflows/uat.yml): a local Supabase with the
 # production schema (e2e/schema.sql, schema only, no data), the storage bucket the backend uses, and
-# e2e/.env.local. Redis runs as a workflow service on 6380. Nothing here reaches a hosted project.
+# e2e/.env.local. Redis (margix-e2e-redis on 6380) is started by the workflow. Nothing here reaches a hosted project.
 #
 # Refresh e2e/schema.sql after new migrations from a local stack that has them:
 #   docker exec supabase_db_margix-e2e pg_dump -U postgres -d postgres --schema-only --schema=public --no-owner > e2e/schema.sql
@@ -55,6 +55,10 @@ BEGIN
   END LOOP;
   ALTER SCHEMA public OWNER TO postgres;
 END $$;
+-- The public-only dump leaves out triggers on auth.users; this one creates the users row on sign-up.
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 INSERT INTO storage.buckets (id, name, public) VALUES ('kyc_documents', 'kyc_documents', false)
   ON CONFLICT (id) DO NOTHING;
 NOTIFY pgrst, 'reload schema';

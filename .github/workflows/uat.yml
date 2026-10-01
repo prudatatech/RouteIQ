@@ -1,6 +1,6 @@
 name: UAT
 # Runs the whole platform on a GitHub runner against a throwaway Supabase (production schema, no data),
-# so multi-account UAT needs nothing on a developer's machine and never touches a hosted database.
+# with Redis as margix-e2e-redis on 6380, so multi-account UAT needs nothing on a developer's machine and never touches a hosted database.
 #
 #   gh workflow run uat.yml --ref <branch> [-f script=e2e/scenarios/OPS.sh]
 #
@@ -23,10 +23,6 @@ jobs:
   uat:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ['6380:6379']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,7 +35,7 @@ jobs:
             e2e/package-lock.json
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.119.0   # the version the local 75/75 run used; newer ones sign sessions differently
       - name: Install
         run: |
           (cd backend-ts && npm ci --no-audit --no-fund) &
@@ -47,7 +43,9 @@ jobs:
           (cd e2e && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium) &
           wait
       - name: Build the test stack
-        run: bash e2e/ci-setup.sh
+        run: |
+          docker run -d --name margix-e2e-redis -p 6380:6379 redis:7-alpine
+          bash e2e/ci-setup.sh
       - name: Start the backend and web app
         run: |
           mkdir -p e2e/out
