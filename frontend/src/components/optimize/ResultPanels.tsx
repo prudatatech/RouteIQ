@@ -3,7 +3,7 @@ import { Alert, Stat, StatusPill } from '@/components/ui'
 import { formatKg, formatKm, formatMinutes } from '@/utils/display'
 import { engineInfo, unassignedTitle, type OptimizerEngine, type UnassignedShipment } from './plan'
 
-/** Which engine made the routes, said plainly, with the reason when it was not the ML service. */
+/** Which engine made the routes, said plainly, with the reason when it was not the planning service. */
 export function EngineBanner({ engine, matrixSource, note }: {
   engine?: OptimizerEngine
   matrixSource?: string | null

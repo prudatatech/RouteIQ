@@ -23,10 +23,16 @@ const serverRoutes: ServerRoute[] = [
 
 describe('engineInfo', () => {
   it('names each engine plainly, and warns when distances are estimates', () => {
-    expect(engineInfo('ml-service')?.title).toBe('ML service')
-    expect(engineInfo('fallback-road-matrix', 'mapbox')?.detail).toContain('Mapbox')
-    expect(engineInfo('fallback-road-matrix', 'tomtom')?.detail).toContain('TomTom')
-    expect(engineInfo('fallback-estimated')).toMatchObject({ tone: 'warning', title: 'Built-in solver, estimated distances' })
+    expect(engineInfo('ml-service')?.title).toBe('Planning service')
+    expect(engineInfo('fallback-road-matrix', 'mapbox')?.detail).toContain('road distances')
+    expect(engineInfo('fallback-estimated')).toMatchObject({ tone: 'warning', title: 'Built-in planner, estimated distances' })
+  })
+
+  it('never names a provider key or a solver to the dispatcher', () => {
+    for (const e of ['ml-service', 'fallback-road-matrix', 'fallback-estimated'] as const) {
+      const text = JSON.stringify(engineInfo(e))
+      expect(text).not.toMatch(/TomTom|Mapbox|OR-Tools|ML service|key/)
+    }
   })
 
   it('says nothing for a result from before engines were reported', () => {

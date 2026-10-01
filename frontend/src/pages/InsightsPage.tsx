@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CloudOff, Moon, Route as RouteIcon } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
+import { useAuthStore } from '@/store/authStore'
+import { pluralize } from '@/utils/display'
 import {
   Button, Card, CardBody, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, Skeleton, Stat, StatusPill, buttonClasses,
   type Column,
@@ -222,6 +224,7 @@ function DemandSection({ query }: { query: { data?: Demand; isLoading: boolean; 
 
 /** Live incidents from traffic monitoring on the roads active routes use. */
 function TrafficIncidentsCard() {
+  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
   const incidents = useQuery({ queryKey: ['traffic', 'incidents'], queryFn: () => trafficAPI.incidents(), refetchInterval: 120_000 })
   const list = incidents.data?.incidents ?? []
 
@@ -235,8 +238,8 @@ function TrafficIncidentsCard() {
       <EmptyState
         compact
         icon={<CloudOff size={22} />}
-        title="Traffic data not configured"
-        description="Add a TomTom key on the server to see accidents and closures on active trips."
+        title="Live traffic is not available"
+        description={isSuperadmin ? 'Add a TomTom key in the server settings to see accidents and closures on active trips.' : 'Your administrator can switch it on in Settings.'}
       />
     )
   } else if (list.length === 0) {
@@ -251,7 +254,7 @@ function TrafficIncidentsCard() {
               <p className="text-xs text-muted">
                 {i.road ? `${i.road} · ` : ''}
                 {i.delay_seconds ? `+${Math.round(i.delay_seconds / 60)} min delay · ` : ''}
-                {i.affected_route_ids.length} {i.affected_route_ids.length === 1 ? 'route' : 'routes'} affected
+                {pluralize(i.affected_route_ids.length, 'trip')} affected
               </p>
             </div>
             <StatusPill tone={i.severity >= 3 ? 'danger' : 'warning'}>{i.severity >= 3 ? 'Major' : 'Minor'}</StatusPill>

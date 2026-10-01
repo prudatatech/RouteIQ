@@ -17,6 +17,7 @@ import {
 } from '@/components/ui'
 import { formatKg, formatKm, formatMinutes } from '@/utils/display'
 import { isFleetVehicle } from '@/utils/vehicles'
+import { useAuthStore } from '@/store/authStore'
 import {
   MAX_STOPS, applyOrder, describeSaving, formatArrival, googleMapsUrl, isoToIstInput, loadWeightOfStops, pickupDropWarning, planText, pointTimes,
   requestKey, routingErrorMessage, sectionMidpoint, shortName, tagRoutes, toPlanRequest, truckProfileText, type PlannerInput, type PlannerStop,
@@ -107,6 +108,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
   const times = selected && fresh ? pointTimes(fresh.departure_at, selected.legs) : []
   const orderWarning = pickupDropWarning(stops)
   const laterInvalid = departLater && departLocal !== '' && Date.parse(`${departLocal}:00+05:30`) < Date.now() - 60_000
+  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
   const routingUnavailable = statusQ.data ? !statusQ.data.available : false
 
   // ── Actions ──
@@ -254,10 +256,12 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
       )}
 
       {routingUnavailable && (
-        <Alert tone="danger" title="Trip planning is not set up">{statusQ.data?.message}</Alert>
+        <Alert tone="danger" title="Trip planning is not available">
+          {isSuperadmin ? statusQ.data?.message : 'Your administrator can switch it on in Settings.'}
+        </Alert>
       )}
       {statusQ.data?.available && !statusQ.data.truck_routing && (
-        <Alert tone="warning" title="Truck restrictions will not be considered">{statusQ.data.message}</Alert>
+        <Alert tone="warning" title="Truck restrictions will not be considered">{isSuperadmin ? statusQ.data.message : 'Routes are planned without height, weight and length limits for now.'}</Alert>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
@@ -434,7 +438,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
             </div>
             {!request && <p className="text-xs text-muted">Choose a start and an end to plan the trip.</p>}
             {request && stops.length < 2 && <p className="text-xs text-muted">Add at least two stops to look for a better order.</p>}
-            {statusQ.data?.truck_routing === false && statusQ.data.available && <p className="text-xs text-muted">Ordering stops needs TomTom, which is not set up.</p>}
+            {statusQ.data?.truck_routing === false && statusQ.data.available && <p className="text-xs text-muted">Putting the stops in the best order is not available right now.</p>}
             {optimize.isError && <p role="alert" className="text-sm text-danger">{routingErrorMessage(optimize.error, 'Could not find a better order. Try again.')}</p>}
 
             {opt && <OrderSuggestion result={opt} onApply={() => applyOptimized(opt.order)} onDismiss={() => setOptimization(null)} />}
@@ -491,7 +495,7 @@ function OrderSuggestion({ result, onApply, onDismiss }: { result: OrderResult; 
     return (
       <Alert tone="success" title={result.changed ? 'The best order is not any quicker' : 'Your order is already the fastest'} action={<Button variant="secondary" size="sm" onClick={onDismiss}>Dismiss</Button>}>
         {result.changed
-          ? `TomTom's order would be ${describeSaving(result.saved_km, result.saved_minutes)}, so it is not worth changing.`
+          ? `The suggested order would be ${describeSaving(result.saved_km, result.saved_minutes)}, so it is not worth changing.`
           : `No other order of these stops is quicker (${formatKm(result.entered.distance_km)}, ${formatMinutes(result.entered.travel_minutes)}).`}
       </Alert>
     )

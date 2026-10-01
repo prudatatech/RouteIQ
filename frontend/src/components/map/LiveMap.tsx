@@ -233,6 +233,7 @@ export default function LiveMap({
 
   // ── Live traffic (staff only: the tiles and incidents need a signed-in staff user) ──
   const role = useAuthStore((s) => s.role)
+  const isSuperadmin = role === 'superadmin'
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
   const tileToken = useTrafficTileToken(isStaff)
   const { data: routeIncidents } = useQuery({
@@ -332,10 +333,10 @@ export default function LiveMap({
       {!compact && (
         <div className="absolute left-3 top-3 z-10 flex w-72 max-w-[calc(100%-4.5rem)] flex-col gap-2">
           <MapPlaceSearch onFound={(pos) => mapRef.current?.flyTo(pos, 13)} />
-          {isStaff && routeIncidents && (
+          {isStaff && routeIncidents && (routeIncidents.configured || isSuperadmin) && (
             <p className="rounded-control border border-border bg-surface px-3 py-2 text-xs text-muted shadow-raised">
               {!routeIncidents.configured
-                ? 'Traffic incidents are not set up yet.'
+                ? 'Live traffic is not available. Add a TomTom key in the server settings.'
                 : routeIncidents.incidents.length === 0
                   ? 'No traffic incidents on active trips.'
                   : `${routeIncidents.incidents.length.toLocaleString('en-IN')} traffic ${routeIncidents.incidents.length === 1 ? 'incident' : 'incidents'} on active trips.`}
