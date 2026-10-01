@@ -20,6 +20,7 @@ import { notificationService } from './notification.service';
 import { selectIn } from './finance.service';
 import { getPayoutAccount } from './people-bank.service';
 import { cleanPathKm, haversineKm, roundKm } from './odometer';
+import { carrierStamp, ownersOf } from '../core/org-context';
 
 export const PAY_VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'] as const;
 export const PAY_STATUSES = ['earned', 'approved', 'paid', 'void'] as const;
@@ -79,8 +80,10 @@ const toRate = (r: any): PayRate => ({
   effective_from: String(r.effective_from).slice(0, 10), active: r.active !== false,
 });
 
-async function loadRates(vehicleType?: string): Promise<PayRate[]> {
+/** The active rates; those of one company when `carrierOrgId` names it (the vehicle's owner). */
+async function loadRates(vehicleType?: string, carrierOrgId?: string | null): Promise<PayRate[]> {
   let q = supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').eq('active', true);
+  if (carrierOrgId) q = q.eq('carrier_org_id', carrierOrgId);
   if (vehicleType) q = q.eq('vehicle_type', vehicleType);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to read pay rates: ${error.message}`);
@@ -128,12 +131,16 @@ export async function createRate(actor: AuditActor, body: Record<string, any>) {
   if (effective_from > indianDateKey(new Date(Date.now() + 366 * 86_400_000))) throw new HttpError(400, 'effective_from is too far ahead');
 
   // A rate already starting that day is replaced: it is withdrawn, not deleted
-  const { error: retireErr } = await supabase.from('driver_pay_rates').update({ active: false })
+  // (only this company's: another company's rate for the same day is not ours to replace)
+  let retire = supabase.from('driver_pay_rates').update({ active: false })
     .eq('vehicle_type', vehicle_type).eq('effective_from', effective_from).eq('active', true);
+  const owner = carrierStamp().carrier_org_id;
+  if (owner) retire = retire.eq('carrier_org_id', owner);
+  const { error: retireErr } = await retire;
   if (retireErr) throw new Error(`Failed to replace the rate: ${retireErr.message}`);
 
   const { data, error } = await supabase.from('driver_pay_rates')
-    .insert({ vehicle_type, per_trip_amount, per_km_amount, effective_from, active: true, created_by: actor.user_id })
+    .insert({ ...carrierStamp(), vehicle_type, per_trip_amount, per_km_amount, effective_from, active: true, created_by: actor.user_id })
     .select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').single();
   if (error) throw new Error(`Failed to save the rate: ${error.message}`);
   await auditService.record('staff-console', actor, 'driver_pay.rate_set', { vehicle_type, per_trip_amount, per_km_amount, effective_from }, `Rate ${data.id}`);
@@ -281,7 +288,7 @@ async function payeeOf(vehicle: { id: string; driver_id: string | null }): Promi
 
 /** Price a finished journey and save its entry (once), and tell staff once when the type has no rate. */
 async function saveEntry(t: PayTarget): Promise<{ entry: any; created: boolean } | null> {
-  const { data: vehicle, error: vehicleErr } = await supabase.from('vehicles').select('id, driver_id, vehicle_type').eq('id', t.vehicleId).maybeSingle();
+  const { data: vehicle, error: vehicleErr } = await supabase.from('vehicles').select('id, driver_id, vehicle_type, carrier_org_id').eq('id', t.vehicleId).maybeSingle();
   if (vehicleErr) throw new Error(`Failed to read the vehicle: ${vehicleErr.message}`);
   const driverId = vehicle ? await payeeOf(vehicle) : null;
   if (!vehicle || !driverId) {
@@ -301,10 +308,12 @@ async function saveEntry(t: PayTarget): Promise<{ entry: any; created: boolean }
   }
 
   const tripDate = indianDateKey(new Date(t.finishedAt));
-  const rate = pickRate(await loadRates(vehicle.vehicle_type), vehicle.vehicle_type, tripDate);
+  const rate = pickRate(await loadRates(vehicle.vehicle_type, vehicle.carrier_org_id), vehicle.vehicle_type, tripDate);
   const perTrip = rate?.per_trip_amount ?? 0;
   const perKm = rate?.per_km_amount ?? 0;
   const row = {
+    ...carrierStamp(),
+    ...ownersOf(vehicle),
     driver_id: driverId,
     vehicle_id: vehicle.id,
     vehicle_type: vehicle.vehicle_type ?? null,
@@ -684,6 +693,7 @@ export async function createPayout(actor: AuditActor, body: Record<string, any>)
   const dates = entries.map(e => String(e.trip_date).slice(0, 10)).sort();
 
   const { data: payout, error } = await supabase.from('driver_payouts').insert({
+    ...carrierStamp(),
     driver_id: driverId, period_from: dates[0], period_to: dates[dates.length - 1], amount, method,
     reference: reference || null, note, paid_at: paidAt.toISOString(), paid_by: actor.user_id,
   }).select('id, driver_id, period_from, period_to, amount, method, reference, note, paid_at').single();

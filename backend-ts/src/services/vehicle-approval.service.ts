@@ -26,6 +26,7 @@ import type { DriverVehicleRegister } from '../schemas';
 import { notificationService } from './notification.service';
 import { auditService } from './audit.service';
 import { listPhotosFor, listVehiclePhotos, primaryPhoto, type VehiclePhoto } from './vehicle-photos.service';
+import { carrierStamp } from '../core/org-context';
 
 type Row = Record<string, any>;
 
@@ -107,7 +108,7 @@ export async function registerDriverVehicle(driverId: string, input: DriverVehic
     if (error || !data) throw error ?? new Error('Failed to update the vehicle request');
     vehicle = data;
   } else {
-    const { data, error } = await supabase.from('vehicles').insert({ id: crypto.randomUUID(), ...fields }).select('*').single();
+    const { data, error } = await supabase.from('vehicles').insert({ ...carrierStamp(), id: crypto.randomUUID(), ...fields }).select('*').single();
     if (isUniqueViolation(error)) throw new HttpError(409, PLATE_TAKEN);
     if (error || !data) throw error ?? new Error('Failed to register the vehicle');
     vehicle = data;

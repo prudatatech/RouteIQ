@@ -25,6 +25,7 @@ import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
   EXPENSE_CATEGORIES, ExpenseCategory, getFinanceSettings, getFinanceSummary, getUnpricedDeliveries, selectIn, setFuelPrice,
 } from '../services/finance.service';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 // Money is for admin and superadmin; managers run operations only
@@ -379,7 +380,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
     const input = await parseExpense(req.body, false);
     const { data, error } = await supabase
       .from('expenses')
-      .insert({ vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
+      .insert({ ...carrierStamp(), vehicle_id: null, route_id: null, litres: null, note: null, receipt_path: null, ...input, created_by: req.user!.user_id })
       .select('*')
       .single();
     if (error || !data) throw new Error(`Failed to save expense: ${error?.message}`);

@@ -17,6 +17,7 @@ import { HttpError } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
 import { cacheDeletePattern } from '../core/redis';
 import { TPL_UPLOAD_CONTENT_TYPES } from './tpl.service';
+import { carrierStamp } from '../core/org-context';
 
 export const ATTACHMENT_KINDS = ['invoice', 'job_card', 'photo', 'other'] as const;
 export type AttachmentKind = typeof ATTACHMENT_KINDS[number];
@@ -238,6 +239,7 @@ export async function recordService(input: ServiceRecordInput, ctx: RecordServic
     const { data: expense, error: expErr } = await supabase
       .from('expenses')
       .insert({
+        ...carrierStamp(),
         vehicle_id: vehicle.id,
         category: 'maintenance',
         amount: total,
@@ -346,6 +348,7 @@ async function refreshRecordCost(logId: string): Promise<{ cost: number | null }
       await supabase.from('expenses').update({ amount: total, updated_at: new Date().toISOString() }).eq('id', log.expense_id);
     } else {
       const { data: expense, error: expErr } = await supabase.from('expenses').insert({
+        ...carrierStamp(),
         vehicle_id: log.vehicle_id, category: 'maintenance', amount: total, expense_date: String(log.done_at).slice(0, 10),
         note: log.note ? `${log.item}: ${log.note}` : log.item,
       }).select('id').single();

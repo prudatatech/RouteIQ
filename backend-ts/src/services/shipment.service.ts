@@ -15,6 +15,7 @@ import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { notificationService } from './notification.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
+import { carrierStamp } from '../core/org-context';
 
 const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return "Pending";
@@ -451,6 +452,7 @@ export class ShipmentService {
     const { data: dbShipment, error: shipErr } = await supabase
       .from('shipments')
       .insert({
+        ...carrierStamp(),
         id: shipmentId,
         tracking_id: trackingId,
         priority: shipmentIn.priority,
@@ -577,6 +579,7 @@ export class ShipmentService {
       // so its route starts active as before. Every other route is created pending and
       // dispatched through the route service once the shipment is marked assigned.
       const { data: dbRoute } = await supabase.from('routes').insert({
+        ...carrierStamp(),
         id: routeId,
         vehicle_id: shipmentIn.vehicle_id,
         status: shipmentIn.open_bidding ? 'active' : 'pending',
@@ -730,6 +733,7 @@ export class ShipmentService {
       routeId = uuidv4();
       routeStatus = 'pending';
       const { error: routeErr } = await supabase.from('routes').insert({
+        ...carrierStamp(),
         id: routeId,
         vehicle_id: vehicleId,
         status: 'pending',

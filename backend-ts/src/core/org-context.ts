@@ -6,15 +6,12 @@
  * else their first logistic company. A header naming an organisation the user is not a member of is a 403.
  *
  * The result is set on the request (`req.org`, `req.orgRole`, `req.memberships`, `req.isPlatformAdmin`) and
- * remembered for the rest of the request, so services stamp and scope without being handed the request:
- *   - carrierStamp() / vendorStamp() / issuerStamp(): owner columns to spread into an insert;
- *   - scopeToCarrier(query): restricts a list to the active company.
- * Outside a request (the scheduler) there is no organisation: nothing is scoped and the database default
- * (the default company) stamps new rows.
+ * remembered for the rest of the request, so services can stamp new rows without being handed the request:
+ * carrierStamp() / issuerStamp() / vendorOrgOf() give the owner columns to spread into an insert. Outside a
+ * request (the scheduler) there is no organisation, and the database default (the default company) stamps.
  *
- * Until the organisations migration has run, no default company is configured and everything here is a
- * no-op, so the app behaves as it always did. Once configured, a staff member or driver with no membership
- * sees nothing rather than everything.
+ * Until the organisations migration has run, no default company is configured: `configured` is false,
+ * `req.org` is null and nothing is stamped, so the app behaves as it always did.
  */
 import type { NextFunction, Request, Response } from 'express';
 import { supabase } from './supabase';

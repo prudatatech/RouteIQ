@@ -25,6 +25,7 @@ import { closeOpenJobsForVehicle } from '../services/maintenance.service';
 import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
 import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
+import { carrierStamp } from '../core/org-context';
 
 const router = Router();
 
@@ -148,7 +149,7 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       return;
     }
 
-    const insertData: any = { ...parsed.data };
+    const insertData: any = { ...carrierStamp(), ...parsed.data };
 
     // If driver details are provided, link (or create) the driver user.
     // A saved draft (archived) is not assigned to anyone yet, so it links no driver.
@@ -630,6 +631,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     const body = description || (byDriver ? 'Driver triggered SOS emergency alert' : 'Staff raised an SOS emergency alert');
 
     const { data: alert, error } = await supabase.from('sos_alerts').insert({
+      ...carrierStamp(),
       driver_id: byDriver ? req.user!.user_id : (vehicle?.driver_id ?? null),
       vehicle_id: req.params.vehicle_id,
       alert_type: alertType,

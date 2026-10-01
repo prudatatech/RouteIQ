@@ -23,6 +23,7 @@ import {
 } from './consignment';
 import { notifyOwner, notifyStaffSafe } from './notify';
 import { estimateMinutes, openDropPoints, planStopsOnVehicle } from './replan';
+import { carrierStamp, vendorOrgOf } from '../../core/org-context';
 
 export const EXCEPTION_TYPES = [
   'vehicle_accident', 'vehicle_breakdown', 'damage', 'shortage', 'excess', 'theft', 'refused', 'undeliverable', 'delay', 'seal_tamper', 'weather', 'other',
@@ -99,8 +100,13 @@ export function makeCode(prefix: 'EXC' | 'TRF' | 'CLM'): string {
 
 /** Inserts a row whose `code` must be unique, trying new codes on the rare clash. */
 export async function insertWithCode(table: 'cargo_exceptions' | 'cargo_transfers' | 'cargo_claims', prefix: 'EXC' | 'TRF' | 'CLM', row: Record<string, unknown>, columns = '*'): Promise<any> {
+  // The company running the case; a claim a vendor raises also names the vendor's organisation
+  const owners = {
+    ...carrierStamp(),
+    ...(table === 'cargo_claims' && row.raised_by_role === 'vendor' ? await vendorOrgOf(row.raised_by as string | undefined) : {}),
+  };
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data, error } = await supabase.from(table).insert({ ...row, code: makeCode(prefix) }).select(columns).single();
+    const { data, error } = await supabase.from(table).insert({ ...owners, ...row, code: makeCode(prefix) }).select(columns).single();
     if (!error && data) return data;
     // The same problem is already open (the partial unique index on dedupe_key): not a code clash
     if (error?.code === '23505' && /dedupe_key/.test(`${error.message ?? ''} ${(error as any).details ?? ''}`)) throw new DuplicateCaseError();

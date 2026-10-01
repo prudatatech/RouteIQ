@@ -18,6 +18,7 @@ import { stampPlannedArrivals } from './driver-performance.service';
 import { recordTripPaySafe } from './driver-pay.service';
 import { syncOdometerAfterTripSafe } from './odometer-sync.service';
 import type { CargoHoldContext } from './shipment.service';
+import { carrierStamp } from '../core/org-context';
 
 /** Sets a vehicle's status unless it is in maintenance or archived (those are changed by staff only). */
 export async function setOperatingVehicleStatus(vehicleId: string | null | undefined, status: 'on_route' | 'available' | 'idle'): Promise<void> {
@@ -480,6 +481,7 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
   const { data: route, error: routeErr } = await supabase
     .from('routes')
     .insert({
+      ...carrierStamp(),
       vehicle_id: input.vehicle_id,
       depot_id: null,
       status: 'pending',

@@ -10,6 +10,7 @@ import { pricingService } from './pricing.service';
 import { haversineKm, isValidPoint, LatLng, ROAD_FACTOR } from './geo';
 import { placeMatchesSide } from '../utils/corridor-match';
 import { toPoint, travelMinutes } from '../utils/eta';
+import { carrierStamp, ownersOf, vendorOrgOf } from '../core/org-context';
 
 /** Notifications are informative; a failure must not undo the bid operation. */
 function notify(send: () => Promise<unknown>) {
@@ -271,6 +272,7 @@ export const capacityService = {
     }
 
     const { data: bid, error } = await supabase.from('capacity_bids').insert({
+      ...(await vendorOrgOf(data.vendor_id)),
       vendor_id: data.vendor_id,
       window_id: data.window_id,
       bid_amount: bidAmount,
@@ -339,6 +341,7 @@ export const capacityService = {
       routeId = routes[0].id;
     } else {
       const { data: newRoute } = await supabase.from('routes').insert({
+        ...carrierStamp(),
         id: uuidv4(),
         vehicle_id: vehicleId,
         status: 'active',
@@ -414,6 +417,7 @@ export const capacityService = {
     if (await findOpenWindow(vehicleId)) throw new HttpError(409, 'This vehicle already has an open bidding window');
 
     const { data: window, error } = await supabase.from('capacity_windows').insert({
+      ...carrierStamp(),
       vehicle_id: vehicleId,
       opens_at: opensAt.toISOString(),
       closes_at: closesAt.toISOString(),
@@ -771,6 +775,9 @@ export const capacityService = {
         standbyPriority = standby?.priority ?? null;
       }
       const { data: shipment, error: shipErr } = await supabase.from('shipments').insert({
+        ...carrierStamp(),
+        ...ownersOf(window),
+        ...ownersOf(bid),
         tracking_id: 'RTX-' + bid.id.slice(0, 7).toUpperCase(),
         status: 'assigned',
         ...(standbyPriority ? { priority: standbyPriority } : {}),
@@ -804,6 +811,9 @@ export const capacityService = {
 
       // 6. The manifest that shows the load on the dashboard and on the driver's screen
       const { data: manifest, error: manifestErr } = await supabase.from('cargo_manifest').insert({
+        ...carrierStamp(),
+        ...ownersOf(window),
+        ...ownersOf(bid),
         vehicle_id: window.vehicle_id,
         pickup_location: vendorOriginAddress,
         pickup_lat: pickupAt.lat,
@@ -831,6 +841,7 @@ export const capacityService = {
         if (!route) {
           const routeId = uuidv4();
           const { error: routeErr } = await supabase.from('routes').insert({
+            ...carrierStamp(),
             id: routeId,
             vehicle_id: window.vehicle_id,
             status: 'active',

@@ -27,6 +27,7 @@ import { predictEta } from '../services/optimizer/eta';
 import { evaluateReroute } from '../services/reroute.service';
 import { evaluateRerouteLocal } from '../services/optimizer/reroute-local';
 import { logFallback, mlPost } from '../services/optimizer/ml-client';
+import { carrierStamp } from '../core/org-context';
 
 /** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
 
@@ -184,6 +185,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       const { data: routeRow, error: routeErr } = await supabase
         .from('routes')
         .insert({
+          ...carrierStamp(),
           vehicle_id: optRoute.vehicle_id,
           depot_id: depot.id,
           status: 'pending',
