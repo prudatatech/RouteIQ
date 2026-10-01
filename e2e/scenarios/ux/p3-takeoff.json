@@ -1,0 +1,1 @@
+[{"shot":"assigned"},{"click":"button:has-text('Take off vehicle')"},{"wait":700},{"shot":"confirm"},{"say":"[role=dialog]"},{"click":"[role=dialog] button:has-text('Take off vehicle')"},{"wait":900},{"say":"[role=status]"},{"wait":1500},{"shot":"taken-off"}]

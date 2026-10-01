@@ -1,0 +1,1 @@
+[{"shot":"before-hold"},{"click":"button:has-text('Hold')"},{"wait":700},{"shot":"hold-form"},{"fill":["[role=dialog] textarea","Consignee gate closed until Monday"]},{"click":"[role=dialog] button[type=submit]"},{"wait":1800},{"shot":"hold-done"}]
