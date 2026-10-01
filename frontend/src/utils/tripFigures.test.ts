@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tripCarries, tripCode, tripFigures, type TripLike } from './tripFigures'
+import { distanceWithBasis, tripCarries, tripCode, tripFigures, type TripLike } from './tripFigures'
 
 const trip = (over: Partial<TripLike> = {}): TripLike => ({
   id: '4afb4ec7-1111-4222-8333-444455556666', status: 'completed', total_distance_km: 846.9, total_duration_minutes: 1285,
@@ -48,5 +48,19 @@ describe('distance and time of a trip', () => {
 
   it('shows nothing when there is nothing to measure', () => {
     expect(tripFigures(trip({ status: 'pending', total_distance_km: 0, total_duration_minutes: 0, route_stops: [] }))).toEqual({ kind: 'none' })
+  })
+})
+
+describe('distanceWithBasis', () => {
+  const km = (n: number) => `${n} km`
+  it('says how the distance was worked out', () => {
+    expect(distanceWithBasis(289.3, 'actual', km)).toBe('289.3 km')
+    expect(distanceWithBasis(289.3, 'planned', km)).toBe('289.3 km (planned)')
+    expect(distanceWithBasis(289.3, 'estimated', km)).toBe('289.3 km (straight line)')
+  })
+  it('shows a dash with no distance or no basis to trust', () => {
+    expect(distanceWithBasis(0, 'planned', km)).toBe('—')
+    expect(distanceWithBasis(null, 'actual', km)).toBe('—')
+    expect(distanceWithBasis(50, 'none', km)).toBe('—')
   })
 })
