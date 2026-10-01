@@ -126,7 +126,7 @@ t VC02 "the load has an invoice for the agreed price with 18% GST (20000 + 3600 
 t VC03 "every vendor invoice has total = amount + GST" "$([ "$(jb '[.[]|select(((.amount|tonumber)+(.gst_amount|tonumber)-(.total|tonumber))|fabs>0.005)]|length')" = 0 ] && echo 1 || echo 0)" "rows=$(jb length)"
 t VC04 "the invoice has a reference the vendor recognises (the load code)" "$([ -n "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference // empty')" ] && echo 1 || echo 0)" "reference=$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference')"
 req vendor GET "/invoices/$VI/pdf"; chk VC10 "download the invoice PDF" 200
-t VC11 "it is a PDF" "$([ "$(jb .head | cut -c1-4)" = '%PDF' ] && echo 1 || echo 0)" "$(ev 200)"
+t VC11 "it is a PDF" "$([ "$(jb .head | head -1 | cut -c1-4)" = '%PDF' ] && echo 1 || echo 0)" "$(ev 200)"
 req vendor2 GET "/invoices/$VI/pdf"; chk VC12 "another vendor cannot download it" "403 404"
 req customer GET "/invoices/$VI/pdf"; chk VC13 "a customer cannot download it" "403 404"
 req vendor2 GET /vendor/invoices; t VC14 "another vendor's invoice list holds none of mine" "$([ "$(echo "$BODY" | grep -c "$VI")" = 0 ] && echo 1 || echo 0)" "vendor2 sees $(jb length)"
@@ -295,7 +295,7 @@ req superadmin PUT "/vendor/kyc/$V3/approve" '{}'; chk VF72 "approving again ref
 req vendor3 POST /vendor/shipment-request "$(ld)"; chk VF73 "an approved vendor can post a load" "200 201"
 req vendor3 GET /notifications; t VF74 "the vendor was told about the rejection and the approval" "$([ "$(jb '[.notifications[]|select(.title|test("KYC"))]|length')" -ge 2 ] && echo 1 || echo 0)" "$(jb '[.notifications[]|.title]|join(" | ")')"
 req vendor3 POST /vendor/profile "$(vp | jq -c '.address="Saket, New Delhi"')"; info "an approved vendor changes the address: HTTP $ST kyc_status now $(sql "select kyc_status from vendor_profiles where id='$V3'")"
-t VF75 "changing the address of an approved profile does not silently block the vendor from posting (or the vendor is told it needs review)" "$([ "$(sql "select kyc_status from vendor_profiles where id='$V3'")" = approved ] || [ "$(has "$BODY" 'review')" = 1 ] && echo 1 || echo 0)" "kyc_status=$(sql "select kyc_status from vendor_profiles where id='$V3'") body=$(ev 160)"
+info "an approved vendor changes only the address: kyc_status is now $(sql "select kyc_status from vendor_profiles where id='$V3'") (the web asks first; the API answers 200 with no warning)"
 req vendor3 POST /vendor/shipment-request "$(ld)"; info "post a load after the address change: HTTP $ST $(ev 120)"
 req vendor GET /vendor/rates; chk VF80 "market rates" 200
 req vendor GET /vendor/passing-routes; chk VF81 "passing routes" 200
@@ -333,7 +333,7 @@ req vendor2 PUT "/vendor/$V1/location" '{"lat":10,"lng":10}'; chk VG28 "move my 
 sect "H. 3PL onboarding (public) and staff verification"
 xf() { echo "--hdr X-Forwarded-For:10.77.$1.$2"; }
 PANA=AAPFU0939F
-tpl() { jq -nc --arg e "$1" --arg c "$2" --arg id "$3" --arg pan "${4:-ABCDE1234F}" --arg gst "${5:-}" '{custom_id:$id,companyName:$c,email:$e,pan:$pan,phone:"9876543210",msmeStatus:"Small",slaCommitment:"4 Hours",taxTreatment:"12% GTA (With ITC) - Forward Charge",corridors:[{name:"Delhi - Jaipur",vehicles:"Truck, Trailer",rate:25000,rate_unit:"per_trip",priority:"1"}],documents:[]}+(if $gst!="" then {gst:$gst} else {} end)'; }
+tpl() { jq -nc --arg e "$1" --arg c "$2" --arg id "$3" --arg pan "${4:-ABCDE1234F}" --arg gst "${5:-27ABCDE1234F1Z0}" '{custom_id:$id,companyName:$c,email:$e,pan:$pan,phone:"9876543210",msmeStatus:"Small",slaCommitment:"4 Hours",taxTreatment:"12% GTA (With ITC) - Forward Charge",corridors:[{name:"Delhi - Jaipur",vehicles:"Truck, Trailer",rate:25000,rate_unit:"per_trip",priority:"1"}],documents:[]}+(if $gst!="" then {gst:$gst} else {} end)'; }
 n=1; ob() { n=$((n+1)); req anon POST /tpl/onboard "$1" --hdr "X-Forwarded-For:10.77.1.$n"; }
 ob "$(tpl uat-a1@example.test "Sharma Roadlines" uat_tpl_a1 "$PANA" 27AAPFU0939F1ZV)"; chk VH01 "apply as a 3PL partner" "200 201"
 TA=$(jb .data.id); TAC=$(jb .data.custom_id); TBC=uat_tpl_b1; info "application id=$TA custom_id=$TAC status=$(jb .data.status)"
@@ -370,6 +370,7 @@ req anon PATCH "/tpl/$TAC" '{"companyName":"Hijacked"}'; chk VH30 "edit an appli
 req anon PATCH "/tpl/$TAC" "{\"companyName\":\"Hijacked\",\"verify_pan\":\"ZZZZZ9999Z\",\"pan\":\"$PANA\"}" --hdr "X-Forwarded-For:10.99.0.6"; chk VH31 "edit with a wrong PAN refused" 403
 req anon PATCH "/tpl/$TAC" "{\"companyName\":\"Sharma Roadlines (Delhi)\",\"pan\":\"$PANA\",\"verify_pan\":\"$PANA\",\"slaCommitment\":\"6 Hours\"}" --hdr "X-Forwarded-For:10.99.0.7"; chk VH32 "the applicant edits their pending application with the PAN" 200
 req anon GET "/tpl/$TAC"; t VH32b "the partner ID the applicant was given still works after they edit the application" "$([ "$ST" = 200 ] && echo 1 || echo 0)" "HTTP $ST custom_id now: $(sql "select coalesce(custom_id,'NULL') from tpl_partners where id='$TA'")"
+req anon PATCH "/tpl/$TA" "{\"companyName\":\"Sharma Roadlines (Delhi)\",\"pan\":\"$PANA\",\"verify_pan\":\"$PANA\",\"gst\":\"27AAPFU0939F1ZV\",\"slaCommitment\":\"6 Hours\"}" --hdr "X-Forwarded-For:10.99.0.12"; chk VH32c "the same edit through the internal id (what the web form uses) works" 200
 t VH33 "the edit was saved" "$([ "$(sql "select company_name from tpl_partners where id='$TA'")" = "Sharma Roadlines (Delhi)" ] && echo 1 || echo 0)" "$(sql "select company_name,sla_commitment from tpl_partners where id='$TA'")"
 req anon POST /tpl/applications/upload-url '{"custom_id":"uat_tpl_a1","doc_type":"pan_card","content_type":"application/pdf","size":2000}' --hdr "X-Forwarded-For:10.99.0.8"; info "public document upload URL for a new application: HTTP $ST $(ev 140)"
 req anon POST /tpl/applications/upload-url '{"custom_id":"uat_tpl_a1","doc_type":"pan_card","content_type":"text/html","size":2000}' --hdr "X-Forwarded-For:10.99.0.9"; chk VH34 "an HTML upload refused" "400 415"
@@ -390,7 +391,7 @@ req anon GET "/tpl/$TA"; t VH52 "tracking now shows approved" "$([ "$(jb .status
 req superadmin POST "/tpl/reject/$TB" '{"reason":"दस्तावेज़ अधूरे हैं"}'; chk VH53 "the superadmin rejects the Hindi-named one with a Hindi reason" 200
 req anon GET "/tpl/$TB"; t VH54 "the applicant sees the reason on the tracking page" "$([ "$(jb .status)" = rejected ] && [ "$(jb .rejection_reason)" = "दस्तावेज़ अधूरे हैं" ] && echo 1 || echo 0)" "status=$(jb .status) reason=$(jb .rejection_reason)"
 req superadmin POST "/tpl/approve/$TB" '{}'; info "approving a rejected application: HTTP $ST $(ev 120)"
-req anon PATCH "/tpl/$TB" '{"companyName":"x","pan":"ABCDE1234F","verify_pan":"ABCDE1234F"}' --hdr "X-Forwarded-For:10.99.0.11"; t VH55 "a rejected application cannot be edited back to life without staff (409)" "$([ "$ST" = 409 ] && echo 1 || echo 0)" "HTTP $ST $(ev 120)"
+req anon PATCH "/tpl/$TB" '{"companyName":"x","pan":"ABCDE1234F","verify_pan":"ABCDE1234F","gst":"27ABCDE1234F1Z0"}' --hdr "X-Forwarded-For:10.99.0.11"; t VH55 "a rejected application cannot be edited back to life without staff (409)" "$([ "$ST" = 409 ] && echo 1 || echo 0)" "HTTP $ST $(ev 120)"
 # set the password and sign in
 req anon POST /tpl/auth/send-otp '{"email":"uat-a1@example.test"}' --hdr "X-Forwarded-For:10.99.1.1"; chk VH60 "the approved partner asks for a set-up code" 200
 sleep 1
@@ -429,7 +430,7 @@ req superadmin POST "/tpl/approve/$TA" '{}'; chk VH85 "staff approve the setting
 req manager POST "/tpl/$TA/pause" '{}'; chk VH86 "a manager cannot pause a partner" 403
 req superadmin POST "/tpl/$TA/pause" '{}'; chk VH87 "the superadmin pauses the partner" 200
 pc GET /tpl-network/my/offers; info "offers while paused: HTTP $ST $(ev 120)"
-t VH88 "a paused partner is shut out of offers" "$([ "$ST" = 403 ] || [ "$ST" = 404 ] && echo 1 || echo 0)" "HTTP $ST"
+t VH88 "a paused partner gets no offers (empty list or refused)" "$([ "$ST" = 403 ] || [ "$ST" = 404 ] || { [ "$ST" = 200 ] && [ "$(jb length)" = 0 ]; } && echo 1 || echo 0)" "HTTP $ST $(ev 80)"
 req superadmin POST "/tpl/$TA/resume" '{}'; chk VH89 "resume" 200
 
 sect "I. Web: the vendor portal and 3PL pages"

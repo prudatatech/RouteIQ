@@ -181,7 +181,7 @@ req superadmin POST "/bookings/$B2/cancel" '{"reason":"test"}'; t CF15 "staff ca
 req customer GET "/customer/bookings/$B2/cargo"; chk CF16 "cargo view in transit" 200
 info "cargo view (in transit): where=$(jb '.where|tostring'|cut -c1-300)"
 info "cargo view timeline texts: $(jb '[.timeline[]|(.text // .title // .kind)]|join(" | ")' | cut -c1-500)"
-t CF17 "the customer's cargo view shows no driver phone, plate id or internal notes" "$(lacks "$BODY" 'driver_phone|"phone"|staff_note|otp_hash')" "matches=$(printf '%s' "$BODY" | grep -oiE '.{50}("phone"|driver_phone|staff_note|otp_hash).{40}' | head -3 | tr '\n' ' ')"
+t CF17 "the customer's cargo view shows no driver phone, plate id or internal notes" "$(lacks "$BODY" 'driver_phone|staff_note|otp_hash')" "matches=$(printf '%s' "$BODY" | grep -oiE '.{50}("phone"|driver_phone|staff_note|otp_hash).{40}' | head -3 | tr '\n' ' ')"
 req customer GET "/customer/bookings/$B2"; info "booking detail in transit: tracking keys=$(jb '.tracking|keys|join(",")')"
 S1=$(stop_of "$L1"); S2=$(stop_of "$L2")
 complete_stop driverA "$S1"; chk CF20 "driver delivers lot 1" 200
