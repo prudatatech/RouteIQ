@@ -10,7 +10,7 @@ import { formatISTDate } from '../core/format';
 import { manifestParcelCode } from '../core/parcelCode';
 import { SecurityService } from './security.service';
 import { InvoiceService } from './invoice.service';
-import { OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertShipmentTransition, assertTransition } from '../core/transitions';
+import { FINAL_SHIPMENT_STATUSES, OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS, assertShipmentTransition, assertTransition } from '../core/transitions';
 import { finalDeliveryPoint, sortDeliveryPoints } from '../core/destination';
 import { notificationService } from './notification.service';
 import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
@@ -69,6 +69,8 @@ export interface ShipmentHistoryEvent {
   actor: { id: string; name: string | null; role: string | null } | null;
   note: string | null;
   location: { lat: number; lng: number } | null;
+  /** An automatic action on a cargo case: shown to staff, never on the public tracking page. */
+  internal?: boolean;
 }
 
 /** The public-safe cut of a history event: status and time only. */
@@ -1363,6 +1365,15 @@ export class ShipmentService {
    * vehicles' free capacity is worked out again.
    */
   static async afterStatusChange(shipmentId: string, status: string, actor?: LogActor | null): Promise<void> {
+    // The goods are no longer on the road: delay cases on them close themselves (never blocks the change)
+    if ((FINAL_SHIPMENT_STATUSES as readonly string[]).includes(status)) {
+      try {
+        const { resolveDelayCasesFor } = await import('./cargo/exception.service');
+        await resolveDelayCasesFor({ shipment_id: shipmentId }, status);
+      } catch (e) {
+        console.error('[cargo] Could not close the delay cases of a settled shipment:', e);
+      }
+    }
     // Bill the delivery (complete-stop, custody deliveries and verify-pod all end up here)
     if (status === 'delivered' || status === 'partially_delivered') await InvoiceService.onShipmentDelivered(shipmentId);
 
@@ -1591,7 +1602,8 @@ export class ShipmentService {
           : null;
 
         let note: string | null = null;
-        if (meta.received_by) note = `Received by ${meta.received_by}`;
+        if (typeof meta.case_note === 'string') note = meta.case_note;
+        else if (meta.received_by) note = `Received by ${meta.received_by}`;
         else if (log.status === 'assigned' && meta.vehicle_id) note = 'Vehicle assigned';
 
         return {
@@ -1600,6 +1612,7 @@ export class ShipmentService {
           actor,
           note,
           location: log.location_lat != null && log.location_lng != null ? { lat: log.location_lat, lng: log.location_lng } : null,
+          ...(typeof meta.case_note === 'string' ? { internal: true } : {}),
         };
       });
     }
@@ -1624,7 +1637,7 @@ export class ShipmentService {
 
   /** Status + time only — what the public tracking page is allowed to show. */
   private static toPublicHistory(events: ShipmentHistoryEvent[]): PublicHistoryEvent[] {
-    return events.map(e => ({ status: e.status, at: e.at }));
+    return events.filter(e => !e.internal).map(e => ({ status: e.status, at: e.at }));
   }
 
   /**

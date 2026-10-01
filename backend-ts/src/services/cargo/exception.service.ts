@@ -15,6 +15,7 @@ import { OPERATING_VEHICLE_STATUSES } from '../../core/transitions';
 import { isPlaceholderPlate } from '../../core/vehicles';
 import { haversineKm, isValidPoint } from '../geo';
 import { ShipmentService } from '../shipment.service';
+import { auditService } from '../audit.service';
 import {
   piecesHeld, refColumns, refOf, reload, resolveRef, toConsignment, weightOf, writeConsignment,
   SHIPMENT_CUSTODY_COLUMNS, MANIFEST_CUSTODY_COLUMNS,
@@ -82,6 +83,13 @@ const EXCEPTION_COLUMNS =
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+/** Thrown when a case of the same type is already open for the same goods (the dedupe_key index refused it). */
+export class DuplicateCaseError extends Error {
+  constructor() {
+    super('A case of this type is already open for these goods');
+  }
+}
+
 /** A human-readable code: PREFIX-XXXXXX. */
 export function makeCode(prefix: 'EXC' | 'TRF' | 'CLM'): string {
   let out = '';
@@ -94,6 +102,8 @@ export async function insertWithCode(table: 'cargo_exceptions' | 'cargo_transfer
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data, error } = await supabase.from(table).insert({ ...row, code: makeCode(prefix) }).select(columns).single();
     if (!error && data) return data;
+    // The same problem is already open (the partial unique index on dedupe_key): not a code clash
+    if (error?.code === '23505' && /dedupe_key/.test(`${error.message ?? ''} ${(error as any).details ?? ''}`)) throw new DuplicateCaseError();
     if (error?.code !== '23505') throw new Error(`Failed to save to ${table}: ${error?.message}`);
   }
   throw new Error(`Could not find a free ${prefix} code`);
@@ -125,6 +135,11 @@ export interface OpenExceptionInput {
   lat?: number | null;
   lng?: number | null;
   status?: string;
+  /**
+   * One open case per key: a second case with the same key is refused while the first is open
+   * (a partial unique index on cargo_exceptions.dedupe_key). Used for cases the system opens by itself.
+   */
+  dedupe_key?: string | null;
 }
 
 async function insertItems(exceptionId: string, items: ExceptionItemInput[]): Promise<void> {
@@ -162,11 +177,21 @@ export async function openException(input: OpenExceptionInput, actor: Actor | nu
     sla_due_at: slaDueAt(severity, now),
     escalation_count: 0,
     notes: [],
+    ...(input.dedupe_key ? { dedupe_key: input.dedupe_key } : {}),
     created_by: actor && ['admin', 'manager', 'superadmin', 'driver', 'vendor'].includes(actor.role) ? actor.id : null,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   }, EXCEPTION_COLUMNS);
   await insertItems(row.id, input.items);
+
+  // A case the system opened by itself goes in the audit log (one a person opened is their own action)
+  if (!['manual', 'driver'].includes(input.source)) {
+    await auditService.recordSystem('cargo_case.opened', {
+      exception_id: row.id, code: row.code, type: input.type, severity, source: input.source,
+      vehicle_id: input.vehicle_id ?? null, route_id: input.route_id ?? null,
+      consignments: input.items.map(i => i.consignment.code),
+    }, `${row.code} opened: ${input.type.replace(/_/g, ' ')} (${severity})`);
+  }
 
   const codes = input.items.map(i => i.consignment.code).join(', ');
   await notifyStaffSafe(
@@ -865,7 +890,106 @@ export async function resolveIfSettled(exceptionId: string, resolution: 'transsh
   const goods = await itemConsignments(exceptionId);
   if (goods.some(({ c }) => c.status === 'on_hold' || (row.vehicle_id && c.holder === 'vehicle' && c.vehicleId === row.vehicle_id))) return false;
   await resolveRow(row, resolution, note, actor);
+  await auditService.recordSystem('cargo_case.auto_resolved', { exception_id: row.id, code: row.code, type: row.type, resolution }, `${row.code} resolved: ${note}`);
   return true;
+}
+
+// ── Delay cases close themselves when the goods are settled ──
+
+/** Statuses (shipment vocabulary) after which goods are no longer on the road: a delay means nothing for them. */
+export const DELAY_MOOT_STATUSES = ['delivered', 'completed', 'returned', 'lost', 'cancelled'] as const;
+
+/** True when a delay case makes no sense for these goods: delivered, cancelled, returned, lost, or partly delivered with nothing left to deliver. */
+export function delayIsMoot(c: Pick<Consignment, 'status' | 'pieces'>): boolean {
+  if ((DELAY_MOOT_STATUSES as readonly string[]).includes(c.status)) return true;
+  if (c.status === 'partially_delivered') {
+    const held = piecesHeld(c.pieces);
+    return held != null && held <= 0;
+  }
+  return false;
+}
+
+const SETTLED_LABEL: Record<string, string> = { cancelled: 'was cancelled', returned: 'was returned', lost: 'was marked lost' };
+
+/** The open cases of one type that have an item on this shipment or load. */
+async function openCasesOfTypeFor(ref: { shipment_id: string } | { manifest_id: string }, type: string): Promise<any[]> {
+  const column = 'shipment_id' in ref ? 'shipment_id' : 'manifest_id';
+  const id = 'shipment_id' in ref ? ref.shipment_id : ref.manifest_id;
+  const { data: items } = await supabase.from('cargo_exception_items').select('exception_id').eq(column, id);
+  const ids = [...new Set((items ?? []).map((i: any) => i.exception_id))];
+  if (ids.length === 0) return [];
+  const { data } = await supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS).in('id', ids).eq('type', type).in('status', [...OPEN_EXCEPTION_STATUSES]);
+  return (data ?? []) as any[];
+}
+
+/**
+ * Resolves one case by itself: a note on the case, an entry in each shipment's log (shown to staff,
+ * not on the public tracking page), and a line in the audit log. The owner is not messaged: there is
+ * nothing for them to act on. Returns false when someone changed the case first.
+ */
+async function autoResolve(row: any, resolution: string, text: string, goods: { c: Consignment }[]): Promise<boolean> {
+  try {
+    await updateException(row, { status: 'resolved', resolution, resolution_note: text, resolved_by: null, resolved_at: new Date().toISOString() },
+      { by: null, role: 'system', kind: 'action', text: `Resolved automatically: ${text}` });
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 409) return false;
+    throw e;
+  }
+  for (const { c } of goods) {
+    if (c.kind !== 'shipment') continue;
+    await ShipmentService.recordShipmentLog(c.id, c.rawStatus, null, null, {
+      case_note: `Case ${row.code} (${String(row.type).replace(/_/g, ' ')}) closed automatically: ${text}`, exception_id: row.id, exception_code: row.code, automatic: true,
+    }, null);
+  }
+  await auditService.recordSystem('cargo_case.auto_resolved', {
+    exception_id: row.id, code: row.code, type: row.type, resolution, consignments: goods.map(g => g.c.code),
+  }, `${row.code} resolved: ${text}`);
+  return true;
+}
+
+/**
+ * Called when a shipment or load is delivered, cancelled, returned or lost: its open delay cases are
+ * resolved with a note, unless a case also covers goods still on the road. Returns how many were resolved.
+ */
+export async function resolveDelayCasesFor(ref: { shipment_id: string } | { manifest_id: string }, status: string): Promise<number> {
+  let resolved = 0;
+  for (const row of await openCasesOfTypeFor(ref, 'delay')) {
+    const goods = await itemConsignments(row.id);
+    if (goods.length === 0 || !goods.every(({ c }) => delayIsMoot(c))) continue;
+    const text = `${goods.map(g => g.c.code).join(', ')} ${SETTLED_LABEL[status] ?? 'was delivered'}, so the delay no longer applies.`;
+    if (await autoResolve(row, status === 'returned' ? 'returned' : 'no_action', text, goods)) resolved++;
+  }
+  return resolved;
+}
+
+/**
+ * A safety net the scheduler runs: delay cases still open although their goods are settled (delivered
+ * before this rule existed, or by a path that missed it) are closed, and when two are open for the
+ * same goods only the oldest is kept. Returns how many were closed.
+ */
+export async function sweepDelayCases(): Promise<number> {
+  const { data, error } = await supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS)
+    .eq('type', 'delay').in('status', [...OPEN_EXCEPTION_STATUSES]).order('created_at', { ascending: true }).limit(300);
+  if (error) throw new Error(`Failed to read the delay cases: ${error.message}`);
+  let closed = 0;
+  const keptFor = new Map<string, any>();
+  for (const row of (data ?? []) as any[]) {
+    const goods = await itemConsignments(row.id);
+    if (goods.length === 0) continue;
+    const codes = goods.map(g => g.c.code).join(', ');
+    if (goods.every(({ c }) => delayIsMoot(c))) {
+      const status = goods[0].c.status;
+      if (await autoResolve(row, status === 'returned' ? 'returned' : 'no_action', `${codes} ${SETTLED_LABEL[status] ?? 'was delivered'}, so the delay no longer applies.`, goods)) closed++;
+      continue;
+    }
+    const original = goods.map(g => keptFor.get(g.c.id)).find(Boolean);
+    if (original) {
+      if (await autoResolve(row, 'no_action', `Duplicate of ${original.code}, which is already open for ${codes}.`, goods)) closed++;
+    } else {
+      for (const g of goods) keptFor.set(g.c.id, row);
+    }
+  }
+  return closed;
 }
 
 // ── Manual cases ────────────────────────────────────────────
@@ -952,6 +1076,11 @@ export async function escalateOverdueExceptions(nowMs: number = Date.now()): Pro
  * arrival. One open delay case per shipment.
  */
 export async function detectDelays(nowMs: number = Date.now()): Promise<number> {
+  try {
+    await sweepDelayCases();
+  } catch (e) {
+    console.error('[cargo] Could not tidy the delay cases:', e);
+  }
   const threshold = settings.CARGO_DELAY_EXCEPTION_MINUTES;
   if (!(threshold > 0)) return 0;
   const { data: routes } = await supabase.from('routes').select('id, vehicle_id').eq('status', 'active').limit(500);
@@ -988,15 +1117,24 @@ export async function detectDelays(nowMs: number = Date.now()): Promise<number> 
     } catch {
       continue;
     }
+    // Never for goods already settled (delivered, cancelled, returned, lost), nor for a master (its lots carry the goods)
+    if (c.isMaster || delayIsMoot(c)) continue;
     if (c.holder !== 'vehicle' || !['picked_up', 'in_transit', 'out_for_delivery'].includes(c.status)) continue;
     const { openExceptionsFor } = await import('./custody.service');
     if ((await openExceptionsFor(c)).some((e: any) => e.type === 'delay')) continue;
     const eta = new Date(etaMs);
-    await openException({
-      type: 'delay', severity: lateMin > threshold * 2 ? 'high' : 'medium', source: 'eta',
-      description: `Live ETA ${eta.toISOString()} is ${lateMin} min past the planned arrival ${stop.planned_arrival_at}.`,
-      items: [{ consignment: c, pieces_affected: piecesHeld(c.pieces) }], vehicle_id: vehicleId, route_id: stop.route_id, lat: at.lat, lng: at.lng,
-    }, null);
+    try {
+      await openException({
+        type: 'delay', severity: lateMin > threshold * 2 ? 'high' : 'medium', source: 'eta',
+        description: `Live ETA ${eta.toISOString()} is ${lateMin} min past the planned arrival ${stop.planned_arrival_at}.`,
+        items: [{ consignment: c, pieces_affected: piecesHeld(c.pieces) }], vehicle_id: vehicleId, route_id: stop.route_id, lat: at.lat, lng: at.lng,
+        dedupe_key: `delay:${c.kind}:${c.id}`,
+      }, null);
+    } catch (e) {
+      // Another tick or server opened it between our check and our insert
+      if (e instanceof DuplicateCaseError) continue;
+      throw e;
+    }
     opened++;
   }
   return opened;

@@ -11,7 +11,7 @@
 import crypto from 'crypto';
 import { supabase } from '../core/supabase';
 
-export type AuditConsole = 'staff-console' | 'vendor-portal' | 'partner-portal' | 'driver-app';
+export type AuditConsole = 'staff-console' | 'vendor-portal' | 'partner-portal' | 'driver-app' | 'system';
 
 export interface AuditActor {
   user_id: string;
@@ -19,6 +19,11 @@ export interface AuditActor {
 }
 
 export const auditService = {
+  /** An action the system took by itself (the scheduler, an automatic rule). Shown on the audit page as source `system`. */
+  async recordSystem(action: string, subject: Record<string, unknown>, outcome?: string): Promise<void> {
+    await auditService.record('system', { user_id: 'system', role: 'system' }, action, subject, outcome);
+  },
+
   async record(
     source: AuditConsole,
     actor: AuditActor,
