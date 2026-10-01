@@ -137,8 +137,14 @@ if [[ "$STAGE" != live ]]; then
     || die "shared resources not found in $RG (${PREFIX}-env): run ./infra/deploy.sh (live) once first"
 fi
 build_secret_params
-API_IMAGE="$(current_image "$API_APP")"; API_IMAGE="${API_IMAGE:-$PLACEHOLDER_IMAGE}"
-ML_IMAGE="$(current_image "$ML_APP")";  ML_IMAGE="${ML_IMAGE:-$PLACEHOLDER_IMAGE}"
+API_IMAGE="$(current_image "$API_APP")"; ML_IMAGE="$(current_image "$ML_APP")"
+# A test stage created for the first time starts from the images live runs (the same code), so it works
+# at once without a local Docker build; the next push to test replaces them with its own builds.
+if [[ "$STAGE" == "test" ]]; then
+  [[ -n "$API_IMAGE" ]] || API_IMAGE="$(current_image "${PREFIX}-api")"
+  [[ -n "$ML_IMAGE" ]] || ML_IMAGE="$(current_image "${PREFIX}-ml")"
+fi
+API_IMAGE="${API_IMAGE:-$PLACEHOLDER_IMAGE}"; ML_IMAGE="${ML_IMAGE:-$PLACEHOLDER_IMAGE}"
 deploy_bicep "$API_IMAGE" "$ML_IMAGE"
 
 OUTPUTS_JSON=""   # re-read: the deployment above just changed them
