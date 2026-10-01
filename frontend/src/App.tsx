@@ -18,7 +18,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, driverPay, adminSettings, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -39,7 +39,6 @@ const KycReviewPage = adminKyc.Component
 const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
-const DriverPayPage = driverPay.Component
 const SettingsPage = adminSettings.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
@@ -451,11 +450,8 @@ export default function App() {
             } />
             {/* Finance became Money; keep old links and bookmarks (and their ?tab=) working */}
             <Route path="finance" element={<MovedTo to="/money" />} />
-            <Route path="money/driver-pay" element={
-              <PrivateRoute allowedRoles={ADMINS}>
-                <DriverPayPage />
-              </PrivateRoute>
-            } />
+            {/* Driver pay is a tab of Money; the old address opens it there */}
+            <Route path="money/driver-pay" element={<Navigate to="/money?tab=driver-pay" replace />} />
             <Route path="admin/settings" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <SettingsPage />
