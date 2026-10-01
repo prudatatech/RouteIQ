@@ -88,6 +88,6 @@ describe('trail and share link helpers', () => {
   })
 
   it('joins a share path to the site address once', () => {
-    expect(shareUrl('/share/abc', 'https://margixindia.vercel.app/')).toBe('https://margixindia.vercel.app/share/abc')
+    expect(shareUrl('/share/abc', 'https://portal.margixindia.com/')).toBe('https://portal.margixindia.com/share/abc')
   })
 })

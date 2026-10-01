@@ -34,7 +34,7 @@ param placeholderPort int = 80
 @maxValue(1)
 param apiMinReplicas int = stage == 'live' ? 1 : 0
 
-@description('Optional custom web domain (e.g. margixindia.com). Live only: added to CORS and used as WEB_APP_URL.')
+@description('Custom web domain of this stage (live: portal.margixindia.com, test: staging.margixindia.com): added to CORS and used as WEB_APP_URL.')
 param customDomain string = ''
 
 @description('Extra CORS regexes, comma separated (default: the old Vercel preview pattern, for the cutover period).')
@@ -203,8 +203,8 @@ resource ml 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // ---------------------------------------------------------------- api (backend-ts)
-// Each stage allows its own web app. The custom domain and margixindia.com are live only.
-var stageDomain = isLive ? customDomain : ''
+// Each stage allows its own web app and its own custom domain; margixindia.com itself is live only.
+var stageDomain = customDomain  // each stage passes its own (live: CUSTOM_DOMAIN, test: TEST_CUSTOM_DOMAIN)
 var webOrigin = empty(stageDomain) ? 'https://${web.properties.defaultHostname}' : 'https://${stageDomain}'
 var allowedOrigins = join(filter([
   'https://${web.properties.defaultHostname}'

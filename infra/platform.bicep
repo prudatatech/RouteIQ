@@ -21,6 +21,9 @@ param pgHost string
 @description('The stage web app URL (sign-in redirects, CORS)')
 param siteUrl string
 
+@description('Custom domain of the gateway, e.g. data.margixindia.com; empty uses the Azure address')
+param dataDomain string = ''
+
 @secure()
 param jwtSecret string
 @secure()
@@ -46,6 +49,7 @@ param smtpPass string = ''
 param smtpSender string = ''
 
 var p = stage == 'live' ? prefix : '${prefix}-test'
+var gatewayHost = empty(dataDomain) ? '${p}-gateway.${env.properties.defaultDomain}' : dataDomain
 var minReplicas = stage == 'live' ? 1 : 0
 var storageAccountName = take(toLower(replace('${p}files${uniqueString(resourceGroup().id, p)}', '-', '')), 24)
 
@@ -109,7 +113,7 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
         env: [
           { name: 'GOTRUE_API_HOST', value: '0.0.0.0' }
           { name: 'GOTRUE_API_PORT', value: '9999' }
-          { name: 'API_EXTERNAL_URL', value: 'https://${p}-gateway.${env.properties.defaultDomain}/auth/v1' }
+          { name: 'API_EXTERNAL_URL', value: 'https://${gatewayHost}/auth/v1' }
           { name: 'GOTRUE_DB_DRIVER', value: 'postgres' }
           { name: 'GOTRUE_DB_DATABASE_URL', secretRef: 'db-url' }
           { name: 'GOTRUE_SITE_URL', value: siteUrl }

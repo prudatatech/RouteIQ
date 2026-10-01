@@ -7,7 +7,7 @@ import type { ShipmentOverview } from '@/components/shipments/types'
 import type { CompanyProfile, InvoiceDetail, InvoiceSummary } from '@/utils/finance'
 
 
-let baseURL = import.meta.env.VITE_API_URL || 'https://routeiq-production-7034.up.railway.app/api/v1';
+let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
   baseURL = baseURL.replace(/\/$/, '') + '/api/v1';
 }

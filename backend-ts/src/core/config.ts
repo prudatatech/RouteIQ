@@ -156,7 +156,7 @@ export const settings = {
     return origins.find(o => !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(o)) ?? origins[0] ?? '';
   },
 
-  // CORS: optional regexes (comma-separated), e.g. ^https://margixindia-[a-z0-9-]+\.vercel\.app$
+  // CORS: optional regexes (comma-separated), e.g. ^https://pr-[0-9]+\.margixindia\.com$
   get CORS_ORIGIN_PATTERNS(): RegExp[] {
     return env('CORS_ORIGIN_PATTERNS')
       .split(',')

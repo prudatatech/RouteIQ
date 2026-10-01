@@ -73,7 +73,7 @@ WEB_HOST="$(az staticwebapp show -g "$RG" -n "$WEB_APP" --query defaultHostname 
 SITE_URL="https://${CUSTOM_DOMAIN:-$WEB_HOST}"
 log "Services ($P-gateway, -auth, -rest, -rt, -storage); sign-in redirects to $SITE_URL"
 GATEWAY="$(az deployment group create -g "$RG" -n "$P-platform" --template-file "$INFRA_DIR/platform.bicep" \
-  --parameters stage="$STAGE" prefix="$PREFIX" location="$LOCATION" pgHost="$PG_HOST" siteUrl="$SITE_URL" \
+  --parameters stage="$STAGE" prefix="$PREFIX" location="$LOCATION" pgHost="$PG_HOST" siteUrl="$SITE_URL" dataDomain="${DATA_DOMAIN:-}" \
     jwtSecret="$JWT_SECRET" anonKey="$ANON_KEY" serviceRoleKey="$SERVICE_ROLE_KEY" \
     authenticatorPassword="$AUTHENTICATOR_PASSWORD" authAdminPassword="$AUTH_ADMIN_PASSWORD" \
     storageAdminPassword="$STORAGE_ADMIN_PASSWORD" realtimeAdminPassword="$REALTIME_ADMIN_PASSWORD" \

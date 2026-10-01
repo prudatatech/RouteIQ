@@ -17,14 +17,15 @@ share nothing: separate databases, servers, keys and schedulers.
 
 | Part | **Test** (branch `test`) | **Live** (branch `main`) |
 |---|---|---|
-| Web app (`frontend/`) | Azure Static Web App `margix-test-web` (Vercel is being retired, see "Retiring Vercel and Railway" below) | Azure Static Web App `margix-web`: https://gentle-plant-0cd625000.5.azurestaticapps.net |
-| Backend, WebSocket, scheduler (`backend-ts/`) | Azure Container App `margix-test-api` (scales 0 to 1; Railway is being retired) | Azure Container App `margix-api`: https://margix-api.graywave-14c2046e.centralindia.azurecontainerapps.io |
-| Route optimizer (`ml-service/`) | Azure Container App `margix-test-ml` (internal) | Azure Container App `margix-ml` (internal, scales to zero) |
-| Database, sign-in, storage, realtime | Supabase project `plutdajzefwtpgofpqlk` | its own Supabase project (`margix-live`), set up from `supabase/bootstrap/` |
+| Web app (`frontend/`) | **https://staging.margixindia.com** (Static Web App `margix-test-web`) | **https://portal.margixindia.com** (Static Web App `margix-web`) |
+| Backend API, WebSocket, scheduler (`backend-ts/`) | **https://staging-api.margixindia.com** (`margix-test-api`, scales 0 to 1) | **https://api.margixindia.com** (`margix-api`, always on) |
+| Route optimizer (`ml-service/`) | `margix-test-ml` (internal only) | `margix-ml` (internal only) |
+| Sign-in, data API, realtime, files (the gateway) | **https://staging-data.margixindia.com** (`margix-test-gateway` → `-auth`, `-rest`, `-rt`, `-storage`) | **https://data.margixindia.com** (`margix-gateway` → `-auth`, `-rest`, `-rt`, `-storage`) |
+| Database | Azure Database for PostgreSQL `margix-test-pg` | Azure Database for PostgreSQL `margix-pg` |
 | Driver and customer apps (Expo EAS) | channel `preview` | channel `production` |
 | Deploys when | a push to `test` | a push to `main` (only through a pull request from `test`) |
 | Database changes applied by | the first job (`migrate`, environment `test`) of `.github/workflows/deploy-azure.yml` | the same job on `main` (environment `production`) |
-| Backups | Supabase's own | Supabase's own **plus** a nightly encrypted dump (`backup-live.yml`, 30 days) |
+| Backups | Azure's automatic backups (7 days, point in time) | Azure's automatic backups **plus** a nightly encrypted dump (`backup-live.yml`, 30 days) |
 
 Both stages are one Azure deployment: the same resource group, container registry, log workspace, pull
 identity and Container Apps environment, with separate apps (`margix-test-*` and `margix-*`). Deploy a stage
@@ -36,10 +37,12 @@ Azure details: subscription `1c904442-…902c` (account `kushagratiwari252@gmail
 `margix-rg` in Central India (the Static Web App record sits in East Asia), budget `margix-budget` ($200,
 alerts at $50, $100 and $150).
 
-**Why Supabase for both databases.** The app uses Supabase for sign-in, row-level security (about 62
-policies on `auth.uid()`), file storage and realtime, not only Postgres. A Supabase project is plain
-Postgres underneath and is not tied to Azure: the live servers can move to AWS, GCP or another Azure
-account without touching the data, and a dump restores into any Postgres or self-hosted Supabase (§2.5).
+**Why the same open-source services, on Azure.** The app relies on sign-in, row-level security (about 62
+policies on `auth.uid()`), file storage and realtime, not only Postgres. Those are open-source programs
+(GoTrue, PostgREST, Realtime, Storage API), so each stage runs them as Container Apps next to its own Azure
+PostgreSQL server (`infra/platform.sh`, `infra/platform.bicep`, `infra/database.bicep`); the app code is
+unchanged. No Supabase account, no project limits, and the whole stack moves to AWS or GCP as it is.
+Set up a stage's database with `./infra/platform.sh --stage <s> --init` then `./infra/platform-db.sh --stage <s>`.
 
 **Why the backend runs as exactly one copy per environment.** The scheduler, rate limits, map tile cache
 and login codes live in the server's memory. Don't raise `maxReplicas` until that state moves to Redis.
