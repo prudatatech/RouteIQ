@@ -10,6 +10,7 @@ import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, deliveryPointsOf, destinationOf, isBiddingOpen, isCargoManifest, pickupDateOf, pickupPlace, plateOf, shipmentStatusLabel } from './format'
 import { shipmentFlags } from './rules'
+import { refreshAfterDispatchChange } from '@/utils/queueRefresh'
 import { carrierText, historyEntries, lotCarriers, masterDestinationText, missingEwayBill } from './masterView'
 import { EWAY_BILL_WARNING } from '@/config/compliance'
 import DriverRating from './DriverRating'
@@ -184,6 +185,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
       queryClient.invalidateQueries({ queryKey: ['cargo'] })
       // The stop leaves its trip and the vehicle is free again
       queryClient.invalidateQueries({ queryKey: ['routes'] })
+      refreshAfterDispatchChange(queryClient)
       toast.success(status === 'created' ? 'Taken off its vehicle. It needs a vehicle again.' : `Status changed to ${shipmentStatusLabel(status).toLowerCase()}`)
     },
     onError: (error: unknown) => toast.error(apiErrorMessage(error, 'We could not change the status. Try again.')),

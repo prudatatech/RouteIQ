@@ -6,6 +6,7 @@ import './index.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import toast from 'react-hot-toast'
+import { refreshQueueCounts } from './utils/queueRefresh'
 
 interface ValidationIssue {
   loc?: (string | number)[]
@@ -22,7 +23,7 @@ type MutationError = Error & {
 const queryClient: QueryClient = new QueryClient({
   // Any change a person makes can move a queue, so the menu's counts (the shared Today query) are read again
   mutationCache: new MutationCache({
-    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['ops-today'] }) },
+    onSuccess: () => { refreshQueueCounts(queryClient) },
   }),
   defaultOptions: {
     queries: {
