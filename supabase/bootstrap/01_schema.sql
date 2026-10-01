@@ -1,11 +1,14 @@
+-- The public schema of MargixIndia, dumped from the running project (schema only, no rows) on 1 Oct 2026.
+-- Loaded by scripts/db-bootstrap.sh into a new Supabase project. "CREATE SCHEMA public" and the
+-- supabase_admin default privileges are left out: a new project already has both.
+
 --
 -- PostgreSQL database dump
 --
 
-\restrict TXAYtZHXkRkOu2a7WZpksa7UuYs5ngqgaouhE3eM4b0jtbo1O8bsjFLix11jiMk
 
 -- Dumped from database version 17.6
--- Dumped by pg_dump version 17.6
+-- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -23,14 +26,6 @@ SET row_security = off;
 -- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA public;
-
-
---
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
@@ -792,6 +787,7 @@ CREATE TABLE public.cargo_exceptions (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    dedupe_key text,
     CONSTRAINT cargo_exceptions_resolution_check CHECK (((resolution IS NULL) OR (resolution = ANY (ARRAY['transshipped'::text, 'repaired_continue'::text, 'moved_to_hub'::text, 'returned'::text, 'delivered_with_remarks'::text, 'redelivered'::text, 'written_off'::text, 'claim_settled'::text, 'no_action'::text])))),
     CONSTRAINT cargo_exceptions_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
     CONSTRAINT cargo_exceptions_source_check CHECK ((source = ANY (ARRAY['sos'::text, 'maintenance'::text, 'stop_failed'::text, 'custody'::text, 'eta'::text, 'manual'::text, 'driver'::text]))),
@@ -1196,8 +1192,9 @@ CREATE TABLE public.invoices (
     payment_reference text,
     void_reason text,
     notes text,
+    bill_to jsonb,
     CONSTRAINT invoices_payment_method_check CHECK (((payment_method IS NULL) OR (payment_method = ANY (ARRAY['bank'::text, 'upi'::text, 'cash'::text, 'cheque'::text])))),
-    CONSTRAINT invoices_status_check CHECK (((status)::text = ANY (ARRAY[('issued'::character varying)::text, ('paid'::character varying)::text, ('void'::character varying)::text])))
+    CONSTRAINT invoices_status_check CHECK (((status)::text = ANY ((ARRAY['issued'::character varying, 'paid'::character varying, 'void'::character varying])::text[])))
 );
 
 
@@ -1407,13 +1404,6 @@ CREATE TABLE public.routes (
     updated_at timestamp with time zone DEFAULT now(),
     plan jsonb
 );
-
-
---
--- Name: COLUMN routes.plan; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.routes.plan IS 'Route planner details: source, provider, truck_aware, origin, departure_at, toll_km, avoid, created_by. Null for routes not made in the planner.';
 
 
 --
@@ -3030,6 +3020,13 @@ ALTER TABLE ONLY public.vendor_route_opportunities
 
 ALTER TABLE ONLY public.vendor_shipment_requests
     ADD CONSTRAINT vendor_shipment_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cargo_exceptions_open_dedupe_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX cargo_exceptions_open_dedupe_key ON public.cargo_exceptions USING btree (dedupe_key) WHERE ((dedupe_key IS NOT NULL) AND (status = ANY (ARRAY['open'::text, 'investigating'::text, 'action_planned'::text])));
 
 
 --
@@ -6155,8 +6152,7 @@ GRANT USAGE ON SCHEMA public TO service_role;
 -- Name: FUNCTION calculate_distance(lat1 double precision, lon1 double precision, lat2 double precision, lon2 double precision); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.calculate_distance(lat1 double precision, lon1 double precision, lat2 double precision, lon2 double precision) TO anon;
-GRANT ALL ON FUNCTION public.calculate_distance(lat1 double precision, lon1 double precision, lat2 double precision, lon2 double precision) TO authenticated;
+REVOKE ALL ON FUNCTION public.calculate_distance(lat1 double precision, lon1 double precision, lat2 double precision, lon2 double precision) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calculate_distance(lat1 double precision, lon1 double precision, lat2 double precision, lon2 double precision) TO service_role;
 
 
@@ -6164,7 +6160,7 @@ GRANT ALL ON FUNCTION public.calculate_distance(lat1 double precision, lon1 doub
 -- Name: FUNCTION can_read_kyc_object(object_name text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.can_read_kyc_object(object_name text) TO anon;
+REVOKE ALL ON FUNCTION public.can_read_kyc_object(object_name text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.can_read_kyc_object(object_name text) TO authenticated;
 GRANT ALL ON FUNCTION public.can_read_kyc_object(object_name text) TO service_role;
 
@@ -6173,7 +6169,7 @@ GRANT ALL ON FUNCTION public.can_read_kyc_object(object_name text) TO service_ro
 -- Name: FUNCTION current_app_role(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.current_app_role() TO anon;
+REVOKE ALL ON FUNCTION public.current_app_role() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.current_app_role() TO authenticated;
 GRANT ALL ON FUNCTION public.current_app_role() TO service_role;
 
@@ -6209,7 +6205,7 @@ GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 -- Name: FUNCTION is_staff(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.is_staff() TO anon;
+REVOKE ALL ON FUNCTION public.is_staff() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.is_staff() TO authenticated;
 GRANT ALL ON FUNCTION public.is_staff() TO service_role;
 
@@ -6218,8 +6214,7 @@ GRANT ALL ON FUNCTION public.is_staff() TO service_role;
 -- Name: FUNCTION match_vendors_to_route(route_points jsonb, radius_km double precision); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.match_vendors_to_route(route_points jsonb, radius_km double precision) TO anon;
-GRANT ALL ON FUNCTION public.match_vendors_to_route(route_points jsonb, radius_km double precision) TO authenticated;
+REVOKE ALL ON FUNCTION public.match_vendors_to_route(route_points jsonb, radius_km double precision) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.match_vendors_to_route(route_points jsonb, radius_km double precision) TO service_role;
 
 
@@ -6227,7 +6222,7 @@ GRANT ALL ON FUNCTION public.match_vendors_to_route(route_points jsonb, radius_k
 -- Name: FUNCTION my_manifest_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.my_manifest_ids() TO anon;
+REVOKE ALL ON FUNCTION public.my_manifest_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_manifest_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.my_manifest_ids() TO service_role;
 
@@ -6236,7 +6231,7 @@ GRANT ALL ON FUNCTION public.my_manifest_ids() TO service_role;
 -- Name: FUNCTION my_route_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.my_route_ids() TO anon;
+REVOKE ALL ON FUNCTION public.my_route_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_route_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.my_route_ids() TO service_role;
 
@@ -6245,7 +6240,7 @@ GRANT ALL ON FUNCTION public.my_route_ids() TO service_role;
 -- Name: FUNCTION my_shipment_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.my_shipment_ids() TO anon;
+REVOKE ALL ON FUNCTION public.my_shipment_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_shipment_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.my_shipment_ids() TO service_role;
 
@@ -6254,7 +6249,7 @@ GRANT ALL ON FUNCTION public.my_shipment_ids() TO service_role;
 -- Name: FUNCTION my_tpl_partner_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.my_tpl_partner_ids() TO anon;
+REVOKE ALL ON FUNCTION public.my_tpl_partner_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_tpl_partner_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.my_tpl_partner_ids() TO service_role;
 
@@ -6263,7 +6258,7 @@ GRANT ALL ON FUNCTION public.my_tpl_partner_ids() TO service_role;
 -- Name: FUNCTION my_vehicle_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.my_vehicle_ids() TO anon;
+REVOKE ALL ON FUNCTION public.my_vehicle_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_vehicle_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.my_vehicle_ids() TO service_role;
 
@@ -6281,8 +6276,8 @@ GRANT ALL ON FUNCTION public.restrict_client_update_columns() TO service_role;
 -- Name: TABLE hsn_codes; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.hsn_codes TO anon;
-GRANT ALL ON TABLE public.hsn_codes TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.hsn_codes TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.hsn_codes TO authenticated;
 GRANT ALL ON TABLE public.hsn_codes TO service_role;
 
 
@@ -6335,7 +6330,7 @@ GRANT ALL ON FUNCTION public.vehicles_driver_status_guard() TO service_role;
 -- Name: FUNCTION vendor_visible_window_ids(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.vendor_visible_window_ids() TO anon;
+REVOKE ALL ON FUNCTION public.vendor_visible_window_ids() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.vendor_visible_window_ids() TO authenticated;
 GRANT ALL ON FUNCTION public.vendor_visible_window_ids() TO service_role;
 
@@ -6344,8 +6339,8 @@ GRANT ALL ON FUNCTION public.vendor_visible_window_ids() TO service_role;
 -- Name: TABLE ai_agent_logs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.ai_agent_logs TO anon;
-GRANT ALL ON TABLE public.ai_agent_logs TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.ai_agent_logs TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.ai_agent_logs TO authenticated;
 GRANT ALL ON TABLE public.ai_agent_logs TO service_role;
 
 
@@ -6353,8 +6348,8 @@ GRANT ALL ON TABLE public.ai_agent_logs TO service_role;
 -- Name: TABLE capacity_bids; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.capacity_bids TO anon;
-GRANT ALL ON TABLE public.capacity_bids TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.capacity_bids TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.capacity_bids TO authenticated;
 GRANT ALL ON TABLE public.capacity_bids TO service_role;
 
 
@@ -6362,8 +6357,8 @@ GRANT ALL ON TABLE public.capacity_bids TO service_role;
 -- Name: TABLE capacity_windows; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.capacity_windows TO anon;
-GRANT ALL ON TABLE public.capacity_windows TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.capacity_windows TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.capacity_windows TO authenticated;
 GRANT ALL ON TABLE public.capacity_windows TO service_role;
 
 
@@ -6407,8 +6402,8 @@ GRANT ALL ON TABLE public.cargo_exceptions TO service_role;
 -- Name: TABLE cargo_manifest; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.cargo_manifest TO anon;
-GRANT ALL ON TABLE public.cargo_manifest TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.cargo_manifest TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.cargo_manifest TO authenticated;
 GRANT ALL ON TABLE public.cargo_manifest TO service_role;
 
 
@@ -6443,8 +6438,8 @@ GRANT ALL ON TABLE public.customer_bookings TO service_role;
 -- Name: TABLE customers; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.customers TO anon;
-GRANT ALL ON TABLE public.customers TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.customers TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.customers TO authenticated;
 GRANT ALL ON TABLE public.customers TO service_role;
 
 
@@ -6452,8 +6447,8 @@ GRANT ALL ON TABLE public.customers TO service_role;
 -- Name: TABLE delivery_points; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.delivery_points TO anon;
-GRANT ALL ON TABLE public.delivery_points TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.delivery_points TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.delivery_points TO authenticated;
 GRANT ALL ON TABLE public.delivery_points TO service_role;
 
 
@@ -6461,8 +6456,8 @@ GRANT ALL ON TABLE public.delivery_points TO service_role;
 -- Name: TABLE depots; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.depots TO anon;
-GRANT ALL ON TABLE public.depots TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.depots TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.depots TO authenticated;
 GRANT ALL ON TABLE public.depots TO service_role;
 
 
@@ -6470,8 +6465,8 @@ GRANT ALL ON TABLE public.depots TO service_role;
 -- Name: TABLE driver_confirmations; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.driver_confirmations TO anon;
-GRANT ALL ON TABLE public.driver_confirmations TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.driver_confirmations TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.driver_confirmations TO authenticated;
 GRANT ALL ON TABLE public.driver_confirmations TO service_role;
 
 
@@ -6506,8 +6501,6 @@ GRANT ALL ON TABLE public.driver_payouts TO service_role;
 -- Name: TABLE driver_vehicle_assignments; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.driver_vehicle_assignments TO anon;
-GRANT ALL ON TABLE public.driver_vehicle_assignments TO authenticated;
 GRANT ALL ON TABLE public.driver_vehicle_assignments TO service_role;
 
 
@@ -6524,8 +6517,8 @@ GRANT ALL ON TABLE public.expenses TO service_role;
 -- Name: TABLE gps_points; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.gps_points TO anon;
-GRANT ALL ON TABLE public.gps_points TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.gps_points TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.gps_points TO authenticated;
 GRANT ALL ON TABLE public.gps_points TO service_role;
 
 
@@ -6542,8 +6535,8 @@ GRANT ALL ON TABLE public.idempotency_keys TO service_role;
 -- Name: TABLE invoices; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.invoices TO anon;
-GRANT ALL ON TABLE public.invoices TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.invoices TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.invoices TO authenticated;
 GRANT ALL ON TABLE public.invoices TO service_role;
 
 
@@ -6551,8 +6544,8 @@ GRANT ALL ON TABLE public.invoices TO service_role;
 -- Name: TABLE kyc_profiles; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.kyc_profiles TO anon;
-GRANT ALL ON TABLE public.kyc_profiles TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.kyc_profiles TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.kyc_profiles TO authenticated;
 GRANT ALL ON TABLE public.kyc_profiles TO service_role;
 
 
@@ -6560,8 +6553,8 @@ GRANT ALL ON TABLE public.kyc_profiles TO service_role;
 -- Name: TABLE maintenance_alerts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.maintenance_alerts TO anon;
-GRANT ALL ON TABLE public.maintenance_alerts TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.maintenance_alerts TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.maintenance_alerts TO authenticated;
 GRANT ALL ON TABLE public.maintenance_alerts TO service_role;
 
 
@@ -6578,9 +6571,16 @@ GRANT ALL ON TABLE public.messages TO service_role;
 -- Name: TABLE notifications; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.notifications TO anon;
-GRANT ALL ON TABLE public.notifications TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.notifications TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN ON TABLE public.notifications TO authenticated;
 GRANT ALL ON TABLE public.notifications TO service_role;
+
+
+--
+-- Name: COLUMN notifications.is_read; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(is_read) ON TABLE public.notifications TO authenticated;
 
 
 --
@@ -6596,8 +6596,8 @@ GRANT ALL ON TABLE public.parcel_scans TO service_role;
 -- Name: TABLE parcels; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.parcels TO anon;
-GRANT ALL ON TABLE public.parcels TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.parcels TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.parcels TO authenticated;
 GRANT ALL ON TABLE public.parcels TO service_role;
 
 
@@ -6605,8 +6605,8 @@ GRANT ALL ON TABLE public.parcels TO service_role;
 -- Name: TABLE payments; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.payments TO anon;
-GRANT ALL ON TABLE public.payments TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.payments TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.payments TO authenticated;
 GRANT ALL ON TABLE public.payments TO service_role;
 
 
@@ -6623,8 +6623,8 @@ GRANT ALL ON TABLE public.price_quotes TO service_role;
 -- Name: TABLE route_stops; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.route_stops TO anon;
-GRANT ALL ON TABLE public.route_stops TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.route_stops TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.route_stops TO authenticated;
 GRANT ALL ON TABLE public.route_stops TO service_role;
 
 
@@ -6632,8 +6632,8 @@ GRANT ALL ON TABLE public.route_stops TO service_role;
 -- Name: TABLE routes; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.routes TO anon;
-GRANT ALL ON TABLE public.routes TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.routes TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.routes TO authenticated;
 GRANT ALL ON TABLE public.routes TO service_role;
 
 
@@ -6650,8 +6650,8 @@ GRANT ALL ON TABLE public.service_plan_templates TO service_role;
 -- Name: TABLE shipment_hsn; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.shipment_hsn TO anon;
-GRANT ALL ON TABLE public.shipment_hsn TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.shipment_hsn TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.shipment_hsn TO authenticated;
 GRANT ALL ON TABLE public.shipment_hsn TO service_role;
 
 
@@ -6659,8 +6659,8 @@ GRANT ALL ON TABLE public.shipment_hsn TO service_role;
 -- Name: TABLE shipment_logs; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.shipment_logs TO anon;
-GRANT ALL ON TABLE public.shipment_logs TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.shipment_logs TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.shipment_logs TO authenticated;
 GRANT ALL ON TABLE public.shipment_logs TO service_role;
 
 
@@ -6668,8 +6668,8 @@ GRANT ALL ON TABLE public.shipment_logs TO service_role;
 -- Name: TABLE shipments; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.shipments TO anon;
-GRANT ALL ON TABLE public.shipments TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.shipments TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.shipments TO authenticated;
 GRANT ALL ON TABLE public.shipments TO service_role;
 
 
@@ -6677,8 +6677,8 @@ GRANT ALL ON TABLE public.shipments TO service_role;
 -- Name: TABLE sos_alerts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.sos_alerts TO anon;
-GRANT ALL ON TABLE public.sos_alerts TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.sos_alerts TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.sos_alerts TO authenticated;
 GRANT ALL ON TABLE public.sos_alerts TO service_role;
 
 
@@ -6686,8 +6686,8 @@ GRANT ALL ON TABLE public.sos_alerts TO service_role;
 -- Name: TABLE system_settings; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.system_settings TO anon;
-GRANT ALL ON TABLE public.system_settings TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.system_settings TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.system_settings TO authenticated;
 GRANT ALL ON TABLE public.system_settings TO service_role;
 
 
@@ -6695,8 +6695,8 @@ GRANT ALL ON TABLE public.system_settings TO service_role;
 -- Name: TABLE telemetry; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.telemetry TO anon;
-GRANT ALL ON TABLE public.telemetry TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.telemetry TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.telemetry TO authenticated;
 GRANT ALL ON TABLE public.telemetry TO service_role;
 
 
@@ -6704,8 +6704,8 @@ GRANT ALL ON TABLE public.telemetry TO service_role;
 -- Name: TABLE tpl_corridors; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.tpl_corridors TO anon;
-GRANT ALL ON TABLE public.tpl_corridors TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_corridors TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_corridors TO authenticated;
 GRANT ALL ON TABLE public.tpl_corridors TO service_role;
 
 
@@ -6713,8 +6713,8 @@ GRANT ALL ON TABLE public.tpl_corridors TO service_role;
 -- Name: TABLE tpl_documents; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.tpl_documents TO anon;
-GRANT ALL ON TABLE public.tpl_documents TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_documents TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_documents TO authenticated;
 GRANT ALL ON TABLE public.tpl_documents TO service_role;
 
 
@@ -6740,8 +6740,8 @@ GRANT ALL ON TABLE public.tpl_orders TO service_role;
 -- Name: TABLE tpl_partners; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.tpl_partners TO anon;
-GRANT ALL ON TABLE public.tpl_partners TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_partners TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.tpl_partners TO authenticated;
 GRANT ALL ON TABLE public.tpl_partners TO service_role;
 
 
@@ -6758,8 +6758,6 @@ GRANT ALL ON TABLE public.traffic_incidents TO service_role;
 -- Name: TABLE user_activity; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_activity TO anon;
-GRANT ALL ON TABLE public.user_activity TO authenticated;
 GRANT ALL ON TABLE public.user_activity TO service_role;
 
 
@@ -6767,8 +6765,6 @@ GRANT ALL ON TABLE public.user_activity TO service_role;
 -- Name: TABLE user_bank_accounts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_bank_accounts TO anon;
-GRANT ALL ON TABLE public.user_bank_accounts TO authenticated;
 GRANT ALL ON TABLE public.user_bank_accounts TO service_role;
 
 
@@ -6776,26 +6772,22 @@ GRANT ALL ON TABLE public.user_bank_accounts TO service_role;
 -- Name: TABLE user_documents; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_documents TO anon;
-GRANT ALL ON TABLE public.user_documents TO authenticated;
 GRANT ALL ON TABLE public.user_documents TO service_role;
+GRANT SELECT ON TABLE public.user_documents TO authenticated;
 
 
 --
 -- Name: TABLE user_emergency_contacts; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_emergency_contacts TO anon;
-GRANT ALL ON TABLE public.user_emergency_contacts TO authenticated;
 GRANT ALL ON TABLE public.user_emergency_contacts TO service_role;
+GRANT SELECT ON TABLE public.user_emergency_contacts TO authenticated;
 
 
 --
 -- Name: TABLE user_notes; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_notes TO anon;
-GRANT ALL ON TABLE public.user_notes TO authenticated;
 GRANT ALL ON TABLE public.user_notes TO service_role;
 
 
@@ -6803,8 +6795,6 @@ GRANT ALL ON TABLE public.user_notes TO service_role;
 -- Name: TABLE user_phone_history; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_phone_history TO anon;
-GRANT ALL ON TABLE public.user_phone_history TO authenticated;
 GRANT ALL ON TABLE public.user_phone_history TO service_role;
 
 
@@ -6812,17 +6802,14 @@ GRANT ALL ON TABLE public.user_phone_history TO service_role;
 -- Name: TABLE user_profiles; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_profiles TO anon;
-GRANT ALL ON TABLE public.user_profiles TO authenticated;
 GRANT ALL ON TABLE public.user_profiles TO service_role;
+GRANT SELECT ON TABLE public.user_profiles TO authenticated;
 
 
 --
 -- Name: TABLE user_status_history; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.user_status_history TO anon;
-GRANT ALL ON TABLE public.user_status_history TO authenticated;
 GRANT ALL ON TABLE public.user_status_history TO service_role;
 
 
@@ -6830,9 +6817,16 @@ GRANT ALL ON TABLE public.user_status_history TO service_role;
 -- Name: TABLE users; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.users TO anon;
-GRANT ALL ON TABLE public.users TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.users TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.users TO authenticated;
 GRANT ALL ON TABLE public.users TO service_role;
+
+
+--
+-- Name: COLUMN users.push_token; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(push_token) ON TABLE public.users TO authenticated;
 
 
 --
@@ -6920,8 +6914,8 @@ GRANT ALL ON TABLE public.vehicle_share_links TO service_role;
 -- Name: TABLE vehicle_stoppages; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.vehicle_stoppages TO anon;
-GRANT ALL ON TABLE public.vehicle_stoppages TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vehicle_stoppages TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.vehicle_stoppages TO authenticated;
 GRANT ALL ON TABLE public.vehicle_stoppages TO service_role;
 
 
@@ -6929,8 +6923,8 @@ GRANT ALL ON TABLE public.vehicle_stoppages TO service_role;
 -- Name: TABLE vehicles; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.vehicles TO anon;
-GRANT ALL ON TABLE public.vehicles TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vehicles TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.vehicles TO authenticated;
 GRANT ALL ON TABLE public.vehicles TO service_role;
 
 
@@ -6938,8 +6932,8 @@ GRANT ALL ON TABLE public.vehicles TO service_role;
 -- Name: TABLE vendor_profiles; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.vendor_profiles TO anon;
-GRANT ALL ON TABLE public.vendor_profiles TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vendor_profiles TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vendor_profiles TO authenticated;
 GRANT ALL ON TABLE public.vendor_profiles TO service_role;
 
 
@@ -6947,8 +6941,8 @@ GRANT ALL ON TABLE public.vendor_profiles TO service_role;
 -- Name: TABLE vendor_route_opportunities; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.vendor_route_opportunities TO anon;
-GRANT ALL ON TABLE public.vendor_route_opportunities TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vendor_route_opportunities TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.vendor_route_opportunities TO authenticated;
 GRANT ALL ON TABLE public.vendor_route_opportunities TO service_role;
 
 
@@ -6956,8 +6950,8 @@ GRANT ALL ON TABLE public.vendor_route_opportunities TO service_role;
 -- Name: TABLE vendor_shipment_requests; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.vendor_shipment_requests TO anon;
-GRANT ALL ON TABLE public.vendor_shipment_requests TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.vendor_shipment_requests TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.vendor_shipment_requests TO authenticated;
 GRANT ALL ON TABLE public.vendor_shipment_requests TO service_role;
 
 
@@ -6975,10 +6969,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
 
 
 --
@@ -6995,10 +6985,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIO
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
 
 
 --
@@ -7015,15 +7001,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES 
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO service_role;
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict TXAYtZHXkRkOu2a7WZpksa7UuYs5ngqgaouhE3eM4b0jtbo1O8bsjFLix11jiMk
 
