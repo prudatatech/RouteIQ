@@ -80,6 +80,8 @@ describe('transshipment to a relief truck', () => {
     expect(again.status).toBe(409);
 
     const items = [{ ref: { shipment_id: ID.s1 } }, { ref: { manifest_id: ID.m1 } }];
+    // Part B is only due on goods that travel on an e-way bill
+    supabaseMock.rows('shipments').find(r => r.id === ID.s1)!.eway_bill_ref = 'EWB-1001';
     // Handover out: only the from-driver (or staff)
     const outBody = { items: [{ ...items[0], pieces_out: 10, condition: 'good' }, { ...items[1], pieces_out: 4, condition: 'good' }] };
     expect((await request(app).post(api(`/cargo/transfers/${transfer.id}/handover-out`)).set(auth.driver(ID.driver2)).send(outBody)).status).toBe(403);

@@ -64,6 +64,8 @@ describe('partial transfer: 30 of 100 on board', () => {
   it('moves only the moving lot on handover, and marks e-way Part B for that lot alone', async () => {
     const planned = await planPartial();
     const [moving, staying] = lotsOf(ID.s1);
+    // Part B is only due on goods that travel on an e-way bill
+    supabaseMock.rows('shipments').find(r => r.id === moving.id)!.eway_bill_ref = 'EWB-2001';
     const ref = { shipment_id: moving.id };
     const out = await request(app).post(api(`/cargo/transfers/${planned.body.id}/handover-out`)).set(auth.driver()).send({ items: [{ ref, pieces_out: 30, condition: 'good' }] });
     expect(out.status).toBe(200);
