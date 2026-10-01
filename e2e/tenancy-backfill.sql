@@ -20,14 +20,14 @@ ALTER TABLE public.tpl_partners DISABLE TRIGGER trg_tpl_partner_org;
 INSERT INTO public.system_settings (key, value) VALUES
   ('company_profile', '{"value": {"legal_name": "Margix Logistics Pvt Ltd", "gstin": "27AAPFU0939F1ZV", "state": "Maharashtra", "address": "Plot 4, Bhiwandi", "bank_name": "HDFC Bank", "bank_account_no": "50200012345678"}}');
 
--- Sign-in accounts for everyone (the foreign keys point at auth.users); the sign-up trigger stays out of the way
-ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;
-INSERT INTO auth.users (id, email) VALUES
+-- Sign-in accounts for everyone (the foreign keys point at auth.users). Marked customers so the sign-up trigger
+-- adds no public.users row of its own: the rows below are the legacy ones.
+INSERT INTO auth.users (id, email, raw_app_meta_data) SELECT v.id::uuid, v.email, '{"role": "customer"}'::jsonb FROM (VALUES
   ('00000000-0000-4000-8000-000000000001', 'su@t.test'), ('00000000-0000-4000-8000-000000000002', 'ad@t.test'),
   ('00000000-0000-4000-8000-000000000003', 'mg@t.test'), ('00000000-0000-4000-8000-000000000004', 'dr@t.test'),
   ('00000000-0000-4000-8000-0000000000a1', 'va@t.test'), ('00000000-0000-4000-8000-0000000000b1', 'vb@t.test'),
   ('00000000-0000-4000-8000-0000000000c1', 'tp@t.test'), ('00000000-0000-4000-8000-000000000005', 'nd@t.test'),
-  ('00000000-0000-4000-8000-0000000000a2', 'nv@t.test');
+  ('00000000-0000-4000-8000-0000000000a2', 'nv@t.test')) AS v(id, email);
 
 INSERT INTO public.users (id, full_name, role, email) VALUES
   ('00000000-0000-4000-8000-000000000001', 'Sue Super', 'superadmin', 'su@t.test'),
