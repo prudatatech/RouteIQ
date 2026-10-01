@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { dropShipmentQueries } from './useDeleteShipment'
+import { dropShipmentQueries } from './shipmentQueries'
 
 describe('dropShipmentQueries', () => {
   it('removes every query about the shipment, the overview included, and keeps the others', async () => {

@@ -269,6 +269,9 @@ function statusAfterTransfer(c: Consignment, toHub: boolean): string {
   return c.status;
 }
 
+/** Whether a consignment has an e-way bill whose Part B (the vehicle number) can need updating. */
+export const hasEwayBill = (ref: unknown): boolean => typeof ref === 'string' && ref.trim() !== '';
+
 export async function handoverIn(id: string, input: unknown, user: TokenData): Promise<any> {
   const parsed = HandoverSchema.safeParse(input);
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
@@ -286,8 +289,10 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
   }
 
   const vehicleChanged = !!transfer.to_vehicle_id;
+  // Part B is only updated on an e-way bill that exists: goods with none (under the threshold) have nothing to update
+  const partBNeeded = vehicleChanged && pairs.some(p => hasEwayBill(p.c.row?.eway_bill_ref));
   const { data: claimed } = await supabase
-    .from('cargo_transfers').update({ status: 'completed', completed_at: new Date().toISOString(), eway_part_b_required: vehicleChanged })
+    .from('cargo_transfers').update({ status: 'completed', completed_at: new Date().toISOString(), eway_part_b_required: partBNeeded })
     .eq('id', id).eq('status', 'in_progress').select('id').maybeSingle();
   if (!claimed) throw new HttpError(409, 'This transfer was just changed by someone else. Refresh and try again.');
 
@@ -351,7 +356,7 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
       ...piecesPatch(pieces),
       ...(c.kind === 'manifest' && !toHub ? { vehicle_id: transfer.to_vehicle_id } : {}),
       // A new vehicle: e-way bill Part B is due for these goods (for a partial transfer, only the moving lot)
-      ...(vehicleChanged ? { eway_part_b_required: true } : {}),
+      ...(vehicleChanged && hasEwayBill(c.row?.eway_bill_ref) ? { eway_part_b_required: true } : {}),
     });
     const moved = await reload(c);
     await recordHandover(moved, 'in', {

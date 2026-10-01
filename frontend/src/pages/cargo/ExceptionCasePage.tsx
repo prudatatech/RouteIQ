@@ -20,7 +20,7 @@ import { CaseTimeline } from '@/components/cargo/CustodyTimeline'
 import ExceptionActionModal from '@/components/cargo/ExceptionActionModal'
 import { ClaimDrawerById } from '@/components/cargo/ClaimDrawer'
 import {
-  ACTION_META, PANEL_ACTIONS, claimTypeLabel, exceptionActions, exceptionTypeLabel, isActiveTransfer, isOpenException, positionOf, resolutionLabel,
+  ACTION_META, PANEL_ACTIONS, claimTypeLabel, exceptionActions, exceptionTypeLabel, isActiveTransfer, isOpenException, partBDue, positionOf, resolutionLabel,
   slaState, sourceLabel, statusMoves, type ActionValues, type PanelAction,
 } from '@/components/cargo/logic'
 
@@ -296,7 +296,7 @@ function CaseView({ kase }: { kase: ExceptionDetail }) {
                         <span className="block font-mono font-medium text-text">{t.code}</span>
                         <span className="block truncate text-xs text-muted">
                           To {t.to_vehicle?.plate_number ?? t.to_depot?.name ?? (t.to_depot_id ? 'a hub' : 'a vehicle')}
-                          {t.eway_part_b_required && !t.eway_part_b_ref ? ' · Part B due' : ''}
+                          {partBDue(t) ? ' · Part B due' : ''}
                         </span>
                       </span>
                       <StatusPill status={t.status} />

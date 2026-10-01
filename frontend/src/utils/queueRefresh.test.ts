@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { DISPATCH_KEYS, QUEUE_COUNT_KEYS, refreshAfterDispatchChange, refreshQueueCounts } from './queueRefresh'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers() })
 
 describe('queue refresh', () => {
   it('names the shared counts and every list an assign, send, take-off or accept moves', () => {

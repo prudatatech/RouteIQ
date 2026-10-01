@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAction, claimMoveErrors, claimMoves, claimSteps, compareBySla, consignmentActions, consignmentCode, exceptionActions, formatDuration,
-  holdCaseFor, hubAgeing, pieceSummary, refKey, refOfShipmentRow, slaState, statusMoves, transferItemCount, transferSteps, validateAction,
+  holdCaseFor, hubAgeing, partBDue, pieceSummary, refKey, refOfShipmentRow, slaState, statusMoves, transferItemCount, transferSteps, validateAction,
 } from './logic'
 import type { CargoException, ExceptionItem, WhereIsIt } from '@/services/cargo'
 
@@ -349,5 +349,14 @@ describe('holdCaseFor', () => {
     ]
     expect(holdCaseFor(cases, { sosAlertId: 'sos-1' })).toBeNull()
     expect(holdCaseFor([...cases, kase('planned', { status: 'action_planned', type: 'vehicle_accident' })])?.id).toBe('planned')
+  })
+})
+
+describe('partBDue', () => {
+  it('is due only while the new reference is missing on a transfer that is not cancelled', () => {
+    expect(partBDue({ status: 'completed', eway_part_b_required: true, eway_part_b_ref: null })).toBe(true)
+    expect(partBDue({ status: 'completed', eway_part_b_required: true, eway_part_b_ref: 'X1' })).toBe(false)
+    expect(partBDue({ status: 'completed', eway_part_b_required: false, eway_part_b_ref: null })).toBe(false)
+    expect(partBDue({ status: 'cancelled', eway_part_b_required: true, eway_part_b_ref: null })).toBe(false)
   })
 })

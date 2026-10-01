@@ -1,4 +1,4 @@
-import type { CustodyEvent } from '@/services/cargo'
+import type { CaseTimelineEntry, CustodyEvent } from '@/services/cargo'
 import { tripNumber } from '@/utils/display'
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
@@ -63,3 +63,53 @@ export function dropRepeatedEvents(events: CustodyEvent[]): CustodyEvent[] {
 
 /** How many of the latest events a long history shows before "Show all". */
 export const HISTORY_PREVIEW = 5
+
+/** Entries this close, of the same kind by the same person, are one handover (each lot writes its own). */
+const HANDOVER_WINDOW_MS = 2 * 60_000
+
+export interface GroupedTimelineEntry extends CaseTimelineEntry {
+  /** The lots the handover covered, in order, when it covered more than one. */
+  lotLabels: string[]
+  /** Pieces of each, in the same order, when known. */
+  piecesList: number[]
+}
+
+/**
+ * A case's timeline with one entry per handover. A split consignment writes the same step once per lot
+ * ("Picked up" for lot A, then for lot B, seconds apart); those become one entry that names its lots
+ * and lists the pieces and notes once. Oldest first in and out; only custody entries are grouped.
+ */
+export function groupTimelineEntries(entries: CaseTimelineEntry[]): GroupedTimelineEntry[] {
+  const sorted = [...entries].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  const out: GroupedTimelineEntry[] = []
+  for (const e of sorted) {
+    const prev = out[out.length - 1]
+    const same = !!prev && e.source === 'custody' && prev.source === 'custody'
+      && prev.kind === e.kind
+      && (prev.title ?? '') === (e.title ?? '')
+      && (prev.actor_name ?? '') === (e.actor_name ?? '')
+      && Math.abs(new Date(e.at).getTime() - new Date(prev.at).getTime()) <= HANDOVER_WINDOW_MS
+    if (prev && same) {
+      const lot = e.ref?.lot_label
+      if (lot && !prev.lotLabels.includes(lot)) {
+        if (prev.lotLabels.length === 0 && prev.ref?.lot_label) {
+          prev.lotLabels.push(prev.ref.lot_label)
+          if (prev.pieces != null) prev.piecesList.push(prev.pieces)
+        }
+        prev.lotLabels.push(lot)
+        if (e.pieces != null) prev.piecesList.push(e.pieces)
+      }
+      prev.note = uniqueTexts([prev.note, e.note]).join(' ') || null
+      prev.photo_urls = [...(prev.photo_urls ?? []), ...(e.photo_urls ?? [])]
+      continue
+    }
+    out.push({ ...e, lotLabels: [], piecesList: [] })
+  }
+  return out
+}
+
+/** "Lots A and B", "Lots A, B and C". */
+export function lotsText(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ? `Lot ${labels[0]}` : ''
+  return `Lots ${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
+}
