@@ -22,7 +22,8 @@
     "dropoff_point_id",
     "weight_kg",
     "load_configuration",
-    "rejection_reason"
+    "rejection_reason",
+    "vendor_org_id"
   ],
   "capacity_windows": [
     "id",
@@ -36,7 +37,8 @@
     "trigger_type",
     "status",
     "resolved_at",
-    "created_by"
+    "created_by",
+    "carrier_org_id"
   ],
   "cargo_manifest": [
     "id",
@@ -79,7 +81,9 @@
     "consignee_gstin",
     "split_reason",
     "eway_bill_ref",
-    "eway_part_b_required"
+    "eway_part_b_required",
+    "carrier_org_id",
+    "vendor_org_id"
   ],
   "customers": [
     "id",
@@ -133,7 +137,8 @@
     "odometer_km",
     "cargo_types",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "driver_confirmations": [
     "id",
@@ -168,7 +173,8 @@
     "voided_by",
     "payout_id",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "driver_pay_rates": [
     "id",
@@ -178,7 +184,8 @@
     "effective_from",
     "active",
     "created_by",
-    "created_at"
+    "created_at",
+    "carrier_org_id"
   ],
   "driver_payouts": [
     "id",
@@ -191,7 +198,8 @@
     "note",
     "paid_at",
     "paid_by",
-    "created_at"
+    "created_at",
+    "carrier_org_id"
   ],
   "expenses": [
     "id",
@@ -205,7 +213,8 @@
     "receipt_path",
     "created_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "gps_points": [
     "id",
@@ -253,7 +262,9 @@
     "payment_reference",
     "void_reason",
     "notes",
-    "bill_to"
+    "bill_to",
+    "issuer_org_id",
+    "bill_to_org_id"
   ],
   "invoice_payment_reports": [
     "id",
@@ -298,7 +309,8 @@
     "last_seen_at",
     "acknowledged_at",
     "acknowledged_by",
-    "resolved_by"
+    "resolved_by",
+    "carrier_org_id"
   ],
   "notifications": [
     "id",
@@ -309,6 +321,35 @@
     "is_read",
     "data",
     "created_at"
+  ],
+  "org_members": [
+    "org_id",
+    "user_id",
+    "role",
+    "status",
+    "invited_by",
+    "created_at"
+  ],
+  "organizations": [
+    "id",
+    "kind",
+    "name",
+    "legal_name",
+    "gstin",
+    "pan",
+    "state",
+    "city",
+    "address",
+    "pincode",
+    "phone",
+    "email",
+    "status",
+    "profile",
+    "approved_by",
+    "approved_at",
+    "created_by",
+    "created_at",
+    "updated_at"
   ],
   "parcels": [
     "id",
@@ -388,7 +429,8 @@
     "completed_at",
     "created_at",
     "updated_at",
-    "plan"
+    "plan",
+    "carrier_org_id"
   ],
   "shipment_hsn": [
     "id",
@@ -469,7 +511,9 @@
     "consignee_gstin",
     "split_reason",
     "eway_bill_ref",
-    "eway_part_b_required"
+    "eway_part_b_required",
+    "carrier_org_id",
+    "vendor_org_id"
   ],
   "sos_alerts": [
     "id",
@@ -482,7 +526,8 @@
     "status",
     "created_at",
     "updated_at",
-    "severity"
+    "severity",
+    "carrier_org_id"
   ],
   "system_settings": [
     "key",
@@ -501,6 +546,15 @@
     "engine_temp",
     "odometer_km",
     "cargo_types"
+  ],
+  "tpl_affiliations": [
+    "company_id",
+    "tpl_id",
+    "status",
+    "requested_by",
+    "approved_by",
+    "approved_at",
+    "created_at"
   ],
   "tpl_corridors": [
     "id",
@@ -539,7 +593,8 @@
     "responded_at",
     "created_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "tpl_orders": [
     "id",
@@ -566,7 +621,8 @@
     "rated_at",
     "rated_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "tpl_partners": [
     "id",
@@ -728,7 +784,8 @@
     "reviewed_at",
     "reviewed_by",
     "review_decision",
-    "rejection_reason"
+    "rejection_reason",
+    "carrier_org_id"
   ],
   "vendor_profiles": [
     "id",
@@ -776,7 +833,8 @@
     "cost",
     "cost_per_km",
     "metadata",
-    "rejection_reason"
+    "rejection_reason",
+    "vendor_org_id"
   ],
   "customer_bookings": [
     "id",
@@ -803,7 +861,8 @@
     "cancel_reason",
     "created_at",
     "updated_at",
-    "drops"
+    "drops",
+    "vendor_org_id"
   ],
   "parcel_scans": [
     "id",
@@ -1026,7 +1085,8 @@
     "total_cost",
     "close_note",
     "service_log_id",
-    "updated_at"
+    "updated_at",
+    "carrier_org_id"
   ],
   "vehicle_service_items": [
     "id",
@@ -1107,7 +1167,8 @@
     "created_by",
     "created_at",
     "updated_at",
-    "dedupe_key"
+    "dedupe_key",
+    "carrier_org_id"
   ],
   "cargo_exception_items": [
     "id",
@@ -1139,7 +1200,8 @@
     "eway_part_b_updated_at",
     "eway_part_b_ref",
     "created_by",
-    "note"
+    "note",
+    "carrier_org_id"
   ],
   "cargo_transfer_items": [
     "id",
@@ -1204,6 +1266,8 @@
     "notes",
     "created_at",
     "updated_at",
-    "settled_at"
+    "settled_at",
+    "carrier_org_id",
+    "vendor_org_id"
   ]
 }

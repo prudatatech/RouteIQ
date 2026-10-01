@@ -15,6 +15,8 @@ interface RequestTiming {
   dbCalls: number;
   dbMs: number;
   route?: string;
+  /** The organisation the caller acts for (set by core/org-context.ts once the caller is known). */
+  org?: unknown;
 }
 
 const storage = new AsyncLocalStorage<RequestTiming>();
@@ -25,6 +27,17 @@ export function recordDbCall(ms: number): void {
   if (!t) return;
   t.dbCalls += 1;
   t.dbMs += ms;
+}
+
+/** Remember the caller's organisation context for the rest of this request (no-op outside a request). */
+export function setRequestOrg(org: unknown): void {
+  const t = storage.getStore();
+  if (t) t.org = org;
+}
+
+/** The organisation context set earlier in this request; undefined outside a request or before sign-in. */
+export function getRequestOrg<T>(): T | undefined {
+  return storage.getStore()?.org as T | undefined;
 }
 
 /** Wraps a fetch so every call it makes is timed and counted against the current request. */
