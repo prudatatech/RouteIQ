@@ -1,0 +1,1 @@
+[{"shot": "accepted-tab"}, {"click": "tbody tr >> nth=0"}, {"wait": 900}, {"shot": "row-drawer"}]

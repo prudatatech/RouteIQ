@@ -1,0 +1,163 @@
+[
+{
+"ls": [
+"draft-shipment-storage",
+{
+"state": {
+"formData": {
+"tracking_id": "RTX-UXPASS2001",
+"originSearch": "Bhiwandi warehouse",
+"destSearch": "Sharma Traders, Patna",
+"searchTerm": "",
+"mobilePhone": "",
+"selectedVehicleId": "",
+"origin_id": "",
+"origin_name": "Bhiwandi warehouse",
+"origin_address": "Bhiwandi, Thane, Maharashtra",
+"origin_lat": 19.3,
+"origin_lng": 73.06,
+"delivery_point_id": "",
+"delivery_point_name": "Sharma Traders",
+"delivery_point_address": "Gandhi Maidan, Patna",
+"dest_lat": 25.61,
+"dest_lng": 85.14,
+"stops": [],
+"priority": "medium",
+"cargo_type": "standard",
+"total_items": 20,
+"total_weight_kg": 500,
+"length_cm": 50,
+"width_cm": 50,
+"height_cm": 50,
+"plan_for_later": false,
+"enable_mobile_gps": false,
+"scheduled_date": "",
+"scheduled_time": "",
+"open_bidding": false,
+"bidding_opens_at": "",
+"bidding_closes_at": "",
+"declared_value": "",
+"multi_drop": false,
+"drops": []
+},
+"isMinimized": false
+},
+"version": 0
+}
+]
+},
+{
+"reload": 1
+},
+{
+"click": "button:has-text('Create shipment')"
+},
+{
+"wait": 900
+},
+{
+"shot": "w1-route-filled"
+},
+{
+"active": 1
+},
+{
+"tabs": 14
+},
+{
+"click": "[role=dialog] button:has-text('Next:')"
+},
+{
+"wait": 600
+},
+{
+"shot": "w2-cargo"
+},
+{
+"fillLabel": [
+"/^Pieces/",
+"0"
+]
+},
+{
+"click": "[role=dialog] button:has-text('Next:')"
+},
+{
+"wait": 500
+},
+{
+"shot": "w2b-cargo-bad-pieces"
+},
+{
+"say": "[role=dialog]"
+},
+{
+"fillLabel": [
+"/^Pieces/",
+"20"
+]
+},
+{
+"fillLabel": [
+"/^Declared value/",
+"50000"
+]
+},
+{
+"fillLabel": [
+"/^Price/",
+"9000"
+]
+},
+{
+"shot": "w2c-cargo-filled"
+},
+{
+"tabs": 10
+},
+{
+"click": "[role=dialog] button:has-text('Next:')"
+},
+{
+"wait": 900
+},
+{
+"shot": "w3-vehicle"
+},
+{
+"tabs": 8
+},
+{
+"click": "[role=dialog] button:has-text('Next:')"
+},
+{
+"wait": 900
+},
+{
+"shot": "w4-review"
+},
+{
+"click": "[role=dialog] button:has-text('Back')"
+},
+{
+"wait": 400
+},
+{
+"shot": "w4b-back-to-vehicle"
+},
+{
+"click": "[role=dialog] button:has-text('Next:')"
+},
+{
+"wait": 600
+},
+{
+"click": "[role=dialog] button:has-text('Create shipment')"
+},
+{
+"wait": 2500
+},
+{
+"shot": "w5-created"
+}
+]

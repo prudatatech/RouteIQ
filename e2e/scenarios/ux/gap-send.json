@@ -1,0 +1,1 @@
+[{"shot": "to-send"}, {"click": "button:has-text('Send to driver')"}, {"wait": 900}, {"shot": "send-clicked"}, {"say": "[role=dialog]"}, {"wait": 1200}, {"shot": "send-after"}]

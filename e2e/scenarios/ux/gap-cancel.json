@@ -1,0 +1,1 @@
+[{"click": "button:has-text('Cancel shipment')"}, {"wait": 700}, {"shot": "cancel-confirm"}, {"click": "[role=dialog] button:has-text('Cancel shipment')"}, {"wait": 1800}, {"shot": "cancel-done"}]
