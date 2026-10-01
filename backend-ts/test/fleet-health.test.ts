@@ -47,6 +47,14 @@ describe('health score', () => {
     expect(h.checks.every(c => c.state === 'unknown')).toBe(true);
   });
 
+  it('has no score when only alarms and fuel are known: no odometer, service plan or document dates', () => {
+    const v = vehicleRow({ last_heartbeat: '2026-09-29T05:59:00Z', fuel_level_pct: 60, fuel_reported_at: '2026-09-29T05:00:00Z' });
+    const h = computeHealth(v, [], [], 15, NOW);
+    expect(h.checks_known).toBe(2);
+    expect(h.score).toBeNull();
+    expect(h.band).toBe('unknown');
+  });
+
   it('takes points off for overdue service, expired documents, alarms and low fuel', () => {
     const v = vehicleRow({
       odometer_km: 51000, insurance_expiry: '2026-09-01', puc_expiry: '2026-10-10', rc_expiry: '2030-01-01',
