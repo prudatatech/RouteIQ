@@ -3,13 +3,15 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ExternalLink, MapPin, Truck } from 'lucide-react'
-import { Alert, Button, DetailList, Timeline, buttonClasses, humanize, statusToLabel, useConfirm } from '@/components/ui'
+import { Alert, Button, DetailList, StatusPill, Timeline, buttonClasses, humanize, statusToLabel, useConfirm } from '@/components/ui'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import InlineTrackingMap from '@/components/map/InlineTrackingMap'
 import { MapView } from '@/components/map'
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage, deliveryPointsOf, destinationOf, isBiddingOpen, isCargoManifest, pickupDateOf, plateOf, shipmentStatusLabel } from './format'
 import { shipmentFlags } from './rules'
+import { carrierText, historyEntries, lotCarriers, masterDestinationText, missingEwayBill } from './masterView'
+import { EWAY_BILL_WARNING } from '@/config/compliance'
 import DriverRating from './DriverRating'
 import ParcelLabel from './ParcelLabel'
 import MessagesPanel from '@/components/messages/MessagesPanel'
@@ -25,6 +27,9 @@ import { formatDate, formatDateTime, formatKg, formatRupees } from '@/utils/disp
  * (the backend refuses a raw PATCH to them: 409 with `use: 'cargo_custody'`).
  */
 type PatchStatus = 'created' | 'cancelled'
+
+/** A split master holds no goods, so it has no driver to rate or message and no position of its own. */
+const OPEN_A_LOT = 'Open a lot to rate its driver, message it or track it.'
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -54,6 +59,10 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
   const stops = deliveryPointsOf(s).length
   const plate = plateOf(s)
   const bidding = isBiddingOpen(s)
+  // A split master has no vehicle, driver or drop of its own: they are on its lots
+  const carriers = f.master ? lotCarriers(s) : []
+  const masterDestination = f.master ? masterDestinationText(s) : null
+  const ewayMissing = !f.closed && missingEwayBill(s)
 
   return (
     <>
@@ -76,7 +85,12 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
           columns={1}
           items={[
             { label: 'Pickup', value: s.origin_name || s.origin_address ? <PlaceText name={s.origin_name} address={s.origin_address} /> : null },
-            { label: 'Destination', value: destination ? <PlaceText name={destination.name} address={destination.address} /> : null },
+            {
+              label: 'Destination',
+              value: masterDestination
+                ? <PlaceText name={masterDestination.headline} address={masterDestination.detail} />
+                : destination ? <PlaceText name={destination.name} address={destination.address} /> : null,
+            },
             ...(stops > 1 ? [{ label: 'Stops', value: `${stops.toLocaleString('en-IN')} drops, including the destination` }] : []),
           ]}
         />
@@ -92,12 +106,24 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
             ...(s.freight_share != null ? [{ label: 'Freight share', value: formatRupees(s.freight_share) }] : []),
             { label: 'Weight', value: formatKg(s.total_weight_kg) },
             ...(s.freight_charge != null ? [{ label: 'Price', value: formatRupees(s.freight_charge) }] : []),
-            { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
-            { label: 'Driver', value: s.driver_name },
+            ...(f.master
+              ? [{
+                label: 'Per lot',
+                value: carriers.length > 0
+                  ? <span className="block space-y-0.5">{carriers.map(c => <span key={`${c.plate}-${c.driver}`} className="block font-mono">{carrierText(c)}</span>)}</span>
+                  : 'No vehicle on a lot yet',
+              }]
+              : [
+                { label: 'Vehicle', value: plate ? <span className="font-mono">{plate}</span> : (s.vehicle_id ? 'Assigned' : 'Not assigned') },
+                { label: 'Driver', value: s.driver_name },
+              ]),
             { label: 'Created', value: formatDateTime(s.created_at) },
             ...(pickupDateOf(s) ? [{ label: 'Pickup date', value: formatDate(pickupDateOf(s)) }] : []),
           ]}
         />
+        {ewayMissing && (
+          <p><StatusPill tone="warning" dot={false}>{EWAY_BILL_WARNING}</StatusPill></p>
+        )}
         {s.status === 'exception' && (
           <Alert tone="danger" title="A problem is open on this shipment">
             {f.withSender
@@ -219,11 +245,12 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
           {historyQuery.isError && <p className="text-sm text-muted">We could not load the status history.</p>}
           {!historyQuery.isLoading && !historyQuery.isError && (
             <Timeline
-              events={historyEvents.map((e): { status: string; at: string; actorLabel?: string | null; note?: string | null } => ({
+              events={historyEntries(historyEvents).map(e => ({
                 status: e.status,
                 at: e.at,
+                label: e.label,
                 actorLabel: e.actor ? [e.actor.name, e.actor.role ? humanize(e.actor.role) : null].filter(Boolean).join(' · ') || null : null,
-                note: e.status === 'exception' ? [e.note, 'Delivery attempt failed'].filter(Boolean).join(' · ') : e.note,
+                note: e.note,
               }))}
               formatAt={formatDateTime}
             />
@@ -262,9 +289,11 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
 
       {!f.manifestOnly && s.status === 'delivered' && (
         <Section title="Rate the driver">
-          {s.vehicle_id
-            ? <DriverRating shipmentId={s.id} rating={s.driver_rating} note={s.driver_rating_note} />
-            : <p className="text-sm text-muted">This delivery has no vehicle on record, so there is no driver to rate.</p>}
+          {f.master
+            ? <p className="text-sm text-muted">{OPEN_A_LOT}</p>
+            : s.vehicle_id
+              ? <DriverRating shipmentId={s.id} rating={s.driver_rating} note={s.driver_rating_note} />
+              : <p className="text-sm text-muted">This delivery has no vehicle on record, so there is no driver to rate.</p>}
         </Section>
       )}
 
@@ -323,14 +352,16 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
       <Section title="Messages">
         <MessagesPanel
           target={{ shipment_id: s.id }}
-          unavailable={s.vehicle_id || f.manifestOnly ? undefined : 'Assign a vehicle to message its driver about this shipment.'}
+          unavailable={f.master
+            ? OPEN_A_LOT
+            : s.vehicle_id || f.manifestOnly ? undefined : 'Assign a vehicle to message its driver about this shipment.'}
         />
       </Section>
 
       {!f.manifestOnly && (
         <Section title="Live location">
           <div className="flex flex-wrap gap-2">
-            {s.vehicle_id && (
+            {s.vehicle_id && !f.master && (
               <Button variant="secondary" size="sm" icon={<MapPin size={16} />} onClick={() => setShowMap(v => !v)} aria-expanded={showMap}>
                 {showMap ? 'Hide map' : 'Show on map'}
               </Button>
@@ -339,7 +370,9 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
               <ExternalLink size={16} aria-hidden="true" /> Open tracking page
             </Link>
           </div>
-          {!s.vehicle_id && <p className="text-sm text-muted">Assign a vehicle to see where this shipment is.</p>}
+          {f.master
+            ? <p className="text-sm text-muted">{OPEN_A_LOT}</p>
+            : !s.vehicle_id && <p className="text-sm text-muted">Assign a vehicle to see where this shipment is.</p>}
           {showMap && <InlineTrackingMap trackingId={s.tracking_id} />}
         </Section>
       )}

@@ -9,6 +9,8 @@ import { destinationOf, deliveryPointsOf, pickupDateOf, priorityTone, shipmentSt
 import type { ShipmentRow } from '@/components/shipments/types'
 import { formatDate, formatKg } from '@/utils/display'
 import { byUrgency, canPickVehicle } from './logic'
+import { EWAY_BILL_WARNING } from '@/config/compliance'
+import { missingEwayBill } from '@/components/shipments/masterView'
 
 function Place({ name, address }: { name?: string | null; address?: string | null }) {
   if (!name && !address) return <span className="text-muted">—</span>
@@ -76,6 +78,7 @@ export default function NeedsVehicleTab({ rows, loading, error, onRetry, onOptim
             <StatusPill tone={priorityTone[s.priority] ?? 'neutral'} dot={false}>{humanize(s.priority)} priority</StatusPill>
           )}
           {!canPickVehicle(s) && <StatusPill tone="warning" dot={false}>Open to bids</StatusPill>}
+          {missingEwayBill(s) && <StatusPill tone="warning" dot={false}>{EWAY_BILL_WARNING}</StatusPill>}
         </div>
       ),
     },

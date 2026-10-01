@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ShipmentRow } from '@/components/shipments/types'
-import { byUrgency, canPickVehicle, hasLiveTrip, needsVehicle, tripSource } from './logic'
+import { byUrgency, canPickVehicle, hasLiveTrip, needsVehicle, tripSource, tripsMissingEwayBill } from './logic'
 
 const ship = (over: Partial<ShipmentRow> = {}): ShipmentRow => ({ id: 's1', tracking_id: 'RTX-AAAA1111', status: 'created', ...over })
 const withTrip = (status: string): Partial<ShipmentRow> => ({
@@ -75,5 +75,16 @@ describe('tripSource', () => {
     expect(tripSource({ plan: { source: 'route_planner' } })).toBe('planner')
     expect(tripSource({ depot_id: 'd1', plan: null })).toBe('optimizer')
     expect(tripSource({})).toBe('other')
+  })
+})
+
+describe('trips missing an e-way bill', () => {
+  const sh = (id: string, over: Partial<ShipmentRow> = {}): ShipmentRow => ({ id, tracking_id: `RTX-${id}`, declared_value: 120000, eway_bill_ref: null, ...over })
+  const trip = (id: string, ...shipmentIds: string[]) => ({ id, route_stops: shipmentIds.map(s => ({ shipment: { id: s } })) })
+
+  it('lists the shipments over the value with no number, per trip, and leaves the rest', () => {
+    const shipments = [sh('a'), sh('b', { eway_bill_ref: '1234' }), sh('c', { declared_value: 900 }), sh('d')]
+    const out = tripsMissingEwayBill([trip('t1', 'a', 'b'), trip('t2', 'c'), trip('t3', 'a', 'd', 'a'), trip('t4')], shipments)
+    expect([...out.entries()]).toEqual([['t1', ['RTX-a']], ['t3', ['RTX-a', 'RTX-d']]])
   })
 })

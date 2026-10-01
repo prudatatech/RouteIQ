@@ -4,6 +4,7 @@
  */
 import { deliveryPointsOf, isBiddingOpen, isCargoManifest } from '@/components/shipments/format'
 import type { ShipmentRow } from '@/components/shipments/types'
+import { missingEwayBill } from '@/components/shipments/masterView'
 
 /** A trip in one of these states still holds the shipment. A completed or cancelled one does not. */
 const LIVE_TRIP_STATUSES = ['pending', 'optimizing', 'active']
@@ -50,3 +51,23 @@ export function tripSource(r: { depot_id?: string | null; plan?: { source?: stri
 }
 
 export const TRIP_SOURCE_LABEL = { optimizer: 'Optimizer', planner: 'Trip planner', other: 'Trip' } as const
+
+/** A stop of a trip as GET /routes returns it: the shipment (or lot) it delivers comes with it. */
+interface StopWithShipment { shipment?: { id: string; tracking_id?: string | null } | null }
+
+/**
+ * Trips that carry a shipment or lot with no e-way bill though its value is over the threshold:
+ * trip id to the tracking ids. A warning before sending; it never stops a trip being sent.
+ */
+export function tripsMissingEwayBill(
+  trips: { id: string; route_stops?: StopWithShipment[] | null }[],
+  shipments: ShipmentRow[],
+): Map<string, string[]> {
+  const missing = new Map(shipments.filter(s => !isCargoManifest(s) && missingEwayBill(s)).map(s => [s.id, s.tracking_id]))
+  const out = new Map<string, string[]>()
+  for (const t of trips) {
+    const codes = [...new Set((t.route_stops ?? []).map(st => st.shipment?.id).filter((id): id is string => !!id && missing.has(id)).map(id => missing.get(id)!))]
+    if (codes.length > 0) out.set(t.id, codes)
+  }
+  return out
+}

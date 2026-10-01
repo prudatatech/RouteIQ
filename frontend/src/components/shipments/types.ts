@@ -95,6 +95,11 @@ export interface LotsSummary {
     current_vehicle_id: string | null
     pieces_total: number | null
     consignee_name: string | null
+    /** Who carries the lot and where it drops; a master has none of its own. */
+    plate_number?: string | null
+    driver_name?: string | null
+    drop?: string | null
+    eway_bill_ref?: string | null
   }[]
 }
 
@@ -105,6 +110,8 @@ export interface ShipmentHistoryEvent {
   actor: { id: string; name: string | null; role: string | null } | null
   note: string | null
   location: { lat: number; lng: number } | null
+  /** A master's status worked out from its lots, not a delivery attempt of its own. */
+  rollup?: boolean
 }
 
 /** Vehicle fields used when choosing a vehicle for a shipment. */

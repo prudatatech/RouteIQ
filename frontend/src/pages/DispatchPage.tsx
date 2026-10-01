@@ -5,7 +5,7 @@ import { routesAPI, shipmentsAPI } from '@/services/api'
 import { openChannel, supabase } from '@/services/supabase'
 import NeedsVehicleTab from '@/components/dispatch/NeedsVehicleTab'
 import TripsToSendTab, { type TripRow } from '@/components/dispatch/TripsToSendTab'
-import { needsVehicle } from '@/components/dispatch/logic'
+import { needsVehicle, tripsMissingEwayBill } from '@/components/dispatch/logic'
 import type { ShipmentRow } from '@/components/shipments/types'
 import OptimizePage from '@/pages/OptimizePage'
 import RoutePlannerPage from '@/pages/RoutePlannerPage'
@@ -54,6 +54,8 @@ export default function DispatchPage() {
   // A vendor load is its own trip and is started by its driver, so it is not sent from here
   const toSend = useMemo(() => (trips.data ?? []).filter(t => t.status === 'pending' && !t.is_manifest), [trips.data])
 
+  const ewayMissing = useMemo(() => tripsMissingEwayBill(toSend, shipments.data ?? []), [toSend, shipments.data])
+
   return (
     <Page>
       <PageHeader
@@ -87,7 +89,7 @@ export default function DispatchPage() {
           />
         )}
         {tab === 'to-send' && (
-          <TripsToSendTab rows={toSend} loading={trips.isLoading} error={trips.isError} onRetry={() => trips.refetch()} />
+          <TripsToSendTab rows={toSend} loading={trips.isLoading} error={trips.isError} onRetry={() => trips.refetch()} ewayMissing={ewayMissing} />
         )}
         {tab === 'plan' && <RoutePlannerPage embedded onCreated={() => setTab('to-send')} />}
         {tab === 'optimize' && (

@@ -8,6 +8,8 @@ export interface TimelineEvent {
   /** Who made the change, already formatted (e.g. "Ramesh Kumar · driver"). Staff view only. */
   actorLabel?: string | null
   note?: string | null
+  /** Words for the status when the usual ones for it would mislead. */
+  label?: string
 }
 
 /**
@@ -35,7 +37,7 @@ export function Timeline({ events, formatAt, className }: {
             </div>
             <div className={clsx('min-w-0 flex-1', !isLast && 'pb-4')}>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-sm font-medium text-text">{statusToLabel(event.status)}</span>
+                <span className="text-sm font-medium text-text">{event.label ?? statusToLabel(event.status)}</span>
                 <span className="text-xs text-muted">{formatAt(event.at) ?? '—'}</span>
               </div>
               {(event.actorLabel || event.note) && (

@@ -15,6 +15,7 @@ import { cargoKeys, lotsAPI, type CargoRef, type Lot, type LotTotals, type LotsV
 import { consignmentHref } from './logic'
 import { accountedPieces, canSplit, heldPieces, lotKey, lotPlace, mergeCheck, progressSegments, roundTo, type SplitAvailable } from './lots'
 import SplitLotsModal from './SplitLotsModal'
+import { EWAY_BILL_WARNING, needsEwayBill } from '@/config/compliance'
 
 const n = (x: number) => x.toLocaleString('en-IN')
 
@@ -317,6 +318,7 @@ function LotEway({ lot }: { lot: Lot }) {
       <FileText size={12} aria-hidden="true" />
       {lot.eway_bill_ref ? <span>E-way bill <span className="font-mono text-text">{lot.eway_bill_ref}</span></span> : <span>No e-way bill</span>}
       {lot.eway_part_b_required && <StatusPill tone="warning" dot={false}>Part B due</StatusPill>}
+      {!settled && needsEwayBill(lot.declared_value, lot.eway_bill_ref) && <StatusPill tone="warning" dot={false}>{EWAY_BILL_WARNING}</StatusPill>}
       {!settled && (
         <button type="button" onClick={() => setEditing(true)} className="font-medium text-brand hover:underline">
           {lot.eway_bill_ref ? 'Change' : 'Add'}
