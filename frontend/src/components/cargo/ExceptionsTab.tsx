@@ -7,7 +7,7 @@ import {
   Button, Checkbox, DataTable, SearchInput, Select, Stat, StatusPill, buttonClasses, statusToLabel, useUrlState, type Column,
 } from '@/components/ui'
 import { MapView, type MapPoint } from '@/components/map'
-import { formatRelative } from '@/utils/display'
+import { formatPieces, formatRelative } from '@/utils/display'
 import {
   EXCEPTION_STATUSES, EXCEPTION_TYPES, OPEN_EXCEPTION_FILTER, SEVERITIES, cargoKeys, exceptionsAPI, type CargoException, type ExceptionFilters,
 } from '@/services/cargo'
@@ -120,7 +120,7 @@ export default function ExceptionsTab() {
           {e.items.slice(0, 2).map(i => (
             <span key={i.id} className="whitespace-nowrap text-sm">
               <ConsignmentLink c={i} />
-              {i.pieces_affected != null && <span className="text-muted"> · {i.pieces_affected.toLocaleString('en-IN')} pcs</span>}
+              {i.pieces_affected != null && <span className="text-muted"> · {formatPieces(i.pieces_affected)}</span>}
             </span>
           ))}
           {e.items.length > 2 && <span className="text-xs text-muted">+{(e.items.length - 2).toLocaleString('en-IN')} more</span>}

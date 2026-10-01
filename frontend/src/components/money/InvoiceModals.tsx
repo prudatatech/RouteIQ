@@ -37,7 +37,7 @@ export function MarkPaidModal({ invoice, open, onClose, onDone }: { invoice: Inv
       open={open}
       onClose={onClose}
       title={`Mark ${invoice.invoice_number ?? 'invoice'} as paid`}
-      description={`${formatRupees(invoice.total)} received${invoice.buyer.name ? ` from ${invoice.buyer.name}` : ''}. The customer or vendor is told.`}
+      description={`${formatRupees(invoice.total)} received${invoice.buyer.name ? ` from ${invoice.buyer.name}` : ''}. The customer or vendor is told. Payments are made outside the app: record here that the money arrived.`}
       onSubmit={submit}
       footer={(
         <>

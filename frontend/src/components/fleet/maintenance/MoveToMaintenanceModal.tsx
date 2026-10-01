@@ -17,7 +17,7 @@ import { useRefreshVehicle } from './useRefreshVehicle'
 type CargoPlan = 'transship' | 'hub' | 'hold'
 
 const PLAN_OPTIONS: { value: CargoPlan; label: string; description: string }[] = [
-  { value: 'transship', label: 'Transship now', description: 'After the move, pick a relief vehicle on the case that opens.' },
+  { value: 'transship', label: 'Plan a transfer now', description: 'After the move, pick a relief vehicle on the case that opens.' },
   { value: 'hub', label: 'Move to a hub', description: 'The goods are sent to the depot you choose.' },
   { value: 'hold', label: 'Hold with the vehicle', description: 'The goods stay on the vehicle, on hold under the case that opens.' },
 ]

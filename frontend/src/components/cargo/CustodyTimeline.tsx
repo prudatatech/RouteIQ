@@ -1,11 +1,12 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { CheckCircle2, Combine, MapPin, ShieldAlert, Split, StickyNote, Truck, Wrench, Zap } from 'lucide-react'
-import { StatusPill, humanize } from '@/components/ui'
-import { formatDateTime } from '@/utils/display'
+import { Button, StatusPill, humanize } from '@/components/ui'
+import { formatDateTime, formatPieces } from '@/utils/display'
 import type { CaseTimelineEntry, CustodyEvent } from '@/services/cargo'
 import { ConditionPill } from './CargoBits'
 import { custodyKindLabel, holderLabel } from './logic'
+import { HISTORY_PREVIEW, dropRepeatedEvents, dropRepeatedSentences, tidyNote, uniqueTexts } from './custodyText'
 
 /** Photo and signature thumbnails; each opens the full image in a new tab. */
 function Thumbnails({ photos, signature, label }: { photos?: string[] | null; signature?: string | null; label: string }) {
@@ -46,7 +47,7 @@ function Rail({ items }: { items: { key: string; dot: ReactNode; body: ReactNode
   )
 }
 
-const pcs = (n: number | null | undefined) => (n == null ? null : `${n.toLocaleString('en-IN')} ${n === 1 ? 'piece' : 'pieces'}`)
+const pcs = (n: number | null | undefined) => (n == null ? null : formatPieces(n))
 
 /** Who held the goods before and after an event, in words. */
 function movement(e: CustodyEvent): string | null {
@@ -63,22 +64,31 @@ function movement(e: CustodyEvent): string | null {
  * and who recorded it. A master's timeline merges its lots' events; each is tagged with its lot.
  */
 export function CustodyTimeline({ events, className, showLots = true }: { events: CustodyEvent[]; className?: string; showLots?: boolean }) {
-  const ordered = [...events].sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
+  const [showAll, setShowAll] = useState(false)
+  const all = dropRepeatedEvents([...events].sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()))
+  // A long history shows the latest few; the rest is one click away
+  const ordered = showAll || all.length <= HISTORY_PREVIEW + 1 ? all : all.slice(-HISTORY_PREVIEW)
+  const hidden = all.length - ordered.length
   return (
     <div className={className} aria-label="Custody history">
+      {hidden > 0 && (
+        <Button variant="ghost" size="sm" className="mb-2" onClick={() => setShowAll(true)}>
+          Show {hidden.toLocaleString('en-IN')} earlier {hidden === 1 ? 'entry' : 'entries'}
+        </Button>
+      )}
       <Rail
         items={ordered.map(e => {
           const trouble = !!e.condition && e.condition !== 'good'
-          const facts = [
+          const facts = uniqueTexts([
             // A split or merge is described by the backend's plain-words line ("Split into lots A, B and C")
-            (e.kind === 'split' || e.kind === 'merge') ? e.summary : null,
+            (e.kind === 'split' || e.kind === 'merge') ? tidyNote(dropRepeatedSentences(e.summary)) : null,
             pcs(e.pieces),
             e.weight_kg != null ? `${e.weight_kg.toLocaleString('en-IN')} kg` : null,
             movement(e),
             e.receiver_name ? `Received by ${e.receiver_name}` : null,
             e.seal_number ? `Seal ${e.seal_number}${e.seal_ok === false ? ' (not intact)' : e.seal_ok ? ' (intact)' : ''}` : null,
             e.otp_verified ? 'OTP checked' : null,
-          ].filter(Boolean)
+          ])
           const who = [e.recorded_by_name, e.recorded_role ? humanize(e.recorded_role) : null].filter(Boolean).join(' · ')
           return {
             key: e.id,
@@ -98,7 +108,7 @@ export function CustodyTimeline({ events, className, showLots = true }: { events
                   <span className="text-xs text-muted">{formatDateTime(e.recorded_at)}</span>
                 </div>
                 {facts.length > 0 && <p className="mt-0.5 text-sm text-text">{facts.join(' · ')}</p>}
-                {(who || e.notes) && <p className="mt-0.5 text-xs text-muted">{[who, e.notes].filter(Boolean).join(' · ')}</p>}
+                {(who || e.notes) && <p className="mt-0.5 text-xs text-muted">{uniqueTexts([who, tidyNote(dropRepeatedSentences(e.notes))]).join(' · ')}</p>}
                 {e.lat != null && e.lng != null && (
                   <a
                     href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lng}`}
@@ -146,7 +156,7 @@ export function CaseTimeline({ entries }: { entries: CaseTimelineEntry[] }) {
                   <span className="text-sm font-medium text-text">{title}</span>
                   <span className="text-xs text-muted">{SOURCE_LABEL[e.source] ?? humanize(e.source)} · {formatDateTime(e.at)}</span>
                 </div>
-                {e.note && <p className="mt-0.5 whitespace-pre-line break-words text-sm text-text">{e.note}</p>}
+                {e.note && <p className="mt-0.5 whitespace-pre-line break-words text-sm text-text">{tidyNote(dropRepeatedSentences(e.note))}</p>}
                 {who && <p className="mt-0.5 text-xs text-muted">{who}</p>}
                 <Thumbnails photos={e.photo_urls} signature={e.signature_url} label={title} />
               </>

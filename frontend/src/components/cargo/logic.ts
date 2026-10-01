@@ -216,7 +216,7 @@ export const PANEL_ACTIONS = [
 export type PanelAction = (typeof PANEL_ACTIONS)[number]
 
 export const ACTION_META: Record<PanelAction, { label: string; description: string; tone?: 'danger' }> = {
-  transship: { label: 'Transship to vehicle', description: 'Plan a handover of the goods to a relief vehicle.' },
+  transship: { label: 'Plan a transfer to a vehicle', description: 'Plan a handover of the goods to a relief vehicle.' },
   move_to_hub: { label: 'Move to hub', description: 'Take the goods to a depot and hold them there.' },
   wait_for_repair: { label: 'Wait for repair', description: 'Keep the goods on the vehicle until it is fixed.' },
   continue_after_repair: { label: 'Continue after repair', description: 'Release the hold and carry on with the same vehicle.' },

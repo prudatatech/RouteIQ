@@ -24,7 +24,7 @@ import CargoChips from '@/components/fleet/CargoChips'
 import SosCountBadge from '@/components/fleet/SosCountBadge'
 import VehicleSosTab from '@/components/fleet/VehicleSosTab'
 import VehicleDocumentsTab from '@/components/fleet/VehicleDocumentsTab'
-import { vehicleDocuments } from '@/components/fleet/documents'
+import { missingDocuments, missingDocumentsText, vehicleDocuments } from '@/components/fleet/documents'
 import VehicleLoadsTab from '@/components/fleet/VehicleLoadsTab'
 import { useSosCounts } from '@/components/fleet/useSosCounts'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
@@ -106,7 +106,10 @@ export default function VehicleDetailPage() {
     if (ok) statusMutation.mutate({ status: 'idle' })
   }
 
-  const attention = useMemo(() => (vehicle ? vehicleDocuments(vehicle).filter(d => expiryStatus(d.expiry)).length : 0), [vehicle])
+  const expiring = useMemo(() => (vehicle ? vehicleDocuments(vehicle).filter(d => expiryStatus(d.expiry)).length : 0), [vehicle])
+  // A document with nothing on file needs attention as much as one that is expiring
+  const missing = useMemo(() => (vehicle ? missingDocuments(vehicle).length : 0), [vehicle])
+  const attention = expiring + missing
 
   if (query.isLoading) {
     return (
@@ -165,7 +168,7 @@ export default function VehicleDetailPage() {
               <a href={`tel:${vehicle.driver_phone}`} className="inline-flex items-center gap-1 text-brand hover:underline"><Phone size={14} aria-hidden="true" /> {vehicle.driver_phone}</a>
             )}
             <span aria-hidden="true">·</span>
-            {isLive ? <StatusPill tone="success">Live</StatusPill> : <span>{ping ? `Last seen ${formatRelative(ping, now)}` : 'No GPS data'}</span>}
+            {isLive ? <StatusPill tone="success">Live</StatusPill> : <span>{ping ? `Last seen ${formatRelative(ping, now)}` : 'Never reported a position'}</span>}
           </span>
         }
         actions={(
@@ -174,9 +177,6 @@ export default function VehicleDetailPage() {
             <Link to={`/analytics?vehicle=${vehicle.id}`} className={buttonClasses({ variant: 'secondary' })}><BarChart2 size={16} aria-hidden="true" /> Analytics</Link>
             {isStaffAction && (
               <>
-                {!draft && vehicle.status !== 'archived' && (
-                  <Button variant="danger" icon={<ShieldAlert size={16} />} onClick={() => setSosOpen(true)}>Raise SOS</Button>
-                )}
                 {canReturnToService(vehicle) && (
                   <Button icon={<Wrench size={16} />} onClick={handleReturnToService}>Return to service</Button>
                 )}
@@ -187,6 +187,9 @@ export default function VehicleDetailPage() {
                   <Button variant="secondary" icon={<ArchiveRestore size={16} />} onClick={() => handleUnarchive(vehicle)}>Restore vehicle</Button>
                 )}
                 <Button variant="secondary" icon={<Pencil size={16} />} onClick={() => setEditing(true)}>Edit</Button>
+                {!draft && vehicle.status !== 'archived' && (
+                  <Button variant="ghost" icon={<ShieldAlert size={16} />} onClick={() => setSosOpen(true)}>Raise SOS for this vehicle</Button>
+                )}
               </>
             )}
           </>
@@ -254,9 +257,10 @@ export default function VehicleDetailPage() {
               <CardHeader title="Documents needing attention" />
               <CardBody>
                 {attention === 0 ? (
-                  <p className="text-sm text-muted">Nothing is expired or expiring within 30 days.</p>
+                  <p className="text-sm text-muted">Every document is on file, and none expires within 30 days.</p>
                 ) : (
                   <div className="space-y-3">
+                    {missing > 0 && <p className="text-sm text-warning">{missingDocumentsText(missing)}</p>}
                     <div className="flex flex-wrap gap-1.5">
                       {vehicleDocuments(vehicle).flatMap(d => {
                         const s = expiryStatus(d.expiry)

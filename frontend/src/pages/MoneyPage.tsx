@@ -32,7 +32,7 @@ export default function MoneyPage() {
 
   return (
     <Page>
-      <PageHeader title="Money" description="Price deliveries, follow invoices, and keep track of costs, claims and driver pay. Payments are offline: mark an invoice paid when the money arrives. Profit and loss is in Reports.">
+      <PageHeader title="Money" description="Price deliveries, follow invoices, and keep track of costs, claims and driver pay.">
         <div className="flex flex-col gap-3">
           <Tabs tabs={tabs} value={tab} onChange={setTab} label="Money sections" />
           {RANGED.includes(tab) && <DateRangeControl value={range} onChange={setRange} />}

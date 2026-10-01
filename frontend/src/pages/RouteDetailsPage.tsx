@@ -6,8 +6,9 @@ import { CheckCircle2, Copy, Edit2, ExternalLink, Play, Trash2, XCircle } from '
 import toast from 'react-hot-toast'
 import type { AxiosError } from 'axios'
 import { routesAPI } from '@/services/api'
+import { routingAPI } from '@/services/routing'
 import { Page, PageHeader, Card, Button, buttonClasses, StatusPill, Stat, DetailList, Timeline, type TimelineEvent, EmptyState, LoadingState, ErrorState, useConfirm } from '@/components/ui'
-import { MapView, TripEtaCard, fetchDrivingRoute, remainingStops, useLiveEta, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
+import { MapView, TripEtaCard, fetchDrivingRoute, routingOff, remainingStops, useLiveEta, type DrivingRoute, type LatLng, type MapRouteStop, type MapVehicle } from '@/components/map'
 import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from '@/utils/routeHelpers'
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatDateTime, formatMinutes, formatKm } from '@/utils/display'
@@ -93,6 +94,18 @@ export default function RouteDetailsPage() {
     onError: (err: AxiosError<{ detail?: string }>) => toast.error(err?.response?.data?.detail || 'Failed to delete trip'),
   })
 
+  // Ask once whether the server can draw road routes at all (staff only; the answer is kept for 10 minutes).
+  // Without a provider the page shows the planned line and makes no directions call, so nothing fails in the console.
+  const routingStatus = useQuery({
+    queryKey: ['routing-status'],
+    queryFn: () => routingAPI.status(),
+    enabled: isStaff,
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+  const roadsOff = routingOff(routingStatus.data)
+  const roadsPending = isStaff && routingStatus.isLoading
+
   const sortedStops = useMemo(
     () => (route?.route_stops ? [...route.route_stops].sort((a, b) => a.sequence - b.sequence) : []),
     [route],
@@ -112,7 +125,7 @@ export default function RouteDetailsPage() {
   useEffect(() => {
     // A refresh keeps the drawn road until the new one arrives; only another route clears it
     if (roadFor.current !== `${route?.id}|${sortedStops.length}`) { roadFor.current = `${route?.id}|${sortedStops.length}`; setRoad(null) }
-    if (!route) return
+    if (!route || roadsOff || roadsPending) return
     const vehiclePos: LatLng | null = route.vehicles?.latitude && route.vehicles?.longitude
       ? { lat: route.vehicles.latitude, lng: route.vehicles.longitude } : null
     const stopPositions: LatLng[] = sortedStops.flatMap(s => (
@@ -127,7 +140,7 @@ export default function RouteDetailsPage() {
       .catch(() => { /* MapView falls back to a dashed line */ })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route?.id, sortedStops.length, trafficTick])
+  }, [route?.id, sortedStops.length, trafficTick, roadsOff, roadsPending])
 
   if (isLoading) return <Page><LoadingState label="Loading trip…" /></Page>
   if (isError || !route) {
@@ -291,7 +304,7 @@ export default function RouteDetailsPage() {
             )}
           </Card>
 
-          {routeActive && <RouteLiveEta route={route} />}
+          {routeActive && <RouteLiveEta route={route} roadsOff={roadsOff} roadsPending={roadsPending} />}
 
           <RouteConditions routeId={route.id} />
 
@@ -359,18 +372,18 @@ export default function RouteDetailsPage() {
 }
 
 /** Live ETA for the vehicle on an active route: where it is now, through the stops it has not done yet. */
-function RouteLiveEta({ route }: { route: RouteDetail }) {
+function RouteLiveEta({ route, roadsOff, roadsPending }: { route: RouteDetail; roadsOff: boolean; roadsPending: boolean }) {
   const stops = useMemo(() => remainingStops(route.route_stops), [route.route_stops])
   const lat = route.vehicles?.latitude
   const lng = route.vehicles?.longitude
   const origin: LatLng | null = lat && lng ? { lat, lng } : null
-  const eta = useLiveEta({ origin, stops })
+  const eta = useLiveEta({ origin, stops, enabled: !roadsOff && !roadsPending })
   if (stops.length === 0) return null
   return (
     <TripEtaCard
       eta={eta.data}
       loading={eta.isLoading}
-      error={!origin ? 'The vehicle has no GPS position yet.' : eta.isError ? 'We could not work out the ETA. It will try again shortly.' : eta.isSuccess ? 'No driving route was found to the remaining stops.' : null}
+      error={!origin ? 'The vehicle has no GPS position yet.' : roadsOff ? 'Live ETA is not available right now.' : eta.isError ? 'We could not work out the ETA. It will try again shortly.' : eta.isSuccess ? 'No driving route was found to the remaining stops.' : null}
     />
   )
 }

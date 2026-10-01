@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, Phone, ShieldAlert, Truck, User, Wrench } from 'lucide-react'
+import { AlertTriangle, CheckCircle, ExternalLink, MapPinned, MapPin, MoreHorizontal, Phone, ShieldAlert, Truck, User, Wrench } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { telemetryAPI } from '@/services/api'
-import { formatDateTime, formatKg } from '@/utils/display'
+import { formatDateTime, formatKg, formatPieces } from '@/utils/display'
 import toast from 'react-hot-toast'
 import {
   Page, PageHeader, Button, StatusPill, EmptyState, ErrorState, Skeleton, Card, CardHeader, useConfirm, buttonClasses,
@@ -16,7 +16,7 @@ import { SlaBadge } from '@/components/cargo/CargoBits'
 import { useNow } from '@/components/cargo/useNow'
 import { exceptionTypeLabel, holdCaseFor } from '@/components/cargo/logic'
 import { MapView, type MapPoint } from '@/components/map'
-import { isOpenSos, sosHeadline, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
+import { canOfferReturnToService, isOpenSos, sosHeadline, sosNextStep, sosSeverityLabel, sosStatusLabel, sosStatusTone, sosTypeLabel, type SosStatus } from '@/utils/sos'
 import { returnVehicleToService } from '@/components/fleet/vehicleStatus'
 import { apiErrorMessage } from '@/components/fleet/health'
 import { canReturnToService } from '@/utils/vehicles'
@@ -81,7 +81,7 @@ function SosCargoCard({ alert }: { alert: SosAlert }) {
     <Card>
       <CardHeader
         title={`Cargo on ${plate}`}
-        description={`${totals.consignments.toLocaleString('en-IN')} ${totals.consignments === 1 ? 'consignment' : 'consignments'}, ${totals.pieces.toLocaleString('en-IN')} pieces, ${formatKg(totals.weightKg)}`}
+        description={`${totals.consignments.toLocaleString('en-IN')} ${totals.consignments === 1 ? 'shipment' : 'shipments'}, ${formatPieces(totals.pieces)}, ${formatKg(totals.weightKg)}`}
         actions={(
           <Link
             to={linked ? `/cargo/exceptions/${linked.id}?action=transship` : `/cargo?vehicle=${vehicleId}`}
@@ -332,6 +332,10 @@ export default function EmergencyPage() {
               alerts.map(alert => {
                 const isActive = isOpenSos(alert.status)
                 const isSelected = alert.id === selectedId
+                const step = sosNextStep(alert.status)
+                const canMaintain = isActive && !!alert.vehicle_id && ['breakdown', 'accident'].includes(alert.alert_type) && !openJobs.has(alert.vehicle_id)
+                  && alert.vehicle?.status !== 'archived'
+                const hasMore = !!alert.vehicle_id || (alert.latitude != null && alert.longitude != null) || isActive
                 return (
                   <div
                     key={alert.id}
@@ -363,58 +367,57 @@ export default function EmergencyPage() {
                       )}
                       {alert.description && <p className="mt-2 truncate text-xs italic text-muted">"{alert.description}"</p>}
                     </button>
-                    <div className="mt-3 space-y-2">
-                    <div className="flex flex-wrap gap-2 empty:hidden">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {/* One main step per state: acknowledge, then resolve. Everything else is a quieter link or in More. */}
+                      {step === 'acknowledge' && <Button size="sm" onClick={() => acknowledge(alert)}>Acknowledge</Button>}
+                      {step === 'resolve' && <Button size="sm" onClick={() => resolve(alert)}>Resolve</Button>}
                       {alert.driver?.phone && (
                         <a
                           href={`tel:${alert.driver.phone}`}
                           aria-label={`Call ${alert.driver.full_name || 'driver'}`}
                           onClick={e => e.stopPropagation()}
-                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                          className={buttonClasses({ variant: step ? 'secondary' : 'ghost', size: 'sm' })}
                         >
                           <Phone size={14} aria-hidden="true" /> Call driver
                         </a>
                       )}
-                      {alert.vehicle_id && (
-                        <Link
-                          to={`/live-map?vehicle=${alert.vehicle_id}`}
-                          onClick={e => e.stopPropagation()}
-                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                        >
-                          <MapPinned size={14} aria-hidden="true" /> Live map
-                        </Link>
-                      )}
-                      {alert.latitude != null && alert.longitude != null && (
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${alert.latitude},${alert.longitude}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label="Open in Google Maps"
-                          onClick={e => e.stopPropagation()}
-                          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                        >
-                          <ExternalLink size={14} aria-hidden="true" /> Google Maps
-                        </a>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2 empty:hidden">
-                      {isActive && (!alert.status || alert.status === 'active') && (
-                        <Button size="sm" variant="secondary" onClick={() => acknowledge(alert)}>Acknowledge</Button>
-                      )}
-                      {isActive && (
-                        <Button size="sm" variant="secondary" onClick={() => resolve(alert)}>Resolve</Button>
-                      )}
-                      {isActive && (
-                        <Button size="sm" variant="secondary" onClick={() => cancel(alert)}>False alarm</Button>
-                      )}
-                      {isActive && alert.vehicle_id && ['breakdown', 'accident'].includes(alert.alert_type) && !openJobs.has(alert.vehicle_id)
-                        && alert.vehicle?.status !== 'archived' && (
-                        <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => setMaintenanceAlert(alert)}>Create maintenance job</Button>
-                      )}
-                      {alert.vehicle_id && canReturnToService({ status: alert.vehicle?.status }) && (
+                      {canOfferReturnToService(alert.status, canReturnToService({ status: alert.vehicle?.status })) && alert.vehicle_id && (
                         <Button size="sm" variant="secondary" icon={<Wrench size={14} />} onClick={() => returnToService(alert, true)}>Return to service</Button>
                       )}
-                    </div>
+                      {hasMore && (
+                        <details className="relative" onClick={e => e.stopPropagation()}>
+                          <summary className={buttonClasses({ variant: 'ghost', size: 'sm' }) + ' cursor-pointer list-none'}>
+                            <MoreHorizontal size={14} aria-hidden="true" /> More
+                          </summary>
+                          <div className="absolute left-0 z-20 mt-1 flex min-w-48 flex-col gap-1 rounded-control border border-border bg-surface p-1 shadow-raised">
+                            {alert.vehicle_id && (
+                              <Link to={`/live-map?vehicle=${alert.vehicle_id}`} className={buttonClasses({ variant: 'ghost', size: 'sm' }) + ' justify-start'}>
+                                <MapPinned size={14} aria-hidden="true" /> Live map
+                              </Link>
+                            )}
+                            {alert.latitude != null && alert.longitude != null && (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${alert.latitude},${alert.longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Open in Google Maps"
+                                className={buttonClasses({ variant: 'ghost', size: 'sm' }) + ' justify-start'}
+                              >
+                                <ExternalLink size={14} aria-hidden="true" /> Google Maps
+                              </a>
+                            )}
+                            {isActive && alert.status === 'active' && (
+                              <Button size="sm" variant="ghost" className="justify-start" onClick={() => resolve(alert)}>Resolve</Button>
+                            )}
+                            {isActive && (
+                              <Button size="sm" variant="ghost" className="justify-start" onClick={() => cancel(alert)}>False alarm</Button>
+                            )}
+                            {canMaintain && (
+                              <Button size="sm" variant="ghost" className="justify-start" icon={<Wrench size={14} />} onClick={() => setMaintenanceAlert(alert)}>Create maintenance job</Button>
+                            )}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </div>
                 )

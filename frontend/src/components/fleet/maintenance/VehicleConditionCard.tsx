@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClipboardCheck, Gauge, Pencil, Plus, RefreshCw, Trash2, Wand2, Wrench } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { fleetAPI } from '@/services/api'
-import { formatDate, formatRelative } from '@/utils/display'
+import { Link } from 'react-router-dom'
+import { formatRelative } from '@/utils/display'
 import { Alert, Button, Card, CardBody, CardHeader, EmptyState, IconButton, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import { apiErrorMessage, formatOdometer, type ServiceItem } from '../health'
 import { OdometerModal, PlanModal } from '../ServiceModals'
@@ -124,7 +125,9 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
   }
   const v = vehicle.data
   const items = plans.data ?? []
-  const docs = DOCUMENT_FIELDS.map(f => ({ f, bar: documentBar(f.key, f.label, v[f.key]) }))
+  const docs = DOCUMENT_FIELDS.map(f => documentBar(f.key, f.label, v[f.key]))
+  const docsMissing = docs.filter(d => d.state === 'unknown').length
+  const docsExpired = docs.filter(d => d.state === 'overdue').length
 
   return (
     <Card>
@@ -193,12 +196,11 @@ export function VehicleConditionCard({ vehicleId }: { vehicleId: string }) {
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-text">Documents</h3>
-        <ul className="divide-y divide-border rounded-card border border-border">
-          {docs.map(({ f, bar }) => (
-            <Bar key={f.key} bar={{ ...bar, detail: v[f.key] ? `Expires ${formatDate(v[f.key])}` : null }} />
-          ))}
-        </ul>
-        <p className="text-xs text-muted">Update a document's expiry date by editing the vehicle.</p>
+        <p className="text-sm text-muted">
+          {docsMissing > 0 ? `${docsMissing.toLocaleString('en-IN')} of ${docs.length} not uploaded. ` : ''}
+          {docsExpired > 0 ? `${docsExpired.toLocaleString('en-IN')} expired. ` : ''}
+          <Link to={`/fleet/${vehicleId}?tab=documents`} className="font-medium text-brand hover:underline">Open the Documents tab</Link>
+        </p>
       </div>
       </CardBody>
 

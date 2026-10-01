@@ -1366,7 +1366,7 @@ export async function lotsSummaries(kind: RefKind, masterIds: string[]): Promise
     if (l.rawStatus !== 'cancelled') {
       entry.count++;
       if (['delivered', 'completed'].includes(l.rawStatus)) entry.delivered_lots++;
-      entry.lots.push({ id: l.id, code: l.code, label: l.lotLabel, status: l.rawStatus, current_holder: l.holder, current_vehicle_id: l.vehicleId, pieces_total: l.pieces.total, consignee_name: l.row.consignee_name ?? null });
+      entry.lots.push({ id: l.id, code: l.code, label: l.lotLabel, status: l.rawStatus, current_holder: l.holder, current_vehicle_id: l.vehicleId, pieces_total: l.pieces.total, pieces_delivered: l.pieces.delivered, consignee_name: l.row.consignee_name ?? null });
     }
     entry.pieces_delivered += l.pieces.delivered;
     out.set(key, entry);

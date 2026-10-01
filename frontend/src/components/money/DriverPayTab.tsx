@@ -9,7 +9,7 @@ import {
 } from '@/components/ui'
 import { errorMessage, formatDate, formatRupees } from '@/utils/display'
 import {
-  KM_SOURCE_LABEL, METHOD_LABEL, PAY_VEHICLE_TYPES, STATUS_LABEL, STATUS_TONE, canApprove, canChange, canPay, payoutSummary, tripRef,
+  KM_SOURCE_HELP, KM_SOURCE_LABEL, METHOD_LABEL, PAY_VEHICLE_TYPES, STATUS_LABEL, STATUS_TONE, canApprove, canChange, canPay, partTripNote, payoutSummary, tripRef,
   typeLabel, type PayEntry, type PayRate, type PayoutMethod,
 } from './driverPay'
 import { driverPayAPI } from './driverPayApi'
@@ -92,6 +92,7 @@ export default function DriverPayTab() {
           <div>
             {id ? <Link to={`/routes/${id}`} className="font-mono text-sm text-brand hover:underline" onClick={ev => ev.stopPropagation()}>{tripRef(e)}</Link> : <span className="text-muted">{tripRef(e)}</span>}
             <p className="text-xs text-muted">{[typeLabel(e.vehicle_type), e.plate_number].filter(Boolean).join(' · ')}</p>
+            {partTripNote(e) && <p className="text-xs text-warning">{partTripNote(e)}</p>}
           </div>
         )
       },
@@ -101,7 +102,10 @@ export default function DriverPayTab() {
       cell: e => (
         <div>
           <span className="tabular">{e.km.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km</span>
-          <p className="text-xs text-muted">{KM_SOURCE_LABEL[e.km_source]}</p>
+          <p className="text-xs text-muted" title={KM_SOURCE_HELP[e.km_source]}>
+            {KM_SOURCE_LABEL[e.km_source]}{e.km_source === 'estimated' && <span className="sr-only">. {KM_SOURCE_HELP.estimated}</span>}
+          </p>
+          {e.km_source === 'estimated' && <p className="max-w-48 text-xs text-muted">Between the stops, not by road</p>}
         </div>
       ),
     },

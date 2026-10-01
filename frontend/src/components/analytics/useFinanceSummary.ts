@@ -40,6 +40,8 @@ export interface FinanceSummary {
     route_id: string
     plate_number: string | null
     completed_at: string | null
+    /** The trip's own status, so a cancelled or running trip is not shown as finished. */
+    status?: string | null
     distance_km: number | null
     revenue: number
     costs: number

@@ -12,6 +12,7 @@ import { TripReplayCard } from '@/components/fleet/location/TripReplayCard'
 import VehicleFuelTab from '@/components/fleet/fuel/VehicleFuelTab'
 import VehicleHealthPanel from '@/components/fleet/VehicleHealthPanel'
 import type { Vehicle } from '@/components/fleet/types'
+import { lastSeenAt } from '@/utils/vehicles'
 
 export interface SlotProps {
   vehicle: Vehicle
@@ -44,7 +45,9 @@ export function MaintenanceTabSlot({ vehicle }: SlotProps) {
 export function FuelTabSlot({ vehicle }: SlotProps) {
   const capacity = vehicle.fuel_capacity_liters ?? 0
   const current = vehicle.current_fuel_liters ?? null
-  const pct = capacity > 0 && current != null ? Math.min(100, Math.round((current / capacity) * 100)) : null
+  // The stored level is only a reading when the vehicle's device has reported in
+  const reported = lastSeenAt(vehicle) != null
+  const pct = reported && capacity > 0 && current != null ? Math.min(100, Math.round((current / capacity) * 100)) : null
   return (
     <div data-tab-slot="fuel" className="space-y-4">
       <Card>
@@ -63,6 +66,8 @@ export function FuelTabSlot({ vehicle }: SlotProps) {
                 <div className={'h-full rounded-full ' + (pct < 15 ? 'bg-danger' : pct < 30 ? 'bg-warning' : 'bg-success')} style={{ width: `${pct}%` }} />
               </div>
             </div>
+          ) : !reported ? (
+            <p className="text-sm text-muted">Not reported. The vehicle has not sent a reading yet{capacity > 0 ? `, so its ${capacity.toLocaleString('en-IN')} L tank is shown as unknown.` : '.'}</p>
           ) : (
             <p className="text-sm text-muted">The tank size is not recorded. Add it by editing the vehicle to see the level here.</p>
           )}

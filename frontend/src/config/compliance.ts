@@ -17,3 +17,6 @@ export function needsEwayBill(declaredValue: number | string | null | undefined,
   if (!Number.isFinite(value) || value <= EWAY_BILL_THRESHOLD_RUPEES) return false
   return !(ewayBillRef ?? '').trim()
 }
+
+/** The government portal where an e-way bill is made and its vehicle number (Part B) updated. */
+export const EWAY_BILL_PORTAL_URL = 'https://ewaybillgst.gov.in'

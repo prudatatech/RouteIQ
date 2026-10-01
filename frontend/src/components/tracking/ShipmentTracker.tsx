@@ -7,7 +7,9 @@ import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { fetchTrackedRoute, type DrivingRoute } from '@/components/map/directions'
-import { formatKg, formatMinutes, formatDateTime } from '@/utils/display'
+import { formatKg, formatMinutes, formatDateTime, formatPieces } from '@/utils/display'
+import { formatAddress } from '@/utils/address'
+import { isPartlyDelivered, lotLine, publicHistory, splitDestination, type PublicDrop, type PublicLot } from './publicView'
 
 /** Vehicle fields the public tracking endpoint returns — no driver identity or phone. */
 export interface TrackedVehicle {
@@ -43,6 +45,10 @@ export interface ShipmentTrackingData {
   eta_minutes?: number | null
   /** Status timeline, public-safe: status and time only, no names. See ShipmentService.getPublicTracking. */
   history?: { status: string; at: string }[] | null
+  /** A split booking: how each lot stands. */
+  lots?: PublicLot[] | null
+  /** A multi-drop booking: its drops, when the answer lists them. */
+  drops?: PublicDrop[] | null
 }
 
 type LatLngPoint = { lat: number; lng: number }
@@ -87,6 +93,8 @@ const STEPS = [
 
 function stepIndex(status: string | undefined) {
   if (!status) return -1
+  // Part of the booking is delivered: the bar sits on Delivered and a note says how much
+  if (isPartlyDelivered(status)) return STEPS.length - 1
   const idx = STEPS.findIndex(s => s.key === status)
   if (idx >= 0) return idx
   // A failed delivery happens with the load already on its way, so it sits at "In transit"
@@ -154,6 +162,11 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
   const cancelled = shipment.status === 'cancelled'
   const delivered = shipment.status === 'delivered'
   const failed = shipment.status === 'exception'
+  const partly = isPartlyDelivered(shipment.status)
+  const lots = shipment.lots ?? []
+  const isSplit = lots.length > 0
+  const lotsDone = lots.filter(l => l.status === 'delivered' || l.status === 'completed').length
+  const history = publicHistory(shipment.history, shipment.status)
   const currentStepIdx = cancelled ? -1 : stepIndex(shipment.status)
 
   const vehicles: MapVehicle[] = (shipment.vehicle?.lat != null && shipment.vehicle?.lng != null)
@@ -193,6 +206,12 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
           </p>
         )}
 
+        {partly && (
+          <p role="status" className="text-sm text-text">
+            Part of your shipment is delivered. The rest is still on its way.
+          </p>
+        )}
+
         {cancelled ? (
           <p className="text-sm text-muted">This shipment was cancelled.</p>
         ) : (
@@ -226,11 +245,16 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         <DetailList
           columns={2}
           items={[
-            { label: 'Origin', value: shipment.origin_name || shipment.origin_address || '—' },
-            { label: 'Destination', value: shipment.destination?.name || shipment.destination?.address || '—' },
+            { label: 'Origin', value: formatAddress(shipment.origin_name, shipment.origin_address) || '—' },
+            {
+              label: 'Destination',
+              value: shipment.destination
+                ? formatAddress(shipment.destination.name, shipment.destination.address) || '—'
+                : isSplit ? splitDestination(shipment.drops, lots, formatAddress) ?? '—' : '—',
+            },
             { label: 'Priority', value: shipment.priority ? shipment.priority.charAt(0).toUpperCase() + shipment.priority.slice(1) : '—' },
             { label: 'Weight', value: formatKg(shipment.total_weight_kg) },
-            { label: 'Items', value: shipment.total_items != null ? shipment.total_items.toLocaleString('en-IN') : '—' },
+            { label: 'Pieces', value: shipment.total_items != null ? shipment.total_items.toLocaleString('en-IN') : '—' },
           ]}
         />
       </Card>
@@ -247,9 +271,9 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
               <Clock size={16} className="text-brand" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-semibold text-text">
-              {delivered ? 'Delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatMinutes(etaMinutes)) : '—'}
+              {delivered ? 'Delivered' : partly ? 'Partly delivered' : cancelled ? 'Cancelled' : failed ? 'Delivery attempt failed' : etaMinutes != null ? (etaMinutes < 1 ? 'Arriving now' : formatMinutes(etaMinutes)) : '—'}
             </p>
-            {!delivered && !cancelled && !failed && etaMinutes == null && (
+            {!delivered && !cancelled && !failed && !partly && etaMinutes == null && (
               <p className="mt-1 text-xs text-muted">Shown once a vehicle is on its way and sharing its location.</p>
             )}
             {!delivered && !cancelled && !failed && etaMinutes != null && (
@@ -257,6 +281,27 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
             )}
           </Card>
 
+          {isSplit ? (
+            <Card padded>
+              <p className="text-sm font-medium text-text">
+                Lots · {lotsDone.toLocaleString('en-IN')} of {lots.length.toLocaleString('en-IN')} delivered
+              </p>
+              <ul className="mt-3 space-y-1.5 text-sm text-text">
+                {lots.map(l => (
+                  <li key={l.tracking_id} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span>
+                      {lotLine(l)}
+                      {l.vehicle?.plate_number && <span className="block text-xs text-muted">Carried by {l.vehicle.plate_number}{l.vehicle.type ? `, ${l.vehicle.type}` : ''}</span>}
+                    </span>
+                    <span className="font-mono text-xs text-muted">{l.tracking_id}</span>
+                  </li>
+                ))}
+              </ul>
+              {shipment.total_items != null && partly && (
+                <p className="mt-3 text-xs text-muted">{formatPieces(shipment.total_items)} booked in all.</p>
+              )}
+            </Card>
+          ) : (shipment.vehicle || !(delivered || cancelled)) && (
           <Card padded>
             <p className="text-sm font-medium text-text">Carrier</p>
             <div className="mt-3 flex items-center gap-3 rounded-control border border-border bg-surface-subtle p-3">
@@ -267,20 +312,21 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
                 <p className="truncate text-sm font-medium text-text">{shipment.vehicle?.plate_number || 'Not yet assigned'}</p>
                 {shipment.vehicle && (
                   <p className="text-xs text-muted">
-                    {shipment.vehicle.type || 'Vehicle'} · <StatusPill status={shipment.vehicle.status} dot={false} className="ml-0.5 align-middle" />
+                    {shipment.vehicle.type || 'Vehicle'}
                   </p>
                 )}
               </div>
             </div>
           </Card>
+          )}
         </div>
       </div>
 
-      {shipment.history && shipment.history.length > 0 && (
+      {history.length > 0 && (
         <Card padded>
           <p className="mb-4 text-sm font-medium text-text">Status history</p>
           <Timeline
-            events={shipment.history.map(e => (e.status === 'exception' ? { ...e, note: 'Delivery attempt failed' } : e))}
+            events={history.map(e => (e.status === 'exception' ? { ...e, note: 'Delivery attempt failed' } : e))}
             formatAt={formatDateTime}
           />
         </Card>

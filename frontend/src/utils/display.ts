@@ -65,6 +65,12 @@ export function formatKm(km: number | string | null | undefined): string {
   return n === null ? EMPTY : `${n.toLocaleString('en-IN', { maximumFractionDigits: 1 })} km`
 }
 
+/** "1 piece", "100 pieces" */
+export function formatPieces(n: number | string | null | undefined): string {
+  const v = numberOf(n)
+  return v === null ? EMPTY : `${v.toLocaleString('en-IN')} ${v === 1 ? 'piece' : 'pieces'}`
+}
+
 /** "12 min", "1 h", "1 h 5 min". Zero or unknown shows a dash. */
 export function formatMinutes(minutes: number | null | undefined): string {
   const n = numberOf(minutes)

@@ -14,6 +14,7 @@ import { carrierText, historyEntries, lotCarriers, masterDestinationText, missin
 import { EWAY_BILL_WARNING } from '@/config/compliance'
 import DriverRating from './DriverRating'
 import ParcelLabel from './ParcelLabel'
+import PlaceText from './PlaceText'
 import MessagesPanel from '@/components/messages/MessagesPanel'
 import type { ShipmentHistoryEvent, ShipmentRow } from './types'
 import ConsignmentCargo from '@/components/cargo/ConsignmentCargo'
@@ -37,15 +38,6 @@ export function Section({ title, children }: { title: string; children: ReactNod
       <h3 className="text-sm font-semibold text-text">{title}</h3>
       {children}
     </section>
-  )
-}
-
-function PlaceText({ name, address }: { name?: string | null; address?: string | null }) {
-  return (
-    <span>
-      <span className="block">{name || address}</span>
-      {name && address && address !== name && <span className="block text-xs text-muted">{address}</span>}
-    </span>
   )
 }
 
@@ -99,11 +91,11 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
       <Section title="Cargo and vehicle">
         <DetailList
           items={[
-            { label: 'Items', value: s.total_items != null ? s.total_items.toLocaleString('en-IN') : null },
-            ...(s.consignee_name ? [{ label: 'Consignee', value: [s.consignee_name, s.consignee_phone, s.consignee_gstin].filter(Boolean).join(' · ') }] : []),
+            { label: 'Pieces', value: s.total_items != null ? s.total_items.toLocaleString('en-IN') : null },
+            ...(s.consignee_name ? [{ label: 'Receiver', value: [s.consignee_name, s.consignee_phone, s.consignee_gstin].filter(Boolean).join(' · ') }] : []),
             ...(s.split_reason ? [{ label: 'Split', value: statusToLabel(s.split_reason, 'split_reason') }] : []),
             ...(s.declared_value != null ? [{ label: 'Declared value', value: formatRupees(s.declared_value) }] : []),
-            ...(s.freight_share != null ? [{ label: 'Freight share', value: formatRupees(s.freight_share) }] : []),
+            ...(s.freight_share != null && !f.master ? [{ label: 'Freight share', value: formatRupees(s.freight_share) }] : []),
             { label: 'Weight', value: formatKg(s.total_weight_kg) },
             ...(s.freight_charge != null ? [{ label: 'Price', value: formatRupees(s.freight_charge) }] : []),
             ...(f.master
@@ -127,8 +119,8 @@ export function ShipmentDetailSections({ shipment: s, onAssign }: { shipment: Sh
         {s.status === 'exception' && (
           <Alert tone="danger" title="A problem is open on this shipment">
             {f.withSender
-              ? 'Work it from its case under Cargo below, or assign a vehicle again.'
-              : 'The goods are still on the vehicle. Work it from its case under Cargo below: re-attempt, move to another vehicle or a hub, or return.'}
+              ? 'Work it from its case under Problems, in the case linked below, or assign a vehicle again.'
+              : 'The goods are still on the vehicle. Work it from its case under Problems, in the case linked below: re-attempt, move to another vehicle or a hub, or return.'}
           </Alert>
         )}
         {!f.manifestOnly && !f.closed && f.canAssign && (s.status !== 'created' || !s.vehicle_id) && (
@@ -273,7 +265,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
 
       {!f.manifestOnly && !f.closed && f.canCancel && (
         <Section title="Update status">
-          <p className="text-sm text-muted">Record the pickup, the move and the delivery under Cargo, with the pieces and proof.</p>
+          <p className="text-sm text-muted">Record the pickup, the move and the delivery under Where is it now, with the pieces and proof.</p>
           <div className="flex flex-wrap gap-2">
             {s.status === 'assigned' && !f.master && (
               <Button variant="ghost" size="sm" disabled={statusMutation.isPending} onClick={unassignShipment}>

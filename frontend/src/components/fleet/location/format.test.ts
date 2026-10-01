@@ -67,7 +67,7 @@ describe('what the vehicle is doing', () => {
   it('writes one sentence for each state', () => {
     const now = Date.parse('2026-09-29T10:00:00Z')
     expect(activitySentence(activity({ state: 'offline', live: false, last_seen_at: '2026-09-29T09:40:00Z' }), now)).toBe('Offline, last heard from 20 minutes ago')
-    expect(activitySentence(activity({ state: 'offline', live: false, last_seen_at: null }), now)).toBe('Offline, has never sent a position')
+    expect(activitySentence(activity({ state: 'offline', live: false, last_seen_at: null }), now)).toBe('Never reported a position')
     expect(activitySentence(activity({ state: 'carrying', since: null }), now)).toBe('Carrying a load')
     expect(activitySentence(activity({ state: 'idle', place_name: 'Pune Hub', stationary: { since: '2026-09-29T08:00:00Z', minutes: 120, at_least: false } }), now))
       .toBe('Idle since 1:30 pm (2 h) at Pune Hub')

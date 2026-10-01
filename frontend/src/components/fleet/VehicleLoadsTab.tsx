@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Package, Route as RouteIcon } from 'lucide-react'
 import { supabase } from '@/services/supabase'
+import { routesAPI } from '@/services/api'
+import { distanceWithBasis, type DistanceBasis } from '@/utils/tripFigures'
 import { Card, CardBody, CardHeader, DataTable, SectionHeader, StatusPill, buttonClasses, type Column } from '@/components/ui'
 import { formatDate, formatDateTime, formatKg, formatKm } from '@/utils/display'
 import { OnBoardCard } from '@/components/cargo/OnBoardList'
@@ -11,7 +13,10 @@ import type { Vehicle } from './types'
 interface RouteRow {
   id: string
   status: string
-  total_distance_km: number | null
+  /** What the routes API reports: the distance and how it was worked out. */
+  distance_km?: number | null
+  distance_basis?: DistanceBasis | null
+  is_manifest?: boolean
   started_at: string | null
   completed_at: string | null
   created_at: string
@@ -30,16 +35,8 @@ interface ManifestRow {
 export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
   const routes = useQuery<RouteRow[]>({
     queryKey: ['vehicles', 'loads-routes', vehicle.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('routes')
-        .select('id, status, total_distance_km, started_at, completed_at, created_at')
-        .eq('vehicle_id', vehicle.id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (error) throw error
-      return (data ?? []) as RouteRow[]
-    },
+    // The routes API, not the table: it carries the distance and how it was worked out. Vendor loads are listed below.
+    queryFn: async () => ((await routesAPI.list({ vehicle_id: vehicle.id, limit: 50 })) as RouteRow[]).filter(r => !r.is_manifest),
     refetchInterval: 60_000,
   })
   const manifests = useQuery<ManifestRow[]>({
@@ -60,7 +57,7 @@ export default function VehicleLoadsTab({ vehicle }: { vehicle: Vehicle }) {
   const routeColumns: Column<RouteRow>[] = [
     { key: 'created', header: 'Created', sortValue: r => r.created_at, cell: r => formatDateTime(r.created_at) },
     { key: 'status', header: 'Status', sortValue: r => r.status, cell: r => <StatusPill status={r.status} kind="route" /> },
-    { key: 'distance', header: 'Distance', hideBelow: 'md', sortValue: r => r.total_distance_km ?? 0, cell: r => (r.total_distance_km != null ? formatKm(r.total_distance_km) : '—') },
+    { key: 'distance', header: 'Distance', hideBelow: 'md', sortValue: r => r.distance_km ?? 0, cell: r => distanceWithBasis(r.distance_km, r.distance_basis, formatKm) },
     { key: 'done', header: 'Finished', hideBelow: 'md', cell: r => (r.completed_at ? formatDate(r.completed_at) : r.started_at ? 'Started, not finished' : '—') },
     { key: 'open', header: <span className="sr-only">Open</span>, align: 'right', cell: r => <Link to={`/routes/${r.id}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Open</Link> },
   ]

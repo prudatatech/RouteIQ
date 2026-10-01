@@ -11,7 +11,8 @@ import {
 import { ConditionPill, ConsignmentLink, Steps } from '@/components/cargo/CargoBits'
 import { isActiveTransfer, positionOf, transferItemCount, transferSteps } from '@/components/cargo/logic'
 import { cargoKeys, transfersAPI, type CargoTransfer, type CargoVehicle, type TransferItem } from '@/services/cargo'
-import { errorMessage, formatDateTime } from '@/utils/display'
+import { EWAY_BILL_PORTAL_URL } from '@/config/compliance'
+import { errorMessage, formatDateTime, formatPieces } from '@/utils/display'
 
 const EWAY_REF = /^[A-Za-z0-9-]{6,40}$/
 const n = (x: number) => x.toLocaleString('en-IN')
@@ -90,6 +91,7 @@ export default function TransferPage() {
 
   const items = t.items
   const mismatches = items.filter(i => transferItemCount(i).mismatch).length
+  const shortPieces = items.reduce((total, i) => total + Math.max(0, transferItemCount(i).gap), 0)
   const sum = (pick: (i: TransferItem) => number | null) => items.reduce((total, i) => total + (pick(i) ?? 0), 0)
   const anyOut = items.some(i => i.pieces_out != null)
   const anyIn = items.some(i => i.pieces_in != null)
@@ -207,9 +209,14 @@ export default function TransferPage() {
           <Card>
             <CardHeader title="Shipments" description="What was planned, handed over and received" />
             <CardBody className="space-y-4">
-              {mismatches > 0 && (
+              {mismatches > 0 && t.status === 'completed' ? (
+                <Alert tone="info" title={shortPieces > 0 ? `${formatPieces(shortPieces)} short on arrival` : 'Counts differed'}>
+                  {shortPieces > 0 ? 'A shortage problem was opened for it. ' : ''}
+                  <Link to="/cargo" className="font-medium underline">Open Problems</Link>
+                </Alert>
+              ) : mismatches > 0 && (
                 <Alert tone="danger" title="Counts do not match">
-                  {mismatches === 1 ? '1 shipment does not match' : `${mismatches} shipments do not match`}: a shortage case opens when fewer pieces arrive than were handed over.
+                  {mismatches === 1 ? '1 shipment does not match' : `${mismatches} shipments do not match`}: a shortage problem opens when fewer pieces arrive than were handed over.
                 </Alert>
               )}
               <p className="text-sm text-muted">
@@ -242,7 +249,11 @@ export default function TransferPage() {
 
         <div className="min-w-0 space-y-4">
           <Card>
-            <CardHeader title="E-way bill" description="Part B, the vehicle number" />
+            <CardHeader
+              title="E-way bill"
+              description="Update the vehicle number on the e-way bill (Part B) when the goods change vehicle"
+              actions={<a href={EWAY_BILL_PORTAL_URL} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand hover:underline">Open the e-way bill portal</a>}
+            />
             <CardBody className="space-y-4">
               {t.eway_part_b_required && !t.eway_part_b_ref ? (
                 <>
