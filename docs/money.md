@@ -65,7 +65,7 @@ The customer and vendor apps get the invoice id from the `invoice_issued` and `i
 
 ### The customer's own invoice list
 
-`GET /api/v1/customer/invoices` (customer only) lists the invoices of the caller's bookings, lots included, newest first. Void invoices and ones billed to a vendor are left out, so every row can be downloaded with `GET /invoices/:id/pdf`. Each row has `id`, `invoice_number`, `status`, `total`, `amount`, `gst_amount`, `issued_at`, `due_date`, `overdue`, `days_overdue`, `paid_at`, `payment_method`, `payment_reference`, `shipment_id`, `booking_id`, `tracking_id`, `pickup_name` and `drop_name`. `GET /customer/bookings` rows also carry `rated` (the delivery has been rated).
+`GET /api/v1/customer/invoices` (customer only; each row also has `amount_paid` and `outstanding`) lists the invoices of the caller's bookings, lots included, newest first. Void invoices and ones billed to a vendor are left out, so every row can be downloaded with `GET /invoices/:id/pdf`. Each row has `id`, `invoice_number`, `status`, `total`, `amount`, `gst_amount`, `issued_at`, `due_date`, `overdue`, `days_overdue`, `paid_at`, `payment_method`, `payment_reference`, `shipment_id`, `booking_id`, `tracking_id`, `pickup_name` and `drop_name`. `GET /customer/bookings` rows also carry `rated` (the delivery has been rated).
 
 ### A customer's profile and the buyer on their invoices
 
