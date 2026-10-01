@@ -54,7 +54,7 @@ export default function ShipmentDetailsDrawer({ shipment, onClose, onEdit, onAss
       ) : (
         <>
           {f.canDelete && (
-            <Button variant="danger" icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending} className="sm:mr-auto">
+            <Button variant="ghost" icon={<Trash2 size={16} />} onClick={del.remove} loading={del.isPending} className="sm:mr-auto">
               Delete
             </Button>
           )}

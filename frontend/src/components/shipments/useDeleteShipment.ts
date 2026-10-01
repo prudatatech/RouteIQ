@@ -1,9 +1,22 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useConfirm } from '@/components/ui'
 import { shipmentsAPI } from '@/services/api'
 import { apiErrorMessage } from './format'
 import type { ShipmentRow } from './types'
+
+/** True for any cached query that belongs to this shipment (its page, overview, history, proof, ...). */
+const isAboutShipment = (key: readonly unknown[], id: string) => key.includes(id)
+
+/**
+ * Stop and forget every query about a shipment that no longer exists, so nothing refetches a 404.
+ * Cancels first (a refetch may be in flight), then removes.
+ */
+export async function dropShipmentQueries(queryClient: QueryClient, id: string) {
+  const predicate = (q: { queryKey: readonly unknown[] }) => isAboutShipment(q.queryKey, id)
+  await queryClient.cancelQueries({ predicate })
+  queryClient.removeQueries({ predicate })
+}
 
 /** Delete a shipment (after a confirmation), for the drawer's and the page's Delete button. */
 export function useDeleteShipment(shipment: ShipmentRow | null, onDeleted: () => void) {
@@ -11,12 +24,10 @@ export function useDeleteShipment(shipment: ShipmentRow | null, onDeleted: () =>
   const { confirm } = useConfirm()
   const mutation = useMutation({
     mutationFn: (id: string) => shipmentsAPI.delete(id),
-    onSuccess: (_data, id) => {
-      onDeleted()
+    onSuccess: async (_data, id) => {
       // The page being left must not ask for the shipment again: it is gone (404)
-      queryClient.removeQueries({ queryKey: ['shipments', 'overview', id] })
-      queryClient.removeQueries({ queryKey: ['shipment-history', id] })
-      queryClient.removeQueries({ queryKey: ['shipment', id] })
+      await dropShipmentQueries(queryClient, id)
+      onDeleted()
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['fleet-summary'] })

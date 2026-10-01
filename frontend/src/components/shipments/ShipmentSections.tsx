@@ -343,14 +343,14 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
         </Section>
       )}
 
-      <Section title="Messages">
+      {s.status !== 'cancelled' && <Section title="Messages">
         <MessagesPanel
           target={{ shipment_id: s.id }}
           unavailable={f.master
             ? OPEN_A_LOT
             : s.vehicle_id || f.manifestOnly ? undefined : 'Assign a vehicle to message its driver about this shipment.'}
         />
-      </Section>
+      </Section>}
 
       {!f.manifestOnly && (
         <Section title="Live location">
@@ -366,7 +366,7 @@ export function ShipmentRecordSections({ shipment: s }: { shipment: ShipmentRow 
           </div>
           {f.master
             ? <p className="text-sm text-muted">{OPEN_A_LOT}</p>
-            : !s.vehicle_id && <p className="text-sm text-muted">Assign a vehicle to see where this shipment is.</p>}
+            : !s.vehicle_id && !f.closed && <p className="text-sm text-muted">Assign a vehicle to see where this shipment is.</p>}
           {showMap && <InlineTrackingMap trackingId={s.tracking_id} vehicleId={s.vehicle_id} />}
         </Section>
       )}

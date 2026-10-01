@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, isActiveShipmentStatus, pickupDateOf, pickupPlace, shipmentStatusLabel,
+  ACTIVE_SHIPMENT_STATUSES, SHIPMENT_STATUSES, destinationOf, plateOf, isActiveShipmentStatus, pickupDateOf, pickupPlace, shipmentStatusLabel,
 } from './format'
 
 describe('shipment statuses', () => {
@@ -57,5 +57,21 @@ describe('pickup place', () => {
   })
   it('passes a shipment with no vendor through', () => {
     expect(pickupPlace({ origin_name: 'Pune hub', origin_address: 'Hadapsar' })).toEqual({ name: 'Pune hub', address: 'Hadapsar' })
+  })
+})
+
+describe('plateOf', () => {
+  const shipment = (stops: { status?: string; trip?: string }[]) => ({
+    delivery_points: [{ route_stops: stops.map(st => ({ status: st.status ?? 'pending', routes: { status: st.trip ?? 'planned', vehicles: { plate_number: 'MH04E2E0001' } } })) }],
+  }) as never
+
+  it('shows the plate of a live stop on a live trip', () => {
+    expect(plateOf(shipment([{}]))).toBe('MH04E2E0001')
+  })
+
+  it('shows no plate once the stop or the trip was cancelled (taken off its vehicle)', () => {
+    expect(plateOf(shipment([{ status: 'cancelled' }]))).toBeNull()
+    expect(plateOf(shipment([{ trip: 'cancelled' }]))).toBeNull()
+    expect(plateOf(shipment([{ status: 'cancelled' }, {}]))).toBe('MH04E2E0001')
   })
 })

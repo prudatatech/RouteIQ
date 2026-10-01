@@ -15,7 +15,8 @@ export default function NextStepBar({ step, action }: { step: NextStep; action?:
 
   return (
     <section aria-label="What's next" className="space-y-4 rounded-card border border-border bg-surface p-4 sm:p-6">
-      <div>
+      {/* A cancelled shipment has left the flow: no stage is "still to come" */}
+      {step.stage && <div>
         <p className="mb-2 flex items-center justify-between gap-3 text-xs text-muted sm:hidden">
           <span>{step.stage ? `Step ${currentIndex + 1} of ${FLOW_STAGES.length}` : 'Not in the flow'}</span>
           <span className="font-medium text-text">{stageLabel}</span>
@@ -34,7 +35,7 @@ export default function NextStepBar({ step, action }: { step: NextStep; action?:
             )
           })}
         </ol>
-      </div>
+      </div>}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
