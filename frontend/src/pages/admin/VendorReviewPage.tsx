@@ -6,10 +6,11 @@ import {
 } from '@/components/ui'
 import { isNotFoundError } from '@/utils/display'
 import { useReviewActions, useVendorReview } from '@/components/admin/vendor-review/useVendorReview'
+import { useDocumentViewer } from '@/components/admin/vendor-review/useDocumentViewer'
 import { AskMoreDetailsModal } from '@/components/admin/vendor-review/AskMoreDetailsModal'
 import {
   AccountSection, ActivitySection, BusinessSection, DocumentsSection, HistorySection, KycFormSection, RequestsSection,
-  StatusAlert, SummarySection, useDocumentViewer,
+  StatusAlert, SummarySection,
 } from '@/components/admin/vendor-review/ReviewSections'
 import type { VendorReview } from '@/components/admin/vendor-review/types'
 

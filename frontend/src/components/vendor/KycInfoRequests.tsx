@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { FileText, Upload } from 'lucide-react'
 import { vendorAPI } from '@/services/api'
@@ -7,29 +7,7 @@ import { uploadKycDocument } from '@/services/kycDocuments'
 import { Alert, Button, Card, FileButton, Textarea } from '@/components/ui'
 import { errorMessage } from '@/utils/display'
 import type { InfoAnswer, VendorKycRequest } from '@/components/admin/vendor-review/types'
-
-export const kycRequestsKey = ['vendor', 'kyc-requests'] as const
-
-/** The vendor's open asks from the review team. Empty while loading or when there are none. */
-export function useKycRequests(enabled: boolean) {
-  return useQuery({ queryKey: kycRequestsKey, queryFn: () => vendorAPI.kycRequests(), enabled, retry: false })
-}
-
-/** Answers that can be sent: every item has text or an uploaded document. Exported for the tests. */
-export function collectAnswers(request: VendorKycRequest, text: Record<string, string>, docs: Record<string, string>): InfoAnswer[] | null {
-  const answers: InfoAnswer[] = []
-  for (const item of request.items) {
-    if (item.kind === 'document') {
-      if (!docs[item.key]) return null
-      answers.push({ key: item.key, document_path: docs[item.key] })
-    } else {
-      const t = (text[item.key] ?? '').trim()
-      if (!t) return null
-      answers.push({ key: item.key, text: t })
-    }
-  }
-  return answers
-}
+import { collectAnswers, kycRequestsKey } from './kycRequests'
 
 function RequestForm({ request }: { request: VendorKycRequest }) {
   const queryClient = useQueryClient()

@@ -15,7 +15,8 @@ import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankB
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
-import { KycInfoRequests, useKycRequests } from '@/components/vendor/KycInfoRequests'
+import { KycInfoRequests } from '@/components/vendor/KycInfoRequests'
+import { useKycRequests } from '@/components/vendor/kycRequests'
 
 type KycStatus = 'pending' | 'submitted' | 'info_requested' | 'approved' | 'rejected'
 

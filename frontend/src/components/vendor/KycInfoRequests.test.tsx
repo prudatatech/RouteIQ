@@ -10,7 +10,8 @@ vi.mock('@/services/api', () => ({ vendorAPI: api }))
 vi.mock('@/services/supabase', () => ({ supabase: {} }))
 vi.mock('@/services/kycDocuments', () => ({ uploadKycDocument: upload }))
 
-import { KycInfoRequests, collectAnswers } from './KycInfoRequests'
+import { KycInfoRequests } from './KycInfoRequests'
+import { collectAnswers } from './kycRequests'
 
 const request: VendorKycRequest = {
   id: 'r1', message: 'Please help us verify', requested_at: '2026-09-11T00:00:00Z',

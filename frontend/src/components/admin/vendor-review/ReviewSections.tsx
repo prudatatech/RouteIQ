@@ -1,13 +1,11 @@
-import { useState, type ReactNode } from 'react'
-import toast from 'react-hot-toast'
+import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { Alert, Button, Card, DetailList, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
-import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
-import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { formatDateTime } from '@/utils/display'
 import { auditActionLabel } from '@/utils/auditLabels'
 import type { InfoRequest, KycFormView, VendorReview } from './types'
+import type { useDocumentViewer } from './useDocumentViewer'
 
 const given = (v: string | null | undefined) => (v && v.trim() ? v : 'Not given')
 const mono = (v: string | null | undefined) => (v && v.trim() ? <span className="font-mono break-all">{v}</span> : 'Not given')
@@ -122,24 +120,6 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
       </div>
     </Section>
   )
-}
-
-/** The documents list with a viewer; also used to open documents a vendor attached to an answer. */
-export function useDocumentViewer() {
-  const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
-  const [opening, setOpening] = useState<string | null>(null)
-  const open = async (label: string, path: string, key: string) => {
-    setOpening(key)
-    try {
-      setViewer({ url: await getKycDocumentUrl(path), name: label })
-    } catch {
-      toast.error('We could not open this document. Try again.')
-    } finally {
-      setOpening(null)
-    }
-  }
-  const modal = <DocumentViewerModal isOpen={!!viewer} onClose={() => setViewer(null)} fileUrl={viewer?.url ?? ''} fileName={viewer?.name ?? ''} />
-  return { open, opening, modal }
 }
 
 type Viewer = ReturnType<typeof useDocumentViewer>

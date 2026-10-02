@@ -8,8 +8,8 @@ export const MAX_REQUEST_ITEMS = 10
 interface Row { label: string; kind: 'text' | 'document'; hint: string }
 const blank = (): Row => ({ label: '', kind: 'text', hint: '' })
 
-/** Builds the payload, or says which rows are missing a label. Exported for the tests. */
-export function buildRequest(message: string, rows: Row[]): { ok: true; data: { message?: string; items: InfoRequestInput[] } } | { ok: false; error: string } {
+/** Builds the payload, or says which rows are missing a label. */
+function buildRequest(message: string, rows: Row[]): { ok: true; data: { message?: string; items: InfoRequestInput[] } } | { ok: false; error: string } {
   if (rows.length === 0) return { ok: false, error: 'Add at least one item to ask for.' }
   if (rows.length > MAX_REQUEST_ITEMS) return { ok: false, error: `Ask for at most ${MAX_REQUEST_ITEMS} items.` }
   if (rows.some(r => !r.label.trim())) return { ok: false, error: 'Give every item a name.' }
