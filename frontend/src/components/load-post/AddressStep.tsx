@@ -42,7 +42,13 @@ function Section({ side, draft, onChange, errors, notes }: {
   errors: StepErrors
   notes?: ReactNode
 }) {
-  const [place, setPlace] = useState<ResolvedPlace | null>(null)
+  // A restored draft keeps the chosen place's address and coordinates; show it in the picker straight away.
+  const [place, setPlace] = useState<ResolvedPlace | null>(() => {
+    const lat = draft[`${side}_lat`]
+    const lng = draft[`${side}_lng`]
+    const address = draft[`${side}_address`]
+    return typeof lat === 'number' && typeof lng === 'number' && address ? { address, lat, lng } : null
+  })
   const title = side === 'pickup' ? 'Pickup' : 'Delivery'
   const state = draft[`${side}_state_name`]
   usePinState(side, draft[`${side}_pincode`], draft[`${side}_state_code`], onChange)

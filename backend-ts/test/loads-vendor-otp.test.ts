@@ -40,6 +40,8 @@ describe('POST /auth/vendor/send-otp', () => {
 
   it('rejects an invalid phone and allows only three codes per 10 minutes', async () => {
     expect((await client().send('12')).status).toBe(400);
+    expect((await client().send('5876543210')).status).toBe(400);
+    expect((await client().send('+14155550100')).status).toBe(400);
     const c = client();
     for (let i = 0; i < 3; i++) expect((await c.send('9876500102')).status).toBe(200);
     expect((await c.send('9876500102')).status).toBe(429);

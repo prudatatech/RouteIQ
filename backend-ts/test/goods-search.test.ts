@@ -15,6 +15,23 @@ describe('HSN search', () => {
     expect(hits[0]).toMatchObject({ description: 'Portland cement, aluminous cement', gst_rates: [12, 28], category: 'construction', rate_note: '28% for bags over 25 kg' });
   });
 
+  it('does not pad "cement" with weak fuzzy hits', () => {
+    const padded = buildHsnIndex([
+      ...index.entries.map(e => ({ hsn_code: e.hsn_code, description: e.description, gst_rate: e.gst_rate, gst_rates: e.gst_rates, category: e.category, keywords: e.terms })),
+      { hsn_code: '2106', description: 'Food preparations not elsewhere specified or included', gst_rate: 18, category: 'food', keywords: ['cement mix', 'cemented'] },
+      { hsn_code: '4410', description: 'Particle board and similar board of wood', gst_rate: 18, category: 'wood', keywords: ['cemet board'] },
+    ]);
+    const hits = searchHsn(padded, 'cement').map(h => h.hsn_code);
+    expect(hits[0]).toBe('2523');
+    for (const weak of ['4410', '61']) expect(hits).not.toContain(weak);
+    expect(codes('cement')).not.toContain('61');
+  });
+
+  it('keeps typo tolerance when nothing matches properly', () => {
+    expect(codes('cemnt')).toContain('2523');
+    expect(codes('clothes')).toContain('61');
+  });
+
   it('maps everyday words to the master: "clothes" -> textiles 61 and 62', () => {
     const hits = codes('clothes');
     expect(hits).toContain('61');

@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { indianDateKey } from '../core/istDate';
 import { validPlace } from '../core/places';
+import { normalizeIndianMobile } from '../utils/phone';
 
 export const MAX_LOAD_ITEMS = 50;
 export const MAX_LOAD_TONNES = 60;
@@ -16,7 +17,13 @@ const optText = (max: number) => z.string().trim().max(max).optional().nullable(
 const pincode = (label: string) => z.string().trim().regex(/^\d{6}$/, `${label} pin code must be 6 digits`);
 const isoDate = (label: string) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, `${label} must be a date (YYYY-MM-DD)`)
   .refine(v => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), `${label} is not a real date`);
-const phoneField = z.string().trim().regex(/^\+?[0-9 -]{7,16}$/, 'Enter a valid phone number').optional().nullable().transform(v => v || null);
+/** An Indian mobile, stored as +91XXXXXXXXXX. Blank means none. */
+const phoneField = z.string().trim().optional().nullable().transform((v, ctx) => {
+  if (!v) return null;
+  const phone = normalizeIndianMobile(v);
+  if (!phone) ctx.addIssue({ code: 'custom', message: 'Enter a valid 10-digit Indian mobile number' });
+  return phone;
+});
 const num = (label: string) => z.number({ invalid_type_error: `${label} must be a number`, required_error: `Enter ${label}` });
 
 export const HANDLING = ['fragile', 'do_not_stack', 'this_side_up', 'hazmat', 'odc', 'temperature_controlled'] as const;

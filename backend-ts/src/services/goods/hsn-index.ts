@@ -1,7 +1,7 @@
 /**
  * margixindia — The HSN master in memory, and the layered fuzzy search over it.
  *
- * Ported from frontend/src/utils/hsnDatabase.ts. Layers, in order of weight: HSN code prefix, exact keyword,
+ * Ported from frontend/src/utils/hsnDatabase.ts. Exact matches (code, keyword, description word) win; typo and similar-spelling hits only show when none exist. Layers, in order of weight: HSN code prefix, exact keyword,
  * keyword starts-with, keyword contains, description word, description substring, Levenshtein typo tolerance and
  * bigram similarity. Hindi and everyday words ("clothes", "chawal") are expanded to the words the master uses
  * first. Nothing here needs pg_trgm. Up to 8 hits come back (PRD 3.2).
@@ -159,17 +159,22 @@ function expandTerms(raw: string[]): string[] {
   return [...new Set(out)];
 }
 
-function scoreEntry(e: HsnEntry, query: string, terms: string[], category?: string | null): number {
+/** A fuzzy-only hit this close to the best score is still worth showing. */
+const FUZZY_KEEP_RATIO = 0.75;
+
+/** `strong` is true when something matched exactly: a code prefix, a keyword or synonym, or a word of the description. Typo and bigram matches are weak. */
+function scoreEntry(e: HsnEntry, query: string, terms: string[], category?: string | null): { score: number; strong: boolean } {
   let score = 0;
-  if (e.hsn_code.startsWith(query)) score += 200;
+  let strong = false;
+  if (e.hsn_code.startsWith(query)) { score += 200; strong = true; }
 
   for (const term of terms) {
     if (term.length < 2) continue;
-    if (e.terms.some(k => k === term)) { score += 60; continue; }
-    if (e.terms.some(k => k.startsWith(term) || term.startsWith(k))) { score += 40; continue; }
-    if (e.terms.some(k => k.includes(term) || term.includes(k))) { score += 25; continue; }
-    if (e.descWords.some(w => w === term || w.startsWith(term))) { score += 20; continue; }
-    if (e.description.toLowerCase().includes(term)) { score += 12; continue; }
+    if (e.terms.some(k => k === term)) { score += 60; strong = true; continue; }
+    if (e.terms.some(k => k.startsWith(term) || term.startsWith(k))) { score += 40; strong = true; continue; }
+    if (e.terms.some(k => k.includes(term) || term.includes(k))) { score += 25; strong = true; continue; }
+    if (e.descWords.some(w => w === term || w.startsWith(term))) { score += 20; strong = true; continue; }
+    if (e.description.toLowerCase().includes(term)) { score += 12; strong = true; continue; }
     if (term.length >= 3) {
       const maxDist = term.length <= 4 ? 1 : 2;
       if (e.terms.some(k => Math.abs(k.length - term.length) <= maxDist && levenshtein(k, term) <= maxDist)) { score += 15; continue; }
@@ -181,7 +186,7 @@ function scoreEntry(e: HsnEntry, query: string, terms: string[], category?: stri
     }
   }
   if (score > 0 && category && e.category?.toLowerCase() === category.toLowerCase()) score += 25;
-  return score;
+  return { score, strong };
 }
 
 /** The best matches for what the customer typed, at most 8, best first. Two characters are enough for a code prefix. */
@@ -189,9 +194,13 @@ export function searchHsn(index: HsnIndex, query: string, category?: string | nu
   const q = (query ?? '').trim().toLowerCase();
   if (q.length < 2) return [];
   const terms = expandTerms(q.split(/\s+/));
-  return index.entries
-    .map(e => ({ e, score: scoreEntry(e, q, terms, category) }))
-    .filter(x => x.score > 0)
+  const scored = index.entries
+    .map(e => ({ e, ...scoreEntry(e, q, terms, category) }))
+    .filter(x => x.score > 0);
+  // Weak (typo or similar-spelling) hits never pad the list when something matched properly; they stay when nothing did
+  const best = Math.max(0, ...scored.filter(x => x.strong).map(x => x.score));
+  return scored
+    .filter(x => x.strong || best === 0 || x.score >= best * FUZZY_KEEP_RATIO)
     .sort((a, b) => b.score - a.score || a.e.hsn_code.localeCompare(b.e.hsn_code))
     .slice(0, MAX_HSN_HITS)
     .map(x => toHit(x.e));

@@ -168,6 +168,19 @@ describe('POST /vendor/loads', () => {
     expect(supabaseMock.rpcCalls).toHaveLength(0);
   });
 
+  it('stores contact phones as +91XXXXXXXXXX and refuses anything that is not an Indian mobile', async () => {
+    const res = await post(draft({ pickup_contact_phone: '098765-43210', delivery_contact_phone: '91 98765 43211' }));
+    expect(res.status).toBe(201);
+    const { load } = supabaseMock.rpcCalls.filter(c => c.name === 'create_vendor_load')[0].args.p;
+    expect(load.pickup_contact_phone).toBe('+919876543210');
+    expect(load.delivery_contact_phone).toBe('+919876543211');
+    for (const bad of ['1234567', '5876543210', '98765', '+1 415 555 0100', 'abcdefghij']) {
+      const r = await post(draft({ pickup_contact_phone: bad }));
+      expect(r.status, bad).toBe(400);
+      expect(r.body.error).toMatch(/10-digit Indian mobile/);
+    }
+  });
+
   it('is for vendors only', async () => {
     expect((await post(draft(), as('driver-a'))).status).toBe(403);
     expect((await request(app).post(api('/vendor/loads')).send(draft())).status).toBe(401);

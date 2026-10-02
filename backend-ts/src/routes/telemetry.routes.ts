@@ -4,6 +4,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
+import { assertDispatchReady } from '../services/documents/dispatch-guard';
 import { requireAuth, requireRole } from '../core/auth';
 import { OWNED, scopeQuery } from '../core/org-scope';
 import { carrierOf, carrierOfVehicle, guardVehicle } from '../core/org-guards';
@@ -992,6 +993,8 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
       let firstTime = false;
       if (manifest.status !== target) {
         if (!isPickup && manifest.status === 'scheduled') throw new HttpError(409, 'Complete the pickup before the drop.');
+        // The goods leave here: a company that blocks dispatch on missing documents holds the pickup until they are in order
+        if (isPickup && manifest.vendor_request_id) await assertDispatchReady(manifest.vendor_request_id);
         const result = await recordCustody(
           { manifest_id: manifestId },
           isPickup ? { kind: 'pickup', pieces: pieces ?? null, condition, seal_number: req.body?.seal_number ?? null, lat: lat ?? null, lng: lng ?? null, notes: noteText } : custodyInput,
