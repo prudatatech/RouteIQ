@@ -19,6 +19,8 @@ import { rateDelivery } from '../services/driver-performance.service';
 import { getProofOfDelivery } from '../services/pod.service';
 import { isPlaceholderPlate } from '../core/vehicles';
 import { assertShipmentVisible, shipmentOverview } from '../services/shipment-overview.service';
+import { OWNED, scopeQuery } from '../core/org-scope';
+import { assertVehicleVisible, guardShipment } from '../core/org-guards';
 
 const router = Router();
 
@@ -131,7 +133,7 @@ router.get('/:shipment_id', requireAuth, async (req: Request, res: Response) => 
 });
 
 // ── PUT /:shipment_id/metadata ─────────────────────────────
-router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
+router.put('/:shipment_id/metadata', requireAuth, requireRole('superadmin', 'admin'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const metadata = req.body;
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
@@ -227,7 +229,7 @@ router.patch('/:shipment_id', requireAuth, async (req: Request, res: Response) =
 // who made each change (when known) and a short note. See
 // ShipmentTracker's public tracking response for the customer-safe cut.
 // POST /:shipment_id/rating — staff rate the driver after delivery (1 to 5, optional note)
-router.post('/:shipment_id/rating', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.post('/:shipment_id/rating', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const { rating, note } = req.body ?? {};
     res.json(await rateDelivery(req.params.shipment_id, Number(rating), typeof note === 'string' ? note : null, req.user!.user_id));
@@ -236,7 +238,7 @@ router.post('/:shipment_id/rating', requireAuth, requireRole('superadmin', 'admi
   }
 });
 
-router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), guardShipment(), async (req: Request, res: Response) => {
   try {
     const events = await ShipmentService.getShipmentHistory(req.params.shipment_id);
     if (!events) {
@@ -251,7 +253,7 @@ router.get('/:shipment_id/history', requireAuth, requireRole(...STAFF_ROLES), as
 
 // ── GET /:shipment_id/proof — receiver, delivery photo and signature (staff) ──
 // The photo and signature come back as signed links that stop working after 10 minutes.
-router.get('/:shipment_id/proof', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.get('/:shipment_id/proof', requireAuth, requireRole(...STAFF_ROLES), guardShipment(), async (req: Request, res: Response) => {
   try {
     const proof = await getProofOfDelivery(req.params.shipment_id);
     if (!proof) {
@@ -289,7 +291,7 @@ router.get('/:shipment_id/verify', requireAuth, async (req: Request, res: Respon
 });
 
 // ── DELETE /:shipment_id ───────────────────────────────────
-router.delete('/:shipment_id', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.delete('/:shipment_id', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const success = await ShipmentService.deleteShipment(req.params.shipment_id);
     if (!success) {
@@ -303,7 +305,7 @@ router.delete('/:shipment_id', requireAuth, requireRole('superadmin', 'admin', '
 });
 
 // ── PATCH /:shipment_id/edit ───────────────────────────────
-router.patch('/:shipment_id/edit', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.patch('/:shipment_id/edit', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const parsed = ShipmentEditSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -322,7 +324,7 @@ router.patch('/:shipment_id/edit', requireAuth, requireRole('superadmin', 'admin
 });
 
 // ── GET /:shipment_id/assign-options ───────────────────────
-router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const mode = req.query.mode as string;
     const shipment = await ShipmentService.getShipment(req.params.shipment_id);
@@ -332,7 +334,7 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
     }
 
     // Vehicles that take part in dispatch (not in maintenance or archived), never a TEMP-/DRFT- placeholder
-    const { data: vehicles, error } = await supabase.from('vehicles').select('*').in('status', [...OPERATING_VEHICLE_STATUSES]);
+    const { data: vehicles, error } = await scopeQuery(supabase.from('vehicles').select('*'), OWNED.carrier).in('status', [...OPERATING_VEHICLE_STATUSES]);
     if (error) throw error;
 
     let options = (vehicles || []).filter((v: any) => !isPlaceholderPlate(v.plate_number));
@@ -368,13 +370,15 @@ router.get('/:shipment_id/assign-options', requireAuth, requireRole('superadmin'
 });
 
 // ── POST /:shipment_id/assign ──────────────────────────────
-router.post('/:shipment_id/assign', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.post('/:shipment_id/assign', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardShipment(), async (req: Request, res: Response) => {
   try {
     const { vehicle_id, dispatch } = req.body;
     if (!vehicle_id) {
       res.status(400).json({ detail: 'vehicle_id is required' });
       return;
     }
+    // The vehicle must be the company's too
+    await assertVehicleVisible(vehicle_id);
     const shipment = await ShipmentService.assignDriver(req.params.shipment_id, vehicle_id, { id: req.user!.user_id, role: req.user!.role }, { dispatch: dispatch === true });
     if (!shipment) {
       res.status(404).json({ detail: 'Shipment not found or could not be assigned' });

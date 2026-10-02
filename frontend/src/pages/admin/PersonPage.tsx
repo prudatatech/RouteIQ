@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { Mail, Pencil, RotateCcw, ShieldAlert, UserCog } from 'lucide-react'
 import { peopleAPI, usersAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import {
   Alert, Button, buttonClasses, Card, DetailList, EmptyState, ErrorState, Modal, Page, PageHeader, Select, Skeleton, StatusPill, Tabs, TabPanel,
   useConfirm, useTabParam, type TabItem,
@@ -67,7 +68,7 @@ function PersonView({ detail }: { detail: PersonDetail }) {
   const { user, profile, documents } = detail
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
-  const myRole = useAuthStore(s => s.role)
+  const myRole = useEffectiveRole().role
   const myId = useAuthStore(s => s.userId)
   const canAdmin = myRole === 'admin' || myRole === 'superadmin'
   const isSuper = myRole === 'superadmin'

@@ -1,6 +1,8 @@
 import { Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
+import { useEffectiveRole } from '@/store/effectiveRole'
+import { roleCanOpen } from '@/utils/effectiveRole'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
@@ -18,11 +20,12 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, vendorInvoices,
-  vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
+  ship, vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
+import { OrgGuard } from '@/components/OrgGuard'
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -42,6 +45,9 @@ const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
 const SettingsPage = adminSettings.Component
 const OrganisationPage = adminOrganisation.Component
+const PlatformOrganisationsPage = platformOrganisations.Component
+const RegisterCompanyPage = registerCompany.Component
+const WaitingForApprovalPage = waitingForApproval.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
@@ -62,6 +68,7 @@ const TplDashboardPage = tplDashboard.Component
 const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
 const VehicleSharePage = vehicleShare.Component
+const ShipPage = ship.Component
 const VendorLoadsPage = vendorLoads.Component
 const VendorLoadPage = vendorLoad.Component
 const VendorClaimsPage = vendorClaims.Component
@@ -159,12 +166,13 @@ function BlockedRedirect({ to, from }: { to: string; from: string }) {
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const location = useLocation()
   const token = useAuthStore(s => s.token)
-  const role = useAuthStore(s => s.role)
+  const { role, ready: orgsReady } = useEffectiveRole()
   const authInitialized = useAuthStore(s => s.authInitialized)
 
   // Supabase's session (and this store) haven't finished restoring yet — e.g. a hard
   // reload of a deep link. Show a spinner instead of bouncing to /login prematurely.
-  if (!authInitialized) {
+  // Also wait for a signed-in person's organisations: their role is the one they hold in the active organisation
+  if (!authInitialized || (token && !orgsReady)) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-bg">
         <Spinner size={32} />
@@ -180,7 +188,7 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   }
 
   // If this route is restricted to certain roles
-  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+  if (!roleCanOpen(role, allowedRoles)) {
     const home = homeForRole(role)
     // Accounts with no area in the web app (no role, customers) would
     // otherwise bounce between redirects forever.
@@ -267,6 +275,9 @@ export default function App() {
         <ChunkErrorBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
+          <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
+          <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
           <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
@@ -293,9 +304,7 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="request" element={
-              <PrivateRoute allowedRoles={['vendor']}>
-                <VendorShipmentRequestPage />
-              </PrivateRoute>
+              <VendorShipmentRequestPage />
             } />
             <Route path="return-trips" element={<VendorCorridorPage />} />
             <Route path="invoices" element={
@@ -325,6 +334,10 @@ export default function App() {
             <Route path="tracking" element={<KeepQuery to="/vendor/loads" />} />
           </Route>
 
+          {/* Find a truck: public, so a visitor can search a lane before any account */}
+          <Route path="/ship" element={<VendorLayout />}>
+            <Route index element={<ShipPage />} />
+          </Route>
           <Route path="/vendor/login" element={<VendorLoginRedirect />} />
 
           {/* 3PL Public/Partner Routes */}
@@ -344,7 +357,9 @@ export default function App() {
 
           <Route element={
             <PrivateRoute>
-              <AppLayout />
+              <OrgGuard>
+                <AppLayout />
+              </OrgGuard>
             </PrivateRoute>
           }>
             <Route path="today" element={
@@ -465,6 +480,13 @@ export default function App() {
                 <OrganisationPage />
               </PrivateRoute>
             } />
+            {/* Platform owner only: OrgGuard sends anyone else back to Today */}
+            <Route path="platform/organisations" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <PlatformOrganisationsPage />
+              </PrivateRoute>
+            } />
+            <Route path="platform" element={<MovedTo to="/platform/organisations" />} />
             <Route path="admin/users" element={
               <PrivateRoute allowedRoles={OPERATIONS}>
                 <UsersPage />

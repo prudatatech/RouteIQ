@@ -27,6 +27,7 @@ import {
   addAttachments, AttachmentInputSchema, dateOnly, recordService, ServiceItemSchema, type AttachmentRow,
 } from './service-records.service';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const MAINTENANCE_REASONS = ['scheduled_service', 'breakdown', 'accident', 'tyre', 'other'] as const;
 export type MaintenanceReason = typeof MAINTENANCE_REASONS[number];
@@ -156,7 +157,7 @@ export function decorateJob<T extends { status: string; opened_at: string; expec
 }
 
 export async function listJobs(filter: { status?: 'open' | 'closed'; vehicleId?: string; limit?: number } = {}) {
-  let q = supabase.from('vehicle_maintenance_jobs').select(JOB_COLUMNS).order('opened_at', { ascending: false }).limit(filter.limit ?? 100);
+  let q = scopeQuery(supabase.from('vehicle_maintenance_jobs').select(JOB_COLUMNS), OWNED.carrier).order('opened_at', { ascending: false }).limit(filter.limit ?? 100);
   if (filter.status) q = q.eq('status', filter.status);
   if (filter.vehicleId) q = q.eq('vehicle_id', filter.vehicleId);
   const { data, error } = await q;
@@ -200,7 +201,7 @@ type Actor = { id: string; role: string };
 
 export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSchema>, actor: Actor) {
   const { data: vehicle, error: vErr } = await supabase
-    .from('vehicles').select('id, plate_number, status, driver_id, odometer_km').eq('id', vehicleId).maybeSingle();
+    .from('vehicles').select('id, plate_number, status, driver_id, odometer_km, carrier_org_id').eq('id', vehicleId).maybeSingle();
   if (vErr) throw vErr;
   if (!vehicle) throw new HttpError(404, 'Vehicle not found');
   if (vehicle.status === 'archived') throw new HttpError(409, 'This vehicle is archived. Restore it first.');
@@ -260,7 +261,8 @@ export async function openJob(vehicleId: string, input: z.infer<typeof OpenJobSc
   const { data: job, error } = await supabase
     .from('vehicle_maintenance_jobs')
     .insert({
-      ...carrierStamp(),
+      // The company that runs the vehicle owns its job, whoever opens it
+      ...(vehicle.carrier_org_id ? { carrier_org_id: vehicle.carrier_org_id } : carrierStamp()),
       vehicle_id: vehicleId,
       status: 'open',
       reason_type: input.reason_type,

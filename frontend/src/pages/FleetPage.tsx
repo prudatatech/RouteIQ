@@ -9,7 +9,7 @@ import {
   Tabs, TabPanel, VehicleCell, humanize, parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column, type TabItem,
 } from '@/components/ui'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { supabase, openChannel } from '@/services/supabase'
 import VehicleWizardModal from '@/components/fleet/VehicleWizardModal'
 import { downloadCsv, toCsv } from '@/utils/csv'
@@ -75,7 +75,7 @@ interface AllocatedShipment {
 const ALLOCATED_STATUSES = new Set(['assigned', 'picked_up', 'in_transit', 'out_for_delivery', 'partially_delivered', 'on_hold', 'returning'])
 
 export default function FleetPage() {
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const navigate = useNavigate()
   const { confirm } = useConfirm()
   const queryClient = useQueryClient()

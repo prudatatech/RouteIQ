@@ -2,6 +2,7 @@
  * margixindia — Shipment Service
  * Ports: backend/app/services/shipment_service.py
  */
+import { carrierOfVehicle } from '../core/org-guards';
 import { assertDriverDispatchable } from './people-docs.service';
 import { HttpError } from '../core/errors';
 import { v4 as uuidv4 } from 'uuid';
@@ -381,10 +382,11 @@ export class ShipmentService {
    * must be in service, be the type the load asks for, and have room for it.
    */
   static async assertVehicleCanTake(vehicleId: string, weightKg: number, requiredType?: string | null, excludeShipmentId?: string, requireDriver = false): Promise<void> {
-    const { data: vehicle } = await supabase
+    // Another company's vehicle is a 404, the same as one that does not exist
+    const { data: vehicle } = await scopeQuery(supabase
       .from('vehicles')
       .select('id, status, plate_number, driver_id, vehicle_type, capacity_kg')
-      .eq('id', vehicleId)
+      .eq('id', vehicleId), OWNED.carrier)
       .maybeSingle();
     if (!vehicle) throw new HttpError(404, 'Vehicle not found');
     if (requireDriver && !vehicle.driver_id) {
@@ -733,8 +735,10 @@ export class ShipmentService {
       // Create new route, pending until it is dispatched below
       routeId = uuidv4();
       routeStatus = 'pending';
+      // The company that runs the vehicle owns the trip, whoever assigns it
+      const vehicleOwner = await carrierOfVehicle(vehicleId);
       const { error: routeErr } = await supabase.from('routes').insert({
-        ...carrierStamp(),
+        ...(vehicleOwner ? { carrier_org_id: vehicleOwner } : carrierStamp()),
         id: routeId,
         vehicle_id: vehicleId,
         status: 'pending',

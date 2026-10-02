@@ -7,6 +7,7 @@
  * partner to accept gets an order (the rest see "taken") -> the partner moves the
  * order to picked up, in transit and delivered -> staff rate it and mark it paid.
  */
+import { carrierOf } from '../core/org-guards';
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
@@ -567,7 +568,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner accepted a load',
         `${partner.company_name} accepted ${shortPlace(offer.pickup_location)} to ${shortPlace(offer.drop_location)} at ${inr(amount)}.`,
-        'tpl_order_accepted', { order_id: order.id, partner_id: partner.id, [col]: sourceId });
+        'tpl_order_accepted', { order_id: order.id, partner_id: partner.id, [col]: sourceId }, await carrierOf('tpl_orders', order.id));
       if (sourceType === 'request') {
         const { data: r } = await supabase.from('vendor_shipment_requests').select('vendor_id').eq('id', sourceId).maybeSingle();
         if (r?.vendor_id) {
@@ -602,7 +603,7 @@ export const tplNetworkService = {
     try {
       await notificationService.notifyStaff('3PL partner declined a load',
         `${partner.company_name} declined ${shortPlace(declined.pickup_location)} to ${shortPlace(declined.drop_location)}: ${reason}`,
-        'tpl_offer_declined', { offer_id: offerId, partner_id: partner.id });
+        'tpl_offer_declined', { offer_id: offerId, partner_id: partner.id }, await carrierOf('tpl_offers', offerId));
     } catch (e) {
       console.error('[tpl-network] Decline notification failed:', e);
     }
@@ -673,7 +674,7 @@ export const tplNetworkService = {
       const label = next === 'picked_up' ? 'picked up' : next === 'in_transit' ? 'in transit' : 'delivered';
       await notificationService.notifyStaff(`3PL order ${label}`,
         `${partner.company_name}: ${shortPlace(order.pickup_location)} to ${shortPlace(order.drop_location)} is ${label}.`,
-        'tpl_order_status', { order_id: orderId, partner_id: partner.id });
+        'tpl_order_status', { order_id: orderId, partner_id: partner.id }, await carrierOf('tpl_orders', orderId));
     } catch (e) {
       console.error('[tpl-network] Order follow-up failed:', e);
     }

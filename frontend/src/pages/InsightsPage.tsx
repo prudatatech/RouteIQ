@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CloudOff, Moon, Route as RouteIcon } from 'lucide-react'
 import { analyticsAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { pluralize } from '@/utils/display'
 import {
   Button, Card, CardBody, CardHeader, DataTable, EmptyState, ErrorState, Page, PageHeader, Skeleton, Stat, StatusPill, buttonClasses,
@@ -224,7 +224,7 @@ function DemandSection({ query }: { query: { data?: Demand; isLoading: boolean; 
 
 /** Live incidents from traffic monitoring on the roads active routes use. */
 function TrafficIncidentsCard() {
-  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
   const incidents = useQuery({ queryKey: ['traffic', 'incidents'], queryFn: () => trafficAPI.incidents(), refetchInterval: 120_000 })
   const list = incidents.data?.incidents ?? []
 

@@ -29,4 +29,11 @@ describe('destinationFor', () => {
   it('always sends a vendor with no company to set it up first', () => {
     expect(destinationFor({ ...vendor, hasVendorProfile: false }, '/vendor/claims')).toBe('/vendor/onboarding')
   })
+
+  it('takes a new vendor back to the load or bid they started before signing up', () => {
+    const fresh = { ...vendor, hasVendorProfile: false }
+    expect(destinationFor(fresh, '/vendor/request?resume=1')).toBe('/vendor/request?resume=1')
+    expect(destinationFor(fresh, '/vendor/return-trips?bid=w1&resume=1')).toBe('/vendor/return-trips?bid=w1&resume=1')
+    expect(destinationFor(fresh, '/vendor/request')).toBe('/vendor/onboarding')
+  })
 })

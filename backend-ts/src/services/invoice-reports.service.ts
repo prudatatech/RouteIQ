@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { supabase } from '../core/supabase';
+import { OWNED, isScoped, scopeQuery } from '../core/org-scope';
 import { HttpError } from '../core/errors';
 import { consumeRateLimit } from '../core/rate-limit';
 import { indianDateKey } from '../core/istDate';
@@ -61,7 +62,7 @@ const shape = (r: any): InvoiceReport => ({ ...r, amount: r.amount != null ? Num
 
 async function loadInvoice(id: string): Promise<InvoiceRecord> {
   if (!UUID.test(id)) throw new HttpError(404, 'Invoice not found');
-  const { data, error } = await supabase.from('invoices').select(INVOICE_COLUMNS).eq('id', id).maybeSingle();
+  const { data, error } = await scopeQuery(supabase.from('invoices').select(INVOICE_COLUMNS).eq('id', id), OWNED.invoice).maybeSingle();
   if (error) throw new Error(`Failed to read invoice: ${error.message}`);
   if (!data) throw new HttpError(404, 'Invoice not found');
   return data as unknown as InvoiceRecord;
@@ -145,8 +146,23 @@ export async function listCustomerReports(customerId: string, invoiceId?: string
 
 // ── Staff ──────────────────────────────────────────────────
 
+/** The reports a company may see are those on its own invoices: the report has no owner column of its own. */
+async function visibleInvoiceIds(ids: string[]): Promise<Set<string>> {
+  const rows = await selectIn<{ id: string }>('invoices', 'id', ids, 'id', q => scopeQuery(q, OWNED.invoice));
+  return new Set(rows.map(r => r.id));
+}
+
 /** Open reports waiting for staff: how many, and how many are payments. */
 export async function openReportCounts(): Promise<{ open: number; payments: number; queries: number }> {
+  if (isScoped(OWNED.invoice)) {
+    const { data, error } = await supabase.from('invoice_payment_reports').select('invoice_id, kind').eq('status', 'open');
+    if (error) throw new Error(`Failed to count reports: ${error.message}`);
+    const mine = await visibleInvoiceIds((data ?? []).map((r: any) => r.invoice_id));
+    const own = (data ?? []).filter((r: any) => mine.has(r.invoice_id));
+    const payments = own.filter((r: any) => r.kind === 'payment').length;
+    const queries = own.filter((r: any) => r.kind === 'query').length;
+    return { open: payments + queries, payments, queries };
+  }
   const count = async (kind?: string) => {
     let q = supabase.from('invoice_payment_reports').select('id', { count: 'exact', head: true }).eq('status', 'open');
     if (kind) q = q.eq('kind', kind);
@@ -167,7 +183,11 @@ export async function listReports(filter: { status?: string; kind?: string; invo
   q = q.order('created_at', { ascending: filter.status === 'open' });
   const { data, error } = await q;
   if (error) throw new Error(`Failed to list reports: ${error.message}`);
-  const rows = (data ?? []).map(shape);
+  let rows = (data ?? []).map(shape);
+  if (isScoped(OWNED.invoice)) {
+    const mine = await visibleInvoiceIds(rows.map(r => r.invoice_id));
+    rows = rows.filter(r => mine.has(r.invoice_id));
+  }
   const [invoices, customers] = await Promise.all([
     selectIn<any>('invoices', 'id', rows.map(r => r.invoice_id), 'id, invoice_number, total, amount, status'),
     selectIn<any>('customers', 'id', rows.map(r => r.customer_id), 'id, full_name, company_name, phone'),
@@ -189,6 +209,8 @@ async function loadReport(id: string): Promise<InvoiceReport> {
   const { data, error } = await supabase.from('invoice_payment_reports').select(REPORT_COLUMNS).eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read report: ${error.message}`);
   if (!data) throw new HttpError(404, 'Report not found');
+  // A report on another company's invoice is the same 404 as a missing one
+  if (isScoped(OWNED.invoice) && !(await visibleInvoiceIds([data.invoice_id])).size) throw new HttpError(404, 'Report not found');
   return shape(data);
 }
 

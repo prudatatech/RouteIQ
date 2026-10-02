@@ -17,7 +17,7 @@ import {
 } from '@/components/ui'
 import { formatKg, formatKm, formatMinutes } from '@/utils/display'
 import { isFleetVehicle } from '@/utils/vehicles'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import {
   MAX_STOPS, applyOrder, describeSaving, formatArrival, googleMapsUrl, isoToIstInput, loadWeightOfStops, pickupDropWarning, planText, pointTimes,
   requestKey, routingErrorMessage, sectionMidpoint, shortName, tagRoutes, toPlanRequest, truckProfileText, type PlannerInput, type PlannerStop,
@@ -108,7 +108,7 @@ export default function RoutePlannerPage({ embedded = false, onCreated }: { embe
   const times = selected && fresh ? pointTimes(fresh.departure_at, selected.legs) : []
   const orderWarning = pickupDropWarning(stops)
   const laterInvalid = departLater && departLocal !== '' && Date.parse(`${departLocal}:00+05:30`) < Date.now() - 60_000
-  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
   const routingUnavailable = statusQ.data ? !statusQ.data.available : false
 
   // ── Actions ──

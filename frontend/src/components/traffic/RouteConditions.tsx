@@ -4,7 +4,7 @@ import { describeIncident } from '@/utils/traffic'
 import { Card, EmptyState, ErrorState, Skeleton, StatusPill } from '@/components/ui'
 import { useRouteIncidents, useRouteWeather } from './hooks'
 import { formatKm } from '@/utils/display'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 
 const SEVERITY_LABEL = ['Unknown delay', 'Minor delay', 'Moderate delay', 'Major delay', 'Road closed or major delay']
 
@@ -16,7 +16,7 @@ export default function RouteConditions({ routeId }: { routeId: string }) {
   const weather = useRouteWeather(routeId)
   const w = weather.data
   // Server-key instructions are for the superadmin; everyone else gets a plain line or nothing.
-  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
 
   return (
     <Card padded className="space-y-5">

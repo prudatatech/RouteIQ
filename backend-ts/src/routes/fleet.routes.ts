@@ -4,12 +4,14 @@
  * Service schedules and log, odometer correction, health scores, and the alarms list.
  * Alarms come from the telematics webhook and the rules in services/alerts.service.ts.
  */
+import { memberOrgId } from '../core/org-scope';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { cacheDeletePattern } from '../core/redis';
 import { STAFF_ROLES } from '../core/ownership';
+import { guardOfVehicle, guardOwned, guardVehicle } from '../core/org-guards';
 import { HttpError, sendError } from '../core/errors';
 import {
   acknowledgeAlert, alertSummary, listAlerts, resolveAlert, ALERT_META,
@@ -31,6 +33,8 @@ import maintenanceRoutes from './fleet-maintenance.routes';
 const router = Router();
 router.use(maintenanceRoutes);
 const staff = [requireAuth, requireRole(...STAFF_ROLES)] as const;
+// Work on one vehicle: another company's is a 404
+const staffVehicle = [...staff, guardVehicle('id')] as const;
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the date format YYYY-MM-DD');
 const optionalNumber = (label: string, opts: { int?: boolean; positive?: boolean } = {}) => {
@@ -73,7 +77,7 @@ router.get('/health', ...staff, async (req: Request, res: Response) => {
 });
 
 // GET /fleet/vehicles/:id/health — one vehicle with the full breakdown
-router.get('/vehicles/:id/health', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/health', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const [health] = await loadFleetHealth(req.params.id);
     if (!health) throw new HttpError(404, 'Vehicle not found');
@@ -86,7 +90,7 @@ router.get('/vehicles/:id/health', ...staff, async (req: Request, res: Response)
 // ── Location, activity and live-location links ───────────
 
 // GET /fleet/vehicles/:id/location — current position with speed, heading, accuracy and last seen
-router.get('/vehicles/:id/location', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/location', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     res.json(await getVehicleLocation(req.params.id));
   } catch (e) {
@@ -95,7 +99,7 @@ router.get('/vehicles/:id/location', ...staff, async (req: Request, res: Respons
 });
 
 // GET /fleet/vehicles/:id/activity — carrying (which load, from where to where, % full), idle (since when) or offline
-router.get('/vehicles/:id/activity', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/activity', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     res.json(await getVehicleActivity(req.params.id));
   } catch (e) {
@@ -104,7 +108,7 @@ router.get('/vehicles/:id/activity', ...staff, async (req: Request, res: Respons
 });
 
 // POST /fleet/vehicles/:id/share-links — a public, read-only live-location link that expires
-router.post('/vehicles/:id/share-links', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/share-links', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const parsed = z.object({
       hours: z.number({ invalid_type_error: 'Hours must be a number' }).int('Hours must be a whole number')
@@ -119,7 +123,7 @@ router.post('/vehicles/:id/share-links', ...staff, async (req: Request, res: Res
 });
 
 // GET /fleet/vehicles/:id/share-links — links that still work
-router.get('/vehicles/:id/share-links', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/share-links', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     res.json(await listShareLinks(req.params.id));
   } catch (e) {
@@ -128,7 +132,7 @@ router.get('/vehicles/:id/share-links', ...staff, async (req: Request, res: Resp
 });
 
 // DELETE /fleet/share-links/:linkId — stop sharing
-router.delete('/share-links/:linkId', ...staff, async (req: Request, res: Response) => {
+router.delete('/share-links/:linkId', ...staff, guardOfVehicle('vehicle_share_links', 'linkId', 'This link is already closed or does not exist'), async (req: Request, res: Response) => {
   try {
     if (!(await revokeShareLink(req.params.linkId))) throw new HttpError(404, 'This link is already closed or does not exist');
     res.json({ success: true });
@@ -141,7 +145,7 @@ router.delete('/share-links/:linkId', ...staff, async (req: Request, res: Respon
 
 // PUT /fleet/vehicles/:id/odometer — staff enter the dashboard reading; GPS keeps adding to it.
 // A reading lower than the current one is refused unless `correction_reason` says why.
-router.put('/vehicles/:id/odometer', ...staff, async (req: Request, res: Response) => {
+router.put('/vehicles/:id/odometer', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const parsed = z.object({
       odometer_km: z.number({ invalid_type_error: 'Enter the odometer reading in km' }).min(0).max(9_999_999),
@@ -170,7 +174,7 @@ const PlanSchema = z.object({
 }).refine(p => p.interval_km != null || p.interval_days != null, { message: 'Set how often it is due: every some km, every some days, or both' });
 
 // GET /fleet/vehicles/:id/service-plans — items with their current status
-router.get('/vehicles/:id/service-plans', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/service-plans', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const vehicle = await requireVehicle(req.params.id);
     const plans = await loadPlans([vehicle.id]);
@@ -182,7 +186,7 @@ router.get('/vehicles/:id/service-plans', ...staff, async (req: Request, res: Re
 });
 
 // POST /fleet/vehicles/:id/service-plans — add or change an item (one plan per item)
-router.post('/vehicles/:id/service-plans', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/service-plans', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const parsed = PlanSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
@@ -209,7 +213,7 @@ router.post('/vehicles/:id/service-plans', ...staff, async (req: Request, res: R
 });
 
 // DELETE /fleet/service-plans/:planId
-router.delete('/service-plans/:planId', ...staff, async (req: Request, res: Response) => {
+router.delete('/service-plans/:planId', ...staff, guardOfVehicle('vehicle_service_plans', 'planId', 'Service item not found'), async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase.from('vehicle_service_plans').delete().eq('id', req.params.planId).select('id');
     if (error) throw error;
@@ -237,7 +241,7 @@ router.get('/service-due', ...staff, async (req: Request, res: Response) => {
 // ── Service log ────────────────────────────────────────────
 
 // GET /fleet/vehicles/:id/service-log — newest first, each record with its items and attachments
-router.get('/vehicles/:id/service-log', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/service-log', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     await requireVehicle(req.params.id);
     res.json(await listServiceLog(req.params.id));
@@ -249,7 +253,7 @@ router.get('/vehicles/:id/service-log', ...staff, async (req: Request, res: Resp
 // POST /fleet/vehicles/:id/service-log — record a service (what was done, date, odometer, cost, workshop,
 // and optionally parts, labour and attachments). Moves the covered items' baseline forward, raises the
 // odometer if the reading is higher, and records a maintenance expense when there is a cost.
-router.post('/vehicles/:id/service-log', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/service-log', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const parsed = ServiceRecordSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
@@ -284,7 +288,7 @@ router.get('/alerts/summary', ...staff, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/alerts/:id/acknowledge', ...staff, async (req: Request, res: Response) => {
+router.post('/alerts/:id/acknowledge', ...staff, guardOwned('maintenance_alerts', 'id', 'Alert not found'), async (req: Request, res: Response) => {
   try {
     const result = await acknowledgeAlert(req.params.id, req.user!.user_id);
     if (result === 'not_found') throw new HttpError(404, 'Alert not found');
@@ -295,7 +299,7 @@ router.post('/alerts/:id/acknowledge', ...staff, async (req: Request, res: Respo
   }
 });
 
-router.post('/alerts/:id/resolve', ...staff, async (req: Request, res: Response) => {
+router.post('/alerts/:id/resolve', ...staff, guardOwned('maintenance_alerts', 'id', 'Alert not found'), async (req: Request, res: Response) => {
   try {
     const result = await resolveAlert(req.params.id, req.user!.user_id);
     if (result === 'not_found') throw new HttpError(404, 'Alert not found');
@@ -318,8 +322,10 @@ router.get('/alert-settings', ...staff, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/alert-settings', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
+router.put('/alert-settings', requireAuth, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
   try {
+    // A company's admins set its own thresholds; the platform default stays with the platform
+    if (req.user!.role !== 'superadmin' && !memberOrgId()) throw new HttpError(403, 'Only the platform can change the default alert settings');
     const patch: Record<string, number> = {};
     for (const field of THRESHOLD_FIELDS) {
       const raw = req.body?.[field];

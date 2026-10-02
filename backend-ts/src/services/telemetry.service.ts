@@ -126,7 +126,7 @@ export class TelemetryService {
     await wsManager.broadcast({
       type: 'TELEMETRY_UPDATE',
       data: liveData,
-    });
+    }, (vehicle as { carrier_org_id?: string | null }).carrier_org_id);
 
     // 6. Alarm rules (overspeed, low fuel) against the thresholds in system_settings
     await evaluatePing(

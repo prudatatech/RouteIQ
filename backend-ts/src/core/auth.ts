@@ -27,6 +27,8 @@ export type TokenSource = 'supabase' | 'backend';
 export interface TokenData {
   user_id: string;
   role: string;
+  /** `users.role` as stored, when `role` has been replaced by the role the active organisation grants. */
+  base_role?: string;
   source: TokenSource;
 }
 
@@ -291,6 +293,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     // Which organisation the caller acts for (X-Org-Id, else their only or first company)
     const ctx = await attachOrgContext(req, req.user.user_id, req.user.role);
+    // From here on every role check (req.user.role, requireRole, ownership) sees the role the membership grants.
+    // Phone-OTP drivers (backend tokens) keep the role the server issued.
+    if (req.user.source === 'supabase') {
+      req.user = { ...req.user, base_role: req.user.role, role: ctx.appRole };
+    }
     // A suspended or rejected organisation can still see itself (/org, /orgs) but does no work
     if (isOrgBlocked(ctx) && !req.originalUrl.startsWith('/api/v1/org')) {
       res.status(403).json({ detail: `Your organisation is ${ctx.org!.status}. Contact the platform team.` });

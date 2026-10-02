@@ -60,11 +60,17 @@ function hasPendingLoadRequest() {
  * onboarding first. Otherwise a safe `next` path wins, then a load the vendor started
  * posting before signing in, then the role's home page.
  */
+/** A step a visitor started before signing in: the saved form is restored there. */
+const RESUME_PATH = /^\/vendor\/(request|return-trips)\?(?:[^#]*&)?resume=1(?:&|$|#)/
+
 export function destinationFor(account: Account, next: string | null): string | null {
   const home = homeFor(account)
   if (!home) return null
   const isVendor = account.role === 'vendor'
-  if (isVendor && !account.tplPartnerId && !account.hasVendorProfile) return home
+  if (isVendor && !account.tplPartnerId && !account.hasVendorProfile) {
+    // A new vendor who came to post a load or bid goes back to it (it shows what to finish); anything else sets up the company first
+    return next && RESUME_PATH.test(next) ? next : home
+  }
   if (next) return next
   if (isVendor && !account.tplPartnerId && hasPendingLoadRequest()) return '/vendor/request'
   return home

@@ -147,7 +147,7 @@ export default function VendorInvoicesPage() {
         />
       </div>
 
-      {unpaid.length > 0 && <HowToPay invoiceNumber={unpaid.length === 1 ? unpaid[0].invoice_number : undefined} />}
+      {unpaid.length > 0 && <HowToPay invoiceNumber={unpaid.length === 1 ? unpaid[0].invoice_number : undefined} invoiceId={unpaid.length === 1 ? unpaid[0].id : undefined} />}
 
       <Tabs tabs={tabs} value={filter} onChange={setFilter} label="Filter invoices" />
       <DataTable

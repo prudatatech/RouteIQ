@@ -28,7 +28,7 @@ const audiences: Audience[] = [
     icon: Package,
     title: 'Vendors',
     description: 'Post a load or bid on spare truck space on return trips, then follow your loads until they are delivered.',
-    action: { to: '/vendor/loads', label: 'Open the vendor portal' },
+    action: { to: '/ship', label: 'Find a truck' },
     secondary: { to: '/login?as=vendor', label: 'Sign in or create an account' },
   },
   {
@@ -114,6 +114,11 @@ export default function LandingPage() {
               MargixIndia connects your operations team, vendors, 3PL partners and drivers. Plan shipments and trips, fill
               trucks through bidding and partners, and let everyone see where a load is.
             </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link to="/ship" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Find a truck</Link>
+              <Link to="/vendor/request" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Post a load</Link>
+            </div>
+            <p className="mt-3 text-sm text-muted">No account needed to look. You sign in only when you post.</p>
           </div>
         </section>
 

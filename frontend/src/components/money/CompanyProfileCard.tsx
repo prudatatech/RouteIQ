@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { financeAPI } from '@/services/api'
 import { Button, Card, CardBody, CardHeader, ErrorState, Input, Skeleton, Textarea } from '@/components/ui'
 import { errorMessage } from '@/utils/display'
+import { useOrgStore, selectActiveMembership } from '@/store/orgStore'
 import type { CompanyProfile } from '@/utils/finance'
 
 type Form = Record<Exclude<keyof CompanyProfile, 'payment_terms_days'>, string> & { payment_terms_days: string }
@@ -12,12 +13,15 @@ const toForm = (c: CompanyProfile): Form => ({
   legal_name: c.legal_name ?? '', gstin: c.gstin ?? '', pan: c.pan ?? '', address: c.address ?? '', city: c.city ?? '', state: c.state ?? '',
   pincode: c.pincode ?? '', phone: c.phone ?? '', email: c.email ?? '', sac_code: c.sac_code ?? '', bank_name: c.bank_name ?? '',
   bank_account_no: c.bank_account_no ?? '', bank_ifsc: c.bank_ifsc ?? '', upi_id: c.upi_id ?? '', invoice_footer: c.invoice_footer ?? '',
-  payment_terms_days: String(c.payment_terms_days),
+  invoice_prefix: c.invoice_prefix ?? '', payment_terms_days: String(c.payment_terms_days),
 })
 
 /** The seller on every invoice, and the payment terms new invoices are issued with. */
 export function CompanyProfileCard() {
   const queryClient = useQueryClient()
+  const acting = useOrgStore(selectActiveMembership)
+  // Acting as the platform edits the default seller details; a company edits its own, with its own invoice prefix
+  const asPlatform = acting?.org.kind === 'platform'
   const company = useQuery({ queryKey: ['finance', 'company'], queryFn: () => financeAPI.company() })
   const [form, setForm] = useState<Form | null>(null)
   const [error, setError] = useState<string | undefined>()
@@ -45,12 +49,18 @@ export function CompanyProfileCard() {
     const terms = Number(form.payment_terms_days)
     if (!Number.isInteger(terms) || terms < 0 || terms > 365) { setError('Payment terms are a whole number of days, from 0 to 365'); return }
     setError(undefined)
-    save.mutate({ ...form, payment_terms_days: terms })
+    const { invoice_prefix, ...rest } = form
+    save.mutate({ ...rest, ...(asPlatform ? {} : { invoice_prefix: invoice_prefix.trim().toUpperCase() }), payment_terms_days: terms })
   }
 
   return (
     <Card>
-      <CardHeader title="Company and invoicing" description="Printed on every invoice as the seller. The GSTIN decides CGST and SGST or IGST. New invoices fall due after the payment terms." />
+      <CardHeader
+        title="Company and invoicing"
+        description={asPlatform
+          ? 'The seller details a company uses until it sets its own. Each company prints its own details on the invoices it issues.'
+          : 'Printed on every invoice you issue as the seller. The GSTIN decides CGST and SGST or IGST. New invoices fall due after the payment terms.'}
+      />
       <CardBody>
         {company.isLoading || !form ? (
           company.isError
@@ -69,6 +79,16 @@ export function CompanyProfileCard() {
               <Input label="Phone" value={form.phone} onChange={set('phone')} type="tel" />
               <Input label="Email" value={form.email} onChange={set('email')} type="email" />
               <Input label="SAC code" value={form.sac_code} onChange={set('sac_code')} inputMode="numeric" maxLength={8} hint="The service code your accountant uses for freight" />
+              {!asPlatform && (
+                <Input
+                  label="Invoice prefix"
+                  value={form.invoice_prefix}
+                  onChange={set('invoice_prefix')}
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  hint={`Invoice numbers read ${form.invoice_prefix.trim().toUpperCase() || 'MIL'}-YYYYMM-0001 and count on from the last one. 2 to 6 letters or digits, not used by another company.${form.invoice_prefix.trim() ? '' : ' Left empty, it is made from the company name when the first invoice is issued.'}`}
+                />
+              )}
               <Input label="Payment terms" value={form.payment_terms_days} onChange={set('payment_terms_days')} inputMode="numeric" trailing="days" hint="Due date = issue date + terms. Default 15." />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

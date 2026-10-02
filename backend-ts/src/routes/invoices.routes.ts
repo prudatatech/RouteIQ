@@ -1,7 +1,7 @@
 /**
  * margixindia — One invoice: its document with links, and its PDF.
  *
- *   GET /invoices/payment-details  vendor, customer, admin: where to pay (bank, UPI, terms), nothing else
+ *   GET /invoices/payment-details[?invoice=id]  vendor, customer, admin: where to pay (bank, UPI, terms) the issuing company
  *   GET /invoices/:id      admin, superadmin: the invoice, seller, buyer, lines, GST split and links
  *   GET /invoices/:id/pdf  admin, superadmin, and the vendor or customer the invoice is billed to
  *
@@ -21,6 +21,15 @@ router.use(requireAuth);
 router.get('/payment-details', requireRole('admin', 'vendor', 'customer'), async (req: Request, res: Response) => {
   try {
     res.setHeader('Cache-Control', 'private, no-store');
+    // ?invoice=<id>: the bank details of the company that issued that invoice (the caller must be allowed
+    // to see it); without it, the active company's, else the platform default
+    const invoiceId = typeof req.query.invoice === 'string' ? req.query.invoice : '';
+    if (invoiceId) {
+      if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) throw new HttpError(404, 'Invoice not found');
+      const inv = await loadInvoiceFor(invoiceId, req.user!);
+      res.json(await getPaymentDetails(inv.issuer_org_id ?? undefined));
+      return;
+    }
     res.json(await getPaymentDetails());
   } catch (e) {
     sendError(req, res, e);

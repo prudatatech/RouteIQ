@@ -1,7 +1,8 @@
 /**
  * margixindia — Resource ownership checks
  *
- * Staff (admin, manager, superadmin) can access every resource. Drivers can
+ * Staff (admin, manager, superadmin) can access every resource of the company they act for (another
+ * company's is a 404, see org-guards.ts). Drivers can
  * access resources tied to a vehicle they drive; vendors those tied to
  * their own bids or shipment requests.
  */
@@ -9,6 +10,8 @@ import { Request, Response, NextFunction } from 'express';
 import { supabase } from './supabase';
 import { TokenData } from './auth';
 import { HttpError } from './errors';
+import { OWNED, assertVisible, isScoped } from './org-scope';
+import { assertOfVisibleVehicle, assertShipmentVisible, assertTripVisible, assertVehicleVisible } from './org-guards';
 
 /** Roles with fleet-wide access. Pass to requireRole(...STAFF_ROLES); superadmin always passes. */
 export const STAFF_ROLES = ['admin', 'manager'] as const;
@@ -44,12 +47,19 @@ async function driverOwnsVehicle(user: TokenData, vehicleId: string | null | und
 }
 
 export async function canAccessVehicle(user: TokenData, vehicleId: string): Promise<boolean> {
-  return isStaff(user) || driverOwnsVehicle(user, vehicleId);
+  if (isStaff(user)) {
+    await assertVehicleVisible(vehicleId);
+    return true;
+  }
+  return driverOwnsVehicle(user, vehicleId);
 }
 
 /** Routes, including cargo manifests that the driver app treats as routes. */
 export async function canAccessRoute(user: TokenData, routeId: string): Promise<boolean> {
-  if (isStaff(user)) return true;
+  if (isStaff(user)) {
+    await assertTripVisible(routeId);
+    return true;
+  }
   if (user.role !== 'driver') return false;
 
   const { data: route } = await supabase.from('routes').select('vehicle_id').eq('id', routeId).maybeSingle();
@@ -60,13 +70,20 @@ export async function canAccessRoute(user: TokenData, routeId: string): Promise<
 }
 
 export async function canAccessRouteStop(user: TokenData, stopId: string): Promise<boolean> {
-  if (isStaff(user)) return true;
+  if (isStaff(user) && !isScoped(OWNED.carrier)) return true;
   const { data: stop } = await supabase.from('route_stops').select('route_id').eq('id', stopId).maybeSingle();
+  if (isStaff(user)) {
+    if (stop) await assertTripVisible(stop.route_id);
+    return true;
+  }
   return !!stop && canAccessRoute(user, stop.route_id);
 }
 
 export async function canAccessManifest(user: TokenData, manifestId: string): Promise<boolean> {
-  if (isStaff(user)) return true;
+  if (isStaff(user)) {
+    await assertVisible('cargo_manifest', manifestId, OWNED.carrier, 'Shipment not found');
+    return true;
+  }
   const { data: manifest } = await supabase
     .from('cargo_manifest')
     .select('vehicle_id, vendor_request_id')
@@ -90,7 +107,10 @@ export async function canAccessManifest(user: TokenData, manifestId: string): Pr
  * shipment endpoints, so all three ID kinds are checked.
  */
 export async function canAccessShipment(user: TokenData, shipmentId: string): Promise<boolean> {
-  if (isStaff(user)) return true;
+  if (isStaff(user)) {
+    await assertShipmentVisible(shipmentId);
+    return true;
+  }
 
   if (user.role === 'vendor') {
     const { data: shipment } = await supabase
@@ -140,7 +160,10 @@ export async function canAccessShipment(user: TokenData, shipmentId: string): Pr
 }
 
 export async function canAccessConfirmation(user: TokenData, confirmationId: string): Promise<boolean> {
-  if (isStaff(user)) return true;
+  if (isStaff(user)) {
+    await assertOfVisibleVehicle('driver_confirmations', confirmationId, 'Confirmation not found');
+    return true;
+  }
   const { data } = await supabase.from('driver_confirmations').select('vehicle_id').eq('id', confirmationId).maybeSingle();
   return driverOwnsVehicle(user, data?.vehicle_id);
 }

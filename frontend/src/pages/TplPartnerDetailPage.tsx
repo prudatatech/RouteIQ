@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Download, FileText, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
@@ -119,7 +119,7 @@ export default function TplPartnerDetailPage() {
   const queryClient = useQueryClient()
   const { confirm, prompt } = useConfirm()
   // Admins can view a partner; only a superadmin approves, rejects, pauses or deletes (the API says the same)
-  const canDecide = useAuthStore(s => s.role) === 'superadmin'
+  const canDecide = useEffectiveRole().role === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
 
   const { data: partner, isLoading, error, refetch } = useQuery<TplPartnerDetail>({

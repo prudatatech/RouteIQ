@@ -19,7 +19,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { settings } from './core/config';
 import { authenticateToken } from './core/auth';
 import { isStaff } from './core/ownership';
-import { errorHandler, notFoundHandler } from './core/errors';
+import { attachOrgContext } from './core/org-context';
+import { feedScope } from './core/org-scope';
+import { HttpError, errorHandler, notFoundHandler } from './core/errors';
 import { redis } from './core/redis';
 import { supabase } from './core/supabase';
 import { wsManager } from './core/websocket';
@@ -172,18 +174,28 @@ export function createHttpServer(app: express.Express = createApp()): http.Serve
 
     const token = url.searchParams.get('token');
     if (!token) return reject('401 Unauthorized');
+    let scope: string | null = null;
     try {
       const user = await authenticateToken(token);
       if (!isStaff(user)) return reject('403 Forbidden');
+      try {
+        // Only the active company's vehicles are on the feed (?org= names it, like X-Org-Id on a request)
+        const org = url.searchParams.get('org');
+        const ctx = await attachOrgContext({ headers: org ? { 'x-org-id': org } : {} } as unknown as express.Request, user.user_id, user.role);
+        scope = feedScope(ctx);
+      } catch (e) {
+        if (e instanceof HttpError) return reject('403 Forbidden');
+        throw e;
+      }
     } catch {
       return reject('401 Unauthorized');
     }
 
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, scope));
   });
 
-  wss.on('connection', (ws: WebSocket) => {
-    wsManager.connect(ws);
+  wss.on('connection', (ws: WebSocket, _req: http.IncomingMessage, scope: string | null = null) => {
+    wsManager.connect(ws, scope);
 
     ws.on('close', () => {
       wsManager.disconnect(ws);

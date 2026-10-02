@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useAuthStore } from '@/store/authStore'
 import { supabase, openChannel } from '@/services/supabase'
 import { opsAPI } from '@/services/api'
@@ -17,6 +18,9 @@ import { IconButton } from './Button'
 import { LoadingState } from './Spinner'
 import { useDialog } from './useDialog'
 import { OrgSwitcher } from './OrgSwitcher'
+import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
+import { actorFor } from '@/utils/orgAccess'
+import { usePendingOrgCount } from '@/hooks/usePendingOrgCount'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 /** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
@@ -62,6 +66,7 @@ const QUEUE_TABLES = [
 /** Counts for the menu badges: the same queues as Today, from one request, refreshed when their tables change. */
 function useNavBadges(enabled: boolean, canSeePartners: boolean) {
   const queryClient = useQueryClient()
+  const pendingOrgs = usePendingOrgCount()
   const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, enabled, refetchInterval: 30_000, retry: false })
   const partners = useQuery({
     queryKey: ['tpl-pending-partners'],
@@ -93,7 +98,7 @@ function useNavBadges(enabled: boolean, canSeePartners: boolean) {
     }
   }, [enabled, queryClient])
 
-  return navBadgeCounts(today.data?.queues, partners.data ?? 0)
+  return navBadgeCounts(today.data?.queues, partners.data ?? 0, pendingOrgs ?? 0)
 }
 
 /** Opens the search palette; shown in the sidebar (desktop) and the phone top bar. */
@@ -257,7 +262,7 @@ function SidebarFooter({ collapsed, onSignOut, onToggle }: { collapsed: boolean;
 
 export default function AppLayout() {
   const clearAuth = useAuthStore(s => s.clearAuth)
-  const role = useAuthStore(s => s.role)
+  const { role } = useEffectiveRole()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
@@ -274,7 +279,8 @@ export default function AppLayout() {
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
   const badges = useNavBadges(isStaff, role === 'superadmin' || role === 'admin')
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
-  const sections = menuFor(role)
+  const actor = actorFor(useOrgStore(selectActiveMembership))
+  const sections = menuFor(role, actor)
   const fullBleed = fullBleedPaths.some(p => location.pathname.startsWith(p))
 
   const toggleCollapsed = () => {

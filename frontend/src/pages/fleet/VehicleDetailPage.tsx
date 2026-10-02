@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { ArchiveRestore, BarChart2, MapPin, Pencil, Phone, ShieldAlert, Truck, Wrench } from 'lucide-react'
 import { vehiclesAPI } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import {
   Alert, Button, Card, CardBody, CardHeader, DetailList, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, TabPanel, Tabs,
   MoreMenu, buttonClasses, humanize, useConfirm, useTabParam, type TabItem,
@@ -43,7 +43,7 @@ type TabId = (typeof TAB_IDS)[number]
 
 export default function VehicleDetailPage() {
   const { vehicleId = '' } = useParams<{ vehicleId: string }>()
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const liveMinutes = useLiveMinutes()

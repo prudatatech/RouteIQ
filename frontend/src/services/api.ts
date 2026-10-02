@@ -6,9 +6,10 @@ import type {
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
+import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 
-import type { Membership, OrgMember, OrgProfile, OrgProfileInput, OrgRole } from '@/utils/orgs'
+import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
@@ -161,6 +162,24 @@ export const orgAPI = {
   addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
   updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
     api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
+}
+
+export const orgRegisterAPI = {
+  /** POST /orgs: a new organisation, pending until the platform approves it. Empty fields are left out. */
+  create: (kind: 'logistic_company' | 'vendor', data: Partial<OrgRegistration>) => {
+    const body: Record<string, string> = {}
+    for (const [key, value] of Object.entries(data)) if (typeof value === 'string' && value.trim()) body[key] = value.trim()
+    return api.post('/orgs', { kind, ...body }).then(r => r.data as OrgRow)
+  },
+  /** PATCH /org: the owner corrects the registration (also while it is pending or rejected). */
+  update: (data: Partial<OrgRegistration>) => api.patch('/org', data).then(r => r.data as OrgRow),
+}
+
+export const adminOrgsAPI = {
+  list: (params: { kind?: string; status?: string; limit?: number; offset?: number }) =>
+    api.get('/admin/orgs', { params }).then(r => r.data as OrgPage),
+  decide: (id: string, decision: 'approve' | 'reject' | 'suspend', reason?: string) =>
+    api.put(`/admin/orgs/${id}/${decision}`, reason ? { reason } : {}).then(r => r.data as OrgRow),
 }
 
 export const vehicleRequestsAPI = {
@@ -409,9 +428,90 @@ export interface PublicStats {
   cities_served: number
 }
 
+/** A company's spare space on a lane, as a guest sees it: cities and a window only, never a plate, driver or position. */
+export interface PublicSpareSpace {
+  id: string
+  company: { id: string; name: string; city: string | null }
+  from_city: string
+  to_city: string | null
+  departs_from: string
+  departs_to: string | null
+  vehicle_type: string | null
+  free_kg: number
+  price_per_kg_from: number | null
+}
+
+/** A logistic company that serves a lane. Aggregates only: no phone, email or GSTIN. */
+export interface PublicCompany {
+  id: string
+  name: string
+  city: string | null
+  vehicle_types: string[]
+  trips_completed: number
+}
+
+export interface PublicSpareSpaceParams { from?: string; to?: string; date?: string; vehicle_type?: string; min_kg?: number }
+export interface PublicCompanyParams { city?: string; vehicle_type?: string }
+
+/** Public calls carry no sign-in header and never trigger the sign-in redirect, so they work for a visitor with no session. */
+const publicClient = axios.create({ baseURL, timeout: 20_000, headers: { 'Content-Type': 'application/json' } })
+
+/** Drops empty values so a blank filter is not sent. */
+const compact = (params: object) => Object.fromEntries(
+  Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '' && !(typeof v === 'number' && Number.isNaN(v))),
+)
+
+interface PublicQuoteReply {
+  status: 'ok' | 'unavailable'
+  distance_km?: number
+  distance_is_estimate?: boolean
+  low?: number
+  suggested?: number
+  high?: number
+  per_km_suggested?: number
+}
+
+function toQuoteResponse(r: PublicQuoteReply): QuoteResponse {
+  if (r.status !== 'ok' || r.suggested == null || r.low == null || r.high == null) {
+    return { status: 'unavailable', reason: 'The price for this lane is on request. Post your load and companies will quote you.', notes: [] }
+  }
+  return {
+    status: 'ok',
+    quote_id: null,
+    distance_km: r.distance_km ?? 0,
+    distance_source: 'estimate',
+    distance_is_estimate: r.distance_is_estimate ?? true,
+    low: r.low,
+    suggested: r.suggested,
+    high: r.high,
+    per_km_suggested: r.per_km_suggested ?? 0,
+    factors: [],
+    notes: [],
+    demand: { open_loads: 0, available_vehicles: 0, radius_km: 0 },
+    history: { samples: 0, median_per_km: null, band_km: [0, 0] },
+    weather: { checked: false, severe: false, description: null },
+  }
+}
+
 export const publicAPI = {
   /** Aggregate counts for the landing page. No sign-in needed. */
-  stats: () => api.get('/public/stats').then(r => r.data as PublicStats),
+  stats: () => publicClient.get('/public/stats').then(r => r.data as PublicStats),
+  /** Open spare space on trucks, across active companies. With no filters, the next 50 by departure. */
+  spareSpace: (params: PublicSpareSpaceParams = {}) =>
+    publicClient.get('/public/spare-space', { params: compact(params) }).then(r => ensureArray(r.data?.items) as PublicSpareSpace[]),
+  /** Active logistic companies, optionally by city or vehicle type. */
+  companies: (params: PublicCompanyParams = {}) =>
+    publicClient.get('/public/companies', { params: compact(params) }).then(r => ensureArray(r.data?.items) as PublicCompany[]),
+  /**
+   * An indicative price for a load. Writes nothing. Same body as the signed-in price check, without `source`.
+   * The answer is shaped like the signed-in one so the same price panel can show it; a public price has no
+   * line-by-line reasons.
+   */
+  quote: (body: Omit<QuoteRequest, 'source'>) =>
+    publicClient.post('/public/quote', body).then(r => toQuoteResponse(r.data as PublicQuoteReply)),
+  /** City suggestions for a lane search. */
+  cities: (q: string) =>
+    publicClient.get('/public/cities', { params: { q } }).then(r => ensureArray(r.data?.cities).filter((c): c is string => typeof c === 'string' && c.length > 0)),
   /** The live-location page behind a shared link. No sign-in header, short timeout. */
   vehicleShare: (token: string) => axios
     .get(`${baseURL}/public/vehicle-share/${encodeURIComponent(token)}`, { timeout: 20_000 })
@@ -642,7 +742,7 @@ export interface PaymentDetails {
 
 /** One invoice: the document with its links, and its PDF. */
 export const invoicesAPI = {
-  paymentDetails: () => api.get('/invoices/payment-details').then(r => r.data as PaymentDetails),
+  paymentDetails: (invoiceId?: string) => api.get('/invoices/payment-details', { params: invoiceId ? { invoice: invoiceId } : undefined }).then(r => r.data as PaymentDetails),
   get: (id: string) => api.get(`/invoices/${id}`).then(r => r.data as InvoiceDetail),
   pdf: (id: string) => api.get(`/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
 }

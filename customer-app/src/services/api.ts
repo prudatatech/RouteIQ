@@ -312,8 +312,8 @@ class ApiClient {
   }
 
   /** Where to pay: bank and UPI details from MargixIndia's settings. `available` is false until staff have saved some. */
-  async getPaymentDetails(): Promise<PaymentDetails> {
-    return this.request('GET', '/invoices/payment-details');
+  async getPaymentDetails(invoiceId?: string): Promise<PaymentDetails> {
+    return this.request('GET', invoiceId ? `/invoices/payment-details?invoice=${encodeURIComponent(invoiceId)}` : '/invoices/payment-details');
   }
 
   /**

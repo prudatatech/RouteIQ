@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { Check, FileText, X } from 'lucide-react'
 import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, DataTable, DetailList, Drawer, IfscVerifiedHint, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
@@ -116,7 +116,7 @@ export default function KycReviewPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   // 3PL applications are decided on a page only superadmin can open
-  const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
 
   const vendors = useQuery({ queryKey: ['kyc-vendors'], queryFn: loadVendors })
   const partners = useQuery({ queryKey: ['tpl-partners-pending-count'], queryFn: countPendingPartners, enabled: isSuperadmin })

@@ -17,6 +17,7 @@ import { indianDateKey } from '../core/istDate';
 import { rupeesInWords } from '../core/words';
 import { finalDeliveryPoint } from '../core/destination';
 import { getCompanyProfile, companyGaps, type CompanyProfile } from './company.service';
+import { defaultCompanyId } from './company-settings.service';
 import { resolveBillTo, partyFromSnapshot } from './invoice-recipient.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
 import { shipmentOverview } from './shipment-overview.service';
@@ -49,10 +50,12 @@ export interface InvoiceRecord {
   price_source: string | null;
   /** The billed party as it was when the invoice was issued (null on invoices issued before it was stored). */
   bill_to?: unknown;
+  /** The company that issued it; null on invoices from before companies existed. */
+  issuer_org_id?: string | null;
 }
 
 export const INVOICE_COLUMNS =
-  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source, bill_to';
+  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source, bill_to, issuer_org_id';
 
 /**
  * The due date shown for an invoice: the one saved on issue, or (for invoices issued before due dates
@@ -168,7 +171,8 @@ export async function loadInvoiceFor(id: string, user: TokenData): Promise<Invoi
 }
 
 export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDetail> {
-  const company = await getCompanyProfile();
+  // The seller is the company that issued the invoice, whoever opens it (an invoice from before companies: the default one)
+  const company = await getCompanyProfile(inv.issuer_org_id ?? (await defaultCompanyId()));
   const sellerState = stateOf(company.gstin);
   const buyer = await buyerOf(inv);
 

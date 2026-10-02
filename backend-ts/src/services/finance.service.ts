@@ -14,9 +14,10 @@
  * reported as missing, never replaced by a made-up number.
  */
 import { supabase } from '../core/supabase';
-import { memoize } from '../core/memo';
+import { readEffectiveSettings, resolveScope, saveOverrides, savePlatformRows, scopedMemo } from './company-settings.service';
 import { manifestParcelCode } from '../core/parcelCode';
 import { indianDateKey } from '../core/istDate';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const EXPENSE_CATEGORIES = ['fuel', 'maintenance', 'toll', 'driver', 'other'] as const;
 export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
@@ -65,31 +66,33 @@ function settingNumber(value: unknown): number | null {
 
 type FinanceSettings = { fuel_price_per_litre: number | null; rate_per_km: number | null };
 
-const loadFinanceSettings = memoize(30_000, async (): Promise<FinanceSettings> => {
-  const { data, error } = await supabase.from('system_settings').select('key, value').in('key', [FUEL_PRICE_KEY, RATE_PER_KM_KEY]);
-  if (error) throw new Error(`Failed to read settings: ${error.message}`);
-  const byKey = new Map((data ?? []).map((r: any) => [r.key, settingNumber(r.value)]));
+const loadFinanceSettings = scopedMemo(30_000, async (scope): Promise<FinanceSettings> => {
+  const byKey = await readEffectiveSettings(k => k === FUEL_PRICE_KEY || k === RATE_PER_KM_KEY, scope);
   return {
-    fuel_price_per_litre: byKey.get(FUEL_PRICE_KEY) ?? null,
-    rate_per_km: byKey.get(RATE_PER_KM_KEY) ?? null,
+    fuel_price_per_litre: settingNumber(byKey.get(FUEL_PRICE_KEY)),
+    rate_per_km: settingNumber(byKey.get(RATE_PER_KM_KEY)),
   };
 });
 
 /**
- * The finance settings as they are now. `{ cached: true }` is for the profit and loss page: the same
- * for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
+ * The finance settings as they are now, for the company the request acts for (the company's own fuel price and rate
+ * per km, else the platform default; acting as the platform: the defaults). `{ cached: true }` is for the profit and
+ * loss page: the same for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
  */
 export async function getFinanceSettings(opts: { cached?: boolean } = {}): Promise<FinanceSettings> {
   if (!opts.cached) loadFinanceSettings.clear();
-  return { ...(await loadFinanceSettings()) };
+  return { ...(await loadFinanceSettings(await resolveScope())) };
 }
 
+/** Sets the fuel price of the company the request acts for; as the platform, the platform default. */
 export async function setFuelPrice(price: number): Promise<void> {
-  const { error } = await supabase
-    .from('system_settings')
-    .upsert({ key: FUEL_PRICE_KEY, value: { price }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-  loadFinanceSettings.clear();
-  if (error) throw new Error(`Failed to save fuel price: ${error.message}`);
+  const scope = await resolveScope();
+  try {
+    if (scope) await saveOverrides(scope, { [FUEL_PRICE_KEY]: price });
+    else await savePlatformRows({ [FUEL_PRICE_KEY]: { price } });
+  } finally {
+    loadFinanceSettings.clear();
+  }
 }
 
 export interface FinanceRange {
@@ -148,14 +151,14 @@ export async function getFinanceSummary(range: FinanceRange) {
 
   const [settings, invoiceRes, expenseRes, routeRes, tplRes] = await Promise.all([
     getFinanceSettings({ cached: true }),
-    supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
-      .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
-    supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
-      .gte('expense_date', fromKey).lte('expense_date', toKey),
-    supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status')
-      .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO),
-    supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
-      .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO),
+    scopeQuery(supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
+      .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO), OWNED.invoice),
+    scopeQuery(supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
+      .gte('expense_date', fromKey).lte('expense_date', toKey), OWNED.carrier),
+    scopeQuery(supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status')
+      .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO), OWNED.carrier),
+    scopeQuery(supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
+      .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO), OWNED.carrier),
   ]);
   if (tplRes.error) throw new Error(`Failed to read 3PL orders: ${tplRes.error.message}`);
   if (invoiceRes.error) throw new Error(`Failed to read invoices: ${invoiceRes.error.message}`);
@@ -374,8 +377,8 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const [shipRes, manRes] = await Promise.all([
-    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share, status, pieces_total, pieces_delivered, pieces_short, pieces_returned').in('status', ['delivered', 'partially_delivered']).gte('updated_at', startISO).lt('updated_at', endISO),
-    supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    scopeQuery(supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share, status, pieces_total, pieces_delivered, pieces_short, pieces_returned').in('status', ['delivered', 'partially_delivered']).gte('updated_at', startISO).lt('updated_at', endISO), OWNED.carrierAndVendor),
+    scopeQuery(supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO), OWNED.carrierAndVendor),
   ]);
   if (shipRes.error) throw new Error(`Failed to read shipments: ${shipRes.error.message}`);
   if (manRes.error) throw new Error(`Failed to read manifests: ${manRes.error.message}`);

@@ -8,6 +8,7 @@
  */
 import { supabase } from '../../core/supabase';
 import { notificationService } from '../notification.service';
+import { carrierOf } from '../../core/org-guards';
 import type { Consignment } from './consignment';
 
 /** The notification types of the cargo contract. */
@@ -48,9 +49,22 @@ export async function ownerRefs(row: { shipment_id?: string | null; manifest_id?
   return null;
 }
 
-export async function notifyStaffSafe(title: string, body: string, type: CargoNotificationType, data: Record<string, unknown>): Promise<void> {
+/**
+ * The company that owns the record a cargo notification is about (its case, transfer, claim, shipment or load,
+ * named in `data`), so only that company's staff hear of it. Null when `data` names none.
+ */
+async function ownerOfNews(data: Record<string, unknown>): Promise<string | null> {
+  const id = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : null);
+  return (await carrierOf('cargo_exceptions', id('exception_id')))
+    ?? (await carrierOf('cargo_transfers', id('transfer_id')))
+    ?? (await carrierOf('cargo_claims', id('claim_id')))
+    ?? (await carrierOf('shipments', id('shipment_id')))
+    ?? (await carrierOf('cargo_manifest', id('manifest_id')));
+}
+
+export async function notifyStaffSafe(title: string, body: string, type: CargoNotificationType, data: Record<string, unknown>, orgId?: string | null): Promise<void> {
   try {
-    await notificationService.notifyStaff(title, body, type, data);
+    await notificationService.notifyStaff(title, body, type, data, orgId ?? await ownerOfNews(data));
   } catch (e) {
     console.error(`[cargo] Staff notification ${type} failed:`, e);
   }
@@ -99,7 +113,7 @@ export async function notifyDeliveryRated(shipmentId: string, rating: number, op
       await notificationService.sendNotificationOnce(opts.driverId, `You got ${rating} out of 5`, `${who} rated delivery ${code} ${rating} out of 5.`, 'delivery_rated', data, 'rated_at', 1);
     }
     if (opts.byCustomer && opts.notifyStaff !== false) {
-      await notificationService.notifyStaffOnce(`Delivery rated ${rating} out of 5`, `The customer rated ${code} ${rating} out of 5${opts.comment ? `: ${opts.comment}` : ''}.`, 'delivery_rated', data, 'rated_at', 1);
+      await notificationService.notifyStaffOnce(`Delivery rated ${rating} out of 5`, `The customer rated ${code} ${rating} out of 5${opts.comment ? `: ${opts.comment}` : ''}.`, 'delivery_rated', data, 'rated_at', 1, await carrierOf('shipments', shipmentId));
     }
   } catch (e) {
     console.error('[rating] could not send the rating notification:', e);

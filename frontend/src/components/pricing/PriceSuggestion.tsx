@@ -48,7 +48,7 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
           <p className="text-xs text-muted">Suggested price</p>
           <p className="text-2xl font-semibold text-text tabular">{formatRupees(data.suggested)}</p>
           <p className="text-sm text-muted tabular">
-            Range {formatRupees(data.low)} to {formatRupees(data.high)} · {formatRupees(data.per_km_suggested)} per km
+            Range {formatRupees(data.low)} to {formatRupees(data.high)}{data.per_km_suggested > 0 && ` · ${formatRupees(data.per_km_suggested)} per km`}
           </p>
         </div>
         {onUse && <Button variant="secondary" onClick={() => onUse(data)}>{useLabel}</Button>}
@@ -58,11 +58,11 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
         <span className="tabular">{formatKm(data.distance_km)}</span>
         {data.distance_is_estimate
           ? <StatusPill tone="warning" dot={false}>Estimated distance</StatusPill>
-          : <StatusPill tone="neutral" dot={false}>{data.distance_source === 'mappls' ? 'Mappls route' : 'Google route'}</StatusPill>}
+          : <StatusPill tone="neutral" dot={false}>{data.distance_source === 'mappls' ? 'Mappls route' : data.distance_source === 'google' ? 'Google route' : 'Road distance'}</StatusPill>}
         {data.history.samples > 0 && <span>{data.history.samples.toLocaleString('en-IN')} similar accepted prices</span>}
       </div>
 
-      <div>
+      {data.factors.length > 0 && <div>
         <p className="mb-2 text-sm font-medium text-text">How this price was worked out</p>
         <ul className="divide-y divide-border rounded-control border border-border">
           {data.factors.map(f => (
@@ -79,7 +79,7 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
             </li>
           ))}
         </ul>
-      </div>
+      </div>}
 
       {data.notes.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted">

@@ -62,7 +62,8 @@ const TRANSFER_COLUMNS =
   'eway_part_b_required, eway_part_b_updated_at, eway_part_b_ref, created_by, note';
 
 async function loadTransfer(id: string): Promise<any> {
-  const { data, error } = await supabase.from('cargo_transfers').select(TRANSFER_COLUMNS).eq('id', id).maybeSingle();
+  // Another company's transfer is a 404, the same as one that does not exist
+  const { data, error } = await scopeQuery(supabase.from('cargo_transfers').select(TRANSFER_COLUMNS).eq('id', id), OWNED.carrier).maybeSingle();
   if (error) throw new Error(`Failed to read the transfer: ${error.message}`);
   if (!data) throw new HttpError(404, 'Transfer not found');
   return data;
@@ -94,10 +95,10 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
   const body = parsed.data;
 
-  const { data: from } = await supabase.from('vehicles').select('id, plate_number').eq('id', body.from_vehicle_id).maybeSingle();
+  const { data: from } = await scopeQuery(supabase.from('vehicles').select('id, plate_number').eq('id', body.from_vehicle_id), OWNED.carrier).maybeSingle();
   if (!from) throw new HttpError(404, 'The vehicle holding the goods was not found');
   if (body.exception_id) {
-    const { data: exc } = await supabase.from('cargo_exceptions').select('id, status').eq('id', body.exception_id).maybeSingle();
+    const { data: exc } = await scopeQuery(supabase.from('cargo_exceptions').select('id, status').eq('id', body.exception_id), OWNED.carrier).maybeSingle();
     if (!exc) throw new HttpError(404, 'Cargo case not found');
   }
 
@@ -132,8 +133,8 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   let toVehicle: any = null;
   if (body.to_vehicle_id) {
     if (body.to_vehicle_id === from.id) throw new HttpError(400, 'Choose a different vehicle');
-    const { data } = await supabase
-      .from('vehicles').select('id, plate_number, status, driver_id, capacity_kg, available_capacity_kg, current_load_kg').eq('id', body.to_vehicle_id).maybeSingle();
+    const { data } = await scopeQuery(supabase
+      .from('vehicles').select('id, plate_number, status, driver_id, capacity_kg, available_capacity_kg, current_load_kg').eq('id', body.to_vehicle_id), OWNED.carrier).maybeSingle();
     if (!data) throw new HttpError(404, 'The relief vehicle was not found');
     if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(data.status)) || isPlaceholderPlate(data.plate_number)) {
       throw new HttpError(409, `${data.plate_number ?? 'That vehicle'} is ${String(data.status).replace(/_/g, ' ')} and can't take the goods.`);
@@ -144,7 +145,7 @@ export async function planTransfer(input: z.infer<typeof PlanTransferSchema>, ac
   }
   let depot: any = null;
   if (body.to_depot_id) {
-    const { data } = await supabase.from('depots').select('id, name, address').eq('id', body.to_depot_id).maybeSingle();
+    const { data } = await scopeQuery(supabase.from('depots').select('id, name, address').eq('id', body.to_depot_id), OWNED.carrier).maybeSingle();
     if (!data) throw new HttpError(404, 'Hub not found');
     depot = data;
   }

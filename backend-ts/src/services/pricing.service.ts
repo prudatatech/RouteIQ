@@ -1,5 +1,6 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
+import { readEffectiveSettings, resolveScope, saveOverrides, type SettingsScope } from './company-settings.service';
 import { getDrivingDistance, DistanceSource } from './distance.service';
 import { getWeather, isConditions } from './weather.service';
 import { haversineKm, isValidPoint, LatLng, midpoint, ROAD_FACTOR } from './geo';
@@ -74,8 +75,8 @@ function num(v: unknown): number | null {
   // Settings are JSON: the live rate card is stored as {"rate": 45} (the driver app reads
   // value.rate); newer settings may be a bare number or {"value": n}.
   if (typeof v === 'object') {
-    const o = v as { rate?: unknown; value?: unknown };
-    return num(o.rate ?? o.value);
+    const o = v as { rate?: unknown; value?: unknown; price?: unknown };
+    return num(o.rate ?? o.value ?? o.price);
   }
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/^"|"$/g, ''));
   return Number.isFinite(n) ? n : null;
@@ -87,26 +88,35 @@ function quantile(sorted: number[], q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-export async function readPricingSettings(): Promise<Record<string, number>> {
-  const { data, error } = await supabase.from('system_settings').select('key, value');
-  if (error) throw new Error(error.message);
+/**
+ * The rate card in effect for the company the request acts for: its own rates, multipliers and fuel price where it
+ * set them, the platform defaults (system_settings) for the rest. Acting as the platform: the defaults.
+ */
+export async function readPricingSettings(scope?: SettingsScope): Promise<Record<string, number>> {
+  const rows = await readEffectiveSettings(k => SETTING_KEY_RE.test(k), scope);
   const out: Record<string, number> = {};
-  for (const row of data ?? []) {
-    if (typeof row.key === 'string' && SETTING_KEY_RE.test(row.key)) {
-      const n = num(row.value);
-      if (n !== null) out[row.key] = n;
-    }
+  for (const [key, value] of rows) {
+    const n = num(value);
+    if (n !== null) out[key] = n;
   }
   return out;
 }
 
-/** Staff edit the rate card here. A null value removes the setting. */
+/**
+ * Staff edit the rate card here. A null value removes the setting: for a company that returns it to the platform
+ * default, as the platform it removes the default itself. A company's changes stay in its own organization row.
+ */
 export async function savePricingSettings(changes: Record<string, number | null>): Promise<Record<string, number>> {
   for (const [key, value] of Object.entries(changes)) {
     if (!SETTING_KEY_RE.test(key)) throw new HttpError(400, `"${key}" is not a pricing setting`);
     if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
       throw new HttpError(400, `"${key}" must be a number of 0 or more`);
     }
+  }
+  const scope = await resolveScope();
+  if (scope) {
+    await saveOverrides(scope, changes);
+    return readPricingSettings(scope);
   }
   const now = new Date().toISOString();
   for (const [key, value] of Object.entries(changes)) {
@@ -122,7 +132,7 @@ export async function savePricingSettings(changes: Record<string, number | null>
       : await supabase.from('system_settings').insert({ key, value: String(value), updated_at: now });
     if (error) throw new Error(error.message);
   }
-  return readPricingSettings();
+  return readPricingSettings(scope);
 }
 
 async function countDemand(pickup: LatLng, vehicleType: string | null) {
@@ -208,7 +218,7 @@ function isToday(date: string | null | undefined): boolean {
 }
 
 export const pricingService = {
-  async quote(input: QuoteInput, ctx: { userId?: string; role?: string; source?: string } = {}): Promise<QuoteOutcome> {
+  async quote(input: QuoteInput, ctx: { userId?: string; role?: string; source?: string; /** false: compute only, store nothing (guest quotes) */ persist?: boolean } = {}): Promise<QuoteOutcome> {
     if (!isValidPoint(input.pickup) || !isValidPoint(input.drop)) throw new HttpError(400, 'Pickup and drop need valid coordinates');
     if (!Number.isFinite(input.weight_kg) || input.weight_kg <= 0) throw new HttpError(400, 'Weight must be more than 0 kg');
 
@@ -367,6 +377,8 @@ export const pricingService = {
       weather,
       generated_at: new Date().toISOString(),
     };
+
+    if (ctx.persist === false) return result;
 
     // Keep the quote for audit and to learn which prices get accepted
     const { data: saved, error } = await supabase.from('price_quotes').insert({

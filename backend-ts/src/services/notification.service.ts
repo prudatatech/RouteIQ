@@ -1,5 +1,6 @@
 import { supabase } from '../core/supabase';
 import { pushService } from './push.service';
+import { currentOrgContext } from '../core/org-context';
 
 /**
  * Notification types managers receive too: the day-to-day work they act on. Only types that open a page
@@ -16,6 +17,49 @@ export const OPERATIONS_NOTIFICATION_TYPES: ReadonlySet<string> = new Set([
 
 /** How long a repeated notification (same person, type and key) is treated as a duplicate. */
 export const DEDUPE_HOURS = 24;
+
+/** The staff who hear about something of `orgId`'s (see notifyStaff), as user ids. */
+export const PLATFORM = 'platform' as const;
+
+export async function staffToNotify(type: string, orgId?: string | null | typeof PLATFORM): Promise<string[]> {
+  const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
+  // News for the platform itself (a 3PL application, a vendor's KYC): only the platform's owners and admins
+  const platformOnly = orgId === PLATFORM;
+  let company = platformOnly ? null : orgId ?? null;
+  if (!company && !platformOnly) {
+    const org = currentOrgContext()?.org;
+    if (org && org.kind === 'logistic_company') company = org.id;
+  }
+  let limitTo: string[] | null = null;
+  if (company || platformOnly) {
+    const ids = new Set<string>();
+    if (company) {
+      const { data: members, error: mErr } = await supabase.from('org_members').select('user_id').eq('org_id', company).eq('status', 'active');
+      if (mErr) throw new Error(`Failed to read members: ${mErr.message}`);
+      for (const m of members ?? []) ids.add((m as { user_id: string }).user_id);
+    }
+    // The platform's own owners and admins hear about every company
+    const { data: platform, error: pErr } = await supabase.from('organizations').select('id').eq('kind', 'platform');
+    if (pErr) throw new Error(`Failed to read organisations: ${pErr.message}`);
+    const platformIds = (platform ?? []).map((o: { id: string }) => o.id);
+    if (platformIds.length > 0) {
+      const { data: admins, error: aErr } = await supabase.from('org_members').select('user_id').in('org_id', platformIds).in('role', ['owner', 'admin']).eq('status', 'active');
+      if (aErr) throw new Error(`Failed to read members: ${aErr.message}`);
+      for (const a of admins ?? []) ids.add((a as { user_id: string }).user_id);
+    }
+    // Organisations are not set up (no platform organisation): everyone is told, as before
+    if (platformOnly && platformIds.length === 0) limitTo = null;
+    else {
+      limitTo = [...ids];
+      if (limitTo.length === 0) return [];
+    }
+  }
+  let q = supabase.from('users').select('id').in('role', roles).eq('is_active', true);
+  if (limitTo) q = q.in('id', limitTo);
+  const { data: staff, error } = await q;
+  if (error || !staff) return [];
+  return staff.map((u: { id: string }) => u.id);
+}
 
 export const notificationService = {
   /**
@@ -56,12 +100,10 @@ export const notificationService = {
   },
 
   /** notifyStaff with the same duplicate check as sendNotificationOnce, per staff member. */
-  async notifyStaffOnce(title: string, body: string, type: string, data: Record<string, unknown>, key: string, hours = DEDUPE_HOURS) {
-    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
-    const { data: staff, error } = await supabase.from('users').select('id').in('role', roles).eq('is_active', true);
-    if (error || !staff) return;
-    for (const member of staff) {
-      await this.sendNotificationOnce(member.id, title, body, type, data, key, hours);
+  async notifyStaffOnce(title: string, body: string, type: string, data: Record<string, unknown>, key: string, hours = DEDUPE_HOURS, orgId?: string | null | typeof PLATFORM) {
+    const staff = await staffToNotify(type, orgId);
+    for (const id of staff) {
+      await this.sendNotificationOnce(id, title, body, type, data, key, hours);
     }
   },
 
@@ -87,20 +129,16 @@ export const notificationService = {
    * who can acknowledge and resolve them. KYC goes to admin and superadmin;
    * 3PL partner applications and orders (tpl_*) go to superadmin only. Deactivated accounts
    * are excluded.
+   *
+   * `orgId` is the company that owns the record the news is about: only that company's members hear it,
+   * plus the platform's owners and admins. Without it the company of the request being handled is used;
+   * with neither (the scheduler, before organisations are set up) every staff member is told, as before.
+   * `PLATFORM` is for news about the platform itself: only its owners and admins hear it.
    */
-  async notifyStaff(title: string, body: string, type: string, data: any = {}) {
-    // Admins can open the 3PL pages (only approving is the superadmin's), so they are sent 3PL events too
-    const roles = OPERATIONS_NOTIFICATION_TYPES.has(type) ? ['admin', 'superadmin', 'manager'] : ['admin', 'superadmin'];
-    const { data: staff, error } = await supabase
-      .from('users')
-      .select('id')
-      .in('role', roles)
-      .eq('is_active', true);
-
-    if (error || !staff) return;
-
-    for (const member of staff) {
-      await this.sendNotification(member.id, title, body, type, data);
+  async notifyStaff(title: string, body: string, type: string, data: any = {}, orgId?: string | null | typeof PLATFORM) {
+    const staff = await staffToNotify(type, orgId);
+    for (const id of staff) {
+      await this.sendNotification(id, title, body, type, data);
     }
   }
 };

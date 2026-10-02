@@ -168,7 +168,7 @@ describe('registering an organisation', () => {
     const id = created.body.id;
     supabaseMock.rows('org_members').find(m => m.org_id === id)!.organizations = { id, kind: 'vendor', name: 'Delta Traders', status: 'pending' };
     const mine = await request(app).get(api('/orgs/mine')).set(as('manager-a'));
-    expect(mine.body).toContainEqual({ org: { id, kind: 'vendor', name: 'Delta Traders', status: 'pending' }, role: 'owner' });
+    expect(mine.body).toContainEqual({ org: { id, kind: 'vendor', name: 'Delta Traders', status: 'pending' }, role: 'owner', app_role: 'vendor' });
     expect(mine.body).toHaveLength(2);
   });
 });

@@ -12,7 +12,7 @@ import { requireAuth } from '../core/auth';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { rateLimitByUser } from '../core/rate-limit';
 import { uuidParam } from '../core/validate';
-import type { OrgRole } from '../core/org-context';
+import { appRoleFor, type OrgRole } from '../core/org-context';
 import {
   AdminOrgDecisionSchema, AdminOrgFilterSchema, AffiliationRequestSchema, MemberInviteSchema, MemberUpdateSchema, OrgCreateSchema, OrgUpdateSchema,
 } from '../schemas/org';
@@ -76,7 +76,7 @@ orgsRouter.use(requireAuth);
 
 // The caller's organisations, for the switcher. Empty for a customer or before organisations are set up.
 orgsRouter.get('/mine', handle(async (req, res) => {
-  res.json((req.memberships ?? []).map(m => ({ org: { id: m.org.id, kind: m.org.kind, name: m.org.name, status: m.org.status }, role: m.role })));
+  res.json((req.memberships ?? []).map(m => ({ org: { id: m.org.id, kind: m.org.kind, name: m.org.name, status: m.org.status }, role: m.role, app_role: appRoleFor(m, req.user!.base_role ?? req.user!.role) })));
 }));
 
 orgsRouter.post('/', rateLimitByUser('org-create', 5, 60 * 60), handle(async (req, res) => {

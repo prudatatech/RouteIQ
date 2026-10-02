@@ -13,6 +13,7 @@ import { consumeRateLimit } from '../core/rate-limit';
 import { scanParcel } from '../services/parcel.service';
 import { createPodUploadUrl } from '../services/pod.service';
 import { getDriverPay } from '../services/driver-pay.service';
+import { readEffectiveSetting, resolveScope, saveOverrides, savePlatformRows } from '../services/company-settings.service';
 
 const router = Router();
 
@@ -57,7 +58,9 @@ router.post('/pod-upload-url', requireAuth, requireRole('driver'), async (req: R
 });
 
 // ── Dispatcher's phone number ──────────────────────────────────
-// Kept in system_settings under `dispatch_phone`; staff edit it on the Settings page.
+// Each company has its own (organizations.profile.settings.dispatch_phone); a company that has not set one falls
+// back to the platform default in system_settings under `dispatch_phone`. Staff edit it on the Settings page, and
+// a driver gets the number of the company they drive for (the company the request acts for).
 const DISPATCH_PHONE_KEY = 'dispatch_phone';
 const PHONE_PATTERN = /^\+?[0-9]{7,15}$/;
 
@@ -68,9 +71,7 @@ function phoneOf(value: unknown): string | null {
 }
 
 async function readDispatchPhone(): Promise<string | null> {
-  const { data, error } = await supabase.from('system_settings').select('value').eq('key', DISPATCH_PHONE_KEY).maybeSingle();
-  if (error) throw new Error(`Failed to read the dispatch phone: ${error.message}`);
-  return phoneOf(data?.value);
+  return phoneOf(await readEffectiveSetting(DISPATCH_PHONE_KEY));
 }
 
 // ── GET /driver/dispatch-contact — the number drivers call (drivers and staff) ──
@@ -90,19 +91,13 @@ router.put('/dispatch-contact', requireAuth, requireRole(...STAFF_ROLES), async 
     if (input !== null && input !== undefined && typeof input !== 'string') throw new HttpError(400, 'phone must be text');
     const phone = typeof input === 'string' ? input.replace(/[\s\-().]/g, '') : '';
 
-    if (!phone) {
-      const { error } = await supabase.from('system_settings').delete().eq('key', DISPATCH_PHONE_KEY);
-      if (error) throw new Error(`Failed to clear the dispatch phone: ${error.message}`);
-      res.json({ phone: null });
-      return;
-    }
-    if (!PHONE_PATTERN.test(phone)) throw new HttpError(400, 'Enter a phone number of 7 to 15 digits, with an optional + at the start');
+    if (phone && !PHONE_PATTERN.test(phone)) throw new HttpError(400, 'Enter a phone number of 7 to 15 digits, with an optional + at the start');
 
-    const { error } = await supabase
-      .from('system_settings')
-      .upsert({ key: DISPATCH_PHONE_KEY, value: { phone }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    if (error) throw new Error(`Failed to save the dispatch phone: ${error.message}`);
-    res.json({ phone });
+    // A company's own number, or the platform default when acting as the platform. Clearing a company's returns it to the default.
+    const scope = await resolveScope();
+    if (scope) await saveOverrides(scope, { [DISPATCH_PHONE_KEY]: phone || null });
+    else await savePlatformRows({ [DISPATCH_PHONE_KEY]: phone ? { phone } : null });
+    res.json({ phone: phone || (scope ? await readDispatchPhone() : null) });
   } catch (e) {
     sendError(req, res, e);
   }

@@ -4,10 +4,13 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
+import { mayGrantSuperadmin } from '../core/org-context';
 import { invalidateRoleCache, requireAuth, requireRole } from '../core/auth';
 import { UserUpdateSchema } from '../schemas';
 import { HttpError, sendError } from '../core/errors';
 import { auditService } from '../services/audit.service';
+import { memberOrgId } from '../core/org-scope';
+import { isInActiveOrg } from '../services/people-common';
 
 const router = Router();
 
@@ -24,7 +27,12 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ detail: 'User not found' });
       return;
     }
-    res.json(user);
+    // `role` stays what the account was created as; `effective_role` is what the active organisation grants
+    res.json({
+      ...user,
+      effective_role: req.user!.role,
+      org: req.org ? { id: req.org.id, kind: req.org.kind, name: req.org.name, status: req.org.status, role: req.orgRole } : null,
+    });
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -58,11 +66,16 @@ router.put('/language', requireAuth, async (req: Request, res: Response) => {
 // ── GET / ──────────────────────────────────────────────────
 router.get('/', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
   try {
-    const { data: users, error } = await supabase
+    // A company sees its own members; the platform and a single-company setup see everyone
+    const orgId = memberOrgId();
+    let usersQuery = supabase
       .from('users')
-      .select('id, email, full_name, role, is_active, created_at');
+      .select(orgId ? 'id, email, full_name, role, is_active, created_at, org_members!inner(org_id, status)' : 'id, email, full_name, role, is_active, created_at');
+    if (orgId) usersQuery = usersQuery.eq('org_members.org_id', orgId).eq('org_members.status', 'active');
+    const { data: rawUsers, error } = await usersQuery;
 
     if (error) throw error;
+    const users = (rawUsers ?? []).map(({ org_members: _m, ...u }: any) => u);
 
     // Fetch ALL vendor profiles
     const { data: profiles } = await supabase
@@ -82,7 +95,7 @@ router.get('/', requireAuth, requireRole('admin', 'superadmin'), async (req: Req
     })) || [];
 
     // Add any vendors that exist in vendor_profiles but NOT in the public.users table
-    if (profiles) {
+    if (profiles && !orgId) {
       const existingUserIds = new Set(mergedUsers.map(u => u.id));
       profiles.forEach(p => {
         if (!existingUserIds.has(p.id)) {
@@ -134,6 +147,10 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
 
     // Check if user exists in public.users
     const { data: existingUser } = await supabase.from('users').select('id, role, status').eq('id', user_id).maybeSingle();
+    // Another company's person (or vendor) is the same 404 as a missing one
+    if (memberOrgId() && user_id !== req.user!.user_id && !(existingUser && (await isInActiveOrg(user_id)))) {
+      throw new HttpError(404, 'User not found');
+    }
 
     // Only a superadmin may grant privileged roles or modify privileged accounts
     const privileged = ['admin', 'superadmin'];
@@ -146,6 +163,9 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
     // Only a superadmin changes roles, and never between driver and staff on the same record
     if (existingUser && payload.role !== undefined && payload.role !== existingUser.role) {
       if (req.user!.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can change a role');
+      if ((payload.role === 'superadmin' || existingUser.role === 'superadmin') && !mayGrantSuperadmin(req.user!.role)) {
+        throw new HttpError(403, 'Only the platform can grant or change a superadmin');
+      }
       if ((payload.role === 'driver') !== (existingUser.role === 'driver')) {
         throw new HttpError(409, "A driver can't be turned into staff, or the reverse, on the same record. Create a new person instead");
       }

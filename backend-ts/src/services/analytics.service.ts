@@ -8,8 +8,31 @@ import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { getVehicleDriverStats } from './driver-performance.service';
 import { selectIn } from './finance.service';
 import { isPlaceholderPlate } from '../core/vehicles';
+import { OWNED, isScoped, orgFilter, scopeQuery } from '../core/org-scope';
+
+/**
+ * Vendor loads (requests) of the active company. A request has no carrier column: the company runs it through the
+ * cargo manifest made for it. Returns null when nothing is scoped (read the table as it is).
+ */
+async function companyRequestIds(): Promise<string[] | null> {
+  if (!isScoped(OWNED.carrier)) return null;
+  const { data, error } = await scopeQuery(supabase.from('cargo_manifest').select('vendor_request_id').not('vendor_request_id', 'is', null), OWNED.carrier);
+  if (error) throw error;
+  return [...new Set((data ?? []).map((m: any) => m.vendor_request_id as string))];
+}
+
+/** The vehicle ids of the active company; null when nothing is scoped. */
+async function companyVehicleIds(): Promise<Set<string> | null> {
+  if (!orgFilter(OWNED.carrier)) return null;
+  const { data, error } = await scopeQuery(supabase.from('vehicles').select('id'), OWNED.carrier);
+  if (error) throw error;
+  return new Set((data ?? []).map((v: any) => v.id as string));
+}
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
+
+// vendor_shipment_requests statuses that count as backhaul revenue
+const BACKHAUL_EARNING_STATUSES = ['completed', 'assigned'];
 
 export class AnalyticsService {
   /**
@@ -23,6 +46,7 @@ export class AnalyticsService {
    *   - `drops`: each lot counts on its own, and the master does not. A consignment that was never split is one drop.
    */
   static async deliveryTimes(startISO: string, endISO: string, unit: 'shipments' | 'drops' = 'shipments'): Promise<string[]> {
+    const scoped = isScoped(OWNED.carrierAndVendor);
     const { data: logs, error: logErr } = await supabase
       .from('shipment_logs')
       .select('shipment_id, timestamp')
@@ -37,21 +61,22 @@ export class AnalyticsService {
     const counted = (r: { is_master?: boolean | null; parent_shipment_id?: string | null }) =>
       unit === 'shipments' ? !r.parent_shipment_id : r.is_master !== true;
     if (times.size > 0) {
-      const logged = await selectIn<{ id: string; is_master: boolean | null; parent_shipment_id: string | null }>('shipments', 'id', [...times.keys()], 'id, is_master, parent_shipment_id');
+      const logged = await selectIn<{ id: string; is_master: boolean | null; parent_shipment_id: string | null }>('shipments', 'id', [...times.keys()], 'id, is_master, parent_shipment_id', q => scopeQuery(q, OWNED.carrierAndVendor));
       const byId = new Map(logged.map(r => [r.id, r]));
       for (const id of [...times.keys()]) {
         const row = byId.get(id);
-        if (row && !counted(row)) times.delete(id);
+        // A delivery log of another company's shipment is not ours (a shipment missing altogether stays, as before)
+        if ((scoped && !row) || (row && !counted(row))) times.delete(id);
       }
     }
 
     // Delivered shipments changed in range that have no delivered log at all (older data)
-    const { data: recent, error: recentErr } = await supabase
+    const { data: recent, error: recentErr } = await scopeQuery(supabase
       .from('shipments')
       .select('id, updated_at, is_master, parent_shipment_id')
       .eq('status', 'delivered')
       .gte('updated_at', startISO)
-      .lt('updated_at', endISO);
+      .lt('updated_at', endISO), OWNED.carrierAndVendor);
     if (recentErr) throw recentErr;
     const unlogged = (recent || []).filter((r: any) => counted(r) && !times.has(r.id));
     if (unlogged.length > 0) {
@@ -60,18 +85,29 @@ export class AnalyticsService {
       for (const r of unlogged) if (!hasLog.has(r.id)) times.set(r.id, r.updated_at);
     }
 
-    const { data: manifests, error: manifestErr } = await supabase
+    const { data: manifests, error: manifestErr } = await scopeQuery(supabase
       .from('cargo_manifest')
       .select('id, updated_at, is_master, parent_manifest_id')
       .in('status', ['delivered', 'completed'])
       .gte('updated_at', startISO)
-      .lt('updated_at', endISO);
+      .lt('updated_at', endISO), OWNED.carrierAndVendor);
     if (manifestErr) throw manifestErr;
     for (const m of manifests || []) {
       const keep = unit === 'shipments' ? !m.parent_manifest_id : m.is_master !== true;
       if (keep) times.set(`manifest:${m.id}`, m.updated_at);
     }
     return [...times.values()];
+  }
+
+  /** Vendor load requests: all of them, or (scoped) the ones the active company runs. */
+  static async requestRows(columns: string, filter: (q: any) => any): Promise<{ data: any[] | null; error: any }> {
+    const ids = await companyRequestIds();
+    if (ids === null) return filter(supabase.from('vendor_shipment_requests').select(columns));
+    try {
+      return { data: await selectIn<any>('vendor_shipment_requests', 'id', ids, columns, filter), error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -93,14 +129,14 @@ export class AnalyticsService {
       { data: routesToday },
       { data: backhaulData },
     ] = await Promise.all([
-      supabase.from('vehicles').select('plate_number, status'),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
+      scopeQuery(supabase.from('vehicles').select('plate_number, status'), OWNED.carrier),
+      scopeQuery(supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO), OWNED.carrier),
       AnalyticsService.deliveryTimes(startISO, endISO),
       AnalyticsService.deliveryTimes(startISO, endISO, 'drops'),
       // Planned distance of the routes dispatched in range
-      supabase.from('routes').select('total_distance_km').in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO),
+      scopeQuery(supabase.from('routes').select('total_distance_km').in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO), OWNED.carrier),
       // Backhaul revenue: agreed cost of vendor loads assigned or completed in range
-      supabase.from('vendor_shipment_requests').select('cost').in('status', ['completed', 'assigned']).gte('created_at', startISO).lt('created_at', endISO),
+      AnalyticsService.requestRows('cost', q => q.in('status', BACKHAUL_EARNING_STATUSES).gte('created_at', startISO).lt('created_at', endISO)),
     ]);
     const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived' && v.status !== 'pending_approval');
     const totalVehicles = fleet.length;
@@ -152,7 +188,7 @@ export class AnalyticsService {
     const dayCount = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
 
     const [{ data: routes, error: routesErr }, deliveredAt] = await Promise.all([
-      supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', sinceISO).lt('created_at', untilISO),
+      scopeQuery(supabase.from('routes').select('created_at').in('status', ['active', 'completed']).gte('created_at', sinceISO).lt('created_at', untilISO), OWNED.carrier),
       AnalyticsService.deliveryTimes(sinceISO, untilISO),
     ]);
     if (routesErr) throw routesErr;
@@ -175,18 +211,24 @@ export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
   // LIVE INSIGHTS — only conditions read from live data (no invented scores or trends)
   // ──────────────────────────────────────────────────────────────────────────
+  /** The cached reroute suggestions, only those for the active company's vehicles. */
+  static async rerouteSuggestions(): Promise<any[] | null> {
+    const [raw, mine] = await Promise.all([cacheGet<any[]>('active_reroute_suggestions'), companyVehicleIds()]);
+    return mine && raw ? raw.filter(s => mine.has(s.vehicle_id)) : raw;
+  }
+
   static async getLiveInsights(): Promise<Record<string, any>[]> {
     const insights: Record<string, any>[] = [];
 
     // The three sources do not depend on each other: read them together
     const [routesRes, idleRes, suggestionsRaw] = await Promise.all([
       // Only what the insights read: the plate, and each stop's status, order and position
-      supabase
+      scopeQuery(supabase
         .from('routes')
         .select('id, vehicle_id, vehicles(plate_number), route_stops(status, sequence, delivery_points(latitude, longitude))')
-        .eq('status', 'active'),
-      supabase.from('vehicles').select('id, plate_number, updated_at').eq('status', 'idle'),
-      cacheGet<any[]>('active_reroute_suggestions'),
+        .eq('status', 'active'), OWNED.carrier),
+      scopeQuery(supabase.from('vehicles').select('id, plate_number, updated_at').eq('status', 'idle'), OWNED.carrier),
+      AnalyticsService.rerouteSuggestions(),
     ]);
     const activeRoutes = routesRes.data as any[] | null;
 
@@ -314,10 +356,10 @@ export class AnalyticsService {
       { count: totalRoutesCount },
       { count: completedRoutesCount },
     ] = await Promise.all([
-      supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').neq('is_master', true),
-      supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']),
-      supabase.from('routes').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+      scopeQuery(supabase.from('shipments').select('id', { count: 'exact', head: true }).eq('status', 'delivered').neq('is_master', true), OWNED.carrierAndVendor),
+      scopeQuery(supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'), OWNED.carrier),
+      scopeQuery(supabase.from('routes').select('id', { count: 'exact', head: true }).in('status', ['active', 'completed']), OWNED.carrier),
+      scopeQuery(supabase.from('routes').select('id', { count: 'exact', head: true }).eq('status', 'completed'), OWNED.carrier),
     ]);
 
     const totalDelivered = deliveredCount || 0;
@@ -345,11 +387,11 @@ export class AnalyticsService {
   // ──────────────────────────────────────────────────────────────────────────
   static async getActiveMissions(): Promise<Record<string, any>[]> {
     const [routesRes, suggestionsRaw] = await Promise.all([
-      supabase
+      scopeQuery(supabase
         .from('routes')
         .select('id, vehicle_id, status, vehicles(plate_number, last_sync), route_stops(status)')
-        .in('status', ['active', 'pending']),
-      cacheGet<any[]>('active_reroute_suggestions'),
+        .in('status', ['active', 'pending']), OWNED.carrier),
+      AnalyticsService.rerouteSuggestions(),
     ]);
     const activeRoutes = routesRes.data as any[] | null;
 
@@ -415,10 +457,10 @@ export class AnalyticsService {
   // DRIVER PERFORMANCE — per vehicle and its assigned driver
   // ──────────────────────────────────────────────────────────────────────────
   static async getDriverPerformance(): Promise<any[]> {
-    const { data: vehicles, error } = await supabase
+    const { data: vehicles, error } = await scopeQuery(supabase
       .from('vehicles')
       .select('id, plate_number, vehicle_type, status, driver_id')
-      .neq('status', 'archived');
+      .neq('status', 'archived'), OWNED.carrier);
 
     if (error) throw error;
     if (!vehicles || vehicles.length === 0) return [];
@@ -473,16 +515,18 @@ export class AnalyticsService {
   // VENDOR PERFORMANCE
   // ──────────────────────────────────────────────────────────────────────────
   static async getVendorPerformance(): Promise<any[]> {
-    const { data: vendors, error } = await supabase
+    // A company sees the vendors whose loads it runs; the platform sees them all
+    const { data: requests, error: reqErr } = await AnalyticsService.requestRows('vendor_id, status, cost, cost_per_km', q => q);
+    if (reqErr) throw reqErr;
+    const scoped = (await companyRequestIds()) !== null;
+    const { data: allVendors, error } = await supabase
       .from('vendor_profiles')
       .select('id, company_name, city, is_verified, kyc_status');
 
     if (error) throw error;
-    if (!vendors) return [];
-
-    const { data: requests } = await supabase
-      .from('vendor_shipment_requests')
-      .select('vendor_id, status, cost, cost_per_km');
+    if (!allVendors) return [];
+    const seen = new Set((requests ?? []).map((r: any) => r.vendor_id));
+    const vendors = scoped ? allVendors.filter((v: any) => seen.has(v.id)) : allVendors;
 
     return vendors.map((v: any) => {
       const vendorReqs = (requests || []).filter((r: any) => r.vendor_id === v.id);

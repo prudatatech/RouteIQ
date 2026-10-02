@@ -12,6 +12,7 @@ import { notificationPath } from '@/components/ui/notificationTargets'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useDraftStore } from '@/store/draftStore'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { buildQueues, splitQueues, type Queue, type QueueTone } from '@/components/today/queues'
@@ -19,6 +20,7 @@ import { DRIVER_ACTION_NOTIFICATION_TYPES } from '@/components/today/driverActio
 import { isDraftVehicle, isFleetVehicle, isVehicleLive, lastSeenAt } from '@/utils/vehicles'
 import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import type { FleetAlert } from '@/components/fleet/health'
+import { usePendingOrgCount } from '@/hooks/usePendingOrgCount'
 import { formatDate, formatRelative } from '@/utils/display'
 
 interface VehicleRow {
@@ -136,11 +138,12 @@ export default function TodayPage() {
   const navigate = useNavigate()
   const openModal = useDraftStore(s => s.openModal)
   const userId = useAuthStore(s => s.userId)
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const [searchParams] = useSearchParams()
   const selectedVehicleId = searchParams.get('vehicle')
 
   // One request for every queue count; the menu badges read the same query.
+  const pendingOrgs = usePendingOrgCount()
   const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, refetchInterval: 30_000 })
   useRealtimeRefresh('today_page', ['sos_alerts', 'cargo_exceptions', 'customer_bookings', 'vendor_shipment_requests', 'shipments', 'routes', 'vehicles', 'user_documents', 'capacity_bids', 'invoices', 'invoice_payment_reports'], [['ops-today']])
 
@@ -278,6 +281,19 @@ export default function TodayPage() {
         description="What needs you now, most urgent first."
         actions={<Button icon={<Plus size={16} />} onClick={openModal}>Create shipment</Button>}
       />
+
+      {pendingOrgs !== null && pendingOrgs > 0 && (
+        <Card padded className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-text">Companies waiting for approval</h2>
+            <p className="mt-0.5 text-xs text-muted">New logistics companies cannot start until you approve them.</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <p className="text-3xl font-semibold leading-none text-warning tabular">{pendingOrgs.toLocaleString('en-IN')}</p>
+            <Link to="/platform/organisations" className={buttonClasses({ variant: 'secondary' })}>Review companies</Link>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat label="Active trips" value={live?.active_trips ?? '–'} loading={today.isLoading} icon={<RouteIcon size={18} />} />
