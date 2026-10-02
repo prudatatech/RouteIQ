@@ -1,13 +1,15 @@
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Check, ExternalLink, Truck, X } from 'lucide-react'
-import { Alert, Button, DetailList, Drawer, StatusPill, humanize } from '@/components/ui'
+import { Alert, Button, DetailList, Drawer, StatusPill, TabPanel, Tabs, humanize } from '@/components/ui'
 import { buttonClasses } from '@/components/ui/buttonStyles'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import VendorLoadCargo from '@/components/cargo/VendorLoadCargo'
 import { supabase } from '@/services/supabase'
 import type { CustomerBooking } from '@/services/api'
 import { formatDate, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
 import { CustomerDetailsBlock } from './CustomerProfileEditor'
 import { bookingNeedsVehicle, customerName, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
 
@@ -133,6 +135,10 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
   const open = !!request && (request.status === 'pending' || request.status === 'approved')
   const showPartners = !!request && ['pending', 'approved', 'escalated', 'assigned_to_partner', 'completed'].includes(request.status)
   const assignedPlate = useAssignedPlate(request?.assigned_vehicle_id)
+  // Documents are for loads we have taken on: not while the request is new or after it was turned down
+  const showDocs = !!request && request.status !== 'pending' && request.status !== 'rejected'
+  const [tab, setTab] = useState<'details' | 'documents'>('details')
+  useEffect(() => { setTab('details') }, [request?.id])
   const row = request ? vendorRow(request) : null
   const shipment = row ? shipmentHref(row) : null
   const cargo = request?.metadata?.cargo
@@ -160,7 +166,21 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
         </>
       ) : undefined}
     >
-      {request && (
+      {request && showDocs && (
+        <Tabs
+          className="mb-4"
+          label="Load sections"
+          value={tab}
+          onChange={setTab}
+          tabs={[{ id: 'details', label: 'Details' }, { id: 'documents', label: 'Documents' }]}
+        />
+      )}
+      {request && showDocs && tab === 'documents' && (
+        <TabPanel id="documents">
+          <LoadDocumentsPanel key={request.id} loadId={request.id} role="carrier" />
+        </TabPanel>
+      )}
+      {request && !(showDocs && tab === 'documents') && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
             {row && <StatusPill tone={row.statusTone}>{row.statusLabel}</StatusPill>}
