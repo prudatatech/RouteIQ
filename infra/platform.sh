@@ -81,12 +81,15 @@ log "Roles and schemas"
 WEB_HOST="$(az staticwebapp show -g "$RG" -n "$WEB_APP" --query defaultHostname -o tsv)"
 SITE_URL="https://${CUSTOM_DOMAIN:-$WEB_HOST}"
 log "Services ($P-gateway, -auth, -rest, -rt, -storage, -s3proxy); sign-in redirects to $SITE_URL"
+# Realtime's start-up seed deletes and re-creates its tenant (ssl off, 100 ms poll): seed only when the tenant is missing
+SEED_RT=false
+if [[ "$(echo "SELECT count(*) FROM _realtime.tenants WHERE external_id = '$P-rt'" | "${PSQL[@]}" -At 2>/dev/null || echo 0)" == "0" ]]; then SEED_RT=true; fi
 GATEWAY="$(az deployment group create -g "$RG" -n "$P-platform" --template-file "$INFRA_DIR/platform.bicep" \
   --parameters stage="$STAGE" prefix="$PREFIX" location="$LOCATION" pgHost="$PG_HOST" siteUrl="$SITE_URL" dataDomain="${DATA_DOMAIN:-}" \
     jwtSecret="$JWT_SECRET" anonKey="$ANON_KEY" serviceRoleKey="$SERVICE_ROLE_KEY" \
     authenticatorPassword="$AUTHENTICATOR_PASSWORD" authAdminPassword="$AUTH_ADMIN_PASSWORD" \
     storageAdminPassword="$STORAGE_ADMIN_PASSWORD" realtimeAdminPassword="$REALTIME_ADMIN_PASSWORD" \
-    realtimeSecretKeyBase="$REALTIME_SECRET_KEY_BASE" \
+    realtimeSecretKeyBase="$REALTIME_SECRET_KEY_BASE" seedRealtimeTenant="$SEED_RT" \
     s3proxyIdentity="$S3PROXY_IDENTITY" s3proxyCredential="$S3PROXY_CREDENTIAL" \
   --only-show-errors --query properties.outputs.gatewayUrl.value -o tsv)"
 # The gateway's custom domain is not part of the Bicep template, and redeploying the app drops its hostname
@@ -109,12 +112,12 @@ fi
 # (notifications, the nav badges, the live map, SOS) failed with UnableToConnectToProject. Switch the tenant to SSL
 # (a plain boolean in _realtime.extensions) and restart the service so it drops its cached tenant. Idempotent.
 log "Realtime: tenant database over SSL"
-RT_SQL="UPDATE _realtime.extensions SET settings = jsonb_set(settings, '{ssl_enforced}', 'true'::jsonb) WHERE tenant_external_id = '$P-rt' AND coalesce(settings->>'ssl_enforced', 'false') <> 'true'"
+RT_SQL="UPDATE _realtime.extensions SET settings = jsonb_set(jsonb_set(settings, '{ssl_enforced}', 'true'::jsonb), '{poll_interval_ms}', '1000'::jsonb) WHERE tenant_external_id = '$P-rt' AND (coalesce(settings->>'ssl_enforced', 'false') <> 'true' OR coalesce(settings->>'poll_interval_ms', '0') <> '1000')"
 for _ in 1 2 3 4 5 6 7 8; do
   if [[ "$(echo "SELECT to_regclass('_realtime.extensions') IS NOT NULL" | "${PSQL[@]}" -At 2>/dev/null)" == "t" ]]; then break; fi
   sleep 5
 done
-if [[ "$(echo "SELECT count(*) FROM _realtime.extensions WHERE tenant_external_id = '$P-rt' AND coalesce(settings->>'ssl_enforced', 'false') <> 'true'" | "${PSQL[@]}" -At 2>/dev/null || echo 0)" != "0" ]]; then
+if [[ "$(echo "SELECT count(*) FROM _realtime.extensions WHERE tenant_external_id = '$P-rt' AND (coalesce(settings->>'ssl_enforced', 'false') <> 'true' OR coalesce(settings->>'poll_interval_ms', '0') <> '1000')" | "${PSQL[@]}" -At 2>/dev/null || echo 0)" != "0" ]]; then
   echo "$RT_SQL" | "${PSQL[@]}" >/dev/null && az containerapp revision restart -g "$RG" -n "$P-rt" \
     --revision "$(az containerapp revision list -g "$RG" -n "$P-rt" --query "[?properties.active] | [0].name" -o tsv)" -o none \
     || warn "could not switch the realtime tenant to SSL: run the UPDATE on _realtime.extensions by hand"
