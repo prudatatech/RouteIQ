@@ -12,18 +12,18 @@ import { errorMessage } from '@/utils/display'
 import type { BusinessProfile, LoadDraft, PostedLoad, ProductRow, Recommendation } from '@/types/load'
 import AddressStep from '@/components/load-post/AddressStep'
 import BusinessProfileStep from '@/components/load-post/BusinessProfileStep'
-import HsnSearch from '@/components/load-post/HsnSearch'
 import LoadConfirmation from '@/components/load-post/LoadConfirmation'
 import OtpModal from '@/components/load-post/OtpModal'
-import ProductRows from '@/components/load-post/ProductRows'
+import GoodsStep from '@/components/load-post/GoodsStep'
 import RecommendationList from '@/components/load-post/RecommendationList'
 import ReviewStep from '@/components/load-post/ReviewStep'
 import TransportStep from '@/components/load-post/TransportStep'
 import { useLoadAssist } from '@/components/load-post/useLoadAssist'
 import {
-  applyRecommendation, emptyDraft, emptyRow, firstInvalidStep, LAST_STEP, mergeDraft, STEP_LABELS, stepForRecommendation,
-  toPayload, validateStep,
+  applyRecommendation, applyRowPatch, deriveCapacity, emptyDraft, emptyRow, itemTotals, LAST_STEP, STEP_LABELS, toPayload,
 } from '@/components/load-post/logic'
+import { mergeDraft } from '@/components/load-post/draft'
+import { firstInvalidStep, stepForRecommendation, validateStep } from '@/components/load-post/validate'
 
 /** Where the email and password sign-in sends the vendor back to: the saved form, at the review step. */
 const RESUME_PATH = '/vendor/request?resume=1'
@@ -38,7 +38,7 @@ function initialDraft(params: URLSearchParams): LoadDraft {
   d.delivery_city = city(params.get('query'))
   d.pickup_city = city(params.get('from'))
   const weight = parseFloat(params.get('weight') ?? '')
-  if (Number.isFinite(weight) && weight > 0) d.items[0].weight_kg = String(weight)
+  if (Number.isFinite(weight) && weight > 0) { d.items[0].weight_kg = String(weight) }
   return d
 }
 
@@ -110,13 +110,17 @@ export default function VendorShipmentRequestPage() {
   useEffect(() => {
     const s = assist?.suggested
     if (!s || draft.transport_touched) return
-    // The server may suggest a type without a vehicle or capacity (nothing fits yet)
+    // The server may suggest a type without a vehicle (nothing fits yet)
     const vehicle = s.vehicle_class ?? ''
-    const capacity = s.capacity_t != null ? String(s.capacity_t) : ''
-    if (draft.load_type !== s.load_type || draft.vehicle_class !== vehicle || draft.capacity_t !== capacity) {
-      patch({ load_type: s.load_type, vehicle_class: vehicle, capacity_t: capacity })
-    }
-  }, [assist, draft.transport_touched, draft.load_type, draft.vehicle_class, draft.capacity_t, patch])
+    if (draft.load_type !== s.load_type || draft.vehicle_class !== vehicle) patch({ load_type: s.load_type, vehicle_class: vehicle })
+  }, [assist, draft.transport_touched, draft.load_type, draft.vehicle_class, patch])
+
+  // The capacity is never typed: it follows the suggestion and the chosen vehicle, and is sent as capacity_t.
+  const capacity = deriveCapacity(assist?.suggested.capacity_t, vehicles.find(v => v.key === draft.vehicle_class), draft.transport_touched)
+  const capacityText = capacity === null || itemTotals(draft.items).weight_kg <= 0 ? '' : String(capacity)
+  useEffect(() => {
+    if (draft.capacity_t !== capacityText) patch({ capacity_t: capacityText })
+  }, [capacityText, draft.capacity_t, patch])
 
   const step = draft.step
   const errors = attempted[step] ? validateStep(draft, step) : {}
@@ -132,7 +136,7 @@ export default function VendorShipmentRequestPage() {
     if (Object.keys(validateStep(draft, step)).length === 0) goTo(step + 1)
   }
 
-  const changeRow = (i: number, p: Partial<ProductRow>) => setDraft(d => ({ ...d, items: d.items.map((r, n) => (n === i ? { ...r, ...p } : r)) }))
+  const changeRow = (i: number, p: Partial<ProductRow>) => setDraft(d => ({ ...d, items: d.items.map((r, n) => (n === i ? applyRowPatch(r, p) : r)) }))
   const addRow = () => setDraft(d => ({ ...d, items: [...d.items, emptyRow()] }))
   const removeRow = (i: number) => setDraft(d => (i === 0 ? d : { ...d, items: d.items.filter((_, n) => n !== i) }))
 
@@ -230,9 +234,7 @@ export default function VendorShipmentRequestPage() {
     )
   }
 
-  const first = draft.items[0]
-
-  return (
+    return (
     <Page width="form">
       <PageHeader title="Post a load" description="Tell us what you are moving and where. You sign in only when you submit." />
 
@@ -250,37 +252,28 @@ export default function VendorShipmentRequestPage() {
         <h2 id="step-title" className="text-lg font-semibold text-text">{STEP_LABELS[step]}</h2>
 
         {step === 0 && (
-          <div className="space-y-4">
-            <HsnSearch
-              row={first} index={0} onChange={p => changeRow(0, p)}
-              errors={{ name: errors.product_name_0, hsn: errors.hsn_code_0, rate: errors.gst_rate_0 }}
-            />
-            {notes(recsFor(0))}
-          </div>
-        )}
-        {step === 1 && (
-          <div className="space-y-4">
-            <ProductRows
-              items={draft.items} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
-              bulkHint={recs.find(r => r.code === 'bulk_template')?.message}
-            />
-            {notes(recsFor(1).filter(r => r.code !== 'bulk_template'))}
-          </div>
-        )}
-        {step === 2 && (
           <AddressStep
             draft={draft} onChange={patch} errors={errors}
-            pickupNotes={notes(recsFor(2, ['same_day_pickup']))}
-            deliveryNotes={notes(recsFor(2, ['same_city', 'interstate_igst']))}
+            pickupNotes={notes(recsFor(0, ['same_day_pickup']))}
+            deliveryNotes={notes(recsFor(0, ['same_city']))}
+          />
+        )}
+        {step === 1 && (
+          <GoodsStep
+            items={draft.items} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
+            notes={notes(recsFor(1).filter(r => r.code !== 'bulk_template' && r.code !== 'eway_required'))}
+            bulkHint={recs.find(r => r.code === 'bulk_template')?.message}
+          />
+        )}
+        {step === 2 && (
+          <TransportStep
+            draft={draft} onChange={patch} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesQuery.isLoading}
+            assist={assist}
+            truckNotes={notes(recsFor(2).filter(r => r.code !== 'budget_below_estimate'))}
+            priceNotes={notes(recsFor(2, ['budget_below_estimate']))}
           />
         )}
         {step === 3 && (
-          <TransportStep
-            draft={draft} onChange={patch} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesQuery.isLoading}
-            assist={assist} notes={notes(recsFor(3))}
-          />
-        )}
-        {step === 4 && (
           <>
             {notes(recs.filter(r => r.severity === 'warn' && r.code !== 'eway_required'))}
             <ReviewStep

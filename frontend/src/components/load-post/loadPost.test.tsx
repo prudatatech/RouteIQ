@@ -32,14 +32,16 @@ vi.mock('@/components/map/AddressPicker', () => ({
 }))
 
 import HsnSearch from './HsnSearch'
-import ProductRows from './ProductRows'
+import GoodsStep from './GoodsStep'
+import { PricingCard, HandlingCard } from './PricingCards'
+import { CapacityNote } from './TruckCards'
 import OtpModal from './OtpModal'
 import LoadConfirmation from './LoadConfirmation'
 import PostedLoads from './PostedLoads'
 import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
 import AddressStep from './AddressStep'
-import { emptyDraft, emptyRow } from './logic'
-import { loadGuestDraft } from '@/utils/guestDraft'
+import { applyRowPatch, emptyDraft, emptyRow } from './logic'
+import { loadGuestDraft, saveGuestDraft } from '@/utils/guestDraft'
 import { useAuthStore } from '@/store/authStore'
 import { useOrgStore } from '@/store/orgStore'
 import { memoryAuthStorage } from '@/test-utils/authStorage'
@@ -78,9 +80,9 @@ afterEach(() => cleanup())
 function Rows({ initial }: { initial?: ProductRow[] }) {
   const [items, setItems] = useState<ProductRow[]>(initial ?? [emptyRow()])
   return (
-    <ProductRows
+    <GoodsStep
       items={items} errors={{}}
-      onChangeRow={(i, p) => setItems(rows => rows.map((r, n) => (n === i ? { ...r, ...p } : r)))}
+      onChangeRow={(i, p) => setItems(rows => rows.map((r, n) => (n === i ? applyRowPatch(r, p) : r)))}
       onAdd={() => setItems(rows => [...rows, emptyRow()])}
       onRemove={i => setItems(rows => rows.filter((_, n) => n !== i))}
     />
@@ -92,7 +94,7 @@ function Single() {
   return <HsnSearch row={row} index={0} onChange={p => setRow(r => ({ ...r, ...p }))} />
 }
 
-describe('product rows', () => {
+describe('goods step', () => {
   it('has no remove button on the first row, adds rows, and removes any other row', () => {
     render(<Rows />)
     expect(screen.queryByRole('button', { name: /remove product 1/i })).toBeNull()
@@ -104,6 +106,24 @@ describe('product rows', () => {
     expect(screen.getAllByRole('group', { name: /^product \d/i })).toHaveLength(2)
   })
 
+  it('asks for each product once, with its search, quantity and own handling in the same card', () => {
+    render(<Rows />)
+    expect(screen.getAllByLabelText(/describe your goods/i)).toHaveLength(1)
+    const card = screen.getByRole('group', { name: 'Product 1' })
+    for (const label of [/describe your goods/i, /^quantity/i, /^unit/i, /^weight/i, /^declared value/i, /^fragile/i, /^hazardous/i]) expect(within(card).getByLabelText(label)).toBeTruthy()
+  })
+
+  it('fills the weight from a quantity in kg, and lets it be changed', () => {
+    render(<Rows />)
+    fireEvent.change(screen.getByLabelText(/^unit/i), { target: { value: 'kg' } })
+    fireEvent.change(screen.getByLabelText(/^quantity/i), { target: { value: '750' } })
+    const weight = screen.getByLabelText(/^weight/i) as HTMLInputElement
+    expect(weight.value).toBe('750')
+    fireEvent.change(weight, { target: { value: '700' } })
+    fireEvent.change(screen.getByLabelText(/^quantity/i), { target: { value: '800' } })
+    expect(weight.value).toBe('700')
+  })
+
   it('shows the totals and the e-way counter as values are typed, and the bulk hint at 3 products', () => {
     render(<Rows initial={[emptyRow(), emptyRow(), emptyRow()]} />)
     const weights = screen.getAllByLabelText(/^weight/i)
@@ -112,12 +132,12 @@ describe('product rows', () => {
     fireEvent.change(weights[1], { target: { value: '8400' } })
     fireEvent.change(values[0], { target: { value: '30000' } })
     expect(screen.getByTestId('total-weight').textContent).toBe('20,900 kg')
-    expect(screen.getByTestId('eway-required').textContent).toBe('No')
-    expect(screen.getByTestId('eway-counter').textContent).toBe('Current declared value: ₹30,000')
+    expect(screen.getByTestId('eway-required').textContent).toMatch(/^No e-Way Bill needed/)
     fireEvent.change(values[1], { target: { value: '732500' } })
     expect(screen.getByTestId('total-value').textContent).toBe('₹7,62,500')
-    expect(screen.getByTestId('eway-required').textContent).toBe('Yes')
-    expect(screen.getByTestId('eway-counter').textContent).toMatch(/e-Way Bill will be required/)
+    expect(screen.getByTestId('eway-required').textContent).toMatch(/^e-Way Bill needed \(value above/)
+    expect(screen.queryByTestId('eway-counter')).toBeNull()
+    expect(screen.queryByText(/current declared value/i)).toBeNull()
     expect(screen.getByText(/download a template/i)).toBeTruthy()
   })
 })
@@ -265,13 +285,16 @@ describe('repost', () => {
   })
 })
 
+const goodsDraft = () => ({ ...emptyDraft(), step: 1 })
+
 describe('the form draft', () => {
   it('is saved on every change and comes back after a reload with the same request id', () => {
+    saveGuestDraft('load', goodsDraft())
     const first = render(wrap(<VendorShipmentRequestPage />))
-    const goods = screen.getByLabelText(/describe your goods/i)
-    fireEvent.change(goods, { target: { value: 'cement' } })
-    const saved = loadGuestDraft<{ client_request_id: string; items: { product_name: string }[] }>('load')
+    fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'cement' } })
+    const saved = loadGuestDraft<{ v: number; client_request_id: string; items: { product_name: string }[] }>('load')
     expect(saved?.items[0].product_name).toBe('cement')
+    expect(saved?.v).toBe(2)
     expect(saved?.client_request_id).toMatch(/^[0-9a-f-]{36}$/)
 
     first.unmount()
@@ -280,11 +303,77 @@ describe('the form draft', () => {
     expect(loadGuestDraft<{ client_request_id: string }>('load')?.client_request_id).toBe(saved?.client_request_id)
   })
 
-  it('asks for the missing detail instead of moving on', () => {
+  it('opens on Route and dates and asks for the missing detail instead of moving on', () => {
     render(wrap(<VendorShipmentRequestPage />))
+    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    expect(screen.queryByLabelText(/describe your goods/i)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
-    expect(screen.getByText(/describe your goods \(at least 3 characters\)/i)).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Goods & HSN' })).toBeTruthy()
+    expect(screen.getAllByText(/enter the city/i).length).toBe(2)
+    expect(screen.getByText(/who receives the goods/i)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+  })
+
+  it('moves an old Products draft (step 1) to the Goods step with the product kept', () => {
+    saveGuestDraft('load', { ...emptyDraft(), v: undefined, step: 1, items: [{ ...emptyRow(), product_name: 'rice' }] })
+    render(wrap(<VendorShipmentRequestPage />))
+    expect(screen.getByRole('heading', { name: 'Goods' })).toBeTruthy()
+    expect((screen.getByLabelText(/describe your goods/i) as HTMLInputElement).value).toBe('rice')
+  })
+
+  it('moves an old Pickup & Delivery draft to Route and dates, and an old Transport draft to Truck and price', () => {
+    saveGuestDraft('load', { ...emptyDraft(), v: undefined, step: 2 })
+    const first = render(wrap(<VendorShipmentRequestPage />))
+    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    first.unmount()
+    saveGuestDraft('load', { ...emptyDraft(), v: undefined, step: 3 })
+    render(wrap(<VendorShipmentRequestPage />))
+    expect(screen.getByRole('heading', { name: 'Truck & price' })).toBeTruthy()
+  })
+
+  it('shows the pricing choice with quotes as the default on Truck and price', () => {
+    saveGuestDraft('load', { ...emptyDraft(), step: 2 })
+    render(wrap(<VendorShipmentRequestPage />))
+    expect((screen.getByRole('radio', { name: /get quotes from companies/i }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByLabelText(/your target budget/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: /book at my price/i }))
+    expect(screen.getByLabelText(/your price/i)).toBeTruthy()
+    expect(screen.queryByLabelText(/required capacity/i)).toBeNull()
+    expect(screen.queryByText(/request quotation/i)).toBeNull()
+  })
+})
+
+describe('pricing card', () => {
+  it('requires a price for book at my price and shows its error', () => {
+    const draft = { ...emptyDraft(), quote_requested: false }
+    render(<PricingCard draft={draft} onChange={() => {}} errors={{ budget_inr: 'Enter the price you will pay, or choose to get quotes instead.' }} assist={null} />)
+    expect(screen.getByText(/price you will pay/i)).toBeTruthy()
+    expect((screen.getByLabelText(/your price/i) as HTMLInputElement).required).toBe(true)
+  })
+})
+
+describe('handling card', () => {
+  it('offers only whole-load options and shows fragile and hazmat from the products as read-only chips', () => {
+    const draft = emptyDraft()
+    draft.items[0].handling = ['fragile', 'hazmat']
+    render(<HandlingCard draft={draft} onChange={() => {}} />)
+    expect(screen.queryByRole('checkbox', { name: /fragile/i })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: /hazardous/i })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: /do not stack/i })).toBeTruthy()
+    const chips = screen.getByTestId('derived-handling').textContent ?? ''
+    expect(chips).toMatch(/Fragile/)
+    expect(chips).toMatch(/Hazardous/)
+  })
+})
+
+describe('capacity note', () => {
+  const van = { key: 'v', name: 'Eicher 14 ft', min_t: 3, max_t: 5, best_for: null, notes: null, interstate_ok: true, is_reefer: false, is_open: false, is_tanker: false, sort: 1 }
+  it('says what the vehicle fits against the load, and warns when the load is heavier', () => {
+    const ok = render(<CapacityNote vehicle={van} capacity={5} weightKg={4000} />)
+    expect(screen.getByTestId('capacity-note').textContent).toBe('Fits up to 5 t, your load is 4 t.')
+    expect(screen.queryByRole('alert')).toBeNull()
+    ok.unmount()
+    render(<CapacityNote vehicle={van} capacity={5} weightKg={6500} />)
+    expect(screen.getByText(/heavier than Eicher 14 ft carries \(5 t\)/)).toBeTruthy()
   })
 })
 
@@ -295,7 +384,7 @@ describe('city suggestions', () => {
     const { container } = render(<AddressStep draft={{ ...base, pickup_city: 'P' + 'u' }} onChange={() => {}} errors={{}} />)
     await waitFor(() => expect(api.cities).toHaveBeenCalledWith('Pu'))
     await waitFor(() => expect(container.querySelectorAll('datalist#pickup-city-suggestions option')).toHaveLength(2))
-    const box = screen.getByLabelText(/pickup city/i)
+    const box = within(screen.getByRole('group', { name: 'Pickup' })).getByLabelText(/^city/i)
     expect(box.getAttribute('list')).toBe('pickup-city-suggestions')
     expect([...container.querySelectorAll('datalist#pickup-city-suggestions option')].map(o => o.getAttribute('value'))).toEqual(['Pune', 'Pimpri'])
   })

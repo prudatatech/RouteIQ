@@ -93,6 +93,8 @@ import type { LoadRouting } from '@/types/routing'
 export interface LoadDraft {
   /** A UUID made when the form opened; the server returns the first load for a repeated id. */
   client_request_id: string
+  /** The draft's layout version. 2 is the four-step form; a saved draft without it is from the five-step form. */
+  v: number
   step: number
   items: ProductRow[]
 
@@ -125,11 +127,14 @@ export interface LoadDraft {
 
   load_type: '' | LoadType
   vehicle_class: string
+  /** Derived, never typed: the server's suggestion or the chosen vehicle's size (deriveCapacity). Sent as capacity_t. */
   capacity_t: string
-  /** False while the suggestion still fills load type, vehicle and capacity; true once the person changed one. */
+  /** False while the suggestion still fills load type and vehicle; true once the person changed one. */
   transport_touched: boolean
   temp_choice: TempChoice
+  /** Load-level handling only (do not stack, this side up, ODC). Fragile and hazmat come from the products. */
   special_handling: SpecialHandling[]
+  /** Quotes mode: an optional target. Book-at-my-price mode (quote_requested false): the price, required. */
   budget_inr: string
   quote_requested: boolean
   loading_help: boolean
