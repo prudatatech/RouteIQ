@@ -51,6 +51,11 @@ jobs:
           set -o pipefail
           mkdir -p e2e/out
           docker exec -i supabase_db_margix-e2e psql -U postgres -d postgres -v ON_ERROR_STOP=1 < e2e/tenancy-backfill.sql 2>&1 | tee e2e/out/backfill.txt
+      - name: Company settings and invoice counters (SQL)
+        run: |
+          set -o pipefail
+          docker exec -i supabase_db_margix-e2e psql -U postgres -d postgres -v ON_ERROR_STOP=1 < e2e/company-settings.sql 2>&1 | tee e2e/out/company-settings.txt
+          bash e2e/company-settings-concurrency.sh 2>&1 | tee -a e2e/out/company-settings.txt
       - name: Start the backend and web app
         run: |
           mkdir -p e2e/out

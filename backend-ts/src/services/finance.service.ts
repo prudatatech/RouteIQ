@@ -14,7 +14,7 @@
  * reported as missing, never replaced by a made-up number.
  */
 import { supabase } from '../core/supabase';
-import { memoize } from '../core/memo';
+import { readEffectiveSettings, resolveScope, saveOverrides, savePlatformRows, scopedMemo } from './company-settings.service';
 import { manifestParcelCode } from '../core/parcelCode';
 import { indianDateKey } from '../core/istDate';
 
@@ -65,31 +65,33 @@ function settingNumber(value: unknown): number | null {
 
 type FinanceSettings = { fuel_price_per_litre: number | null; rate_per_km: number | null };
 
-const loadFinanceSettings = memoize(30_000, async (): Promise<FinanceSettings> => {
-  const { data, error } = await supabase.from('system_settings').select('key, value').in('key', [FUEL_PRICE_KEY, RATE_PER_KM_KEY]);
-  if (error) throw new Error(`Failed to read settings: ${error.message}`);
-  const byKey = new Map((data ?? []).map((r: any) => [r.key, settingNumber(r.value)]));
+const loadFinanceSettings = scopedMemo(30_000, async (scope): Promise<FinanceSettings> => {
+  const byKey = await readEffectiveSettings(k => k === FUEL_PRICE_KEY || k === RATE_PER_KM_KEY, scope);
   return {
-    fuel_price_per_litre: byKey.get(FUEL_PRICE_KEY) ?? null,
-    rate_per_km: byKey.get(RATE_PER_KM_KEY) ?? null,
+    fuel_price_per_litre: settingNumber(byKey.get(FUEL_PRICE_KEY)),
+    rate_per_km: settingNumber(byKey.get(RATE_PER_KM_KEY)),
   };
 });
 
 /**
- * The finance settings as they are now. `{ cached: true }` is for the profit and loss page: the same
- * for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
+ * The finance settings as they are now, for the company the request acts for (the company's own fuel price and rate
+ * per km, else the platform default; acting as the platform: the defaults). `{ cached: true }` is for the profit and
+ * loss page: the same for every user and rarely changed, so read at most every 30 s there (setFuelPrice clears it).
  */
 export async function getFinanceSettings(opts: { cached?: boolean } = {}): Promise<FinanceSettings> {
   if (!opts.cached) loadFinanceSettings.clear();
-  return { ...(await loadFinanceSettings()) };
+  return { ...(await loadFinanceSettings(await resolveScope())) };
 }
 
+/** Sets the fuel price of the company the request acts for; as the platform, the platform default. */
 export async function setFuelPrice(price: number): Promise<void> {
-  const { error } = await supabase
-    .from('system_settings')
-    .upsert({ key: FUEL_PRICE_KEY, value: { price }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-  loadFinanceSettings.clear();
-  if (error) throw new Error(`Failed to save fuel price: ${error.message}`);
+  const scope = await resolveScope();
+  try {
+    if (scope) await saveOverrides(scope, { [FUEL_PRICE_KEY]: price });
+    else await savePlatformRows({ [FUEL_PRICE_KEY]: { price } });
+  } finally {
+    loadFinanceSettings.clear();
+  }
 }
 
 export interface FinanceRange {

@@ -9,6 +9,7 @@ import { AlarmSettingsSection } from '@/components/fleet/AlarmSettings'
 import { AutoEscalationSetting } from '@/components/tpl/AutoEscalationSetting'
 import { PeopleSettingsCard } from '@/components/people/PeopleSettingsCard'
 import { CompanyProfileCard } from '@/components/money/CompanyProfileCard'
+import { useOrgStore, selectActiveMembership } from '@/store/orgStore'
 
 const PHONE_PATTERN = /^\+?[0-9]{7,15}$/
 
@@ -78,6 +79,8 @@ function DispatchPhoneCard() {
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const isSuperadmin = useAuthStore(s => s.role) === 'superadmin'
+  const acting = useOrgStore(selectActiveMembership)
+  const asPlatform = acting?.org.kind === 'platform'
   const settings = useQuery({ queryKey: ['finance', 'settings'], queryFn: () => financeAPI.settings() })
   const [price, setPrice] = useState('')
   const [error, setError] = useState<string | undefined>()
@@ -112,7 +115,23 @@ export default function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Values that costs, pricing and fleet alerts are worked out from, and the number drivers call." />
+      <PageHeader
+        title="Settings"
+        description={asPlatform
+          ? 'The platform defaults that costs, pricing and the number drivers call are worked out from.'
+          : 'Values that costs, pricing and fleet alerts are worked out from, and the number drivers call.'}
+      />
+
+      {asPlatform ? (
+        <p role="note" className="rounded-card border border-border bg-surface-subtle px-4 py-3 text-sm text-muted">
+          You are acting as the platform, so these are the platform defaults. Each logistic company can override them in its own Settings,
+          and uses the default for anything it leaves unset.
+        </p>
+      ) : acting ? (
+        <p role="note" className="rounded-card border border-border bg-surface-subtle px-4 py-3 text-sm text-muted">
+          These settings belong to <span className="font-medium text-text">{acting.org.name}</span>. Anything not set here uses the platform default.
+        </p>
+      ) : null}
 
       {settings.isError ? (
         <ErrorState title="We could not load settings" description="Check your connection and try again." onRetry={() => settings.refetch()} />

@@ -110,6 +110,8 @@ export interface CompanyProfile {
   upi_id: string | null
   payment_terms_days: number
   invoice_footer: string | null
+  /** Letters invoice numbers start with, e.g. MIL for MIL-202610-0001. Unique per company; null until set or until the first invoice. */
+  invoice_prefix: string | null
 }
 
 /** One invoice as its page shows it (GET /invoices/:id). */
