@@ -8,14 +8,29 @@
  */
 import { Router, Request } from 'express';
 import { requireAuth, requireRole } from '../core/auth';
+import type { NextFunction, Response } from 'express';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
-import { tplNetworkService, type SourceType } from '../services/tpl-network.service';
+import { tplNetworkService, type PartnerSession, type SourceType } from '../services/tpl-network.service';
 import { supabase } from '../core/supabase';
 
 const router = Router();
 const staff = [requireAuth, requireRole(...STAFF_ROLES)];
-const partner = [requireAuth, requireRole('vendor')];
+// A partner portal caller is a member of a 3PL partner organisation (or the partner's linked user), whatever
+// app role the membership maps to: the lookup throws 403 for anyone else.
+const requirePartnerMember = (req: Request, res: Response, next: NextFunction): void => {
+  tplNetworkService.partnerForUser(req.user!.user_id).then(p => { (req as Request & { tplPartner?: PartnerSession }).tplPartner = p; next(); }, err => failBoth(req, res, err));
+};
+const partner = [requireAuth, requirePartnerMember];
+
+/** The partner screens read the reason from `detail` (the web dialog shows it as is); older clients read `error`: both are sent. */
+function failBoth(req: Request, res: Response, err: unknown): void {
+  if (err instanceof HttpError) {
+    res.status(err.status).json({ ...err.extra, error: err.message, detail: err.message });
+    return;
+  }
+  sendError(req, res, err, 'error');
+}
 const superadmin = [requireAuth, requireRole('superadmin')];
 // Marking a partner paid is money: admin and superadmin only
 const moneyStaff = [requireAuth, requireRole('admin')];
@@ -60,7 +75,7 @@ function parseSource(input: Record<string, unknown> | undefined): { sourceType: 
   return { sourceType: requestId != null ? 'request' : 'shipment', id };
 }
 
-const myPartner = (req: Request) => tplNetworkService.partnerForUser(req.user!.user_id);
+const myPartner = async (req: Request): Promise<PartnerSession> => (req as Request & { tplPartner?: PartnerSession }).tplPartner ?? tplNetworkService.partnerForUser(req.user!.user_id);
 
 // ── Staff ────────────────────────────────────────────────────────────
 
@@ -181,12 +196,12 @@ router.get('/my/offers', ...partner, async (req, res) => {
   }
 });
 
-// POST /tpl-network/my/offers/:id/accept  { pickup_eta?, delivery_eta?, agreed_amount? }
+// POST /tpl-network/my/offers/:id/accept  { vehicle_id, driver_id, pickup_eta?, delivery_eta?, agreed_amount? }
 router.post('/my/offers/:id/accept', ...partner, async (req, res) => {
   try {
     res.status(201).json(await tplNetworkService.accept(await myPartner(req), req.params.id, req.body ?? {}));
   } catch (error) {
-    sendError(req, res, error, 'error');
+    failBoth(req, res, error);
   }
 });
 

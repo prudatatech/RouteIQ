@@ -83,7 +83,8 @@
     "eway_bill_ref",
     "eway_part_b_required",
     "carrier_org_id",
-    "vendor_org_id"
+    "vendor_org_id",
+    "metadata"
   ],
   "customers": [
     "id",
@@ -610,7 +611,8 @@
     "created_by",
     "created_at",
     "updated_at",
-    "carrier_org_id"
+    "carrier_org_id",
+    "targeted"
   ],
   "tpl_orders": [
     "id",
@@ -638,7 +640,13 @@
     "rated_by",
     "created_at",
     "updated_at",
-    "carrier_org_id"
+    "carrier_org_id",
+    "vehicle_id",
+    "driver_id",
+    "manifest_id",
+    "pod_photo_url",
+    "pod_signature_url",
+    "pod_received_by"
   ],
   "tpl_partners": [
     "id",
