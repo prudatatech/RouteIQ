@@ -219,7 +219,7 @@ contains any of A's markers or ids, and the other way round. `own` means the ans
 | `/messages` | 400 | 400 | 400 | 403 | 403 | 400 | 400 |
 | `/messages/unread` | 200 empty | 200 empty | 200 none | 403 | 403 | 200 | 200 |
 | `/capacity/windows` | 200 own | 200 own | 200 both | 403 | 403 | 403 | 403 |
-| `/capacity/windows/open` | 200 own | 200 own | 200 both | 200 LEAK | 200 LEAK | 403 | 403 |
+| `/capacity/windows/open` | 200 own | 200 own | 200 both | 200 | 200 | 403 | 403 |
 | `/capacity/bids/mine` | 200 empty | 200 empty | 200 none | 200 | 200 | 403 | 403 |
 | `/capacity/bids/pending` | 200 empty | 200 empty | 200 none | 403 | 403 | 403 | 403 |
 | `/capacity/nearby-vendors` | 400 | 400 | 400 | 403 | 403 | 403 | 403 |
@@ -242,9 +242,10 @@ contains any of A's markers or ids, and the other way round. `own` means the ans
 | `/vendor/requests` | 404 | 404 | 404 | 404 | 404 | 404 | 404 |
 | `/vendor/profile` | 200 own | 200 own | 200 none | 200 | 200 | 200 | 200 |
 
-`/cargo/shipments`, `/cargo/security-alerts` show the leak of issue 1 (deployed behaviour); `/capacity/windows/open`
-shows another company's open windows to a vendor, which is the marketplace by design (N3);
-`/vendor/loads` for a vendor shows its own plate on its own load (own data).
+`/cargo/shipments` and `/cargo/security-alerts` show the leak of issue 1 (deployed behaviour; `/cargo/open-loads` leaked
+the same way in an earlier run and is hidden here only because the seeded shipments already sit on a trip).
+`/capacity/windows/open` shows other companies' open windows to a vendor: the marketplace, by design (N3), accepted by
+the walk. `/vendor/loads` for a vendor shows its own plate on its own load (own data).
 
 ### 3.2 By-id reads and writes of A's rows by others
 
@@ -376,8 +377,9 @@ the row is looked up) and never a 2xx, a 403 that proves the row exists, or a 5x
 | `POST /bookings/{request}/cancel` | 400 | 400 | 403 | 403 |
 
 Failing rows: `POST /cargo/verify-pod` and `POST /cargo/optimize-pooling` (issue 1, deployed behaviour: B reached the
-delivery step on A's goods, 409 instead of 404) and `GET /capacity/windows/:id/bid-count` for a vendor (the
-marketplace window, by design). Other by-id calls are 404 for B.
+delivery step on A's goods, 409 instead of 404). `GET /capacity/windows/:id/bid-count` answers 200 to any vendor: that is
+the marketplace window (by design, N3) and is accepted by the walk. Every other call is the same answer for A's id and
+for an id nobody has.
 
 ### 3.3 Writes that name another company's row in the body
 
@@ -433,18 +435,18 @@ marketplace window, by design). Other by-id calls are 404 for B.
 
 | Table (PostgREST, staff JWT) | rows A sees | rows B sees | verdict |
 |---|---|---|---|
-| `vendor_profiles` | 105 | 105 | ok |
-| `notifications` | 5 | 4 | ok |
+| `vendor_profiles` | 116 | 116 | ok |
+| `notifications` | 9 | 8 | ok |
 | `vehicles` | 2 | 4 (sees the other company) | LEAK (migration 20261010060000) |
-| `tpl_partners` | 16 | 16 | ok |
+| `tpl_partners` | 22 | 22 | ok |
 | `kyc_documents` | 404 | 404 | ok |
-| `users` | 770 (sees the other company) | 770 (sees the other company) | LEAK (migration 20261010060000) |
+| `users` | 842 (sees the other company) | 842 (sees the other company) | LEAK (migration 20261010060000) |
 | `sos_alerts` | 2 | 1 | ok |
 | `cargo_manifest` | 1 | 1 | ok |
 | `vendor_shipment_requests` | 30 | 30 | ok |
 | `shipments` | 1 | 1 | ok |
 | `routes` | 1 | 1 | ok |
-| `route_stops` | 63 (sees the other company) | 63 (sees the other company) | LEAK (migration 20261010060000) |
+| `route_stops` | 90 (sees the other company) | 90 (sees the other company) | LEAK (migration 20261010060000) |
 | `driver_confirmations` | 0 | 0 | ok |
 | `capacity_windows` | 1 | 1 | ok |
 | `capacity_bids` | 0 | 0 | ok |
@@ -455,15 +457,15 @@ marketplace window, by design). Other by-id calls are 404 for B.
 | `driver_payouts` | 0 | 0 | ok |
 | `depots` | 0 | 0 | ok |
 | `cargo_exceptions` | 3 (sees the other company) | 3 | LEAK (migration 20261010060000) |
-| `cargo_exception_items` | 36 (sees the other company) | 36 | LEAK (migration 20261010060000) |
+| `cargo_exception_items` | 43 (sees the other company) | 43 | LEAK (migration 20261010060000) |
 | `cargo_claims` | 1 | 1 | ok |
 | `cargo_transfers` | 1 | 1 | ok |
 | `cargo_transfer_items` | 3 | 3 | ok |
-| `cargo_custody_events` | 166 (sees the other company) | 166 (sees the other company) | LEAK (migration 20261010060000) |
+| `cargo_custody_events` | 237 (sees the other company) | 237 (sees the other company) | LEAK (migration 20261010060000) |
 | `maintenance_alerts` | 0 | 0 | ok |
 | `vehicle_maintenance_jobs` | 1 | 1 | ok |
-| `vehicle_fuel_logs` | 21 (sees the other company) | 21 (sees the other company) | LEAK (migration 20261010060000) |
-| `vehicle_service_log` | 13 (sees the other company) | 13 (sees the other company) | LEAK (migration 20261010060000) |
+| `vehicle_fuel_logs` | 23 (sees the other company) | 23 (sees the other company) | LEAK (migration 20261010060000) |
+| `vehicle_service_log` | 15 (sees the other company) | 15 (sees the other company) | LEAK (migration 20261010060000) |
 | `vehicle_service_plans` | 43 | 43 | ok |
 | `vehicle_share_links` | 0 | 0 | ok |
 | `user_documents` | 0 | 0 | ok |
@@ -471,14 +473,14 @@ marketplace window, by design). Other by-id calls are 404 for B.
 | `user_notes` | 403 | 403 | ok |
 | `user_emergency_contacts` | 0 | 0 | ok |
 | `user_profiles` | 0 | 0 | ok |
-| `messages` | 26 (sees the other company) | 26 (sees the other company) | LEAK (migration 20261010060000) |
+| `messages` | 29 (sees the other company) | 29 (sees the other company) | LEAK (migration 20261010060000) |
 | `load_documents` | 0 | 0 | ok |
 | `load_document_events` | 0 | 0 | ok |
 | `payments` | 0 | 0 | ok |
 | `organizations` | 1 | 1 | ok |
 | `org_members` | 4 | 3 | ok |
 | `tpl_affiliations` | 0 | 0 | ok |
-| `tpl_documents` | 6 | 6 | ok |
+| `tpl_documents` | 12 | 12 | ok |
 | `tpl_offers` | 0 | 0 | ok |
 | `tpl_orders` | 0 | 0 | ok |
 | `tpl_partner_statements` | 0 | 0 | ok |
@@ -503,10 +505,10 @@ marketplace window, by design). Other by-id calls are 404 for B.
 | `traffic_incidents` | 0 | 0 | ok |
 | `vehicle_photos` | 0 | 0 | ok |
 | `vehicle_stoppages` | 0 | 0 | ok |
-| `vehicle_odometer_events` | 23 (sees the other company) | 23 (sees the other company) | LEAK (migration 20261010060000) |
+| `vehicle_odometer_events` | 25 (sees the other company) | 25 (sees the other company) | LEAK (migration 20261010060000) |
 | `vendor_route_opportunities` | 0 | 0 | ok |
-| `delivery_points` | 87 (sees the other company) | 87 (sees the other company) | LEAK (migration 20261010060000) |
-| `tpl_corridors` | 12 | 12 | ok |
+| `delivery_points` | 110 (sees the other company) | 110 (sees the other company) | LEAK (migration 20261010060000) |
+| `tpl_corridors` | 18 | 18 | ok |
 
 Every table the web reads itself (`vendor_profiles`, `notifications`, `vehicles`, `tpl_partners`, `users`,
 `sos_alerts`, `cargo_manifest`, `vendor_shipment_requests`, `shipments`, `routes`, `route_stops`,
@@ -524,8 +526,8 @@ platform organisation or change its own organisation's status or name (3.9 to 3.
 | 3.s.A.expense | created via API | as expected | PASS |
 | 3.s.B.vehicle | created via API and stamped | as expected | PASS |
 | 3.s.B.expense | created via API | as expected | PASS |
-| 3.2d | nothing B's admin created (even through a refused call) points at, or is owned by, company A | rows: cargo_exceptions:1fe8d4e2-62c0-4440-918f-69fd6693f995 | FAIL |
-| 3.2e | company A's driver is on no vehicle of company B | [{"id":"ad01b9bc-d314-4b4b-af72-fce617ddb88b","carrier_org_id":"6272be25-14f7-458e-bf5e-c74d1e716c75"}] | FAIL |
+| 3.2d | nothing B's admin created (even through a refused call) points at, or is owned by, company A | rows: cargo_exceptions:fa98483f-56f1-4a65-ba85-f5fc2a35c1fe | FAIL |
+| 3.2e | company A's driver is on no vehicle of company B | [{"id":"14a835a5-effb-4a7d-b0be-812268a4729b","carrier_org_id":"397f633a-b492-46ca-a1aa-afcd97a5b91d"}] | FAIL |
 | 3.20 | a case/SOS raised in A (case 201, SOS 201) notifies A's admin and manager | as expected | PASS |
 | 3.21 | ... and notifies nobody in company B (admin, manager, driver) | as expected | PASS |
 | 3.3 | after the foreign calls, A's vehicle, shipment, invoice, expense and person are untouched | as expected | PASS |
@@ -582,7 +584,7 @@ Foreign-reference and filter steps (one line each; the tables above carry the de
 | 3.2b | foreign reference POST /finance/unpriced/price | as expected | PASS |
 | 3.2b | foreign reference POST /cargo/lots/split | as expected | PASS |
 | 3.2b | foreign reference POST /cargo/custody | as expected | PASS |
-| 3.2b | foreign reference POST /vehicles | foreign:201 control:201  201 {"id":"ad01b9bc-d314-4b4b-af72-fce617ddb88b","plate_number":"MH20871738","vehicle_type":"truck","capacity_kg":1000,"fuel_type":"diesel","fuel | FAIL |
+| 3.2b | foreign reference POST /vehicles | foreign:201 control:201  201 {"id":"14a835a5-effb-4a7d-b0be-812268a4729b","plate_number":"MH20130069","vehicle_type":"truck","capacity_kg":1000,"fuel_type":"diesel","fuel | FAIL |
 | 3.2b | foreign reference PATCH OWN:/vehicles/{vehicle} | as expected | PASS |
 | 3.2b | foreign reference POST /optimize | as expected | PASS |
 | 3.2b | foreign reference POST /shipments | as expected | PASS |
