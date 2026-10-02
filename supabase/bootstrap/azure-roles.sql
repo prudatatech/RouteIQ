@@ -86,3 +86,6 @@ DO $$ BEGIN
   END IF;
 END $$;
 RESET ROLE;
+
+-- The API (service_role) writes storage rows directly (signed uploads). Supabase gives it BYPASSRLS;
+-- Azure cannot, so an explicit allow-everything policy stands in (see 20261006020000_storage_service_role).
