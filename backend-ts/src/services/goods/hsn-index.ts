@@ -380,4 +380,5 @@ async function fetchHsnRows(): Promise<HsnRow[]> {
 }
 
 /** The HSN master, loaded once and kept for 10 minutes (about 22,000 rows, a few MB in memory). */
-export const loadHsnIndex = memoize<HsnIndex>(HSN_CACHE_TTL_MS, async () => buildHsnIndex(await fetchHsnRows()));
+// 21,808 codes take a few seconds to read: serve the current index while a fresh one loads, never make a visitor wait
+export const loadHsnIndex = memoize<HsnIndex>(HSN_CACHE_TTL_MS, async () => buildHsnIndex(await fetchHsnRows()), { staleWhileRevalidate: true });
