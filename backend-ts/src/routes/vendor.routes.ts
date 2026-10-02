@@ -211,7 +211,9 @@ router.get('/loads/:id', requireAuth, requireRole('vendor', ...STAFF_ROLES), asy
     }
     let board: object = {};
     if (caller.role === 'vendor') {
-      try { board = await vendorLoadDetail(caller.userId, id); } catch (e) { if (!(e instanceof HttpError) || e.status !== 404) throw e; }
+      // getPostedLoad has checked organisation access, so a colleague in the same vendor business sees the poster's board too
+      const poster = (posted.load as { vendor_id?: string | null }).vendor_id ?? caller.userId;
+      try { board = await vendorLoadDetail(poster, id); } catch (e) { if (!(e instanceof HttpError) || e.status !== 404) throw e; }
     }
     res.json({ ...board, load: posted.load, items: posted.items });
   } catch (error: any) {
