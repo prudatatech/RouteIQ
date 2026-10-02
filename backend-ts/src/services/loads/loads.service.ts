@@ -117,11 +117,16 @@ export function primaryItem<T extends { declared_value: number; weight_kg: numbe
 
 const validState = (code: string | null | undefined) => (code && GST_STATES[code] ? code : null);
 
-/** The vendor organisation is active, or (organisations not set up) the vendor's KYC is approved. */
+/**
+ * The vendor can reach companies: their organisation is active AND their KYC is approved. A vendor whose approved profile
+ * was sent back to review (new name, GSTIN, address or documents) keeps an active organisation (nothing reverses it) but
+ * is not verified until it is approved again, so a load posted meanwhile is held. Without organisations (not set up) the
+ * KYC alone decides.
+ */
 async function vendorVerified(c: Caller): Promise<boolean> {
-  if (c.vendorOrg) return c.vendorOrg.status === 'active';
   const { data, error } = await supabase.from('vendor_profiles').select('kyc_status').eq('id', c.userId).maybeSingle();
   if (error) throw new Error(error.message);
+  if (c.vendorOrg) return c.vendorOrg.status === 'active' && (!data || data.kyc_status === 'approved');
   return data?.kyc_status === 'approved';
 }
 

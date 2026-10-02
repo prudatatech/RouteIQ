@@ -139,6 +139,26 @@ describe('POST /vendor/loads', () => {
     expect(supabaseMock.rows('notifications').filter(n => n.type === 'load_posted' && n.user_id === uid('vendor-1'))).toHaveLength(1);
   });
 
+  it('posts the repost draft as it is served (client_request_id null means none, a new one is made)', async () => {
+    const first = await post(draft());
+    const repost = await request(app).post(api(`/vendor/loads/${first.body.id}/repost`)).set(as('vendor-1')).send({});
+    expect(repost.body.draft.client_request_id).toBeNull();
+    const again = await post({ ...repost.body.draft, pickup_date: draft().pickup_date });
+    expect(again.status).toBe(201);
+    expect(again.body.duplicate).toBe(false);
+    expect(again.body.id).not.toBe(first.body.id);
+  });
+
+  it('holds the load when an approved vendor was sent back to review (the organisation stays active, the KYC is not approved)', async () => {
+    world();
+    supabaseMock.rows('vendor_profiles').find(v => v.id === uid('vendor-1'))!.kyc_status = 'submitted';
+    const res = await post(draft());
+    expect(res.status).toBe(201);
+    expect(res.body.status_note).toMatch(/verification pending/i);
+    expect(supabaseMock.rpcCalls[0].args.p.load.metadata.hold).toBe('vendor_unverified');
+    expect(supabaseMock.rows('notifications').filter(n => n.type === 'vendor_request')).toHaveLength(0);
+  });
+
   it('routes to the companies when the vendor organisation is active, and tells the vendor', async () => {
     const res = await post(draft());
     expect(res.body.status_note).toBeNull();
