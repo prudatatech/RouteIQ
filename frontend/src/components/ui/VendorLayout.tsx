@@ -116,7 +116,7 @@ export default function VendorLayout() {
       console.error('Sign-out failed', e)
     }
     clearAuth()
-    navigate('/vendor/login')
+    navigate('/login')
   }
 
   // A visitor sees only the public sections; the account pages appear once they sign in.
@@ -166,7 +166,7 @@ export default function VendorLayout() {
         : <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />}
     </div>
   ) : (
-    <NavLink to={`/vendor/login?next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+    <NavLink to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
       <LogIn size={16} aria-hidden="true" /> Sign in / Sign up
     </NavLink>
   )

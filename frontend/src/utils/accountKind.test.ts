@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  accountKindOf, homeForKind, legacyAudiencePath, loginPathFor, nextForKind, wrongPageMessage,
+  accountKindOf, homeForKind, LOGIN_PATH, nextForKind,
 } from './accountKind'
 import type { Membership, OrgKind } from './orgs'
 
@@ -69,31 +69,9 @@ describe('nextForKind', () => {
   })
 })
 
-describe('sign-in addresses', () => {
-  it('sends each area to its own sign-in page', () => {
-    expect(loginPathFor('/vendor/loads')).toBe('/vendor/login')
-    expect(loginPathFor('/vendor')).toBe('/vendor/login')
-    expect(loginPathFor('/ship')).toBe('/vendor/login')
-    expect(loginPathFor('/3pl-portal/p1')).toBe('/3pl/login')
-    expect(loginPathFor('/today')).toBe('/login')
-    expect(loginPathFor('/3pl/onboard')).toBe('/login')
-  })
-
-  it('maps the old ?as= values', () => {
-    expect(legacyAudiencePath('vendor')).toBe('/vendor/login')
-    expect(legacyAudiencePath('partner')).toBe('/vendor/login')
-    expect(legacyAudiencePath('3pl')).toBe('/3pl/login')
-    expect(legacyAudiencePath('staff')).toBeNull()
-    expect(legacyAudiencePath(null)).toBeNull()
-  })
-
-  it('names the right page when the account is of another kind', () => {
-    expect(wrongPageMessage('vendor', 'staff')).toEqual({
-      text: 'This is the vendor sign-in. Your account is a company staff account, so use the',
-      to: '/login',
-      linkLabel: 'staff sign-in',
-    })
-    expect(wrongPageMessage('staff', 'tpl').to).toBe('/3pl/login')
+describe('sign-in address', () => {
+  it('is one page for every kind of account', () => {
+    expect(LOGIN_PATH).toBe('/login')
   })
 
   it('finds each kind\'s home', () => {

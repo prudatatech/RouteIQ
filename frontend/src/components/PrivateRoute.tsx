@@ -5,7 +5,7 @@ import { Lock } from 'lucide-react'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import { roleCanOpen } from '@/utils/effectiveRole'
 import { useAccountKind } from '@/store/accountKind'
-import { homeForKind, loginPathFor, type AccountKind } from '@/utils/accountKind'
+import { homeForKind, LOGIN_PATH, type AccountKind } from '@/utils/accountKind'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import { Button, EmptyState, Spinner } from '@/components/ui'
@@ -69,9 +69,9 @@ export default function PrivateRoute({ children, allowedRoles, kinds }: { childr
   }
 
   if (!token) {
-    // Come back here after signing in; vendor pages open the vendor sign-in, 3PL pages the 3PL one, the rest the staff one.
+    // Come back here after signing in
     const params = new URLSearchParams({ next: `${location.pathname}${location.search}` })
-    return <Navigate to={`${loginPathFor(location.pathname)}?${params}`} replace />
+    return <Navigate to={`${LOGIN_PATH}?${params}`} replace />
   }
 
   // A route for one kind of account sends the others to their own home

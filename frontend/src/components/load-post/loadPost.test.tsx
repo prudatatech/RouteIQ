@@ -162,7 +162,7 @@ describe('OTP modal', () => {
     api.vendorVerifyOtp.mockResolvedValue({ session: { access_token: 'AT', refresh_token: 'RT' } })
     api.setSession.mockResolvedValue({ error: null })
     const onVerified = vi.fn()
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/vendor/login" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login" />))
 
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '98200 12345' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
@@ -180,7 +180,7 @@ describe('OTP modal', () => {
     api.vendorSendOtp.mockResolvedValue({ ok: true })
     api.vendorVerifyOtp.mockRejectedValue(new Error('bad code'))
     const onVerified = vi.fn()
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/vendor/login" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login" />))
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '9820012345' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
     fireEvent.change(await screen.findByLabelText(/6-digit code/i), { target: { value: '000000' } })
@@ -190,9 +190,9 @@ describe('OTP modal', () => {
   })
 
   it('links to email and password sign-in', () => {
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={() => {}} emailSignInHref="/vendor/login?next=%2Fvendor%2Frequest%3Fresume%3D1" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={() => {}} emailSignInHref="/login?next=%2Fvendor%2Frequest%3Fresume%3D1" />))
     const link = screen.getByRole('link', { name: /email and password/i })
-    expect(link.getAttribute('href')).toContain('/vendor/login')
+    expect(link.getAttribute('href')).toContain('/login')
   })
 })
 

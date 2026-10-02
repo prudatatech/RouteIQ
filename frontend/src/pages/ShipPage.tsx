@@ -139,7 +139,7 @@ export default function ShipPage() {
     if (!booking) return
     const saved = saveGuestDraft('bid', { windowId: booking.id, window: toBidWindow(booking), fields })
     if (!saved) toast('We could not save your bid on this device, so you may need to fill it in again after signing in.')
-    navigate(`/vendor/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${booking.id}&resume=1`)}`)
+    navigate(`/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${booking.id}&resume=1`)}`)
   }
 
   return (
@@ -275,7 +275,7 @@ export default function ShipPage() {
 
       {!session && (
         <p className="text-sm text-muted">
-          Already have an account? <Link className={buttonClasses({ variant: 'ghost', size: 'sm' })} to="/vendor/login?next=%2Fship">Sign in</Link>
+          Already have an account? <Link className={buttonClasses({ variant: 'ghost', size: 'sm' })} to="/login?next=%2Fship">Sign in</Link>
         </p>
       )}
 

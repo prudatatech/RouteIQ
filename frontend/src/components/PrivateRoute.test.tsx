@@ -46,17 +46,17 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('PrivateRoute sign-in redirects', () => {
-  it('sends a visitor of /vendor pages to the vendor sign-in, keeping next', () => {
+  it('sends a visitor of /vendor pages to the sign-in, keeping next', () => {
     at('/vendor/loads')
-    expect(screen.getByTestId('where').textContent).toBe('/vendor/login?next=%2Fvendor%2Floads')
+    expect(screen.getByTestId('where').textContent).toBe('/login?next=%2Fvendor%2Floads')
   })
 
-  it('sends a visitor of the 3PL portal to the 3PL sign-in, keeping next', () => {
+  it('sends a visitor of the 3PL portal to the sign-in, keeping next', () => {
     at('/3pl-portal/p1/orders?tab=open')
-    expect(screen.getByTestId('where').textContent).toBe('/3pl/login?next=%2F3pl-portal%2Fp1%2Forders%3Ftab%3Dopen')
+    expect(screen.getByTestId('where').textContent).toBe('/login?next=%2F3pl-portal%2Fp1%2Forders%3Ftab%3Dopen')
   })
 
-  it('sends a visitor of any other page to the staff sign-in', () => {
+  it('sends a visitor of any other page to the sign-in', () => {
     at('/today')
     expect(screen.getByTestId('where').textContent).toBe('/login?next=%2Ftoday')
   })

@@ -27,7 +27,7 @@ import {
 
 /** Where the email and password sign-in sends the vendor back to: the saved form, at the review step. */
 const RESUME_PATH = '/vendor/request?resume=1'
-const EMAIL_SIGN_IN = `/vendor/login?next=${encodeURIComponent(RESUME_PATH)}`
+const EMAIL_SIGN_IN = `/login?next=${encodeURIComponent(RESUME_PATH)}`
 
 /** The draft from this browser, or an empty one seeded from the lane the Find a truck page passed in the link. */
 function initialDraft(params: URLSearchParams): LoadDraft {
