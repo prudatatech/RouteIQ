@@ -236,7 +236,16 @@
     "keywords",
     "is_active",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "gst_rates",
+    "rate_note",
+    "synonyms",
+    "is_hazmat",
+    "is_perishable",
+    "eway_always",
+    "effective_from",
+    "needs_review",
+    "source"
   ],
   "invoices": [
     "id",
@@ -1269,5 +1278,42 @@
     "settled_at",
     "carrier_org_id",
     "vendor_org_id"
+  ],
+  "goods_categories": [
+    "key",
+    "name",
+    "examples",
+    "hsn_range",
+    "default_rates",
+    "eway_threshold_inr",
+    "is_hazmat",
+    "is_perishable",
+    "recommended_vehicle_class",
+    "sort"
+  ],
+  "vehicle_classes": [
+    "key",
+    "name",
+    "min_t",
+    "max_t",
+    "best_for",
+    "notes",
+    "interstate_ok",
+    "is_reefer",
+    "is_open",
+    "is_tanker",
+    "sort"
+  ],
+  "pincode_prefixes": [
+    "prefix",
+    "state_code",
+    "state_name"
+  ],
+  "pincodes": [
+    "pincode",
+    "district",
+    "city",
+    "state_code",
+    "state_name"
   ]
 }
