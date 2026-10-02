@@ -195,11 +195,14 @@ export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDet
   const code = overview?.code ?? null;
   const description = ['Freight (road transport of goods)', code ? `shipment ${code}` : null, route].filter(Boolean).join(', ');
 
+  // Goods lines: a booking's shipment, or a vendor load's manifest / the load itself (copied there at assignment)
   let goods: InvoiceDetail['goods'] = [];
-  if (inv.shipment_id) {
-    const masterId = row?.parent_shipment_id ?? inv.shipment_id;
-    const { data: hsn } = await supabase.from('shipment_hsn').select('hsn_code, description, gst_rate').eq('shipment_id', masterId);
-    goods = (hsn ?? []).map((h: any) => ({ hsn_code: h.hsn_code ?? null, description: h.description ?? null, gst_rate: h.gst_rate != null ? Number(h.gst_rate) : null }));
+  const goodsBy: [string, string] | null = inv.shipment_id ? ['shipment_id', row?.parent_shipment_id ?? inv.shipment_id]
+    : inv.manifest_id ? ['manifest_id', inv.manifest_id]
+    : inv.vendor_request_id ? ['load_id', inv.vendor_request_id] : null;
+  if (goodsBy) {
+    const { data: hsn } = await supabase.from('shipment_hsn').select('hsn_code, description, product_name, gst_rate').eq(goodsBy[0], goodsBy[1]);
+    goods = (hsn ?? []).map((h: any) => ({ hsn_code: h.hsn_code ?? null, description: h.description ?? h.product_name ?? null, gst_rate: h.gst_rate != null ? Number(h.gst_rate) : null }));
   }
 
   const amount = Number(inv.amount ?? 0);
