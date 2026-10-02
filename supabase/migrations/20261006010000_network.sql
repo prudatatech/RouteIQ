@@ -38,6 +38,10 @@ CREATE INDEX IF NOT EXISTS idx_tpl_orders_driver ON public.tpl_orders (driver_id
 CREATE INDEX IF NOT EXISTS idx_tpl_orders_manifest ON public.tpl_orders (manifest_id) WHERE manifest_id IS NOT NULL;
 
 -- ── 3. Targeted offers ──────────────────────────────────────────────────────────────────────────────
+-- Who actually runs a company's trip (a 3PL partner) travels on the trip itself. 020_add_shipment_metadata
+-- added metadata to shipments only, so cargo_manifest never had one.
+ALTER TABLE public.cargo_manifest ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
+
 ALTER TABLE public.tpl_offers ADD COLUMN IF NOT EXISTS targeted boolean NOT NULL DEFAULT false;
 
 -- ── 4. A partner member reads the vehicles of the partner organisation ──────────────────────────────
