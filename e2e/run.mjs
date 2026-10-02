@@ -694,12 +694,15 @@ async function vendorAndPermissions() {
     ok(load, `load not found in ${JSON.stringify(list).slice(0, 300)}`);
     ok(['delivered', 'closed'].includes(load.stage), `stage is ${load.stage}`);
   });
-  await step('The vendor has an invoice for the agreed price, with GST', async () => {
+  await step('The vendor has an invoice for the agreed price, GST on freight under reverse charge', async () => {
     const res = await get('vendor', '/vendor/invoices');
     status(res, 200, 'vendor invoices');
     const inv = res.body.find(i => i.vendor_request_id === ctx.request.id || i.manifest_id === ctx.manifest.id);
     ok(inv, `no invoice in ${JSON.stringify(res.body).slice(0, 300)}`);
-    eq([Number(inv.amount), Number(inv.gst_rate), Number(inv.total)], [20000, 18, 23600], 'amount, GST rate and total');
+    // Freight GST is the company's GTA option, by default 5% paid by the recipient (reverse charge): nothing charged on
+    // the invoice, and never the goods' own rate (docs/load-posting-design.md, owner decision of 2 Oct 2026)
+    eq([Number(inv.amount), Number(inv.gst_rate), Number(inv.total)], [20000, 0, 20000], 'amount, GST rate and total');
+    if (inv.tax_mode !== undefined) eq(inv.tax_mode, 'rcm_5', 'tax mode');
   });
   await step('The vendor can read the payment details to pay against the invoice', async () => {
     const res = await get('vendor', '/invoices/payment-details');

@@ -122,7 +122,7 @@ req vendor GET "/vendor/loads/$L1"; t VB64 "the vendor sees it delivered with pr
 sect "C. Invoices and payment"
 req vendor GET /vendor/invoices; chk VC01 "my invoices" 200
 VI=$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].id'); info "invoice of L1: $(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|{n:.invoice_number,amount,gst_rate,gst_amount,total,status,reference,due_date,vendor_request_id}|tostring')"
-t VC02 "the load has an invoice for the agreed price with 18% GST (20000 + 3600 = 23600)" "$([ "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[((.amount|tonumber)+0),((.gst_rate|tonumber)+0),((.total|tonumber)+0)]|tostring')" = "[20000,18,23600]" ] && echo 1 || echo 0)" "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[.amount,.gst_rate,.total]|tostring')"
+t VC02 "the load has an invoice for the agreed price, freight GST under reverse charge (20000, 0%, 20000)" "$([ "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[((.amount|tonumber)+0),((.gst_rate|tonumber)+0),((.total|tonumber)+0)]|tostring')" = "[20000,0,20000]" ] && echo 1 || echo 0)" "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0]|[.amount,.gst_rate,.total]|tostring')"
 t VC03 "every vendor invoice has total = amount + GST" "$([ "$(jb '[.[]|select(((.amount|tonumber)+(.gst_amount|tonumber)-(.total|tonumber))|fabs>0.005)]|length')" = 0 ] && echo 1 || echo 0)" "rows=$(jb length)"
 t VC04 "the invoice has a reference the vendor recognises (the load code)" "$([ -n "$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference // empty')" ] && echo 1 || echo 0)" "reference=$(jb '[.[]|select(.manifest_id=="'"$MAN"'")][0].reference')"
 req vendor GET "/invoices/$VI/pdf"; chk VC10 "download the invoice PDF" 200
