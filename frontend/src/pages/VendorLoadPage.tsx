@@ -120,6 +120,16 @@ export default function VendorLoadPage() {
     return <Page>{header}<ErrorState title="We could not load this load" description="Check your connection and try again." onRetry={() => load.refetch()} /></Page>
   }
 
+  // A colleague in the vendor's business sees the posted load without the board fields (stage, problems, truck)
+  if (!data.stage) {
+    return (
+      <Page>
+        <PageHeader title={<span className="font-mono">{data.load?.load_number ?? data.code ?? 'Load'}</span>} back={{ to: '/vendor/loads', label: 'My loads' }} />
+        <LoadDocumentsPanel loadId={data.load?.id ?? id} role="vendor" />
+      </Page>
+    )
+  }
+
   const action = nextAction(data)
   const canCancel = data.kind === 'posted' && !data.manifest_id && (data.status === 'pending' || data.status === 'approved')
   const claimLoad = data.manifest_id ? [{ id: data.id, label: data.code, manifest_id: data.manifest_id }] : []
@@ -151,7 +161,7 @@ export default function VendorLoadPage() {
   return (
     <Page>
       <PageHeader
-        title={<span className="font-mono">{data.load_number ?? data.code}</span>}
+        title={<span className="font-mono">{data.load?.load_number ?? data.load_number ?? data.code}</span>}
         back={{ to: '/vendor/loads', label: 'My loads' }}
         description={<Route pickup={data.pickup} drop={data.drop} className="text-sm text-text sm:text-base" />}
         actions={(
@@ -236,7 +246,7 @@ export default function VendorLoadPage() {
         </Section>
       )}
 
-      <LoadDocumentsPanel loadId={data.id} role="vendor" />
+      <LoadDocumentsPanel loadId={data.load?.id ?? data.id} role="vendor" />
 
       {data.lots.length > 0 && (
         <Section id="lots" title="Lots">

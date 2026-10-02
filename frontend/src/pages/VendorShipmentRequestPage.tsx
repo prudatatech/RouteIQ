@@ -107,9 +107,11 @@ export default function VendorShipmentRequestPage() {
   useEffect(() => {
     const s = assist?.suggested
     if (!s || draft.transport_touched) return
-    const capacity = String(s.capacity_t)
-    if (draft.load_type !== s.load_type || draft.vehicle_class !== s.vehicle_class || draft.capacity_t !== capacity) {
-      patch({ load_type: s.load_type, vehicle_class: s.vehicle_class, capacity_t: capacity })
+    // The server may suggest a type without a vehicle or capacity (nothing fits yet)
+    const vehicle = s.vehicle_class ?? ''
+    const capacity = s.capacity_t != null ? String(s.capacity_t) : ''
+    if (draft.load_type !== s.load_type || draft.vehicle_class !== vehicle || draft.capacity_t !== capacity) {
+      patch({ load_type: s.load_type, vehicle_class: vehicle, capacity_t: capacity })
     }
   }, [assist, draft.transport_touched, draft.load_type, draft.vehicle_class, draft.capacity_t, patch])
 
@@ -206,7 +208,7 @@ export default function VendorShipmentRequestPage() {
         <LoadConfirmation
           loadId={posted.id} loadNumber={posted.load_number}
           pickupCity={draft.pickup_city} deliveryCity={draft.delivery_city} pickupDate={draft.pickup_date || null}
-          vehicleName={vehicleName} onPostAnother={postAnother}
+          vehicleName={vehicleName} statusNote={posted.status_note ?? null} onPostAnother={postAnother}
         />
       </Page>
     )

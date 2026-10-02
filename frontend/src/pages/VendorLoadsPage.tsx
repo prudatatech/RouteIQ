@@ -13,6 +13,7 @@ import {
 } from '@/components/ui'
 import { formatDate } from '@/utils/display'
 import PostedLoads from '@/components/load-post/PostedLoads'
+import BulkUpload from '@/components/load-post/BulkUpload'
 
 const CLOSED: LoadStage = 'closed'
 
@@ -128,6 +129,8 @@ export default function VendorLoadsPage() {
       <ActionStrip items={items} />
 
       <PostedLoads enabled={isVendor} />
+
+      <BulkUpload />
 
       {total > 6 && <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />}
 

@@ -47,7 +47,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div><dt className="text-xs text-muted">Total weight</dt><dd className="font-semibold tabular text-text">{kgText(totals.weight_kg)}</dd></div>
           <div><dt className="text-xs text-muted">Total declared value</dt><dd className="font-semibold tabular text-text">{totals.declared_value > 0 ? inr(totals.declared_value) : 'Not declared'}</dd></div>
-          <div><dt className="text-xs text-muted">Route</dt><dd className="font-semibold text-text">{draft.pickup_city} → {draft.delivery_city}</dd></div>
+          <div><dt className="text-xs text-muted">From and to</dt><dd className="font-semibold text-text">{draft.pickup_city} → {draft.delivery_city}</dd></div>
           <div><dt className="text-xs text-muted">Pickup date</dt><dd className="font-semibold text-text">{draft.pickup_date ? formatDate(draft.pickup_date) : '—'}</dd></div>
         </dl>
       </Card>

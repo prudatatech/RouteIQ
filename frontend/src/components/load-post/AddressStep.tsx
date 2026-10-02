@@ -54,9 +54,11 @@ function Section({ side, draft, onChange, errors, notes }: {
 
   const pick = (p: ResolvedPlace | null) => {
     setPlace(p)
-    if (!p) return
+    if (!p) { onChange({ [`${side}_lat`]: null, [`${side}_lng`]: null } as Partial<LoadDraft>); return }
     const f = placeToFields(p)
     onChange({
+      [`${side}_lat`]: p.lat,
+      [`${side}_lng`]: p.lng,
       [`${side}_address`]: f.address,
       ...(f.city ? { [`${side}_city`]: f.city } : {}),
       ...(f.pincode ? { [`${side}_pincode`]: f.pincode } : {}),
@@ -74,6 +76,7 @@ function Section({ side, draft, onChange, errors, notes }: {
         showMap={false}
         allowCurrentLocation={side === 'pickup'}
         recentPlacesKey={`load-${side}`}
+        error={errors[`${side}_lat`]}
         hint="Indian addresses only. Pick a result to fill the city, address and pin code."
       />
       <Input label={`${title} city`} required value={draft[`${side}_city`]} onChange={e => onChange({ [`${side}_city`]: e.target.value } as Partial<LoadDraft>)} error={errors[`${side}_city`]} autoComplete="address-level2" />

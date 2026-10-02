@@ -1,7 +1,7 @@
 /**
  * Every type of the Post a Load flow, in one place: the public lookups, the assist answer, the
- * posted load and the business profile. The shapes follow docs/load-posting-design.md (sections 1
- * and 2). When the backend contract changes, this file and the calls in services/api.ts are the
+ * posted load and the business profile. The shapes follow the backend (backend-ts/src/routes/vendor.routes.ts,
+ * public.routes.ts, auth.routes.ts and schemas/loads.ts). When the backend contract changes, this file and the calls in services/api.ts are the
  * only places to edit.
  */
 
@@ -97,6 +97,9 @@ export interface LoadDraft {
   pickup_pincode: string
   pickup_state_code: string
   pickup_state_name: string
+  /** Where the address picker put the pin; the server needs both ends. Null until a place is chosen. */
+  pickup_lat: number | null
+  pickup_lng: number | null
   pickup_date: string
   pickup_slot: '' | PickupSlot
   pickup_contact_name: string
@@ -107,6 +110,8 @@ export interface LoadDraft {
   delivery_pincode: string
   delivery_state_code: string
   delivery_state_name: string
+  delivery_lat: number | null
+  delivery_lng: number | null
   delivery_date: string
   delivery_contact_name: string
   delivery_contact_phone: string
@@ -139,7 +144,8 @@ export interface LoadItemPayload {
   quantity: number
   unit: string
   weight_kg: number
-  declared_value: number | null
+  /** Rupees; 0 when none was entered (the server needs a number). */
+  declared_value: number
   handling: ProductHandling[]
   category: string | null
   is_hazmat: boolean
@@ -157,6 +163,8 @@ export interface LoadPayload {
   pickup_address: string
   pickup_pincode: string
   pickup_state_code: string | null
+  pickup_lat: number | null
+  pickup_lng: number | null
   pickup_date: string | null
   pickup_slot: PickupSlot | null
   pickup_contact_name: string
@@ -166,6 +174,8 @@ export interface LoadPayload {
   delivery_address: string
   delivery_pincode: string
   delivery_state_code: string | null
+  delivery_lat: number | null
+  delivery_lng: number | null
   delivery_date: string | null
   delivery_contact_name: string | null
   delivery_contact_phone: string | null
@@ -185,10 +195,17 @@ export interface LoadPayload {
   unloading_help: boolean
 }
 
+/** The answer of POST /vendor/loads: 201, or 200 with `duplicate` when the same client_request_id was sent before. */
 export interface PostedLoad {
   id: string
   load_number: string
   status?: string
+  duplicate?: boolean
+  /** For example "Business verification pending...": the load is saved but waits. */
+  status_note?: string | null
+  load?: Record<string, unknown>
+  items?: LoadItem[]
+  assessment?: AssistResult
 }
 
 // ---------- Assist ----------
@@ -205,13 +222,16 @@ export interface Recommendation {
   action?: { field: string; value: string | number | boolean }
 }
 
-export interface TaxLine { product: string; hsn: string; rate: number; taxable: number; gst: number }
+export interface TaxLine { product: string; hsn: string | null; rate: number; taxable: number; gst: number }
 export interface TaxByRate { rate: number; taxable: number; gst: number }
 
 export interface AssistTax {
   basis: 'intra' | 'inter' | 'unknown'
   pickup_state: string | null
   delivery_state: string | null
+  /** GST state codes ('27'). */
+  pickup_state_code?: string | null
+  delivery_state_code?: string | null
   lines: TaxLine[]
   by_rate: TaxByRate[]
   taxable: number
@@ -228,7 +248,7 @@ export interface AssistResult {
   tax: AssistTax
   hazmat_mixed: boolean
   perishable: boolean
-  suggested: { load_type: LoadType; vehicle_class: string; capacity_t: number }
+  suggested: { load_type: LoadType; vehicle_class: string | null; capacity_t: number | null }
   estimate: { low: number; high: number; distance_km: number; label: string } | null
   recommendations: Recommendation[]
 }
@@ -272,6 +292,7 @@ export type AccountType = 'customer' | 'business_partner'
 export type BusinessType = '' | 'manufacturer' | 'trader' | 'distributor' | 'retailer' | 'exporter' | 'other'
 export type MonthlyLoads = '' | '1-5' | '6-20' | '21-50' | '50+'
 
+/** The business profile as the form holds it (text, never null). Sent as PUT /vendor/business-profile. */
 export interface BusinessProfile {
   full_name: string
   business_name: string
@@ -279,13 +300,33 @@ export interface BusinessProfile {
   gstin: string
   address: string
   pincode: string
+  /** Two-digit GST state code; the server takes it from the GSTIN when there is one. */
+  state_code?: string
   email: string
   business_type: BusinessType
   monthly_loads: MonthlyLoads
-  /** Server-computed: every required field is present. */
+}
+
+/** GET/PUT /vendor/business-profile, with what the server adds. */
+export type BusinessProfileView = Partial<BusinessProfile> & {
+  state?: string
+  /** Every field this account type needs is filled in. */
   complete?: boolean
+  gstin_status?: string | null
 }
 
 export interface VendorSession {
-  session: { access_token: string; refresh_token: string }
+  status: string
+  role: 'vendor'
+  user_id: string
+  is_new_user: boolean
+  session: { access_token: string; refresh_token: string; expires_at?: number }
+  vendor: { id: string; phone: string | null; full_name: string | null }
+}
+
+/** POST /vendor/loads/bulk: one load per CSV row; rows with a problem are listed, the rest are posted. */
+export interface BulkResult {
+  batch: { id?: string; file_name?: string | null; row_count?: number; ok_count?: number; error_count?: number }
+  loads: { row: number; id: string; load_number: string }[]
+  errors: { row: number; message: string }[]
 }

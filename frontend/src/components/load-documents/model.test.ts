@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LoadDocument } from '@/types/loadDocuments'
 import {
-  closeBlockedReason, computeBalance, emptyUpload, groupByKind, uploadFields, validateUpload,
+  closeBlockedReason, emptyUpload, groupByKind, uploadFields, validateUpload,
 } from './model'
 
 const doc = (over: Partial<LoadDocument>): LoadDocument => ({
@@ -29,7 +29,8 @@ describe('e-way bill validation', () => {
   })
   it('sends the vehicle number tidy and leaves empty fields out', () => {
     const f = uploadFields(eway({ vehicle_number: 'mh 12 ab 1234', distance_km: '450' }))
-    expect(f).toEqual({ valid_until: '2026-10-05', vehicle_number: 'MH12AB1234', distance_km: 450 })
+    // The validity is the document's own valid_until, not a field; the dates and number use the backend's names
+    expect(f).toEqual({ ewb_number: '123456789012', generated_on: '2026-10-01', vehicle_number: 'MH12AB1234', approx_distance_km: 450 })
   })
 })
 
@@ -42,20 +43,20 @@ describe('invoice validation', () => {
   })
 })
 
-describe('settlement maths', () => {
-  const s = {
-    agreed_freight: 50000, advance_paid: 10000,
-    extra_charges: [
-      { label: 'Detention', amount: 2000, approved_by: 'u', approved_at: '2026-10-02T00:00:00Z' },
-      { label: 'Toll', amount: 900, approved_by: null, approved_at: null },
-    ],
-    deductions: [{ label: 'Late', amount: 500, reason: 'A day late' }],
-  }
-  it('counts only approved extras: freight + extras - deductions - advance', () => {
-    expect(computeBalance(s)).toBe(41500)
+describe('invoice fields', () => {
+  it('uses the backend names for the dispatch and delivery addresses', () => {
+    const f = uploadFields({ ...emptyUpload('tax_invoice'), number: 'A1', from_address: 'Pune', to_address: 'Delhi', seller_gstin: '27aaapl1234c1zv', total_value: '900' })
+    expect(f).toEqual({ seller_gstin: '27AAAPL1234C1ZV', dispatch_from: 'Pune', ship_to: 'Delhi', total_value: 900 })
   })
+})
+
+describe('closing a trip', () => {
   it('blocks closing without a final POD, and says why', () => {
-    const open = { id: 's', ...s, balance: 41500, payment_terms: null, payment_status: null, pod_document_id: null, closed_at: null, status: 'open' as const }
+    const open = {
+      id: 's', agreed_freight: 50000, advance_paid: 10000,
+      extra_charges: [], deductions: [], approved_extras_total: 0, pending_extras_total: 0, deductions_total: 0,
+      balance: 40000, payment_terms: 'to_pay' as const, payment_status: 'pending' as const, pod_document_id: null, closed_at: null, status: 'open' as const,
+    }
     expect(closeBlockedReason(open, [])).toMatch(/proof of delivery/)
     expect(closeBlockedReason(open, [doc({ kind: 'pod', status: 'draft' })])).toMatch(/proof of delivery/)
     expect(closeBlockedReason(open, [doc({ kind: 'pod', status: 'final' })])).toBeNull()

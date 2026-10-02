@@ -6,13 +6,14 @@ import type {
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
 import type {
-  DispatchCheck, DocumentEvent, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, Settlement, TimelineItem,
+  ClosedSettlement, DispatchCheck, DocumentHistory, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, LoadDocumentsResponse,
+  LoadTimelineResponse, Settlement, UploadUrl,
 } from '@/types/loadDocuments'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 import type {
-  AssistResult, BusinessProfile, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
+  AssistResult, BulkResult, BusinessProfile, BusinessProfileView, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
 } from '@/types/load'
 
 import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
@@ -572,6 +573,29 @@ export const capacityAPI = {
   rejectBid: (id: string, reason: string) => api.post(`/capacity/bids/${id}/reject`, { reason }).then(r => r.data),
 }
 
+/** The server sends null for what is not filled in; the form wants text. */
+function fromServerProfile(d: Record<string, unknown> | null | undefined): BusinessProfileView {
+  const s = (v: unknown) => (typeof v === 'string' ? v : '')
+  const p = d ?? {}
+  return {
+    full_name: s(p.full_name), business_name: s(p.business_name),
+    account_type: p.account_type === 'business_partner' ? 'business_partner' : 'customer',
+    gstin: s(p.gstin), address: s(p.address), pincode: s(p.pincode), state_code: s(p.state_code), email: s(p.email),
+    business_type: s(p.business_type) as BusinessProfile['business_type'],
+    monthly_loads: s(p.monthly_loads) as BusinessProfile['monthly_loads'],
+    state: s(p.state), complete: p.complete === true, gstin_status: typeof p.gstin_status === 'string' ? p.gstin_status : null,
+  }
+}
+
+/** The server's enums reject an empty string, so an unchosen option goes as null. */
+function toServerProfile(b: BusinessProfile) {
+  return {
+    full_name: b.full_name, business_name: b.business_name || null, account_type: b.account_type, gstin: b.gstin || null,
+    address: b.address, pincode: b.pincode, ...(b.state_code ? { state_code: b.state_code } : {}), email: b.email,
+    business_type: b.business_type || null, monthly_loads: b.monthly_loads || null,
+  }
+}
+
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
   /** Create or update the company profile without submitting KYC (status stays as it is, "pending" for a new profile). */
@@ -605,6 +629,11 @@ export const vendorAPI = {
   load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
   /** Posts a load. The same client_request_id returns the first load instead of a second one. */
   postLoad: (body: LoadPayload) => api.post('/vendor/loads', body).then(r => r.data as PostedLoad),
+  /** The CSV template for a bulk upload, fetched with the sign-in header. */
+  bulkTemplate: () => api.get('/vendor/loads/template.csv', { responseType: 'blob' }).then(r => r.data as Blob),
+  /** Posts one load per CSV row (up to 50). `csv` is the file's text. */
+  bulkPost: (csv: string, fileName?: string) =>
+    api.post('/vendor/loads/bulk', { csv, ...(fileName ? { file_name: fileName } : {}) }).then(r => r.data as BulkResult),
   /** The vendor's posted loads, newest first. */
   myPostedLoads: (params: { page?: number } = {}) =>
     api.get('/vendor/loads/mine', { params }).then(r => {
@@ -612,44 +641,63 @@ export const vendorAPI = {
       const items = (Array.isArray(d) ? d : ensureArray(d?.items)) as LoadSummary[]
       return { items, total: d?.total, page: d?.page } as LoadListPage
     }),
-  /** A draft copy of a posted load with the dates cleared. Creates nothing. */
+  /** { draft }: a copy of a posted load with the dates and client_request_id null. Creates nothing. */
   repostLoad: (id: string) =>
-    api.post(`/vendor/loads/${encodeURIComponent(id)}/repost`).then(r => (r.data?.draft ?? r.data) as Partial<LoadPayload>),
-  businessProfile: () => api.get('/vendor/business-profile').then(r => r.data as Partial<BusinessProfile> & { complete?: boolean }),
+    api.post(`/vendor/loads/${encodeURIComponent(id)}/repost`).then(r => r.data.draft as Partial<LoadPayload>),
+  businessProfile: () => api.get('/vendor/business-profile').then(r => fromServerProfile(r.data)),
   saveBusinessProfile: (body: BusinessProfile) =>
-    api.put('/vendor/business-profile', body).then(r => r.data as Partial<BusinessProfile> & { complete?: boolean }),
+    api.put('/vendor/business-profile', toServerProfile(body)).then(r => fromServerProfile(r.data)),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }
 
-/** Documents, pre-dispatch check, settlement and timeline of one vendor load. One place to fix if the contract moves. */
+/** Documents, pre-dispatch check, settlement and timeline of one vendor load (backend-ts/src/routes/load-documents.routes.ts). */
 const loadBase = (id: string) => `/loads/${encodeURIComponent(id)}`
+const docBase = (id: string, docId: string) => `${loadBase(id)}/documents/${encodeURIComponent(docId)}`
 export const loadDocumentsAPI = {
-  list: (id: string): Promise<{ items: LoadDocument[] }> => api.get(`${loadBase(id)}/documents`).then(r => r.data),
-  uploadUrl: (id: string, data: { kind: string; file_name: string }): Promise<{ upload_url: string; path: string }> =>
+  list: (id: string): Promise<LoadDocumentsResponse> => api.get(`${loadBase(id)}/documents`).then(r => r.data),
+  /** `size` is in bytes; PDF, JPG or PNG up to 10 MB. Put the file with supabase.storage.from(bucket).uploadToSignedUrl(path, token, file). */
+  uploadUrl: (id: string, data: { kind: string; content_type: string; size: number }): Promise<UploadUrl> =>
     api.post(`${loadBase(id)}/documents/upload-url`, data).then(r => r.data),
   create: (id: string, data: DocumentInput): Promise<LoadDocument> =>
     api.post(`${loadBase(id)}/documents`, data).then(r => r.data),
   update: (id: string, docId: string, data: DocumentPatch): Promise<LoadDocument> =>
-    api.patch(`${loadBase(id)}/documents/${encodeURIComponent(docId)}`, data).then(r => r.data),
+    api.patch(docBase(id, docId), data).then(r => r.data),
   generate: (id: string, kind: GenerateKind): Promise<LoadDocument> =>
     api.post(`${loadBase(id)}/documents/generate/${kind}`).then(r => r.data),
-  pdf: (id: string, docId: string): Promise<{ url: string }> =>
-    api.get(`${loadBase(id)}/documents/${encodeURIComponent(docId)}/pdf`).then(r => r.data),
-  history: (id: string, docId: string): Promise<{ items: DocumentEvent[] }> =>
-    api.get(`${loadBase(id)}/documents/${encodeURIComponent(docId)}/history`).then(r => r.data),
+  /**
+   * A generated document streams as application/pdf (returned as a blob); an uploaded file answers { url, expires_in }.
+   * Fetched with the sign-in header either way.
+   */
+  pdf: async (id: string, docId: string): Promise<{ blob: Blob } | { url: string }> => {
+    const res = await api.get(`${docBase(id, docId)}/pdf`, { responseType: 'blob' })
+    const blob = res.data as Blob
+    if (String(blob.type).includes('application/json')) {
+      const body = JSON.parse(await blob.text()) as { url?: string }
+      if (!body.url) throw new Error('The file is not available')
+      return { url: body.url }
+    }
+    return { blob }
+  },
+  history: (id: string, docId: string): Promise<DocumentHistory> => api.get(`${docBase(id, docId)}/history`).then(r => r.data),
   dispatchCheck: (id: string): Promise<DispatchCheck> => api.get(`${loadBase(id)}/dispatch-check`).then(r => r.data),
-  /** Assumed (not in the agreed contract): the current settlement, or 404 / null when none is open. */
-  settlement: (id: string): Promise<Settlement | null> => api.get(`${loadBase(id)}/settlement`).then(r => r.data ?? null),
-  openSettlement: (id: string): Promise<Settlement> => api.post(`${loadBase(id)}/settlement`).then(r => r.data),
+  /** The settlement, or null when none is opened (the API answers 404). */
+  settlement: (id: string): Promise<Settlement | null> =>
+    api.get(`${loadBase(id)}/settlement`).then(r => r.data as Settlement).catch(err => {
+      if (err?.response?.status === 404) return null
+      throw err
+    }),
+  openSettlement: (id: string, data?: { agreed_freight?: number; advance_paid?: number; payment_terms?: Settlement['payment_terms'] }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement`, data ?? {}).then(r => r.data),
   addExtraCharge: (id: string, data: { label: string; amount: number }): Promise<Settlement> =>
     api.post(`${loadBase(id)}/settlement/extra-charges`, data).then(r => r.data),
   approveExtraCharge: (id: string, idx: number): Promise<Settlement> =>
     api.post(`${loadBase(id)}/settlement/extra-charges/${idx}/approve`).then(r => r.data),
   addDeduction: (id: string, data: { label: string; amount: number; reason: string }): Promise<Settlement> =>
     api.post(`${loadBase(id)}/settlement/deductions`, data).then(r => r.data),
-  closeSettlement: (id: string): Promise<Settlement> => api.post(`${loadBase(id)}/settlement/close`).then(r => r.data),
-  timeline: (id: string): Promise<{ items: TimelineItem[] }> => api.get(`${loadBase(id)}/timeline`).then(r => r.data),
+  closeSettlement: (id: string, data?: { payment_status?: Settlement['payment_status'] }): Promise<ClosedSettlement> =>
+    api.post(`${loadBase(id)}/settlement/close`, data ?? {}).then(r => r.data),
+  timeline: (id: string): Promise<LoadTimelineResponse> => api.get(`${loadBase(id)}/timeline`).then(r => r.data),
 }
 
 export const authAPI = {

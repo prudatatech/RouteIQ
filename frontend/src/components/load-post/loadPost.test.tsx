@@ -207,6 +207,17 @@ describe('confirmation', () => {
   })
 })
 
+describe('confirmation note', () => {
+  it('shows the server status note instead of the matching message when the load waits', () => {
+    render(wrap(
+      <LoadConfirmation loadId="abc" loadNumber="MRX-2026-00143" pickupCity="Mumbai" deliveryCity="Delhi" pickupDate={null} vehicleName="Truck"
+        statusNote="Business verification pending. Your load is saved." onPostAnother={() => {}} />,
+    ))
+    expect(screen.getByText(/business verification pending/i)).toBeTruthy()
+    expect(screen.queryByText(/matching a verified carrier/i)).toBeNull()
+  })
+})
+
 describe('repost', () => {
   it('opens the form with everything filled in and the dates cleared', async () => {
     api.myPostedLoads.mockResolvedValue({

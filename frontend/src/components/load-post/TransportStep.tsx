@@ -138,7 +138,7 @@ export default function TransportStep({ draft, onChange, errors, vehicles, vehic
       <Card padded className="space-y-4 !p-4">
         {assist?.estimate && (
           <Alert tone="info" title={`${inr(assist.estimate.low)} – ${inr(assist.estimate.high)}`}>
-            Estimated freight on this route ({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km). {assist.estimate.label}
+            Estimated freight for this load ({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km). {assist.estimate.label}
           </Alert>
         )}
         <Input
@@ -148,7 +148,7 @@ export default function TransportStep({ draft, onChange, errors, vehicles, vehic
         />
         <Checkbox
           label="Request quotation"
-          description="Logistic companies on this route quote you within 2 hours."
+          description="Logistic companies serving these cities quote you within 2 hours."
           checked={draft.quote_requested} onChange={e => onChange({ quote_requested: e.target.checked })}
         />
         <div className="grid gap-3 sm:grid-cols-2">
