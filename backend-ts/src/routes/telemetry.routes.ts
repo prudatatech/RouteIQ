@@ -307,6 +307,7 @@ router.post('/stoppages', requireAuth, async (req: Request, res: Response) => {
     const { data, error } = await supabase
       .from('vehicle_stoppages')
       .insert({
+        id: crypto.randomUUID(),
         vehicle_id: req.body.vehicle_id,
         latitude: lat,
         longitude: lng,

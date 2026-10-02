@@ -174,7 +174,8 @@ export async function parseProfileInput(
     const clash = (data ?? []).find(r => r.user_id !== subject.id && (!inCompany || inCompany.has(r.user_id as string)));
     if (clash) {
       const { data: other } = await supabase.from('users').select('id, full_name, role, status').eq('id', clash.user_id).maybeSingle();
-      throw new HttpError(409, `Employee code ${code} is already used by ${other?.full_name ?? 'another person'}`, { existing_person: other ?? { id: clash.user_id } });
+      if (!other) throw new HttpError(409, `Employee code ${code} is already used by another person`);
+      throw await duplicateError(`Employee code ${code} is already used by ${other.full_name ?? 'another person'}`, other as PersonRow, `Employee code ${code} is already in use`);
     }
     patch.employee_code = code;
   } else if (has('employee_code')) {
@@ -231,7 +232,18 @@ export async function parseProfileInput(
 
 // ── Phone numbers ──────────────────────────────────────────
 
-export function duplicateError(message: string, person: Pick<PersonRow, 'id' | 'full_name' | 'role' | 'status'>): HttpError {
+/**
+ * The 409 for a phone, email, document number or employee code somebody already uses. Numbers are unique across the
+ * platform, but a person of another company is not this company's to see: for them the answer is neutral (no name,
+ * id, role or status), so a company cannot probe who works for a competitor.
+ */
+export async function duplicateError(
+  message: string,
+  person: Pick<PersonRow, 'id' | 'full_name' | 'role' | 'status'>,
+  neutral = 'This is already registered to someone else',
+): Promise<HttpError> {
+  const members = await membersAmong([person.id]);
+  if (members && !members.has(person.id)) return new HttpError(409, neutral);
   return new HttpError(409, message, { existing_person: { id: person.id, full_name: person.full_name, role: person.role, status: person.status } });
 }
 
@@ -260,11 +272,11 @@ export async function assertPhoneAvailable(phone: string, exceptUserId: string |
     if (holder.id === exceptUserId) continue;
     // A number another company's person holds is taken, and says no more than that: never who they are, never theirs to release
     if (inCompany && !inCompany.has(holder.id)) throw new HttpError(409, 'This phone number is already registered to another account');
-    if (holder.status !== 'inactive') throw duplicateError(`This phone number already belongs to ${holder.full_name ?? 'another person'}`, holder);
+    if (holder.status !== 'inactive') throw await duplicateError(`This phone number already belongs to ${holder.full_name ?? 'another person'}`, holder, 'This phone number is already registered to someone else');
     const left = await leftOn(holder);
     const until = addDays(left, RECYCLE_BLOCK_DAYS);
     if (until > today) {
-      throw duplicateError(`This number belonged to ${holder.full_name ?? 'someone'}, who left on ${left}. It can be reused after ${until}`, holder);
+      throw await duplicateError(`This number belonged to ${holder.full_name ?? 'someone'}, who left on ${left}. It can be reused after ${until}`, holder, `This number was used by someone else recently. It can be reused after ${until}`);
     }
     releaseFrom = { holder, leftOn: left };
   }

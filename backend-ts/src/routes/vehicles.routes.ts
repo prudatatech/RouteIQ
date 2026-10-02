@@ -511,7 +511,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     // change so an edited truck can actually take that load (what it carries now stays untouched).
     if (updateData.capacity_kg !== undefined && updateData.capacity_kg !== null && current.capacity_kg != null
         && updateData.declared_load_percentage === undefined) {
-      const { data: loadNow } = await supabase.from('vehicles').select('available_capacity_kg, current_load_kg').eq('id', req.params.id).maybeSingle();
+      const { data: loadNow } = await supabase.from('vehicles').select('available_capacity_kg, current_load_kg').eq('id', req.params.vehicle_id).maybeSingle();
       const carried = Number(loadNow?.current_load_kg ?? 0) || Math.max(0, Number(current.capacity_kg) - Number(loadNow?.available_capacity_kg ?? current.capacity_kg));
       updateData.available_capacity_kg = Math.max(0, Number(updateData.capacity_kg) - carried);
     }
