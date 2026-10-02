@@ -11,7 +11,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import type { NextFunction, Response } from 'express';
 import { STAFF_ROLES } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
-import { tplNetworkService, type PartnerSession, type SourceType } from '../services/tpl-network.service';
+import { tplNetworkService, parsePartnerIds, type PartnerSession, type SourceType } from '../services/tpl-network.service';
 import { supabase } from '../core/supabase';
 
 const router = Router();
@@ -89,21 +89,24 @@ router.get('/escalations', ...staff, async (req, res) => {
   }
 });
 
-// GET /tpl-network/escalations/preview?request_id=|shipment_id=  partners that would receive an offer
+// GET /tpl-network/escalations/preview?request_id=|shipment_id=[&partner_ids=a,b]  partners that would receive an offer,
+// and { excluded: [{ partner_id, name, reason }] } the ones the company's partner rules keep out
 router.get('/escalations/preview', ...staff, async (req, res) => {
   try {
     const { sourceType, id } = parseSource(req.query as Record<string, unknown>);
-    res.json(await tplNetworkService.preview(sourceType, id));
+    const chosen = typeof req.query.partner_ids === 'string' && req.query.partner_ids !== '' ? req.query.partner_ids.split(',') : null;
+    res.json(await tplNetworkService.preview(sourceType, id, { partnerIds: parsePartnerIds(chosen) }));
   } catch (error) {
     sendError(req, res, error, 'error');
   }
 });
 
-// POST /tpl-network/escalations  { request_id | shipment_id }
+// POST /tpl-network/escalations  { request_id | shipment_id, vendor_price?, partner_ids?: uuid[1..10] }
+// partner_ids: offer only to those partners of the company (targeted offers); absent: every matching partner
 router.post('/escalations', ...staff, async (req, res) => {
   try {
     const { sourceType, id } = parseSource(req.body);
-    res.status(201).json(await tplNetworkService.escalate(sourceType, id, req.user!.user_id, { vendorPrice: req.body?.vendor_price }));
+    res.status(201).json(await tplNetworkService.escalate(sourceType, id, req.user!.user_id, { vendorPrice: req.body?.vendor_price, partnerIds: req.body?.partner_ids }));
   } catch (error) {
     sendError(req, res, error, 'error');
   }

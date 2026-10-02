@@ -571,7 +571,8 @@
     "requested_by",
     "approved_by",
     "approved_at",
-    "created_at"
+    "created_at",
+    "rules"
   ],
   "tpl_corridors": [
     "id",
@@ -1481,6 +1482,25 @@
     "notes",
     "status",
     "created_by",
+    "created_at",
+    "updated_at"
+  ],
+  "tpl_partner_statements": [
+    "id",
+    "partner_org_id",
+    "company_org_id",
+    "period",
+    "order_ids",
+    "orders_total_paise",
+    "deductions",
+    "balance_paise",
+    "status",
+    "issued_at",
+    "paid_at",
+    "paid_reference",
+    "created_by",
+    "issued_by",
+    "paid_by",
     "created_at",
     "updated_at"
   ]
