@@ -377,6 +377,14 @@ describe('dispatch block at pickup', () => {
     expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('in_transit');
   });
 
+  it('holds the pickup recorded through the custody API too, so the block cannot be bypassed', async () => {
+    world({ orgs: blocking(true), extra: scheduled });
+    const res = await request(app).post('/api/v1/cargo/custody').set(as('driver-a', ORG.companyA)).send({ ref: { manifest_id: MAN }, kind: 'pickup' });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toMatch(/Invoice or challan/);
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('scheduled');
+  });
+
   it('only warns with the setting off: the pickup goes ahead with documents missing', async () => {
     world({ orgs: blocking(false), extra: scheduled });
     expect((await pickup()).status).toBe(200);
