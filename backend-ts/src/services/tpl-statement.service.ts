@@ -352,7 +352,9 @@ export const tplStatementService = {
  */
 export async function statementCoveringOrder(orderId: string): Promise<{ id: string; period: string; status: string } | null> {
   const { data, error } = await supabase.from('tpl_partner_statements')
-    .select('id, period, status, order_ids').in('status', ['issued', 'paid']).contains('order_ids', [orderId]);
+    .select('id, period, status, order_ids').in('status', ['issued', 'paid'])
+    // order_ids is jsonb: contains needs the JSON text, a bare array would be sent as a Postgres array literal
+    .contains('order_ids', JSON.stringify([orderId]));
   if (error) failed('Failed to check statements', error);
   const hit = (data ?? []).find(s => Array.isArray(s.order_ids) && (s.order_ids as string[]).includes(orderId));
   return hit ? { id: hit.id, period: hit.period, status: hit.status } : null;
