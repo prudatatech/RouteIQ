@@ -12,6 +12,14 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     RETURN;
   END IF;
+  -- Where service_role already bypasses row security (managed Supabase, the CI stack) there is nothing to add
+  IF (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'service_role') THEN
+    RETURN;
+  END IF;
+  -- And only a login that may act as the storage owner can add the policy (the Azure admin can; CI's postgres cannot)
+  IF NOT pg_has_role(current_user, 'supabase_storage_admin', 'MEMBER') THEN
+    RETURN;
+  END IF;
   SET LOCAL ROLE supabase_storage_admin;
   GRANT USAGE ON SCHEMA storage TO service_role;
   GRANT ALL ON storage.objects, storage.buckets TO service_role;
