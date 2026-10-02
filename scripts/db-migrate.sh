@@ -77,3 +77,27 @@ for f in "${pending[@]}"; do
   { echo "SET lock_timeout = '5s'; BEGIN;"; cat "$f"; echo "INSERT INTO public.app_migrations (name) VALUES ('$name');"; echo "COMMIT;"; } | run >/dev/null
   echo "applied  $name"
 done
+
+# Every app table belongs to app_owner (Azure: the API's service_role inherits it, and default privileges grant only
+# app_owner's tables). A migration that creates a table as the admin login leaves it unreadable to the API; hand any
+# such table over and grant it like the others, and say so. Nothing to do where app_owner doesn't exist (Supabase/CI).
+fixed="$(run <<'SQL'
+DO $$
+DECLARE r record; out text := '';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN RETURN; END IF;
+  -- (tables an extension owns, such as spatial_ref_sys of PostGIS, stay as they are)
+  FOR r IN SELECT t.tablename FROM pg_tables t
+           WHERE t.schemaname = 'public' AND t.tableowner <> 'app_owner'
+             AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = format('public.%I', t.tablename)::regclass AND d.deptype = 'e') LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO app_owner', r.tablename);
+    EXECUTE format('GRANT ALL ON public.%I TO authenticated, service_role', r.tablename);
+    out := out || ' ' || r.tablename;
+  END LOOP;
+  PERFORM set_config('margix.fixed', out, false);
+END $$;
+SELECT current_setting('margix.fixed', true);
+SQL
+)"
+[[ -n "${fixed// /}" ]] && echo "handed to app_owner and granted:${fixed}"
+exit 0
