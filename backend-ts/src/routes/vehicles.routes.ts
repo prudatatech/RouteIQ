@@ -446,6 +446,11 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       updateData[key] = value;
     }
 
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ detail: 'Nothing to update' });
+      return;
+    }
+
     const { data: current, error: currentErr } = await supabase
       .from('vehicles')
       .select('id, status, capacity_kg, driver_id, driver_name, driver_phone')
