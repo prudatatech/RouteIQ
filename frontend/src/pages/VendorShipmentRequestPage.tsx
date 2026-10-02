@@ -1,556 +1,304 @@
-import { errorMessage } from '@/utils/display'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { Sparkles, Warehouse } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
+import { Alert, Button, Page, PageHeader } from '@/components/ui'
+import { publicAPI, vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { clearGuestDraft, loadGuestDraft, saveGuestDraft } from '@/utils/guestDraft'
-import { useVendorContext } from '@/components/vendor/vendorContext'
-import { vendorAPI } from '@/services/api'
-import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase'
-import { MapView, type MapPoint, type MapRoute } from '@/components/map'
-import AddressPicker from '@/components/map/AddressPicker'
+import { errorMessage } from '@/utils/display'
+import type { BusinessProfile, LoadDraft, PostedLoad, ProductRow, Recommendation } from '@/types/load'
+import AddressStep from '@/components/load-post/AddressStep'
+import BusinessProfileStep from '@/components/load-post/BusinessProfileStep'
+import HsnSearch from '@/components/load-post/HsnSearch'
+import LoadConfirmation from '@/components/load-post/LoadConfirmation'
+import OtpModal from '@/components/load-post/OtpModal'
+import ProductRows from '@/components/load-post/ProductRows'
+import RecommendationList from '@/components/load-post/RecommendationList'
+import ReviewStep from '@/components/load-post/ReviewStep'
+import TransportStep from '@/components/load-post/TransportStep'
+import { useLoadAssist } from '@/components/load-post/useLoadAssist'
 import {
-  Alert, Button, buttonClasses, Card, Checkbox, Input, Page, PageHeader, Select, Textarea,
-} from '@/components/ui'
-import { reversePlace, type ResolvedPlace } from '@/services/geocoding'
-import { formatKg, formatRupees } from '@/utils/display'
-import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
-import { usePriceQuote } from '@/components/pricing/usePriceQuote'
-import type { QuoteRequest } from '@/services/pricing'
+  applyRecommendation, emptyDraft, emptyRow, firstInvalidStep, LAST_STEP, mergeDraft, STEP_LABELS, stepForRecommendation,
+  toPayload, validateStep,
+} from '@/components/load-post/logic'
 
-const PRODUCT_CATEGORIES = ['FMCG', 'Electronics', 'Textile', 'Steel', 'Cement', 'Agriculture', 'Chemicals', 'Furniture', 'Automobile parts', 'Machinery']
-  .map(v => ({ value: v, label: v }))
-const PACKAGING_TYPES = ['Box', 'Carton', 'Bag', 'Drum', 'Pallet', 'Roll', 'Loose', 'Bundle', 'Container'].map(v => ({ value: v, label: v }))
-const UNITS = ['Kg', 'Ton', 'Piece', 'Box', 'Bag', 'Drum', 'Litre', 'Roll', 'Carton'].map(v => ({ value: v, label: v }))
-const SPECIAL_HANDLING = [
-  { id: 'fragile', label: 'Fragile' },
-  { id: 'hazardous', label: 'Hazardous' },
-  { id: 'coldChain', label: 'Cold chain' },
-  { id: 'stackable', label: 'Stackable' },
-  { id: 'highValue', label: 'High value' },
-] as const
+/** Where the email and password sign-in sends the vendor back to: the saved form, at the review step. */
+const RESUME_PATH = '/vendor/request?resume=1'
+const EMAIL_SIGN_IN = `/login?as=vendor&next=${encodeURIComponent(RESUME_PATH)}`
 
-const STEPS = ['Trip', 'Cargo', 'Review'] as const
-
-/** Everything typed on the form, saved while the visitor signs in. */
-interface RequestDraft {
-  pickup: ResolvedPlace | null
-  drop: ResolvedPlace | null
-  consigneeName: string; consigneeContact: string; consigneeEmail: string
-  productCategory: string; productName: string; brand: string; modelVariant: string
-  packagingType: string; noOfPackages: string; quantity: string; unit: string; capacity: string; declaredValue: string
-  hsnCode: string; hsnDescription: string; gstRate: string
-  specialHandling: Record<string, boolean>
-  remarks: string; myPrice: string
+/** The draft from this browser, or an empty one seeded from the lane the Find a truck page passed in the link. */
+function initialDraft(params: URLSearchParams): LoadDraft {
+  const saved = loadGuestDraft<Partial<LoadDraft>>('load')
+  if (saved) return mergeDraft(saved)
+  const d = emptyDraft()
+  const city = (v: string | null) => (v ? v.split(',')[0].trim() : '')
+  d.delivery_city = city(params.get('query'))
+  d.pickup_city = city(params.get('from'))
+  const weight = parseFloat(params.get('weight') ?? '')
+  if (Number.isFinite(weight) && weight > 0) d.items[0].weight_kg = String(weight)
+  return d
 }
 
-interface VendorProfileLite {
-  company_name?: string
-  address?: string | null
-  latitude?: number | null
-  longitude?: number | null
-}
-
-export default function VendorShipmentRequestPage() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const token = useAuthStore(s => s.token)
-  const authInitialized = useAuthStore(s => s.authInitialized)
-  const [searchParams, setSearchParams] = useSearchParams()
-  const resumeRequested = searchParams.get('resume') === '1'
-  const [restored, setRestored] = useState(false)
-  const { vendorProfile: kycProfile, profileLoading, isVendor } = useVendorContext()
-  const kycBlocked = isVendor && !profileLoading && kycProfile?.kycStatus !== 'approved'
-
-  const [step, setStep] = useState(0)
-  const [attempted, setAttempted] = useState<Record<number, boolean>>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [vendorProfile, setVendorProfile] = useState<VendorProfileLite | null>(null)
-
-  const [pickup, setPickup] = useState<ResolvedPlace | null>(null)
-  const [drop, setDrop] = useState<ResolvedPlace | null>(null)
-
-  const [consigneeName, setConsigneeName] = useState('')
-  const [consigneeContact, setConsigneeContact] = useState('')
-  const [consigneeEmail, setConsigneeEmail] = useState('')
-
-  const [productCategory, setProductCategory] = useState('')
-  const [productName, setProductName] = useState('')
-  const [brand, setBrand] = useState('')
-  const [modelVariant, setModelVariant] = useState('')
-
-  const [packagingType, setPackagingType] = useState('')
-  const [noOfPackages, setNoOfPackages] = useState('')
-  const [quantity, setQuantity] = useState('')
-  const [unit, setUnit] = useState('')
-  const [capacity, setCapacity] = useState('')
-  const [declaredValue, setDeclaredValue] = useState('')
-
-  const [hsnCode, setHsnCode] = useState('')
-  const [hsnDescription, setHsnDescription] = useState('')
-  const [gstRate, setGstRate] = useState('')
-  const [hsnSuggestions, setHsnSuggestions] = useState<HSNEntry[]>([])
-  const [showHsnDropdown, setShowHsnDropdown] = useState(false)
-  const hsnDropdownRef = useRef<HTMLDivElement>(null)
-
-  const [specialHandling, setSpecialHandling] = useState<Record<string, boolean>>({})
-  const [remarks, setRemarks] = useState('')
-  const [myPrice, setMyPrice] = useState('')
-
-  // Seed the lane from a link elsewhere (the Find a truck page): drop as query/lat/lng, pickup as from/fromLat/fromLng.
-  useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    if (params.get('resume') === '1') return
-    const place = (q: string, la: string, ln: string): ResolvedPlace | null => {
-      const text = params.get(q)
-      const lat = parseFloat(params.get(la) ?? '')
-      const lng = parseFloat(params.get(ln) ?? '')
-      return text && Number.isFinite(lat) && Number.isFinite(lng) ? { address: text, lat, lng } : null
-    }
-    const dropPlace = place('query', 'lat', 'lng')
-    const pickupPlace = place('from', 'fromLat', 'fromLng')
-    if (dropPlace) setDrop(dropPlace)
-    if (pickupPlace) setPickup(pickupPlace)
-    const weight = parseFloat(params.get('weight') ?? '')
-    if (Number.isFinite(weight) && weight > 0) setCapacity(String(weight))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (token) {
-      vendorAPI.profile().then(setVendorProfile).catch(err => console.warn('Failed to load vendor profile', err))
-    }
-  }, [token])
-
-  // Coming back from sign-in: put the saved form back and show the review. Nothing is posted until the vendor confirms.
-  useEffect(() => {
-    if (!resumeRequested || restored || !authInitialized) return
-    if (!token) return
-    const d = loadGuestDraft<RequestDraft>('request')
-    setRestored(true)
-    if (!d) {
-      toast('We could not find your saved load. Please fill it in again.')
-      setSearchParams({}, { replace: true })
-      return
-    }
-    setPickup(d.pickup ?? null); setDrop(d.drop ?? null)
-    setConsigneeName(d.consigneeName ?? ''); setConsigneeContact(d.consigneeContact ?? ''); setConsigneeEmail(d.consigneeEmail ?? '')
-    setProductCategory(d.productCategory ?? ''); setProductName(d.productName ?? ''); setBrand(d.brand ?? ''); setModelVariant(d.modelVariant ?? '')
-    setPackagingType(d.packagingType ?? ''); setNoOfPackages(d.noOfPackages ?? ''); setQuantity(d.quantity ?? ''); setUnit(d.unit ?? '')
-    setCapacity(d.capacity ?? ''); setDeclaredValue(d.declaredValue ?? '')
-    setHsnCode(d.hsnCode ?? ''); setHsnDescription(d.hsnDescription ?? ''); setGstRate(d.gstRate ?? '')
-    setSpecialHandling(d.specialHandling ?? {}); setRemarks(d.remarks ?? ''); setMyPrice(d.myPrice ?? '')
-    setStep(STEPS.length - 1)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resumeRequested, restored, authInitialized, token])
-  /** True while the restored form waits for the vendor's confirmation. */
-  const confirming = restored && resumeRequested && !!token
-
-  useEffect(() => {
-    const query = hsnCode || productName
-    if (query && query.length >= 2) {
-      const results = searchHSN(query, productCategory)
-      setHsnSuggestions(results)
-      if (results.length > 0 && !hsnCode) setShowHsnDropdown(true)
-    } else {
-      setHsnSuggestions([])
-    }
-  }, [hsnCode, productName, productCategory])
-
-  useEffect(() => {
-    const onOutside = (e: MouseEvent) => {
-      if (hsnDropdownRef.current && !hsnDropdownRef.current.contains(e.target as Node)) setShowHsnDropdown(false)
-    }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [])
-
-  const selectHSN = (entry: HSNEntry) => {
-    setHsnCode(entry.hsn)
-    setHsnDescription(entry.description)
-    setGstRate(String(entry.gstRate))
-    setShowHsnDropdown(false)
-  }
-
-  const useWarehouse = () => {
-    if (vendorProfile?.address && vendorProfile.latitude != null && vendorProfile.longitude != null) {
-      setPickup({ address: vendorProfile.address, lat: vendorProfile.latitude, lng: vendorProfile.longitude })
-      toast.success('Warehouse address selected')
-    } else {
-      toast.error('No warehouse address on file yet. Add one under Company.')
-    }
-  }
-
-  // A dragged pin is named by reverse geocoding; until then it shows as a pinned location.
-  const onPointMove = async (id: string, pos: { lat: number; lng: number }) => {
-    const set = id === 'pickup' ? setPickup : id === 'drop' ? setDrop : null
-    if (!set) return
-    set({ address: `Pinned location (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`, ...pos })
-    const named = await reversePlace(pos.lat, pos.lng).catch(() => null)
-    if (named) set({ ...named, lat: pos.lat, lng: pos.lng })
-  }
-
-  const mapPoints: MapPoint[] = [
-    pickup && { id: 'pickup', kind: 'pickup', label: `Pickup: ${pickup.address}`, position: pickup, radiusKm: 5, draggable: true },
-    drop && { id: 'drop', kind: 'drop', label: `Drop: ${drop.address}`, position: drop, radiusKm: 5, draggable: true },
-  ].filter(Boolean) as MapPoint[]
-  const mapRoute: MapRoute | null = pickup && drop
-    ? { coordinates: [[pickup.lng, pickup.lat], [drop.lng, drop.lat]], planned: true }
-    : null
-
-  const stepErrors = useMemo(() => {
-    const errors: Record<number, Record<string, string>> = { 0: {}, 1: {}, 2: {} }
-    if (!pickup) errors[0].pickup = 'Search or pick a pickup location'
-    if (!drop) errors[0].drop = 'Search or pick a drop location'
-    if (!consigneeContact.trim() && !consigneeEmail.trim()) {
-      errors[1].consigneeContact = 'Enter a contact number or email'
-      errors[1].consigneeEmail = 'Enter a contact number or email'
-    } else {
-      if (consigneeContact.trim() && !/^[6-9]\d{9}$/.test(consigneeContact.trim())) {
-        errors[1].consigneeContact = 'Enter a valid 10-digit mobile number'
-      }
-      if (consigneeEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(consigneeEmail.trim())) {
-        errors[1].consigneeEmail = 'Enter a valid email address'
-      }
-    }
-    if (!productCategory) errors[1].productCategory = 'Choose a product category'
-    if (!productName.trim()) errors[1].productName = 'Enter the product name'
-    if (!capacity || Number(capacity) <= 0) errors[1].capacity = 'Enter the gross weight'
-    return errors
-  }, [pickup, drop, consigneeContact, consigneeEmail, productCategory, productName, capacity])
-
-  // Suggested price for the Review step (signed-in vendors only)
-  const loadType = specialHandling.hazardous ? 'hazardous' : specialHandling.coldChain ? 'cold_chain' : specialHandling.fragile ? 'fragile' : 'general'
-  const quoteInput: QuoteRequest | null = step === 2 && pickup && drop && Number(capacity) > 0
-    ? {
-        pickup: { lat: pickup.lat, lng: pickup.lng, label: pickup.address },
-        drop: { lat: drop.lat, lng: drop.lng, label: drop.address },
-        weight_kg: Number(capacity),
-        load_type: loadType,
-        source: 'vendor_request',
-      }
-    : null
-  const quote = usePriceQuote(quoteInput, { guest: !token })
-  const quoteId = quote.data?.status === 'ok' ? quote.data.quote_id : null
-  const myPriceNumber = myPrice.trim() === '' ? null : Number(myPrice)
-  const myPriceError = myPriceNumber !== null && !(myPriceNumber > 0) ? 'Enter a price above 0, or leave it blank' : undefined
-
-  const stepValid = (i: number) => Object.keys(stepErrors[i]).length === 0
-  const err = (i: number, key: string) => (attempted[i] ? stepErrors[i][key] : undefined)
-  const missingSummary = [...Object.values(stepErrors[0]), ...Object.values(stepErrors[1])]
-
-  const goNext = () => {
-    setAttempted(prev => ({ ...prev, [step]: true }))
-    if (!stepValid(step)) return
-    setStep(s => Math.min(STEPS.length - 1, s + 1))
-    window.scrollTo(0, 0)
-  }
-  const goBack = () => { setStep(s => Math.max(0, s - 1)); window.scrollTo(0, 0) }
-
-  const submit = async () => {
-    setAttempted({ 0: true, 1: true, 2: true })
-    if (!stepValid(0) || !stepValid(1) || !pickup || !drop || myPriceError) {
-      if (!stepValid(0)) setStep(0)
-      else if (!stepValid(1)) setStep(1)
-      return
-    }
-
-    const payload = {
-      pickup,
-      drop,
-      capacity: Number(capacity),
-      metadata: {
-        ...(quoteId ? { quote_id: quoteId } : {}),
-        ...(quote.data?.status === 'ok' ? { suggested_price_inr: quote.data.suggested } : {}),
-        ...(myPriceNumber ? { offered_price_inr: myPriceNumber } : {}),
-        consignee: { name: consigneeName, contact: consigneeContact, email: consigneeEmail },
-        cargo: {
-          category: productCategory,
-          name: productName,
-          brand,
-          modelVariant,
-          hsnCode,
-          hsnDescription,
-          gstRate: gstRate ? Number(gstRate) : null,
-          packagingType,
-          noOfPackages: Number(noOfPackages) || 0,
-          quantity: Number(quantity) || 0,
-          unit,
-          grossWeightKg: Number(capacity),
-          declaredValue,
-          specialHandling,
-          remarks,
-        },
-      },
-    }
-
-    if (!token) {
-      // Keep the whole form in this browser, then sign in. The vendor lands back on the review and confirms.
-      const draft: RequestDraft = {
-        pickup, drop, consigneeName, consigneeContact, consigneeEmail,
-        productCategory, productName, brand, modelVariant,
-        packagingType, noOfPackages, quantity, unit, capacity, declaredValue,
-        hsnCode, hsnDescription, gstRate, specialHandling, remarks, myPrice,
-      }
-      if (!saveGuestDraft('request', draft)) toast('We could not save your load on this device, so you may need to fill it in again after signing in.')
-      else toast('Sign in to post this load. We will bring you right back with everything filled in.')
-      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request?resume=1')}`)
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      await vendorAPI.createShipmentRequest(payload)
-      clearGuestDraft('request')
-      toast.success('Load posted. Dispatch will assign a vehicle.')
-      navigate('/vendor/loads')
-    } catch (err) {
-      const message = errorMessage(err, 'Please try again.')
-      toast.error(`We could not post your load. ${message}`)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
+function Stepper({ step, onGo }: { step: number; onGo: (s: number) => void }) {
   return (
-    <Page>
-      <PageHeader
-        title="Post a load"
-        description="Tell us the trip and cargo — we'll match it with available capacity."
-        back={token ? { to: '/vendor/loads', label: 'My loads' } : { to: '/ship', label: 'Find a truck' }}
-      />
-
-      {confirming && (
-        <Alert tone="info" title="Welcome back. Check your load, then confirm.">
-          Your details are filled in. Nothing is posted until you press Confirm and post.
-        </Alert>
-      )}
-
-      {!token && (
-        <Alert tone="info" title="You can fill this in without an account">
-          You will be asked to sign in or create a free account when you post.
-        </Alert>
-      )}
-
-      {kycBlocked && (
-        <Alert
-          tone={kycProfile?.kycStatus === 'submitted' ? 'info' : 'warning'}
-          title={kycProfile?.kycStatus === 'submitted' ? 'Your KYC is in review' : 'Finish your KYC to post a load'}
-          action={kycProfile?.kycStatus === 'submitted' ? undefined : (
-            <Link to={kycProfile ? '/vendor/company' : '/vendor/onboarding'} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-              {kycProfile ? 'Open company' : 'Set up company'}
-            </Link>
-          )}
-        >
-          You can fill in this form now. You can submit it once your company KYC is approved.
-        </Alert>
-      )}
-
-      <ol aria-label="Steps" className="flex flex-wrap items-center gap-2 text-sm">
-        {STEPS.map((label, i) => (
-          <li key={label} aria-current={i === step ? 'step' : undefined} className="flex items-center gap-2">
-            <span className={i === step ? 'font-medium text-text' : i < step ? 'text-brand' : 'text-muted'}>
-              {i + 1}. {label}
-            </span>
-            {i < STEPS.length - 1 && <span aria-hidden="true" className="text-border">/</span>}
+    <nav aria-label="Steps">
+      <p className="text-sm font-medium text-text sm:hidden">Step {step + 1} of {STEP_LABELS.length}: {STEP_LABELS[step]}</p>
+      <ol className="mt-2 flex gap-1 sm:mt-0">
+        {STEP_LABELS.map((label, i) => (
+          <li key={label} className="min-w-0 flex-1">
+            <button
+              type="button"
+              disabled={i > step}
+              onClick={() => onGo(i)}
+              aria-current={i === step ? 'step' : undefined}
+              className={clsx(
+                'flex w-full flex-col gap-1 border-t-4 pt-1.5 text-left text-xs',
+                i <= step ? 'border-brand-fill' : 'border-border',
+                i === step ? 'font-semibold text-text' : 'text-muted',
+                i > step && 'cursor-default',
+              )}
+            >
+              <span className="hidden truncate sm:block">{i + 1}. {label}</span>
+            </button>
           </li>
         ))}
       </ol>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <Card padded className={step === 0 ? 'space-y-6 lg:col-span-5' : 'space-y-6 lg:col-span-3'}>
-          {step === 0 && (
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button type="button" variant="secondary" size="sm" icon={<Warehouse size={14} />} onClick={useWarehouse}>Use my warehouse as pickup</Button>
-              </div>
-              <AddressPicker
-                label="Pickup location" required value={pickup} onChange={setPickup} placeholder="Search pickup address"
-                error={err(0, 'pickup')} showMap={false} kind="pickup"
-              />
-
-              <AddressPicker
-                label="Drop location" required value={drop} onChange={setDrop} placeholder="Search drop address"
-                error={err(0, 'drop')} showMap={false} kind="drop"
-              />
-
-              <div className="overflow-hidden rounded-card border border-border">
-                <MapView mode="picker" height={280} points={mapPoints} route={mapRoute} onPointMove={onPointMove} />
-              </div>
-              <p className="text-xs text-muted">Drag a pin above to fine-tune the pickup or drop point, or use "Use my location" on either field. The dashed line and shaded circles show the 5&nbsp;km match radius.</p>
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="space-y-6">
-              <div>
-                <p className="mb-3 text-sm font-medium text-text">Receiver</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Input label="Name" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
-                  <Input
-                    label="Contact number" type="tel" inputMode="tel" maxLength={10}
-                    value={consigneeContact} onChange={e => setConsigneeContact(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    error={err(1, 'consigneeContact')}
-                    hint="Give a phone number or email below"
-                  />
-                  <div className="sm:col-span-2">
-                    <Input label="Email address" type="email" value={consigneeEmail} onChange={e => setConsigneeEmail(e.target.value)} error={err(1, 'consigneeEmail')} />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-3 text-sm font-medium text-text">Product</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Select label="Category" required options={PRODUCT_CATEGORIES} placeholder="Select a category" value={productCategory} onChange={e => setProductCategory(e.target.value)} error={err(1, 'productCategory')} />
-                  <Input label="Product name" required value={productName} onChange={e => setProductName(e.target.value)} error={err(1, 'productName')} />
-                  <Input label="Brand" value={brand} onChange={e => setBrand(e.target.value)} />
-                  <Input label="Model / variant" value={modelVariant} onChange={e => setModelVariant(e.target.value)} />
-                </div>
-              </div>
-
-              <div ref={hsnDropdownRef} className="relative space-y-3 rounded-card border border-border p-4">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-brand" />
-                  <p className="text-sm font-medium text-text">HSN classification <span className="font-normal text-muted">(auto-suggest)</span></p>
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="relative">
-                    <Input
-                      label="HSN code" value={hsnCode}
-                      onChange={e => { setHsnCode(e.target.value); setShowHsnDropdown(true) }}
-                      onFocus={() => { if (hsnSuggestions.length > 0) setShowHsnDropdown(true) }}
-                      placeholder="e.g. 1006 or type the product"
-                    />
-                    {showHsnDropdown && hsnSuggestions.length > 0 && (
-                      <ul className="absolute z-20 mt-1 w-[280px] max-h-64 overflow-y-auto rounded-control border border-border bg-surface shadow-raised">
-                        {hsnSuggestions.map((entry, i) => (
-                          <li key={`${entry.hsn}-${i}`}>
-                            <button type="button" onClick={() => selectHSN(entry)} className="w-full px-3 py-2 text-left hover:bg-surface-subtle">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="font-medium text-text">{entry.hsn}</span>
-                                <span className="text-xs text-success">{entry.gstRate}% GST</span>
-                              </div>
-                              <div className="text-xs text-muted">{entry.description}</div>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <Input label="Description" value={hsnDescription} onChange={e => setHsnDescription(e.target.value)} />
-                  <Input label="GST rate (%)" inputMode="decimal" value={gstRate} onChange={e => setGstRate(e.target.value.replace('%', ''))} />
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-3 text-sm font-medium text-text">Packaging & quantity</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <Select label="Packaging" options={PACKAGING_TYPES} placeholder="Select type" value={packagingType} onChange={e => setPackagingType(e.target.value)} />
-                  <Input label="No. of packages" type="number" min={0} inputMode="numeric" value={noOfPackages} onChange={e => setNoOfPackages(e.target.value)} />
-                  <Input label="Quantity" type="number" min={0} inputMode="decimal" value={quantity} onChange={e => setQuantity(e.target.value)} />
-                  <Select label="Unit" options={UNITS} placeholder="Select unit" value={unit} onChange={e => setUnit(e.target.value)} />
-                  <Input label="Gross weight (kg)" type="number" min={1} inputMode="decimal" required value={capacity} onChange={e => setCapacity(e.target.value)} error={err(1, 'capacity')} />
-                  <Input label="Declared value (₹)" type="number" min={0} inputMode="decimal" value={declaredValue} onChange={e => setDeclaredValue(e.target.value)} />
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-3 text-sm font-medium text-text">Special handling</p>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {SPECIAL_HANDLING.map(opt => (
-                    <Checkbox
-                      key={opt.id}
-                      label={opt.label}
-                      checked={!!specialHandling[opt.id]}
-                      onChange={e => setSpecialHandling(s => ({ ...s, [opt.id]: e.target.checked }))}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <Textarea label="Remarks" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Handling instructions, delivery notes…" />
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              <ReviewSection title="Trip" rows={[
-                ['Pickup', pickup?.address ?? '—'],
-                ['Drop', drop?.address ?? '—'],
-              ]} />
-              <ReviewSection title="Cargo" rows={[
-                ['Category', productCategory || '—'],
-                ['Product', [productName, brand].filter(Boolean).join(' · ') || '—'],
-                ['HSN code', hsnCode || '—'],
-                ['Packaging', [packagingType, noOfPackages ? `${Number(noOfPackages).toLocaleString('en-IN')} packages` : ''].filter(Boolean).join(' · ') || '—'],
-                ['Gross weight', capacity ? formatKg(capacity) : '—'],
-                ['Declared value', declaredValue ? formatRupees(declaredValue) : '—'],
-                ['Special handling', SPECIAL_HANDLING.filter(o => specialHandling[o.id]).map(o => o.label).join(', ') || 'None'],
-              ]} />
-              <ReviewSection title="Receiver" rows={[
-                ['Name', consigneeName || '—'],
-                ['Contact', [consigneeContact, consigneeEmail].filter(Boolean).join(' · ') || '—'],
-              ]} />
-              <div>
-                <p className="mb-2 text-sm font-medium text-text">Price</p>
-                <div className="space-y-4 rounded-card border border-border p-4">
-                  <PriceSuggestion
-                    query={quote}
-                    onUse={q => setMyPrice(String(q.suggested))}
-                    useLabel="Offer this price"
-                    idle="Enter a gross weight to see a suggested price."
-                  />
-                  <Input
-                    label="Your price (₹)" type="number" min={0} value={myPrice} onChange={e => setMyPrice(e.target.value)}
-                    hint="Optional. Dispatch sees your price when they assign a vehicle."
-                    error={myPriceError}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-            <Button type="button" variant="secondary" onClick={goBack} disabled={step === 0}>Back</Button>
-            <div className="flex flex-col items-end gap-1">
-              {attempted[step] && missingSummary.length > 0 && step < STEPS.length - 1 && (
-                <p className="text-xs text-danger">{missingSummary[0]}</p>
-              )}
-              {step < STEPS.length - 1 ? (
-                <Button type="button" onClick={goNext}>Continue</Button>
-              ) : (
-                <Button type="button" onClick={submit} loading={isSubmitting} disabled={kycBlocked}>{confirming ? 'Confirm and post' : 'Post load'}</Button>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {step !== 0 && (
-          <div className="hidden lg:col-span-2 lg:block">
-            <div className="sticky top-6 overflow-hidden rounded-card border border-border">
-              <MapView mode="picker" height={420} points={mapPoints} route={mapRoute} onPointMove={onPointMove} interactive={step !== 2} />
-            </div>
-          </div>
-        )}
-      </div>
-    </Page>
+    </nav>
   )
 }
 
-function ReviewSection({ title, rows }: { title: string; rows: [string, string][] }) {
+export default function VendorShipmentRequestPage() {
+  const [params] = useSearchParams()
+  const queryClient = useQueryClient()
+  const token = useAuthStore(s => s.token)
+
+  const [draft, setDraft] = useState<LoadDraft>(() => {
+    const d = initialDraft(params)
+    // Back from the email sign-in: show the review again. Nothing is posted until Submit Load is pressed.
+    return params.get('resume') === '1' ? { ...d, step: LAST_STEP } : d
+  })
+  const [attempted, setAttempted] = useState<Record<number, boolean>>({})
+  const [stage, setStage] = useState<'form' | 'profile' | 'done'>('form')
+  const [posted, setPosted] = useState<PostedLoad | null>(null)
+  const [otpOpen, setOtpOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [profileInitial, setProfileInitial] = useState<Partial<BusinessProfile>>({})
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [cameBack] = useState(() => params.get('resume') === '1')
+  const resumed = cameBack && !!token
+
+  const patch = useCallback((p: Partial<LoadDraft>) => setDraft(d => ({ ...d, ...p })), [])
+
+  // Save on every change. A posted load is gone from the draft.
+  useEffect(() => {
+    if (stage === 'done') return
+    saveGuestDraft('load', draft)
+  }, [draft, stage])
+
+  const vehiclesQuery = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: () => publicAPI.vehicleClasses(), staleTime: 60 * 60 * 1000 })
+  const vehicles = useMemo(() => [...(vehiclesQuery.data ?? [])].sort((a, b) => a.sort - b.sort), [vehiclesQuery.data])
+
+  const { assist, loading: assistLoading } = useLoadAssist(draft, stage === 'form')
+
+  // While the person has not chosen the transport themselves, it follows the suggestion.
+  useEffect(() => {
+    const s = assist?.suggested
+    if (!s || draft.transport_touched) return
+    const capacity = String(s.capacity_t)
+    if (draft.load_type !== s.load_type || draft.vehicle_class !== s.vehicle_class || draft.capacity_t !== capacity) {
+      patch({ load_type: s.load_type, vehicle_class: s.vehicle_class, capacity_t: capacity })
+    }
+  }, [assist, draft.transport_touched, draft.load_type, draft.vehicle_class, draft.capacity_t, patch])
+
+  const step = draft.step
+  const errors = attempted[step] ? validateStep(draft, step) : {}
+  const recs = useMemo(() => assist?.recommendations ?? [], [assist])
+  const recsFor = (s: number, codes?: string[]): Recommendation[] =>
+    recs.filter(r => stepForRecommendation(r.code) === s && (!codes || codes.includes(r.code)))
+  const apply = (action: NonNullable<Recommendation['action']>) => setDraft(d => applyRecommendation(d, action))
+  const notes = (list: Recommendation[]) => <RecommendationList recommendations={list} onApply={apply} vehicles={vehicles} />
+
+  const goTo = (s: number) => { patch({ step: s }); window.scrollTo?.({ top: 0 }) }
+  const next = () => {
+    setAttempted(a => ({ ...a, [step]: true }))
+    if (Object.keys(validateStep(draft, step)).length === 0) goTo(step + 1)
+  }
+
+  const changeRow = (i: number, p: Partial<ProductRow>) => setDraft(d => ({ ...d, items: d.items.map((r, n) => (n === i ? { ...r, ...p } : r)) }))
+  const addRow = () => setDraft(d => ({ ...d, items: [...d.items, emptyRow()] }))
+  const removeRow = (i: number) => setDraft(d => (i === 0 ? d : { ...d, items: d.items.filter((_, n) => n !== i) }))
+
+  // ----- submit -----
+
+  const post = async () => {
+    setSubmitting(true); setSubmitError(null)
+    try {
+      const result = await vendorAPI.postLoad(toPayload(draft))
+      clearGuestDraft('load')
+      setPosted(result)
+      setStage('done')
+      queryClient.invalidateQueries({ queryKey: ['vendor', 'posted-loads'] })
+    } catch (err) {
+      setSubmitError(errorMessage(err, 'We could not post your load. Nothing was lost; try again.'))
+      setStage('form')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  /** After sign-in: the business profile once, then the post. */
+  const afterSignIn = async () => {
+    setSubmitting(true); setSubmitError(null)
+    try {
+      const profile = await vendorAPI.businessProfile().catch(() => null)
+      if (!profile || !profile.complete) {
+        setProfileInitial(profile ?? {})
+        setStage('profile')
+        setSubmitting(false)
+        return
+      }
+    } catch { /* fall through to the post */ }
+    await post()
+  }
+
+  const onSubmit = () => {
+    const bad = firstInvalidStep(draft)
+    if (bad !== null) {
+      setAttempted(a => ({ ...a, [bad]: true }))
+      goTo(bad)
+      return
+    }
+    if (!token) { setOtpOpen(true); return }
+    void afterSignIn()
+  }
+
+  const saveProfile = async (profile: BusinessProfile) => {
+    setProfileSaving(true); setProfileError(null)
+    try {
+      await vendorAPI.saveBusinessProfile(profile)
+    } catch (err) {
+      setProfileError(errorMessage(err, 'We could not save your details. Try again.'))
+      setProfileSaving(false)
+      return
+    }
+    setProfileSaving(false)
+    await post()
+  }
+
+  const postAnother = () => {
+    clearGuestDraft('load')
+    setDraft(emptyDraft())
+    setAttempted({})
+    setPosted(null)
+    setStage('form')
+    setSubmitError(null)
+  }
+
+  // ----- screens -----
+
+  if (stage === 'done' && posted) {
+    const vehicleName = vehicles.find(v => v.key === draft.vehicle_class)?.name ?? draft.vehicle_class
+    return (
+      <Page width="form">
+        <LoadConfirmation
+          loadId={posted.id} loadNumber={posted.load_number}
+          pickupCity={draft.pickup_city} deliveryCity={draft.delivery_city} pickupDate={draft.pickup_date || null}
+          vehicleName={vehicleName} onPostAnother={postAnother}
+        />
+      </Page>
+    )
+  }
+
+  if (stage === 'profile') {
+    return (
+      <Page width="form">
+        <BusinessProfileStep
+          initial={profileInitial} saving={profileSaving || submitting} error={profileError}
+          onSave={saveProfile} onBack={() => setStage('form')}
+        />
+      </Page>
+    )
+  }
+
+  const first = draft.items[0]
+
   return (
-    <div>
-      <p className="mb-2 text-sm font-medium text-text">{title}</p>
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-card border border-border p-4 sm:grid-cols-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="min-w-0">
-            <dt className="text-xs text-muted">{label}</dt>
-            <dd className="mt-0.5 break-words text-sm text-text">{value}</dd>
+    <Page width="form">
+      <PageHeader title="Post a load" description="Tell us what you are moving and where. You sign in only when you submit." />
+
+      {draft.reposted_from && (
+        <Alert tone="info" title="Copied from an earlier load">Everything is filled in except the dates. Choose the new pickup date, then review.</Alert>
+      )}
+      {resumed && step === LAST_STEP && (
+        <Alert tone="success" title="Welcome back">Your load is exactly as you left it. Press Submit Load when you are ready.</Alert>
+      )}
+
+      <Stepper step={step} onGo={goTo} />
+
+      <section aria-labelledby="step-title" className="space-y-4">
+        <h2 id="step-title" className="text-lg font-semibold text-text">{STEP_LABELS[step]}</h2>
+
+        {step === 0 && (
+          <div className="space-y-4">
+            <HsnSearch
+              row={first} index={0} onChange={p => changeRow(0, p)}
+              errors={{ name: errors.product_name_0, hsn: errors.hsn_code_0, rate: errors.gst_rate_0 }}
+            />
+            {notes(recsFor(0))}
           </div>
-        ))}
-      </dl>
-    </div>
+        )}
+        {step === 1 && (
+          <div className="space-y-4">
+            <ProductRows
+              items={draft.items} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
+              bulkHint={recs.find(r => r.code === 'bulk_template')?.message}
+            />
+            {notes(recsFor(1).filter(r => r.code !== 'bulk_template'))}
+          </div>
+        )}
+        {step === 2 && (
+          <AddressStep
+            draft={draft} onChange={patch} errors={errors}
+            pickupNotes={notes(recsFor(2, ['same_day_pickup']))}
+            deliveryNotes={notes(recsFor(2, ['same_city', 'interstate_igst']))}
+          />
+        )}
+        {step === 3 && (
+          <TransportStep
+            draft={draft} onChange={patch} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesQuery.isLoading}
+            assist={assist} notes={notes(recsFor(3))}
+          />
+        )}
+        {step === 4 && (
+          <>
+            {notes(recs.filter(r => r.severity === 'warn' && r.code !== 'eway_required'))}
+            <ReviewStep
+              draft={draft} assist={assist} assistLoading={assistLoading} vehicles={vehicles}
+              onEdit={goTo} onSubmit={onSubmit} submitting={submitting} signedIn={!!token} error={submitError}
+            />
+          </>
+        )}
+      </section>
+
+      {step < LAST_STEP && (
+        <div className="flex gap-2 sm:justify-end">
+          {step > 0 && <Button variant="secondary" size="lg" onClick={() => goTo(step - 1)}>Back</Button>}
+          <Button size="lg" className="flex-1 sm:flex-none" onClick={next}>Next</Button>
+        </div>
+      )}
+      {step === LAST_STEP && (
+        <div><Button variant="ghost" onClick={() => goTo(step - 1)}>Back</Button></div>
+      )}
+
+      <OtpModal
+        open={otpOpen}
+        onClose={() => setOtpOpen(false)}
+        emailSignInHref={EMAIL_SIGN_IN}
+        onVerified={() => { setOtpOpen(false); void afterSignIn() }}
+      />
+    </Page>
   )
 }

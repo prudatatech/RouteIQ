@@ -8,6 +8,9 @@ import type { ShipmentOverview } from '@/components/shipments/types'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
+import type {
+  AssistResult, BusinessProfile, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
+} from '@/types/load'
 
 import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
 
@@ -512,6 +515,26 @@ export const publicAPI = {
   /** City suggestions for a lane search. */
   cities: (q: string) =>
     publicClient.get('/public/cities', { params: { q } }).then(r => ensureArray(r.data?.cities).filter((c): c is string => typeof c === 'string' && c.length > 0)),
+  /** HSN suggestions for what the person typed (at least 3 characters), up to 8. */
+  hsnSearch: (q: string, signal?: AbortSignal) =>
+    publicClient.get('/public/hsn/search', { params: { q }, signal }).then(r => ensureArray(r.data?.items) as HsnHit[]),
+  /** One HSN code with its rate or rates; null when the code is not in the master. */
+  hsn: (code: string) =>
+    publicClient.get(`/public/hsn/${encodeURIComponent(code)}`)
+      .then(r => (r.data?.item ?? r.data) as HsnHit)
+      .catch(err => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err }),
+  /** The state a 6-digit pin code is in; null when it is not known. */
+  pincode: (pin: string) =>
+    publicClient.get(`/public/pincode/${encodeURIComponent(pin)}`)
+      .then(r => r.data as PincodeInfo)
+      .catch(err => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err }),
+  vehicleClasses: () =>
+    publicClient.get('/public/vehicle-classes').then(r => ensureArray(r.data?.items ?? r.data) as VehicleClass[]),
+  goodsCategories: () =>
+    publicClient.get('/public/goods-categories').then(r => ensureArray(r.data?.items ?? r.data) as GoodsCategory[]),
+  /** Totals, tax, e-way, suggestions and the estimate for a load being filled in. Writes nothing. */
+  loadAssist: (draft: LoadPayload, signal?: AbortSignal) =>
+    publicClient.post('/public/loads/assist', draft, { signal }).then(r => r.data as AssistResult),
   /** The live-location page behind a shared link. No sign-in header, short timeout. */
   vehicleShare: (token: string) => axios
     .get(`${baseURL}/public/vehicle-share/${encodeURIComponent(token)}`, { timeout: 20_000 })
@@ -577,11 +600,31 @@ export const vendorAPI = {
   loads: () => api.get('/vendor/loads').then(r => ensureArray(r.data)),
   /** One load with where it is, lots, proof of delivery, problems in plain words, claims and whether a claim can be raised. */
   load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
+  /** Posts a load. The same client_request_id returns the first load instead of a second one. */
+  postLoad: (body: LoadPayload) => api.post('/vendor/loads', body).then(r => r.data as PostedLoad),
+  /** The vendor's posted loads, newest first. */
+  myPostedLoads: (params: { page?: number } = {}) =>
+    api.get('/vendor/loads/mine', { params }).then(r => {
+      const d = r.data
+      const items = (Array.isArray(d) ? d : ensureArray(d?.items)) as LoadSummary[]
+      return { items, total: d?.total, page: d?.page } as LoadListPage
+    }),
+  /** A draft copy of a posted load with the dates cleared. Creates nothing. */
+  repostLoad: (id: string) =>
+    api.post(`/vendor/loads/${encodeURIComponent(id)}/repost`).then(r => (r.data?.draft ?? r.data) as Partial<LoadPayload>),
+  businessProfile: () => api.get('/vendor/business-profile').then(r => r.data as Partial<BusinessProfile> & { complete?: boolean }),
+  saveBusinessProfile: (body: BusinessProfile) =>
+    api.put('/vendor/business-profile', body).then(r => r.data as Partial<BusinessProfile> & { complete?: boolean }),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
 }
 
 export const authAPI = {
+  /** Texts a 6-digit code to a vendor's phone. No sign-in needed. */
+  vendorSendOtp: (phone: string) => publicClient.post('/auth/vendor/send-otp', { phone }).then(r => r.data),
+  /** Checks the code; the answer carries a session to hand to supabase.auth.setSession. */
+  vendorVerifyOtp: (phone: string, otp: string) =>
+    publicClient.post('/auth/vendor/verify-otp', { phone, otp }).then(r => r.data as VendorSession),
   inviteVendor: (email: string, password: string) =>
     api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }

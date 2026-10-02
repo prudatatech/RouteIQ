@@ -10,6 +10,7 @@ import { useVendorContext } from '@/components/vendor/vendorContext'
 import {
   claimWindowText, nextAction, overdueText, STAGE_LABELS, type LoadStage, type VendorLoadDetail,
 } from '@/components/vendor/loads'
+import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
 import HowToPay from '@/components/vendor/HowToPay'
 import { ActionCell, LoadFacts, ProblemPill, Route, TrackLink, TruckLine } from '@/components/vendor/LoadBits'
 import RaiseClaimModal from '@/components/vendor/RaiseClaimModal'
@@ -19,7 +20,7 @@ import { holderLabel, claimTypeLabel } from '@/components/cargo/logic'
 import {
   Alert, Button, buttonClasses, Card, DetailList, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, useConfirm,
 } from '@/components/ui'
-import { errorMessage, formatDate, formatDateTime, formatRupees } from '@/utils/display'
+import { errorMessage, formatDate, formatDateTime, formatKg, formatRupees } from '@/utils/display'
 
 const STEP_STAGES: LoadStage[] = ['waiting', 'accepted', 'assigned', 'on_the_way', 'delivered']
 
@@ -150,7 +151,7 @@ export default function VendorLoadPage() {
   return (
     <Page>
       <PageHeader
-        title={<span className="font-mono">{data.code}</span>}
+        title={<span className="font-mono">{data.load_number ?? data.code}</span>}
         back={{ to: '/vendor/loads', label: 'My loads' }}
         description={<Route pickup={data.pickup} drop={data.drop} className="text-sm text-text sm:text-base" />}
         actions={(
@@ -208,6 +209,34 @@ export default function VendorLoadPage() {
           ]}
         />
       </Card>
+
+      {data.items && data.items.length > 0 && (
+        <Section id="goods" title="Goods">
+          <Card padded className="overflow-x-auto !p-0">
+            <table className="w-full min-w-[480px] text-sm" aria-label="Goods">
+              <thead><tr className="border-b border-border text-xs text-muted">
+                <th className="px-3 py-2 text-left font-medium">Product</th><th className="px-3 py-2 text-left font-medium">HSN</th>
+                <th className="px-3 py-2 text-right font-medium">GST</th><th className="px-3 py-2 text-right font-medium">Quantity</th>
+                <th className="px-3 py-2 text-right font-medium">Weight</th><th className="px-3 py-2 text-right font-medium">Value</th>
+              </tr></thead>
+              <tbody>
+                {data.items.map((i, n) => (
+                  <tr key={i.id ?? n} className="border-b border-border last:border-0">
+                    <td className="px-3 py-2">{i.product_name}</td>
+                    <td className="px-3 py-2 font-mono">{i.hsn_code}</td>
+                    <td className="px-3 py-2 text-right tabular">{i.gst_rate != null ? `${i.gst_rate}%` : '—'}</td>
+                    <td className="px-3 py-2 text-right tabular">{i.quantity ?? '—'} {i.unit ?? ''}</td>
+                    <td className="px-3 py-2 text-right tabular">{i.weight_kg != null ? formatKg(i.weight_kg) : '—'}</td>
+                    <td className="px-3 py-2 text-right tabular">{i.declared_value != null ? formatRupees(i.declared_value) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </Section>
+      )}
+
+      <LoadDocumentsPanel loadId={data.id} role="vendor" />
 
       {data.lots.length > 0 && (
         <Section id="lots" title="Lots">
