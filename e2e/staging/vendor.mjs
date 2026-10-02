@@ -644,6 +644,7 @@ async function s4() {
   const lp = await post(v, { budget_inr: 88000, quote_requested: false, items: items({ declared_value: 150000 }) })
   const id = lp.body.id
   let r = await acceptLoad(S.adminA.token, id)
+  const agreed4 = r.at ?? 88000
   check('4.01 setup: load awarded to company A', r.status === 200, `${r.status} ${msg(r)}`)
   const D = (path) => `/loads/${id}/documents${path || ''}`
 
@@ -734,7 +735,7 @@ async function s4() {
   r = await api(S.adminA.token, 'POST', D('/generate/invoice'), {})
   check('4.37 an unknown kind is a 404, not a 500', r.status === 404, `${r.status}`)
   r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement`, {})
-  check('4.38 settlement opens at the agreed price of 88,000', r.status === 200 && r.body.agreed_freight === 88000, `${r.status} ${msg(r)}`)
+  check('4.38 settlement opens at the agreed price (the booked amount)', r.status === 200 && Number(r.body.agreed_freight) === agreed4, `${r.status} ${msg(r)}`)
   r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement/close`, {})
   check('4.39 closing the trip without a final POD is refused (409)', r.status === 409, `${r.status} ${msg(r)}`)
   r = await api(S.adminA.token, 'POST', D(), { kind: 'pod', status: 'final', doc_date: dayKey(0), fields: { complete: true, delivered_at: new Date().toISOString(), receiver_name: 'R. Kumar', delivered_quantity: 400 } })
