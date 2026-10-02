@@ -192,7 +192,7 @@ describe('generated documents', () => {
       transporter_name: 'Alpha Logistics', consignor_name: 'Acme Traders', pickup_address: 'Pune', delivery_address: 'Mumbai',
       vehicle_number: 'MH12AB1234', packages: 120, actual_weight_kg: 5200, freight_amount: 25000, invoice_number: 'INV-100',
     });
-    expect(supabaseMock.rpcCalls).toEqual([{ fn: 'next_lr_number', args: { p_org: ORG.companyA, p_prefix: 'LR', p_year: year } }]);
+    expect(supabaseMock.rpcCalls).toEqual([{ name: 'next_lr_number', fn: 'next_lr_number', args: { p_org: ORG.companyA, p_prefix: 'LR', p_year: year } }]);
 
     // Generating again keeps the number and consumes none
     const again = await request(app).post(api(`/${LOAD}/documents/generate/lr`)).set(carrier()).send({});
