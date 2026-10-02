@@ -60,12 +60,14 @@ describe('GST per line (PRD 8.3)', () => {
   });
 
   it('uses the rate the customer picked for a multi-rate code, else the default', () => {
-    const [def] = resolveLines([line('Cement', '2523', 1000, 10000)], index);
-    expect(def).toMatchObject({ rate: 12, rate_ambiguous: true, rates: [12, 28] });
-    const [picked] = resolveLines([line('Cement', '2523', 1000, 10000, { gst_rate: 28 })], index);
-    expect(picked).toMatchObject({ rate: 28, rate_ambiguous: false });
-    const [bogus] = resolveLines([line('Cement', '2523', 1000, 10000, { gst_rate: 7 })], index);
-    expect(bogus).toMatchObject({ rate: 12, rate_ambiguous: true });
+    const [def] = resolveLines([line('Medicine', '3004', 1000, 10000)], index);
+    expect(def).toMatchObject({ rate: 5, rate_ambiguous: true, rates: [0, 5] });
+    const [picked] = resolveLines([line('Medicine', '3004', 1000, 10000, { gst_rate: 0 })], index);
+    expect(picked).toMatchObject({ rate: 0, rate_ambiguous: false });
+    const [bogus] = resolveLines([line('Medicine', '3004', 1000, 10000, { gst_rate: 12 })], index);
+    expect(bogus).toMatchObject({ rate: 5, rate_ambiguous: true });
+    const [cement] = resolveLines([line('Cement', '2523', 1000, 10000)], index);
+    expect(cement).toMatchObject({ rate: 18, rate_ambiguous: false, rates: [18] });
   });
 
   it('keeps a typed rate for an HSN the master does not have', () => {
@@ -193,11 +195,11 @@ describe('recommendation codes (PRD 5.2, 5.3)', () => {
     expect(await only('hsn_ambiguous', { items: [{ product_name: 'zzzzqqq' }] })).toBeUndefined();
   });
 
-  it('multi_rate: medicine at 5% or 12% asks to select, until one is chosen', async () => {
+  it('multi_rate: medicine at nil or 5% asks to select, until one is chosen', async () => {
     const r = await only('multi_rate', { items: [line('Medicine', '3004', 10, 1000)] });
     expect(r).toMatchObject({ severity: 'warn', action: { field: 'items.0.gst_rate' } });
-    expect(r?.message).toMatch(/5% OR 12%/);
-    expect(await only('multi_rate', { items: [line('Medicine', '3004', 10, 1000, { gst_rate: 12 })] })).toBeUndefined();
+    expect(r?.message).toMatch(/0% OR 5%/);
+    expect(await only('multi_rate', { items: [line('Medicine', '3004', 10, 1000, { gst_rate: 0 })] })).toBeUndefined();
     expect(await only('multi_rate', { items: [line('Rice', '1006', 10, 1000)] })).toBeUndefined();
   });
 

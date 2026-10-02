@@ -84,10 +84,9 @@ describe('POST /vendor/loads', () => {
     expect(load.eway_required).toBe(true);
     expect(load.tax_basis).toBe('inter');
     expect(load.hazmat_mixed).toBe(false);
-    // A rate the HSN master doesn't allow for the code is not trusted: cement (2523) is 12/28 in the seed, so the
-    // client's 18% falls back to the code's default 12% (84,000 + paint 9,000 + tiles 1,800 + fasteners 450)
-    expect(res.body.assessment.tax.gst_total).toBe(95250);
-    expect(res.body.assessment.tax.igst).toBe(95250);
+    // Cement (2523) is 18% under GST 2.0, so the client's 18% stands (126,000 + paint 9,000 + tiles 1,800 + fasteners 450)
+    expect(res.body.assessment.tax.gst_total).toBe(137250);
+    expect(res.body.assessment.tax.igst).toBe(137250);
   });
 
   it('writes metadata.cargo from the primary product (the largest value) for older screens', async () => {

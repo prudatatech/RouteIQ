@@ -44,9 +44,9 @@ describe('a new driver signs up', () => {
     const first = await signIn('9876511111', '10.9.0.1');
     // (the mock does not apply the database default is_active = true, so the sign-in itself may answer 403)
     expect(first.status).not.toBe(500);
-    await settle();
+    // The staff are told in the background, one by one: wait for all of them (a fixed pause was too short on a busy CI runner)
+    await vi.waitFor(() => expect(of('driver_signed_up').map(n => n.user_id).sort()).toEqual(['admin-1', 'mgr-1', 'super-1']), { timeout: 3000 });
     const notes = of('driver_signed_up');
-    expect(notes.map(n => n.user_id).sort()).toEqual(['admin-1', 'mgr-1', 'super-1']);
     const driverId = supabaseMock.rows('users').find(u => u.role === 'driver')!.id;
     expect(notes[0].data).toEqual({ user_id: driverId });
 

@@ -14,6 +14,7 @@ import { getBackendSecret } from './core/auth';
 import { redis, cacheSet } from './core/redis';
 import { fleetHealthMonitor } from './services/fleet-health.service';
 import { createApp, createHttpServer } from './app';
+import { loadHsnIndex } from './services/goods/hsn-index';
 
 // ── Create Express app ─────────────────────────────────────
 const app = createApp();
@@ -77,6 +78,9 @@ async function startup(): Promise<void> {
   const { startTrafficMonitor } = await import('./services/traffic.service');
   if (startTrafficMonitor()) console.log(`✅ Traffic incident check started (every ${settings.TRAFFIC_REFRESH_MINUTES} min)`);
   else console.log('ℹ️  Traffic incident check off: TOMTOM_API_KEY is not set');
+
+  // The HSN index is large; load it now so the first goods search after a deploy doesn't wait for it
+  loadHsnIndex().then(() => console.log(`✅ HSN index loaded`), e => console.warn('[goods] HSN index not loaded yet:', e?.message ?? e));
 
   // 6. Start HTTP server
   server.listen(settings.PORT, () => {

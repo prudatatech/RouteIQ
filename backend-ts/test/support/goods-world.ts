@@ -1,6 +1,7 @@
 /**
- * Fixture rows for the goods master tests: a slice of what migration 20261003010000_goods_master.sql seeds (same
- * codes, rates, keywords and flags), so the search and the assistant are tested on data shaped like production.
+ * Fixture rows for the goods master tests: a slice of what migrations 20261003010000_goods_master.sql (codes,
+ * keywords, flags) and 20261005010000_hsn_master_gst2.sql (the GST 2.0 rates) give production, so the search and the
+ * assistant are tested on data shaped like it.
  */
 import { buildHsnIndex, HsnRow } from '../../src/services/goods/hsn-index';
 import type { GoodsCategory, PincodePrefix, VehicleClass } from '../../src/services/goods/master';
@@ -17,16 +18,16 @@ export const HSN_ROWS: HsnRow[] = [
   row('1101', 'Wheat or meslin flour', [0], 'food_agri', ['flour', 'atta', 'maida', 'wheat flour']),
   row('1512', 'Sunflower-seed or safflower oil', [5], 'food_agri', ['sunflower oil', 'safflower oil']),
   row('0910', 'Ginger, saffron, turmeric', [5], 'food_agri', ['ginger', 'saffron', 'turmeric', 'haldi', 'spice', 'spices']),
-  row('3401', 'Soap and organic surface-active products', [18], 'fmcg', ['soap', 'detergent', 'bath soap']),
+  row('3401', 'Soap and organic surface-active products', [5, 18], 'fmcg', ['soap', 'detergent', 'bath soap'], { gst_rate: 18, rate_note: '5%: Toilet soap in the form of bars, cakes; 18%: other soap' }),
   row('0401', 'Milk and cream, not concentrated', [0], 'perishables', ['milk', 'cream', 'dairy', 'doodh'], { is_perishable: true }),
   row('0803', 'Bananas', [0], 'perishables', ['banana', 'bananas', 'kela'], { is_perishable: true }),
-  row('2523', 'Portland cement, aluminous cement', [12, 28], 'construction', ['cement', 'portland cement', 'ultratech', 'acc', 'ambuja', 'ppc', 'opc', 'white cement'], { rate_note: '28% for bags over 25 kg' }),
-  row('6810', 'Articles of cement, concrete or artificial stone', [28], 'construction', ['concrete block', 'cement block', 'precast', 'paver', 'rcc', 'concrete', 'tile']),
+  row('2523', 'Portland cement, aluminous cement', [18], 'construction', ['cement', 'portland cement', 'ultratech', 'acc', 'ambuja', 'ppc', 'opc', 'white cement']),
+  row('6810', 'Articles of cement, concrete or artificial stone', [5, 18], 'construction', ['concrete block', 'cement block', 'precast', 'paver', 'rcc', 'concrete', 'tile']),
   row('6808', 'Panels, boards of vegetable fibre with cement', [18], 'construction', ['fibre board', 'cement board', 'particle board', 'gypsum board', 'drywall']),
-  row('3004', 'Medicaments for therapeutic or prophylactic uses', [5, 12], 'pharma', ['medicine', 'tablet', 'capsule', 'syrup', 'pharmaceutical', 'drug', 'paracetamol', 'antibiotic'], { synonyms: ['medicine', 'medicines', 'medical', 'medication', 'pharma', 'generic medicine'], rate_note: 'Rate depends on the medicine; select the applicable one' }),
-  row('61', 'Articles of apparel and clothing accessories, knitted or crocheted (chapter 61)', [5, 12], 'textiles', ['knitwear', 'tshirt', 't-shirt', 'hosiery', 'innerwear'], { synonyms: GARMENT_SYN, rate_note: '5% for garments up to 1,000 per piece, 12% above' }),
-  row('62', 'Articles of apparel and clothing accessories, not knitted or crocheted (chapter 62)', [5, 12], 'textiles', ['woven garments', 'shirt', 'trouser', 'suit', 'formal wear'], { synonyms: GARMENT_SYN }),
-  row('6109', 'T-shirts, singlets and other vests, knitted', [5], 'textiles', ['tshirt', 't-shirt', 'vest', 'tank top', 'singlet', 'innerwear']),
+  row('3004', 'Medicaments for therapeutic or prophylactic uses', [0, 5], 'pharma', ['medicine', 'tablet', 'capsule', 'syrup', 'pharmaceutical', 'drug', 'paracetamol', 'antibiotic'], { gst_rate: 5, synonyms: ['medicine', 'medicines', 'medical', 'medication', 'pharma', 'generic medicine'], rate_note: '5%: Medicaments put up in measured doses; nil: drugs or medicines listed in Annexure I of 10/2025' }),
+  row('61', 'Articles of apparel and clothing accessories, knitted or crocheted (chapter 61)', [5, 18], 'textiles', ['knitwear', 'tshirt', 't-shirt', 'hosiery', 'innerwear'], { synonyms: GARMENT_SYN, rate_note: '5%: of sale value not exceeding Rs 2500 per piece; 18%: above' }),
+  row('62', 'Articles of apparel and clothing accessories, not knitted or crocheted (chapter 62)', [5, 18], 'textiles', ['woven garments', 'shirt', 'trouser', 'suit', 'formal wear'], { synonyms: GARMENT_SYN }),
+  row('6109', 'T-shirts, singlets and other vests, knitted', [5, 18], 'textiles', ['tshirt', 't-shirt', 'vest', 'tank top', 'singlet', 'innerwear']),
   row('5208', 'Woven fabrics of cotton (cotton fabric, headings 5208 to 5212)', [5], 'textiles', ['cotton', 'fabric', 'cloth']),
   row('8517', 'Telephone sets, smartphones', [18], 'electronics', ['mobile', 'smartphone', 'phone', 'iphone', 'samsung']),
   row('7214', 'Bars and rods of iron or steel', [18], 'steel_metal', ['tmt', 'tmt bar', 'rebar', 'steel bar', 'saria']),

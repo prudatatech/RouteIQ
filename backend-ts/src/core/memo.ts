@@ -18,13 +18,18 @@ export interface Memo<T> {
   clear(): void;
 }
 
-export function memoize<T>(ttlMs: number, load: () => Promise<T>): Memo<T> {
+/**
+ * `staleWhileRevalidate`: once a value exists, an expired one is still returned at once while a fresh load runs in
+ * the background (for large values that are slow to load, such as the HSN index).
+ */
+export function memoize<T>(ttlMs: number, load: () => Promise<T>, opts: { staleWhileRevalidate?: boolean } = {}): Memo<T> {
   let entry: { value: T; expiresAt: number } | null = null;
   let inflight: Promise<T> | null = null;
   let generation = 0;
 
   const get = (async () => {
     if (entry && entry.expiresAt > Date.now()) return entry.value;
+    const stale = opts.staleWhileRevalidate && entry ? entry.value : undefined;
     if (!inflight) {
       const started = generation;
       inflight = load()
@@ -34,8 +39,10 @@ export function memoize<T>(ttlMs: number, load: () => Promise<T>): Memo<T> {
           return value;
         })
         .finally(() => { inflight = null; });
+      // A failed background refresh keeps the stale value; the next call tries again
+      if (stale !== undefined) inflight.catch(() => undefined);
     }
-    return inflight;
+    return stale !== undefined ? stale : inflight;
   }) as Memo<T>;
 
   get.clear = () => { entry = null; inflight = null; generation++; };
