@@ -4,7 +4,7 @@
  * core/gst.ts taxLines and shown in rupees at the edge.
  */
 import { fromPaise, GST_STATES, taxLines, toPaise, TaxBasis } from '../../core/gst';
-import { findHsn, HsnIndex } from './hsn-index';
+import { HsnIndex, resolveHsn } from './hsn-index';
 import type { GoodsCategory } from './master';
 import type { DraftItem, EwayRule, GoodsLine, TaxByRate, TaxLine, TaxSummary } from './types';
 
@@ -18,7 +18,7 @@ export const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 export function resolveLines(items: DraftItem[], index: HsnIndex): GoodsLine[] {
   return items.map(item => {
     const hsn = (item.hsn_code ?? '').trim() || null;
-    const entry = hsn ? findHsn(index, hsn) : null;
+    const entry = hsn ? resolveHsn(index, hsn)?.entry ?? null : null;
     const chosen = typeof item.gst_rate === 'number' && Number.isFinite(item.gst_rate) ? item.gst_rate : null;
     const rates = entry ? entry.gst_rates : chosen != null ? [chosen] : [];
     const picked = chosen != null && rates.includes(chosen);

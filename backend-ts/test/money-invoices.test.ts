@@ -27,7 +27,7 @@ const BUYER_GSTIN_GJ = '24AAACC1206D1ZM';
 
 const COMPANY = {
   legal_name: 'Margix Logistics Pvt Ltd', gstin: SELLER_GSTIN, address: 'Plot 4, Bhiwandi', city: 'Thane', state: 'Maharashtra',
-  sac_code: '996511', bank_name: 'HDFC Bank', bank_account_no: '50200012345678', bank_ifsc: 'HDFC0000123', payment_terms_days: 15,
+  sac_code: '996511', bank_name: 'HDFC Bank', bank_account_no: '50200012345678', bank_ifsc: 'HDFC0000123', payment_terms_days: 15, gta_gst_option: 'fcm_18',
 };
 
 function world(extra: Record<string, any[]> = {}) {
@@ -126,7 +126,7 @@ describe('GET /invoices/:id', () => {
       routes: [{ id: ID.route1, vehicle_id: ID.v1, status: 'active', created_at: new Date().toISOString() }],
     });
     deliver('cargo_manifest', ID.m1);
-    one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 18 } };
+    one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 12 } };
     await InvoiceService.createForManifest(ID.m1);
     const inv = supabaseMock.rows('invoices')[0];
     const res = await get(inv.id);
@@ -152,7 +152,7 @@ describe('GET /invoices/:id', () => {
     for (const [gstin, expected] of [[BUYER_GSTIN_GJ, { basis: 'inter', igst: 1440, cgst: 0, sgst: 0 }], [null, { basis: 'unknown', total: 1440 }]] as const) {
       world();
       deliver('cargo_manifest', ID.m1);
-      one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 18 } };
+      one('vendor_shipment_requests', ID.request1).metadata = { cargo: { gstRate: 12 } };
       supabaseMock.rows('vendor_profiles')[0].gst_number = gstin;
       await InvoiceService.createForManifest(ID.m1);
       const res = await get(supabaseMock.rows('invoices')[0].id);

@@ -15,6 +15,7 @@ import { roadKm } from '../../utils/eta';
 import { notificationService } from '../notification.service';
 import { emailService, escapeHtml } from '../email.service';
 import { sendLoadPosted } from '../whatsapp.service';
+import { loadVehicleClasses } from '../goods/master';
 import { assessLoad, type LoadAssessment } from './assess';
 import { csvLine, parseCsv } from './csv';
 import { LoadDraftSchema, MAX_BULK_ROWS, type LoadDraftInput } from '../../schemas/loads';
@@ -24,6 +25,8 @@ export const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 /** Marks a load whose vendor organisation is not active yet: it stays out of the companies' queue until it is. */
 export const HOLD_UNVERIFIED = 'vendor_unverified';
 export const HOLD_NOTE = 'Business verification pending. Your load is saved and goes to logistic companies once your business is verified.';
+
+export const OPEN_NOTE = 'It is open to logistic companies serving this lane. We will notify you when one accepts.';
 
 export interface Caller {
   userId: string;
@@ -177,6 +180,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
         declaredValue: assessment.totals.declared_value,
         specialHandling: Object.fromEntries(input.special_handling.map(h => [h, true])),
       },
+      ...(input.temp_mode ? { temp_mode: input.temp_mode } : {}),
       transporter: 'MargixIndia',
       consignor_id: c.userId,
       routing: { estimated_distance_km: Math.round(km) },
@@ -195,7 +199,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     pickup_city: input.pickup_city,
     pickup_address: input.pickup_address,
     pickup_pincode: input.pickup_pincode,
-    pickup_state_code: validState(input.pickup_state_code) ?? validState(assessment.tax.pickup_state_code),
+    pickup_state_code: validState(assessment.tax.pickup_state_code) ?? validState(input.pickup_state_code),
     pickup_date: input.pickup_date,
     pickup_slot: input.pickup_slot ?? null,
     pickup_contact_name: input.pickup_contact_name,
@@ -203,7 +207,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     delivery_city: input.delivery_city,
     delivery_address: input.delivery_address,
     delivery_pincode: input.delivery_pincode,
-    delivery_state_code: validState(input.delivery_state_code) ?? validState(assessment.tax.delivery_state_code),
+    delivery_state_code: validState(assessment.tax.delivery_state_code) ?? validState(input.delivery_state_code),
     delivery_date: input.delivery_date ?? null,
     delivery_contact_name: input.delivery_contact_name,
     delivery_contact_phone: input.delivery_contact_phone,
@@ -247,7 +251,7 @@ async function announceLoad(c: Caller, row: Record<string, any>, verified: boole
   const route = `${row.pickup_city ?? shortPlace(row.pickup_location)} → ${row.delivery_city ?? shortPlace(row.drop_location)}`;
   const tasks: Array<Promise<unknown>> = [
     notificationService.sendNotification(
-      c.userId, 'Load posted', `Load ${row.load_number} (${route}) was posted.${verified ? ' We are matching a verified carrier.' : ' ' + HOLD_NOTE}`,
+      c.userId, 'Load posted', `Load ${row.load_number} (${route}) was posted.${' ' + (verified ? OPEN_NOTE : HOLD_NOTE)}`,
       'load_posted', { request_id: row.id, load_number: row.load_number },
     ),
   ];
@@ -260,19 +264,29 @@ async function announceLoad(c: Caller, row: Record<string, any>, verified: boole
   }
   tasks.push((async () => {
     const { data: user } = await supabase.from('users').select('phone, email').eq('id', c.userId).maybeSingle();
-    const vehicle = row.vehicle_class ?? 'To be matched';
+    const vehicle = await vehicleLabel(row.vehicle_class);
     const sent = await sendLoadPosted(user?.phone, {
-      loadNumber: row.load_number, route, pickupDate: shortDate(row.pickup_date), vehicle, totalWeightKg: Number(row.total_weight_kg ?? 0),
+      loadNumber: row.load_number, route, pickupDate: shortDate(row.pickup_date), vehicle, totalWeightKg: Number(row.total_weight_kg ?? 0), held: !verified,
     });
     // Email is the fallback when WhatsApp did not go out; a placeholder login address is not a mailbox
     const email = user?.email && !/\.margixindia\.local$/.test(user.email) ? user.email : null;
     if (!sent && email) {
       await emailService.send(email, `Load ${row.load_number} posted`,
-        `<p>Your load <b>${escapeHtml(row.load_number)}</b> was posted.</p><p>From and to: ${escapeHtml(route)}<br>Pickup: ${escapeHtml(shortDate(row.pickup_date))}<br>Vehicle: ${escapeHtml(vehicle)}<br>Total weight: ${Math.round(Number(row.total_weight_kg ?? 0)).toLocaleString('en-IN')} kg</p><p>${verified ? 'We are matching a verified carrier.' : escapeHtml(HOLD_NOTE)}</p>`);
+        `<p>Your load <b>${escapeHtml(row.load_number)}</b> was posted.</p><p>From and to: ${escapeHtml(route)}<br>Pickup: ${escapeHtml(shortDate(row.pickup_date))}<br>Vehicle: ${escapeHtml(vehicle)}<br>Total weight: ${Math.round(Number(row.total_weight_kg ?? 0)).toLocaleString('en-IN')} kg</p><p>${escapeHtml(verified ? OPEN_NOTE : HOLD_NOTE)}</p>`);
     }
   })());
   const results = await Promise.allSettled(tasks);
   for (const r of results) if (r.status === 'rejected') console.error('[loads] notification failed:', r.reason);
+}
+
+/** The vehicle as a person reads it ("Container (32 ft / SXL)"), not the key; the key itself when the class is not in the table. */
+async function vehicleLabel(key: string | null | undefined): Promise<string> {
+  if (!key) return 'To be matched';
+  try {
+    return (await loadVehicleClasses()).find(c => c.key === key)?.name ?? key;
+  } catch {
+    return key;
+  }
 }
 
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || 'pickup';
@@ -317,7 +331,7 @@ export async function repostDraft(c: Caller, id: string) {
     delivery_contact_name: l.delivery_contact_name, delivery_contact_phone: l.delivery_contact_phone,
     loading_dock: l.loading_dock, access_restrictions: l.access_restrictions,
     load_type: l.load_type, vehicle_class: l.vehicle_class, capacity_t: num(l.capacity_t),
-    temp_min_c: num(l.temp_min_c), temp_max_c: num(l.temp_max_c), special_handling: l.special_handling ?? [],
+    temp_mode: l.metadata?.temp_mode ?? null, temp_min_c: num(l.temp_min_c), temp_max_c: num(l.temp_max_c), special_handling: l.special_handling ?? [],
     budget_inr: num(l.budget_inr), quote_requested: !!l.quote_requested, loading_help: !!l.loading_help, unloading_help: !!l.unloading_help,
     company_ids: l.company_ids ?? [],
   };

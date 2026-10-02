@@ -3,7 +3,7 @@
  * conversion to and from what the server sends. Plain functions so they are easy to test.
  */
 import type {
-  LoadDraft, LoadItemPayload, LoadPayload, ProductHandling, ProductRow, Recommendation, TempChoice,
+  LoadDraft, LoadItemPayload, LoadPayload, ProductHandling, ProductRow, Recommendation, TempChoice, TempMode,
 } from '@/types/load'
 
 export const STEP_LABELS = ['Goods & HSN', 'Products', 'Pickup & Delivery', 'Transport', 'Review'] as const
@@ -115,10 +115,11 @@ export function phoneDigits(raw: string): string | null {
   return /^[6-9]\d{9}$/.test(digits) ? digits : null
 }
 
-export const TEMP_RANGES: Record<Exclude<TempChoice, ''>, { min: number | null; max: number | null; label: string }> = {
-  '2_8': { min: 2, max: 8, label: '2–8 °C' },
-  minus18: { min: -18, max: -18, label: '−18 °C' },
-  ambient: { min: null, max: null, label: 'Ambient' },
+/** Ambient is a mode of its own with no range: the server asks for a range only for chilled, frozen and custom. */
+export const TEMP_RANGES: Record<Exclude<TempChoice, ''>, { min: number | null; max: number | null; label: string; mode: TempMode }> = {
+  '2_8': { min: 2, max: 8, label: '2–8 °C', mode: 'chilled' },
+  minus18: { min: -18, max: -18, label: '−18 °C', mode: 'frozen' },
+  ambient: { min: null, max: null, label: 'Ambient', mode: 'ambient' },
 }
 
 /** Without the server's suggestion: heavy loads fill a truck. */
@@ -173,6 +174,7 @@ export function toPayload(d: LoadDraft): LoadPayload {
     load_type: d.load_type || null,
     vehicle_class: d.vehicle_class || null,
     capacity_t: d.capacity_t === '' ? null : toNum(d.capacity_t),
+    temp_mode: temp ? temp.mode : null,
     temp_min_c: temp ? temp.min : null,
     temp_max_c: temp ? temp.max : null,
     special_handling: d.special_handling,
@@ -185,7 +187,8 @@ export function toPayload(d: LoadDraft): LoadPayload {
 
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v))
 
-function tempChoiceOf(min: number | null | undefined, max: number | null | undefined): TempChoice {
+function tempChoiceOf(min: number | null | undefined, max: number | null | undefined, mode?: TempMode | null): TempChoice {
+  if (mode === 'ambient') return 'ambient'
   if (min === 2 && max === 8) return '2_8'
   if (min === -18) return 'minus18'
   return ''
@@ -224,7 +227,7 @@ export function repostToDraft(payload: Partial<LoadPayload>, repostedFrom: strin
     loading_dock: !!payload.loading_dock, access_restrictions: str(payload.access_restrictions),
     load_type: payload.load_type ?? '', vehicle_class: str(payload.vehicle_class), capacity_t: str(payload.capacity_t),
     transport_touched: !!(payload.load_type || payload.vehicle_class),
-    temp_choice: tempChoiceOf(payload.temp_min_c, payload.temp_max_c),
+    temp_choice: tempChoiceOf(payload.temp_min_c, payload.temp_max_c, payload.temp_mode),
     special_handling: payload.special_handling ?? [],
     budget_inr: str(payload.budget_inr), quote_requested: !!payload.quote_requested,
     loading_help: !!payload.loading_help, unloading_help: !!payload.unloading_help,

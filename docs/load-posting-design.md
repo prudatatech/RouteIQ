@@ -320,7 +320,8 @@ concern, with a one-click fix where there is one.
 **Confirmation (§10.2):**
 - the load ID, large, with a copy button;
 - the route, date and vehicle;
-- "Our team is matching a verified carrier. You'll get a WhatsApp update within 2 hours";
+- with a quote requested: "Logistic companies serving this lane will send quotes, usually within 2 hours"; without:
+  "Logistic companies serving this lane can now accept your load. We'll notify you when one does";
 - **Track this load** (My Loads) and **Post another load** (which resets the form and the draft).
 
 **My Loads:** `/vendor/loads` lists them by load number, with a **Repost** button on each, which opens the

@@ -11,6 +11,8 @@ import type { CustomerBooking } from '@/services/api'
 import { formatDate, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
 import { CustomerDetailsBlock } from './CustomerProfileEditor'
+import PostedLoadDetails from './PostedLoadDetails'
+import { plainText, specialHandlingLabels, type PostedLoadFields } from './postedLoad'
 import { bookingNeedsVehicle, customerName, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
 
 /** Link that looks like a secondary button. */
@@ -152,7 +154,7 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
       open={!!request}
       onClose={onClose}
       title={request ? vendorName(request) : 'Load'}
-      description={request ? `${shortPlace(request.pickup_location)} to ${shortPlace(request.drop_location)}` : undefined}
+      description={request ? `${request.load_number ? `${request.load_number} · ` : ''}${shortPlace(request.pickup_location)} to ${shortPlace(request.drop_location)}` : undefined}
       footer={request && (open || shipment) ? (
         <>
           {open && <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={rejecting} onClick={() => onReject(request)}>Reject request</Button>}
@@ -205,17 +207,19 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
               { label: 'Weight', value: <span className="tabular">{formatKg(request.required_capacity_kg)}</span> },
               ...(request.metadata?.offered_price_inr ? [{ label: 'Vendor’s price', value: <span className="tabular">{formatRupees(request.metadata.offered_price_inr)}</span> }] : []),
               { label: 'Vendor city', value: request.vendor?.city ?? 'Not given' },
-              ...(cargo?.name || cargo?.category ? [{ label: 'Goods', value: [cargo.name, cargo.category].filter(Boolean).join(' · ') }] : []),
+              ...(plainText(cargo?.name) || plainText(cargo?.category) ? [{ label: 'Goods', value: [plainText(cargo?.name), plainText(cargo?.category)].filter(Boolean).join(' · ') }] : []),
               ...(cargo?.noOfPackages ? [{ label: 'Packages', value: `${Number(cargo.noOfPackages).toLocaleString('en-IN')}${cargo.packagingType ? ` · ${cargo.packagingType}` : ''}` }] : []),
               ...(declared ? [{ label: 'Declared value', value: declared }] : []),
-              ...(cargo?.specialHandling ? [{ label: 'Special handling', value: cargo.specialHandling }] : []),
+              ...(specialHandlingLabels(cargo?.specialHandling).length > 0 ? [{ label: 'Special handling', value: specialHandlingLabels(cargo?.specialHandling).join(', ') }] : []),
               ...(consignee?.name ? [{ label: 'Receiver', value: [consignee.name, consignee.contact].filter(Boolean).join(' · ') }] : []),
-              ...(cargo?.remarks ? [{ label: 'Notes', value: cargo.remarks }] : []),
+              ...(plainText(cargo?.remarks) ? [{ label: 'Notes', value: plainText(cargo?.remarks) }] : []),
               { label: 'Posted', value: formatDateTime(request.created_at) },
               ...(request.assigned_vehicle_id ? [{ label: 'Vehicle', value: <span className="font-mono">{assignedPlate ?? 'Assigned'}</span> }] : []),
               ...(request.cost ? [{ label: 'Agreed price', value: <span className="tabular">{formatRupees(request.cost)}{request.cost_per_km ? ` (${formatRupees(request.cost_per_km)} per km)` : ''}</span> }] : []),
             ]}
           />
+
+          {request.load_number && <PostedLoadDetails request={request as { id: string } & Partial<PostedLoadFields>} />}
 
           {request.assigned_vehicle_id && <VendorLoadCargo key={request.id} requestId={request.id} />}
 

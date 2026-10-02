@@ -36,8 +36,9 @@ const ORG_COLUMNS = 'id, name, legal_name, gstin, address, pincode, state, email
 const realEmail = (e: string | null | undefined) => (e && !/\.margixindia\.local$/i.test(e) ? e : null);
 
 export function isComplete(p: Omit<BusinessProfile, 'complete' | 'gstin_status'>): boolean {
-  const base = !!(p.full_name && p.account_type && p.address && p.pincode && p.email);
-  return p.account_type === 'business_partner' ? base && !!p.business_name && !!p.gstin : base;
+  // The business name is for everyone; email is optional (PRD section 9)
+  const base = !!(p.full_name && p.business_name && p.account_type && p.address && p.pincode);
+  return p.account_type === 'business_partner' ? base && !!p.gstin : base;
 }
 
 function requireVendorOrg(c: Caller): string {

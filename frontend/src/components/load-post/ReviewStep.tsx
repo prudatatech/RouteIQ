@@ -80,8 +80,8 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
       <Alert tone={eway ? 'warning' : 'info'}>
         {eway
           ? (local.hazmat && local.declared_value <= EWAY_THRESHOLD_INR
-            ? 'e-Way Bill will be auto-generated, required because your load has hazardous goods.'
-            : `e-Way Bill will be auto-generated, required because total value ${inr(totals.declared_value)} exceeds ${inr(EWAY_THRESHOLD_INR)}.`)
+            ? 'An e-Way Bill is needed (hazardous goods). You or the company add it after a carrier is assigned.'
+            : `An e-Way Bill is needed (value above ${inr(EWAY_THRESHOLD_INR)}). You or the company add it after a carrier is assigned.`)
           : 'e-Way Bill not required: total value is below the threshold.'}
       </Alert>
 

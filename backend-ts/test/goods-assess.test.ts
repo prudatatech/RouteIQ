@@ -179,7 +179,7 @@ describe('recommendation codes (PRD 5.2, 5.3)', () => {
 
   it('has a rule for every code in the spec', () => {
     expect(Object.keys(RECOMMENDATION_RULES).sort()).toEqual([
-      'budget_below_estimate', 'bulk_template', 'eway_required', 'hazmat_permit', 'hsn_ambiguous', 'interstate_igst', 'multi_rate',
+      'budget_below_estimate', 'bulk_template', 'eway_required', 'hazmat_permit', 'hsn_ambiguous', 'interstate_igst', 'mini_truck_interstate', 'multi_rate',
       'no_value', 'perishable_reefer', 'ptl_heavy', 'same_city', 'same_day_pickup', 'weight_over_18t',
     ]);
   });
@@ -223,8 +223,20 @@ describe('recommendation codes (PRD 5.2, 5.3)', () => {
     expect(await only('interstate_igst', { items: [line('Rice', '1006', 1, 1)] }, { deliveryState: null })).toBeUndefined();
   });
 
+  it('mini_truck_interstate: a mini truck on a load that crosses states', async () => {
+    const items = [line('Rice', '1006', 500, 1000)];
+    const r = await only('mini_truck_interstate', { items, vehicle_class: 'mini_truck' });
+    expect(r).toMatchObject({ severity: 'warn' });
+    expect(r?.message).toMatch(/can't run interstate without a permit/);
+    expect(await only('mini_truck_interstate', { items, vehicle_class: 'mini_truck' }, { deliveryState: MH })).toBeUndefined();
+    expect(await only('mini_truck_interstate', { items, vehicle_class: 'container_20ft' })).toBeUndefined();
+    expect(await only('mini_truck_interstate', { items })).toBeUndefined();
+  });
+
   it('eway_required: when the e-way bill applies', async () => {
-    expect((await only('eway_required', { items: [line('Soap', '3401', 1, 60000)] }))?.message).toMatch(/E-Way Bill/);
+    const msg = (await only('eway_required', { items: [line('Soap', '3401', 1, 60000)] }))?.message;
+    expect(msg).toBe('An e-Way Bill is needed (value above ₹50,000). You or the company add it after a carrier is assigned.');
+    expect(msg).not.toMatch(/auto-generated/);
     expect(await only('eway_required', { items: [line('Soap', '3401', 1, 40000)] })).toBeUndefined();
     expect(await only('eway_required', { items: [line('Crackers', '3604', 1, 10)] })).toBeDefined();
   });

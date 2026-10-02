@@ -7,8 +7,7 @@
  *     or, when there is no winning bid, the freight charge staff entered on it
  *   - cargo manifest: the agreed cost of the vendor request it carries out
  *     (cargo_manifest.vendor_request_id -> vendor_shipment_requests.cost), or, when only a
- *     rate per km was agreed, that rate times the trip's road distance; GST is the rate the
- *     vendor entered on the request
+ *     rate per km was agreed, that rate times the trip's road distance
  *   - a lot of a split consignment (docs/cargo-plan.md, Lots): its freight_share, the part of the
  *     master's price that falls to it; a master is billed only for the part it kept (its own
  *     freight_share, the pieces delivered before the split), so the master's price is never
@@ -16,6 +15,8 @@
  * A shipment or lot that settles as partially_delivered (nothing left on a vehicle or at a hub) is
  * invoiced too, for its price or freight_share; the short and refused pieces are written on the
  * invoice's notes so a claim can offset it. One that still holds pieces waits until it settles.
+ * Freight GST follows the issuing company's GTA option (gta_gst_option: reverse charge 5%, so none on the invoice, or
+ * 5% / 18% forward charge), stored on the invoice as tax_mode. The goods' own rate is never used for the freight.
  * Every invoice is issued with a due date: the payment terms in the issuing company's Settings, 15 days by default.
  * Numbers are the issuing company's own: its prefix and its own sequence per month (nextInvoiceNumber).
  * No invoice is issued until the issuing company's profile has a name, GSTIN and state (409): the seller must be
@@ -33,7 +34,7 @@ import { bookingCustomer, manifestRequest } from './cargo/notify';
 import { assertCanIssueInvoices, invoicePrefixFor, sellerStateCode, COMPANY_PROFILE_INCOMPLETE } from './company.service';
 import { resolveScope } from './company-settings.service';
 import { HttpError } from '../core/errors';
-import { fromPaise, taxLines, toPaise, type TaxBasis } from '../core/gst';
+import { fromPaise, gtaTerms, taxLines, toPaise, type TaxBasis } from '../core/gst';
 import { resolveBillTo, snapshotOf } from './invoice-recipient.service';
 import { issuerStamp, vendorOrgOf } from '../core/org-context';
 
@@ -47,14 +48,6 @@ const PRICE_SOURCE_LOT = 'lot_freight_share';
 export interface InvoiceResult {
   status: 'created' | 'exists' | 'unpriced' | 'skipped';
   invoiceId?: string;
-}
-
-/** GST rate for a shipment from its HSN lines: the single rate, or the highest when goods differ. */
-async function shipmentGstRate(shipmentId: string): Promise<number> {
-  const { data, error } = await supabase.from('shipment_hsn').select('gst_rate').eq('shipment_id', shipmentId);
-  if (error) throw new Error(`Failed to read GST lines: ${error.message}`);
-  const rates = (data ?? []).map((r: any) => Number(r.gst_rate)).filter(r => Number.isFinite(r) && r > 0);
-  return rates.length ? Math.max(...rates) : 0;
 }
 
 /** The Indian calendar month an invoice number is counted in, as YYYYMM. */
@@ -121,7 +114,6 @@ interface NewInvoice {
   vendor_request_id?: string;
   vendor_id: string | null;
   amount: number;
-  gst_rate: number;
   price_source: string;
   /** Free text on the invoice, e.g. the pieces short or refused on a partial delivery. */
   notes?: string | null;
@@ -194,8 +186,11 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
   const billTo = await resolveBillTo(input).catch(() => null);
   const sellerState = sellerStateCode(company);
   const buyerState = billTo?.state_code ?? null;
-  const basis: TaxBasis = !(input.gst_rate > 0) ? 'none' : sellerState && buyerState ? (sellerState === buyerState ? 'intra' : 'inter') : 'unknown';
-  const lines = taxLines(toPaise(input.amount), input.gst_rate, basis);
+  // Freight is taxed at the transporter's rate (the company's GTA option), never at the rate of the goods it carries
+  const taxMode = company.gta_gst_option;
+  const gstRate = gtaTerms(taxMode).rate;
+  const basis: TaxBasis = !(gstRate > 0) ? 'none' : sellerState && buyerState ? (sellerState === buyerState ? 'intra' : 'inter') : 'unknown';
+  const lines = taxLines(toPaise(input.amount), gstRate, basis);
   const amount = fromPaise(lines.taxable);
   const gstAmount = fromPaise(lines.tax);
   const termsDays = company.payment_terms_days;
@@ -211,6 +206,8 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
         ...(issuerId ? { issuer_org_id: issuerId } : {}),
         ...(billToOrg ? { bill_to_org_id: billToOrg } : {}),
         ...fields,
+        gst_rate: gstRate,
+        tax_mode: taxMode,
         ...(notes ? { notes } : {}),
         invoice_number: await nextInvoiceNumber(issuerId, now),
         amount,
@@ -296,7 +293,6 @@ export const InvoiceService = {
         shipment_id: shipmentId,
         vendor_id: lotVendor,
         amount: share,
-        gst_rate: await shipmentGstRate(masterId),
         price_source: PRICE_SOURCE_LOT,
         notes,
       });
@@ -330,7 +326,6 @@ export const InvoiceService = {
       shipment_id: shipmentId,
       vendor_id: vendorId,
       amount,
-      gst_rate: await shipmentGstRate(shipmentId),
       price_source: priceSource,
       notes,
     });
@@ -356,12 +351,10 @@ export const InvoiceService = {
       const share = Number(manifest.freight_share ?? 0);
       if (!Number.isFinite(share) || share <= 0) return { status: manifest.is_master ? 'skipped' : 'unpriced' };
       const { data: req } = await supabase.from('vendor_shipment_requests').select('vendor_id, metadata').eq('id', manifest.vendor_request_id).maybeSingle();
-      const gst = Number(req?.metadata?.cargo?.gstRate);
       const lotInvoice = await insertInvoice({
         manifest_id: manifestId,
         vendor_id: req?.vendor_id ?? null,
         amount: share,
-        gst_rate: Number.isFinite(gst) && gst > 0 && gst <= 100 ? gst : 0,
         price_source: PRICE_SOURCE_LOT,
       });
       return { status: 'created', invoiceId: lotInvoice };
@@ -388,15 +381,10 @@ export const InvoiceService = {
     }
     if (!Number.isFinite(amount) || amount <= 0) return { status: 'unpriced' };
 
-    // The GST rate the vendor entered with the cargo details
-    const enteredGst = Number(request.metadata?.cargo?.gstRate);
-    const gstRate = Number.isFinite(enteredGst) && enteredGst > 0 && enteredGst <= 100 ? enteredGst : 0;
-
     const invoiceId = await insertInvoice({
       manifest_id: manifestId,
       vendor_id: request.vendor_id ?? null,
       amount,
-      gst_rate: gstRate,
       price_source: priceSource,
     });
     return { status: 'created', invoiceId };
@@ -422,7 +410,6 @@ export const InvoiceService = {
       vendor_request_id: requestId,
       vendor_id: request.vendor_id ?? null,
       amount,
-      gst_rate: 0,
       price_source: PRICE_SOURCE_REQUEST,
     });
     return { status: 'created', invoiceId };

@@ -103,7 +103,7 @@ export const ewayRequired: Rule = ctx => {
   if (!ctx.eway.required) return null;
   return {
     code: 'eway_required', severity: 'info',
-    message: 'E-Way Bill will be auto-generated after carrier assignment. Make sure your GSTIN is ready.',
+    message: `An e-Way Bill is needed (${ctx.eway.reason.startsWith('Required at any value') ? 'hazardous goods' : `value above ${inr(ctx.eway.threshold)}`}). You or the company add it after a carrier is assigned.`,
   };
 };
 
@@ -175,6 +175,19 @@ export const budgetBelowEstimate: Rule = ctx => {
   };
 };
 
+/** A mini truck chosen for a load that crosses states: it cannot run interstate without a permit. */
+export const miniTruckInterstate: Rule = ctx => {
+  if (ctx.tax.basis !== 'inter') return null;
+  const chosen = ctx.vehicle_classes.find(c => c.key === ctx.vehicle_class);
+  if (!chosen || chosen.interstate_ok) return null;
+  const alt = ctx.suggested.vehicle_class && ctx.suggested.vehicle_class !== chosen.key ? ctx.vehicle_classes.find(c => c.key === ctx.suggested.vehicle_class && c.interstate_ok) : undefined;
+  return {
+    code: 'mini_truck_interstate', severity: 'warn',
+    message: `${chosen.name} can't run interstate without a permit. This load crosses states, so choose a larger vehicle.`,
+    ...(alt ? { action: { field: 'vehicle_class', value: alt.key } } : {}),
+  };
+};
+
 /** Every rule by its recommendation code, in the order they are shown. */
 export const RECOMMENDATION_RULES: Record<string, Rule> = {
   hsn_ambiguous: hsnAmbiguous,
@@ -190,6 +203,7 @@ export const RECOMMENDATION_RULES: Record<string, Rule> = {
   no_value: noValue,
   bulk_template: bulkTemplate,
   budget_below_estimate: budgetBelowEstimate,
+  mini_truck_interstate: miniTruckInterstate,
 };
 
 export function buildRecommendations(ctx: RecommendCtx): Recommendation[] {

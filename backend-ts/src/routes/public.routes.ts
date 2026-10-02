@@ -17,7 +17,7 @@ import { getPublicShare } from '../services/vehicle-location.service';
 import { freeCapacityKg } from '../services/capacity.service';
 import { pricingService } from '../services/pricing.service';
 import { normalizePlace } from '../utils/corridor-match';
-import { assessLoad, findHsn, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, searchHsn, toHit, toNestedDraft } from '../services/goods';
+import { assessLoad, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, resolveHsn, searchHsn, toHit, toNestedDraft } from '../services/goods';
 
 const router = Router();
 
@@ -298,10 +298,11 @@ router.get('/hsn/search', rateLimitByIp('public-hsn', 120, 60), async (req: Requ
 router.get('/hsn/:code', rateLimitByIp('public-hsn', 120, 60), async (req: Request, res: Response) => {
   try {
     if (!/^\d{2,8}$/.test(req.params.code)) return void res.status(400).json({ detail: 'An HSN code is 2 to 8 digits' });
-    const e = findHsn(await loadHsnIndex(), req.params.code);
+    const found = resolveHsn(await loadHsnIndex(), req.params.code);
+    const e = found?.entry;
     if (!e) return void res.status(404).json({ detail: 'We do not have that HSN code. You can still enter it by hand.' });
     res.set('Cache-Control', GOODS_CACHE);
-    res.json({ ...toHit(e), gst_rate: e.gst_rate, eway_always: e.eway_always });
+    res.json({ ...toHit(e), gst_rate: e.gst_rate, eway_always: e.eway_always, matched_prefix: found.matched_prefix });
   } catch (e: any) {
     sendError(req, res, e);
   }

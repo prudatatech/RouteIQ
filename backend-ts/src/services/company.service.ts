@@ -15,7 +15,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { checkGstin, normalizeGstin } from '../utils/gstin';
-import { stateCodeByName, stateOf } from '../core/gst';
+import { DEFAULT_GTA_GST_OPTION, isGtaOption, stateCodeByName, stateOf, type GtaGstOption } from '../core/gst';
 import { loadOrg, resolveScope, scopedMemo, type SettingsScope } from './company-settings.service';
 
 export const COMPANY_PROFILE_KEY = 'company_profile';
@@ -38,6 +38,8 @@ export interface CompanyProfile {
   bank_ifsc: string | null;
   upi_id: string | null;
   payment_terms_days: number;
+  /** How freight GST is charged on invoices (core/gst.ts gtaTerms): reverse charge 5% by default. */
+  gta_gst_option: GtaGstOption;
   /** Free text under the total, e.g. the jurisdiction line. */
   invoice_footer: string | null;
   /** The letters invoice numbers start with (`MIL-202610-0001`), unique per company. Null until the first invoice or until set. */
@@ -52,7 +54,7 @@ const TEXT_FIELDS = [
 const EMPTY: CompanyProfile = {
   legal_name: null, gstin: null, pan: null, address: null, city: null, state: null, pincode: null, phone: null, email: null,
   sac_code: null, bank_name: null, bank_account_no: null, bank_ifsc: null, upi_id: null,
-  payment_terms_days: DEFAULT_PAYMENT_TERMS_DAYS, invoice_footer: null, invoice_prefix: null,
+  payment_terms_days: DEFAULT_PAYMENT_TERMS_DAYS, invoice_footer: null, invoice_prefix: null, gta_gst_option: DEFAULT_GTA_GST_OPTION,
 };
 
 /** The fields that have a column on organizations as well as a place in `profile`. */
@@ -67,6 +69,7 @@ function parseProfile(raw: Record<string, unknown>): CompanyProfile {
   }
   const days = Number(raw.payment_terms_days);
   if (raw.payment_terms_days != null && Number.isInteger(days) && days >= 0 && days <= 365) out.payment_terms_days = days;
+  if (isGtaOption(raw.gta_gst_option)) out.gta_gst_option = raw.gta_gst_option;
   const prefix = typeof raw.invoice_prefix === 'string' ? raw.invoice_prefix.trim().toUpperCase() : '';
   out.invoice_prefix = PREFIX_RE.test(prefix) ? prefix : null;
   return out;
@@ -104,7 +107,7 @@ const loadCompanyProfile = scopedMemo(SETTINGS_CACHE_MS, async (scope): Promise<
     if (own && hasDetails(own)) return own;
     // Nothing set for this company yet: the platform-wide profile stands in, but the company keeps its own prefix and terms
     const fallback = await loadPlatformProfile();
-    return { ...fallback, invoice_prefix: own?.invoice_prefix ?? null };
+    return { ...fallback, invoice_prefix: own?.invoice_prefix ?? null, gta_gst_option: own?.gta_gst_option ?? fallback.gta_gst_option };
   }
   return loadPlatformProfile();
 });
@@ -174,6 +177,10 @@ export async function saveCompanyProfile(input: Record<string, unknown>, company
     const days = Number(input.payment_terms_days);
     if (!Number.isInteger(days) || days < 0 || days > 365) throw new HttpError(400, 'Payment terms must be a whole number of days from 0 to 365');
     next.payment_terms_days = days;
+  }
+  if (has('gta_gst_option')) {
+    if (!isGtaOption(input.gta_gst_option)) throw new HttpError(400, 'Choose how GST on freight is charged: reverse charge 5%, 5% forward charge or 18% forward charge');
+    next.gta_gst_option = input.gta_gst_option;
   }
   if (has('invoice_prefix')) {
     const raw = input.invoice_prefix;

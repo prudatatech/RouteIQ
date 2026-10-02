@@ -167,6 +167,8 @@ function scoreEntry(e: HsnEntry, query: string, terms: string[], category?: stri
   let score = 0;
   let strong = false;
   if (e.hsn_code.startsWith(query)) { score += 200; strong = true; }
+  // A 6 or 8 digit code finds its known parent (4 or 6 digits), as the lookup does
+  else if (/^\d{5,8}$/.test(query) && query.startsWith(e.hsn_code)) { score += 150 + e.hsn_code.length; strong = true; }
 
   for (const term of terms) {
     if (term.length < 2) continue;
@@ -209,6 +211,19 @@ export function searchHsn(index: HsnIndex, query: string, category?: string | nu
 /** One code. Digits are compared as typed, so "2523" and "2523 " are the same. */
 export function findHsn(index: HsnIndex, code: string): HsnEntry | null {
   return index.byCode.get((code ?? '').trim()) ?? null;
+}
+
+/** Longest known prefix of a 6 or 8 digit code (8, 6, then 4 digits); `matched_prefix` is the code whose rates apply. */
+export function resolveHsn(index: HsnIndex, code: string): { entry: HsnEntry; matched_prefix: string } | null {
+  const c = (code ?? '').trim();
+  const exact = index.byCode.get(c);
+  if (exact) return { entry: exact, matched_prefix: exact.hsn_code };
+  for (const len of [8, 6, 4]) {
+    if (len >= c.length) continue;
+    const entry = index.byCode.get(c.slice(0, len));
+    if (entry) return { entry, matched_prefix: entry.hsn_code };
+  }
+  return null;
 }
 
 const PAGE = 1000;

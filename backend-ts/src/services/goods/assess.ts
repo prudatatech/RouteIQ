@@ -86,11 +86,11 @@ export interface AssessRefs {
 
 const validState = (code: string | null | undefined) => (code && GST_STATES[code] ? code : null);
 
-async function stateOfPlace(p: DraftPlace | null | undefined): Promise<string | null> {
+/** The pin code decides the state (the client's code can be stale or wrong); the client's code is used only when the pin is unknown. */
+export async function stateOfPlace(p: DraftPlace | null | undefined): Promise<string | null> {
   if (!p) return null;
-  const given = validState(p.state_code);
-  if (given) return given;
-  return p.pincode ? validState((await lookupPincode(p.pincode))?.state_code) : null;
+  const fromPin = p.pincode ? validState((await lookupPincode(p.pincode))?.state_code) : null;
+  return fromPin ?? validState(p.state_code);
 }
 
 /** The freight range for the draft, or null when it cannot be worked out (no coordinates, no rate card, a routing failure). */

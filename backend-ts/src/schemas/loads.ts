@@ -26,6 +26,9 @@ const phoneField = z.string().trim().optional().nullable().transform((v, ctx) =>
 });
 const num = (label: string) => z.number({ invalid_type_error: `${label} must be a number`, required_error: `Enter ${label}` });
 
+export const TEMP_MODES = ['chilled', 'frozen', 'ambient', 'custom'] as const;
+export type TempMode = (typeof TEMP_MODES)[number];
+
 export const HANDLING = ['fragile', 'do_not_stack', 'this_side_up', 'hazmat', 'odc', 'temperature_controlled'] as const;
 
 export const LoadItemSchema = z.object({
@@ -78,6 +81,8 @@ export const LoadDraftBase = z.object({
   load_type: z.enum(['ftl', 'ptl']).optional().nullable(),
   vehicle_class: optText(40),
   capacity_t: z.number().positive().max(MAX_LOAD_TONNES).optional().nullable(),
+  /** How a perishable load is kept: chilled, frozen, ambient (no range needed) or a custom range. */
+  temp_mode: z.enum(TEMP_MODES).optional().nullable(),
   temp_min_c: z.number().min(-50).max(60).optional().nullable(),
   temp_max_c: z.number().min(-50).max(60).optional().nullable(),
   special_handling: z.array(z.string().trim().min(1).max(40)).max(10).optional().default([]),
@@ -98,7 +103,11 @@ export function crossChecks(d: Draft): string | null {
   if (totalKg > MAX_LOAD_TONNES * 1000) return `A load can be at most ${MAX_LOAD_TONNES} t`;
   if (!validPlace(d.pickup_lat, d.pickup_lng) || !validPlace(d.delivery_lat, d.delivery_lng)) return 'Choose a real pickup and delivery place';
   if (d.delivery_date && d.delivery_date < d.pickup_date) return 'Delivery date cannot be before the pickup date';
-  if (d.items.some(i => i.is_perishable) && (d.temp_min_c == null || d.temp_max_c == null)) return 'Enter the temperature range for perishable goods';
+  if (d.items.some(i => i.is_perishable)) {
+    const hasRange = d.temp_min_c != null && d.temp_max_c != null;
+    if (!d.temp_mode && !hasRange) return 'Choose the temperature mode for perishable goods: chilled, frozen, ambient or a custom range';
+    if (d.temp_mode && d.temp_mode !== 'ambient' && !hasRange) return 'Enter the temperature range for perishable goods';
+  }
   if (d.temp_min_c != null && d.temp_max_c != null && d.temp_min_c > d.temp_max_c) return 'The lowest temperature is above the highest';
   return null;
 }
@@ -122,18 +131,19 @@ export const MONTHLY_LOADS = ['1-5', '6-20', '21-50', '50+'] as const;
 
 export const BusinessProfileSchema = z.object({
   full_name: text('your full name', 100),
-  business_name: z.string().trim().max(200).optional().nullable().transform(v => v || null),
+  business_name: text('your business name', 200),
   account_type: z.enum(['customer', 'business_partner'], { errorMap: () => ({ message: 'Choose the account type' }) }),
   gstin: z.string().trim().toUpperCase().max(15).optional().nullable().transform(v => v || null),
   address: text('the address', 500),
   pincode: pincode('Business'),
   state_code: z.string().regex(/^\d{2}$/).optional().nullable(),
-  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  /** Optional, but the only channel for documents when there is no WhatsApp. */
+  email: z.string().trim().toLowerCase().optional().nullable().transform(v => v || null)
+    .refine(v => v === null || z.string().email().safeParse(v).success, 'Enter a valid email address'),
   business_type: z.enum(BUSINESS_TYPES).optional().nullable(),
   monthly_loads: z.enum(MONTHLY_LOADS).optional().nullable(),
 }).superRefine((v, ctx) => {
   if (v.account_type === 'business_partner') {
-    if (!v.business_name) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter your business name', path: ['business_name'] });
     if (!v.gstin) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'GSTIN is required for a business account', path: ['gstin'] });
   }
 });

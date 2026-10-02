@@ -208,7 +208,7 @@ export default function VendorShipmentRequestPage() {
         <LoadConfirmation
           loadId={posted.id} loadNumber={posted.load_number}
           pickupCity={draft.pickup_city} deliveryCity={draft.delivery_city} pickupDate={draft.pickup_date || null}
-          vehicleName={vehicleName} statusNote={posted.status_note ?? null} onPostAnother={postAnother}
+          vehicleName={vehicleName} statusNote={posted.status_note ?? null} quoteRequested={draft.quote_requested} onPostAnother={postAnother}
         />
       </Page>
     )

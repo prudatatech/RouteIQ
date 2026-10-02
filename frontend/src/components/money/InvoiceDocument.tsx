@@ -61,6 +61,7 @@ export default function InvoiceDocument({ inv }: { inv: InvoiceDetail }) {
           ['Invoice date', formatDate(inv.issued_at)],
           ['Due date', <span key="d">{formatDate(inv.due_date)}<span className="block text-xs text-muted">{inv.payment_terms_days} day terms</span></span>],
           ['Place of supply', b.state ? `${b.state} (${b.state_code})` : <Missing key="p">Not recorded</Missing>],
+          ...(inv.load_number ? [['Load', <span key="l" className="font-mono">Load {inv.load_number}</span>]] : []),
         ].map(([label, value], i) => (
           <div key={i} className="min-w-0">
             <dt className="text-xs text-muted">{label}</dt>
@@ -122,6 +123,7 @@ export default function InvoiceDocument({ inv }: { inv: InvoiceDetail }) {
             <p className="text-xs font-medium uppercase tracking-wide text-muted">Amount in words</p>
             <p className="mt-1 break-words font-medium text-text">{inv.total_in_words || '—'}</p>
           </div>
+          {inv.reverse_charge?.note && <p className="font-medium text-text">{inv.reverse_charge.note}</p>}
           {inv.tax.note && <p className="text-muted">{inv.tax.note}</p>}
           {inv.status === 'issued' && (s.bank_account_no || s.upi_id) && (
             <div>

@@ -591,7 +591,7 @@ function fromServerProfile(d: Record<string, unknown> | null | undefined): Busin
 function toServerProfile(b: BusinessProfile) {
   return {
     full_name: b.full_name, business_name: b.business_name || null, account_type: b.account_type, gstin: b.gstin || null,
-    address: b.address, pincode: b.pincode, ...(b.state_code ? { state_code: b.state_code } : {}), email: b.email,
+    address: b.address, pincode: b.pincode, ...(b.state_code ? { state_code: b.state_code } : {}), email: b.email.trim() || null,
     business_type: b.business_type || null, monthly_loads: b.monthly_loads || null,
   }
 }

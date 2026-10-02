@@ -78,6 +78,7 @@ export function renderInvoicePdf(inv: InvoiceDetail): Promise<Buffer> {
       ['Due date', inv.due_date ? formatISTDate(inv.due_date) : '-'],
       ['Currency', 'INR'],
     ];
+    if (inv.load_number) facts.push(['Load', `Load ${inv.load_number}`]);
     if (inv.links.shipment) facts.push(['Shipment', inv.links.shipment.code]);
     if (inv.buyer.state) facts.push(['Place of supply', `${inv.buyer.state} (${inv.buyer.state_code})`]);
     let fy = y;
@@ -154,6 +155,10 @@ export function renderInvoicePdf(inv: InvoiceDetail): Promise<Buffer> {
     y += 2;
     text(`Amount in words: ${inv.total_in_words}`, left, y, { font: 'Helvetica-Bold', width });
     y = doc.y + 6;
+    if (inv.reverse_charge.note) {
+      text(inv.reverse_charge.note, left, y, { font: 'Helvetica-Bold', size: 9, width });
+      y = doc.y + 6;
+    }
     if (t.note) {
       text(t.note, left, y, { color: MUTED, size: 8, width });
       y = doc.y + 6;

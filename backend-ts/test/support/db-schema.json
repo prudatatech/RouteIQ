@@ -273,7 +273,8 @@
     "notes",
     "bill_to",
     "issuer_org_id",
-    "bill_to_org_id"
+    "bill_to_org_id",
+    "tax_mode"
   ],
   "invoice_payment_reports": [
     "id",

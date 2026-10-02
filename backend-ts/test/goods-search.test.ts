@@ -3,7 +3,7 @@ import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { goodsTables, hsnIndex } from './support/goods-world';
-import { buildHsnIndex, findHsn, levenshtein, MAX_HSN_HITS, searchHsn, toEntry } from '../src/services/goods/hsn-index';
+import { buildHsnIndex, findHsn, levenshtein, MAX_HSN_HITS, resolveHsn, searchHsn, toEntry } from '../src/services/goods/hsn-index';
 
 const index = hsnIndex();
 const codes = (q: string) => searchHsn(index, q).map(h => h.hsn_code);
@@ -115,6 +115,30 @@ describe('public goods endpoints', () => {
     expect(ok.body).toMatchObject({ hsn_code: '2523', gst_rate: 12, gst_rates: [12, 28], eway_always: false });
     expect((await request(app).get('/api/v1/public/hsn/0001')).status).toBe(404);
     expect((await request(app).get('/api/v1/public/hsn/abc')).status).toBe(400);
+  });
+
+  it('GET /public/hsn/:code falls back to the longest known prefix for 6 and 8 digit codes', async () => {
+    const six = await request(app).get('/api/v1/public/hsn/252310');
+    expect(six.status).toBe(200);
+    expect(six.body).toMatchObject({ hsn_code: '2523', gst_rates: [12, 28], matched_prefix: '2523' });
+    const eight = await request(app).get('/api/v1/public/hsn/25232010');
+    expect(eight.status).toBe(200);
+    expect(eight.body.matched_prefix).toBe('2523');
+    expect((await request(app).get('/api/v1/public/hsn/2523')).body.matched_prefix).toBe('2523');
+    expect((await request(app).get('/api/v1/public/hsn/99991234')).status).toBe(404);
+  });
+
+  it('resolveHsn prefers the longest known prefix; search matches 6 and 8 digit codes', () => {
+    const wider = buildHsnIndex([
+      ...index.entries.map(e => ({ hsn_code: e.hsn_code, description: e.description, gst_rate: e.gst_rate, gst_rates: e.gst_rates })),
+      { hsn_code: '252310', description: 'Portland cement', gst_rate: 18 },
+    ]);
+    expect(resolveHsn(wider, '25231090')?.matched_prefix).toBe('252310');
+    expect(resolveHsn(wider, '252320')?.matched_prefix).toBe('2523');
+    expect(resolveHsn(wider, '61')?.matched_prefix).toBe('61');
+    expect(resolveHsn(wider, '999999')).toBeNull();
+    expect(codes('25232010')).toContain('2523');
+    expect(codes('252310')[0]).toBe('2523');
   });
 
   it('GET /public/vehicle-classes and /public/goods-categories list the reference tables', async () => {

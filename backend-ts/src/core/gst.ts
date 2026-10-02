@@ -101,3 +101,27 @@ export function taxableFromInclusive(totalPaise: number, rate: number, basis: Ta
   }
   return { ...best!, exact: false };
 }
+
+/**
+ * GST on freight (a goods transport agency): how a company charges it. The freight is taxed at the transporter's
+ * rate, never at the rate of the goods it carries.
+ *   rcm_5   reverse charge: the recipient pays 5%, so the invoice itself charges no GST (the default)
+ *   fcm_5   forward charge, 5%, without input tax credit
+ *   fcm_18  forward charge, 18%, with input tax credit
+ */
+export const GTA_GST_OPTIONS = ['rcm_5', 'fcm_5', 'fcm_18'] as const;
+export type GtaGstOption = (typeof GTA_GST_OPTIONS)[number];
+export const DEFAULT_GTA_GST_OPTION: GtaGstOption = 'rcm_5';
+/** The SAC of goods transport by road. */
+export const FREIGHT_SAC = '9965';
+
+export const isGtaOption = (v: unknown): v is GtaGstOption => typeof v === 'string' && (GTA_GST_OPTIONS as readonly string[]).includes(v);
+
+/** What the invoice charges, and what the recipient owes instead, for one option. */
+export function gtaTerms(option: GtaGstOption): { rate: number; reverse_charge: boolean; reverse_charge_rate: number } {
+  switch (option) {
+    case 'fcm_5': return { rate: 5, reverse_charge: false, reverse_charge_rate: 0 };
+    case 'fcm_18': return { rate: 18, reverse_charge: false, reverse_charge_rate: 0 };
+    default: return { rate: 0, reverse_charge: true, reverse_charge_rate: 5 };
+  }
+}
