@@ -86,6 +86,8 @@ export interface ProductRow {
  * The whole form. Field names that the server also uses keep the server's names, so a
  * recommendation's `action.field` applies to the draft directly.
  */
+import type { LoadRouting } from '@/types/routing'
+
 export interface LoadDraft {
   /** A UUID made when the form opened; the server returns the first load for a repeated id. */
   client_request_id: string
@@ -130,6 +132,9 @@ export interface LoadDraft {
   quote_requested: boolean
   loading_help: boolean
   unloading_help: boolean
+  /** Who should quote: every company on the lane, or the chosen ones. */
+  routing: LoadRouting
+  company_ids: string[]
 
   /** Set on a repost: the load this one copies. */
   reposted_from: string | null
@@ -193,6 +198,9 @@ export interface LoadPayload {
   quote_requested: boolean
   loading_help: boolean
   unloading_help: boolean
+  routing: LoadRouting
+  /** Only when routing is chosen. */
+  company_ids?: string[]
 }
 
 /** The answer of POST /vendor/loads: 201, or 200 with `duplicate` when the same client_request_id was sent before. */

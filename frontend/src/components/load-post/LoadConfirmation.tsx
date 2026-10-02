@@ -8,7 +8,7 @@ import { copyText } from '@/components/fleet/location/clipboard'
 
 
 /** Shown after the load is posted (PRD 10.2): the load ID, the route, what happens next. */
-export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, onPostAnother }: {
+export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, onPostAnother, chosenCount = 0, quoteRequested = false }: {
   loadId: string
   loadNumber: string
   pickupCity: string
@@ -18,6 +18,9 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
   /** The server's note when the load waits, for example for business verification. */
   statusNote?: string | null
   onPostAnother: () => void
+  /** How many companies the vendor chose; 0 means the load is open to every company on the lane. */
+  chosenCount?: number
+  quoteRequested?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
@@ -49,6 +52,15 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
       {statusNote
         ? <Alert tone="warning" title="Your load is saved">{statusNote}</Alert>
         : <p className="text-sm text-text">Our team is matching a verified carrier. You'll get a WhatsApp update within 2 hours.</p>}
+
+      <div data-testid="routing-note" className="space-y-1 text-sm">
+        <p className="font-medium text-text">
+          {chosenCount > 0
+            ? `Sent to ${chosenCount} ${chosenCount === 1 ? 'company' : 'companies'}`
+            : `Open to companies serving ${pickupCity} → ${deliveryCity}`}
+        </p>
+        {quoteRequested && <p className="text-muted">Quotes usually arrive within 2 hours</p>}
+      </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
         <Link to={`/vendor/loads/${encodeURIComponent(loadId)}`} className={buttonClasses({ variant: 'primary', size: 'lg' })}>Track this load</Link>

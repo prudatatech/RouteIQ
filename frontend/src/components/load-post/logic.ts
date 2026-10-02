@@ -2,6 +2,7 @@
  * The Post a Load form without any screen: the draft, its totals, the checks for each step, and the
  * conversion to and from what the server sends. Plain functions so they are easy to test.
  */
+import { MAX_CHOSEN_COMPANIES } from '@/types/routing'
 import type {
   LoadDraft, LoadItemPayload, LoadPayload, ProductHandling, ProductRow, Recommendation, TempChoice,
 } from '@/types/load'
@@ -46,6 +47,7 @@ export function emptyDraft(): LoadDraft {
     loading_dock: false, access_restrictions: '',
     load_type: '', vehicle_class: '', capacity_t: '', transport_touched: false, temp_choice: '',
     special_handling: [], budget_inr: '', quote_requested: false, loading_help: false, unloading_help: false,
+    routing: 'open', company_ids: [],
     reposted_from: null,
   }
 }
@@ -180,6 +182,9 @@ export function toPayload(d: LoadDraft): LoadPayload {
     quote_requested: d.quote_requested,
     loading_help: d.loading_help,
     unloading_help: d.unloading_help,
+    ...(d.routing === 'chosen' && d.company_ids.length > 0
+      ? { routing: 'chosen' as const, company_ids: d.company_ids.slice(0, MAX_CHOSEN_COMPANIES) }
+      : { routing: 'open' as const }),
   }
 }
 
@@ -283,6 +288,7 @@ export function validateStep(d: LoadDraft, step: number, today: string = todayIs
     if (!d.vehicle_class) e.vehicle_class = 'Choose a vehicle type.'
     if (toNum(d.capacity_t) <= 0) e.capacity_t = 'Enter the capacity in tonnes.'
     if (hasPerishable(d.items) && !d.temp_choice) e.temp_choice = 'Choose the temperature your goods need.'
+    if (d.routing === 'chosen' && d.company_ids.length === 0) e.company_ids = 'Choose at least one company, or open the load to all companies.'
   }
   return e
 }

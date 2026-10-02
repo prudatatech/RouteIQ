@@ -11,6 +11,7 @@ import {
   claimWindowText, nextAction, overdueText, STAGE_LABELS, type LoadStage, type VendorLoadDetail,
 } from '@/components/vendor/loads'
 import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
+import LoadQuotes from '@/components/vendor/LoadQuotes'
 import HowToPay from '@/components/vendor/HowToPay'
 import { ActionCell, LoadFacts, ProblemPill, Route, TrackLink, TruckLine } from '@/components/vendor/LoadBits'
 import RaiseClaimModal from '@/components/vendor/RaiseClaimModal'
@@ -219,6 +220,8 @@ export default function VendorLoadPage() {
           ]}
         />
       </Card>
+
+      {data.kind === 'posted' && <LoadQuotes loadId={data.load?.id ?? id} />}
 
       {data.items && data.items.length > 0 && (
         <Section id="goods" title="Goods">

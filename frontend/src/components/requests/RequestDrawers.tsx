@@ -10,6 +10,7 @@ import { supabase } from '@/services/supabase'
 import type { CustomerBooking } from '@/services/api'
 import { formatDate, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
 import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
+import QuotePanel from './QuotePanel'
 import { CustomerDetailsBlock } from './CustomerProfileEditor'
 import { bookingNeedsVehicle, customerName, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
 
@@ -196,6 +197,8 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
               Accepted{request.cost ? ` at ${formatRupees(request.cost)}` : ''}. The vendor has been told. Choose a vehicle with a driver next.
             </Alert>
           )}
+
+          <QuotePanel key={request.id} loadId={request.id} status={request.status} />
 
           <DetailList
             items={[
