@@ -218,7 +218,7 @@ function isToday(date: string | null | undefined): boolean {
 }
 
 export const pricingService = {
-  async quote(input: QuoteInput, ctx: { userId?: string; role?: string; source?: string } = {}): Promise<QuoteOutcome> {
+  async quote(input: QuoteInput, ctx: { userId?: string; role?: string; source?: string; /** false: compute only, store nothing (guest quotes) */ persist?: boolean } = {}): Promise<QuoteOutcome> {
     if (!isValidPoint(input.pickup) || !isValidPoint(input.drop)) throw new HttpError(400, 'Pickup and drop need valid coordinates');
     if (!Number.isFinite(input.weight_kg) || input.weight_kg <= 0) throw new HttpError(400, 'Weight must be more than 0 kg');
 
@@ -377,6 +377,8 @@ export const pricingService = {
       weather,
       generated_at: new Date().toISOString(),
     };
+
+    if (ctx.persist === false) return result;
 
     // Keep the quote for audit and to learn which prices get accepted
     const { data: saved, error } = await supabase.from('price_quotes').insert({
