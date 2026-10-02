@@ -14,9 +14,17 @@ function escapeCsvField(value: string): string {
   return value
 }
 
+/**
+ * A text that a spreadsheet would run as a formula (it starts with =, +, - or @) gets a leading quote, so an expense note
+ * like `=HYPERLINK(...)` opens as text. Plain numbers (a string such as "-12.50") are left alone.
+ */
+function neutraliseFormula(text: string): string {
+  return /^[=+\-@\t\r]/.test(text) && !/^[+-]?\d+(\.\d+)?$/.test(text) ? `'${text}` : text
+}
+
 function toField(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return ''
-  return escapeCsvField(String(value))
+  return escapeCsvField(typeof value === 'string' ? neutraliseFormula(value) : String(value))
 }
 
 /** Builds an RFC4180 CSV string (CRLF line endings, header row first) from rows and columns. */

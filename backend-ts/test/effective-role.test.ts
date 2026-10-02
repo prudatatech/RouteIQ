@@ -90,9 +90,10 @@ describe('the effective role on requests', () => {
     expect(asCompany.body.effective_role).toBe('admin');
     const asPlatform = await request(app).get('/api/v1/users/me').set(as('super-1', ORG.platform));
     expect(asPlatform.body.effective_role).toBe('superadmin');
-    // The driver-pay backfill is superadmin-only: refused as a company, allowed as the platform
-    expect((await request(app).post('/api/v1/driver-pay/backfill').set(as('super-1', ORG.companyA)).send({})).status).toBe(403);
-    expect((await request(app).post('/api/v1/driver-pay/backfill').set(as('super-1', ORG.platform)).send({})).status).not.toBe(403);
+    // Reading a person's bank account number is superadmin-only: refused as a company, allowed as the platform
+    const reveal = '/api/v1/people/00000000-0000-4000-8000-000000000001/bank-accounts/00000000-0000-4000-8000-000000000002/reveal';
+    expect((await request(app).post(reveal).set(as('super-1', ORG.companyA)).send({})).status).toBe(403);
+    expect((await request(app).post(reveal).set(as('super-1', ORG.platform)).send({})).status).not.toBe(403);
   });
 
   it('falls back to users.role without a membership', () => {
