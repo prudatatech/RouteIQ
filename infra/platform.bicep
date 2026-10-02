@@ -250,6 +250,10 @@ resource s3proxy 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'S3PROXY_IDENTITY', secretRef: 's3-identity' }
           { name: 'S3PROXY_CREDENTIAL', secretRef: 's3-credential' }
           { name: 'JCLOUDS_PROVIDER', value: 'azureblob' }
+          // The image hands an unset JCLOUDS_AZUREBLOB_AUTH to jclouds as an empty string, which crashes start-up
+          // ("No enum constant AuthType."): name the auth type (the storage account key) explicitly.
+          { name: 'JCLOUDS_AZUREBLOB_AUTH', value: 'azureKey' }
+          { name: 'JCLOUDS_AZUREBLOB_ACCOUNT', value: blobSa.name }
           { name: 'JCLOUDS_IDENTITY', value: blobSa.name }
           { name: 'JCLOUDS_CREDENTIAL', secretRef: 'blob-key' }
           { name: 'JCLOUDS_ENDPOINT', value: 'https://${blobSa.name}.blob.${environment().suffixes.storage}' }
@@ -291,6 +295,8 @@ resource storage 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'AUTH_JWT_SECRET', secretRef: 'jwt-secret' }
           { name: 'DATABASE_URL', secretRef: 'db-url' }
           { name: 'FILE_SIZE_LIMIT', value: '52428800' }
+          // A signed upload link lives 60 s by default: too short for a driver's photo on a slow mobile network
+          { name: 'UPLOAD_SIGNED_URL_EXPIRATION_TIME', value: '900' }
           { name: 'STORAGE_BACKEND', value: 's3' }
           { name: 'GLOBAL_S3_BUCKET', value: objectsContainer }
           { name: 'GLOBAL_S3_ENDPOINT', value: 'http://${p}-s3proxy' }
