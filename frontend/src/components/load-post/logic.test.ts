@@ -59,6 +59,9 @@ describe('step checks', () => {
       pickup_city: 'Mumbai', pickup_address: 'Dock 4', pickup_pincode: '400001', delivery_city: 'Delhi', delivery_address: 'Plot 9',
       delivery_pincode: '110001', pickup_date: '2026-10-01', pickup_contact_name: 'Ravi', pickup_contact_phone: '98200 12345',
     })
+    // Both addresses must be picked from the search so the server gets their coordinates
+    expect(Object.keys(validateStep(d, 2, '2026-10-02'))).toEqual(expect.arrayContaining(['pickup_lat', 'delivery_lat']))
+    Object.assign(d, { pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2 })
     expect(validateStep(d, 2, '2026-10-02').pickup_date).toMatch(/past/)
     d.pickup_date = '2026-10-02'
     expect(validateStep(d, 2, '2026-10-02')).toEqual({})
@@ -117,6 +120,15 @@ describe('draft and payload', () => {
     expect(p.client_request_id).toBe(d.client_request_id)
   })
 
+  it('sends the coordinates and a number for a blank declared value', () => {
+    const d = emptyDraft()
+    Object.assign(d, { pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2 })
+    d.items = [{ ...sample()[0], declared_value: '' }]
+    const p = toPayload(d)
+    expect([p.pickup_lat, p.pickup_lng, p.delivery_lat, p.delivery_lng]).toEqual([19.07, 72.87, 28.61, 77.2])
+    expect(p.items[0].declared_value).toBe(0)
+  })
+
   it('applies a recommendation fix to the draft', () => {
     const d = emptyDraft()
     const next = applyRecommendation(d, { field: 'load_type', value: 'ftl' })
@@ -131,7 +143,7 @@ describe('repost', () => {
   const payload: Partial<LoadPayload> = {
     items: [{ product_name: 'Cement', hsn_code: '2523', gst_rate: 18, quantity: 100, unit: 'bags', weight_kg: 5000, declared_value: 40000, handling: [], category: 'construction', is_hazmat: false, is_perishable: false }],
     pickup_city: 'Mumbai', pickup_address: 'Dock 4', pickup_pincode: '400001', pickup_date: '2026-10-05', pickup_slot: 'morning',
-    pickup_contact_name: 'Ravi', pickup_contact_phone: '+919820012345',
+    pickup_contact_name: 'Ravi', pickup_contact_phone: '+919820012345', pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2,
     delivery_city: 'Delhi', delivery_address: 'Plot 9', delivery_pincode: '110001', delivery_date: '2026-10-09',
     load_type: 'ftl', vehicle_class: 'sxl_32', capacity_t: 16, budget_inr: 90000,
   }
@@ -147,6 +159,7 @@ describe('repost', () => {
     expect(d.capacity_t).toBe('16')
     expect(d.budget_inr).toBe('90000')
     expect(d.reposted_from).toBe('load-1')
+    expect([d.pickup_lat, d.delivery_lng]).toEqual([19.07, 77.2])
     expect(toPayload(d).source).toBe('repost')
   })
 })

@@ -11,7 +11,7 @@ export const KIND_LABELS: Record<DocumentKind, string> = {
   bill_of_supply: 'Bill of supply',
   delivery_challan: 'Delivery challan',
   eway_bill: 'E-way bill',
-  lr: 'LR / GR (consignment note)',
+  lr: 'LR / GR (lorry receipt)',
   freight_sheet: 'Freight sheet',
   pod: 'Proof of delivery',
   loading_report: 'Loading report',
@@ -32,6 +32,7 @@ export const GENERATE_ACTIONS: { kind: GenerateKind; label: string }[] = [
   { kind: 'lr', label: 'Generate LR / GR' },
   { kind: 'freight_sheet', label: 'Generate freight sheet' },
   { kind: 'loading_report', label: 'Loading report' },
+  { kind: 'pod', label: 'Proof of delivery' },
   { kind: 'unloading_report', label: 'Unloading report' },
   { kind: 'damage_report', label: 'Damage report' },
   { kind: 'trip_closure', label: 'Trip closure report' },
@@ -39,9 +40,11 @@ export const GENERATE_ACTIONS: { kind: GenerateKind; label: string }[] = [
 
 export const CHECK_LABELS: Record<CheckStatus, { label: string; tone: Tone }> = {
   ok: { label: 'In order', tone: 'success' },
+  expiring: { label: 'Expiring soon', tone: 'warning' },
   missing: { label: 'Missing', tone: 'danger' },
   expired: { label: 'Expired', tone: 'danger' },
-  mismatch: { label: 'Does not match', tone: 'warning' },
+  inconsistent: { label: 'Does not match', tone: 'warning' },
+  not_required: { label: 'Not needed', tone: 'neutral' },
 }
 
 export const DOC_STATUS: Record<DocumentStatus, { label: string; tone: Tone }> = {
@@ -73,13 +76,6 @@ export function closeBlockedReason(settlement: Settlement | null, docs: LoadDocu
   if (settlement.status === 'closed') return 'This trip is already closed.'
   if (!finalPod(docs)) return 'A final proof of delivery is needed before the trip can be closed.'
   return null
-}
-
-/** Freight + approved extra charges - deductions - advance. Rupees. Used only when the server sends no balance. */
-export function computeBalance(s: Pick<Settlement, 'agreed_freight' | 'advance_paid' | 'extra_charges' | 'deductions'>): number {
-  const extras = s.extra_charges.filter(c => !!c.approved_at).reduce((t, c) => t + Number(c.amount || 0), 0)
-  const cuts = s.deductions.reduce((t, d) => t + Number(d.amount || 0), 0)
-  return Math.round((Number(s.agreed_freight || 0) + extras - cuts - Number(s.advance_paid || 0)) * 100) / 100
 }
 
 // ── Upload form ──────────────────────────────────────────
@@ -144,16 +140,20 @@ export function validateUpload(v: UploadValues): UploadErrors {
 const clean = (o: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(o).filter(([, val]) => val !== '' && val !== undefined && val !== null))
 
-/** The A2 fields for the kind, as the API takes them. */
+/**
+ * The `fields` of the document as the API takes them (backend schemas.ts). The e-way bill's validity is not a field:
+ * it goes in the top-level `valid_until`.
+ */
 export function uploadFields(v: UploadValues): Record<string, unknown> {
   if (v.kind === 'eway_bill') {
     return clean({
-      valid_until: v.valid_until,
-      linked_document: v.linked_document.trim(),
-      transporter_id: v.transporter_id.trim(),
+      ewb_number: v.number.trim(),
+      generated_on: v.doc_date,
+      linked_document_number: v.linked_document.trim(),
+      transporter_id: v.transporter_id.trim().toUpperCase(),
       transporter_name: v.transporter_name.trim(),
       vehicle_number: v.vehicle_number.trim().toUpperCase().replace(/\s+/g, ''),
-      distance_km: v.distance_km ? Number(v.distance_km) : '',
+      approx_distance_km: v.distance_km ? Math.round(Number(v.distance_km)) : '',
     })
   }
   return clean({
@@ -161,8 +161,8 @@ export function uploadFields(v: UploadValues): Record<string, unknown> {
     seller_gstin: v.seller_gstin.trim().toUpperCase(),
     buyer_name: v.buyer_name.trim(),
     buyer_gstin: v.buyer_gstin.trim().toUpperCase(),
-    from_address: v.from_address.trim(),
-    to_address: v.to_address.trim(),
+    dispatch_from: v.from_address.trim(),
+    ship_to: v.to_address.trim(),
     total_value: v.total_value ? Number(v.total_value) : '',
   })
 }
@@ -176,9 +176,9 @@ export function valuesFromDocument(d: LoadDocument): UploadValues {
     number: d.number ?? '',
     doc_date: d.doc_date?.slice(0, 10) ?? '',
     seller_name: s('seller_name'), seller_gstin: s('seller_gstin'), buyer_name: s('buyer_name'), buyer_gstin: s('buyer_gstin'),
-    from_address: s('from_address'), to_address: s('to_address'), total_value: s('total_value'),
-    valid_until: (d.valid_until ?? s('valid_until')).slice(0, 10),
-    linked_document: s('linked_document'), transporter_id: s('transporter_id'), transporter_name: s('transporter_name'),
-    vehicle_number: s('vehicle_number'), distance_km: s('distance_km'),
+    from_address: s('dispatch_from'), to_address: s('ship_to'), total_value: s('total_value'),
+    valid_until: (d.valid_until ?? '').slice(0, 10),
+    linked_document: s('linked_document_number'), transporter_id: s('transporter_id'), transporter_name: s('transporter_name'),
+    vehicle_number: s('vehicle_number'), distance_km: s('approx_distance_km'),
   }
 }

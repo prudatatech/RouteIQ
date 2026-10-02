@@ -30,7 +30,6 @@ export function useLoadAssist(draft: LoadDraft, enabled = true): { assist: Assis
         .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
     }, ASSIST_DEBOUNCE_MS)
     return () => { clearTimeout(timer); ctrl.abort() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, worthAsking])
 
   return { assist, loading }

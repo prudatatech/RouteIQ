@@ -4,8 +4,9 @@ import toast from 'react-hot-toast'
 import { Plus } from 'lucide-react'
 import { Button, ErrorState, Spinner } from '@/components/ui'
 import { loadDocumentsAPI } from '@/services/api'
+import { supabase } from '@/services/supabase'
 import { errorMessage } from '@/utils/display'
-import type { GenerateKind, LoadDocument, Settlement } from '@/types/loadDocuments'
+import type { GenerateKind, LoadDocument, Settlement, UploadUrl } from '@/types/loadDocuments'
 import { DispatchChecklist } from './DispatchChecklist'
 import { DocumentHistory } from './DocumentHistory'
 import { DocumentList } from './DocumentList'
@@ -14,7 +15,7 @@ import { LoadTimeline } from './LoadTimeline'
 import { PodView } from './PodView'
 import { SettlementCard } from './SettlementCard'
 import { UploadDocumentForm } from './UploadDocumentForm'
-import { canUpload, finalPod, uploadFields, type PanelRole, type UploadValues } from './model'
+import { canUpload, finalPod, uploadFields, type UploadValues } from './model'
 
 function Section({ title, actions, children }: { title: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -28,10 +29,10 @@ function Section({ title, actions, children }: { title: string; actions?: React.
   )
 }
 
-/** Put a file on the signed URL the API gave for it. */
-async function putFile(url: string, file: File) {
-  const res = await fetch(url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-  if (!res.ok) throw new Error('The file could not be uploaded. Try again.')
+/** Put a file on the signed upload the API gave for it, the way every other upload in the app does. */
+async function putFile(upload: UploadUrl, file: File) {
+  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  if (error) throw new Error('The file could not be uploaded. Try again.')
 }
 
 /**
@@ -59,27 +60,32 @@ export function LoadDocumentsPanel({ loadId, role }: { loadId: string; role: 've
     queryFn: () => loadDocumentsAPI.history(loadId, historyDoc!.id),
     enabled: !!historyDoc,
   })
-  // Assumed GET settlement (not in the contract list): a load with no settlement yet answers 404 or null.
+  // A load with no settlement yet answers 404, which the API client turns into null.
   const settlement = useQuery<Settlement | null>({
     queryKey: key('settlement'),
-    queryFn: () => loadDocumentsAPI.settlement(loadId).catch(() => null),
+    queryFn: () => loadDocumentsAPI.settlement(loadId),
   })
 
   const fail = (fallback: string) => (err: unknown) => toast.error(errorMessage(err, fallback))
-  const items = docs.data?.items ?? []
+  const items = docs.data?.documents ?? []
 
   const save = useMutation({
     mutationFn: async ({ values, file }: { values: UploadValues; file: File | null }) => {
       let file_path: string | undefined
       if (file) {
-        const { upload_url, path } = await loadDocumentsAPI.uploadUrl(loadId, { kind: values.kind, file_name: file.name })
-        await putFile(upload_url, file)
-        file_path = path
+        const upload = await loadDocumentsAPI.uploadUrl(loadId, { kind: values.kind, content_type: file.type, size: file.size })
+        await putFile(upload, file)
+        file_path = upload.path
       }
-      const number = values.number.trim()
-      const body = { number, doc_date: values.doc_date, fields: uploadFields(values), ...(file_path ? { file_path } : {}) }
+      const body = {
+        number: values.number.trim(),
+        doc_date: values.doc_date,
+        fields: uploadFields(values),
+        ...(values.kind === 'eway_bill' ? { valid_until: values.valid_until } : {}),
+        ...(file_path ? { file_path } : {}),
+      }
       return editing
-        ? loadDocumentsAPI.update(loadId, editing.id, { ...body, ...(values.kind === 'eway_bill' ? { valid_until: values.valid_until } : {}) })
+        ? loadDocumentsAPI.update(loadId, editing.id, body)
         : loadDocumentsAPI.create(loadId, { kind: values.kind, ...body })
     },
     onSuccess: () => { toast.success('Saved.'); setUploadOpen(false); setEditing(null); refreshAll() },
@@ -96,8 +102,14 @@ export function LoadDocumentsPanel({ loadId, role }: { loadId: string; role: 've
   const view = async (d: LoadDocument) => {
     setViewingId(d.id)
     try {
-      const { url } = await loadDocumentsAPI.pdf(loadId, d.id)
-      window.open(url, '_blank', 'noopener')
+      const res = await loadDocumentsAPI.pdf(loadId, d.id)
+      if ('blob' in res) {
+        const url = URL.createObjectURL(res.blob)
+        window.open(url, '_blank', 'noopener')
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      } else {
+        window.open(res.url, '_blank', 'noopener')
+      }
     } catch (err) {
       toast.error(errorMessage(err, 'We could not open this document. Try again.'))
     } finally {
@@ -154,7 +166,7 @@ export function LoadDocumentsPanel({ loadId, role }: { loadId: string; role: 've
       </Section>
 
       <Section title="Timeline">
-        <LoadTimeline items={timeline.data?.items ?? []} />
+        <LoadTimeline items={timeline.data?.entries ?? []} />
       </Section>
 
       <UploadDocumentForm
@@ -164,7 +176,7 @@ export function LoadDocumentsPanel({ loadId, role }: { loadId: string; role: 've
         onClose={() => { setUploadOpen(false); setEditing(null) }}
         onSubmit={(values, file) => save.mutateAsync({ values, file }).catch(() => undefined)}
       />
-      <DocumentHistory doc={historyDoc} events={history.data?.items ?? []} loading={history.isLoading} onClose={() => setHistoryDoc(null)} />
+      <DocumentHistory doc={historyDoc} events={history.data?.events ?? []} loading={history.isLoading} onClose={() => setHistoryDoc(null)} />
     </div>
   )
 }

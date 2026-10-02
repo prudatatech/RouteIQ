@@ -104,8 +104,10 @@ export interface VendorLoadDetail extends Omit<VendorLoad, 'problems'> {
   problems: LoadProblem[]
   claims: LoadClaimSummary[]
   claim_window: { allowed: boolean; reason: string | null; until: string | null }
-  /** Set on a load posted through the Post a Load form (MRX-YYYY-NNNNN), with its goods lines. */
+  /** The posted load itself (GET /vendor/loads/:id answers { ...board fields, load, items }). */
+  load?: { id: string; load_number: string | null; status?: string }
   load_number?: string | null
+  /** Its goods lines. */
   items?: LoadItem[]
 }
 

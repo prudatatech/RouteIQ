@@ -11,6 +11,8 @@ export function PodView({ pod }: { pod: LoadDocument | undefined }) {
     return <Alert tone="info" title="No proof of delivery yet">It appears here once the driver or the receiver confirms delivery.</Alert>
   }
   const f = pod.fields
+  const photos = pod.evidence?.photo_urls ?? []
+  const signature = pod.evidence?.signature_url ?? null
   const st = DOC_STATUS[pod.status]
   return (
     <div className="space-y-3">
@@ -22,10 +24,18 @@ export function PodView({ pod }: { pod: LoadDocument | undefined }) {
         { label: 'Delivered', value: formatDateTime(text(f.delivered_at) ?? pod.doc_date) },
         { label: 'Receiver', value: [text(f.receiver_name), text(f.receiver_contact)].filter(Boolean).join(' · ') || 'Not given' },
         { label: 'Quantity delivered', value: text(f.delivered_quantity) ?? 'Not given' },
-        { label: 'Shortage', value: text(f.shortage) ?? 'None reported' },
-        { label: 'Damage', value: text(f.damage) ?? 'None reported' },
+        { label: 'Shortage', value: text(f.shortage_quantity) ?? 'None reported' },
+        { label: 'Damage', value: [text(f.damaged_quantity), text(f.damage_details)].filter(Boolean).join(' · ') || 'None reported' },
         { label: 'Remarks', value: text(f.remarks) ?? 'None' },
       ]} />
+      {(photos.length > 0 || signature) && (
+        <div className="flex flex-wrap gap-2" aria-label="Delivery evidence">
+          {photos.map((url, i) => (
+            <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-brand underline">Delivery photo {i + 1}</a>
+          ))}
+          {signature && <a href={signature} target="_blank" rel="noopener noreferrer" className="text-xs text-brand underline">Receiver signature</a>}
+        </div>
+      )}
     </div>
   )
 }

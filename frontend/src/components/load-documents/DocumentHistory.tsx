@@ -3,6 +3,8 @@ import { formatDateTime } from '@/utils/display'
 import type { DocumentEvent, LoadDocument } from '@/types/loadDocuments'
 import { KIND_LABELS } from './model'
 
+const show = (v: unknown) => (v === null || v === undefined || v === '' ? 'empty' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+
 const ACTIONS: Record<string, string> = {
   created: 'Added', updated: 'Changed', uploaded: 'File uploaded', generated: 'Made', status: 'Status changed',
 }
@@ -22,13 +24,13 @@ export function DocumentHistory({ doc, events, loading, onClose }: {
           : (
             <ol className="space-y-4">
               {events.map((e, i) => (
-                <li key={e.id ?? `${e.at}-${i}`} className="border-l-2 border-border pl-3">
+                <li key={`${e.at}-${i}`} className="border-l-2 border-border pl-3">
                   <p className="text-sm font-medium text-text">{ACTIONS[e.action] ?? e.action}</p>
-                  <p className="text-xs text-muted">{formatDateTime(e.at)}{e.by ? ` · ${e.by}` : ''}</p>
+                  <p className="text-xs text-muted">{formatDateTime(e.at)}{e.by_name || e.by ? ` · ${e.by_name ?? e.by}` : ''}{e.by_role ? ` (${e.by_role})` : ''}{e.version ? ` · version ${e.version}` : ''}</p>
                   {e.changes && Object.keys(e.changes).length > 0 && (
                     <ul className="mt-1 space-y-0.5 text-xs text-muted">
                       {Object.entries(e.changes).map(([k, v]) => (
-                        <li key={k}><span className="font-medium">{k.replace(/_/g, ' ')}</span>: {typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>
+                        <li key={k}><span className="font-medium">{k.replace(/^fields\./, '').replace(/_/g, ' ')}</span>: {show(v?.from)} → {show(v?.to)}</li>
                       ))}
                     </ul>
                   )}

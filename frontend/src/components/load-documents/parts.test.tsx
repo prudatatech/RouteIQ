@@ -20,20 +20,23 @@ const doc = (over: Partial<LoadDocument> = {}): LoadDocument => ({
 
 const settlement = (over: Partial<Settlement> = {}): Settlement => ({
   id: 's1', agreed_freight: 50000, advance_paid: 10000,
-  extra_charges: [{ label: 'Detention', amount: 2000, approved_by: null, approved_at: null }],
-  deductions: [{ label: 'Late', amount: 500, reason: 'A day late' }],
-  balance: 41500, payment_terms: 'to_pay', payment_status: null, pod_document_id: null, closed_at: null, status: 'open', ...over,
+  extra_charges: [{ idx: 0, label: 'Detention', amount: 2000, added_at: null, approved: false, approved_by: null, approved_at: null }],
+  deductions: [{ idx: 0, label: 'Late', amount: 500, reason: 'A day late', added_at: null }],
+  approved_extras_total: 0, pending_extras_total: 2000, deductions_total: 500,
+  balance: 39500, payment_terms: 'to_pay', payment_status: 'pending', pod_document_id: null, closed_at: null, status: 'open', ...over,
 })
 
 describe('DispatchChecklist', () => {
   const check: DispatchCheck = {
-    blocking: false,
+    load_id: 'l1',
+    eway: { required: true, reason: 'Declared value is over Rs 50,000', declared_value: 90000, threshold: 50000 },
     items: [
-      { key: 'invoice', label: 'Invoice or challan', status: 'ok', detail: null, required: true },
-      { key: 'eway', label: 'E-way bill', status: 'expired', detail: 'Expired on 5 Oct 2026', required: true },
-      { key: 'lr', label: 'LR', status: 'missing', detail: null, required: true },
-      { key: 'veh', label: 'Vehicle', status: 'mismatch', detail: 'Different vehicle on the e-way bill', required: true },
+      { key: 'invoice', label: 'Invoice or challan', status: 'ok', message: 'Tax invoice INV-1 is on file', required: true, document_id: 'd1' },
+      { key: 'eway', label: 'E-way bill', status: 'expired', message: 'Expired on 5 Oct 2026', required: true, document_id: 'd2' },
+      { key: 'lr', label: 'LR', status: 'missing', message: 'Generate the LR', required: true, document_id: null },
+      { key: 'veh', label: 'Vehicle', status: 'inconsistent', message: 'Different vehicle on the e-way bill', required: true, document_id: null },
     ],
+    issues: 3, ready: false, mode: 'warn', can_dispatch: true,
   }
   it('shows a pill for each status and the details', () => {
     const html = renderToStaticMarkup(<DispatchChecklist check={check} />)
@@ -42,7 +45,7 @@ describe('DispatchChecklist', () => {
     expect(html).not.toContain('Dispatch is on hold')
   })
   it('says so when dispatch is blocked', () => {
-    expect(renderToStaticMarkup(<DispatchChecklist check={{ ...check, blocking: true }} />)).toContain('Dispatch is on hold')
+    expect(renderToStaticMarkup(<DispatchChecklist check={{ ...check, mode: 'block', can_dispatch: false }} />)).toContain('Dispatch is on hold')
   })
 })
 
@@ -59,12 +62,12 @@ describe('actions by role', () => {
     expect(vendor).toContain('123456789012')
     expect(vendor).toContain('Final')
     expect(vendor).toContain('valid until 5 Oct 2026')
-    expect(vendor).toContain('View PDF')
+    expect(vendor).toContain('View file')
     expect(vendor).toContain('History')
     expect(vendor).toContain('Update')
     expect(list('carrier')).toContain('Update')
     const platform = list('platform')
-    expect(platform).toContain('View PDF')
+    expect(platform).toContain('View file')
     expect(platform).not.toContain('Update')
   })
 })
@@ -77,8 +80,9 @@ describe('SettlementCard', () => {
     expect(html).toContain('₹10,000')
     expect(html).toContain('Detention')
     expect(html).toContain('A day late')
-    expect(html).toContain('₹41,500')
+    expect(html).toContain('₹39,500')
     expect(html).toContain('Approve')
+    expect(html).toContain('₹2,000 of extra charges still waits')
   })
   it('disables Close trip with a reason until a final POD exists', () => {
     const without = renderToStaticMarkup(<SettlementCard role="carrier" settlement={settlement()} {...props} />)
@@ -91,7 +95,7 @@ describe('SettlementCard', () => {
   })
   it('gives the vendor a read-only view: no Approve, no Close trip', () => {
     const html = renderToStaticMarkup(<SettlementCard role="vendor" settlement={settlement()} {...props} />)
-    expect(html).toContain('₹41,500')
+    expect(html).toContain('₹39,500')
     expect(html).not.toContain('Approve')
     expect(html).not.toContain('Close trip')
     expect(html).not.toContain('Add charge')

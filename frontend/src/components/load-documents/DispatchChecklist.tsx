@@ -5,17 +5,16 @@ import { CHECK_LABELS } from './model'
 
 /** What is needed before this load moves, with a pill for each item. */
 export function DispatchChecklist({ check }: { check: DispatchCheck }) {
-  const problems = check.items.filter(i => i.status !== 'ok' && i.required)
   return (
     <section aria-labelledby="dispatch-check-title" className="space-y-3">
       <h3 id="dispatch-check-title" className="text-base font-semibold text-text">Before dispatch</h3>
-      {check.blocking && (
+      {check.issues > 0 && !check.can_dispatch && (
         <Alert tone="danger" title="Dispatch is on hold">
           Your company requires these to be in order before a vehicle leaves.
         </Alert>
       )}
-      {!check.blocking && problems.length > 0 && (
-        <Alert tone="warning" title={`${problems.length} ${problems.length === 1 ? 'item needs' : 'items need'} attention`}>
+      {check.issues > 0 && check.can_dispatch && (
+        <Alert tone="warning" title={`${check.issues} ${check.issues === 1 ? 'item needs' : 'items need'} attention`}>
           You can still dispatch, but fix these first.
         </Alert>
       )}
@@ -32,7 +31,7 @@ export function DispatchChecklist({ check }: { check: DispatchCheck }) {
                     {item.label}
                     {!item.required && <span className="ml-2 text-xs font-normal text-muted">Optional</span>}
                   </p>
-                  {item.detail && <p className="mt-0.5 text-xs text-muted">{item.detail}</p>}
+                  {item.message && <p className="mt-0.5 text-xs text-muted">{item.message}</p>}
                 </div>
                 <StatusPill tone={s.tone}>{s.label}</StatusPill>
               </li>

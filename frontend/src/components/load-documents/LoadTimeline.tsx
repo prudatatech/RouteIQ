@@ -1,10 +1,10 @@
 import clsx from 'clsx'
 import { EmptyState } from '@/components/ui'
 import { formatDateTime } from '@/utils/display'
-import type { TimelineItem } from '@/types/loadDocuments'
+import type { TimelineEntry } from '@/types/loadDocuments'
 
 /** Everything that happened on the load, oldest first: status changes, documents, delivery, settlement. */
-export function LoadTimeline({ items }: { items: TimelineItem[] }) {
+export function LoadTimeline({ items }: { items: TimelineEntry[] }) {
   if (items.length === 0) return <EmptyState compact title="Nothing has happened yet" />
   const sorted = [...items].sort((a, b) => a.at.localeCompare(b.at))
   return (
@@ -17,7 +17,7 @@ export function LoadTimeline({ items }: { items: TimelineItem[] }) {
           </div>
           <div className={clsx('min-w-0 flex-1', i < sorted.length - 1 && 'pb-4')}>
             <p className="text-sm font-medium text-text">{item.title}</p>
-            <p className="text-xs text-muted">{formatDateTime(item.at)}</p>
+            <p className="text-xs text-muted">{formatDateTime(item.at)}{item.by ? ` · ${item.by}` : ''}</p>
             {item.detail && <p className="mt-0.5 text-xs text-muted">{item.detail}</p>}
           </div>
         </li>

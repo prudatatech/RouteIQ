@@ -43,7 +43,7 @@ function WhyHsn() {
         <HelpCircle size={14} aria-hidden="true" /> Why is HSN needed?
       </button>
       {open && (
-        <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 rounded-control border border-border bg-surface p-2 text-xs text-text shadow-lg">
+        <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 rounded-control border border-border bg-surface p-2 text-xs text-text shadow-raised">
           Required for e-Way Bill and GST invoice generation
         </span>
       )}
@@ -132,7 +132,7 @@ export default function HsnSearch({ row, index, onChange, errors = {}, label = '
           name={`product_name_${index}`}
         />
         {open && searchable && query.length >= 3 && (
-          <ul id={listId} role="listbox" aria-label="HSN suggestions" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-control border border-border bg-surface shadow-lg">
+          <ul id={listId} role="listbox" aria-label="HSN suggestions" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-control border border-border bg-surface shadow-raised">
             {searching && hits.length === 0 && <li className="px-3 py-2 text-sm text-muted">Searching…</li>}
             {failed && <li className="px-3 py-2 text-sm text-danger">We could not search just now. Enter the HSN code instead.</li>}
             {!searching && !failed && hits.length === 0 && <li className="px-3 py-2 text-sm text-muted">No match found.</li>}

@@ -25,7 +25,8 @@ export function DocumentList({ docs, role, onView, onHistory, onEdit, busyId }: 
           <h4 className="mb-1.5 text-sm font-semibold text-text">{KIND_LABELS[group.kind]}</h4>
           <ul className="divide-y divide-border rounded-card border border-border bg-surface">
             {group.docs.map(d => {
-              const st = DOC_STATUS[d.status] ?? { label: d.status, tone: 'neutral' as const }
+              const shown = d.effective_status ?? d.status
+              const st = DOC_STATUS[shown] ?? { label: shown, tone: 'neutral' as const }
               const editable = !!onEdit && role !== 'platform' && (UPLOAD_KINDS as string[]).includes(d.kind)
                 && d.status !== 'superseded' && d.status !== 'cancelled'
               return (
@@ -42,7 +43,7 @@ export function DocumentList({ docs, role, onView, onHistory, onEdit, busyId }: 
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" icon={<Eye size={14} />} loading={busyId === d.id} onClick={() => onView(d)}>View PDF</Button>
+                    <Button size="sm" variant="secondary" icon={<Eye size={14} />} loading={busyId === d.id} onClick={() => onView(d)}>{d.file_path ? 'View file' : 'View PDF'}</Button>
                     {editable && <Button size="sm" variant="secondary" icon={<Pencil size={14} />} onClick={() => onEdit!(d)}>Update</Button>}
                     <Button size="sm" variant="ghost" icon={<History size={14} />} onClick={() => onHistory(d)}>History</Button>
                   </div>

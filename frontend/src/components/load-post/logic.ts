@@ -38,8 +38,10 @@ export function emptyDraft(): LoadDraft {
     step: 0,
     items: [emptyRow()],
     pickup_city: '', pickup_address: '', pickup_pincode: '', pickup_state_code: '', pickup_state_name: '',
+    pickup_lat: null, pickup_lng: null,
     pickup_date: '', pickup_slot: '', pickup_contact_name: '', pickup_contact_phone: '',
     delivery_city: '', delivery_address: '', delivery_pincode: '', delivery_state_code: '', delivery_state_name: '',
+    delivery_lat: null, delivery_lng: null,
     delivery_date: '', delivery_contact_name: '', delivery_contact_phone: '',
     loading_dock: false, access_restrictions: '',
     load_type: '', vehicle_class: '', capacity_t: '', transport_touched: false, temp_choice: '',
@@ -133,7 +135,8 @@ export function toPayload(d: LoadDraft): LoadPayload {
     quantity: toNum(i.quantity),
     unit: i.unit,
     weight_kg: toNum(i.weight_kg),
-    declared_value: i.declared_value === '' ? null : toNum(i.declared_value),
+    // The server needs a number; no value entered is 0
+    declared_value: toNum(i.declared_value),
     handling: i.handling,
     category: i.category,
     is_hazmat: i.handling.includes('hazmat'),
@@ -150,6 +153,8 @@ export function toPayload(d: LoadDraft): LoadPayload {
     pickup_address: d.pickup_address.trim(),
     pickup_pincode: d.pickup_pincode.trim(),
     pickup_state_code: d.pickup_state_code || null,
+    pickup_lat: d.pickup_lat,
+    pickup_lng: d.pickup_lng,
     pickup_date: d.pickup_date || null,
     pickup_slot: d.pickup_slot || null,
     pickup_contact_name: d.pickup_contact_name.trim(),
@@ -158,6 +163,8 @@ export function toPayload(d: LoadDraft): LoadPayload {
     delivery_address: d.delivery_address.trim(),
     delivery_pincode: d.delivery_pincode.trim(),
     delivery_state_code: d.delivery_state_code || null,
+    delivery_lat: d.delivery_lat,
+    delivery_lng: d.delivery_lng,
     delivery_date: d.delivery_date || null,
     delivery_contact_name: d.delivery_contact_name.trim() || null,
     delivery_contact_phone: deliveryPhone ? `+91${deliveryPhone}` : d.delivery_contact_phone.trim() || null,
@@ -208,10 +215,11 @@ export function repostToDraft(payload: Partial<LoadPayload>, repostedFrom: strin
     ...base,
     items: items.length > 0 ? items : base.items,
     pickup_city: str(payload.pickup_city), pickup_address: str(payload.pickup_address), pickup_pincode: str(payload.pickup_pincode),
-    pickup_state_code: str(payload.pickup_state_code), pickup_slot: payload.pickup_slot ?? '',
+    pickup_state_code: str(payload.pickup_state_code), pickup_lat: payload.pickup_lat ?? null, pickup_lng: payload.pickup_lng ?? null,
+    pickup_slot: payload.pickup_slot ?? '',
     pickup_contact_name: str(payload.pickup_contact_name), pickup_contact_phone: str(payload.pickup_contact_phone),
     delivery_city: str(payload.delivery_city), delivery_address: str(payload.delivery_address), delivery_pincode: str(payload.delivery_pincode),
-    delivery_state_code: str(payload.delivery_state_code),
+    delivery_state_code: str(payload.delivery_state_code), delivery_lat: payload.delivery_lat ?? null, delivery_lng: payload.delivery_lng ?? null,
     delivery_contact_name: str(payload.delivery_contact_name), delivery_contact_phone: str(payload.delivery_contact_phone),
     loading_dock: !!payload.loading_dock, access_restrictions: str(payload.access_restrictions),
     load_type: payload.load_type ?? '', vehicle_class: str(payload.vehicle_class), capacity_t: str(payload.capacity_t),
@@ -257,6 +265,7 @@ export function validateStep(d: LoadDraft, step: number, today: string = todayIs
       if (!d[`${p}_city`].trim()) e[`${p}_city`] = 'Enter the city.'
       if (!d[`${p}_address`].trim()) e[`${p}_address`] = 'Enter the full address with a landmark.'
       if (!pinOk(d[`${p}_pincode`])) e[`${p}_pincode`] = 'Enter the 6-digit pin code.'
+      if (d[`${p}_lat`] === null || d[`${p}_lng`] === null) e[`${p}_lat`] = `Search and pick the ${p} address so we can place it on the map.`
       if (required) {
         if (!d.pickup_contact_name.trim()) e.pickup_contact_name = 'Who will be at the loading point?'
         if (!phoneDigits(d.pickup_contact_phone)) e.pickup_contact_phone = 'Enter a 10-digit mobile number.'
