@@ -99,9 +99,10 @@ await step('1.6', async () => {
   check("1.6 company B does not see A's request", reqB.status === 200 && !JSON.stringify(reqB.body).includes(vid), st(reqB))
   const apB = await api(B.token, 'POST', `/vehicles/${vid}/approve`, {})
   check('1.6 company B cannot approve it (404)', apB.status === 404, st(apB))
-  const notif = await db('GET', 'notifications', { query: 'type=eq.vehicle_request&order=created_at.desc&limit=30&select=*' })
+  await sleep(3000)
+  const notif = await db('GET', 'notifications', { query: `type=eq.vehicle_request&order=created_at.desc&limit=300&select=*` })
   const mine = (notif.body || []).filter(n => JSON.stringify(n).includes(vid))
-  check('1.6 staff of company A notified of the vehicle request, company B staff not', mine.some(n => [A.id, AM.id].includes(n.user_id)) && !mine.some(n => [B.id, BM.id].includes(n.user_id)), JSON.stringify(notif.body)?.slice(0, 300))
+  check('1.6 staff of company A notified of the vehicle request, company B staff not', mine.some(n => [A.id, AM.id].includes(n.user_id)) && !mine.some(n => [B.id, BM.id].includes(n.user_id)), `A=${mine.some(n => n.user_id === A.id)} AM=${mine.some(n => n.user_id === AM.id)} B=${mine.some(n => n.user_id === B.id)} BM=${mine.some(n => n.user_id === BM.id)} total=${mine.length}`)
   const rj0 = await api(A.token, 'POST', `/vehicles/${vid}/reject`, {})
   check('1.6 reject without a reason -> 400', rj0.status === 400, st(rj0))
   const rj = await api(A.token, 'POST', `/vehicles/${vid}/reject`, { reason: 'RC photo unreadable' })
@@ -241,6 +242,7 @@ await step('2.4', async () => {
 
 // ── 3. Documents and expiry ──────────────────────────────────
 let licDoc
+const LIC = `MH12${Date.now()}`.slice(0, 15)
 await step('3.1', async () => {
   const noConsent = await api(A.token, 'POST', `/people/${person.id}/documents/upload-url`, { doc_type: 'driving_licence', file_name: 'dl.png', content_type: 'image/png', size: PNG.length })
   check('3.1 documents need consent first (409)', noConsent.status === 409, st(noConsent))
@@ -251,9 +253,9 @@ await step('3.1', async () => {
   await putSigned(up.body, PNG)
   const bytes = await readObject('kyc_documents', up.body.path)
   check('3.1 document bytes come back', bytes && Buffer.compare(bytes, PNG) === 0, `${bytes?.length}`)
-  const noExp = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: 'MH1220200012345', file_path: up.body.path })
+  const noExp = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: LIC, file_path: up.body.path })
   check('3.1 licence without an expiry -> 400', noExp.status === 400, st(noExp))
-  const d = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: 'MH1220200012345', expires_on: day(-3), file_path: up.body.path, metadata: { licence_classes: ['HMV'] } })
+  const d = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: LIC, expires_on: day(-3), file_path: up.body.path, metadata: { licence_classes: ['HMV'] } })
   licDoc = d.body; G.licDoc = licDoc
   check('3.1 expired licence saved -> 201, effective status expired', d.status === 201 && d.body.status === 'expired', st(d))
   const file = await api(A.token, 'GET', `/people/${person.id}/documents/${licDoc.id}/file`)
@@ -303,16 +305,17 @@ await step('3.2', async () => {
   await api(A.token, 'PUT', '/people/settings', { licence_grace_days: 0 })
   const up = await api(A.token, 'POST', `/people/${person.id}/documents/upload-url`, { doc_type: 'driving_licence', file_name: 'dl.png', content_type: 'image/png', size: PNG.length })
   await putSigned(up.body, PNG)
-  const nd = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: 'MH1220200012345', expires_on: day(400), file_path: up.body.path, metadata: { licence_classes: ['HMV'] } })
+  const nd = await api(A.token, 'POST', `/people/${person.id}/documents`, { doc_type: 'driving_licence', doc_number: LIC, expires_on: day(400), file_path: up.body.path, metadata: { licence_classes: ['HMV'] } })
   check('3.2 renewed licence saved', nd.status === 201, st(nd))
   const old = (await db('GET', 'user_documents', { query: `id=eq.${licDoc.id}&select=archived_at` })).body[0]
   check('3.2 the replaced document is archived, not deleted', !!old?.archived_at, JSON.stringify(old))
   const ok = await api(A.token, 'POST', '/shipments', { ...base, dest_name: 'Pune Depot 2' })
   check('3.2 with a valid licence the shipment goes through', ok.status < 300 || (ok.status !== 409 && ok.status < 500), st(ok))
-  const susp = await api(A.token, 'POST', `/people/${person.id}/status`, { status: 'suspended', reason: 'Repeated overspeeding' })
+  const susp = await api(A.token, 'POST', `/people/${person.id}/status`, { status: 'suspended', reason: 'Repeated overspeeding', confirm_release: true })
   check('3.2 suspending the driver', susp.status === 200, st(susp))
-  const sus2 = await api(A.token, 'POST', '/shipments', { ...base, dest_name: 'Pune Depot 3' })
-  check('3.2 a suspended driver blocks dispatch again (409)', sus2.status === 409, st(sus2))
+  const vAfter = (await db('GET', 'vehicles', { query: `id=eq.${G.v2.id}&select=driver_id` })).body[0]
+  check('3.2 suspending the driver (with confirmation) releases their vehicle', vAfter.driver_id === null, JSON.stringify(vAfter))
+  await api(A.token, 'PATCH', `/vehicles/${G.v2.id}`, { driver_name: 'Ramesh Fleet', driver_phone: dPhone })
   await api(A.token, 'POST', `/people/${person.id}/status`, { status: 'active' })
   await api(A.token, 'PUT', '/people/settings', { driver_document_enforcement: 'warn' })
   const warn = await api(A.token, 'POST', '/shipments', { ...base, dest_name: 'Pune Depot 4' })
