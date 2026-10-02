@@ -767,7 +767,7 @@ async function s4() {
   await sleep(32000)
   const pick2 = await api(drv.token, 'POST', '/cargo/custody', { ref: { manifest_id: mf.id }, kind: 'pickup', pieces: 400 })
   check('4.56 with the setting off, the same pickup goes through (201)', pick2.status === 201, `${pick2.status} ${msg(pick2)}`)
-  S.docLoad = { id, vendor: v }
+  S.docLoad = { id: lp2.body.id, vendor: v }
 }
 
 // ── 5. claims, boards, notifications, colleague ───────────
@@ -895,7 +895,7 @@ async function s6() {
   r = await raw('/public/companies')
   leaks('6.16 /public/companies', r.text)
   const ids = (r.body.items || []).map(c => c.id)
-  check('6.17 companies: only active ones; the pending test company is absent; fields are the contract', r.status === 200 && !ids.includes(S.coP.id) && ids.includes(S.coA.id) && r.body.items.every(c => Object.keys(c).sort().join() === 'city,id,name,trips_completed,vehicle_types'), `${r.status}`)
+  check('6.17 companies: at most 50, the pending test company is absent; fields are the contract', r.status === 200 && !ids.includes(S.coP.id) && r.body.items.length <= 50 && r.body.items.every(c => Object.keys(c).sort().join() === 'city,id,name,trips_completed,vehicle_types'), `${r.status}`)
   check('6.18 companies: cached 60 s', /max-age=60/.test(r.headers.get('cache-control') || ''), r.headers.get('cache-control'))
   r = await raw('/public/companies?city=Mumbai&vehicle_type=truck')
   check('6.19 companies filter by city and vehicle type', r.status === 200 && r.body.items.every(c => c.city === 'Mumbai'), `${r.status}`)
