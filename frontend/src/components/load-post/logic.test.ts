@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { profileErrors } from './helpers'
 import type { LoadPayload, ProductRow } from '@/types/load'
 import {
   applyRecommendation, emptyDraft, emptyRow, ewayLocal, firstInvalidStep, inr, itemTotals, mergeDraft, phoneDigits, repostToDraft,
@@ -120,6 +121,29 @@ describe('draft and payload', () => {
     expect(p.client_request_id).toBe(d.client_request_id)
   })
 
+  it('sends ambient as its own mode with no range, so a perishable load can be ambient', () => {
+    const d = emptyDraft()
+    d.items = sample()
+    d.items[0].handling = ['temperature_controlled']
+    d.temp_choice = 'ambient'
+    expect(validateStep({ ...d, load_type: 'ftl', vehicle_class: 'reefer', capacity_t: '5' }, 3)).toEqual({})
+    const ambient = toPayload(d)
+    expect(ambient).toMatchObject({ temp_mode: 'ambient', temp_min_c: null, temp_max_c: null })
+    expect(ambient.items[0].is_perishable).toBe(true)
+    d.temp_choice = '2_8'
+    expect(toPayload(d)).toMatchObject({ temp_mode: 'chilled', temp_min_c: 2, temp_max_c: 8 })
+    d.temp_choice = 'minus18'
+    expect(toPayload(d)).toMatchObject({ temp_mode: 'frozen', temp_min_c: -18, temp_max_c: -18 })
+    d.temp_choice = ''
+    expect(toPayload(d)).toMatchObject({ temp_mode: null, temp_min_c: null })
+  })
+
+  it('a repost of an ambient load comes back as ambient', () => {
+    const draft = repostToDraft({ items: [], temp_mode: 'ambient', temp_min_c: null, temp_max_c: null } as Partial<LoadPayload>)
+    expect(draft.temp_choice).toBe('ambient')
+    expect(repostToDraft({ temp_mode: 'chilled', temp_min_c: 2, temp_max_c: 8 } as Partial<LoadPayload>).temp_choice).toBe('2_8')
+  })
+
   it('sends the coordinates and a number for a blank declared value', () => {
     const d = emptyDraft()
     Object.assign(d, { pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2 })
@@ -161,5 +185,17 @@ describe('repost', () => {
     expect(d.reposted_from).toBe('load-1')
     expect([d.pickup_lat, d.delivery_lng]).toEqual([19.07, 77.2])
     expect(toPayload(d).source).toBe('repost')
+  })
+})
+
+describe('the business profile (PRD section 9)', () => {
+  const profile = { full_name: 'Vik', business_name: 'Acme', account_type: 'customer' as const, gstin: '', address: '4 MIDC', pincode: '400093', email: '', business_type: '' as const, monthly_loads: '' as const }
+
+  it('needs the business name for everyone, and leaves email optional', () => {
+    expect(profileErrors(profile)).toEqual({})
+    expect(profileErrors({ ...profile, business_name: ' ' })).toEqual({ business_name: 'Enter your business name.' })
+    expect(profileErrors({ ...profile, account_type: 'business_partner', business_name: '' })).toMatchObject({ business_name: 'Enter your business name.' })
+    expect(profileErrors({ ...profile, email: 'not-an-email' })).toEqual({ email: 'Enter a valid email.' })
+    expect(profileErrors({ ...profile, email: 'vik@example.test' })).toEqual({})
   })
 })

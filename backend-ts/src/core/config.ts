@@ -88,6 +88,8 @@ export const settings = {
   WHATSAPP_TOKEN: env('WHATSAPP_TOKEN'),
   WHATSAPP_PHONE_ID: env('WHATSAPP_PHONE_ID'),
   WHATSAPP_TEMPLATE_LOAD_POSTED: env('WHATSAPP_TEMPLATE_LOAD_POSTED'),
+  // Same body parameters; sent instead when the vendor's business is not verified yet. Unset: no WhatsApp for those loads (email only).
+  WHATSAPP_TEMPLATE_LOAD_HELD: env('WHATSAPP_TEMPLATE_LOAD_HELD'),
   WHATSAPP_API_VERSION: env('WHATSAPP_API_VERSION', 'v20.0'),
 
   // KYC / 3PL document uploads (backend-issued signed upload URLs)

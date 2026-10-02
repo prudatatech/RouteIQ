@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
-import { COMPANY_SETTING } from './support/cargo-world';
+import { COMPANY_SETTING, COMPANY_SETTING_FCM18 } from './support/cargo-world';
 import { testApp } from './support/test-app';
 import { InvoiceService } from '../src/services/invoice.service';
 
@@ -24,9 +24,9 @@ function reset(shipments: Record<string, unknown>[], extra: Record<string, any[]
 
 describe('invoice from the freight charge', () => {
   it('prices a shipment from freight_charge when it has no bid', async () => {
-    reset([shipment('s1', { freight_charge: 2500.5 })], { shipment_hsn: [{ id: 'h', shipment_id: 's1', hsn_code: '1001', gst_rate: 18 }] });
+    reset([shipment('s1', { freight_charge: 2500.5 })], { shipment_hsn: [{ id: 'h', shipment_id: 's1', hsn_code: '1001', gst_rate: 12 }], system_settings: [COMPANY_SETTING_FCM18] });
     expect((await InvoiceService.createForShipment('s1')).status).toBe('created');
-    expect(supabaseMock.rows('invoices')[0]).toMatchObject({ shipment_id: 's1', vendor_id: null, amount: 2500.5, gst_rate: 18, gst_amount: 450.09, total: 2950.59, price_source: 'freight_charge' });
+    expect(supabaseMock.rows('invoices')[0]).toMatchObject({ shipment_id: 's1', vendor_id: null, amount: 2500.5, gst_rate: 18, gst_amount: 450.09, total: 2950.59, price_source: 'freight_charge', tax_mode: 'fcm_18' });
   });
 
   it('prefers the winning bid over the freight charge', async () => {

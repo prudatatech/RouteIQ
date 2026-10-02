@@ -60,6 +60,8 @@ export type LoadType = 'ftl' | 'ptl'
 export type PickupSlot = 'morning' | 'afternoon' | 'evening'
 /** The temperature choice on the Transport step. Empty until chosen. */
 export type TempChoice = '' | '2_8' | 'minus18' | 'ambient'
+/** How a perishable load is kept, as the server stores it. Ambient needs no range. */
+export type TempMode = 'chilled' | 'frozen' | 'ambient' | 'custom'
 
 /** One product row as typed. Numbers are kept as text while the person types. */
 export interface ProductRow {
@@ -186,6 +188,8 @@ export interface LoadPayload {
   load_type: LoadType | null
   vehicle_class: string | null
   capacity_t: number | null
+  /** Set for a perishable load: chilled, frozen or ambient. */
+  temp_mode?: TempMode | null
   temp_min_c: number | null
   temp_max_c: number | null
   special_handling: SpecialHandling[]

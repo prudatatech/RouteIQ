@@ -7,8 +7,9 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
-import { as, orgWorld, uid } from './support/org-world';
+import { ORG, as, orgWorld, uid } from './support/org-world';
 import { draft } from './support/load-draft';
+import { goodsTables } from './support/goods-world';
 import { settings } from '../src/core/config';
 import { emailService } from '../src/services/email.service';
 import { loadPostedParams, sendLoadPosted, templatePayload, whatsappConfigured } from '../src/services/whatsapp.service';
@@ -102,9 +103,11 @@ describe('when WhatsApp is configured', () => {
 });
 
 describe('posting a load', () => {
-  function world(user: Record<string, unknown>) {
-    const fixtures = orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), kyc_status: 'approved' }], vendor_shipment_requests: [], load_items: [] });
+  function world(user: Record<string, unknown>, orgStatus = 'active', tables: Record<string, any[]> = {}) {
+    const fixtures = orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), kyc_status: 'approved' }], vendor_shipment_requests: [], load_items: [], ...tables });
     Object.assign(fixtures.users.find(u => u.id === uid('vendor-1'))!, user);
+    fixtures.organizations.find(o => o.id === ORG.vendorV)!.status = orgStatus;
+    for (const m of fixtures.org_members) if (m.org_id === ORG.vendorV) m.organizations = { ...m.organizations, status: orgStatus };
     supabaseMock.reset(fixtures);
     supabaseMock.rpcHandlers.set('create_vendor_load', ({ p }: any) => ({ id: randomUUID(), status: 'pending', created_at: new Date().toISOString(), ...p.load, load_number: 'MRX-2026-00142', duplicate: false }));
   }
@@ -126,6 +129,39 @@ describe('posting a load', () => {
     expect(params[3]).toBe('sxl_32');
     expect(params[4]).toBe('20,900 kg');
     expect(email).not.toHaveBeenCalled();
+  });
+
+  it('shows the vehicle by its name, not its key', async () => {
+    configure(true);
+    world({ phone: '+919800000000' }, 'active', goodsTables());
+    const calls = stubMeta();
+    const res = await request(app).post(api('/vendor/loads')).set(as('vendor-1')).send(draft({ vehicle_class: 'container_32ft_sxl' }));
+    expect(res.status).toBe(201);
+    const params = JSON.parse(calls[0].init.body as string).template.components[0].parameters.map((p: any) => p.text);
+    expect(params[3]).toBe('Container (32 ft / SXL)');
+  });
+
+  it('a held load (business not verified) gets the pending-verification template, not "matching a carrier"', async () => {
+    configure(true);
+    Object.assign(settings, { WHATSAPP_TEMPLATE_LOAD_HELD: 'load_held' });
+    world({ phone: '+919800000000' }, 'pending');
+    const calls = stubMeta();
+    const res = await post();
+    expect(res.status).toBe(201);
+    expect(JSON.parse(calls[0].init.body as string).template.name).toBe('load_held');
+    Object.assign(settings, { WHATSAPP_TEMPLATE_LOAD_HELD: '' });
+  });
+
+  it('a held load with no held template sends no WhatsApp, and the email says verification is pending', async () => {
+    configure(true);
+    world({ phone: '+919800000000', email: 'vik@example.test' }, 'pending');
+    const calls = stubMeta();
+    const email = vi.spyOn(emailService, 'send').mockResolvedValue(true);
+    const res = await post();
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(0);
+    expect(email.mock.calls[0][2]).toMatch(/Business verification pending/);
+    expect(email.mock.calls[0][2]).not.toMatch(/matching a verified carrier/);
   });
 
   it('falls back to email when WhatsApp is not configured and the profile has an email', async () => {

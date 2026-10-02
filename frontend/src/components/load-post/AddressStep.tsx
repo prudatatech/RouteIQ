@@ -35,6 +35,21 @@ function usePinState(side: Side, pin: string, stateCode: string, onChange: (patc
   }, [pin])
 }
 
+/** City names from GET /public/cities for what has been typed (after a short pause). The city stays free text. */
+function useCitySuggestions(typed: string): string[] {
+  const [names, setNames] = useState<string[]>([])
+  useEffect(() => {
+    const q = typed.trim()
+    if (q.length < 2) { setNames([]); return }
+    let live = true
+    const t = setTimeout(() => {
+      publicAPI.cities(q).then(list => { if (live) setNames(list) }).catch(() => { if (live) setNames([]) })
+    }, 250)
+    return () => { live = false; clearTimeout(t) }
+  }, [typed])
+  return names
+}
+
 function Section({ side, draft, onChange, errors, notes }: {
   side: Side
   draft: LoadDraft
@@ -52,6 +67,8 @@ function Section({ side, draft, onChange, errors, notes }: {
   const title = side === 'pickup' ? 'Pickup' : 'Delivery'
   const state = draft[`${side}_state_name`]
   usePinState(side, draft[`${side}_pincode`], draft[`${side}_state_code`], onChange)
+  const cities = useCitySuggestions(draft[`${side}_city`])
+  const listId = `${side}-city-suggestions`
 
   const pick = (p: ResolvedPlace | null) => {
     setPlace(p)
@@ -80,7 +97,8 @@ function Section({ side, draft, onChange, errors, notes }: {
         error={errors[`${side}_lat`]}
         hint="Indian addresses only. Pick a result to fill the city, address and pin code."
       />
-      <Input label={`${title} city`} required value={draft[`${side}_city`]} onChange={e => onChange({ [`${side}_city`]: e.target.value } as Partial<LoadDraft>)} error={errors[`${side}_city`]} autoComplete="address-level2" />
+      <Input label={`${title} city`} required list={listId} value={draft[`${side}_city`]} onChange={e => onChange({ [`${side}_city`]: e.target.value } as Partial<LoadDraft>)} error={errors[`${side}_city`]} autoComplete="address-level2" />
+      <datalist id={listId}>{cities.map(c => <option key={c} value={c} />)}</datalist>
       <Textarea
         label={`${title} full address`} required rows={3}
         value={draft[`${side}_address`]} onChange={e => onChange({ [`${side}_address`]: e.target.value } as Partial<LoadDraft>)}

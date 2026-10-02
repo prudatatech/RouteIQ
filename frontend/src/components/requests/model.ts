@@ -30,13 +30,16 @@ export interface CargoDetails {
   noOfPackages?: number
   packagingType?: string
   declaredValue?: string | number
-  specialHandling?: string
+  /** Free text from the older form; the Post a Load form writes an object of flags ({ fragile: true }). */
+  specialHandling?: string | Record<string, boolean>
   remarks?: string
 }
 
 /** A load a vendor posted (vendor_shipment_requests). */
 export interface VendorRequest {
   id: string
+  /** MRX-YYYY-NNNNN, set for loads posted through the Post a Load form. */
+  load_number?: string | null
   vendor_id: string
   pickup_location: string
   pickup_lat: number
@@ -59,6 +62,8 @@ export interface VendorRequest {
     /** The price the vendor offered on the Review step, in rupees. */
     offered_price_inr?: number
     dispatch_date?: string
+    /** Posted loads: how a perishable load is kept (chilled, frozen, ambient). */
+    temp_mode?: string | null
   } | null
   vendor: { company_name: string | null; city: string | null } | null
 }

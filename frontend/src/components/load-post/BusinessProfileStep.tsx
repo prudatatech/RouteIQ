@@ -39,7 +39,7 @@ export default function BusinessProfileStep({ initial, saving, error, onSave, on
         <p className="text-sm text-muted">We ask this once. It appears on your lorry receipts (LR), invoices and e-Way Bills.</p>
       </div>
       <Input label="Full name" required value={p.full_name} onChange={e => set({ full_name: e.target.value })} error={errors.full_name} autoComplete="name" />
-      <Input label="Business name" required={p.account_type === 'business_partner'} value={p.business_name} onChange={e => set({ business_name: e.target.value })} error={errors.business_name} autoComplete="organization" />
+      <Input label="Business name" required value={p.business_name} onChange={e => set({ business_name: e.target.value })} error={errors.business_name} autoComplete="organization" />
       <fieldset>
         <legend className="mb-1 text-sm font-medium text-text">Account type <span className="text-danger" aria-hidden="true">*</span></legend>
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -58,7 +58,7 @@ export default function BusinessProfileStep({ initial, saving, error, onSave, on
       <Input label="Business address" required value={p.address} onChange={e => set({ address: e.target.value })} error={errors.address} autoComplete="street-address" />
       <div className="grid gap-3 sm:grid-cols-2">
         <Input label="Pin code" required inputMode="numeric" maxLength={6} value={p.pincode} onChange={e => set({ pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })} error={errors.pincode} autoComplete="postal-code" />
-        <Input label="Email" type="email" required value={p.email} onChange={e => set({ email: e.target.value })} error={errors.email} hint="We send your documents here." autoComplete="email" />
+        <Input label="Email (optional)" type="email" value={p.email} onChange={e => set({ email: e.target.value })} error={errors.email} hint="We send your documents here when you are not on WhatsApp." autoComplete="email" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Select label="Business type" value={p.business_type} placeholder="Choose" onChange={e => set({ business_type: e.target.value as BusinessProfile['business_type'] })} options={BUSINESS_TYPES} />

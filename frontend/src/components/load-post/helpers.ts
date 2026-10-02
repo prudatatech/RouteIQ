@@ -21,7 +21,7 @@ export const emptyProfile = (): BusinessProfile => ({
 export function profileErrors(p: BusinessProfile): Record<string, string> {
   const e: Record<string, string> = {}
   if (!p.full_name.trim()) e.full_name = 'Enter your full name.'
-  if (p.account_type === 'business_partner' && !p.business_name.trim()) e.business_name = 'Enter your business name.'
+  if (!p.business_name.trim()) e.business_name = 'Enter your business name.'
   if (p.account_type === 'business_partner' && !p.gstin.trim()) e.gstin = 'A GSTIN is required for a Business Partner.'
   else if (p.gstin.trim()) {
     const check = checkGstin(p.gstin)
@@ -29,8 +29,8 @@ export function profileErrors(p: BusinessProfile): Record<string, string> {
   }
   if (!p.address.trim()) e.address = 'Enter your business address.'
   if (!/^\d{6}$/.test(p.pincode.trim())) e.pincode = 'Enter the 6-digit pin code.'
-  if (!p.email.trim()) e.email = 'Enter your email.'
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) e.email = 'Enter a valid email.'
+  // Email is optional (it is how documents reach you without WhatsApp), but a typed one must be real
+  if (p.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) e.email = 'Enter a valid email.'
   return e
 }
 

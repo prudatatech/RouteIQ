@@ -9,7 +9,7 @@ import { testApp } from './support/test-app';
 import { InvoiceService } from '../src/services/invoice.service';
 import { fromPaise, taxLines, taxableFromInclusive, toPaise, type TaxBasis } from '../src/core/gst';
 import { INVOICE_PROFILE_MESSAGE } from '../src/services/company.service';
-import { COMPANY_SETTING, ID, auth, cargoWorld, one, shipmentRow } from './support/cargo-world';
+import { COMPANY_SETTING, COMPANY_SETTING_FCM18, ID, auth, cargoWorld, one, shipmentRow } from './support/cargo-world';
 
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
@@ -87,7 +87,7 @@ describe('GST in integer paise (UAT-009)', () => {
   });
 
   it('issues an invoice whose paise add up exactly', async () => {
-    world({ shipment_hsn: [{ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 18 }] });
+    world({ shipment_hsn: [{ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 5 }], system_settings: [COMPANY_SETTING_FCM18] });
     one('shipments', ID.s1).freight_charge = 127118.64;
     await InvoiceService.createForShipment(ID.s1);
     expect(issued()).toMatchObject({ amount: 127118.64, gst_amount: 22881.36, total: 150000 });
@@ -95,7 +95,7 @@ describe('GST in integer paise (UAT-009)', () => {
 
   it('splits CGST and SGST equally for a buyer in the seller\'s state, and charges IGST for one in another', async () => {
     for (const [gstin, intra] of [[BUYER_GSTIN_MH, true], [BUYER_GSTIN_GJ, false]] as const) {
-      world({ shipment_hsn: [{ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 18 }] });
+      world({ shipment_hsn: [{ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 5 }], system_settings: [COMPANY_SETTING_FCM18] });
       one('shipments', ID.s1).bid_id = 'b1';
       supabaseMock.rows('capacity_bids').push({ id: 'b1', vendor_id: ID.vendor, bid_amount: 10001.01, status: 'won' });
       supabaseMock.rows('vendor_profiles')[0].gst_number = gstin;

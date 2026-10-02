@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   hsnSearch: vi.fn(),
   hsn: vi.fn(),
   pincode: vi.fn(),
+  cities: vi.fn(),
   vehicleClasses: vi.fn(),
   loadAssist: vi.fn(),
   vendorSendOtp: vi.fn(),
@@ -20,7 +21,7 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('@/services/api', () => ({
-  publicAPI: { hsnSearch: api.hsnSearch, hsn: api.hsn, pincode: api.pincode, vehicleClasses: api.vehicleClasses, loadAssist: api.loadAssist },
+  publicAPI: { hsnSearch: api.hsnSearch, hsn: api.hsn, pincode: api.pincode, cities: api.cities, vehicleClasses: api.vehicleClasses, loadAssist: api.loadAssist },
   authAPI: { vendorSendOtp: api.vendorSendOtp, vendorVerifyOtp: api.vendorVerifyOtp },
   vendorAPI: { myPostedLoads: api.myPostedLoads, repostLoad: api.repostLoad, postLoad: vi.fn(), businessProfile: vi.fn(), saveBusinessProfile: vi.fn() },
 }))
@@ -65,6 +66,7 @@ beforeEach(() => {
   api.hsnSearch.mockImplementation(async (q: string) => (q.includes('cement') ? [cement] : q.includes('medic') ? [medicine] : []))
   api.hsn.mockResolvedValue(null)
   api.pincode.mockResolvedValue(null)
+  api.cities.mockResolvedValue([])
   api.vehicleClasses.mockResolvedValue([])
   api.loadAssist.mockRejectedValue(new Error('not asked in this test'))
 })
@@ -203,7 +205,8 @@ describe('confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: /^copy$/i }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('MRX-2026-00142'))
     expect(await screen.findByRole('button', { name: /copied/i })).toBeTruthy()
-    expect(screen.getByText(/matching a verified carrier/i)).toBeTruthy()
+    expect(screen.getByText(/can now accept your load/i)).toBeTruthy()
+    expect(screen.queryByText(/matching a verified carrier|auto-generated/i)).toBeNull()
     expect(screen.getByRole('link', { name: /track this load/i }).getAttribute('href')).toBe('/vendor/loads/abc')
     fireEvent.click(screen.getByRole('button', { name: /post another load/i }))
     expect(onAnother).toHaveBeenCalled()
@@ -218,6 +221,15 @@ describe('confirmation note', () => {
     ))
     expect(screen.getByText(/business verification pending/i)).toBeTruthy()
     expect(screen.queryByText(/matching a verified carrier/i)).toBeNull()
+  })
+
+  it('promises quotes only when a quote was requested', () => {
+    render(wrap(
+      <LoadConfirmation loadId="abc" loadNumber="MRX-2026-00144" pickupCity="Mumbai" deliveryCity="Delhi" pickupDate={null} vehicleName="Truck"
+        quoteRequested onPostAnother={() => {}} />,
+    ))
+    expect(screen.getByText('Logistic companies serving this lane will send quotes, usually within 2 hours.')).toBeTruthy()
+    expect(screen.queryByText(/can now accept your load/i)).toBeNull()
   })
 })
 
@@ -270,6 +282,19 @@ describe('the form draft', () => {
     fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
     expect(screen.getByText(/describe your goods \(at least 3 characters\)/i)).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Goods & HSN' })).toBeTruthy()
+  })
+})
+
+describe('city suggestions', () => {
+  it('offers the cities from /public/cities as a list for the city box, which stays free text', async () => {
+    api.cities.mockResolvedValue(['Pune', 'Pimpri'])
+    const base = emptyDraft()
+    const { container } = render(<AddressStep draft={{ ...base, pickup_city: 'P' + 'u' }} onChange={() => {}} errors={{}} />)
+    await waitFor(() => expect(api.cities).toHaveBeenCalledWith('Pu'))
+    await waitFor(() => expect(container.querySelectorAll('datalist#pickup-city-suggestions option')).toHaveLength(2))
+    const box = screen.getByLabelText(/pickup city/i)
+    expect(box.getAttribute('list')).toBe('pickup-city-suggestions')
+    expect([...container.querySelectorAll('datalist#pickup-city-suggestions option')].map(o => o.getAttribute('value'))).toEqual(['Pune', 'Pimpri'])
   })
 })
 

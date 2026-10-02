@@ -219,7 +219,7 @@ async function assemble(requests: any[], shipments: any[], vendorId: string): Pr
     const agreed = num(r.cost);
     const offered = num(r.metadata?.offered_price_inr);
     return {
-      id: r.id, kind: 'posted', code: c ? c.code : `REQ-${String(r.id).slice(0, 8).toUpperCase()}`,
+      id: r.id, kind: 'posted', code: r.load_number ?? (c ? c.code : `REQ-${String(r.id).slice(0, 8).toUpperCase()}`),
       request_id: r.id, manifest_id: c?.id ?? null, shipment_id: null, bid_id: null,
       stage, status: c?.status ?? r.status, outcome,
       pickup: text(r.pickup_location), drop: text(r.drop_location),
@@ -276,7 +276,7 @@ async function wonSpace(vendorId: string, only?: string): Promise<any[]> {
 export async function listVendorLoads(vendorId: string): Promise<VendorLoad[]> {
   const { data, error } = await supabase
     .from('vendor_shipment_requests')
-    .select('id, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
+    .select('id, load_number, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
     .eq('vendor_id', vendorId)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`Failed to read your loads: ${error.message}`);
@@ -304,7 +304,7 @@ export interface VendorLoadDetail extends VendorLoad {
 export async function vendorLoadDetail(vendorId: string, id: string): Promise<VendorLoadDetail> {
   const { data: request, error } = await supabase
     .from('vendor_shipment_requests')
-    .select('id, vendor_id, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
+    .select('id, load_number, vendor_id, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
     .eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read the load: ${error.message}`);
 

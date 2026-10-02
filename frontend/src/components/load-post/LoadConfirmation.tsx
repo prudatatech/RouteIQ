@@ -8,7 +8,7 @@ import { copyText } from '@/components/fleet/location/clipboard'
 
 
 /** Shown after the load is posted (PRD 10.2): the load ID, the route, what happens next. */
-export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, onPostAnother }: {
+export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, quoteRequested = false, onPostAnother }: {
   loadId: string
   loadNumber: string
   pickupCity: string
@@ -17,6 +17,8 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
   vehicleName: string
   /** The server's note when the load waits, for example for business verification. */
   statusNote?: string | null
+  /** The vendor asked logistic companies for quotes. */
+  quoteRequested?: boolean
   onPostAnother: () => void
 }) {
   const [copied, setCopied] = useState(false)
@@ -48,7 +50,9 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
 
       {statusNote
         ? <Alert tone="warning" title="Your load is saved">{statusNote}</Alert>
-        : <p className="text-sm text-text">Our team is matching a verified carrier. You'll get a WhatsApp update within 2 hours.</p>}
+        : <p className="text-sm text-text">{quoteRequested
+          ? 'Logistic companies serving this lane will send quotes, usually within 2 hours.'
+          : "Logistic companies serving this lane can now accept your load. We'll notify you when one does."}</p>}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
         <Link to={`/vendor/loads/${encodeURIComponent(loadId)}`} className={buttonClasses({ variant: 'primary', size: 'lg' })}>Track this load</Link>

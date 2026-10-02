@@ -168,6 +168,35 @@ describe('POST /vendor/loads', () => {
     expect(supabaseMock.rpcCalls).toHaveLength(0);
   });
 
+  it('a perishable load must state its temperature mode, and ambient needs no range', async () => {
+    const perishable = [{ ...draft().items[0], is_perishable: true }];
+    const ambient = await post(draft({ items: perishable, temp_mode: 'ambient' }));
+    expect(ambient.status).toBe(201);
+    const { load } = supabaseMock.rpcCalls.filter(c => c.name === 'create_vendor_load')[0].args.p;
+    expect(load.metadata.temp_mode).toBe('ambient');
+    expect(load.temp_min_c).toBeNull();
+    const chilledNoRange = await post(draft({ items: perishable, temp_mode: 'chilled' }));
+    expect(chilledNoRange.status).toBe(400);
+    expect(chilledNoRange.body.error).toMatch(/temperature range/);
+    expect((await post(draft({ items: perishable, temp_mode: 'chilled', temp_min_c: 2, temp_max_c: 8 }))).status).toBe(201);
+    expect((await post(draft({ items: perishable, temp_mode: 'tropical' }))).status).toBe(400);
+  });
+
+  it('derives the state from the pin code and ignores a wrong client state', async () => {
+    const res = await post(draft({ pickup_pincode: '400001', pickup_state_code: '07', delivery_pincode: '110001', delivery_state_code: '27' }));
+    expect(res.status).toBe(201);
+    const { load } = supabaseMock.rpcCalls.filter(c => c.name === 'create_vendor_load')[0].args.p;
+    expect(load.pickup_state_code).toBe('27');
+    expect(load.delivery_state_code).toBe('07');
+    expect(load.tax_basis).toBe('inter');
+  });
+
+  it('keeps the client state only when the pin code is unknown', async () => {
+    await post(draft({ pickup_pincode: '999999', pickup_state_code: '07' }));
+    const { load } = supabaseMock.rpcCalls.filter(c => c.name === 'create_vendor_load')[0].args.p;
+    expect(load.pickup_state_code).toBe('07');
+  });
+
   it('stores contact phones as +91XXXXXXXXXX and refuses anything that is not an Indian mobile', async () => {
     const res = await post(draft({ pickup_contact_phone: '098765-43210', delivery_contact_phone: '91 98765 43211' }));
     expect(res.status).toBe(201);

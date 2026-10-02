@@ -82,12 +82,22 @@ describe('PUT /vendor/business-profile', () => {
 
   it('lets a customer account save without a GSTIN, and verifies one when given', async () => {
     const verify = vi.spyOn(gstinService, 'verify');
-    const res = await put(body({ account_type: 'customer', gstin: null, business_name: null }));
+    const res = await put(body({ account_type: 'customer', gstin: null }));
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ complete: true, account_type: 'customer', gstin: null });
     expect(verify).not.toHaveBeenCalled();
     await put(body({ account_type: 'customer' }));
     expect(verify).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires the business name for everyone, and leaves email optional', async () => {
+    expect((await put(body({ account_type: 'customer', gstin: null, business_name: null }))).status).toBe(400);
+    expect((await put(body({ account_type: 'customer', gstin: null, business_name: '  ' }))).status).toBe(400);
+    const res = await put(body({ account_type: 'customer', gstin: null, email: null }));
+    expect(res.status).toBe(200);
+    expect(res.body.complete).toBe(true);
+    expect(supabaseMock.rows('organizations').find((o: any) => o.id === ORG.vendorV)?.email).toBeNull();
+    expect((await put(body({ account_type: 'customer', gstin: null, email: '' }))).status).toBe(200);
   });
 
   it('validates the rest of the form', async () => {

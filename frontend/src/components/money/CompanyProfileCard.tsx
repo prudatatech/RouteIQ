@@ -2,18 +2,18 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { financeAPI } from '@/services/api'
-import { Button, Card, CardBody, CardHeader, ErrorState, Input, Skeleton, Textarea } from '@/components/ui'
+import { Button, Card, CardBody, CardHeader, ErrorState, Input, Select, Skeleton, Textarea } from '@/components/ui'
 import { errorMessage } from '@/utils/display'
 import { useOrgStore, selectActiveMembership } from '@/store/orgStore'
-import type { CompanyProfile } from '@/utils/finance'
+import { GTA_GST_OPTIONS, type CompanyProfile } from '@/utils/finance'
 
-type Form = Record<Exclude<keyof CompanyProfile, 'payment_terms_days'>, string> & { payment_terms_days: string }
+type Form = Record<Exclude<keyof CompanyProfile, 'payment_terms_days' | 'gta_gst_option'>, string> & { payment_terms_days: string; gta_gst_option: CompanyProfile['gta_gst_option'] }
 
 const toForm = (c: CompanyProfile): Form => ({
   legal_name: c.legal_name ?? '', gstin: c.gstin ?? '', pan: c.pan ?? '', address: c.address ?? '', city: c.city ?? '', state: c.state ?? '',
   pincode: c.pincode ?? '', phone: c.phone ?? '', email: c.email ?? '', sac_code: c.sac_code ?? '', bank_name: c.bank_name ?? '',
   bank_account_no: c.bank_account_no ?? '', bank_ifsc: c.bank_ifsc ?? '', upi_id: c.upi_id ?? '', invoice_footer: c.invoice_footer ?? '',
-  invoice_prefix: c.invoice_prefix ?? '', payment_terms_days: String(c.payment_terms_days),
+  invoice_prefix: c.invoice_prefix ?? '', payment_terms_days: String(c.payment_terms_days), gta_gst_option: c.gta_gst_option ?? 'rcm_5',
 })
 
 /** The seller on every invoice, and the payment terms new invoices are issued with. */
@@ -89,6 +89,12 @@ export function CompanyProfileCard() {
                   hint={`Invoice numbers read ${form.invoice_prefix.trim().toUpperCase() || 'MIL'}-YYYYMM-0001 and count on from the last one. 2 to 6 letters or digits, not used by another company.${form.invoice_prefix.trim() ? '' : ' Left empty, it is made from the company name when the first invoice is issued.'}`}
                 />
               )}
+              <Select
+                label="GST on freight (GTA)" value={form.gta_gst_option}
+                onChange={e => setForm(f => (f ? { ...f, gta_gst_option: e.target.value as Form['gta_gst_option'] } : f))}
+                options={GTA_GST_OPTIONS} className="sm:col-span-2"
+                hint="Freight is taxed at the transport rate, never at the rate of the goods. Applies to new invoices; invoices already issued keep their amounts."
+              />
               <Input label="Payment terms" value={form.payment_terms_days} onChange={set('payment_terms_days')} inputMode="numeric" trailing="days" hint="Due date = issue date + terms. Default 15." />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

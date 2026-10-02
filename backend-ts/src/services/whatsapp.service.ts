@@ -66,6 +66,8 @@ export interface LoadPostedMessage {
   pickupDate: string;
   vehicle: string;
   totalWeightKg: number;
+  /** The vendor's business is not verified yet: the load is saved, not yet with any logistic company. */
+  held?: boolean;
 }
 
 /** The PRD 10.3 parameters, in the order of the approved `load_posted` template body. */
@@ -80,5 +82,11 @@ export async function sendLoadPosted(phone: string | null | undefined, m: LoadPo
     console.warn(`[whatsapp] Not configured; load-posted message for ${m.loadNumber} not sent`);
     return false;
   }
-  return sendWhatsappTemplate(phone, { name: settings.WHATSAPP_TEMPLATE_LOAD_POSTED, language: 'en', params: loadPostedParams(m) });
+  // A held load must not get the "matching a carrier" template; with no held template set, only the email goes out
+  const name = m.held ? settings.WHATSAPP_TEMPLATE_LOAD_HELD : settings.WHATSAPP_TEMPLATE_LOAD_POSTED;
+  if (!name) {
+    console.warn(`[whatsapp] No pending-verification template set; message for ${m.loadNumber} not sent`);
+    return false;
+  }
+  return sendWhatsappTemplate(phone, { name, language: 'en', params: loadPostedParams(m) });
 }

@@ -50,11 +50,11 @@ describe('invoice on delivery', () => {
     }));
   });
 
-  it('creates an invoice from the accepted bid, with GST and a month-based number', async () => {
+  it('creates an invoice from the accepted bid, with a month-based number and no GST on freight under the default reverse charge', async () => {
     const res = await markDelivered('s1');
     expect(res.status).toBe(201);
     const [inv] = supabaseMock.rows('invoices');
-    expect(inv).toMatchObject({ shipment_id: 's1', vendor_id: 'vendor-1', amount: 12500, gst_rate: 12, gst_amount: 1500, total: 14000, status: 'issued', price_source: 'bid' });
+    expect(inv).toMatchObject({ shipment_id: 's1', vendor_id: 'vendor-1', amount: 12500, gst_rate: 0, gst_amount: 0, total: 12500, status: 'issued', price_source: 'bid', tax_mode: 'rcm_5' });
     const month = TODAY.slice(0, 7).replace('-', '');
     expect(inv.invoice_number).toBe(`INV-${month}-0001`);
   });
