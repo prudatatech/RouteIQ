@@ -14,6 +14,10 @@ export interface PostedLoadFields {
   temp_max_c: number | string | null
   special_handling: string[] | null
   budget_inr: number | string | null
+  priority: 'high' | 'medium' | 'low' | null
+  /** The recommended freight range worked out when the load was posted. */
+  price_min_inr: number | string | null
+  price_max_inr: number | string | null
   quote_requested: boolean | null
   loading_help: boolean | null
   unloading_help: boolean | null

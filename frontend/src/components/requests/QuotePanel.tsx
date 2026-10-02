@@ -6,7 +6,8 @@ import { companyLoadsAPI, publicAPI } from '@/services/api'
 import { Alert, Button, Input, Select, StatusPill, Textarea, useConfirm } from '@/components/ui'
 import { useCountdown } from '@/components/vendor/quoteTime'
 import { errorMessage, formatRupees } from '@/utils/display'
-import { canAcceptDirect } from './quoteRules'
+import { amountInRange, canAcceptDirect, freightRange } from './quoteRules'
+import PriorityBadge from './PriorityBadge'
 import type { MarketLoad, MarketTab } from '@/types/routing'
 
 const TABS: MarketTab[] = ['new', 'quoted', 'won']
@@ -32,6 +33,9 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
   const classes = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: () => publicAPI.vehicleClasses(), staleTime: 300_000 })
   const left = useCountdown(row?.quote_requested ? row.quote_deadline : null)
 
+  const range = row ? freightRange(row) : null
+  const [bookAmount, setBookAmount] = useState('')
+  const [bookError, setBookError] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [vehicleClass, setVehicleClass] = useState('')
@@ -45,7 +49,9 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
     setEta(dateOf(mine?.pickup_eta))
     setNotes(mine?.notes ?? '')
     setError(null)
-  }, [loadId, mine?.id, mine?.amount_inr]) // eslint-disable-line react-hooks/exhaustive-deps
+    setBookAmount(range ? String(range.min) : '')
+    setBookError(null)
+  }, [loadId, range?.min, mine?.id, mine?.amount_inr]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['company', 'market'] }),
@@ -69,7 +75,7 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
     onError: err => toast.error(errorMessage(err, 'We could not withdraw your quote. Try again.')),
   })
   const accept = useMutation({
-    mutationFn: () => companyLoadsAPI.accept(loadId),
+    mutationFn: (amountInr?: number) => companyLoadsAPI.accept(loadId, amountInr !== undefined ? { amount_inr: amountInr } : {}),
     onSuccess: async () => { toast.success('Accepted. The vendor has been told.'); await refresh() },
     onError: err => toast.error(errorMessage(err, 'We could not accept this load. Try again.')),
   })
@@ -85,7 +91,8 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
   if (loading) return null
 
   const budget = row?.budget_inr ?? null
-  const direct = canAcceptDirect({ status, quote_requested: row?.quote_requested, budget_inr: budget }, won)
+  const direct = canAcceptDirect({ status, quote_requested: row?.quote_requested, budget_inr: budget, price_min_inr: row?.price_min_inr, price_max_inr: row?.price_max_inr }, won)
+  const quoting = row?.quote_requested === true
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -94,44 +101,79 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
     submit.mutate()
   }
   const askAccept = async () => {
+    if (range) {
+      const value = Number(bookAmount)
+      if (!amountInRange(value, range)) {
+        setBookError(`Enter an amount between ${formatRupees(range.min)} and ${formatRupees(range.max)}.`)
+        return
+      }
+      setBookError(null)
+      const ok = await confirm({
+        title: `Book at ${formatRupees(value)}?`,
+        message: 'The load is yours at this price. The vendor is told, and other companies lose it.',
+        confirmLabel: `Book at ${formatRupees(value)}`,
+      })
+      if (ok) accept.mutate(value)
+      return
+    }
     const ok = await confirm({
       title: `Accept at ${formatRupees(budget)}?`,
       message: 'The load is yours at the vendor’s budget. The vendor is told, and other companies lose it.',
       confirmLabel: `Accept at ${formatRupees(budget)}`,
     })
-    if (ok) accept.mutate()
+    if (ok) accept.mutate(undefined)
   }
 
   return (
-    <section aria-label="Your quote" className="space-y-4 rounded-control border border-border p-4">
+    <section aria-label={quoting ? 'Your quote' : 'Book this load'} className="space-y-4 rounded-control border border-border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-text">Your quote</h3>
-        {row?.quote_requested && <StatusPill tone={left === 'Time is up' ? 'warning' : 'info'}>{left ? `Quote wanted, ${left}` : 'Quote wanted'}</StatusPill>}
+        <h3 className="text-base font-semibold text-text">{quoting ? 'Your quote' : 'Book this load'}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <PriorityBadge priority={row?.priority} />
+          {quoting && <StatusPill tone={left === 'Time is up' ? 'warning' : 'info'}>{left ? `Quote wanted, ${left}` : 'Quote wanted'}</StatusPill>}
+        </div>
       </div>
-      {budget ? <p className="text-sm text-muted">Vendor’s budget: <span className="font-medium text-text tabular">{formatRupees(budget)}</span></p> : null}
+      {range && (
+        <p className="text-sm text-muted" data-testid="range-line">
+          Recommended freight: <span className="font-medium text-text tabular">{formatRupees(range.min)} – {formatRupees(range.max)}</span>. You can book at any price in this range.
+        </p>
+      )}
+      {!range && budget ? <p className="text-sm text-muted">Vendor’s budget: <span className="font-medium text-text tabular">{formatRupees(budget)}</span></p> : null}
 
-      {direct && (
+      {direct && range && (
+        <div className="space-y-2">
+          <Input
+            label="Your amount (₹)" required inputMode="decimal" value={bookAmount}
+            onChange={e => setBookAmount(e.target.value.replace(/[^\d.]/g, ''))} error={bookError ?? undefined}
+            hint={`Between ${formatRupees(range.min)} and ${formatRupees(range.max)}.`}
+          />
+          <Button icon={<Check size={16} />} loading={accept.isPending} disabled={submit.isPending} onClick={askAccept}>Book this load</Button>
+        </div>
+      )}
+      {direct && !range && (
         <Button icon={<Check size={16} />} loading={accept.isPending} disabled={submit.isPending} onClick={askAccept}>
           Accept at {formatRupees(budget)}
         </Button>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-3" noValidate>
-        <Input label="Your price (₹)" required inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} error={error ?? undefined} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input label="Valid until" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} />
-          <Input label="Pickup ETA" type="date" value={eta} onChange={e => setEta(e.target.value)} />
-        </div>
-        <Select
-          label="Vehicle class" value={vehicleClass} onChange={e => setVehicleClass(e.target.value)}
-          options={[{ value: '', label: 'Not set' }, ...(classes.data ?? []).map(c => ({ value: c.key, label: c.name }))]}
-        />
-        <Textarea label="Notes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} hint="Optional. For example loading time or return load." />
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" loading={submit.isPending} disabled={withdraw.isPending}>{mine ? 'Update quote' : 'Submit quote'}</Button>
-          {mine && <Button type="button" variant="secondary" loading={withdraw.isPending} disabled={submit.isPending} onClick={() => withdraw.mutate()}>Withdraw quote</Button>}
-        </div>
-      </form>
+      {quoting && (
+        <form onSubmit={onSubmit} className="space-y-3" noValidate>
+          <Input label="Your price (₹)" required inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} error={error ?? undefined} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input label="Valid until" type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} />
+            <Input label="Pickup ETA" type="date" value={eta} onChange={e => setEta(e.target.value)} />
+          </div>
+          <Select
+            label="Vehicle class" value={vehicleClass} onChange={e => setVehicleClass(e.target.value)}
+            options={[{ value: '', label: 'Not set' }, ...(classes.data ?? []).map(c => ({ value: c.key, label: c.name }))]}
+          />
+          <Textarea label="Notes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} hint="Optional. For example loading time or return load." />
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" loading={submit.isPending} disabled={withdraw.isPending}>{mine ? 'Update quote' : 'Submit quote'}</Button>
+            {mine && <Button type="button" variant="secondary" loading={withdraw.isPending} disabled={submit.isPending} onClick={() => withdraw.mutate()}>Withdraw quote</Button>}
+          </div>
+        </form>
+      )}
     </section>
   )
 }

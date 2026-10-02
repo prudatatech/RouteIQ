@@ -53,21 +53,19 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('the routing choice in the payload', () => {
+describe('the routing in the payload', () => {
   it('is open by default and sends no company list', () => {
     const p = toPayload(emptyDraft())
     expect(p.routing).toBe('open')
     expect(p.company_ids).toBeUndefined()
   })
-  it('sends the chosen companies', () => {
-    const p = toPayload({ ...emptyDraft(), routing: 'chosen', company_ids: ['a', 'b'] })
-    expect(p.routing).toBe('chosen')
-    expect(p.company_ids).toEqual(['a', 'b'])
-  })
-  it('never sends more than 10 companies, and falls back to open with none', () => {
-    const many = Array.from({ length: 14 }, (_, i) => `c${i}`)
-    expect(toPayload({ ...emptyDraft(), routing: 'chosen', company_ids: many }).company_ids).toHaveLength(10)
-    expect(toPayload({ ...emptyDraft(), routing: 'chosen', company_ids: [] }).routing).toBe('open')
+  it('is open even when an old draft had chosen companies, with no budget and no quote round', () => {
+    const old = { ...emptyDraft(), routing: 'chosen', company_ids: ['a', 'b'], budget_inr: '9000', quote_requested: true } as unknown as ReturnType<typeof emptyDraft>
+    const p = toPayload(old)
+    expect(p.routing).toBe('open')
+    expect(p.company_ids).toBeUndefined()
+    expect(p.quote_requested).toBe(false)
+    expect(p.budget_inr).toBeNull()
   })
 })
 
@@ -135,7 +133,46 @@ describe('QuotePanel direct accept', () => {
     api.market.mockImplementation((tab: MarketTab) => Promise.resolve(tab === 'new' ? [marketRow({ quote_requested: false })] : []))
     render(wrap(<QuotePanel loadId="L1" status="pending" />))
     expect(await screen.findByRole('button', { name: 'Accept at ₹50,000' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Submit quote' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Submit quote' })).toBeNull()
+  })
+
+  const ranged = { priority: 'high' as const, price_min_inr: 32000, price_max_inr: 38000, budget_inr: null, quote_requested: false }
+  const openPanel = async () => {
+    api.market.mockImplementation((tab: MarketTab) => Promise.resolve(tab === 'new' ? [marketRow(ranged)] : []))
+    render(wrap(<QuotePanel loadId="L1" status="pending" />))
+    return await screen.findByLabelText(/Your amount/) as HTMLInputElement
+  }
+
+  it('shows Urgent and the range, prefills the minimum, and books at that amount', async () => {
+    api.accept.mockResolvedValue({})
+    const input = await openPanel()
+    expect(screen.getByText('Urgent')).toBeTruthy()
+    expect(screen.getByTestId('range-line').textContent).toMatch(/₹32,000 – ₹38,000/)
+    expect(input.value).toBe('32000')
+    expect(screen.queryByRole('button', { name: 'Submit quote' })).toBeNull()
+    fireEvent.change(input, { target: { value: '35000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Book this load' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Book at ₹35,000' }))
+    await waitFor(() => expect(api.accept).toHaveBeenCalledWith('L1', { amount_inr: 35000 }))
+  })
+
+  it('refuses an amount outside the range with a clear message and sends nothing', async () => {
+    const input = await openPanel()
+    for (const bad of ['31999', '38001', '']) {
+      fireEvent.change(input, { target: { value: bad } })
+      fireEvent.click(screen.getByRole('button', { name: 'Book this load' }))
+      expect(await screen.findByText('Enter an amount between ₹32,000 and ₹38,000.')).toBeTruthy()
+    }
+    expect(api.accept).not.toHaveBeenCalled()
+  })
+
+  it('keeps the old accept at the budget when the load has no range', async () => {
+    api.market.mockImplementation((tab: MarketTab) => Promise.resolve(tab === 'new' ? [marketRow({ price_min_inr: null, price_max_inr: null })] : []))
+    api.accept.mockResolvedValue({})
+    render(wrap(<QuotePanel loadId="L1" status="pending" />))
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept at ₹50,000' }))
+    fireEvent.click(await screen.findAllByRole('button', { name: 'Accept at ₹50,000' }).then(b => b[b.length - 1]))
+    await waitFor(() => expect(api.accept).toHaveBeenCalledWith('L1', {}))
   })
 
   it('hides it when a quote was requested, and submits the quote', async () => {
@@ -158,6 +195,14 @@ describe('QuotePanel direct accept', () => {
 })
 
 describe('LoadMarket tabs', () => {
+  it('shows the priority (Urgent for high) and the recommended range on the board', async () => {
+    api.market.mockResolvedValue([marketRow({ priority: 'high', price_min_inr: 32000, price_max_inr: 38000, quote_requested: false })])
+    render(wrap(<LoadMarket onOpen={() => {}} />))
+    expect((await screen.findAllByText('Urgent')).length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('range-L1')[0].textContent).toBe('₹32,000 – ₹38,000')
+    expect(screen.getAllByText('Book in range').length).toBeGreaterThan(0)
+  })
+
   it('asks for the tab that was chosen and opens a row', async () => {
     api.market.mockImplementation((tab: MarketTab) => Promise.resolve(tab === 'quoted' ? [marketRow({ id: 'L2', load_number: 'LD-2002', my_quote: { id: 'q', amount_inr: 45000, valid_until: null, vehicle_class: null, pickup_eta: null, notes: null, status: 'submitted' } })] : [marketRow()]))
     const onOpen = vi.fn()

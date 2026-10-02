@@ -57,6 +57,10 @@ export interface GoodsCategory {
 export type ProductHandling = 'fragile' | 'temperature_controlled' | 'hazmat'
 export type SpecialHandling = 'fragile' | 'do_not_stack' | 'this_side_up' | 'hazmat' | 'odc'
 export type LoadType = 'ftl' | 'ptl'
+/** How urgent the booking is: high loads go first to the largest logistic networks. */
+export type LoadPriority = 'high' | 'medium' | 'low'
+/** Step 3: use the server's suggested vehicle, or pick one from the list. */
+export type VehicleMode = 'recommend' | 'manual'
 export type PickupSlot = 'morning' | 'afternoon' | 'evening'
 /** The temperature choice on the Transport step. Empty until chosen. */
 export type TempChoice = '' | '2_8' | 'minus18' | 'ambient'
@@ -71,8 +75,6 @@ export interface ProductRow {
   hsn_code: string
   /** The chosen rate in percent, or null until chosen. */
   gst_rate: number | null
-  /** True when the code and rate came from the HSN search (they are read-only). */
-  hsn_locked: boolean
   /** The rates the code allows. More than one means the person must choose. */
   rate_options: number[]
   rate_note: string | null
@@ -88,8 +90,6 @@ export interface ProductRow {
  * The whole form. Field names that the server also uses keep the server's names, so a
  * recommendation's `action.field` applies to the draft directly.
  */
-import type { LoadRouting } from '@/types/routing'
-
 export interface LoadDraft {
   /** A UUID made when the form opened; the server returns the first load for a repeated id. */
   client_request_id: string
@@ -118,30 +118,23 @@ export interface LoadDraft {
   delivery_state_name: string
   delivery_lat: number | null
   delivery_lng: number | null
-  delivery_date: string
   delivery_contact_name: string
   delivery_contact_phone: string
 
-  loading_dock: boolean
-  access_restrictions: string
+  /** Step 1: High (sent first to the largest networks), Medium (default) or Low. Sent as priority. */
+  priority: LoadPriority
 
   load_type: '' | LoadType
   vehicle_class: string
   /** Derived, never typed: the server's suggestion or the chosen vehicle's size (deriveCapacity). Sent as capacity_t. */
   capacity_t: string
-  /** False while the suggestion still fills load type and vehicle; true once the person changed one. */
+  /** Recommend (default): the suggested vehicle is used and sent. Manual: the person picks from the list. */
+  vehicle_mode: VehicleMode
+  /** False while the suggestion still fills the load type; true once the person chose one. */
   transport_touched: boolean
   temp_choice: TempChoice
   /** Load-level handling only (do not stack, this side up, ODC). Fragile and hazmat come from the products. */
   special_handling: SpecialHandling[]
-  /** Quotes mode: an optional target. Book-at-my-price mode (quote_requested false): the price, required. */
-  budget_inr: string
-  quote_requested: boolean
-  loading_help: boolean
-  unloading_help: boolean
-  /** Who should quote: every company on the lane, or the chosen ones. */
-  routing: LoadRouting
-  company_ids: string[]
 
   /** Set on a repost: the load this one copies. */
   reposted_from: string | null
@@ -188,10 +181,13 @@ export interface LoadPayload {
   delivery_state_code: string | null
   delivery_lat: number | null
   delivery_lng: number | null
+  /** Always null since the 2 Oct change: there is no preferred delivery date. */
   delivery_date: string | null
   delivery_contact_name: string | null
   delivery_contact_phone: string | null
 
+  priority: LoadPriority
+  /** Always false and null since the 2 Oct change (no site details); kept because the server still accepts them. */
   loading_dock: boolean
   access_restrictions: string | null
 
@@ -203,12 +199,13 @@ export interface LoadPayload {
   temp_min_c: number | null
   temp_max_c: number | null
   special_handling: SpecialHandling[]
+  /** Always null: companies book at any price in the recommended range. */
   budget_inr: number | null
   quote_requested: boolean
   loading_help: boolean
   unloading_help: boolean
-  routing: LoadRouting
-  /** Only when routing is chosen. */
+  /** Always 'open': every company on the lane sees the load. */
+  routing: 'open' | 'chosen'
   company_ids?: string[]
 }
 
@@ -220,6 +217,10 @@ export interface PostedLoad {
   duplicate?: boolean
   /** For example "Business verification pending...": the load is saved but waits. */
   status_note?: string | null
+  priority?: LoadPriority
+  /** The recommended freight range the server worked out, when it could. */
+  price_min_inr?: number | null
+  price_max_inr?: number | null
   load?: Record<string, unknown>
   items?: LoadItem[]
   assessment?: AssistResult
@@ -237,6 +238,8 @@ export interface Recommendation {
   severity: 'info' | 'warn'
   message: string
   action?: { field: string; value: string | number | boolean }
+  /** The product the note is about (0-based), when the server says. Otherwise read from action.field or the message. */
+  item_index?: number
 }
 
 export interface TaxLine { product: string; hsn: string | null; rate: number; taxable: number; gst: number }
@@ -282,6 +285,9 @@ export interface LoadSummary {
   vehicle_class: string | null
   total_weight_kg: number | null
   created_at: string | null
+  priority?: LoadPriority | null
+  price_min_inr?: number | null
+  price_max_inr?: number | null
 }
 
 export interface LoadListPage {

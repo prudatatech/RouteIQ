@@ -1,16 +1,11 @@
 import type { ReactNode } from 'react'
-import { Container, Droplets, Package, Snowflake, Truck } from 'lucide-react'
-import { Alert, Card, Skeleton } from '@/components/ui'
-import type { LoadDraft, LoadType, VehicleClass } from '@/types/load'
+import { Alert, Card, Select, Skeleton } from '@/components/ui'
+import type { LoadDraft, LoadType, VehicleClass, VehicleMode } from '@/types/load'
 import { hasPerishable, localLoadType, TEMP_RANGES } from './logic'
 import type { StepErrors } from './validate'
 import { capacityText } from './helpers'
 import Radio from './Radio'
-
-function VehicleIcon({ v }: { v: VehicleClass }) {
-  const Icon = v.is_reefer ? Snowflake : v.is_tanker ? Droplets : v.is_open ? Package : v.key.includes('container') ? Container : Truck
-  return <Icon size={22} aria-hidden="true" />
-}
+import Segmented from './Segmented'
 
 /** What the vehicle can carry against the load, in words. The capacity is worked out, never typed. */
 export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: VehicleClass; capacity: number | null; weightKg: number }) {
@@ -29,68 +24,76 @@ export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: Vehicl
   )
 }
 
-/** Load type, vehicle (needed for a full load only), the derived capacity and the temperature. */
-export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedType, weightKg, capacity, notes }: {
+const vehicleLine = (v: VehicleClass) => `${v.name} · ${capacityText(v)}`
+
+/** Load type (a compact choice), the vehicle (the suggestion, or one picked from a list), the derived capacity and the temperature. */
+export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedType, suggestedVehicleKey, assistLoading, weightKg, capacity, notes }: {
   draft: LoadDraft
   onChange: (patch: Partial<LoadDraft>) => void
   errors: StepErrors
   vehicles: VehicleClass[]
   vehiclesLoading?: boolean
   suggestedType: LoadType | undefined
+  /** assist.suggested.vehicle_class: the vehicle sent when "Recommend for my goods" is on. */
+  suggestedVehicleKey?: string | null
+  assistLoading?: boolean
   weightKg: number
   capacity: number | null
   notes?: ReactNode
 }) {
-  const touch = (patch: Partial<LoadDraft>) => onChange({ ...patch, transport_touched: true })
   const recommended = suggestedType ?? localLoadType(weightKg)
   const ptl = draft.load_type === 'ptl'
   const vehicle = vehicles.find(v => v.key === draft.vehicle_class)
+  const suggested = suggestedVehicleKey ? vehicles.find(v => v.key === suggestedVehicleKey) : undefined
+  const manual = draft.vehicle_mode === 'manual'
+  const setMode = (mode: VehicleMode) => onChange(mode === 'manual' ? { vehicle_mode: mode, transport_touched: true } : { vehicle_mode: mode })
+
+  const suggestionText = suggested
+    ? vehicleLine(suggested)
+    : suggestedVehicleKey
+      ? suggestedVehicleKey.replace(/_/g, ' ')
+      : assistLoading ? 'Working out the right vehicle…' : weightKg > 0 ? 'No vehicle to suggest yet' : 'Add the weight of your goods first'
+  const options = [
+    ...(ptl ? [{ value: '', label: 'No preference (the logistic company decides)' }] : []),
+    ...vehicles.map(v => ({ value: v.key, label: vehicleLine(v) })),
+  ]
+
   return (
     <>
       <Card padded className="space-y-4 !p-4">
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium text-text">Load type <span className="text-danger" aria-hidden="true">*</span></legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(['ftl', 'ptl'] as const).map(t => (
-              <Radio key={t} name="load_type" checked={draft.load_type === t} onChange={() => touch({ load_type: t })} value={t}>
-                <span className="font-medium text-text">{t === 'ftl' ? 'Full truck load (FTL)' : 'Part truck load (PTL)'}</span>
-                {recommended === t && weightKg > 0 && <span className="ml-2 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Recommended</span>}
-                <span className="block text-muted">{t === 'ftl' ? 'The whole truck is yours.' : 'You share the truck with other goods.'}</span>
-              </Radio>
-            ))}
-          </div>
-          {errors.load_type && <p className="mt-1 text-xs text-danger" role="alert">{errors.load_type}</p>}
-        </fieldset>
+        <Segmented
+          name="load_type" legend="Load type" required value={draft.load_type} columns="grid-cols-2"
+          onChange={t => onChange({ load_type: t, transport_touched: true })}
+          options={(['ftl', 'ptl'] as const).map(t => ({
+            value: t,
+            label: <>{t === 'ftl' ? 'Full truck (FTL)' : 'Part truck (PTL)'}{recommended === t && weightKg > 0 && <span className="ml-2 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Recommended</span>}</>,
+            hint: t === 'ftl' ? 'The whole truck is yours.' : 'You share the truck with other goods.',
+          }))}
+          error={errors.load_type}
+        />
         {notes}
       </Card>
 
       <Card padded className="space-y-3 !p-4">
-        <fieldset>
-          <legend className="mb-1 text-sm font-medium text-text">
-            Vehicle type {!ptl && <span className="text-danger" aria-hidden="true">*</span>}
-          </legend>
-          {ptl && <p className="mb-2 text-xs text-muted">For a part load the logistic company picks the truck that fits. You can still ask for a vehicle type.</p>}
-          {vehiclesLoading ? (
-            <div className="grid gap-2 sm:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {ptl && (
-                <Radio name="vehicle_class" value="" checked={draft.vehicle_class === ''} onChange={() => touch({ vehicle_class: '' })}>
-                  <span className="font-medium text-text">No preference</span>
-                  <span className="block text-muted">Let the logistic company decide.</span>
-                </Radio>
-              )}
-              {vehicles.map(v => (
-                <Radio key={v.key} name="vehicle_class" value={v.key} checked={draft.vehicle_class === v.key} onChange={() => touch({ vehicle_class: v.key })}>
-                  <span className="flex items-center gap-2 font-medium text-text"><VehicleIcon v={v} /> {v.name}</span>
-                  <span className="block text-muted">{capacityText(v)}{v.best_for ? ` · ${v.best_for}` : ''}</span>
-                  {v.notes && <span className="block text-xs text-muted">{v.notes}</span>}
-                </Radio>
-              ))}
-            </div>
-          )}
-          {errors.vehicle_class && <p className="mt-1 text-xs text-danger" role="alert">{errors.vehicle_class}</p>}
-        </fieldset>
+        <Segmented
+          name="vehicle_mode" legend="Vehicle type" required={!ptl} value={draft.vehicle_mode} columns="sm:grid-cols-2"
+          onChange={setMode}
+          options={[
+            { value: 'recommend', label: 'Recommend for my goods', hint: <span data-testid="vehicle-suggestion">{suggestionText}</span> },
+            { value: 'manual', label: 'Choose myself', hint: 'Pick from the list of vehicle types.' },
+          ]}
+        />
+        {ptl && !manual && <p className="text-xs text-muted">For a part load the logistic company picks the truck that fits.</p>}
+        {manual && (vehiclesLoading ? (
+          <Skeleton className="h-control w-full" />
+        ) : (
+          <Select
+            label="Vehicle" hideLabel name="vehicle_class" value={draft.vehicle_class} placeholder={ptl ? undefined : 'Select a vehicle type'}
+            onChange={e => onChange({ vehicle_class: e.target.value, transport_touched: true })}
+            options={options} error={errors.vehicle_class}
+          />
+        ))}
+        {!manual && errors.vehicle_class && <p className="text-xs text-danger" role="alert">{errors.vehicle_class}</p>}
         <CapacityNote vehicle={vehicle} capacity={capacity} weightKg={weightKg} />
       </Card>
 

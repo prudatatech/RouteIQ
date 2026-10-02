@@ -2,9 +2,8 @@
  * The Post a Load form without any screen: the draft, its totals, the checks for each step, and the
  * conversion to and from what the server sends. Plain functions so they are easy to test.
  */
-import { MAX_CHOSEN_COMPANIES } from '@/types/routing'
 import type {
-  LoadDraft, LoadItemPayload, LoadPayload, ProductRow, Recommendation, SpecialHandling, TempChoice, TempMode, VehicleClass,
+  LoadDraft, LoadItemPayload, LoadPayload, LoadPriority, ProductRow, Recommendation, SpecialHandling, TempChoice, TempMode, VehicleClass,
 } from '@/types/load'
 
 export const STEP_LABELS = ['Route & dates', 'Goods', 'Truck & price', 'Review'] as const
@@ -34,7 +33,7 @@ export const randomId = (): string => {
 
 export function emptyRow(): ProductRow {
   return {
-    key: randomId(), product_name: '', hsn_code: '', gst_rate: null, hsn_locked: false, rate_options: [], rate_note: null,
+    key: randomId(), product_name: '', hsn_code: '', gst_rate: null, rate_options: [], rate_note: null,
     category: null, quantity: '', unit: 'bags', weight_kg: '', declared_value: '', handling: [],
   }
 }
@@ -50,16 +49,22 @@ export function emptyDraft(): LoadDraft {
     pickup_date: '', pickup_slot: '', pickup_contact_name: '', pickup_contact_phone: '',
     delivery_city: '', delivery_address: '', delivery_pincode: '', delivery_state_code: '', delivery_state_name: '',
     delivery_lat: null, delivery_lng: null,
-    delivery_date: '', delivery_contact_name: '', delivery_contact_phone: '',
-    loading_dock: false, access_restrictions: '',
-    load_type: '', vehicle_class: '', capacity_t: '', transport_touched: false, temp_choice: '',
-    special_handling: [], budget_inr: '', quote_requested: true, loading_help: false, unloading_help: false,
-    routing: 'open', company_ids: [],
+    priority: 'medium', delivery_contact_name: '', delivery_contact_phone: '',
+    load_type: '', vehicle_class: '', vehicle_mode: 'recommend', capacity_t: '', transport_touched: false, temp_choice: '',
+    special_handling: [],
     reposted_from: null,
   }
 }
 
 // ---------- Numbers and text ----------
+
+export const PRIORITIES: { value: LoadPriority; label: string; hint: string }[] = [
+  { value: 'high', label: 'High', hint: 'Urgent: sent first to the largest logistic networks' },
+  { value: 'medium', label: 'Medium', hint: 'Normal booking' },
+  { value: 'low', label: 'Low', hint: 'Flexible: no rush' },
+]
+export const isPriority = (v: unknown): v is LoadPriority => v === 'high' || v === 'medium' || v === 'low'
+export const priorityLabel = (p: LoadPriority | null | undefined): string => PRIORITIES.find(x => x.value === p)?.label ?? 'Medium'
 
 export const toNum = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === '') return 0
@@ -70,6 +75,10 @@ export const toNum = (v: string | number | null | undefined): number => {
 /** Rupees the Indian way: ₹7,62,500. */
 export const inr = (n: number | null | undefined): string =>
   `₹${Math.round(n ?? 0).toLocaleString('en-IN')}`
+
+/** "₹32,000 – ₹38,000", or null when the range is missing. */
+export const rangeText = (low: number | null | undefined, high: number | null | undefined): string | null =>
+  typeof low === 'number' && typeof high === 'number' && high > 0 ? `${inr(low)} – ${inr(high)}` : null
 
 export const kgText = (n: number): string => `${Math.round(n).toLocaleString('en-IN')} kg`
 
@@ -176,6 +185,16 @@ export const localLoadType = (weightKg: number): 'ftl' | 'ptl' => (weightKg >= 7
 
 // ---------- Draft to server ----------
 
+/**
+ * The address sent: the place the search picked (its full formatted address). When there is none, one made from the
+ * city, pin code and state. The server wants 1 to 500 characters.
+ */
+export function addressOf(d: LoadDraft, side: 'pickup' | 'delivery'): string {
+  const picked = d[`${side}_address`].trim()
+  const text = picked || [d[`${side}_city`].trim(), d[`${side}_pincode`].trim(), d[`${side}_state_name`].trim()].filter(Boolean).join(', ')
+  return text.slice(0, 500)
+}
+
 export function toPayload(d: LoadDraft): LoadPayload {
   const temp = d.temp_choice ? TEMP_RANGES[d.temp_choice] : null
   const items: LoadItemPayload[] = d.items.map(i => ({
@@ -200,7 +219,7 @@ export function toPayload(d: LoadDraft): LoadPayload {
     reposted_from: d.reposted_from,
     items,
     pickup_city: d.pickup_city.trim(),
-    pickup_address: d.pickup_address.trim(),
+    pickup_address: addressOf(d, 'pickup'),
     pickup_pincode: d.pickup_pincode.trim(),
     pickup_state_code: d.pickup_state_code || null,
     pickup_lat: d.pickup_lat,
@@ -210,16 +229,17 @@ export function toPayload(d: LoadDraft): LoadPayload {
     pickup_contact_name: d.pickup_contact_name.trim(),
     pickup_contact_phone: pickupPhone ? `+91${pickupPhone}` : d.pickup_contact_phone.trim(),
     delivery_city: d.delivery_city.trim(),
-    delivery_address: d.delivery_address.trim(),
+    delivery_address: addressOf(d, 'delivery'),
     delivery_pincode: d.delivery_pincode.trim(),
     delivery_state_code: d.delivery_state_code || null,
     delivery_lat: d.delivery_lat,
     delivery_lng: d.delivery_lng,
-    delivery_date: d.delivery_date || null,
+    delivery_date: null,
+    priority: d.priority,
     delivery_contact_name: d.delivery_contact_name.trim() || null,
     delivery_contact_phone: deliveryPhone ? `+91${deliveryPhone}` : d.delivery_contact_phone.trim() || null,
-    loading_dock: d.loading_dock,
-    access_restrictions: d.access_restrictions.trim() || null,
+    loading_dock: false,
+    access_restrictions: null,
     load_type: d.load_type || null,
     vehicle_class: d.vehicle_class || null,
     capacity_t: d.capacity_t === '' ? null : toNum(d.capacity_t),
@@ -227,35 +247,31 @@ export function toPayload(d: LoadDraft): LoadPayload {
     temp_min_c: temp ? temp.min : null,
     temp_max_c: temp ? temp.max : null,
     special_handling: allSpecialHandling(d),
-    budget_inr: d.budget_inr === '' ? null : toNum(d.budget_inr),
-    quote_requested: d.quote_requested,
-    loading_help: d.loading_help,
-    unloading_help: d.unloading_help,
-    ...(d.routing === 'chosen' && d.company_ids.length > 0
-      ? { routing: 'chosen' as const, company_ids: d.company_ids.slice(0, MAX_CHOSEN_COMPANIES) }
-      : { routing: 'open' as const }),
+    // Companies book at any price in the recommended range: no budget, no quote round, open to every company.
+    budget_inr: null,
+    quote_requested: false,
+    loading_help: false,
+    unloading_help: false,
+    routing: 'open',
   }
 }
 
 // ---------- Recommendations ----------
 
-const SIMPLE_FIELDS = new Set([
-  'load_type', 'vehicle_class', 'budget_inr', 'pickup_date', 'pickup_slot', 'delivery_date',
-  'pickup_city', 'delivery_city', 'temp_choice',
-])
+const SIMPLE_FIELDS = new Set(['load_type', 'vehicle_class', 'pickup_date', 'pickup_slot', 'pickup_city', 'delivery_city', 'temp_choice'])
 
 /** Applies a recommendation's one-click fix to the draft. Unknown fields are ignored. */
 export function applyRecommendation(d: LoadDraft, action: NonNullable<Recommendation['action']>): LoadDraft {
   if (!SIMPLE_FIELDS.has(action.field)) return d
   const next = { ...d, [action.field]: String(action.value) } as LoadDraft
   if (['load_type', 'vehicle_class'].includes(action.field)) next.transport_touched = true
+  if (action.field === 'vehicle_class') next.vehicle_mode = 'manual'
   return next
 }
 
 /** The label of a fix button. */
 export function actionLabel(action: NonNullable<Recommendation['action']>, vehicleName?: string): string {
   switch (action.field) {
-    case 'budget_inr': return `Use ${inr(Number(action.value))}`
     case 'load_type': return `Switch to ${String(action.value).toUpperCase()}`
     case 'vehicle_class': return vehicleName ? `Use ${vehicleName}` : 'Use this vehicle'
     default: return 'Apply'

@@ -33,7 +33,8 @@ vi.mock('@/components/map/AddressPicker', () => ({
 
 import HsnSearch from './HsnSearch'
 import GoodsStep from './GoodsStep'
-import { PricingCard, HandlingCard } from './PricingCards'
+import HandlingCard from './HandlingCard'
+import FreightCard from './FreightCard'
 import { CapacityNote } from './TruckCards'
 import OtpModal from './OtpModal'
 import LoadConfirmation from './LoadConfirmation'
@@ -48,6 +49,8 @@ import { memoryAuthStorage } from '@/test-utils/authStorage'
 
 const cement: HsnHit = { hsn_code: '2523', description: 'Portland cement', category: 'construction', gst_rates: [18], rate_note: null, is_hazmat: false, is_perishable: false }
 const medicine: HsnHit = { hsn_code: '3004', description: 'Pharmaceutical formulations', category: 'pharma', gst_rates: [5, 12], rate_note: '5% or 12% by product', is_hazmat: false, is_perishable: false }
+
+const van = { key: 'v', name: 'Eicher 14 ft', min_t: 3, max_t: 5, best_for: null, notes: null, interstate_ok: true, is_reefer: false, is_open: false, is_tanker: false, sort: 1 }
 
 // Newer Node versions ship their own localStorage that hides jsdom's; use a plain in-memory one so the test is the same everywhere.
 const memory = new Map<string, string>()
@@ -148,25 +151,49 @@ describe('goods step', () => {
 })
 
 describe('HSN search', () => {
-  it('locks the code and rate when a suggestion is picked', async () => {
+  it('prefills the code and rate from a pick and leaves both editable, with no lock', async () => {
     render(<Single />)
     fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'cement' } })
     const option = await screen.findByRole('option', { name: /2523/ })
     expect(within(option).getByText('18%')).toBeTruthy()
     fireEvent.click(option)
-    const code = screen.getByLabelText('HSN code') as HTMLInputElement
+    const code = screen.getByLabelText(/^HSN code/) as HTMLInputElement
     expect(code.value).toBe('2523')
-    expect(code.readOnly).toBe(true)
-    expect((screen.getByLabelText('GST rate') as HTMLInputElement).readOnly).toBe(true)
-    expect(screen.queryByLabelText(/select applicable gst rate/i)).toBeNull()
+    expect(code.readOnly).toBe(false)
+    const rate = screen.getByLabelText(/^GST rate/) as HTMLSelectElement
+    expect(rate.value).toBe('18')
+    // The code's own rate first, then the other GST 2.0 rates
+    expect(Array.from(rate.options).map(o => o.value).filter(Boolean)).toEqual(['18', '0', '0.25', '1.5', '3', '5', '12', '40'])
+    fireEvent.change(rate, { target: { value: '12' } })
+    expect(rate.value).toBe('12')
   })
 
-  it('asks which rate applies for a multi-rate code, limited to its valid rates', async () => {
+  it('looks a changed HSN code up when the box is left, and keeps a chosen rate when the code is unchanged', async () => {
+    api.hsn.mockResolvedValue(medicine)
+    render(<Single />)
+    fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'cement' } })
+    fireEvent.click(await screen.findByRole('option', { name: /2523/ }))
+    fireEvent.change(screen.getByLabelText(/^GST rate/), { target: { value: '12' } })
+    const code = screen.getByLabelText(/^HSN code/)
+    fireEvent.blur(code)
+    expect(api.hsn).not.toHaveBeenCalled()
+    expect((screen.getByLabelText(/^GST rate/) as HTMLSelectElement).value).toBe('12')
+    fireEvent.change(code, { target: { value: '3004' } })
+    fireEvent.blur(code)
+    await waitFor(() => expect(api.hsn).toHaveBeenCalledWith('3004'))
+    await waitFor(() => expect(screen.getByText('5% or 12% by product')).toBeTruthy())
+    const rate = screen.getByLabelText(/^GST rate/) as HTMLSelectElement
+    expect(Array.from(rate.options).map(o => o.value).filter(Boolean).slice(0, 2)).toEqual(['5', '12'])
+    expect(rate.value).toBe('12')
+  })
+
+  it('asks which rate applies for a multi-rate code, with its own rates first', async () => {
     render(<Single />)
     fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'medicine' } })
     fireEvent.click(await screen.findByRole('option', { name: /3004/ }))
-    const rate = screen.getByLabelText(/select applicable gst rate/i) as HTMLSelectElement
-    expect(Array.from(rate.options).map(o => o.value).filter(Boolean)).toEqual(['5', '12'])
+    const rate = screen.getByLabelText(/^GST rate/) as HTMLSelectElement
+    expect(rate.value).toBe('')
+    expect(Array.from(rate.options).map(o => o.value).filter(Boolean).slice(0, 2)).toEqual(['5', '12'])
     expect(screen.getByText('5% or 12% by product')).toBeTruthy()
     fireEvent.change(rate, { target: { value: '12' } })
     expect(rate.value).toBe('12')
@@ -178,6 +205,27 @@ describe('HSN search', () => {
     expect(screen.getByLabelText(/^hsn code/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /why is hsn needed/i }))
     expect(screen.getByRole('tooltip').textContent).toMatch(/e-Way Bill and GST invoice/)
+  })
+})
+
+describe('notes beside a product', () => {
+  const multi = { ...emptyRow(), product_name: 'Medicine', hsn_code: '3004', rate_options: [5, 12], gst_rate: null }
+  const plain = { ...emptyRow(), product_name: 'Cement', hsn_code: '2523', rate_options: [18], gst_rate: 18, quantity: '10', weight_kg: '500' }
+  it('shows the multi-rate note inside that product only, not in a list at the bottom', () => {
+    const recs = [{ code: 'multi_rate', severity: 'warn' as const, message: 'HSN 3004 has more than one GST rate (5% OR 12%). Please select one.' }]
+    render(<GoodsStep items={[plain, multi]} errors={{}} recommendations={recs} onChangeRow={() => {}} onAdd={() => {}} onRemove={() => {}} />)
+    const second = screen.getByRole('group', { name: 'Product 2' })
+    expect(within(second).getByText(/HSN 3004 has more than one GST rate/)).toBeTruthy()
+    expect(within(screen.getByRole('group', { name: 'Product 1' })).queryByText(/more than one GST rate/)).toBeNull()
+    expect(screen.getAllByText(/more than one GST rate/)).toHaveLength(1)
+  })
+  it('shows the form\'s own multi-rate note beside the product when the server has not answered', () => {
+    render(<GoodsStep items={[multi]} errors={{}} onChangeRow={() => {}} onAdd={() => {}} onRemove={() => {}} />)
+    expect(within(screen.getByTestId('product-notes-0')).getByText(/more than one GST rate \(5% \/ 12%\)/)).toBeTruthy()
+  })
+  it('keeps the note on a folded product summary', () => {
+    render(<GoodsStep items={[{ ...multi, gst_rate: 12, quantity: '5', weight_kg: '50' }, emptyRow()]} errors={{}} onChangeRow={() => {}} onAdd={() => {}} onRemove={() => {}} />)
+    expect(screen.getByTestId('product-note-0').textContent).toMatch(/You chose 12%/)
   })
 })
 
@@ -233,7 +281,8 @@ describe('confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: /^copy$/i }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('MRX-2026-00142'))
     expect(await screen.findByRole('button', { name: /copied/i })).toBeTruthy()
-    expect(screen.getByText(/can now accept your load/i)).toBeTruthy()
+    expect(screen.getByText(/can now book your load/i)).toBeTruthy()
+    expect(screen.queryByText(/within 2 hours|quotes/i)).toBeNull()
     expect(screen.queryByText(/matching a verified carrier|auto-generated/i)).toBeNull()
     expect(screen.getByRole('link', { name: /track this load/i }).getAttribute('href')).toBe('/vendor/loads/abc')
     fireEvent.click(screen.getByRole('button', { name: /post another load/i }))
@@ -251,24 +300,26 @@ describe('confirmation note', () => {
     expect(screen.queryByText(/matching a verified carrier/i)).toBeNull()
   })
 
-  it('promises quotes only when a quote was requested', () => {
+  it('shows the priority and says companies can book at any price in the range', () => {
     render(wrap(
       <LoadConfirmation loadId="abc" loadNumber="MRX-2026-00144" pickupCity="Mumbai" deliveryCity="Delhi" pickupDate={null} vehicleName="Truck"
-        quoteRequested onPostAnother={() => {}} />,
+        priority="high" priceMin={32000} priceMax={38000} onPostAnother={() => {}} />,
     ))
-    expect(screen.getByText('They will send quotes, usually within 2 hours.')).toBeTruthy()
-    expect(screen.queryByText(/can now accept your load/i)).toBeNull()
+    expect(screen.getByTestId('confirm-priority').textContent).toBe('High')
+    expect(screen.getByTestId('confirm-range').textContent).toBe('₹32,000 – ₹38,000')
+    expect(screen.getByText(/can book your load at any price in this range/i)).toBeTruthy()
+    expect(screen.queryByText(/quotes/i)).toBeNull()
   })
 })
 
 describe('repost', () => {
   it('opens the form with everything filled in and the dates cleared', async () => {
     api.myPostedLoads.mockResolvedValue({
-      items: [{ id: 'L1', load_number: 'MRX-2026-00001', status: 'open', pickup_city: 'Mumbai', delivery_city: 'Delhi', pickup_date: '2026-10-05', vehicle_class: 'sxl_32', total_weight_kg: 5000, created_at: null }],
+      items: [{ id: 'L1', load_number: 'MRX-2026-00001', status: 'open', pickup_city: 'Mumbai', delivery_city: 'Delhi', pickup_date: '2026-10-05', vehicle_class: 'sxl_32', total_weight_kg: 5000, created_at: null, priority: 'high', price_min_inr: 32000, price_max_inr: 38000 }],
     })
     const payload: Partial<LoadPayload> = {
       items: [{ product_name: 'Cement', hsn_code: '2523', gst_rate: 18, quantity: 100, unit: 'bags', weight_kg: 5000, declared_value: 40000, handling: [], category: null, is_hazmat: false, is_perishable: false }],
-      pickup_city: 'Mumbai', pickup_date: '2026-10-05', delivery_city: 'Delhi', delivery_date: '2026-10-09', vehicle_class: 'sxl_32', load_type: 'ftl',
+      pickup_city: 'Mumbai', pickup_date: '2026-10-05', delivery_city: 'Delhi', vehicle_class: 'sxl_32', load_type: 'ftl', priority: 'low',
     }
     api.repostLoad.mockResolvedValue(payload)
     render(wrap(
@@ -278,12 +329,14 @@ describe('repost', () => {
       </Routes>,
     ))
     expect((await screen.findByRole('link', { name: 'MRX-2026-00001' })).getAttribute('href')).toBe('/vendor/loads/L1')
+    expect(screen.getByText(/High priority/)).toBeTruthy()
+    expect(screen.getByTestId('posted-range-L1').textContent).toMatch(/₹32,000 – ₹38,000/)
     fireEvent.click(screen.getByRole('button', { name: /repost/i }))
     await screen.findByText('The form')
     expect(api.repostLoad).toHaveBeenCalledWith('L1')
-    const draft = loadGuestDraft<{ pickup_date: string; delivery_date: string; pickup_city: string; reposted_from: string; items: { product_name: string }[] }>('load')
+    const draft = loadGuestDraft<{ pickup_date: string; priority: string; pickup_city: string; reposted_from: string; items: { product_name: string }[] }>('load')
     expect(draft?.pickup_date).toBe('')
-    expect(draft?.delivery_date).toBe('')
+    expect(draft?.priority).toBe('low')
     expect(draft?.pickup_city).toBe('Mumbai')
     expect(draft?.items[0].product_name).toBe('Cement')
     expect(draft?.reposted_from).toBe('L1')
@@ -335,24 +388,76 @@ describe('the form draft', () => {
     expect(screen.getByRole('heading', { name: 'Truck & price' })).toBeTruthy()
   })
 
-  it('shows the pricing choice with quotes as the default on Truck and price', () => {
+  it('shows no pricing, routing or company choice on Truck and price, only the recommended freight', () => {
     saveGuestDraft('load', { ...emptyDraft(), step: 2 })
     render(wrap(<VendorShipmentRequestPage />))
-    expect((screen.getByRole('radio', { name: /get quotes from companies/i }) as HTMLInputElement).checked).toBe(true)
-    expect(screen.getByLabelText(/your target budget/i)).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: /book at my price/i }))
-    expect(screen.getByLabelText(/your price/i)).toBeTruthy()
-    expect(screen.queryByLabelText(/required capacity/i)).toBeNull()
-    expect(screen.queryByText(/request quotation/i)).toBeNull()
+    expect(screen.queryByText(/how do you want to price/i)).toBeNull()
+    expect(screen.queryByText(/who can see this load/i)).toBeNull()
+    expect(screen.queryByLabelText(/budget|your price/i)).toBeNull()
+    expect(screen.queryByRole('radio', { name: /book at my price|get quotes/i })).toBeNull()
+    expect(screen.getByTestId('freight-card')).toBeTruthy()
+  })
+
+  it('offers Recommend for my goods (default) and Choose myself, which reveals a dropdown', async () => {
+    api.vehicleClasses.mockResolvedValue([van, { ...van, key: 'sxl', name: '32 ft SXL', min_t: 14, max_t: 20 }])
+    saveGuestDraft('load', { ...emptyDraft(), step: 2, load_type: 'ftl' })
+    render(wrap(<VendorShipmentRequestPage />))
+    expect((screen.getByRole('radio', { name: /recommend for my goods/i }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.queryByRole('combobox', { name: /vehicle/i })).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: /choose myself/i }))
+    const select = await screen.findByRole('combobox', { name: /vehicle/i }) as HTMLSelectElement
+    await waitFor(() => expect(Array.from(select.options).map(o => o.textContent)).toContain('32 ft SXL · 14–20 T'))
+    fireEvent.change(select, { target: { value: 'sxl' } })
+    expect(loadGuestDraft<{ vehicle_class: string; vehicle_mode: string }>('load')).toMatchObject({ vehicle_class: 'sxl', vehicle_mode: 'manual' })
+  })
+
+  it('names the suggested vehicle with its capacity and sends that class in recommend mode', async () => {
+    api.vehicleClasses.mockResolvedValue([van])
+    api.loadAssist.mockResolvedValue({
+      totals: { weight_kg: 4000, declared_value: 0, product_count: 1 }, eway: { required: false, threshold: 50000, reason: '' },
+      tax: { basis: 'unknown', pickup_state: null, delivery_state: null, lines: [], by_rate: [], taxable: 0, cgst: 0, sgst: 0, igst: 0, gst_total: 0, grand_total: 0 },
+      hazmat_mixed: false, perishable: false, suggested: { load_type: 'ftl', vehicle_class: 'v', capacity_t: 5 },
+      estimate: { low: 32000, high: 38000, distance_km: 1400, label: 'Market rate' }, recommendations: [],
+    })
+    const d = { ...emptyDraft(), step: 2 }
+    d.items[0].hsn_code = '2523'
+    d.items[0].weight_kg = '4000'
+    saveGuestDraft('load', d)
+    render(wrap(<VendorShipmentRequestPage />))
+    await waitFor(() => expect(screen.getByTestId('vehicle-suggestion').textContent).toBe('Eicher 14 ft · 3–5 T'))
+    await waitFor(() => expect(loadGuestDraft<{ vehicle_class: string }>('load')?.vehicle_class).toBe('v'))
+    expect(screen.getByTestId('freight-range').textContent).toBe('₹32,000 – ₹38,000')
+    expect(screen.getByText(/can book your load at any price in this range/i)).toBeTruthy()
+  })
+
+  it('shows Route and dates without the address line, site details or delivery date, and with Priority (Medium by default)', () => {
+    render(wrap(<VendorShipmentRequestPage />))
+    expect(screen.queryByLabelText(/address line/i)).toBeNull()
+    expect(screen.queryByText(/site details|loading dock|access restrictions|need loading help|need unloading help/i)).toBeNull()
+    expect(screen.queryByLabelText(/delivery date/i)).toBeNull()
+    expect((screen.getByRole('radio', { name: /^medium/i }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText('Urgent: sent first to the largest logistic networks')).toBeTruthy()
+    expect(screen.getByText('Normal booking')).toBeTruthy()
+    expect(screen.getByText('Flexible: no rush')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: /^high/i }))
+    expect(loadGuestDraft<{ priority: string }>('load')?.priority).toBe('high')
   })
 })
 
-describe('pricing card', () => {
-  it('requires a price for book at my price and shows its error', () => {
-    const draft = { ...emptyDraft(), quote_requested: false }
-    render(<PricingCard draft={draft} onChange={() => {}} errors={{ budget_inr: 'Enter the price you will pay, or choose to get quotes instead.' }} assist={null} />)
-    expect(screen.getByText(/price you will pay/i)).toBeTruthy()
-    expect((screen.getByLabelText(/your price/i) as HTMLInputElement).required).toBe(true)
+describe('recommended freight card', () => {
+  const assist = (estimate: unknown) => ({ estimate }) as never
+  it('shows the range, the distance and the booking line', () => {
+    render(<FreightCard assist={assist({ low: 32000, high: 38000, distance_km: 1400, label: 'Market rate' })} />)
+    expect(screen.getByTestId('freight-range').textContent).toBe('₹32,000 – ₹38,000')
+    expect(screen.getByText(/1,400 km/)).toBeTruthy()
+    expect(screen.getByText('Logistic companies can book your load at any price in this range.')).toBeTruthy()
+  })
+  it('shows a skeleton while it is worked out, and a plain line when there is none', () => {
+    const first = render(<FreightCard assist={null} loading />)
+    expect(screen.getByTestId('freight-skeleton')).toBeTruthy()
+    first.unmount()
+    render(<FreightCard assist={assist(null)} />)
+    expect(screen.getByText('We will share the range once a logistic company reviews the route.')).toBeTruthy()
   })
 })
 
@@ -371,13 +476,13 @@ describe('handling card', () => {
 })
 
 describe('capacity note', () => {
-  const van = { key: 'v', name: 'Eicher 14 ft', min_t: 3, max_t: 5, best_for: null, notes: null, interstate_ok: true, is_reefer: false, is_open: false, is_tanker: false, sort: 1 }
+  const vanInner = { key: 'v', name: 'Eicher 14 ft', min_t: 3, max_t: 5, best_for: null, notes: null, interstate_ok: true, is_reefer: false, is_open: false, is_tanker: false, sort: 1 }
   it('says what the vehicle fits against the load, and warns when the load is heavier', () => {
-    const ok = render(<CapacityNote vehicle={van} capacity={5} weightKg={4000} />)
+    const ok = render(<CapacityNote vehicle={vanInner} capacity={5} weightKg={4000} />)
     expect(screen.getByTestId('capacity-note').textContent).toBe('Fits up to 5 t, your load is 4 t.')
     expect(screen.queryByRole('alert')).toBeNull()
     ok.unmount()
-    render(<CapacityNote vehicle={van} capacity={5} weightKg={6500} />)
+    render(<CapacityNote vehicle={vanInner} capacity={5} weightKg={6500} />)
     expect(screen.getByText(/heavier than Eicher 14 ft carries \(5 t\)/)).toBeTruthy()
   })
 })

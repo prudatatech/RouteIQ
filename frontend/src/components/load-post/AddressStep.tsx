@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { Alert } from '@/components/ui'
+import { Alert, Card } from '@/components/ui'
 import type { LoadDraft } from '@/types/load'
-import { taxBasisLocal } from './logic'
+import { PRIORITIES, taxBasisLocal } from './logic'
 import type { StepErrors } from './validate'
 import SiteCard from './SiteCard'
+import Segmented from './Segmented'
 
-/** Step 1, Route and dates: where the goods are collected and delivered, when, who to call and what each site needs. */
+/** Step 1, Route and dates: where the goods are collected and delivered, when, who to call, and how urgent it is. */
 export default function AddressStep({ draft, onChange, errors, pickupNotes, deliveryNotes }: {
   draft: LoadDraft
   onChange: (patch: Partial<LoadDraft>) => void
@@ -21,6 +22,12 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
         <SiteCard side="pickup" draft={draft} onChange={onChange} errors={errors} notes={pickupNotes} />
         <SiteCard side="delivery" draft={draft} onChange={onChange} errors={errors} notes={deliveryNotes} />
       </div>
+      <Card padded className="!p-4">
+        <Segmented
+          name="priority" legend="Priority" value={draft.priority} onChange={priority => onChange({ priority })}
+          options={PRIORITIES.map(p => ({ value: p.value, label: p.label, hint: p.hint }))}
+        />
+      </Card>
       {basis !== 'unknown' && (
         <Alert tone="info" title={basis === 'inter' ? 'Interstate (IGST)' : 'Within state (CGST + SGST)'}>
           {basis === 'inter'
