@@ -12,6 +12,7 @@ import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { InvoiceService } from './invoice.service';
 import { assertCanIssueInvoices } from './company.service';
+import { OWNED, assertVisible, scopeQuery } from '../core/org-scope';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -26,8 +27,8 @@ export function parseAmount(raw: unknown): number {
 }
 
 async function priceShipment(id: string, amount: number): Promise<void> {
-  const { data: s, error } = await supabase
-    .from('shipments').select('id, status, bid_id, is_master, parent_shipment_id').eq('id', id).maybeSingle();
+  const { data: s, error } = await scopeQuery(supabase
+    .from('shipments').select('id, status, bid_id, is_master, parent_shipment_id').eq('id', id), OWNED.carrierAndVendor).maybeSingle();
   if (error) throw new Error(`Failed to read shipment: ${error.message}`);
   if (!s) throw new HttpError(404, 'Shipment not found');
   if (s.status !== 'delivered' && s.status !== 'partially_delivered') throw new HttpError(409, 'Only delivered shipments can be priced here');
@@ -46,8 +47,8 @@ async function priceShipment(id: string, amount: number): Promise<void> {
 }
 
 async function priceManifest(id: string, amount: number): Promise<void> {
-  const { data: m, error } = await supabase
-    .from('cargo_manifest').select('id, status, vendor_request_id, is_master, parent_manifest_id').eq('id', id).maybeSingle();
+  const { data: m, error } = await scopeQuery(supabase
+    .from('cargo_manifest').select('id, status, vendor_request_id, is_master, parent_manifest_id').eq('id', id), OWNED.carrierAndVendor).maybeSingle();
   if (error) throw new Error(`Failed to read load: ${error.message}`);
   if (!m) throw new HttpError(404, 'Load not found');
   if (m.status !== 'delivered') throw new HttpError(409, 'Only delivered loads can be priced here');
@@ -65,6 +66,8 @@ async function priceManifest(id: string, amount: number): Promise<void> {
 /** Sets the price, then issues the invoice through the invoice service. Returns the invoice. */
 export async function setPriceAndInvoice(target: PriceTarget, rawAmount: unknown): Promise<{ invoice_id: string; invoice_number: string | null; amount: number }> {
   const amount = parseAmount(rawAmount);
+  // A delivery of another company is the same 404 as a missing one, before anything is read or written
+  await assertVisible(target.kind === 'shipment' ? 'shipments' : 'cargo_manifest', target.id, OWNED.carrierAndVendor, target.kind === 'shipment' ? 'Shipment not found' : 'Load not found');
   // Refuse before the price is saved: a price saved with no invoice behind it would sit unseen
   await assertCanIssueInvoices();
   const column = target.kind === 'shipment' ? 'shipment_id' : 'manifest_id';

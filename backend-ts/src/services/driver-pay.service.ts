@@ -21,7 +21,11 @@ import { selectIn } from './finance.service';
 import { getPayoutAccount } from './people-bank.service';
 import { cleanPathKm, haversineKm, roundKm } from './odometer';
 import { carrierStamp, ownersOf } from '../core/org-context';
-import { OWNED, scopeQuery } from '../core/org-scope';
+import { OWNED, isScoped, scopeQuery } from '../core/org-scope';
+import { isUuid } from '../core/validate';
+
+/** A malformed id can match no row of a scoped table (the database would reject it, not return nothing). */
+const notAnId = (id: unknown): boolean => isScoped(OWNED.carrier) && !isUuid(id);
 
 export const PAY_VEHICLE_TYPES = ['truck', 'van', 'bike', 'car'] as const;
 export const PAY_STATUSES = ['earned', 'approved', 'paid', 'void'] as const;
@@ -151,7 +155,8 @@ export async function createRate(actor: AuditActor, body: Record<string, any>) {
 }
 
 export async function updateRate(actor: AuditActor, id: string, body: Record<string, any>) {
-  const { data: rate, error } = await supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').eq('id', id).maybeSingle();
+  if (notAnId(id)) throw new HttpError(404, 'Rate not found');
+  const { data: rate, error } = await scopeQuery(supabase.from('driver_pay_rates').select('id, vehicle_type, per_trip_amount, per_km_amount, effective_from, active').eq('id', id), OWNED.carrier).maybeSingle();
   if (error) throw new Error(`Failed to read the rate: ${error.message}`);
   if (!rate || !rate.active) throw new HttpError(404, 'Rate not found');
   const patch: Record<string, unknown> = {};
@@ -159,7 +164,7 @@ export async function updateRate(actor: AuditActor, id: string, body: Record<str
   if (body.per_km_amount !== undefined) patch.per_km_amount = validAmount(body.per_km_amount, 'per_km_amount');
   if (body.effective_from !== undefined) {
     patch.effective_from = validDate(body.effective_from, 'effective_from');
-    const { data: clash } = await supabase.from('driver_pay_rates').select('id').eq('vehicle_type', rate.vehicle_type).eq('effective_from', patch.effective_from as string).eq('active', true).neq('id', id);
+    const { data: clash } = await scopeQuery(supabase.from('driver_pay_rates').select('id').eq('vehicle_type', rate.vehicle_type).eq('effective_from', patch.effective_from as string).eq('active', true).neq('id', id), OWNED.carrier);
     if ((clash ?? []).length > 0) throw new HttpError(409, 'Another rate for this vehicle type already starts that day');
   }
   if (Object.keys(patch).length === 0) throw new HttpError(400, 'Nothing to change');
@@ -172,7 +177,8 @@ export async function updateRate(actor: AuditActor, id: string, body: Record<str
 
 /** Withdraw a rate. It stays as history; trips already priced keep their amounts. */
 export async function withdrawRate(actor: AuditActor, id: string) {
-  const { data: rate } = await supabase.from('driver_pay_rates').select('id, vehicle_type, effective_from, active').eq('id', id).maybeSingle();
+  if (notAnId(id)) throw new HttpError(404, 'Rate not found');
+  const { data: rate } = await scopeQuery(supabase.from('driver_pay_rates').select('id, vehicle_type, effective_from, active').eq('id', id), OWNED.carrier).maybeSingle();
   if (!rate || !rate.active) throw new HttpError(404, 'Rate not found');
   const { error } = await supabase.from('driver_pay_rates').update({ active: false }).eq('id', id);
   if (error) throw new Error(`Failed to withdraw the rate: ${error.message}`);
@@ -182,8 +188,9 @@ export async function withdrawRate(actor: AuditActor, id: string) {
 
 /** A rate was just set: trips that finished with none (amount 0, flagged) are priced now, if a rate now covers their date. */
 async function repriceMissingRateEntries(vehicleType: string): Promise<number> {
-  const { data, error } = await supabase.from('driver_pay_entries')
-    .select('id, trip_date, km, adjustments, status').eq('vehicle_type', vehicleType).eq('rate_missing', true).eq('status', 'earned');
+  // Only this company's trips: another company's rate card does not price them
+  const { data, error } = await scopeQuery(supabase.from('driver_pay_entries')
+    .select('id, trip_date, km, adjustments, status').eq('vehicle_type', vehicleType).eq('rate_missing', true).eq('status', 'earned'), OWNED.carrier);
   if (error) throw new Error(`Failed to read entries: ${error.message}`);
   const rates = await loadRates(vehicleType);
   let count = 0;
@@ -529,8 +536,8 @@ export async function backfillTripPay(actor: AuditActor, fromDate: string) {
   validDate(fromDate, 'from');
   const since = indianDayStart(fromDate).toISOString();
   const [routes, loads] = await Promise.all([
-    supabase.from('routes').select('id').eq('status', 'completed').gte('completed_at', since),
-    supabase.from('cargo_manifest').select('id').in('status', ['delivered', 'completed']).gte('updated_at', since),
+    scopeQuery(supabase.from('routes').select('id').eq('status', 'completed').gte('completed_at', since), OWNED.carrier),
+    scopeQuery(supabase.from('cargo_manifest').select('id').in('status', ['delivered', 'completed']).gte('updated_at', since), OWNED.carrier),
   ]);
   if (routes.error) throw new Error(`Failed to read routes: ${routes.error.message}`);
   if (loads.error) throw new Error(`Failed to read loads: ${loads.error.message}`);
@@ -605,7 +612,9 @@ const toEntry = (e: any) => ({
 });
 
 async function loadEntry(id: string) {
-  const { data, error } = await supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq('id', id).maybeSingle();
+  if (notAnId(id)) throw new HttpError(404, 'Pay entry not found');
+  // Another company's entry is the same 404 as a missing one
+  const { data, error } = await scopeQuery(supabase.from('driver_pay_entries').select(ENTRY_COLUMNS).eq('id', id), OWNED.carrier).maybeSingle();
   if (error) throw new Error(`Failed to read the entry: ${error.message}`);
   if (!data) throw new HttpError(404, 'Pay entry not found');
   return data;
@@ -614,7 +623,7 @@ async function loadEntry(id: string) {
 /** Approve earned entries. One with no rate yet (amount not real) is skipped with the reason, the rest go through. */
 export async function approveEntries(actor: AuditActor, ids: unknown) {
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || ids.some(i => typeof i !== 'string')) throw new HttpError(400, 'ids must be a list of 1 to 500 entry ids');
-  const entries = await selectIn<any>('driver_pay_entries', 'id', ids as string[], ENTRY_COLUMNS);
+  const entries = await selectIn<any>('driver_pay_entries', 'id', (ids as string[]).filter(i => !notAnId(i)), ENTRY_COLUMNS, q => scopeQuery(q, OWNED.carrier));
   const byId = new Map(entries.map(e => [e.id, e]));
   const approved: string[] = [];
   const skipped: Array<{ id: string; reason: string }> = [];
@@ -686,7 +695,7 @@ export async function createPayout(actor: AuditActor, body: Record<string, any>)
   const paidAt = body.paid_at ? new Date(String(body.paid_at)) : new Date();
   if (Number.isNaN(paidAt.getTime()) || paidAt.getTime() > Date.now() + 86_400_000) throw new HttpError(400, 'paid_at must be a valid date that is not in the future');
 
-  const entries = await selectIn<any>('driver_pay_entries', 'id', ids as string[], ENTRY_COLUMNS);
+  const entries = await selectIn<any>('driver_pay_entries', 'id', (ids as string[]).filter(i => !notAnId(i)), ENTRY_COLUMNS, q => scopeQuery(q, OWNED.carrier));
   if (entries.length !== new Set(ids as string[]).size) throw new HttpError(404, 'Some of these entries no longer exist');
   const bad = entries.find(e => e.driver_id !== driverId || e.status !== 'approved');
   if (bad) throw new HttpError(409, bad.driver_id !== driverId ? 'Every entry must belong to this driver' : `Only approved entries can be paid (one is ${bad.status})`);

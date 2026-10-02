@@ -17,6 +17,7 @@ import { supabase } from '../core/supabase';
 import { memoize } from '../core/memo';
 import { manifestParcelCode } from '../core/parcelCode';
 import { indianDateKey } from '../core/istDate';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const EXPENSE_CATEGORIES = ['fuel', 'maintenance', 'toll', 'driver', 'other'] as const;
 export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
@@ -148,14 +149,14 @@ export async function getFinanceSummary(range: FinanceRange) {
 
   const [settings, invoiceRes, expenseRes, routeRes, tplRes] = await Promise.all([
     getFinanceSettings({ cached: true }),
-    supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
-      .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO),
-    supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
-      .gte('expense_date', fromKey).lte('expense_date', toKey),
-    supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status')
-      .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO),
-    supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
-      .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO),
+    scopeQuery(supabase.from('invoices').select('id, shipment_id, manifest_id, vendor_id, amount, gst_amount, total, status, issued_at')
+      .neq('status', 'void').gte('issued_at', startISO).lt('issued_at', endISO), OWNED.invoice),
+    scopeQuery(supabase.from('expenses').select('id, vehicle_id, route_id, category, amount, expense_date')
+      .gte('expense_date', fromKey).lte('expense_date', toKey), OWNED.carrier),
+    scopeQuery(supabase.from('routes').select('id, vehicle_id, total_distance_km, estimated_fuel_liters, completed_at, status')
+      .eq('status', 'completed').gte('completed_at', startISO).lt('completed_at', endISO), OWNED.carrier),
+    scopeQuery(supabase.from('tpl_orders').select('id, agreed_amount, delivered_at')
+      .eq('status', 'delivered').gte('delivered_at', startISO).lt('delivered_at', endISO), OWNED.carrier),
   ]);
   if (tplRes.error) throw new Error(`Failed to read 3PL orders: ${tplRes.error.message}`);
   if (invoiceRes.error) throw new Error(`Failed to read invoices: ${invoiceRes.error.message}`);
@@ -374,8 +375,8 @@ export async function getUnpricedDeliveries(range: FinanceRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const [shipRes, manRes] = await Promise.all([
-    supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share, status, pieces_total, pieces_delivered, pieces_short, pieces_returned').in('status', ['delivered', 'partially_delivered']).gte('updated_at', startISO).lt('updated_at', endISO),
-    supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO),
+    scopeQuery(supabase.from('shipments').select('id, tracking_id, origin_name, bid_id, freight_charge, updated_at, is_master, parent_shipment_id, freight_share, status, pieces_total, pieces_delivered, pieces_short, pieces_returned').in('status', ['delivered', 'partially_delivered']).gte('updated_at', startISO).lt('updated_at', endISO), OWNED.carrierAndVendor),
+    scopeQuery(supabase.from('cargo_manifest').select('id, vendor_request_id, pickup_location, drop_location, updated_at, is_master, parent_manifest_id, freight_share, lot_label').eq('status', 'delivered').gte('updated_at', startISO).lt('updated_at', endISO), OWNED.carrierAndVendor),
   ]);
   if (shipRes.error) throw new Error(`Failed to read shipments: ${shipRes.error.message}`);
   if (manRes.error) throw new Error(`Failed to read manifests: ${manRes.error.message}`);

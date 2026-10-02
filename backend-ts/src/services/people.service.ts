@@ -27,7 +27,7 @@ import { buildEarnings } from './driver-pay.service';
 import { driverWindows, getDriverStats } from './driver-assignments.service';
 import {
   Actor, DRIVER_EMAIL_DOMAIN, PERSON_COLUMNS, PERSON_ROLES, PERSON_STATUSES, PersonRole, PersonRow, PersonStatus,
-  SIGN_IN_STATUSES, STAFF_PERSON_ROLES, assertCanModify, assertFresh, canManage, isStaffRole, isUuid, loadPerson,
+  SIGN_IN_STATUSES, STAFF_PERSON_ROLES, assertCanModify, membersAmong, assertFresh, canManage, isStaffRole, isUuid, loadPerson,
   logActivity, nowIso, parseEmail, parseRequiredText, removeStoredFiles,
 } from './people-common';
 import { DocRow, liveDocumentsByUser, missingGroups, summarizeDocuments, todayKey } from './people-docs.service';
@@ -37,6 +37,7 @@ import {
 import { findDocumentDuplicate, listDocuments } from './people-documents.service';
 import { getPayoutAccount, listBankAccounts, listContacts, listNotes } from './people-bank.service';
 import { memberOrgId } from '../core/org-scope';
+import { currentOrgContext, invalidateOrgContext } from '../core/org-context';
 
 /** Placeholder sign-in email driver OTP login uses for a phone. Never shown as the person's email. */
 export const driverEmailFor = (phone: string): string => `driver_${phone.replace(/\+/g, '')}@${DRIVER_EMAIL_DOMAIN}`;
@@ -178,7 +179,7 @@ async function authInfo(person: PersonRow, profile: Record<string, any> | null) 
  * their documents and contacts but not staff notes, activity, history or bank data.
  */
 export async function getPersonDetail(actor: Actor, id: string) {
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   const self = actor.user_id === subject.id;
   const staff = isStaffRole(actor.role);
   const profileRow = await getProfile(id);
@@ -300,7 +301,9 @@ export async function findDuplicates(query: { phone?: unknown; doc_type?: unknow
   if (query.doc_type !== undefined || query.doc_number !== undefined) {
     matches.push(...(await findDocumentDuplicate(query.doc_type, query.doc_number, except)));
   }
-  return { matches };
+  // Only people of the active company are shown (the account itself stays one per phone, whoever holds it)
+  const mine = await membersAmong(matches.map(m => m.id as string));
+  return { matches: mine ? matches.filter(m => mine.has(m.id as string)) : matches };
 }
 
 // ── Sign-in accounts ───────────────────────────────────────
@@ -371,6 +374,28 @@ export async function checkNewPerson(actor: Actor, body: Record<string, any>) {
   return { role, fullName, phone, email, profilePatch, clearance };
 }
 
+const ORG_ROLE_FOR: Record<string, string> = { superadmin: 'owner', admin: 'admin', manager: 'ops', driver: 'driver' };
+
+/**
+ * A new person joins the company the request acts for, with the role that matches theirs, and only that one.
+ * The database adds everyone to the default company when the user row is made; when the active company is a
+ * different one, that membership is taken back. Nothing happens before organisations are set up, or when the
+ * request acts as the platform (the database default stands).
+ */
+async function joinActiveCompany(actorId: string, userId: string, role: string): Promise<void> {
+  const org = currentOrgContext()?.org;
+  if (!org || org.kind !== 'logistic_company') return;
+  const { error } = await supabase.from('org_members')
+    .upsert({ org_id: org.id, user_id: userId, role: ORG_ROLE_FOR[role] ?? 'member', status: 'active', invited_by: actorId }, { onConflict: 'org_id,user_id' });
+  if (error) throw new Error(`Failed to add the person to the company: ${error.message}`);
+  const { data: setting } = await supabase.from('system_settings').select('value').eq('key', 'default_company_org_id').maybeSingle();
+  const fallback = (setting?.value as { value?: unknown } | null)?.value;
+  if (typeof fallback === 'string' && fallback !== org.id) {
+    await supabase.from('org_members').update({ status: 'removed' }).eq('org_id', fallback).eq('user_id', userId);
+  }
+  invalidateOrgContext(userId);
+}
+
 export async function createPerson(actor: Actor, body: Record<string, any>) {
   const { role, fullName, phone, email, profilePatch, clearance } = await checkNewPerson(actor, body);
   if (clearance.releaseFrom) await releasePhone(clearance.releaseFrom.holder, clearance.releaseFrom.leftOn, actor.user_id);
@@ -414,6 +439,7 @@ export async function createPerson(actor: Actor, body: Record<string, any>) {
   }
 
   try {
+    await joinActiveCompany(actor.user_id, id, role);
     await saveProfile(id, actor.user_id, {
       ...profilePatch,
       ...(role !== 'driver' ? { employer_type: 'company', employer_partner_id: null } : {}),
@@ -442,7 +468,7 @@ async function assertNotLastSuperadmin(subject: PersonRow): Promise<void> {
 }
 
 export async function updatePerson(actor: Actor, id: string, body: Record<string, any>) {
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   assertCanModify(actor, subject);
   const profileRow = await getProfile(id);
   if (profileRow?.anonymised_at) throw new HttpError(409, 'This person has been anonymised');
@@ -621,7 +647,7 @@ export async function releaseUnansweredPrompts(actor: Actor, subject: PersonRow,
 }
 
 export async function changeStatus(actor: Actor, id: string, body: Record<string, any>) {
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   if (id === actor.user_id) throw new HttpError(403, "You can't change your own status");
   assertCanModify(actor, subject);
   const profileRow = await getProfile(id);
@@ -704,7 +730,7 @@ export const INVITE_COOLDOWN_MS = 10 * 60 * 1000;
  * their missing sign-in account (they sign in with an OTP, so nothing is sent).
  */
 export async function sendInvite(actor: Actor, id: string) {
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   assertCanModify(actor, subject);
   const profileRow = await getProfile(id);
   if (profileRow?.anonymised_at) throw new HttpError(409, 'This person has been anonymised');
@@ -752,7 +778,7 @@ const CONSENT_METHODS = ['signed_form', 'in_app', 'verbal_recorded'];
 
 /** Records the person's consent to keep their documents (by staff, or by the person in the app). */
 export async function recordConsent(actor: Actor, id: string, body: Record<string, any>) {
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   const method = typeof body.method === 'string' ? body.method.trim().toLowerCase().replace(/[\s-]/g, '_') : '';
   if (!CONSENT_METHODS.includes(method)) throw new HttpError(400, `method must be one of ${CONSENT_METHODS.join(', ')}`);
   if (actor.user_id === subject.id && method !== 'in_app') throw new HttpError(400, 'Consent you give yourself is recorded as in_app');
@@ -771,7 +797,7 @@ export async function recordConsent(actor: Actor, id: string, body: Record<strin
  */
 export async function anonymisePerson(actor: Actor, id: string) {
   if (actor.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can anonymise a person');
-  const subject = await loadPerson(id);
+  const subject = await loadPerson(id, actor.user_id);
   if (id === actor.user_id) throw new HttpError(403, "You can't anonymise yourself");
   if (subject.status !== 'inactive') throw new HttpError(409, 'Only someone who has left (inactive) can be anonymised');
   const profileRow = await getProfile(id);

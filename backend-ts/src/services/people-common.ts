@@ -5,6 +5,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { settings } from '../core/config';
+import { memberOrgId } from '../core/org-scope';
 
 export interface Actor { user_id: string; role: string }
 
@@ -38,12 +39,42 @@ export const PERSON_COLUMNS = 'id, email, full_name, role, phone, is_active, sta
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
 
-/** Loads a driver or staff member; anything else (vendors, customers, unknown ids) is a 404. */
-export async function loadPerson(id: string): Promise<PersonRow> {
+/**
+ * Whether the person is an active member of the organisation the request acts for. True when nothing is
+ * scoped (before organisations are set up, outside a request, or the platform view).
+ */
+export async function isInActiveOrg(userId: string): Promise<boolean> {
+  const orgId = memberOrgId();
+  if (!orgId) return true;
+  const { data, error } = await supabase.from('org_members').select('user_id').eq('org_id', orgId).eq('user_id', userId).eq('status', 'active').maybeSingle();
+  if (error) throw new Error(`Failed to check membership: ${error.message}`);
+  return !!data;
+}
+
+/** Of these people, the ones in the active organisation; null when nothing is scoped (everyone qualifies). */
+export async function membersAmong(userIds: string[]): Promise<Set<string> | null> {
+  const orgId = memberOrgId();
+  if (!orgId) return null;
+  const out = new Set<string>();
+  const ids = [...new Set(userIds)];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase.from('org_members').select('user_id').eq('org_id', orgId).eq('status', 'active').in('user_id', ids.slice(i, i + 100));
+    if (error) throw new Error(`Failed to check membership: ${error.message}`);
+    for (const r of data ?? []) out.add(r.user_id as string);
+  }
+  return out;
+}
+
+/**
+ * Loads a driver or staff member; anything else (vendors, customers, unknown ids) is a 404, and so is a person
+ * who belongs to another company. `selfId` is the caller: everyone may open their own record.
+ */
+export async function loadPerson(id: string, selfId?: string): Promise<PersonRow> {
   if (!isUuid(id)) throw new HttpError(404, 'Person not found');
   const { data, error } = await supabase.from('users').select(PERSON_COLUMNS).eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read person: ${error.message}`);
   if (!data || !(PERSON_ROLES as readonly string[]).includes(data.role)) throw new HttpError(404, 'Person not found');
+  if (id !== selfId && !(await isInActiveOrg(id))) throw new HttpError(404, 'Person not found');
   return data as PersonRow;
 }
 

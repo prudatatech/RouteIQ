@@ -20,7 +20,9 @@ import { idempotent } from '../core/idempotency';
 import { setPriceAndInvoice } from '../services/invoice-pricing.service';
 import { partyFromSnapshot, resolveBillTo } from '../services/invoice-recipient.service';
 import { customerDisplayName } from '../core/customer-name';
-import { OWNED, scopeQuery } from '../core/org-scope';
+import { OWNED, assertVisible, isScoped, scopeQuery } from '../core/org-scope';
+import type { OwnerColumns } from '../core/org-scope';
+import { isUuid } from '../core/validate';
 import { rateLimitByUser } from '../core/rate-limit';
 import { TPL_UPLOAD_CONTENT_TYPES } from '../services/tpl.service';
 import {
@@ -31,6 +33,9 @@ import { carrierStamp } from '../core/org-context';
 const router = Router();
 // Money is for admin and superadmin; managers run operations only
 router.use(requireAuth, requireRole('admin'));
+
+/** A malformed id can match no row of a scoped table (the database would reject it, not return nothing). */
+const badId = (id: unknown, cols: OwnerColumns) => isScoped(cols) && !isUuid(id);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = (v: unknown): v is string => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(v));
@@ -181,9 +186,11 @@ router.post('/invoices', async (req: Request, res: Response) => {
     if ((typeof shipmentId === 'string') === (typeof manifestId === 'string')) {
       throw new HttpError(400, 'Give either a shipment or a load');
     }
+    const target = typeof shipmentId === 'string' ? shipmentId : manifestId;
+    if (typeof target !== 'string' || badId(target, OWNED.carrierAndVendor)) throw new HttpError(404, 'Delivery not found');
     const { data: delivered } = typeof shipmentId === 'string'
-      ? await supabase.from('shipments').select('status').eq('id', shipmentId).maybeSingle()
-      : await supabase.from('cargo_manifest').select('status').eq('id', manifestId).maybeSingle();
+      ? await scopeQuery(supabase.from('shipments').select('status').eq('id', shipmentId), OWNED.carrierAndVendor).maybeSingle()
+      : await scopeQuery(supabase.from('cargo_manifest').select('status').eq('id', manifestId), OWNED.carrierAndVendor).maybeSingle();
     if (!delivered) throw new HttpError(404, 'Delivery not found');
     if (delivered.status !== 'delivered') throw new HttpError(409, 'Only delivered shipments can be invoiced');
 
@@ -199,8 +206,16 @@ router.post('/invoices', async (req: Request, res: Response) => {
   }
 });
 
+/** 404 unless the invoice is the active company's (or the caller acts as the platform). */
+async function assertInvoiceVisible(id: string): Promise<void> {
+  if (badId(id, OWNED.invoice)) throw new HttpError(404, 'Invoice not found');
+  await assertVisible('invoices', id, OWNED.invoice, 'Invoice not found');
+}
+
 async function moveInvoice(req: Request, res: Response, to: 'paid' | 'void') {
   try {
+    // Another company's invoice is the same 404 as a missing one
+    await assertInvoiceVisible(String(req.params.id));
     if (to === 'paid') {
       const { data: inv } = await supabase.from('invoices').select('issued_at').eq('id', req.params.id).maybeSingle();
       res.json(await markInvoicePaid(String(req.params.id), parsePayment(req.body, inv?.issued_at ?? null), req.user!));
@@ -263,6 +278,8 @@ router.post('/unpriced/price', async (req: Request, res: Response) => {
   try {
     const { kind, id, amount } = req.body ?? {};
     if ((kind !== 'shipment' && kind !== 'manifest') || typeof id !== 'string' || !id) throw new HttpError(400, 'Choose the shipment or load to price');
+    if (badId(id, OWNED.carrierAndVendor)) throw new HttpError(404, kind === 'shipment' ? 'Shipment not found' : 'Load not found');
+    await assertVisible(kind === 'shipment' ? 'shipments' : 'cargo_manifest', id, OWNED.carrierAndVendor, kind === 'shipment' ? 'Shipment not found' : 'Load not found');
     const result = await setPriceAndInvoice({ kind, id }, amount);
     await auditService.record('staff-console', req.user!, 'delivery_priced', { kind, id, amount: result.amount, invoice_id: result.invoice_id, invoice_number: result.invoice_number });
     res.status(201).json(result);
@@ -343,11 +360,17 @@ async function parseExpense(body: any, partial: boolean): Promise<Partial<Expens
     const id = body[key];
     if (id === null || id === '') { out[key] = null; continue; }
     if (typeof id !== 'string') throw new HttpError(400, `${label} is not valid`);
-    const { data } = await supabase.from(table).select('id').eq('id', id).maybeSingle();
+    const { data } = !badId(id, OWNED.carrier) ? await scopeQuery(supabase.from(table).select('id').eq('id', id), OWNED.carrier).maybeSingle() : { data: null };
     if (!data) throw new HttpError(400, `${label} not found`);
     out[key] = id;
   }
   return out;
+}
+
+/** 404 unless the expense is the active company's. */
+async function assertExpenseVisible(id: string): Promise<void> {
+  if (badId(id, OWNED.carrier)) throw new HttpError(404, 'Expense not found');
+  await assertVisible('expenses', id, OWNED.carrier, 'Expense not found');
 }
 
 router.get('/expenses', async (req: Request, res: Response) => {
@@ -355,11 +378,11 @@ router.get('/expenses', async (req: Request, res: Response) => {
     const { start, end } = rangeFrom(req);
     const fromKey = indianDateKey(start);
     const toKey = indianDateKey(new Date(end.getTime() - 1));
-    let query = supabase
+    let query = scopeQuery(supabase
       .from('expenses')
       .select('id, vehicle_id, route_id, category, amount, expense_date, litres, note, receipt_path, created_at')
       .gte('expense_date', fromKey)
-      .lte('expense_date', toKey)
+      .lte('expense_date', toKey), OWNED.carrier)
       .order('expense_date', { ascending: false });
     if (typeof req.query.category === 'string' && (EXPENSE_CATEGORIES as readonly string[]).includes(req.query.category)) {
       query = query.eq('category', req.query.category);
@@ -412,12 +435,13 @@ router.post('/expenses/receipt-upload', rateLimitByUser('expense-receipt-upload'
 
 router.put('/expenses/:id', async (req: Request, res: Response) => {
   try {
+    await assertExpenseVisible(String(req.params.id));
     const input = await parseExpense(req.body, true);
     if (!Object.keys(input).length) throw new HttpError(400, 'Nothing to update');
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('expenses')
       .update({ ...input, updated_at: new Date().toISOString() })
-      .eq('id', req.params.id)
+      .eq('id', req.params.id), OWNED.carrier)
       .select('*')
       .maybeSingle();
     if (error) throw new Error(`Failed to update expense: ${error.message}`);
@@ -430,7 +454,8 @@ router.put('/expenses/:id', async (req: Request, res: Response) => {
 
 router.delete('/expenses/:id', async (req: Request, res: Response) => {
   try {
-    const { data, error } = await supabase.from('expenses').delete().eq('id', req.params.id).select('id, receipt_path').maybeSingle();
+    await assertExpenseVisible(String(req.params.id));
+    const { data, error } = await scopeQuery(supabase.from('expenses').delete().eq('id', req.params.id), OWNED.carrier).select('id, receipt_path').maybeSingle();
     if (error) throw new Error(`Failed to delete expense: ${error.message}`);
     if (!data) throw new HttpError(404, 'Expense not found');
     await auditService.record('staff-console', req.user!, 'expense_deleted', { expense_id: data.id });
@@ -446,7 +471,8 @@ router.delete('/expenses/:id', async (req: Request, res: Response) => {
 
 router.get('/expenses/:id/receipt-url', async (req: Request, res: Response) => {
   try {
-    const { data } = await supabase.from('expenses').select('receipt_path').eq('id', req.params.id).maybeSingle();
+    await assertExpenseVisible(String(req.params.id));
+    const { data } = await scopeQuery(supabase.from('expenses').select('receipt_path').eq('id', req.params.id), OWNED.carrier).maybeSingle();
     if (!data?.receipt_path) throw new HttpError(404, 'This expense has no receipt');
     const { data: signed, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUrl(data.receipt_path, 600);
     if (error || !signed) throw new Error(`Failed to create receipt link: ${error?.message}`);

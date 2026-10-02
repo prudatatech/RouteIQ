@@ -11,6 +11,7 @@ import { indianDateKey, indianDayStart } from '../core/istDate';
 import { auditService } from './audit.service';
 import { announceInvoice } from './invoice.service';
 import type { TokenData } from '../core/auth';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const PAYMENT_METHODS = ['bank', 'upi', 'cash', 'cheque'] as const;
 export type PaymentMethod = typeof PAYMENT_METHODS[number];
@@ -40,16 +41,17 @@ export function parsePayment(body: any, issuedAt: string | null): PaymentFields 
  */
 export async function markInvoicePaid(invoiceId: string, payment: PaymentFields, user: TokenData, opts: { announce?: boolean; via?: string } = {}) {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  // Another company's invoice is the same 404 as a missing one
+  const { data, error } = await scopeQuery(supabase
     .from('invoices')
     .update({ status: 'paid', paid_at: payment.paidAt, payment_method: payment.method, payment_reference: payment.reference, updated_at: now })
     .eq('id', invoiceId)
-    .eq('status', 'issued')
+    .eq('status', 'issued'), OWNED.invoice)
     .select('*')
     .maybeSingle();
   if (error) throw new Error(`Failed to update invoice: ${error.message}`);
   if (!data) {
-    const { data: existing } = await supabase.from('invoices').select('status').eq('id', invoiceId).maybeSingle();
+    const { data: existing } = await scopeQuery(supabase.from('invoices').select('status').eq('id', invoiceId), OWNED.invoice).maybeSingle();
     if (!existing) throw new HttpError(404, 'Invoice not found');
     throw new HttpError(409, `Invoice is already ${existing.status}`);
   }

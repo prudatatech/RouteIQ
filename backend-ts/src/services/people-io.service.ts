@@ -5,7 +5,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { selectIn } from './finance.service';
-import { Actor, PERSON_ROLES } from './people-common';
+import { Actor, PERSON_ROLES, membersAmong } from './people-common';
 import { DOC_LABELS, DocType, addDays, daysBetween, effectiveStatus, todayKey } from './people-docs.service';
 import { checkNewPerson, createPerson, listPeopleAll } from './people.service';
 
@@ -199,7 +199,8 @@ export async function expiringDocumentsCsv(days: number): Promise<string> {
   const { data, error } = await supabase.from('user_documents')
     .select('id, user_id, doc_type, number_last4, expires_on, status, archived_at').is('archived_at', null).lte('expires_on', horizon);
   if (error) throw new Error(`Failed to read documents: ${error.message}`);
-  const docs = (data ?? []).filter(d => d.expires_on && d.expires_on <= horizon && !d.archived_at && d.status !== 'rejected');
+  const mine = await membersAmong((data ?? []).map(d => d.user_id as string));
+  const docs = (data ?? []).filter(d => d.expires_on && d.expires_on <= horizon && !d.archived_at && d.status !== 'rejected' && (!mine || mine.has(d.user_id)));
   const people = await selectIn<any>('users', 'id', docs.map(d => d.user_id), 'id, full_name, role, status, phone');
   const byId = new Map(people.map(p => [p.id, p]));
   const rows = docs
