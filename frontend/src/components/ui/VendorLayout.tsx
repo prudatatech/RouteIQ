@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
@@ -33,7 +34,7 @@ const links = [
 export default function VendorLayout() {
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
-  const role = useAuthStore(s => s.role)
+  const { role } = useEffectiveRole()
   const clearAuth = useAuthStore(s => s.clearAuth)
   const navigate = useNavigate()
   const location = useLocation()

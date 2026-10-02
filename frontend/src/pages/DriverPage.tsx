@@ -11,6 +11,7 @@ import { api, routesAPI, shipmentsAPI, telemetryAPI, usersAPI } from '@/services
 import { getRouteDistance, getRouteDuration, type RouteLike } from '@/utils/routeHelpers'
 import DriverMap from '@/components/map/DriverMap'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { Button } from '@/components/ui/Button'
 import { Card, DetailList } from '@/components/ui/Card'
 import { StatusPill } from '@/components/ui/StatusPill'
@@ -233,7 +234,7 @@ export default function DriverPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const userId = useAuthStore(s => s.userId)
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const clearAuth = useAuthStore(s => s.clearAuth)
 
   const signOut = async () => {

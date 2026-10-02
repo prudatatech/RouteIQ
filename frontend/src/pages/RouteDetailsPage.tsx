@@ -13,7 +13,7 @@ import { getRouteDistance, getRouteDuration, getRouteFuel, type RouteLike } from
 import { canCompleteRoute, canDispatchRoute, completeBlockedReason, useRouteStatusActions } from '@/hooks/useRouteStatusActions'
 import { formatDateTime, formatMinutes, formatKm, isNotFoundError, tripNumber } from '@/utils/display'
 import RouteConditions from '@/components/traffic/RouteConditions'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import MessagesPanel from '@/components/messages/MessagesPanel'
 import { manifestTrackingId } from '@/components/shipments/format'
 
@@ -71,7 +71,7 @@ export default function RouteDetailsPage() {
     refetchInterval: (query) => (query.state.data?.status === 'active' ? 20_000 : false),
   })
 
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
 
   const updateStatusMutation = useMutation({

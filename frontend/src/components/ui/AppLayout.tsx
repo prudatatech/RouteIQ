@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { ChevronsLeft, ChevronsRight, ExternalLink, LogOut, Menu, Search, X } from 'lucide-react'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useAuthStore } from '@/store/authStore'
 import { supabase, openChannel } from '@/services/supabase'
 import { opsAPI } from '@/services/api'
@@ -257,7 +258,7 @@ function SidebarFooter({ collapsed, onSignOut, onToggle }: { collapsed: boolean;
 
 export default function AppLayout() {
   const clearAuth = useAuthStore(s => s.clearAuth)
-  const role = useAuthStore(s => s.role)
+  const { role } = useEffectiveRole()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()

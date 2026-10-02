@@ -12,6 +12,7 @@ import { notificationPath } from '@/components/ui/notificationTargets'
 import LiveMap from '@/components/map/LiveMap'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useDraftStore } from '@/store/draftStore'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { buildQueues, splitQueues, type Queue, type QueueTone } from '@/components/today/queues'
@@ -136,7 +137,7 @@ export default function TodayPage() {
   const navigate = useNavigate()
   const openModal = useDraftStore(s => s.openModal)
   const userId = useAuthStore(s => s.userId)
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const [searchParams] = useSearchParams()
   const selectedVehicleId = searchParams.get('vehicle')
 

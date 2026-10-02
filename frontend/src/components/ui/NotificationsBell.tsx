@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bell, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { supabase, openChannel } from '@/services/supabase'
 import { messagesAPI, type UnreadThread } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -38,7 +39,7 @@ const threadPath = (t: UnreadThread) => (t.route_id ? `/routes/${t.route_id}` : 
  * shippers and 3PL partners get what happens to their loads, bids, KYC and offers. */
 export function NotificationsBell({ placement = 'left' }: { placement?: 'left' | 'right' } = {}) {
   const userId = useAuthStore(s => s.userId)
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   // Vendors and 3PL partners both sign in with the vendor role; drivers' messages are for staff only
   const audience: NotificationAudience = role === 'vendor' ? 'vendor' : 'staff'
   const navigate = useNavigate()

@@ -9,7 +9,7 @@ import {
   BulkActionBar, Button, DataTable, ExportCsvButton, IconButton, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, statusToLabel, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
 
@@ -34,7 +34,7 @@ const isPending = (p: TplPartner) => p.status === 'pending'
  * superadmin can approve or reject, so pending rows get inline approve/reject and a bulk approve for them alone.
  */
 export default function PartnersTab() {
-  const canDecide = useAuthStore(s => s.role) === 'superadmin'
+  const canDecide = useEffectiveRole().role === 'superadmin'
   const navigate = useNavigate()
   // Opened from a link (a notification, global search): ?open=<partner id> goes straight to the partner
   const [searchParams] = useSearchParams()

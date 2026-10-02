@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { marketplaceAPI, routesAPI } from '@/services/api'
 import { trafficAPI } from '@/services/pricing'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { PlaceSearch } from '@/components/ui'
 import { supabase, openChannel } from '@/services/supabase'
@@ -239,7 +239,7 @@ export default function LiveMap({
       : []), [openLoads, compact])
 
   // ── Live traffic (staff only: the tiles and incidents need a signed-in staff user) ──
-  const role = useAuthStore((s) => s.role)
+  const role = useEffectiveRole().role
   const isSuperadmin = role === 'superadmin'
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
   const tileToken = useTrafficTileToken(isStaff)
