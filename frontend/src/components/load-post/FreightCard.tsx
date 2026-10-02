@@ -23,7 +23,7 @@ export default function FreightCard({ assist, loading }: { assist: AssistResult 
           <Skeleton className="h-4 w-full max-w-sm" />
         </div>
       ) : (
-        <p className="text-sm text-muted" data-testid="freight-none">We will share the range once a logistic company reviews the route.</p>
+        <p className="text-sm text-muted" data-testid="freight-none">We will share the range once a logistic company reviews the trip.</p>
       )}
     </Card>
   )

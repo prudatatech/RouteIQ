@@ -6,7 +6,7 @@ import type { StepErrors } from './validate'
 import SiteCard from './SiteCard'
 import Segmented from './Segmented'
 
-/** Step 1, Route and dates: where the goods are collected and delivered, when, who to call, and how urgent it is. */
+/** Step 1, Pickup and delivery: where the goods are collected and delivered, when, who to call, and how urgent it is. */
 export default function AddressStep({ draft, onChange, errors, pickupNotes, deliveryNotes }: {
   draft: LoadDraft
   onChange: (patch: Partial<LoadDraft>) => void

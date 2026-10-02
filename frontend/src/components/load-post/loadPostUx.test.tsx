@@ -264,12 +264,12 @@ describe('moving between steps', () => {
     const active = document.activeElement as HTMLElement
     expect(active.getAttribute('aria-invalid')).toBe('true')
     expect(active.getAttribute('autocomplete')).toBe('postal-code')
-    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Pickup & delivery' })).toBeTruthy()
   })
 
   it('shows the compact step line and the sticky action bar', () => {
     render(wrap(<VendorShipmentRequestPage />))
-    expect(screen.getByText('Step 1 of 4 · Route & dates')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 4 · Pickup & delivery')).toBeTruthy()
     expect(screen.getByTestId('step-actions').className).toMatch(/sticky bottom-0/)
   })
 })

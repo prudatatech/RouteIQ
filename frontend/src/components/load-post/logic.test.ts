@@ -70,8 +70,8 @@ const route = (): Partial<ReturnType<typeof emptyDraft>> => ({
 })
 
 describe('the four steps', () => {
-  it('are Route and dates, Goods, Truck and price, Review, and the review is last', () => {
-    expect([...STEP_LABELS]).toEqual(['Route & dates', 'Goods', 'Truck & price', 'Review'])
+  it('are Pickup and delivery, Goods, Truck and price, Review, and the review is last', () => {
+    expect([...STEP_LABELS]).toEqual(['Pickup & delivery', 'Goods', 'Truck & price', 'Review'])
     expect(LAST_STEP).toBe(3)
   })
 

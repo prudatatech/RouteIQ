@@ -361,14 +361,14 @@ describe('the form draft', () => {
     expect(loadGuestDraft<{ client_request_id: string }>('load')?.client_request_id).toBe(saved?.client_request_id)
   })
 
-  it('opens on Route and dates and asks for the missing detail instead of moving on', () => {
+  it('opens on Pickup and delivery and asks for the missing detail instead of moving on', () => {
     render(wrap(<VendorShipmentRequestPage />))
-    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Pickup & delivery' })).toBeTruthy()
     expect(screen.queryByLabelText(/describe your goods/i)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
     expect(screen.getAllByText(/enter the city/i).length).toBe(2)
     expect(screen.getByText(/who receives the goods/i)).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Pickup & delivery' })).toBeTruthy()
   })
 
   it('moves an old Products draft (step 1) to the Goods step with the product kept', () => {
@@ -378,10 +378,10 @@ describe('the form draft', () => {
     expect((screen.getByLabelText(/describe your goods/i) as HTMLInputElement).value).toBe('rice')
   })
 
-  it('moves an old Pickup & Delivery draft to Route and dates, and an old Transport draft to Truck and price', () => {
+  it('moves an old Pickup & Delivery draft to Pickup and delivery, and an old Transport draft to Truck and price', () => {
     saveGuestDraft('load', { ...emptyDraft(), v: undefined, step: 2 })
     const first = render(wrap(<VendorShipmentRequestPage />))
-    expect(screen.getByRole('heading', { name: 'Route & dates' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Pickup & delivery' })).toBeTruthy()
     first.unmount()
     saveGuestDraft('load', { ...emptyDraft(), v: undefined, step: 3 })
     render(wrap(<VendorShipmentRequestPage />))
@@ -430,7 +430,7 @@ describe('the form draft', () => {
     expect(screen.getByText(/can book your load at any price in this range/i)).toBeTruthy()
   })
 
-  it('shows Route and dates without the address line, site details or delivery date, and with Priority (Medium by default)', () => {
+  it('shows Pickup and delivery without the address line, site details or delivery date, and with Priority (Medium by default)', () => {
     render(wrap(<VendorShipmentRequestPage />))
     expect(screen.queryByLabelText(/address line/i)).toBeNull()
     expect(screen.queryByText(/site details|loading dock|access restrictions|need loading help|need unloading help/i)).toBeNull()
@@ -457,7 +457,7 @@ describe('recommended freight card', () => {
     expect(screen.getByTestId('freight-skeleton')).toBeTruthy()
     first.unmount()
     render(<FreightCard assist={assist(null)} />)
-    expect(screen.getByText('We will share the range once a logistic company reviews the route.')).toBeTruthy()
+    expect(screen.getByText('We will share the range once a logistic company reviews the trip.')).toBeTruthy()
   })
 })
 

@@ -6,7 +6,7 @@ import type {
   LoadDraft, LoadItemPayload, LoadPayload, LoadPriority, ProductRow, Recommendation, SpecialHandling, TempChoice, TempMode, VehicleClass,
 } from '@/types/load'
 
-export const STEP_LABELS = ['Route & dates', 'Goods', 'Truck & price', 'Review'] as const
+export const STEP_LABELS = ['Pickup & delivery', 'Goods', 'Truck & price', 'Review'] as const
 /** The draft layout this build writes (2: four steps). Saved drafts without it are migrated in draft.ts. */
 export const DRAFT_VERSION = 2
 export const LAST_STEP = STEP_LABELS.length - 1

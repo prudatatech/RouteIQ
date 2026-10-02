@@ -96,7 +96,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
 
       <GstSummary tax={assist?.tax ?? null} hasValue={totals.declared_value > 0} loading={assistLoading} />
 
-      <Section title="Route and dates" onEdit={() => onEdit(0)}>
+      <Section title="Pickup and delivery" onEdit={() => onEdit(0)}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-0.5 text-sm">
             <p className="font-medium text-text">Pickup: {draft.pickup_city}</p>
@@ -126,7 +126,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
             Logistic companies can book your load at any price in this range.
           </p>
         ) : (
-          <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the route.</p>
+          <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the trip.</p>
         )}
       </Section>
 
