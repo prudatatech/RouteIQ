@@ -847,7 +847,9 @@ export const tplNetworkService = {
     const { data: order, error: oErr } = await supabase
       .from('tpl_orders')
       .insert({
-        ...carrierStamp(),
+        // The order belongs to the company that handed the work over (its offer), not to the partner who accepts it:
+        // the company's lists, statements and payments find it by this, and the partner portal groups by it
+        ...(offer.carrier_org_id ? { carrier_org_id: offer.carrier_org_id } : carrierStamp()),
         offer_id: offerId,
         partner_id: partner.id,
         source_type: sourceType,
