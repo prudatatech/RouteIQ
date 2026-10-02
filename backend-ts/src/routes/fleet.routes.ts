@@ -4,6 +4,7 @@
  * Service schedules and log, odometer correction, health scores, and the alarms list.
  * Alarms come from the telematics webhook and the rules in services/alerts.service.ts.
  */
+import { memberOrgId } from '../core/org-scope';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { supabase } from '../core/supabase';
@@ -321,8 +322,10 @@ router.get('/alert-settings', ...staff, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/alert-settings', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
+router.put('/alert-settings', requireAuth, requireRole('superadmin', 'admin'), async (req: Request, res: Response) => {
   try {
+    // A company's admins set its own thresholds; the platform default stays with the platform
+    if (req.user!.role !== 'superadmin' && !memberOrgId()) throw new HttpError(403, 'Only the platform can change the default alert settings');
     const patch: Record<string, number> = {};
     for (const field of THRESHOLD_FIELDS) {
       const raw = req.body?.[field];

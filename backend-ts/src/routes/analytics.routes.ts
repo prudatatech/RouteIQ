@@ -132,8 +132,9 @@ const AUDIT_LOG_MAX_LIMIT = 200;
 
 router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (req.user!.role !== 'superadmin') {
-      res.status(403).json({ detail: 'Only superadmins can view audit logs' });
+    // A company's admins read its own entries; only the platform reads everyone's
+    if (req.user!.role !== 'superadmin' && !(req.user!.role === 'admin' && memberOrgId())) {
+      res.status(403).json({ detail: 'Only admins can view audit logs' });
       return;
     }
 
