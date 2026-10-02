@@ -459,7 +459,7 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
 
   const reuseIds = input.stops.map(s => s.delivery_point_id).filter((id): id is string => !!id);
   if (reuseIds.length > 0) {
-    const { data: found, error } = await supabase.from('delivery_points').select('id, shipments(carrier_org_id)').in('id', reuseIds);
+    const { data: found, error } = await supabase.from('delivery_points').select('id, shipments!delivery_points_shipment_id_fkey(carrier_org_id)').in('id', reuseIds);
     if (error) throw new Error(error.message);
     // A stop that is part of another company's shipment is not this company's to plan
     const mineOnly = orgFilter(OWNED.carrier);

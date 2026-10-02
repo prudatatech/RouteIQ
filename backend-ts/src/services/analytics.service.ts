@@ -31,6 +31,9 @@ async function companyVehicleIds(): Promise<Set<string> | null> {
 
 export const FUEL_PRICE_PER_LITER = 92; // INR
 
+// vendor_shipment_requests statuses that count as backhaul revenue
+const BACKHAUL_EARNING_STATUSES = ['completed', 'assigned'];
+
 export class AnalyticsService {
   /**
    * When each delivery happened in `[startISO, endISO)`: shipments by the time their `delivered`
@@ -133,7 +136,7 @@ export class AnalyticsService {
       // Planned distance of the routes dispatched in range
       scopeQuery(supabase.from('routes').select('total_distance_km').in('status', ['active', 'completed']).gte('created_at', startISO).lt('created_at', endISO), OWNED.carrier),
       // Backhaul revenue: agreed cost of vendor loads assigned or completed in range
-      AnalyticsService.requestRows('cost', q => q.in('status', ['completed', 'assigned']).gte('created_at', startISO).lt('created_at', endISO)),
+      AnalyticsService.requestRows('cost', q => q.in('status', BACKHAUL_EARNING_STATUSES).gte('created_at', startISO).lt('created_at', endISO)),
     ]);
     const fleet = (vehicleRows || []).filter((v: any) => !isPlaceholderPlate(v.plate_number) && v.status !== 'archived' && v.status !== 'pending_approval');
     const totalVehicles = fleet.length;
