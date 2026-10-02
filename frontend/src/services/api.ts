@@ -601,7 +601,11 @@ function toServerProfile(b: BusinessProfile) {
   }
 }
 
+/** Name and city (and whether a pickup point is set) of the vendors a company may deal with; never PAN, bank or KYC details. */
+export interface VendorBasic { id: string; company_name: string | null; city: string | null; has_location: boolean }
+
 export const vendorAPI = {
+  basic: (ids: string[]): Promise<VendorBasic[]> => api.get('/vendor/basic', { params: { ids: ids.join(',') } }).then(r => r.data),
   profile: () => api.get('/vendor/profile').then(r => r.data),
   /** Create or update the company profile without submitting KYC (status stays as it is, "pending" for a new profile). */
   saveProfile: (data: { companyName: string; gstNumber: string; city: string; address: string; lat: number; lng: number }) =>

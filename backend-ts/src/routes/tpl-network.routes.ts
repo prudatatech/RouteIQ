@@ -173,7 +173,7 @@ router.post('/orders/:id/paid', ...moneyStaff, async (req, res) => {
 // GET /tpl-network/partners/stats  statistics for every partner, keyed by partner id
 router.get('/partners/stats', ...staff, async (req, res) => {
   try {
-    res.json(await tplNetworkService.statsForAll());
+    res.json(await tplNetworkService.statsForAll(true));
   } catch (error) {
     sendError(req, res, error, 'error');
   }
@@ -182,7 +182,7 @@ router.get('/partners/stats', ...staff, async (req, res) => {
 // GET /tpl-network/partners/:id/stats
 router.get('/partners/:id/stats', ...staff, async (req, res) => {
   try {
-    res.json(await tplNetworkService.statsForPartner(req.params.id));
+    res.json(await tplNetworkService.statsForPartner(req.params.id, true));
   } catch (error) {
     sendError(req, res, error, 'error');
   }

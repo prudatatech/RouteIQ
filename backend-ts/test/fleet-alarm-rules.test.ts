@@ -171,43 +171,46 @@ describe('sweep of active routes', () => {
   });
 });
 
+const AL1 = 'a1e00000-0000-4000-8000-000000000001';
+const AL2 = 'a1e00000-0000-4000-8000-000000000002';
+
 describe('alarms list, acknowledge and resolve', () => {
   const row = (over: Record<string, unknown>) => ({
-    id: 'a1', vehicle_id: VEHICLE, alert_type: 'overspeed', severity: 'high', description: 'Fast', is_resolved: false,
+    id: AL1, vehicle_id: VEHICLE, alert_type: 'overspeed', severity: 'high', description: 'Fast', is_resolved: false,
     status: 'open', is_test: false, occurrences: 1, created_at: new Date().toISOString(), vehicles: { plate_number: 'MH12AB1234' }, ...over,
   });
 
   beforeEach(() => setup());
 
   it('lists active alarms with plate numbers and rejects non-staff', async () => {
-    supabaseMock.rows('maintenance_alerts').push(row({}), row({ id: 'a2', is_resolved: true, status: 'resolved' }));
+    supabaseMock.rows('maintenance_alerts').push(row({}), row({ id: AL2, is_resolved: true, status: 'resolved' }));
     supabaseMock.rows('users').push({ id: 'drv', role: 'driver', is_active: true });
     const res = await request(app).get('/api/v1/fleet/alerts').set(bearer('admin-1'));
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0]).toMatchObject({ id: 'a1', plate_number: 'MH12AB1234', type: 'overspeed', status: 'open' });
+    expect(res.body[0]).toMatchObject({ id: AL1, plate_number: 'MH12AB1234', type: 'overspeed', status: 'open' });
     expect((await request(app).get('/api/v1/fleet/alerts').set(bearer('drv'))).status).toBe(403);
     const resolved = await request(app).get('/api/v1/fleet/alerts?status=resolved').set(bearer('admin-1'));
-    expect(resolved.body.map((a: { id: string }) => a.id)).toEqual(['a2']);
+    expect(resolved.body.map((a: { id: string }) => a.id)).toEqual([AL2]);
   });
 
   it('acknowledges, then resolves; a resolved alarm cannot be acknowledged', async () => {
     supabaseMock.rows('maintenance_alerts').push(row({}));
-    const ack = await request(app).post('/api/v1/fleet/alerts/a1/acknowledge').set(bearer('admin-1'));
+    const ack = await request(app).post(`/api/v1/fleet/alerts/${AL1}/acknowledge`).set(bearer('admin-1'));
     expect(ack.status).toBe(200);
     expect(supabaseMock.rows('maintenance_alerts')[0]).toMatchObject({ status: 'acknowledged', acknowledged_by: 'admin-1' });
 
-    const resolve = await request(app).post('/api/v1/fleet/alerts/a1/resolve').set(bearer('admin-1'));
+    const resolve = await request(app).post(`/api/v1/fleet/alerts/${AL1}/resolve`).set(bearer('admin-1'));
     expect(resolve.status).toBe(200);
     expect(supabaseMock.rows('maintenance_alerts')[0]).toMatchObject({ is_resolved: true, status: 'resolved', resolved_by: 'admin-1' });
 
-    expect((await request(app).post('/api/v1/fleet/alerts/a1/acknowledge').set(bearer('admin-1'))).status).toBe(409);
+    expect((await request(app).post(`/api/v1/fleet/alerts/${AL1}/acknowledge`).set(bearer('admin-1'))).status).toBe(409);
     expect((await request(app).post('/api/v1/fleet/alerts/nope/resolve').set(bearer('admin-1'))).status).toBe(404);
   });
 
   it('keeps the older cargo resolve endpoint working', async () => {
     supabaseMock.rows('maintenance_alerts').push(row({}));
-    const res = await request(app).post('/api/v1/cargo/resolve-alert/a1').set(bearer('admin-1'));
+    const res = await request(app).post(`/api/v1/cargo/resolve-alert/${AL1}`).set(bearer('admin-1'));
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('maintenance_alerts')[0]).toMatchObject({ is_resolved: true, status: 'resolved' });
   });

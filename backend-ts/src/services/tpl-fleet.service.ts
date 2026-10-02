@@ -139,7 +139,7 @@ export async function createVehicle(orgId: string, userId: string, body: unknown
   return vehicleView(data);
 }
 
-async function ownVehicle(orgId: string, vehicleId: string): Promise<VehicleRow> {
+export async function ownVehicle(orgId: string, vehicleId: string): Promise<VehicleRow> {
   const { data, error } = await supabase.from('vehicles').select('*').eq('id', vehicleId).eq('carrier_org_id', orgId).maybeSingle();
   if (error) throw new Error(`Failed to load the vehicle: ${error.message}`);
   if (!data) throw new HttpError(404, 'Vehicle not found');

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/services/supabase'
+import { vendorAPI } from '@/services/api'
 import { CONFIRMATION_LIMIT, WINDOW_LIMIT, type AwardedLoad, type Bid, type Board, type CapacityWindow, type DriverConfirmation, type Trip } from './model'
 
 export * from './model'
@@ -38,11 +39,8 @@ async function loadBoard(): Promise<Board> {
   const vendorIds = [...new Set(bidRows.map(b => b.vendor_id))]
   const vendors = new Map<string, NonNullable<Bid['vendor']>>()
   if (vendorIds.length > 0) {
-    const { data: profiles, error: pErr } = await supabase
-      .from('vendor_profiles').select('id, company_name, city, latitude, longitude').in('id', vendorIds)
-    if (pErr) throw pErr
-    for (const p of profiles ?? []) {
-      vendors.set(p.id, { company_name: p.company_name, city: p.city, has_location: p.latitude != null && p.longitude != null })
+    for (const p of await vendorAPI.basic(vendorIds)) {
+      vendors.set(p.id, { company_name: p.company_name, city: p.city, has_location: p.has_location })
     }
   }
 

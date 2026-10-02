@@ -18,12 +18,17 @@ describe('the staff menu', () => {
     }
   })
 
-  it('shows admin the return trips and 3PL partners (to view), and KYC, but not the audit log', () => {
+  it('shows a company admin the return trips and its own 3PL partners, but not KYC review (the platform decides that), nor the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
-    expect(links).toContain('/admin/kyc')
+    expect(links).not.toContain('/admin/kyc')
     expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
     expect(links).not.toContain('/admin/audit')
     expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
+  })
+
+  it('puts KYC review in the platform section', () => {
+    const platform = menuFor('superadmin', 'platform').find(s => s.label === 'Platform')!
+    expect(platform.children.map(c => c.to)).toEqual(['/platform/organisations', '/admin/kyc'])
   })
 
   it('shows nothing to anyone who is not staff', () => {
@@ -35,7 +40,7 @@ describe('the staff menu', () => {
     const links = new Set(navSections.flatMap(s => [s.to, ...s.children.map(c => c.to.split('?')[0])]))
     for (const page of [
       '/today', '/requests', '/bookings', '/vendor-requests', '/shipments', '/dispatch', '/routes', '/route-planner', '/optimize', '/live-map',
-      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/admin/kyc', '/return-trips', '/money',
+      '/cargo', '/emergency', '/fleet', '/vehicle-requests', '/admin/users', '/return-trips', '/money',
       '/analytics', '/insights', '/admin/settings', '/admin/audit',
     ]) expect(links).toContain(page)
   })
@@ -52,7 +57,7 @@ describe('finding the open section', () => {
     expect(at('/today')).toEqual(['Today', null])
     expect(at('/vendor-requests')).toEqual(['Requests', 'Vendor loads'])
     expect(at('/vehicle-requests')).toEqual(['Fleet', 'Vehicle requests'])
-    expect(at('/admin/kyc')).toEqual(['People', 'KYC review'])
+    expect(activeNav(menuFor('superadmin', 'platform'), '/admin/kyc', '').child?.label).toBe('KYC review')
   })
 
   it('keeps detail pages inside their section', () => {

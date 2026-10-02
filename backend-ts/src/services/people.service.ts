@@ -370,7 +370,7 @@ export async function checkNewPerson(actor: Actor, body: Record<string, any>) {
   if (phone) clearance = await assertPhoneAvailable(phone, null);
   if (email) {
     const { data: clash } = await supabase.from('users').select('id, full_name, role, status').eq('email', email).maybeSingle();
-    if (clash) throw duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow);
+    if (clash) throw await duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow, 'This email address is already registered to someone else');
   }
   return { role, fullName, phone, email, profilePatch, clearance };
 }
@@ -383,7 +383,7 @@ const ORG_ROLE_FOR: Record<string, string> = { superadmin: 'owner', admin: 'admi
  * different one, that membership is taken back. Nothing happens before organisations are set up, or when the
  * request acts as the platform (the database default stands).
  */
-async function joinActiveCompany(actorId: string, userId: string, role: string, partnerOrgId?: string): Promise<void> {
+export async function joinActiveCompany(actorId: string, userId: string, role: string, partnerOrgId?: string): Promise<void> {
   // A driver a 3PL partner invites joins the partner organisation, never a company
   const org = partnerOrgId ? { id: partnerOrgId } : currentOrgContext()?.org;
   if (!org || (!partnerOrgId && (org as { kind?: string }).kind !== 'logistic_company')) return;
@@ -536,7 +536,7 @@ export async function updatePerson(actor: Actor, id: string, body: Record<string
       newEmail = parseEmail(body.email);
       if (newEmail !== (subject.email ?? '').toLowerCase()) {
         const { data: clash } = await supabase.from('users').select('id, full_name, role, status').eq('email', newEmail).maybeSingle();
-        if (clash && clash.id !== id) throw duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow);
+        if (clash && clash.id !== id) throw await duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow, 'This email address is already registered to someone else');
         userPatch.email = newEmail;
         changed.push('email');
       } else newEmail = null;

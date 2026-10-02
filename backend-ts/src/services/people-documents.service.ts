@@ -182,7 +182,7 @@ async function assertNotDuplicate(type: DocType, hash: string, exceptUserId: str
   const other = (data ?? []).find(r => r.user_id !== exceptUserId);
   if (!other) return;
   const { data: person } = await supabase.from('users').select('id, full_name, role, status').eq('id', other.user_id).maybeSingle();
-  if (person) throw duplicateError(`This ${DOC_LABELS[type]} number is already on file for ${person.full_name ?? 'another person'}`, person as PersonRow);
+  if (person) throw await duplicateError(`This ${DOC_LABELS[type]} number is already on file for ${person.full_name ?? 'another person'}`, person as PersonRow, `This ${DOC_LABELS[type]} number is already on file for someone else`);
   throw new HttpError(409, `This ${DOC_LABELS[type]} number is already on file for another person`);
 }
 

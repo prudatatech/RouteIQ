@@ -128,6 +128,31 @@ export async function assertAffiliated(companyOrgId: string, tplOrgId: string): 
   return { status: data.status, rules: readRules(data.rules) };
 }
 
+/** The legacy tpl_partners ids of every partner with a live (not ended) affiliation to the company. */
+export async function partnerRowIdsOf(companyOrgId: string): Promise<Set<string>> {
+  const { data: links, error } = await supabase
+    .from('tpl_affiliations').select('tpl_id').eq('company_id', companyOrgId).neq('status', 'ended');
+  if (error) throw new Error(`Failed to load partners: ${error.message}`);
+  if (!links || links.length === 0) return new Set();
+  const { data: orgs, error: oErr } = await supabase
+    .from('organizations').select('profile').in('id', links.map(l => l.tpl_id)).eq('kind', 'tpl_partner');
+  if (oErr) throw new Error(`Failed to load partner organisations: ${oErr.message}`);
+  const out = new Set<string>();
+  for (const o of orgs ?? []) {
+    const legacy = (o.profile as { legacy_tpl_partner_id?: unknown } | null)?.legacy_tpl_partner_id;
+    if (typeof legacy === 'string') out.add(legacy);
+  }
+  return out;
+}
+
+/** What a company may read of its partner: not the bank account, bank code, PAN or the documents (those are the platform's to review). */
+export function withoutPrivateDetails<T extends Record<string, any>>(partner: T): T {
+  const copy: Record<string, any> = { ...partner };
+  for (const k of ['bank_account_no', 'bank_ifsc', 'bank_ifsc_details', 'bank_name', 'bank_branch', 'pan_number']) delete copy[k];
+  if ('tpl_documents' in copy) copy.tpl_documents = [];
+  return copy as T;
+}
+
 // ── Rules ────────────────────────────────────────────────────────────
 
 export interface FleetFlags {

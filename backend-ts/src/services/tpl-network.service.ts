@@ -23,9 +23,9 @@ import { carrierStamp, currentOrgContext, loadMemberships } from '../core/org-co
 import { isDispatchable } from '../core/vehicles';
 import { assertVehicleFits } from './loads/vehicle-fit';
 import { assertCapacity, insertManifest, putLoadOnVehicle } from './loads/create-manifest';
-import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
+import { OWNED, assertVisible, memberOrgId, scopeQuery } from '../core/org-scope';
 import { statementCoveringOrder } from './tpl-statement.service';
-import { activePartnersOf, fleetFlagsOf, ruleExclusion, type AffiliatedPartner } from './tpl-affiliation';
+import { activePartnersOf, assertAffiliated, fleetFlagsOf, partnerOrgOf, ruleExclusion, type AffiliatedPartner } from './tpl-affiliation';
 
 export type SourceType = 'request' | 'shipment';
 
@@ -657,9 +657,12 @@ export const tplNetworkService = {
       throw new HttpError(400, `The price must be more than 0 and at most ₹${MAX_AMOUNT.toLocaleString('en-IN')}`);
     }
     const { data: request, error } = await supabase
-      .from('vendor_shipment_requests').select('id, status').eq('id', requestId).maybeSingle();
+      .from('vendor_shipment_requests').select('id, status, carrier_org_id').eq('id', requestId).maybeSingle();
     if (error) dbError('Failed to load request', error);
     if (!request) throw new HttpError(404, 'Request not found');
+    // Another company's load is a 404
+    const mine = memberOrgId();
+    if (mine && request.carrier_org_id && request.carrier_org_id !== mine) throw new HttpError(404, 'Request not found');
     if (['rejected', 'cancelled'].includes(request.status)) {
       throw new HttpError(409, `This request is ${request.status}, so it has no price to set`);
     }
@@ -713,6 +716,7 @@ export const tplNetworkService = {
       .eq(col, id)
       .eq('status', 'offered');
     if (offerId) query = query.eq('id', offerId);
+    query = scopeQuery(query, OWNED.carrier);
     const { data, error } = await query.select();
     if (error) dbError('Failed to withdraw offers', error);
     const withdrawn = data ?? [];
@@ -734,7 +738,7 @@ export const tplNetworkService = {
   },
 
   async getOfferSource(offerId: string): Promise<{ sourceType: SourceType; id: string }> {
-    const { data, error } = await supabase.from('tpl_offers').select('id, source_type, request_id, shipment_id').eq('id', offerId).maybeSingle();
+    const { data, error } = await scopeQuery(supabase.from('tpl_offers').select('id, source_type, request_id, shipment_id').eq('id', offerId), OWNED.carrier).maybeSingle();
     if (error) dbError('Failed to load offer', error);
     if (!data) throw new HttpError(404, 'Offer not found');
     return { sourceType: data.source_type, id: (data.source_type === 'request' ? data.request_id : data.shipment_id) as string };
@@ -748,7 +752,8 @@ export const tplNetworkService = {
    * organisation, null before organisations are set up.
    */
   async partnerForUser(userId: string): Promise<PartnerSession> {
-    const memberships = (await loadMemberships(userId)).filter(m => m.org.kind === 'tpl_partner');
+    // A partner's drivers work in the driver app; the offers, orders and money are for its owner, admins and managers
+    const memberships = (await loadMemberships(userId)).filter(m => m.org.kind === 'tpl_partner' && m.role !== 'driver');
     const { data, error } = await supabase
       .from('tpl_partners').select('id, company_name, status, sla_commitment, email').eq('user_id', userId).maybeSingle();
     if (error) dbError('Failed to load partner', error);
@@ -847,7 +852,9 @@ export const tplNetworkService = {
     const { data: order, error: oErr } = await supabase
       .from('tpl_orders')
       .insert({
-        ...carrierStamp(),
+        // The order belongs to the company that handed the work over (its offer), not to the partner who accepts it:
+        // the company's lists, statements and payments find it by this, and the partner portal groups by it
+        ...(offer.carrier_org_id ? { carrier_org_id: offer.carrier_org_id } : carrierStamp()),
         offer_id: offerId,
         partner_id: partner.id,
         source_type: sourceType,
@@ -1086,6 +1093,7 @@ export const tplNetworkService = {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new HttpError(400, 'Rating must be a whole number from 1 to 5');
     const note = typeof noteInput === 'string' ? noteInput.trim() : '';
     if (note.length > 500) throw new HttpError(400, 'The note can be at most 500 characters');
+    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('tpl_orders')
@@ -1101,6 +1109,8 @@ export const tplNetworkService = {
   },
 
   async markPaid(orderId: string, paid: boolean, referenceInput: unknown) {
+    // Another company's order is the same 404 as a missing one (this writes, so it is checked before anything else)
+    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     // An order inside an issued statement is settled by that statement, not one order at a time
     const statement = await statementCoveringOrder(orderId);
     if (statement) {
@@ -1108,10 +1118,10 @@ export const tplNetworkService = {
     }
     const reference = typeof referenceInput === 'string' ? referenceInput.trim().slice(0, 100) : '';
     const now = new Date().toISOString();
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('tpl_orders')
       .update({ paid_at: paid ? now : null, paid_reference: paid && reference ? reference : null, updated_at: now })
-      .eq('id', orderId).eq('status', 'delivered').select().maybeSingle();
+      .eq('id', orderId).eq('status', 'delivered'), OWNED.carrier).select().maybeSingle();
     if (error) dbError('Failed to update payment', error);
     if (!data) {
       const { data: existing } = await supabase.from('tpl_orders').select('status').eq('id', orderId).maybeSingle();
@@ -1133,11 +1143,15 @@ export const tplNetworkService = {
     return data;
   },
 
-  /** Statistics for every partner, keyed by partner id. Partners with no offers or orders are left out. */
-  async statsForAll() {
+  /**
+   * Statistics for every partner, keyed by partner id. Partners with no offers or orders are left out. A company
+   * (`scoped`) sees the numbers of the work it handed out, never another company's.
+   */
+  async statsForAll(scoped = false) {
+    const own = <Q,>(q: Q, col = 'carrier_org_id'): Q => (scoped ? scopeQuery(q, { carrier: col }) : q);
     const [{ data: offers, error: oErr }, { data: orders, error: rErr }] = await Promise.all([
-      supabase.from('tpl_offers').select('partner_id, status, offered_at, responded_at'),
-      supabase.from('tpl_orders').select('partner_id, status, due_by, delivered_at, rating, agreed_amount, paid_at'),
+      own(supabase.from('tpl_offers').select('partner_id, status, offered_at, responded_at')),
+      own(supabase.from('tpl_orders').select('partner_id, status, due_by, delivered_at, rating, agreed_amount, paid_at')),
     ]);
     if (oErr) dbError('Failed to load offers', oErr);
     if (rErr) dbError('Failed to load orders', rErr);
@@ -1150,10 +1164,20 @@ export const tplNetworkService = {
     return out;
   },
 
-  async statsForPartner(partnerId: string) {
+  /** One partner's statistics. For a company (`scoped`): only a partner it works with, and only the work it handed out. */
+  async statsForPartner(partnerId: string, scoped = false) {
+    if (scoped) {
+      const company = memberOrgId();
+      if (company) {
+        const org = /^[0-9a-fA-F-]{36}$/.test(partnerId) ? await partnerOrgOf(partnerId) : null;
+        if (!org) throw new HttpError(404, 'Partner not found');
+        await assertAffiliated(company, org);
+      }
+    }
+    const own = <Q,>(q: Q): Q => (scoped ? scopeQuery(q, OWNED.carrier) : q);
     const [{ data: offers, error: oErr }, { data: orders, error: rErr }] = await Promise.all([
-      supabase.from('tpl_offers').select('partner_id, status, offered_at, responded_at').eq('partner_id', partnerId),
-      supabase.from('tpl_orders').select('partner_id, status, due_by, delivered_at, rating, agreed_amount, paid_at').eq('partner_id', partnerId),
+      own(supabase.from('tpl_offers').select('partner_id, status, offered_at, responded_at').eq('partner_id', partnerId)),
+      own(supabase.from('tpl_orders').select('partner_id, status, due_by, delivered_at, rating, agreed_amount, paid_at').eq('partner_id', partnerId)),
     ]);
     if (oErr) dbError('Failed to load offers', oErr);
     if (rErr) dbError('Failed to load orders', rErr);

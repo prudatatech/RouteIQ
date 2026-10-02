@@ -57,6 +57,11 @@ ALTER ROLE supabase_storage_admin SET search_path = storage;
 GRANT USAGE ON SCHEMA public, extensions TO anon, authenticated, service_role, supabase_auth_admin, supabase_storage_admin;
 GRANT USAGE ON SCHEMA auth, storage TO anon, authenticated, service_role;
 GRANT USAGE ON SCHEMA realtime TO anon, authenticated, service_role;
+-- Tables the storage service creates later: a signed-in user must be able to read them (the web opens documents with
+-- the user's own session; the policies on storage.objects decide which rows). Nothing for anon, no writes: uploads are
+-- signed links the API makes. Tables that already exist are covered by 20261010080000_storage_authenticated_access.sql.
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_storage_admin IN SCHEMA storage GRANT SELECT ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_storage_admin IN SCHEMA storage GRANT EXECUTE ON FUNCTIONS TO authenticated;
 GRANT USAGE ON SCHEMA extensions, auth, storage TO app_owner;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA extensions TO app_owner;
 

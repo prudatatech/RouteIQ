@@ -5,6 +5,7 @@
  * service with their own rules: vehicle requests and unpriced deliveries. Managers get the
  * operations queues only; finance, KYC and bid decisions are for admin and superadmin.
  */
+import { currentOrgContext } from '../core/org-context';
 import { supabase } from '../core/supabase';
 import { startOfIndianDay, resolveIndianDateRange } from '../core/istDate';
 import { OPEN_SOS_STATUSES } from './sos.service';
@@ -67,6 +68,12 @@ async function unpricedDeliveries() {
   return { count: rows.length, no_price: rows.filter(r => !r.can_invoice).length };
 }
 
+/** True while acting as the platform organisation (or before organisations are set up, when everything is one company). */
+function actsForPlatform(): boolean {
+  const ctx = currentOrgContext();
+  return !ctx || !ctx.configured || ctx.org?.kind === 'platform';
+}
+
 export async function getTodayQueues(userId: string, scope: TodayScope) {
   const nowISO = new Date().toISOString();
   const todayISO = startOfIndianDay(0).toISOString();
@@ -94,7 +101,8 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     vehicleIdsOnActiveTrip().then(ids => ids.size),
     countOf(owned('routes').gte('created_at', todayISO), 'trips today'),
     countOf(owned('routes').eq('status', 'completed').gte('created_at', todayISO), 'trips completed today'),
-    all ? countOf(head('vendor_profiles').eq('kyc_status', 'submitted'), 'KYC to review') : Promise.resolve(null),
+    // Vendor verification is the platform's: only the platform's view counts it
+    all && actsForPlatform() ? countOf(head('vendor_profiles').eq('kyc_status', 'submitted'), 'KYC to review') : Promise.resolve(null),
     all ? countBidsToDecide(nowISO) : Promise.resolve(null),
     all ? unpricedDeliveries() : Promise.resolve(null),
     all ? countOf(head('invoice_payment_reports').eq('status', 'open').eq('kind', 'payment'), 'payments reported by customers') : Promise.resolve(null),
@@ -112,7 +120,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
   };
   if (all) {
     queues.unpriced = { count: unpriced!.count, no_price: unpriced!.no_price };
-    queues.kyc = { count: kyc! };
+    if (kyc != null) queues.kyc = { count: kyc };
     queues.bids = { count: bids! };
     queues.payment_reports = { count: paymentReports! };
   }

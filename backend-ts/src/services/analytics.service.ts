@@ -469,17 +469,14 @@ export class AnalyticsService {
 
     const driverIds = vehicles.map(v => v.driver_id).filter(Boolean) as string[];
     // Routes, drivers and the driver stats depend only on the vehicles: read them together
-    const [{ data: routesData, error: routesErr }, { data: usersData }, stats] = await Promise.all([
-      supabase.from('routes').select('vehicle_id, status, total_distance_km').in('vehicle_id', vehicleIds),
-      driverIds.length > 0
-        ? supabase.from('users').select('id, full_name, email').in('id', driverIds)
-        : Promise.resolve({ data: [] as any[] }),
+    // (read in chunks: the platform's view, or a big company's, would overflow the request address with one long list)
+    const [routesData, usersData, stats] = await Promise.all([
+      selectIn<any>('routes', 'vehicle_id', vehicleIds, 'vehicle_id, status, total_distance_km'),
+      selectIn<any>('users', 'id', driverIds, 'id, full_name, email'),
       // Only figures that exist in the data: on-time % from planned vs actual stop
       // arrival, rating from staff ratings. Both are null until there is data.
       getVehicleDriverStats(vehicleIds),
     ]);
-    if (routesErr) throw routesErr;
-
     const routesByVehicle: Record<string, any[]> = {};
     (routesData || []).forEach(r => {
       (routesByVehicle[r.vehicle_id] ||= []).push(r);

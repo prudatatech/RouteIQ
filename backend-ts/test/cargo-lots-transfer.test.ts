@@ -57,8 +57,8 @@ describe('partial transfer: 30 of 100 on board', () => {
       expect(point).toMatchObject({ address: 'Hinjewadi, Pune', lot_shipment_id: lot.id });
       expect(supabaseMock.rows('route_stops').find(s => s.delivery_point_id === point.id)).toMatchObject({ route_id: ID.route1, status: 'pending' });
     }
-    // The truck still carries the same weight once: 300 + 700 kg of lots and s2's 500 kg, not the master's 1,000 again
-    expect(one('vehicles', ID.v1).available_capacity_kg).toBe(3500);
+    // The truck still carries the same weight once: 300 + 700 kg of lots, s2's 500 kg and the 300 kg vendor load, not the master's 1,000 again
+    expect(one('vehicles', ID.v1).available_capacity_kg).toBe(3200);
   });
 
   it('moves only the moving lot on handover, and marks e-way Part B for that lot alone', async () => {

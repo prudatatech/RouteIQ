@@ -36,10 +36,7 @@ async function loadVendorRequests(): Promise<VendorRequest[]> {
   const vendorIds = [...new Set(rows.map(r => r.vendor_id).filter(Boolean))]
   const vendors = new Map<string, VendorRequest['vendor']>()
   if (vendorIds.length > 0) {
-    const { data: profiles, error: pErr } = await supabase
-      .from('vendor_profiles').select('id, company_name, city').in('id', vendorIds)
-    if (pErr) throw pErr
-    for (const p of profiles ?? []) vendors.set(p.id, { company_name: p.company_name, city: p.city })
+    for (const p of await vendorAPI.basic(vendorIds as string[])) vendors.set(p.id, { company_name: p.company_name, city: p.city })
   }
   return rows.map(r => ({ ...r, vendor: vendors.get(r.vendor_id) ?? null })) as VendorRequest[]
 }

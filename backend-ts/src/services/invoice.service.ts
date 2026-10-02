@@ -182,7 +182,11 @@ export async function announceInvoice(invoiceId: string, event: 'issued' | 'paid
 async function insertInvoice(input: NewInvoice): Promise<string> {
   // The seller is the company issuing it: its GSTIN and state decide the GST split, its bank and terms are on the invoice
   const issuerId = await issuerOf(input);
-  const company = await assertCanIssueInvoices(issuerId);
+  const company = await assertCanIssueInvoices(issuerId).catch((e: unknown) => {
+    // Remember whose profile is incomplete: the notice goes to that company's admins, not to whoever happened to deliver
+    if (e instanceof HttpError && e.extra?.code === COMPANY_PROFILE_INCOMPLETE) throw new HttpError(e.status, e.message, { ...e.extra, issuer_org_id: issuerId });
+    throw e;
+  });
   const billTo = await resolveBillTo(input).catch(() => null);
   const sellerState = sellerStateCode(company);
   const buyerState = billTo?.state_code ?? null;
@@ -252,10 +256,11 @@ function logIssueFailure(what: string, e: unknown): void {
   if (e instanceof HttpError && e.extra?.code === COMPANY_PROFILE_INCOMPLETE) {
     console.warn(`[invoice] ${what} not invoiced yet: ${e.message}`);
     // A delivery without an invoice is money waiting: tell the company's admins once, don't just log
+    const issuer = typeof e.extra?.issuer_org_id === 'string' ? e.extra.issuer_org_id : undefined;
     notificationService.notifyStaffOnce(
       'Invoice not issued',
       `A delivery (${what}) has no invoice yet: ${e.message}`,
-      'invoice_blocked', { what }, 'what',
+      'invoice_blocked', { what, link: '/admin/settings' }, 'what', undefined, issuer,
     ).catch(err => console.error('[invoice] could not tell staff:', err));
     return;
   }

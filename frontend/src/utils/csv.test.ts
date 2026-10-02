@@ -40,6 +40,14 @@ describe('toCsv', () => {
     expect(csv).toBe('A,B\r\n,')
   })
 
+  it('stops a text from running as a spreadsheet formula, but leaves numbers and negative amounts alone', () => {
+    const csv = toCsv(
+      [{ note: '=HYPERLINK("http://x")', plus: '+91 98765', neg: -12.5, negText: '-12.50', at: '@SUM(A1)' }],
+      [{ key: 'note', header: 'Note' }, { key: 'plus', header: 'Plus' }, { key: 'neg', header: 'Neg' }, { key: 'negText', header: 'NegText' }, { key: 'at', header: 'At' }],
+    )
+    expect(csv).toBe('Note,Plus,Neg,NegText,At\r\n"\'=HYPERLINK(""http://x"")",\'+91 98765,-12.5,-12.50,\'@SUM(A1)')
+  })
+
   it('returns only the header row for empty input', () => {
     const csv = toCsv([], [{ key: 'a', header: 'A' }])
     expect(csv).toBe('A')

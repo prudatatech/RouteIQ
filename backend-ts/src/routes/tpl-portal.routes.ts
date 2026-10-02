@@ -14,6 +14,7 @@ import { HttpError, sendError } from '../core/errors';
 import { isUuid, uuidParam } from '../core/validate';
 import type { OrgSummary } from '../core/org-context';
 import * as fleet from '../services/tpl-fleet.service';
+import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, saveVehiclePhoto } from '../services/vehicle-photos.service';
 import { legacyPartnerIdOf } from '../services/tpl-affiliation';
 import { tplStatementService } from '../services/tpl-statement.service';
 import { renderStatementPdf, statementFileName } from '../services/tpl-statement-pdf';
@@ -68,6 +69,34 @@ router.post('/:id/vehicles', handle(async (req, res) => {
 router.patch('/:id/vehicles/:vid', handle(async (req, res) => {
   const org = await partnerOrg(req, true);
   res.json(await fleet.updateVehicle(org.id, uuidParam(req.params.vid, 'Vehicle not found'), req.body));
+}));
+
+// ── Vehicle photos and document copies (the same slots and signed upload as a company's vehicle) ──
+
+router.get('/:id/vehicles/:vid/photos', handle(async (req, res) => {
+  const org = await partnerOrg(req);
+  await fleet.ownVehicle(org.id, uuidParam(req.params.vid, 'Vehicle not found'));
+  res.json(await listVehiclePhotos(req.params.vid));
+}));
+
+// POST { slot, content_type, size } -> { path, signed_url, ... }: PUT the file there, then PUT .../photos/:slot { file_path }
+router.post('/:id/vehicles/:vid/photos/upload-url', handle(async (req, res) => {
+  const org = await partnerOrg(req, true);
+  await fleet.ownVehicle(org.id, uuidParam(req.params.vid, 'Vehicle not found'));
+  res.json(await createVehiclePhotoUploadUrl(req.params.vid, req.body ?? {}));
+}));
+
+router.put('/:id/vehicles/:vid/photos/:slot', handle(async (req, res) => {
+  const org = await partnerOrg(req, true);
+  await fleet.ownVehicle(org.id, uuidParam(req.params.vid, 'Vehicle not found'));
+  res.json(await saveVehiclePhoto(req.params.vid, req.params.slot, req.body?.file_path, req.user!.user_id));
+}));
+
+router.delete('/:id/vehicles/:vid/photos/:slot', handle(async (req, res) => {
+  const org = await partnerOrg(req, true);
+  await fleet.ownVehicle(org.id, uuidParam(req.params.vid, 'Vehicle not found'));
+  await deleteVehiclePhoto(req.params.vid, req.params.slot);
+  res.status(204).send();
 }));
 
 // ── Drivers ──────────────────────────────────────────────────

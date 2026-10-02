@@ -13,6 +13,7 @@ import { notificationService } from './notification.service';
 import { auditService, type AuditActor } from './audit.service';
 import { normalizePhone } from '../utils/phone';
 import type { MemberInvite, MemberUpdate, OrgCreate, OrgUpdate } from '../schemas/org';
+import { PROFILE_INVOICING_KEYS, saveCompanyProfile } from './company.service';
 import { assertAffiliated, legacyPartnerIdOf, readRules, type AffiliationRules } from './tpl-affiliation';
 
 const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at';
@@ -55,8 +56,29 @@ export async function getOrg(id: string): Promise<OrgRow> {
 }
 
 export async function updateOrg(actor: AuditActor, orgId: string, input: OrgUpdate): Promise<OrgRow> {
-  const { profile, ...columns } = input;
+  const { profile: rawProfile, ...columns } = input;
+  let profile = rawProfile;
+  let savedInvoicing = false;
+  if (profile !== undefined) {
+    // The invoicing identity (prefix, bank, UPI, terms, GST option, SAC) is validated like Settings does it, never stored raw:
+    // a lower-case or duplicate prefix, or a made-up GST option, would otherwise sit unseen until an invoice goes wrong
+    const invoicing = Object.fromEntries(PROFILE_INVOICING_KEYS.filter(k => profile![k] !== undefined).map(k => [k, profile![k]]));
+    if (Object.keys(invoicing).length > 0) {
+      const org = await getOrg(orgId);
+      if (org.kind === 'logistic_company' || org.kind === 'tpl_partner') {
+        await saveCompanyProfile(invoicing, orgId);
+        savedInvoicing = true;
+        profile = Object.fromEntries(Object.entries(profile).filter(([k]) => !(PROFILE_INVOICING_KEYS as readonly string[]).includes(k)));
+      }
+    }
+  }
   const patch: Record<string, unknown> = definedOnly(columns);
+  if (savedInvoicing && profile !== undefined && Object.keys(profile).length === 0 && Object.keys(patch).length === 0) {
+    // Only invoicing keys were sent and they are saved: return the organisation as it is now
+    invalidateOrgContext();
+    await audit(actor, 'org.updated', { org_id: orgId, fields: Object.keys(rawProfile ?? {}) });
+    return getOrg(orgId);
+  }
   if (profile !== undefined) {
     // The profile is merged key by key; keys the organisation was created with (where it came from) stay
     const current = await getOrg(orgId);

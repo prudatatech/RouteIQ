@@ -268,7 +268,8 @@ describe('permissions', () => {
     expect((await request(app).delete(`/api/v1/fleet/fuel-logs/${id}`).set(driver)).status).toBe(403);
     expect((await request(app).get('/api/v1/fleet/fuel-summary').set(driver)).status).toBe(403);
     expect((await request(app).get('/api/v1/fleet/fuel-anomalies').set(driver)).status).toBe(403);
-    expect((await request(app).get(`/api/v1/fleet/fuel-logs/${id}/bill-url`).set(bearer('drv-other'))).status).toBe(403);
+    // a driver who is not on the vehicle gets the answer for an entry that does not exist, never a 403 that says it does
+    expect((await request(app).get(`/api/v1/fleet/fuel-logs/${id}/bill-url`).set(bearer('drv-other'))).status).toBe(404);
     expect((await request(app).get(url())).status).toBe(401);
     expect((await request(app).put(`/api/v1/fleet/fuel-logs/${id}`).set(admin).send({})).status).toBe(400);
     expect((await request(app).put('/api/v1/fleet/fuel-logs/00000000-0000-0000-0000-000000000000').set(admin).send({ reviewed: true })).status).toBe(404);

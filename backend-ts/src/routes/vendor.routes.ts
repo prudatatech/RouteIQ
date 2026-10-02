@@ -8,7 +8,7 @@ import { STAFF_ROLES } from '../core/ownership';
 import { supabase } from '../core/supabase';
 import { manifestParcelCode } from '../core/parcelCode';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
-import { parseUuid, uuidParam } from '../core/validate';
+import { isUuid, parseUuid, uuidParam } from '../core/validate';
 import { rateLimitByUser } from '../core/rate-limit';
 import { idempotent } from '../core/idempotency';
 import { BusinessProfileSchema, LoadDraftSchema, LoadsMineQuery } from '../schemas/loads';
@@ -41,6 +41,17 @@ router.get('/profile', requireAuth, async (req: any, res: any) => {
       };
     }
     res.json(profile);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The basic profile (company name, city, whether a pickup point is set) of vendors the caller may deal with: the platform
+// sees any; a company only vendors whose loads or bids it can see. Never PAN, bank details or KYC documents.
+router.get('/basic', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
+  try {
+    const raw = typeof req.query.ids === 'string' ? req.query.ids.split(',') : [];
+    res.json(await vendorService.basicProfiles(raw.filter(isUuid).slice(0, 200)));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -309,8 +320,8 @@ router.put('/shipment-request/:id/reject', requireAuth, requireRole(...STAFF_ROL
   }
 });
 
-// Approve a vendor's KYC (Admin/Super Admin): tells the vendor and is audited
-router.put('/kyc/:id/approve', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Approve a vendor's KYC (platform only: the effective role is superadmin, i.e. acting as the platform): tells the vendor and is audited
+router.put('/kyc/:id/approve', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
   try {
     const data = await vendorService.approveKyc(req.params.id, req.user);
     res.json({ success: true, data });
@@ -319,8 +330,8 @@ router.put('/kyc/:id/approve', requireAuth, requireRole('superadmin', 'admin'), 
   }
 });
 
-// Reject a vendor's KYC, storing why (Admin/Super Admin)
-router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
+// Reject a vendor's KYC, storing why (platform only)
+router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
   try {
     const reason = parseRejectionReason(req.body?.reason);
     const data = await vendorService.rejectKyc(req.params.id, reason, req.user);

@@ -436,6 +436,22 @@ describe('trip settlement', () => {
     expect((await settle('/deductions', { label: 'x', amount: 1, reason: 'because' }, vendor())).status).toBe(403);
   });
 
+  it('refuses deductions that add up to more than the freight and the approved extras', async () => {
+    await settle('', {});
+    const tooMuch = await settle('/deductions', { label: 'Penalty', amount: 25000.01, reason: 'More than the freight' });
+    expect(tooMuch.status).toBe(400);
+    expect(tooMuch.body.detail).toMatch(/more than the freight/);
+    expect(supabaseMock.rows('trip_settlements')[0].deductions).toHaveLength(0);
+    // together they may not pass it either; an approved extra raises the limit
+    expect((await settle('/deductions', { label: 'Damage', amount: 20000, reason: 'Pallets lost' })).status).toBe(201);
+    expect((await settle('/deductions', { label: 'Late', amount: 5000.01, reason: 'Two days late' })).status).toBe(400);
+    await settle('/extra-charges', { label: 'Toll', amount: 1000 });
+    await settle('/extra-charges/0/approve');
+    const ok = await settle('/deductions', { label: 'Late', amount: 5000.01, reason: 'Two days late' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.balance).toBe(999.99);
+  });
+
   it('refuses extras before the settlement is opened', async () => {
     expect((await settle('/extra-charges', { label: 'Toll', amount: 100 })).status).toBe(409);
   });

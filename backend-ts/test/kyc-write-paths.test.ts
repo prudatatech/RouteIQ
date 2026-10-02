@@ -32,28 +32,28 @@ describe('PUT /vendor/kyc/:id/approve', () => {
   const approve = (token: Record<string, string>) => request(app).put(`/api/v1/vendor/kyc/${VENDOR}/approve`).set(token);
 
   it('approves a submitted KYC, tells the vendor and writes an audit entry', async () => {
-    const res = await approve(bearer('admin-1'));
+    const res = await approve(bearer('super-1'));
     expect(res.status).toBe(200);
-    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ kyc_status: 'approved', kyc_reviewed_by: 'admin-1' });
+    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ kyc_status: 'approved', kyc_reviewed_by: 'super-1' });
 
     const [note] = supabaseMock.writes('notifications', 'POST');
     expect(note.body).toMatchObject({ user_id: VENDOR, type: 'kyc_approved' });
 
     const [audit] = supabaseMock.writes('ai_agent_logs', 'POST');
     expect(audit.body).toMatchObject({ action: 'kyc_approved', agent_name: 'staff-console' });
-    expect(audit.body.input_data).toMatchObject({ actor_id: 'admin-1', vendor_id: VENDOR });
+    expect(audit.body.input_data).toMatchObject({ actor_id: 'super-1', vendor_id: VENDOR });
   });
 
   it('refuses a KYC that is not waiting for review, without notifying anyone', async () => {
     reset('approved');
-    const res = await approve(bearer('admin-1'));
+    const res = await approve(bearer('super-1'));
     expect(res.status).toBe(409);
     expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(0);
     expect(supabaseMock.writes('ai_agent_logs', 'POST')).toHaveLength(0);
   });
 
   it('reports an unknown vendor as not found', async () => {
-    const res = await request(app).put('/api/v1/vendor/kyc/nobody/approve').set(bearer('admin-1'));
+    const res = await request(app).put('/api/v1/vendor/kyc/nobody/approve').set(bearer('super-1'));
     expect(res.status).toBe(404);
   });
 
@@ -62,15 +62,16 @@ describe('PUT /vendor/kyc/:id/approve', () => {
     expect((await approve(bearer(VENDOR))).status).toBe(403);
     expect((await approve(bearer('driver-1'))).status).toBe(403);
     expect((await approve(bearer('manager-1'))).status).toBe(403);
+    expect((await approve(bearer('admin-1'))).status).toBe(403); // a company admin: KYC is the platform's
     expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
   });
 
   it('audits a rejection too', async () => {
-    const res = await request(app).put(`/api/v1/vendor/kyc/${VENDOR}/reject`).set(bearer('admin-1')).send({ reason: 'PAN scan is unreadable' });
+    const res = await request(app).put(`/api/v1/vendor/kyc/${VENDOR}/reject`).set(bearer('super-1')).send({ reason: 'PAN scan is unreadable' });
     expect(res.status).toBe(200);
     const [audit] = supabaseMock.writes('ai_agent_logs', 'POST');
     expect(audit.body).toMatchObject({ action: 'kyc_rejected' });
-    expect(supabaseMock.rows('vendor_profiles')[0].kyc_reviewed_by).toBe('admin-1');
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_reviewed_by).toBe('super-1');
   });
 });
 
