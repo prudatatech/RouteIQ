@@ -20,7 +20,7 @@ import { isStaff, canAccessManifest } from '../../core/ownership';
 import type { TokenData } from '../../core/auth';
 import { createKycUploadUrl, signedUrl } from '../pod.service';
 import { manifestParcelCode } from '../../core/parcelCode';
-import { RefSchema, customerOwnsShipment, manifestVendorId, refColumns, resolveRef, type Actor, type Consignment } from './consignment';
+import { RefSchema, assertCompanyConsignment, customerOwnsShipment, manifestVendorId, refColumns, resolveRef, type Actor, type Consignment } from './consignment';
 import { insertWithCode } from './exception.service';
 import { notifyStaffSafe, notifyUserSafe, ownerRefs } from './notify';
 import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
@@ -185,6 +185,8 @@ export async function createClaim(input: unknown, actor: Actor): Promise<any> {
   const body = parsed.data;
   const role = claimRole(actor.role);
   const c = await resolveRef(body.ref);
+  // Staff claim on their own company's goods: another company's shipment or load is a 404
+  if (role === 'staff') await assertCompanyConsignment(c);
 
   if (role === 'customer') {
     if (c.kind !== 'shipment' || !(await customerOwnsShipment(actor.id, c.id))) throw new HttpError(404, 'Shipment not found');
@@ -280,6 +282,8 @@ export const MAX_CLAIM_DOCUMENTS = 20;
 export async function claimDocumentUploadUrl(id: string, input: { content_type?: unknown; size?: unknown }, user: TokenData) {
   const claim = await loadClaim(id);
   await assertClaimAccess(user, claim);
+  // Staff reach their own company's claims only; another's is a 404
+  if (isStaff(user)) await assertVisible('cargo_claims', id, OWNED.carrierAndVendor, 'Claim not found');
   if (CLOSED.includes(claim.status)) throw new HttpError(409, `This claim is ${claim.status}.`);
   const paths: string[] = claim.document_paths ?? [];
   if (paths.length >= MAX_CLAIM_DOCUMENTS) throw new HttpError(409, `A claim holds at most ${MAX_CLAIM_DOCUMENTS} documents.`);
@@ -313,6 +317,9 @@ export async function updateClaim(id: string, input: unknown): Promise<any> {
     }
     const approved = fields.approved_amount ?? claim.approved_amount;
     const settled = fields.settled_amount ?? claim.settled_amount;
+    const claimed = fields.claimed_amount ?? claim.claimed_amount;
+    if (approved != null && claimed != null && approved > claimed) throw new HttpError(422, `The approved amount can't be more than the amount claimed (₹${Number(claimed).toLocaleString('en-IN')}).`);
+    if (settled != null && approved != null && settled > approved) throw new HttpError(422, `The settled amount can't be more than the amount approved (₹${Number(approved).toLocaleString('en-IN')}).`);
     if (status === 'approved' && approved == null) throw new HttpError(400, 'Enter the approved amount');
     if (status === 'settled') {
       if (settled == null) throw new HttpError(400, 'Enter the settled amount');

@@ -16,6 +16,7 @@ import { orderDropsInProcess } from '../services/optimizer/pooling';
 import { MapplsService } from '../services/mappls.service';
 import { resolveAlert } from '../services/alerts.service';
 import { idempotent } from '../core/idempotency';
+import { OWNED, assertVisible } from '../core/org-scope';
 import { cargoFolder, isPathIn, recordCustody } from '../services/cargo/custody.service';
 
 const router = Router();
@@ -440,6 +441,8 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent(
       res.status(404).json({ detail: 'Shipment not found' });
       return;
     }
+    // Another company's shipment is a 404, the same as one that does not exist
+    await assertVisible('shipments', shipment.id, OWNED.carrier, 'Shipment not found');
     if (shipment.status === 'delivered' || shipment.status === 'cancelled') {
       res.status(409).json({ detail: `Shipment is already ${shipment.status}` });
       return;

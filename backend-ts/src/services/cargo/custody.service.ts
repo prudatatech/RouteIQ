@@ -723,6 +723,8 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
       // The goods left that vehicle: its stops for them go, and its load is worked out again
       const vehicles = await settleStops(c, 'cancelled');
       for (const v of new Set([...vehicles, ...(vehicleId ? [vehicleId] : [])])) await ShipmentService.recalculateVehicleCapacity(v);
+      // A vendor load's weight comes off the truck while it waits at the hub
+      if (c.kind === 'manifest' && vehicleId) await releaseVehicleLoad(vehicleId, Number(c.row.capacity_kg) || 0);
       await notifyOwner(c, 'Your goods reached a hub', `Your goods are at our ${depot.name} hub.`, 'cargo_at_hub', { depot_id: depot.id });
       return finish(previous, 'at_hub', event, { via });
     }
@@ -744,6 +746,10 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         ...base, pieces: input.pieces ?? piecesHeld(c.pieces), from_holder: 'hub', from_depot_id: depotId, to_holder: 'vehicle', to_vehicle_id: vehicleId,
         driver_id: base.driver_id ?? (await driverOf(vehicleId)),
       }, actor);
+      if (c.kind === 'manifest') {
+        const { reserveVehicleLoad } = await import('./transfer.service');
+        await reserveVehicleLoad(vehicleId, Number(c.row.capacity_kg) || 0);
+      }
       if (c.kind === 'shipment') {
         const planned = await planStopsOnVehicle(await openDropPoints(c.id, c.rto), vehicleId, actor, { note: 'From the hub' });
         await ShipmentService.recalculateVehicleCapacity(vehicleId);

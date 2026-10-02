@@ -256,7 +256,7 @@ export async function handoverOut(id: string, input: unknown, user: TokenData): 
 }
 
 /** Puts a vendor load's weight on a vehicle (the mirror of releaseVehicleLoad). */
-async function reserveVehicleLoad(vehicleId: string, weightKg: number): Promise<void> {
+export async function reserveVehicleLoad(vehicleId: string, weightKg: number): Promise<void> {
   if (!(weightKg > 0)) return;
   const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', vehicleId).maybeSingle();
   if (!veh) return;

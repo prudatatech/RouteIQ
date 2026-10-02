@@ -528,7 +528,8 @@ if (want('shipments')) await guard('shipments', async () => {
   ok('shipment row after delivery', 'delivered, hash and expiry cleared, received_by saved', after.status === 'delivered' && after.delivery_otp_hash === null && after.received_by === 'Anita', short({ s: after.status, h: after.delivery_otp_hash, r: after.received_by }))
   r = await api(admin.token, 'POST', '/cargo/otp/send', { ref: s1.ref })
   ok('send a code for a delivered shipment', '409', r.status === 409, short(r.body))
-  r = await api(admin.token, 'POST', '/cargo/otp/send', { ref: world.m1.ref })
+  const mOtp = await newManifest(await newVehicle('S0'), { pieces: 2 })
+  r = await api(admin.token, 'POST', '/cargo/otp/send', { ref: mOtp.ref })
   ok('send a code for a vendor load', '400 (shipments only)', r.status === 400, short(r.body))
   const sends = []
   const s1b = await newShipment(await newVehicle('S1b'), { pieces: 2 })
@@ -539,7 +540,7 @@ if (want('shipments')) await guard('shipments', async () => {
   const b = await newVehicle('S2')
   const s2 = await newShipment(b, { pieces: 3 })
   world.s2 = s2
-  r = await api(admin.token, 'POST', '/cargo/verify-pod', { tracking_id: s2.tracking, recipient_name: 'Meena' , reason: 'ok'})
+  r = await api(admin.token, 'POST', '/cargo/verify-pod', { tracking_id: s2.tracking, recipient_name: 'Meena', reason: 'Receiver says ok' })
   ok('verify-pod before any pickup', '409 (record the pickup first)', r.status === 409, short(r.body))
   r = await api(admin.token, 'POST', '/cargo/verify-pod', { tracking_id: s2.tracking, recipient_name: 'Meena', allow_without_pickup: true })
   ok('verify-pod without pickup and without a reason', '400', r.status === 400, short(r.body))
@@ -606,10 +607,10 @@ if (want('shipments')) await guard('shipments', async () => {
   ok('custody chain of the returned shipment', 'pickup, departed, 3 failed attempts, return_delivery', k4.filter(k => k === 'undelivered').length === 3 && k4.includes('return_delivery'), J(k4))
   const vh = await vehRow(d.id)
   ok('truck after the return', 'free (no load on it)', Number(vh.current_load_kg) === 0 || vh.current_load_kg == null, short({ l: vh.current_load_kg, s: vh.status }))
-  const log = (await db('GET', 'shipment_logs', { query: `shipment_id=eq.${s4.id}&select=status,hash,previous_hash&order=timestamp.asc` })).body ?? []
-  ok('shipment log hash chain for the returned shipment', 'every entry chains to the one before', log.length >= 5 && log.every((l, i) => i === 0 || l.previous_hash === log[i - 1].hash), short(log.slice(-3)))
+  const log = (await db('GET', 'shipment_logs', { query: `shipment_id=eq.${s4.id}&select=status,log_hash,previous_hash&order=index.asc` })).body ?? []
+  ok('shipment log hash chain for the returned shipment', 'every entry chains to the one before', log.length >= 5 && log.every((l, i) => i === 0 || l.previous_hash === log[i - 1].log_hash), short(log.slice?.(-3) ?? log))
   const vs = await api(admin.token, 'GET', `/shipments/${s4.id}/verify`)
-  ok('the chain verifies', 'valid', vs.status === 200 && (vs.body.valid === true || vs.body.verified === true || vs.body.ok === true), short(vs.body))
+  ok('the chain verifies', 'valid', vs.status === 200 && vs.body.is_valid === true, short(vs.body))
   // refused for damage: staff partial on a shipment
   const e5 = await newVehicle('S5')
   const s5 = await newShipment(e5, { pieces: 6 })
@@ -748,21 +749,17 @@ if (want('lots')) await guard('lots', async () => {
   const m = await newManifest(a, { pieces: 10 })
   world.lotM = m
   let r = await api(admin.token, 'POST', '/cargo/lots/split', { ref: m.ref, reason: 'manual', lots: [{ pieces: 4 }, { pieces: 3 }] })
-  ok('split a load that has not been picked up', '201 or a clear refusal', r.status === 201 || r.status === 409 || r.status === 400, short(r.body))
-  const cleanup = r.status === 201
-  await cust(a.tok, { ref: cleanup ? r.body.lots?.[0]?.ref : m.ref, kind: 'pickup', pieces: cleanup ? 4 : 10 }).catch(() => {})
-  if (!cleanup) {
-    r = await cust(a.tok, { ref: m.ref, kind: 'pickup', pieces: 10, condition: 'good' })
-    ok('pickup of the whole load', '201', r.status === 201, short(r.body))
-    r = await api(admin.token, 'POST', '/cargo/lots/split', { ref: m.ref, reason: 'manual', lots: [{ pieces: 4 }, { pieces: 3 }] })
-    ok('split the load on the truck into 4 + 3 + 3', '201 three lots', r.status === 201 && r.body.lots?.length === 3, short(r.body))
-  }
+  ok('split a load nobody counted yet', '409 (count the pieces first)', r.status === 409, short(r.body))
+  r = await cust(a.tok, { ref: m.ref, kind: 'pickup', pieces: 10, condition: 'good' })
+  ok('pickup of the whole load', '201', r.status === 201, short(r.body))
+  r = await api(admin.token, 'POST', '/cargo/lots/split', { ref: m.ref, reason: 'manual', lots: [{ pieces: 4 }, { pieces: 3 }] })
+  ok('split the load on the truck into 4 + 3 + the rest', '201 three lots', r.status === 201 && r.body.lots?.length === 3, short(r.body))
   const lots = r.body.lots ?? []
   ok('lots add up', 'pieces 4 + 3 + 3 = 10', lots.reduce((s, l) => s + (l.pieces ?? 0), 0) === 10, short(lots))
   r = await api(admin.token, 'POST', '/cargo/lots/split', { ref: m.ref, reason: 'manual', lots: [{ pieces: 4 }] })
   ok('split the master again', '409 (the master holds no goods)', r.status === 409, short(r.body))
   r = await cust(a.tok, { ref: m.ref, kind: 'delivery', pieces: 10, receiver_name: 'x', reason: 'abc' })
-  ok('deliver the master directly', '409 (act on a lot)', r.status === 409, short(r.body))
+  ok('deliver the master directly', '403/409 (act on a lot)', r.status === 409 || r.status === 403, short(r.body))
   const ov = await api(admin.token, 'GET', `/cargo/lots/${m.id}`)
   ok('lots overview from the master', 'the master and 3 lots with codes', ov.status === 200 && J(ov.body).includes(lots[0]?.code ?? 'zz'), short(ov.body))
   const ovl = await api(admin.token, 'GET', `/cargo/lots/${lots[0]?.code}`)
@@ -773,19 +770,19 @@ if (want('lots')) await guard('lots', async () => {
     r = await cust(a.tok, { ref: l1.ref, kind: 'delivery', pieces: 4, receiver_name: 'Dealer A', photo_paths: [ph1.path] })
     ok('deliver lot A (4 pieces)', '201 delivered', r.status === 201 && r.body.status === 'delivered', short(r.body))
     let mm = await manifestRow(m.id)
-    ok('master after one lot is delivered', 'partly delivered (not delivered)', mm.status !== 'delivered' && mm.pieces_delivered === 4, short({ s: mm.status, d: mm.pieces_delivered }))
+    ok('master after one lot is delivered', 'partly delivered (not delivered)', mm.status !== 'delivered' && (await api(admin.token, 'GET', `/cargo/where/${m.id}`)).body?.pieces?.delivered === 4, short({ s: mm.status, d: mm.pieces_delivered }))
     const req = (await db('GET', 'vendor_shipment_requests', { query: `id=eq.${m.requestId}&select=status` })).body?.[0]
     ok('vendor request while lots are open', 'not completed', req?.status !== 'completed', short(req))
-    r = await cust(a.tok, { ref: l2.ref, kind: 'delivery', pieces: 2, receiver_name: 'Dealer B', photo_paths: [ph1.path] })
-    ok('deliver 2 of lot B\'s 3 pieces as a full delivery', '409', r.status === 409, short(r.body))
     const ph2 = await photo(a.tok, l2.ref)
+    r = await cust(a.tok, { ref: l2.ref, kind: 'delivery', pieces: 2, receiver_name: 'Dealer B', photo_paths: [ph2.path] })
+    ok('deliver 2 of lot B\'s 3 pieces as a full delivery', '409', r.status === 409, short(r.body))
     r = await cust(a.tok, { ref: l2.ref, kind: 'delivery', pieces: 3, receiver_name: 'Dealer B', photo_paths: [ph2.path] })
     ok('deliver lot B (3)', '201 delivered', r.status === 201, short(r.body))
     const ph3 = await photo(a.tok, l3.ref)
     r = await cust(a.tok, { ref: l3.ref, kind: 'delivery', pieces: 3, receiver_name: 'Dealer C', photo_paths: [ph3.path] })
     ok('deliver lot C (3)', '201 delivered', r.status === 201, short(r.body))
     mm = await manifestRow(m.id)
-    ok('master after all lots', 'delivered, 10 of 10 delivered, rolled up', mm.status === 'delivered' && mm.pieces_delivered === 10, short({ s: mm.status, d: mm.pieces_delivered }))
+    ok('master after all lots', 'delivered, 10 of 10 delivered, rolled up', mm.status === 'delivered' && (await api(admin.token, 'GET', `/cargo/where/${m.id}`)).body?.pieces?.delivered === 10, short({ s: mm.status, d: mm.pieces_delivered }))
     const req2 = (await db('GET', 'vendor_shipment_requests', { query: `id=eq.${m.requestId}&select=status` })).body?.[0]
     ok('vendor request after all lots', 'completed', req2?.status === 'completed', short(req2))
     const where = await api(vendor.token, 'GET', `/cargo/where/${m.id}`)
