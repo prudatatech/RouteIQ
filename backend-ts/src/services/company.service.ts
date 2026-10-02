@@ -16,7 +16,7 @@ import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { checkGstin, normalizeGstin } from '../utils/gstin';
 import { DEFAULT_GTA_GST_OPTION, isGtaOption, stateCodeByName, stateOf, type GtaGstOption } from '../core/gst';
-import { loadOrg, resolveScope, scopedMemo, type SettingsScope } from './company-settings.service';
+import { defaultCompanyId, loadOrg, resolveScope, scopedMemo, type SettingsScope } from './company-settings.service';
 
 export const COMPANY_PROFILE_KEY = 'company_profile';
 export const DEFAULT_PAYMENT_TERMS_DAYS = 15;
@@ -80,6 +80,14 @@ const hasDetails = (c: CompanyProfile): boolean => [...TEXT_FIELDS, 'gstin', 'pa
 
 const PREFIX_RE = /^[A-Z0-9]{2,6}$/;
 
+/**
+ * The invoicing keys of `organizations.profile` that have no column of their own. They must only be written through
+ * saveCompanyProfile (validated, prefix kept unique); PATCH /org routes them there too.
+ */
+export const PROFILE_INVOICING_KEYS = [
+  'invoice_prefix', 'payment_terms_days', 'gta_gst_option', 'sac_code', 'bank_name', 'bank_account_no', 'bank_ifsc', 'upi_id', 'invoice_footer',
+] as const;
+
 const MAX_TEXT = 300;
 
 const SETTINGS_CACHE_MS = 30_000;
@@ -105,7 +113,9 @@ const loadCompanyProfile = scopedMemo(SETTINGS_CACHE_MS, async (scope): Promise<
   if (scope) {
     const own = await loadOwnProfile(scope);
     if (own && hasDetails(own)) return own;
-    // Nothing set for this company yet: the platform-wide profile stands in, but the company keeps its own prefix and terms
+    // Nothing set yet: only the default company (the one that held the platform-wide profile before there were companies)
+    // is issued under it. Any other company is NOT: its invoices must never carry another company's name, GSTIN and bank.
+    if (scope !== (await defaultCompanyId())) return own ?? EMPTY;
     const fallback = await loadPlatformProfile();
     return { ...fallback, invoice_prefix: own?.invoice_prefix ?? null, gta_gst_option: own?.gta_gst_option ?? fallback.gta_gst_option };
   }
@@ -230,10 +240,31 @@ export async function saveCompanyProfile(input: Record<string, unknown>, company
 
 /** No two companies share a prefix (the invoice number is unique across the platform). The database enforces it too. */
 async function assertPrefixFree(prefix: string, exceptCompanyId: string): Promise<void> {
-  const { data, error } = await supabase.from('organizations').select('id, profile');
-  if (error) throw new Error(`Failed to check the invoice prefix: ${error.message}`);
-  const taken = (data ?? []).some((o: any) => o.id !== exceptCompanyId && String(o.profile?.invoice_prefix ?? '').toUpperCase() === prefix);
-  if (taken) throw new HttpError(409, 'Another company already uses that invoice prefix');
+  if ((await prefixesOfOthers(exceptCompanyId)).has(prefix)) throw new HttpError(409, 'Another company already uses that invoice prefix');
+}
+
+/**
+ * Every prefix another company has: the one in its profile, and any it ever issued numbers under (invoice_counters). A
+ * company that changed its prefix does not release the old one: numbers are unique across the platform, so a company
+ * taking over 'MIL' would collide with the invoices MIL-… already issued, and burn numbers (gaps in its own sequence).
+ */
+async function prefixesOfOthers(companyId: string): Promise<Set<string>> {
+  const [orgs, counters] = await Promise.all([
+    supabase.from('organizations').select('id, profile'),
+    supabase.from('invoice_counters').select('org_id, prefix'),
+  ]);
+  if (orgs.error) throw new Error(`Failed to read invoice prefixes: ${orgs.error.message}`);
+  // Before the counters exist (42P01) only the profiles are known
+  if (counters.error && String(counters.error.code) !== '42P01') throw new Error(`Failed to read invoice prefixes: ${counters.error.message}`);
+  const used = new Set<string>();
+  for (const o of (orgs.data ?? []) as Array<{ id: string; profile?: { invoice_prefix?: unknown } | null }>) {
+    if (o.id !== companyId) used.add(String(o.profile?.invoice_prefix ?? '').toUpperCase());
+  }
+  for (const c of (counters.data ?? []) as Array<{ org_id: string; prefix: string }>) {
+    if (c.org_id !== companyId) used.add(String(c.prefix).toUpperCase());
+  }
+  used.delete('');
+  return used;
 }
 
 /** Initials of the name's words (camel-case words split), e.g. "MargixIndia Logistics" gives MIL; a single word gives its first three letters. */
@@ -255,9 +286,7 @@ export async function invoicePrefixFor(companyId: string): Promise<string> {
   const set = typeof org.profile.invoice_prefix === 'string' ? org.profile.invoice_prefix.trim().toUpperCase() : '';
   if (PREFIX_RE.test(set)) return set;
 
-  const { data, error } = await supabase.from('organizations').select('id, profile');
-  if (error) throw new Error(`Failed to read invoice prefixes: ${error.message}`);
-  const used = new Set((data ?? []).filter((o: any) => o.id !== companyId).map((o: any) => String(o.profile?.invoice_prefix ?? '').toUpperCase()));
+  const used = await prefixesOfOthers(companyId);
   const profileName = typeof org.profile.legal_name === "string" ? org.profile.legal_name : '';
   const base = derivePrefix(org.legal_name || profileName || org.name);
   let candidate = base;

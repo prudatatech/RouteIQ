@@ -581,12 +581,12 @@ describe('who may use it', () => {
     expect((await request(app).get(api('/driver/pay'))).status).toBe(401);
   });
 
-  it('backfills old trips for a superadmin only', async () => {
+  it('backfills old trips for a company admin (its own trips only), not for a manager or a driver', async () => {
     reset({ routes: [route()], driver_pay_rates: [rate()] });
-    expect((await request(app).post(api('/driver-pay/backfill')).set(admin()).send({ from: '2026-09-01' })).status).toBe(403);
-    const ok = await request(app).post(api('/driver-pay/backfill')).set(staff('super-1')).send({ from: '2026-09-01' });
+    expect((await request(app).post(api('/driver-pay/backfill')).set(staff('mgr-1')).send({ from: '2026-09-01' })).status).toBe(403);
+    const ok = await request(app).post(api('/driver-pay/backfill')).set(admin()).send({ from: '2026-09-01' });
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual({ created: 1, skipped: 0 });
-    expect((await request(app).post(api('/driver-pay/backfill')).set(staff('super-1')).send({ from: '2026-09-01' })).body).toEqual({ created: 0, skipped: 1 });
+    expect((await request(app).post(api('/driver-pay/backfill')).set(admin()).send({ from: '2026-09-01' })).body).toEqual({ created: 0, skipped: 1 });
   });
 });

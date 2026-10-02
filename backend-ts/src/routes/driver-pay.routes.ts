@@ -51,8 +51,9 @@ router.post('/entries/:id/adjust', async (req: Request, res: Response) => {
 router.post('/entries/:id/void', async (req: Request, res: Response) => {
   try { res.json(await voidEntry(actorOf(req), req.params.id, req.body?.reason)); } catch (e) { sendError(req, res, e); }
 });
-// Trips that finished before driver pay existed
-router.post('/backfill', requireRole('superadmin'), async (req: Request, res: Response) => {
+// Trips that finished before driver pay existed, or on a vehicle that had no driver then (the notice tells the company
+// to run this). It reads and writes only the signed-in company's own trips and entries, so a company admin may run it.
+router.post('/backfill', async (req: Request, res: Response) => {
   try {
     if (typeof req.body?.from !== 'string') throw new HttpError(400, 'from is required (YYYY-MM-DD)');
     res.json(await backfillTripPay(actorOf(req), req.body.from));

@@ -23,7 +23,7 @@ import { carrierStamp, currentOrgContext, loadMemberships } from '../core/org-co
 import { isDispatchable } from '../core/vehicles';
 import { assertVehicleFits } from './loads/vehicle-fit';
 import { assertCapacity, insertManifest, putLoadOnVehicle } from './loads/create-manifest';
-import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
+import { OWNED, assertVisible, memberOrgId, scopeQuery } from '../core/org-scope';
 import { statementCoveringOrder } from './tpl-statement.service';
 import { activePartnersOf, fleetFlagsOf, ruleExclusion, type AffiliatedPartner } from './tpl-affiliation';
 
@@ -1086,6 +1086,7 @@ export const tplNetworkService = {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new HttpError(400, 'Rating must be a whole number from 1 to 5');
     const note = typeof noteInput === 'string' ? noteInput.trim() : '';
     if (note.length > 500) throw new HttpError(400, 'The note can be at most 500 characters');
+    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('tpl_orders')
@@ -1101,6 +1102,8 @@ export const tplNetworkService = {
   },
 
   async markPaid(orderId: string, paid: boolean, referenceInput: unknown) {
+    // Another company's order is the same 404 as a missing one (this writes, so it is checked before anything else)
+    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     // An order inside an issued statement is settled by that statement, not one order at a time
     const statement = await statementCoveringOrder(orderId);
     if (statement) {
@@ -1108,10 +1111,10 @@ export const tplNetworkService = {
     }
     const reference = typeof referenceInput === 'string' ? referenceInput.trim().slice(0, 100) : '';
     const now = new Date().toISOString();
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('tpl_orders')
       .update({ paid_at: paid ? now : null, paid_reference: paid && reference ? reference : null, updated_at: now })
-      .eq('id', orderId).eq('status', 'delivered').select().maybeSingle();
+      .eq('id', orderId).eq('status', 'delivered'), OWNED.carrier).select().maybeSingle();
     if (error) dbError('Failed to update payment', error);
     if (!data) {
       const { data: existing } = await supabase.from('tpl_orders').select('status').eq('id', orderId).maybeSingle();
