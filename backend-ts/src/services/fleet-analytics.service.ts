@@ -14,7 +14,6 @@ import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { isPlaceholderPlate } from '../core/vehicles';
 import { alertSummary } from './alerts.service';
 import { loadSosCounts } from './sos.service';
-import { OWNED, scopeQuery } from '../core/org-scope';
 
 export const FLEET_ANALYTICS_MAX_DAYS = 90;
 
