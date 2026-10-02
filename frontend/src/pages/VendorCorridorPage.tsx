@@ -5,14 +5,15 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { capacityAPI, vendorAPI } from '@/services/api'
+import { capacityAPI, publicAPI, vendorAPI, type PublicSpareSpace } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { resolvePlace, suggestPlaces } from '@/services/geocoding'
-import PlaceBidModal from '@/components/vendor/PlaceBidModal'
+import PlaceBidModal, { type BidFields, type CapacityWindow } from '@/components/vendor/PlaceBidModal'
 import MyBids, { type VendorBid } from '@/components/vendor/MyBids'
 import type { VendorLoad } from '@/components/vendor/loads'
 import { Alert, Button, buttonClasses, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/components/ui'
-import { formatRupees, formatMinutes } from '@/utils/display'
+import { formatRupees, formatMinutes, formatDateTime } from '@/utils/display'
+import { clearGuestDraft, loadGuestDraft, saveGuestDraft } from '@/utils/guestDraft'
 
 interface OpenWindow {
   id: string
@@ -33,6 +34,23 @@ interface PassingRoute {
     vehicles?: {
       vehicle_type?: string
     }
+  }
+}
+
+/** A bid started before signing in: the space it is for, and what was typed. */
+interface BidDraft {
+  windowId: string
+  window: CapacityWindow
+  fields: BidFields
+}
+
+/** A public spare-space listing in the shape the bid form takes. */
+function toBidWindow(p: PublicSpareSpace): CapacityWindow {
+  return {
+    id: p.id,
+    floor_price: null,
+    closes_at: p.departs_to ?? p.departs_from,
+    vehicles: { vehicle_type: p.vehicle_type, available_capacity_kg: p.free_kg },
   }
 }
 
@@ -80,12 +98,18 @@ export default function VendorCorridorPage() {
   const [bids, setBids] = useState<VendorBid[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [biddingWindow, setBiddingWindow] = useState<OpenWindow | null>(null)
+  const [biddingWindow, setBiddingWindow] = useState<CapacityWindow | null>(null)
   const [claiming, setClaiming] = useState<string | null>(null)
+  const [publicSpace, setPublicSpace] = useState<PublicSpareSpace[]>([])
+  const [guestBidding, setGuestBidding] = useState<PublicSpareSpace | null>(null)
+  const [restoredBid, setRestoredBid] = useState<BidFields | null>(null)
+  // The company profile loads a moment after the session; wait for it (up to a few seconds) before judging KYC on a return from sign-in
+  const [profileWait, setProfileWait] = useState(false)
 
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
   const navigate = useNavigate()
+  const authInitialized = useAuthStore(s => s.authInitialized)
   const { vendorProfile, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
   const [params, setParams] = useSearchParams()
@@ -102,6 +126,11 @@ export default function VendorCorridorPage() {
 
   const fetchData = async () => {
     try {
+      if (!session) {
+        setPublicSpace(await publicAPI.spareSpace())
+        setError(null)
+        return
+      }
       const [w, p, b] = await Promise.all([
         session ? capacityAPI.openWindows() : Promise.resolve([]),
         session ? vendorAPI.passingRoutes().catch(() => []) : Promise.resolve([]),
@@ -120,6 +149,8 @@ export default function VendorCorridorPage() {
 
   useEffect(() => {
     fetchData()
+    // Live updates need a sign-in; a visitor sees the list as of now.
+    if (!session) return
     const subW = openChannel('vendor_corr_win').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_windows' }, fetchData).subscribe()
     const subB = openChannel('vendor_corr_bids').on('postgres_changes', { event: '*', schema: 'public', table: 'capacity_bids' }, fetchData).subscribe()
     return () => { supabase.removeChannel(subW); supabase.removeChannel(subB) }
@@ -162,10 +193,6 @@ export default function VendorCorridorPage() {
   }
 
   const handlePlaceBid = (w: OpenWindow) => {
-    if (!session) {
-      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/return-trips')}`)
-      return
-    }
     if (!kycApproved) {
       toast('Finish your company KYC first. It only takes a few minutes.')
       navigate(vendorProfile ? '/vendor/company' : '/vendor/onboarding')
@@ -174,19 +201,103 @@ export default function VendorCorridorPage() {
     setBiddingWindow(w)
   }
 
+  // Bid started before signing in: save it, sign in, and come back to confirm it.
+  const continueGuestBid = (fields: BidFields) => {
+    if (!guestBidding) return
+    const draft: BidDraft = { windowId: guestBidding.id, window: toBidWindow(guestBidding), fields }
+    if (!saveGuestDraft('bid', draft)) toast('We could not save your bid on this device, so you may need to fill it in again after signing in.')
+    navigate(`/login?as=vendor&next=${encodeURIComponent(`/vendor/return-trips?bid=${guestBidding.id}&resume=1`)}`)
+  }
+
+  // Back from sign-in: reopen the bid form with what was typed. The vendor confirms; nothing is placed automatically.
+  useEffect(() => {
+    if (params.get('resume') !== '1' || !authInitialized || !session || loading) return
+    const id = params.get('bid')
+    const clearParams = () => setParams(prev => { const n = new URLSearchParams(prev); n.delete('resume'); n.delete('bid'); return n }, { replace: true })
+    const draft = loadGuestDraft<BidDraft>('bid')
+    if (!id || !draft || draft.windowId !== id) {
+      clearParams()
+      return
+    }
+    if (!kycApproved && !vendorProfile && !profileWait) return
+    if (!kycApproved) {
+      // The vendor has to finish KYC first; the draft stays for a day so they can bid after.
+      clearParams()
+      toast('Finish your company KYC first. It only takes a few minutes.')
+      navigate(vendorProfile ? '/vendor/company' : '/vendor/onboarding')
+      return
+    }
+    setRestoredBid(draft.fields)
+    setBiddingWindow(windows.find(w => w.id === id) ?? draft.window)
+    clearParams()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, authInitialized, session, loading, kycApproved, vendorProfile, profileWait])
+
+  useEffect(() => {
+    if (params.get('resume') !== '1' || !session) return
+    const t = setTimeout(() => setProfileWait(true), 3000)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!session])
+
   if (!session) {
     return (
       <Page>
-        <PageHeader title="Return trips" description="Spare space on trucks heading back near you. Bid to fill it with your load, updated live." />
-        <EmptyState
-          title="Sign in to see return trips"
-          description="Return trips and passing trucks are shown to signed-in vendors."
-          action={(
-            <Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/return-trips')}`} className={buttonClasses({ variant: 'primary' })}>
-              Sign in
-            </Link>
+        <PageHeader title="Return trips" description="Spare space on trucks heading back. Pick one and bid to fill it with your load." />
+        <Alert tone="info" title="Look around freely">
+          You only sign in or create an account when you place a bid. Your bid is kept while you sign in.
+        </Alert>
+        <section id="open-return-trips" className="space-y-4">
+          <h2 className="text-lg font-semibold text-text">Spare space on trucks</h2>
+          {error ? (
+            <ErrorState compact title="We could not load return trips" description="Check your connection and try again." onRetry={() => { setLoading(true); fetchData() }} />
+          ) : loading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
+            </div>
+          ) : publicSpace.length === 0 ? (
+            <EmptyState
+              compact
+              title="No spare space listed right now"
+              description="Check back soon, or post your load and let trucks come to you."
+              action={<Link to="/vendor/request" className={buttonClasses({ variant: 'primary' })}>Post a load</Link>}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {publicSpace.map(sp => (
+                <Card key={sp.id} id={`window-${sp.id}`} padded className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-xs text-muted">{sp.company.name}</p>
+                    <p className="text-base font-semibold text-text">{sp.from_city} to {sp.to_city}</p>
+                    <p className="text-xs text-muted">Leaves {formatDateTime(sp.departs_from)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted">{sp.vehicle_type || 'Truck'}</p>
+                    <p className="text-2xl font-semibold text-text">
+                      {sp.free_kg.toLocaleString('en-IN')} <span className="text-sm font-normal text-muted">kg free</span>
+                    </p>
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
+                    <div>
+                      <p className="text-xs text-muted">From</p>
+                      <p className="text-sm font-medium text-text">{sp.price_per_kg_from != null ? `${formatRupees(sp.price_per_kg_from)} per kg` : 'Name your price'}</p>
+                    </div>
+                    <Button onClick={() => setGuestBidding(sp)}>Bid</Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
           )}
-        />
+        </section>
+        {guestBidding && (
+          <PlaceBidModal
+            guest
+            window={toBidWindow(guestBidding)}
+            onClose={() => setGuestBidding(null)}
+            onPlaced={() => undefined}
+            onGuestContinue={continueGuestBid}
+          />
+        )}
       </Page>
     )
   }
@@ -320,7 +431,13 @@ export default function VendorCorridorPage() {
       </section>
 
       {biddingWindow && (
-        <PlaceBidModal window={biddingWindow} onClose={() => setBiddingWindow(null)} onPlaced={fetchData} />
+        <PlaceBidModal
+          window={biddingWindow}
+          initial={restoredBid ?? undefined}
+          restored={!!restoredBid}
+          onClose={() => { setBiddingWindow(null); setRestoredBid(null) }}
+          onPlaced={() => { clearGuestDraft('bid'); fetchData() }}
+        />
       )}
     </Page>
   )

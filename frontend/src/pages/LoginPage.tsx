@@ -265,7 +265,7 @@ export default function LoginPage() {
       email: email.trim(),
       password,
       // The database gives self-registered accounts the vendor role only when they ask for it here.
-      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/login?${registering ? 'register=company' : 'as=vendor'}` },
+      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/login?${registering ? 'register=company' : 'as=vendor'}${next && !registering ? `&next=${encodeURIComponent(next)}` : ''}` },
     })
     if (error) {
       setFormError(describeAuthError(error, 'sign-up'))
@@ -406,10 +406,9 @@ export default function LoginPage() {
   }
   if (mode === 'sign-in' && audience === 'partner') {
     otherOptions.push(
-      <>New vendor? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create an account</button></>,
       <>Approved 3PL partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
       <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
-      <>Just looking? <Link className={linkClass} to="/vendor/return-trips">Look at return trips without signing in</Link></>,
+      <>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>,
     )
   } else if (mode === 'sign-in') {
     otherOptions.push(
@@ -468,6 +467,16 @@ export default function LoginPage() {
                   form
                 )}
               </Card>
+
+              {mode === 'sign-in' && audience === 'partner' && !resetLinkMissing && (
+                <div className="mt-4 rounded-card border border-brand/40 bg-brand-soft p-4">
+                  <p className="text-sm font-medium text-text">New here?</p>
+                  <p className="mt-0.5 text-sm text-muted">Create a free vendor account. Anything you filled in is kept{next ? ' and you come straight back to it' : ''}.</p>
+                  <Button variant="secondary" size="lg" fullWidth className="mt-3" onClick={() => switchMode('sign-up')}>
+                    New here? Create a vendor account
+                  </Button>
+                </div>
+              )}
 
               <ul className="mt-6 space-y-2 text-sm text-muted">
                 {otherOptions.map((option, i) => <li key={i}>{option}</li>)}
