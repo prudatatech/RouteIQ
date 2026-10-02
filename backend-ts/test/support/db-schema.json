@@ -1509,5 +1509,16 @@
     "prefix",
     "period",
     "last_seq"
+  ],
+  "kyc_info_requests": [
+    "id",
+    "vendor_id",
+    "message",
+    "items",
+    "status",
+    "requested_by",
+    "requested_at",
+    "answered_at",
+    "answers"
   ]
 }
