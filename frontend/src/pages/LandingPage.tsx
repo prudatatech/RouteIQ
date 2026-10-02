@@ -29,7 +29,7 @@ const audiences: Audience[] = [
     title: 'Vendors',
     description: 'Post a load or bid on spare truck space on return trips, then follow your loads until they are delivered.',
     action: { to: '/ship', label: 'Find a truck' },
-    secondary: { to: '/login?as=vendor', label: 'Sign in or create an account' },
+    secondary: { to: '/vendor/login', label: 'Sign in or create an account' },
   },
   {
     icon: Building2,
@@ -170,7 +170,9 @@ export default function LandingPage() {
           <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
             <Link to="/track" className="hover:text-text">Track a shipment</Link>
             <Link to="/3pl/onboard" className="hover:text-text">Become a 3PL partner</Link>
-            <Link to="/login" className="hover:text-text">Sign in</Link>
+            <Link to="/login" className="hover:text-text">Staff sign in</Link>
+            <Link to="/vendor/login" className="hover:text-text">Vendor sign in</Link>
+            <Link to="/3pl/login" className="hover:text-text">3PL partner sign in</Link>
           </nav>
         </div>
       </footer>

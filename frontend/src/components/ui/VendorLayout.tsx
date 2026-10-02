@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
-import { useEffectiveRole } from '@/store/effectiveRole'
+import { useAccountKind } from '@/store/accountKind'
 import { useAuthStore } from '@/store/authStore'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import type { KycStatus, VendorOutletContext, VendorProfileSummary } from '@/components/vendor/vendorContext'
@@ -35,7 +35,7 @@ const links = [
 export default function VendorLayout() {
   const userId = useAuthStore(s => s.userId)
   const session = useAuthStore(s => s.session)
-  const { role } = useEffectiveRole()
+  const { kind } = useAccountKind()
   const clearAuth = useAuthStore(s => s.clearAuth)
   const navigate = useNavigate()
   const location = useLocation()
@@ -116,13 +116,14 @@ export default function VendorLayout() {
       console.error('Sign-out failed', e)
     }
     clearAuth()
-    navigate('/login?as=vendor')
+    navigate('/vendor/login')
   }
 
   // A visitor sees only the public sections; the account pages appear once they sign in.
   const visibleLinks = links.filter(link => !link.requiresSignIn || !!session)
 
-  const isVendor = !!session && role === 'vendor'
+  // A 3PL partner has the vendor role but its own portal: only a plain vendor account is a vendor here
+  const isVendor = !!session && kind === 'vendor'
   const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, isVendor, refreshProfile: loadProfile }
   // The company page needs the vendor when the KYC is not approved, or the profile has no pickup location
   const needsKyc = isVendor && (vendorProfile ? vendorProfile.kycStatus !== 'approved' || !vendorProfile.hasLocation : !profileLoading)
@@ -165,7 +166,7 @@ export default function VendorLayout() {
         : <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />}
     </div>
   ) : (
-    <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+    <NavLink to={`/vendor/login?next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
       <LogIn size={16} aria-hidden="true" /> Sign in / Sign up
     </NavLink>
   )

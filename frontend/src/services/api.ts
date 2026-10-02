@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { supabase } from '@/services/supabase'
 import { orgHeaders } from '@/store/orgStore'
+import { loginPathFor } from '@/utils/accountKind'
 import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
@@ -104,7 +105,7 @@ api.interceptors.response.use(
         // Session is dead — sign out and redirect
         await supabase.auth.signOut()
         if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
+          window.location.href = loginPathFor(window.location.pathname)
         }
       }
     }

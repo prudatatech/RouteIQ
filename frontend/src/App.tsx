@@ -1,15 +1,11 @@
 import { Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import toast, { Toaster } from 'react-hot-toast'
-import { useEffectiveRole } from '@/store/effectiveRole'
-import { roleCanOpen } from '@/utils/effectiveRole'
+import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
 import AppLayout from '@/components/ui/AppLayout'
-import { Button, ConfirmProvider, EmptyState, LoadingState, Spinner } from '@/components/ui'
-import { Lock } from 'lucide-react'
-import { pageNameFor } from '@/config/navigation'
+import { ConfirmProvider, LoadingState } from '@/components/ui'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
 import { inboxLink, type RequestSource } from '@/components/requests/model'
@@ -26,6 +22,7 @@ import {
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
 import { OrgGuard } from '@/components/OrgGuard'
+import PrivateRoute from '@/components/PrivateRoute'
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -128,85 +125,6 @@ function MovedToReturnTrips({ from }: { from: OldReturnTripsPage }) {
   return <Navigate to={returnTripsLink(from, location.search)} state={location.state} replace />
 }
 
-/** Home page for a role, from the store. Vendors without a profile are routed later by the vendor pages. */
-function homeForRole(role: string | null): string | null {
-  if (role === 'admin' || role === 'superadmin' || role === 'manager') return '/today'
-  if (role === 'driver') return '/driver'
-  if (role === 'vendor') return '/vendor/loads'
-  return null
-}
-
-function NoAccess() {
-  const clearAuth = useAuthStore(s => s.clearAuth)
-  const signOut = async () => {
-    try { await supabase.auth.signOut() } catch (err) { console.error('Sign-out failed', err) }
-    clearAuth()
-  }
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <EmptyState
-        icon={<Lock size={22} />}
-        title="This account can't use the web app"
-        description="Ask your MargixIndia administrator to give your account access, or sign in with a different account."
-        action={<Button variant="secondary" onClick={signOut}>Sign out</Button>}
-      />
-    </div>
-  )
-}
-
-/** Sends a signed-in user home from a page their role cannot open, and says why. */
-function BlockedRedirect({ to, from }: { to: string; from: string }) {
-  useEffect(() => {
-    const name = pageNameFor(from)
-    toast.error(`You don't have access to this page${name ? ` (${name})` : ''}. Ask an administrator if you need it.`, { id: 'page-blocked' })
-  }, [from])
-  return <Navigate to={to} replace />
-}
-
-function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
-  const location = useLocation()
-  const token = useAuthStore(s => s.token)
-  const { role, ready: orgsReady } = useEffectiveRole()
-  const authInitialized = useAuthStore(s => s.authInitialized)
-
-  // Supabase's session (and this store) haven't finished restoring yet — e.g. a hard
-  // reload of a deep link. Show a spinner instead of bouncing to /login prematurely.
-  // Also wait for a signed-in person's organisations: their role is the one they hold in the active organisation
-  if (!authInitialized || (token && !orgsReady)) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-bg">
-        <Spinner size={32} />
-      </div>
-    )
-  }
-
-  if (!token) {
-    // Come back here after signing in; vendor and 3PL pages open the partner sign-in.
-    const params = new URLSearchParams({ next: `${location.pathname}${location.search}` })
-    if (location.pathname.startsWith('/vendor') || location.pathname.startsWith('/3pl-portal')) params.set('as', 'vendor')
-    return <Navigate to={`/login?${params}`} replace />
-  }
-
-  // If this route is restricted to certain roles
-  if (!roleCanOpen(role, allowedRoles)) {
-    const home = homeForRole(role)
-    // Accounts with no area in the web app (no role, customers) would
-    // otherwise bounce between redirects forever.
-    if (!home || home === location.pathname) return <NoAccess />
-    return <BlockedRedirect to={home} from={location.pathname} />
-  }
-
-  return <>{children}</>
-}
-
-// The vendor sign-in page is now the partner option of /login. Keep ?next= and the rest.
-function VendorLoginRedirect() {
-  const { search, hash } = useLocation()
-  const params = new URLSearchParams(search)
-  params.set('as', 'vendor')
-  return <Navigate to={{ pathname: '/login', search: `?${params}`, hash }} replace />
-}
-
 // Old activation links point here; the real flow is the 3PL credential setup.
 // Keep the query string (e.g. ?email=) so the setup form is prefilled.
 function TplActivateRedirect() {
@@ -233,7 +151,7 @@ export default function App() {
       }
       try {
         const account = await loadAccount(session.user.id)
-        store.setSession(session, account.role)
+        store.setSession(session, account.role, account.tplPartnerId)
       } catch (err) {
         console.error('Failed to load the account role', err)
         store.setSession(session, null)
@@ -274,7 +192,9 @@ export default function App() {
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ChunkErrorBoundary>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={<LoginPage audience="staff" />} />
+          <Route path="/vendor/login" element={<LoginPage audience="vendor" />} />
+          <Route path="/3pl/login" element={<LoginPage audience="tpl" />} />
           {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
           <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
           <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
@@ -297,9 +217,13 @@ export default function App() {
               sign-in when there's no session). Everything that needs a vendor account is gated below. */}
           <Route path="/vendor" element={<VendorLayout />}>
             <Route index element={<Navigate to="/vendor/loads" replace />} />
-            <Route path="loads" element={<VendorLoadsPage />} />
+            <Route path="loads" element={
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
+                <VendorLoadsPage />
+              </PrivateRoute>
+            } />
             <Route path="loads/:id" element={
-              <PrivateRoute allowedRoles={['vendor']}>
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
                 <VendorLoadPage />
               </PrivateRoute>
             } />
@@ -308,22 +232,22 @@ export default function App() {
             } />
             <Route path="return-trips" element={<VendorCorridorPage />} />
             <Route path="invoices" element={
-              <PrivateRoute allowedRoles={['vendor']}>
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
                 <VendorInvoicesPage />
               </PrivateRoute>
             } />
             <Route path="claims" element={
-              <PrivateRoute allowedRoles={['vendor']}>
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
                 <VendorClaimsPage />
               </PrivateRoute>
             } />
             <Route path="company" element={
-              <PrivateRoute allowedRoles={['vendor']}>
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
                 <VendorDocumentsPage />
               </PrivateRoute>
             } />
             <Route path="onboarding" element={
-              <PrivateRoute allowedRoles={['vendor']}>
+              <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
                 <VendorOnboardingPage />
               </PrivateRoute>
             } />
@@ -338,7 +262,6 @@ export default function App() {
           <Route path="/ship" element={<VendorLayout />}>
             <Route index element={<ShipPage />} />
           </Route>
-          <Route path="/vendor/login" element={<VendorLoginRedirect />} />
 
           {/* 3PL Public/Partner Routes */}
           <Route path="/3pl/onboard" element={<LazyRoute><TplOnboardingPage /></LazyRoute>} />
@@ -347,7 +270,7 @@ export default function App() {
           <Route path="/3pl-portal/activate" element={<TplActivateRedirect />} />
           {/* The partner portal has its own pages (Orders, Earnings, Lanes, Documents, Settings) under the id */}
           <Route path="/3pl-portal/:id/*" element={
-            <LazyRoute><PrivateRoute allowedRoles={['vendor']}>
+            <LazyRoute><PrivateRoute allowedRoles={['vendor']} kinds={['tpl']}>
               <TplDashboardPage />
             </PrivateRoute></LazyRoute>
           } />

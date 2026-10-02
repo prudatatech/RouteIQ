@@ -40,6 +40,9 @@ import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
 import AddressStep from './AddressStep'
 import { emptyDraft, emptyRow } from './logic'
 import { loadGuestDraft } from '@/utils/guestDraft'
+import { useAuthStore } from '@/store/authStore'
+import { useOrgStore } from '@/store/orgStore'
+import { memoryAuthStorage } from '@/test-utils/authStorage'
 
 const cement: HsnHit = { hsn_code: '2523', description: 'Portland cement', category: 'construction', gst_rates: [18], rate_note: null, is_hazmat: false, is_perishable: false }
 const medicine: HsnHit = { hsn_code: '3004', description: 'Pharmaceutical formulations', category: 'pharma', gst_rates: [5, 12], rate_note: '5% or 12% by product', is_hazmat: false, is_perishable: false }
@@ -159,7 +162,7 @@ describe('OTP modal', () => {
     api.vendorVerifyOtp.mockResolvedValue({ session: { access_token: 'AT', refresh_token: 'RT' } })
     api.setSession.mockResolvedValue({ error: null })
     const onVerified = vi.fn()
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login?as=vendor" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/vendor/login" />))
 
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '98200 12345' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
@@ -177,7 +180,7 @@ describe('OTP modal', () => {
     api.vendorSendOtp.mockResolvedValue({ ok: true })
     api.vendorVerifyOtp.mockRejectedValue(new Error('bad code'))
     const onVerified = vi.fn()
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login?as=vendor" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/vendor/login" />))
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '9820012345' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
     fireEvent.change(await screen.findByLabelText(/6-digit code/i), { target: { value: '000000' } })
@@ -187,9 +190,9 @@ describe('OTP modal', () => {
   })
 
   it('links to email and password sign-in', () => {
-    render(wrap(<OtpModal open onClose={() => {}} onVerified={() => {}} emailSignInHref="/login?as=vendor&next=%2Fvendor%2Frequest%3Fresume%3D1" />))
+    render(wrap(<OtpModal open onClose={() => {}} onVerified={() => {}} emailSignInHref="/vendor/login?next=%2Fvendor%2Frequest%3Fresume%3D1" />))
     const link = screen.getByRole('link', { name: /email and password/i })
-    expect(link.getAttribute('href')).toContain('/login?as=vendor')
+    expect(link.getAttribute('href')).toContain('/vendor/login')
   })
 })
 
@@ -308,5 +311,36 @@ describe('the address picker after a reload', () => {
     first.unmount()
     render(<AddressStep draft={{ ...base, pickup_address: 'typed only' }} onChange={() => {}} errors={{}} />)
     expect(screen.getByTestId('Search the pickup address').textContent).toBe('')
+  })
+})
+
+describe('staff on the vendor pages', () => {
+  beforeEach(() => memoryAuthStorage())
+  afterEach(() => { useAuthStore.getState().clearAuth(); useOrgStore.getState().reset() })
+
+  const signInAs = (role: string, tplPartnerId: string | null = null) => {
+    useAuthStore.setState({ token: 't', role, tplPartnerId, authInitialized: true })
+    useOrgStore.getState().setMemberships([])
+  }
+
+  it('tells company staff that posting loads needs a vendor account, and disables Submit Load', async () => {
+    signInAs('admin')
+    render(wrap(<VendorShipmentRequestPage />, '/vendor/request?resume=1'))
+    expect(await screen.findByText("You're signed in as company staff. Posting loads needs a vendor account.")).toBeTruthy()
+    const submit = screen.getByRole('button', { name: /submit load/i }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+  })
+
+  it('shows the same notice for a 3PL partner', async () => {
+    signInAs('vendor', 'p1')
+    render(wrap(<VendorShipmentRequestPage />, '/vendor/request?resume=1'))
+    expect(await screen.findByText("You're signed in as a 3PL partner. Posting loads needs a vendor account.")).toBeTruthy()
+  })
+
+  it('shows no notice to a vendor', async () => {
+    signInAs('vendor')
+    render(wrap(<VendorShipmentRequestPage />, '/vendor/request?resume=1'))
+    expect(await screen.findByRole('button', { name: /submit load/i })).toBeTruthy()
+    expect(screen.queryByText(/Posting loads needs a vendor account/)).toBeNull()
   })
 })

@@ -5,6 +5,8 @@ import clsx from 'clsx'
 import { Alert, Button, Page, PageHeader } from '@/components/ui'
 import { publicAPI, vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { useBlockedFromVendorActions } from '@/store/accountKind'
+import NotVendorNotice from '@/components/vendor/NotVendorNotice'
 import { clearGuestDraft, loadGuestDraft, saveGuestDraft } from '@/utils/guestDraft'
 import { errorMessage } from '@/utils/display'
 import type { BusinessProfile, LoadDraft, PostedLoad, ProductRow, Recommendation } from '@/types/load'
@@ -25,7 +27,7 @@ import {
 
 /** Where the email and password sign-in sends the vendor back to: the saved form, at the review step. */
 const RESUME_PATH = '/vendor/request?resume=1'
-const EMAIL_SIGN_IN = `/login?as=vendor&next=${encodeURIComponent(RESUME_PATH)}`
+const EMAIL_SIGN_IN = `/vendor/login?next=${encodeURIComponent(RESUME_PATH)}`
 
 /** The draft from this browser, or an empty one seeded from the lane the Find a truck page passed in the link. */
 function initialDraft(params: URLSearchParams): LoadDraft {
@@ -72,6 +74,7 @@ export default function VendorShipmentRequestPage() {
   const [params] = useSearchParams()
   const queryClient = useQueryClient()
   const token = useAuthStore(s => s.token)
+  const blockedKind = useBlockedFromVendorActions()
 
   const [draft, setDraft] = useState<LoadDraft>(() => {
     const d = initialDraft(params)
@@ -167,6 +170,7 @@ export default function VendorShipmentRequestPage() {
   }
 
   const onSubmit = () => {
+    if (blockedKind) return
     const bad = firstInvalidStep(draft)
     if (bad !== null) {
       setAttempted(a => ({ ...a, [bad]: true }))
@@ -232,6 +236,7 @@ export default function VendorShipmentRequestPage() {
     <Page width="form">
       <PageHeader title="Post a load" description="Tell us what you are moving and where. You sign in only when you submit." />
 
+      {blockedKind && <NotVendorNotice kind={blockedKind} />}
       {draft.reposted_from && (
         <Alert tone="info" title="Copied from an earlier load">Everything is filled in except the dates. Choose the new pickup date, then review.</Alert>
       )}
@@ -280,7 +285,7 @@ export default function VendorShipmentRequestPage() {
             {notes(recs.filter(r => r.severity === 'warn' && r.code !== 'eway_required'))}
             <ReviewStep
               draft={draft} assist={assist} assistLoading={assistLoading} vehicles={vehicles}
-              onEdit={goTo} onSubmit={onSubmit} submitting={submitting} signedIn={!!token} error={submitError}
+              onEdit={goTo} onSubmit={onSubmit} submitting={submitting} signedIn={!!token} error={submitError} disabled={!!blockedKind}
             />
           </>
         )}

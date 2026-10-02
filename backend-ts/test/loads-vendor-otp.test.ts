@@ -103,6 +103,27 @@ describe('POST /auth/vendor/verify-otp', () => {
     expect((await c.verify('9876500107', lastCode())).status).toBe(403);
   });
 
+  it('refuses a phone that belongs to staff, a driver or a 3PL partner, and changes nobody', async () => {
+    const ids = { admin: 'dd000000-0000-4000-8000-0000000000a1', driver: 'dd000000-0000-4000-8000-0000000000a2', tpl: 'dd000000-0000-4000-8000-0000000000a3' };
+    supabaseMock.rows('users').push(
+      { id: ids.admin, phone: '+919876500201', role: 'admin', is_active: true },
+      { id: ids.driver, phone: '+919876500202', role: 'driver', is_active: true },
+      { id: ids.tpl, phone: '+919876500203', role: 'vendor', is_active: true },
+    );
+    supabaseMock.rows('tpl_partners').push({ id: 'dd000000-0000-4000-8000-0000000000b1', user_id: ids.tpl });
+    const before = JSON.stringify(supabaseMock.rows('users'));
+    for (const phone of ['9876500201', '9876500202', '9876500203']) {
+      const c = client();
+      await c.send(phone);
+      const res = await c.verify(phone, lastCode());
+      expect(res.status).toBe(403);
+      expect(res.body.detail).toBe('This number belongs to a company or partner account');
+      expect(res.body.session).toBeUndefined();
+    }
+    expect(supabaseMock.authCalls.filter(a => a.op === 'create')).toHaveLength(0);
+    expect(JSON.stringify(supabaseMock.rows('users'))).toBe(before);
+  });
+
   it('answers 502 when a session cannot be made, rather than a login with nothing to use', async () => {
     supabaseMock.sessions = false;
     vi.spyOn(console, 'error').mockImplementation(() => {});
