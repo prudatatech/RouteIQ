@@ -55,8 +55,9 @@ describe('partial delivery', () => {
     expect(res.body.status).toBe('completed');
     expect(one('shipments', ID.s1)).toMatchObject({ status: 'partially_delivered', pieces_delivered: 8 });
     expect(one('route_stops', ID.stop1)).toMatchObject({ status: 'completed', photo_url: `pod/${ID.stop1}/photo_b.jpg` });
-    // 8 of 10 pieces of 1,000 kg came off: 800 kg (the vehicle recorded 300 kg of loads)
-    expect(one('vehicles', ID.v1).current_load_kg).toBe(0);
+    // 8 of 10 pieces of 1,000 kg came off, so 200 kg of it is still on board, with the 500 kg shipment still to
+    // collect and the 300 kg vendor load: the load is worked out from what is on or planned for the truck.
+    expect(one('vehicles', ID.v1).current_load_kg).toBe(1000);
   });
 
   it('records a delivery with remarks as delivered, with a damage case', async () => {

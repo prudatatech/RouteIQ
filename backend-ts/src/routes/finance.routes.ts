@@ -192,11 +192,16 @@ router.post('/invoices', async (req: Request, res: Response) => {
       ? await scopeQuery(supabase.from('shipments').select('status').eq('id', shipmentId), OWNED.carrierAndVendor).maybeSingle()
       : await scopeQuery(supabase.from('cargo_manifest').select('status').eq('id', manifestId), OWNED.carrierAndVendor).maybeSingle();
     if (!delivered) throw new HttpError(404, 'Delivery not found');
-    if (delivered.status !== 'delivered') throw new HttpError(409, 'Only delivered shipments can be invoiced');
+    // A shipment that settled as partially delivered is invoiced for its price too (the To price list offers it)
+    const billable = typeof shipmentId === 'string' ? ['delivered', 'partially_delivered'] : ['delivered'];
+    if (!billable.includes(String(delivered.status))) throw new HttpError(409, 'Only delivered shipments can be invoiced');
 
     const result = typeof shipmentId === 'string'
       ? await InvoiceService.createForShipment(shipmentId)
       : await InvoiceService.createForManifest(manifestId);
+    if (result.status === 'skipped' && delivered.status === 'partially_delivered') {
+      throw new HttpError(409, 'Part of this shipment is still on a vehicle or at a hub. It is invoiced once nothing is left to deliver');
+    }
     if (result.status === 'unpriced' || result.status === 'skipped') {
       throw new HttpError(422, 'This delivery has no price on record, so there is nothing to invoice');
     }
@@ -319,7 +324,23 @@ interface ExpenseInput {
   receipt_path: string | null;
 }
 
-async function parseExpense(body: any, partial: boolean): Promise<Partial<ExpenseInput>> {
+/**
+ * A receipt path must point at a file that was really uploaded through the signed link, and at one no other expense
+ * already holds: otherwise an expense keeps a dead link, or one company attaches (and so reads) another's receipt.
+ */
+async function assertReceiptUploaded(path: string, exceptExpenseId?: string): Promise<void> {
+  const [, folder, file] = path.split('/');
+  const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).list(`expenses/${folder}`, { search: file, limit: 10 });
+  if (error) throw new Error(`Failed to check the receipt: ${error.message}`);
+  if (!(data ?? []).some(o => o.name === file)) throw new HttpError(400, 'Receipt was not uploaded correctly. Upload it again.');
+  let used = supabase.from('expenses').select('id').eq('receipt_path', path).limit(1);
+  if (exceptExpenseId) used = used.neq('id', exceptExpenseId);
+  const { data: other, error: usedErr } = await used;
+  if (usedErr) throw new Error(`Failed to check the receipt: ${usedErr.message}`);
+  if ((other ?? []).length > 0) throw new HttpError(400, 'That receipt is already attached to another expense. Upload it again.');
+}
+
+async function parseExpense(body: any, partial: boolean, expenseId?: string): Promise<Partial<ExpenseInput>> {
   const out: Partial<ExpenseInput> = {};
   const has = (k: string) => body && body[k] !== undefined;
 
@@ -352,8 +373,12 @@ async function parseExpense(body: any, partial: boolean): Promise<Partial<Expens
   }
   if (has('receipt_path')) {
     if (body.receipt_path === null || body.receipt_path === '') out.receipt_path = null;
-    else if (typeof body.receipt_path === 'string' && /^expenses\/[\w-]+\/[\w.-]+$/.test(body.receipt_path)) out.receipt_path = body.receipt_path;
-    else throw new HttpError(400, 'Receipt was not uploaded correctly. Upload it again.');
+    else if (typeof body.receipt_path === 'string' && /^expenses\/[\w-]+\/[\w.-]+$/.test(body.receipt_path)) {
+      // Unchanged on an edit: it was checked when it was attached
+      const { data: current } = expenseId ? await supabase.from('expenses').select('receipt_path').eq('id', expenseId).maybeSingle() : { data: null };
+      if (current?.receipt_path !== body.receipt_path) await assertReceiptUploaded(body.receipt_path, expenseId);
+      out.receipt_path = body.receipt_path;
+    } else throw new HttpError(400, 'Receipt was not uploaded correctly. Upload it again.');
   }
   for (const [key, table, label] of [['vehicle_id', 'vehicles', 'Vehicle'], ['route_id', 'routes', 'Trip']] as const) {
     if (!has(key)) continue;
@@ -436,7 +461,7 @@ router.post('/expenses/receipt-upload', rateLimitByUser('expense-receipt-upload'
 router.put('/expenses/:id', async (req: Request, res: Response) => {
   try {
     await assertExpenseVisible(String(req.params.id));
-    const input = await parseExpense(req.body, true);
+    const input = await parseExpense(req.body, true, String(req.params.id));
     if (!Object.keys(input).length) throw new HttpError(400, 'Nothing to update');
     const { data, error } = await scopeQuery(supabase
       .from('expenses')

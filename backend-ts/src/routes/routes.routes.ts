@@ -103,10 +103,11 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 // ── GET /delivery-points ───────────────────────────────────
 router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
+    // (delivery_points has two foreign keys to shipments: name the one that is its own shipment, or PostgREST answers 300)
     // A delivery point has no owner column: it is the company's when its shipment or a stop of one of its trips is
     const limited = isScoped(OWNED.carrier);
     const { data, error } = await supabase.from('delivery_points')
-      .select(limited ? '*, shipments(carrier_org_id), route_stops(routes(carrier_org_id))' : '*');
+      .select(limited ? '*, shipments!delivery_points_shipment_id_fkey(carrier_org_id), route_stops(routes(carrier_org_id))' : '*');
     if (error) throw error;
     if (!limited) { res.json(data || []); return; }
     const mine = (rows: any): boolean => (Array.isArray(rows) ? rows : rows ? [rows] : []).some((r: any) => r?.carrier_org_id === orgFilter(OWNED.carrier)?.id);
@@ -300,6 +301,8 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       }
       const { error: vehicleErr } = await supabase.from('routes').update({ vehicle_id: newVehicleId }).eq('id', route.id).eq('status', route.status);
       if (vehicleErr) throw new Error(vehicleErr.message);
+      const { moveTripToVehicle } = await import('../services/shipment.service');
+      await moveTripToVehicle(route.id, route.vehicle_id, newVehicleId);
     }
 
     if (parsed.data.status) await routeService.changeStatus(route.id, parsed.data.status);

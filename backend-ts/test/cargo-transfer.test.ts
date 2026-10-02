@@ -112,9 +112,9 @@ describe('transshipment to a relief truck', () => {
     expect(supabaseMock.rows('route_stops').find(s => s.route_id === newRouteId)).toMatchObject({ delivery_point_id: ID.dp1, status: 'pending' });
     expect(one('route_stops', ID.stop1).status).toBe('cancelled');
 
-    // Loads follow: the vendor load's weight leaves the broken truck for the relief truck
-    expect(one('vehicles', ID.v1).current_load_kg).toBe(0);
-    expect(one('vehicles', ID.v2).current_load_kg).toBe(300);
+    // Loads follow: the vendor load's weight leaves the broken truck for the relief truck (s2, still to collect, stays on it)
+    expect(one('vehicles', ID.v1).current_load_kg).toBe(500);
+    expect(one('vehicles', ID.v2).current_load_kg).toBe(1300); // the shipment (1,000 kg) and the vendor load (300 kg)
 
     // Custody trail: handover out and in on both consignments, in the hash chain for the shipment
     const kinds = supabaseMock.rows('cargo_custody_events').filter(e => e.shipment_id === ID.s1).map(e => e.kind);

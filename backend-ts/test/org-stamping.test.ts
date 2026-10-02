@@ -7,7 +7,7 @@ import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { COMPANY_SETTING } from './support/cargo-world';
 import { testApp } from './support/test-app';
-import { ORG, ORG_SETTINGS, as, orgWorld, uid } from './support/org-world';
+import { ORG, ORGS, ORG_SETTINGS, as, orgWorld, uid } from './support/org-world';
 
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
@@ -76,6 +76,8 @@ describe('a load a vendor asked for', () => {
 describe('an invoice', () => {
   it('is issued by the company that delivered and billed to the vendor\'s organisation', async () => {
     supabaseMock.reset(orgWorld({
+      // Beta is not the default company, so it is issued under its own details (never the platform-wide profile)
+      organizations: ORGS.map(o => (o.id === ORG.companyB ? { ...o, legal_name: 'Beta Freight Pvt Ltd', gstin: '27AAPFU0939F1ZV', state: 'Maharashtra' } : { ...o })),
       shipments: [{ id: 's1', tracking_id: 'RTX-S1', status: 'in_transit', priority: 'medium', origin_name: 'Hub', total_items: 1, total_weight_kg: 100, bid_id: 'bid-1', created_at: NOW, updated_at: NOW, metadata: {}, carrier_org_id: ORG.companyB }],
       capacity_bids: [{ id: 'bid-1', vendor_id: uid('vendor-1'), vendor_org_id: ORG.vendorV, bid_amount: 12500, status: 'won' }],
       vendor_profiles: [{ id: uid('vendor-1'), company_name: 'Acme Traders' }],
