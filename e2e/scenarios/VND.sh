@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # UAT scenario: the vendor (loads, invoices, claims, return-trip bids, documents/KYC), 3PL onboarding, other vendors' data.
-# Runs after the 75-step story. Read e2e/out/scenario.txt.
+# Runs after the 91-step story. Read e2e/out/scenario.txt.
 set -u
 source "$(dirname "$0")/lib.sh"
 set -a; . e2e/.env.local; set +a
@@ -431,7 +431,7 @@ req superadmin POST "/tpl/approve/$TA" '{}'; chk VH85 "staff approve the setting
 req manager POST "/tpl/$TA/pause" '{}'; chk VH86 "a manager cannot pause a partner" 403
 req superadmin POST "/tpl/$TA/pause" '{}'; chk VH87 "the superadmin pauses the partner" 200
 pc GET /tpl-network/my/offers; info "offers while paused: HTTP $ST $(ev 120)"
-t VH88 "a paused partner gets no offers (empty list or refused)" "$([ "$ST" = 403 ] || [ "$ST" = 404 ] || { [ "$ST" = 200 ] && [ "$(jb length)" = 0 ]; } && echo 1 || echo 0)" "HTTP $ST $(ev 80)"
+t VH88 "a paused partner gets no offers (empty list or refused)" "$([ "$ST" = 403 ] || [ "$ST" = 404 ] || { [ "$ST" = 200 ] && [ "$(jb '(.items // .) | length')" = 0 ]; } && echo 1 || echo 0)" "HTTP $ST $(ev 80)"
 req superadmin POST "/tpl/$TA/resume" '{}'; chk VH89 "resume" 200
 
 sect "I. Web: the vendor portal and 3PL pages"

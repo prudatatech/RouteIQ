@@ -9,6 +9,7 @@ import {
   BulkActionBar, Button, DataTable, ExportCsvButton, IconButton, SearchInput, StatusPill, Tabs,
   parseSort, serializeSort, statusToLabel, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
+import MyNetwork from './MyNetwork'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
@@ -215,6 +216,7 @@ export default function PartnersTab() {
 
   return (
     <div className="space-y-4">
+      {!canDecide && <MyNetwork partners={partners} />}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <Tabs
           label="Filter partners by status"

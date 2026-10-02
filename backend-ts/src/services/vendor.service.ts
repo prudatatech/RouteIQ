@@ -9,13 +9,13 @@ import { HttpError } from '../core/errors';
 import { formatINR, formatKg } from '../core/format';
 import { pricingService } from './pricing.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
-import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
-import { vendorOrgOf, carrierStamp, ownersOf, currentOrgContext } from '../core/org-context';
-import { copyItemsToManifest, releaseHeldLoads } from './loads/loads.service';
+import { vendorOrgOf, currentOrgContext } from '../core/org-context';
+import { releaseHeldLoads } from './loads/loads.service';
 import { HOLD_UNVERIFIED, acceptDirect, filterVisibleToCompany } from './loads/order-routing';
 import { assertVehicleFits } from './loads/vehicle-fit';
+import { assertCapacity, insertManifest, putLoadOnVehicle } from './loads/create-manifest';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
 function cleanVendorGstin(raw: unknown): string {
@@ -737,14 +737,8 @@ export const vendorService = {
     assertVehicleFits({ ...before, items: goods ?? [] }, assignee);
 
     // Free capacity: what the vehicle reports, else its rated capacity less what it already carries
-    const required = Number(before.required_capacity_kg) || 0;
-    const rated = Number(assignee.capacity_kg);
-    const free = assignee.available_capacity_kg != null
-      ? Number(assignee.available_capacity_kg)
-      : Number.isFinite(rated) && rated > 0 ? rated - (Number(assignee.current_load_kg) || 0) : null;
-    if (free !== null && required > free) {
-      throw new HttpError(409, `This vehicle has ${Math.max(0, Math.round(free)).toLocaleString('en-IN')} kg free and the load needs ${required.toLocaleString('en-IN')} kg`);
-    }
+    const capacity = assertCapacity(assignee, before.required_capacity_kg);
+    const { required } = capacity;
 
     // The agreed amount: a flat price wins; a rate per km needs the distance to become an amount
     const km = roadKm(
@@ -772,55 +766,19 @@ export const vendorService = {
     }
 
     // Insert into cargo_manifest
-    const { data: manifest, error: manifestErr } = await supabase.from('cargo_manifest').insert({
-      ...carrierStamp(),
-      ...ownersOf(req),
-      vehicle_id: vehicleId,
-      vendor_request_id: requestId,
-      pickup_location: req.pickup_location,
-      pickup_lat: req.pickup_lat,
-      pickup_lng: req.pickup_lng,
-      drop_location: req.drop_location,
-      drop_lat: req.drop_lat,
-      drop_lng: req.drop_lng,
-      capacity_kg: req.required_capacity_kg,
-      status: 'scheduled',
-      created_at: new Date().toISOString()
-    }).select('id').single();
-
-    if (!manifestErr && manifest?.id) await copyItemsToManifest(req, manifest.id);
-
-    if (manifestErr) {
-      console.error('Failed to create cargo_manifest:', manifestErr);
+    try {
+      await insertManifest(req, vehicleId);
+    } catch (e) {
       // Release the claim so the request can be assigned again
       await supabase.from('vendor_shipment_requests')
         .update({ status: before.status, assigned_vehicle_id: null, updated_at: new Date().toISOString() })
         .eq('id', requestId)
         .eq('status', 'assigned');
-      throw new Error(`Failed to create manifest: ${manifestErr.message}`);
+      throw e;
     }
 
-    // The load now sits on the vehicle. A vendor load has no trip to hold back in Dispatch, so
-    // assigning it always sends it: the vehicle goes on the road (only from an operating status,
-    // checked above, so a vehicle that went into maintenance meanwhile is left alone) and the driver is told.
-    const newLoad = (Number(assignee.current_load_kg) || 0) + required;
-    const newAvail = Math.max(0, (free ?? 0) - required);
-    await supabase.from('vehicles').update({
-      current_load_kg: newLoad,
-      available_capacity_kg: newAvail,
-      status: 'on_route',
-    }).eq('id', vehicleId).in('status', [...OPERATING_VEHICLE_STATUSES]);
-
-    if (assignee.driver_id) {
-      // Notify the driver instantly so the listener triggers
-      await notificationService.sendNotification(
-        assignee.driver_id,
-        'New pickup assigned',
-        `A new pickup has been scheduled at ${req.pickup_location}.`,
-        'cargo_assigned',
-        { request_id: requestId, vehicle_id: vehicleId }
-      );
-    }
+    // The load now sits on the vehicle and the driver is told
+    await putLoadOnVehicle(assignee, vehicleId, { ...req, id: requestId }, capacity);
 
     // Notify the vendor, with the price that was agreed
     await notificationService.sendNotification(

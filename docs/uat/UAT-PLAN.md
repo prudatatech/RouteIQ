@@ -25,7 +25,7 @@ docker start $(docker ps -aq --filter name=margix-e2e)   # local Supabase + Redi
 bash e2e/setup-local.sh                                   # writes e2e/.env.local
 bash e2e/start-backend.sh                                 # API on :8011 (leave running)
 bash e2e/start-web.sh                                     # web on :5174 (leave running)
-node e2e/run.mjs --reset                                  # seed + the 75-step story; must be 75/75
+node e2e/run.mjs --reset                                  # seed + the 91-step story; must be 91/91
 ```
 
 The tools for testing:

@@ -8,7 +8,7 @@ export default function OrdersPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Orders" description="Loads offered to you, and the orders you are carrying." />
-      <TplOrdersTab canAccept={partner.status === 'active'} />
+      <TplOrdersTab partnerId={partner.id} canAccept={partner.status === 'active'} />
     </div>
   )
 }

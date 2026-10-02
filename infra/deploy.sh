@@ -177,10 +177,19 @@ if [[ $ONLY_INFRA -eq 1 ]]; then
   exit 0
 fi
 
-# Image tag: git short sha; a dirty tree gets a timestamp so the tag is never reused for different code.
+# Each image is tagged by the CONTENT of its own directory (the git tree hash), not the commit. The same
+# code gives the same tag on any branch, so the live release reuses the image the test deploy already
+# built and pushed, and a deploy triggered by unrelated files skips the build entirely.
 TAG="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
+API_TAG="$(git -C "$ROOT_DIR" rev-parse --short "HEAD:backend-ts" 2>/dev/null || echo "$TAG")"
+ML_TAG="$(git -C "$ROOT_DIR" rev-parse --short "HEAD:ml-service" 2>/dev/null || echo "$TAG")"
+
+# True when the registry already holds this image:tag (both stages share the registry)
+in_acr() { az acr repository show -n "$ACR_NAME" --image "$1" -o none 2>/dev/null; }
 if [[ -n "$(git -C "$ROOT_DIR" status --porcelain -- backend-ts ml-service)" ]]; then
+  # A dirty tree gets a timestamp so a tag never names two different builds (and is never reused from the registry)
   TAG="${TAG}-dirty$(date +%H%M%S)"
+  API_TAG="$TAG"; ML_TAG="$TAG"
 fi
 NEW_API_IMAGE=""; NEW_ML_IMAGE=""
 
@@ -209,8 +218,14 @@ build_image() { # app-key (api|ml), image, context dir
 if [[ $DO_API -eq 1 || $DO_ML -eq 1 ]]; then
   command -v docker >/dev/null || die "docker is required to build the images"
   az acr login --name "$ACR_NAME"   # before the build: buildx pushes as it goes
-  [[ $DO_API -eq 1 ]] && { NEW_API_IMAGE="$ACR_SERVER/${PREFIX}-api:$TAG"; build_image api "$NEW_API_IMAGE" "$ROOT_DIR/backend-ts"; }
-  [[ $DO_ML -eq 1 ]] && { NEW_ML_IMAGE="$ACR_SERVER/${PREFIX}-ml:$TAG"; build_image ml "$NEW_ML_IMAGE" "$ROOT_DIR/ml-service"; }
+  if [[ $DO_API -eq 1 ]]; then
+    NEW_API_IMAGE="$ACR_SERVER/${PREFIX}-api:$API_TAG"
+    if in_acr "${PREFIX}-api:$API_TAG"; then log "Reusing $NEW_API_IMAGE (same backend-ts content already built)"; else build_image api "$NEW_API_IMAGE" "$ROOT_DIR/backend-ts"; fi
+  fi
+  if [[ $DO_ML -eq 1 ]]; then
+    NEW_ML_IMAGE="$ACR_SERVER/${PREFIX}-ml:$ML_TAG"
+    if in_acr "${PREFIX}-ml:$ML_TAG"; then log "Reusing $NEW_ML_IMAGE (same ml-service content already built)"; else build_image ml "$NEW_ML_IMAGE" "$ROOT_DIR/ml-service"; fi
+  fi
 
   # 8. roll the apps
   if [[ $IMAGES_ONLY -eq 1 ]]; then

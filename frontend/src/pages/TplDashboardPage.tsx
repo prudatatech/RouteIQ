@@ -13,6 +13,9 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { legacyTabPage, portalAccess } from '@/components/tpl/portal/access'
 import { PortalContext, type PortalContextValue, type PortalPartner } from '@/components/tpl/portal/portalContext'
 import OrdersPage from '@/components/tpl/portal/OrdersPage'
+import FleetPage from '@/components/tpl/portal/FleetPage'
+import DriversPage from '@/components/tpl/portal/DriversPage'
+import StatementsPage from '@/components/tpl/portal/StatementsPage'
 import EarningsPage from '@/components/tpl/portal/EarningsPage'
 import LanesPage from '@/components/tpl/portal/LanesPage'
 import DocumentsPage from '@/components/tpl/portal/DocumentsPage'
@@ -20,6 +23,9 @@ import SettingsPage from '@/components/tpl/portal/SettingsPage'
 
 const LINKS = [
   { to: '', label: 'Orders' },
+  { to: 'fleet', label: 'Fleet' },
+  { to: 'drivers', label: 'Drivers' },
+  { to: 'statements', label: 'Statements' },
   { to: 'earnings', label: 'Earnings' },
   { to: 'lanes', label: 'Lanes' },
   { to: 'documents', label: 'Documents' },
@@ -63,7 +69,7 @@ export default function TplDashboardPage() {
   })
   useRealtimeRefresh('tpl_portal_partner', ['tpl_partners', 'tpl_corridors', 'tpl_documents'], [['tpl-portal-partner', id]])
   const offers = useQuery({ queryKey: ['tpl-my-offers'], queryFn: tplNetworkAPI.myOffers, enabled: access === 'own', retry: false })
-  const openOffers = (offers.data ?? []).filter(o => o.status === 'offered').length
+  const openOffers = (offers.data?.items ?? []).filter(o => o.status === 'offered').length
 
   const partner = partnerQuery.data
   // An approved settings request arrives through realtime
@@ -192,6 +198,9 @@ export default function TplDashboardPage() {
           )}
           <Routes>
             <Route index element={<OrdersPage />} />
+            <Route path="fleet" element={<FleetPage />} />
+            <Route path="drivers" element={<DriversPage />} />
+            <Route path="statements" element={<StatementsPage />} />
             <Route path="earnings" element={<EarningsPage />} />
             <Route path="lanes" element={<LanesPage />} />
             <Route path="documents" element={<DocumentsPage />} />

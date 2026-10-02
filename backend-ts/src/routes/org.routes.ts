@@ -17,6 +17,10 @@ import {
   AdminOrgDecisionSchema, AdminOrgFilterSchema, AffiliationRequestSchema, MemberInviteSchema, MemberUpdateSchema, OrgCreateSchema, OrgUpdateSchema,
 } from '../schemas/org';
 import * as orgs from '../services/org.service';
+import { AffiliationRulesSchema, resolveTplOrg } from '../services/tpl-affiliation';
+import { fleetSummaryFor } from '../services/tpl-fleet.service';
+import { StatementBuildSchema, StatementPaidSchema, StatementUpdateSchema, tplStatementService } from '../services/tpl-statement.service';
+import { renderStatementPdf, statementFileName } from '../services/tpl-statement-pdf';
 
 const handle = (fn: (req: Request, res: Response) => Promise<void>): RequestHandler => async (req, res) => {
   try {
@@ -119,6 +123,73 @@ for (const action of ['approve', 'pause', 'end'] as const) {
     res.json(await orgs.decideAffiliation(actorOf(req), req.org!.id, tplId, action));
   }));
 }
+
+// PATCH /org/tpl-affiliations/:tplId/rules  { vehicle_classes?, corridor_ids?, min_rate_per_km?, gps_required?, insurance_required? }
+// (the rules object itself, or { rules: {...} }); replaces the rules as a whole. Answers { company_id, tpl_id, status, rules }.
+orgRouter.patch('/tpl-affiliations/:tplId/rules', ofKind('logistic_company', ...OWNER_OR_ADMIN), handle(async (req, res) => {
+  const tplId = await resolveTplOrg(req.org!.id, req.params.tplId);
+  const body = req.body && typeof req.body === 'object' && 'rules' in req.body && Object.keys(req.body).length === 1 ? req.body.rules : req.body;
+  res.json(await orgs.updateAffiliationRules(actorOf(req), req.org!.id, tplId, parse(AffiliationRulesSchema, body)));
+}));
+
+// GET /org/tpl-affiliations/:tplId  one partner of the company: { tpl_id, status, rules, organization, ... }
+// (:tplId is the partner organisation, or the id of the older tpl_partners row)
+orgRouter.get('/tpl-affiliations/:tplId', ofKind('logistic_company', ...OWNER_OR_ADMIN), handle(async (req, res) => {
+  res.json(await orgs.getCompanyAffiliation(req.org!.id, await resolveTplOrg(req.org!.id, req.params.tplId)));
+}));
+
+// GET /org/tpl-affiliations/:tplId/fleet  counts only, never the partner's documents
+orgRouter.get('/tpl-affiliations/:tplId/fleet', ofKind('logistic_company'), handle(async (req, res) => {
+  res.json(await fleetSummaryFor(req.org!.id, await resolveTplOrg(req.org!.id, req.params.tplId)));
+}));
+
+// ── Partner statements (the company's side) ────────────────
+const statementsOf = async (req: Request) => ({ company: req.org!.id, tpl: await resolveTplOrg(req.org!.id, req.params.tplId) });
+const statementId = (req: Request) => uuidParam(req.params.sid, 'Statement not found');
+const statementAuth = ofKind('logistic_company', ...OWNER_OR_ADMIN);
+
+orgRouter.get('/tpl-affiliations/:tplId/statements', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  res.json({ items: await tplStatementService.list(company, tpl) });
+}));
+
+// POST { period: 'YYYYMM' }: 201 for a new draft, 200 when the month's draft was refreshed
+orgRouter.post('/tpl-affiliations/:tplId/statements', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  const { statement, created } = await tplStatementService.build(actorOf(req), company, tpl, parse(StatementBuildSchema, req.body).period);
+  res.status(created ? 201 : 200).json(statement);
+}));
+
+orgRouter.get('/tpl-affiliations/:tplId/statements/:sid', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  res.json(await tplStatementService.get(company, tpl, statementId(req)));
+}));
+
+// PATCH { deductions: [{ label, amount_paise, reason? }] } replaces the deductions; { rebuild: true } pulls the orders again
+orgRouter.patch('/tpl-affiliations/:tplId/statements/:sid', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  res.json(await tplStatementService.update(actorOf(req), company, tpl, statementId(req), parse(StatementUpdateSchema, req.body)));
+}));
+
+orgRouter.post('/tpl-affiliations/:tplId/statements/:sid/issue', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  res.json(await tplStatementService.issue(actorOf(req), company, tpl, statementId(req)));
+}));
+
+// POST { reference? }
+orgRouter.post('/tpl-affiliations/:tplId/statements/:sid/mark-paid', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  res.json(await tplStatementService.markPaid(actorOf(req), company, tpl, statementId(req), parse(StatementPaidSchema, req.body).reference));
+}));
+
+orgRouter.get('/tpl-affiliations/:tplId/statements/:sid/pdf', statementAuth, handle(async (req, res) => {
+  const { company, tpl } = await statementsOf(req);
+  const statement = await tplStatementService.get(company, tpl, statementId(req));
+  const pdf = await renderStatementPdf(statement, await tplStatementService.partiesOf(statement));
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${statementFileName(statement)}"`);
+  res.send(pdf);
+}));
 
 // ── /admin/orgs ────────────────────────────────────────────
 export const adminOrgsRouter = Router();

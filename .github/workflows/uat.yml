@@ -5,7 +5,7 @@ name: UAT
 #   gh workflow run uat.yml --ref <branch> [-f script=e2e/scenarios/OPS.sh]
 #
 # Steps: build the test stack (e2e/ci-setup.sh), start the backend (:8011) and web app (:5174), run the
-# 75-step story (node e2e/run.mjs --reset), then the optional scenario script, which can use
+# 91-step story (node e2e/run.mjs --reset), then the optional scenario script, which can use
 # e2e/uat.mjs and e2e/ui.mjs. Everything printed, the screenshots and the logs are kept as the run's
 # "uat" artifact: gh run download <run-id> -n uat
 on:
@@ -64,7 +64,7 @@ jobs:
           for i in $(seq 1 90); do curl -sf -o /dev/null http://localhost:8011/health && break; sleep 2; done
           for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:5174 && break; sleep 2; done
           curl -sf -o /dev/null http://localhost:8011/health || { tail -50 e2e/out/backend.log; exit 1; }
-      - name: Story (75 steps)
+      - name: Story (91 steps)
         id: story
         continue-on-error: true
         run: node e2e/run.mjs --reset 2>&1 | tee e2e/out/story.txt; exit "${PIPESTATUS[0]}"

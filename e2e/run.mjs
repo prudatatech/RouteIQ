@@ -5,7 +5,7 @@
  *   node e2e/run.mjs --reset [--api http://localhost:8011/api/v1] [--only B,C]
  *
  * Sections: S seed, A booking, B assign and send, C pickup, D accident, E transfer, F delivery,
- * G receipt and claim, H invoices, I driver pay, J vendor load, K return trip, L permissions.
+ * G receipt and claim, H invoices, I driver pay, J vendor load, K return trip, L permissions, M 3PL network.
  * Every step prints PASS or FAIL; the run exits 1 if any step fails.
  *
  * SAFETY: the script refuses to run unless every URL it uses is 127.0.0.1, localhost or [::1].
@@ -759,6 +759,190 @@ async function vendorAndPermissions() {
     const mine = await get('customer2', '/customer/invoices');
     const list = Array.isArray(mine.body) ? mine.body : mine.body.invoices;
     eq(list.length, 0, "customer2's invoices");
+  });
+
+  // ── M. 3PL network (Phase N1: docs/network-design.md) ──────────────────────
+  section('M', '3PL network');
+  const net = {};
+  const orgOf = async (partnerRowId) => (await one('organizations', `kind=eq.tpl_partner&profile->>legacy_tpl_partner_id=eq.${partnerRowId}`)).id;
+  const authUser = async (key, email, role, name, phone) => {
+    const res = await http(`${SB}/auth/v1/admin/users`, {
+      method: 'POST', headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+      body: { email, password: 'E2e-Local-Pass-1', email_confirm: true, app_metadata: { role }, user_metadata: { full_name: name, phone, role } },
+    });
+    status(res, [200, 201], `create ${key}`);
+    return res.body.id;
+  };
+  const signIn = async (key, email) => {
+    const res = await http(`${SB}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: ANON_KEY }, body: { email, password: 'E2e-Local-Pass-1' } });
+    status(res, 200, `sign in ${key}`);
+    tokens[key] = res.body.access_token;
+  };
+
+  await step('Seed company B with its admin, and partner P affiliated active to company A only', async () => {
+    net.companyA = (await one('system_settings', 'key=eq.default_company_org_id')).value.value;
+    ok(net.companyA, 'no default company');
+    const [b] = await rest('organizations', { method: 'POST', body: { kind: 'logistic_company', name: 'Company B Carriers', status: 'active' } });
+    net.companyB = b.id;
+    const adminB = await authUser('adminB', 'e2e-adminb@example.test', 'admin', 'Bela Admin', '+919900000008');
+    await rest('users', { method: 'PATCH', query: `id=eq.${adminB}`, body: { role: 'admin', phone: '+919900000008' } });
+    // The sign-up triggers put every new staff user in company A: move this one to company B
+    await rest('org_members', { method: 'DELETE', query: `org_id=eq.${net.companyA}&user_id=eq.${adminB}` });
+    await rest('org_members', { method: 'POST', body: { org_id: net.companyB, user_id: adminB, role: 'owner', status: 'active' } });
+    await signIn('adminB', 'e2e-adminb@example.test');
+    // P: a vendor-role sign-in linked to an active tpl_partners row. The row's trigger makes the organisation, its
+    // owner seat and the affiliation to the default company (A).
+    net.userP = await authUser('memberP', 'e2e-partnerp@example.test', 'vendor', 'Priya Partner', '+919900000010');
+    const [p] = await rest('tpl_partners', { method: 'POST', body: {
+      user_id: net.userP, company_name: 'Prime Haulers 3PL', pan_number: 'AAAPL1234C', gstin: '27AAAPL1234C1Z5', status: 'active',
+      email: 'e2e-partnerp@example.test', phone: '+919900000010', custom_id: 'E2E-P1',
+    } });
+    net.partnerRow = p.id;
+    net.partnerOrg = await orgOf(p.id);
+    await signIn('memberP', 'e2e-partnerp@example.test');
+    const links = await rows('tpl_affiliations', `tpl_id=eq.${net.partnerOrg}`);
+    eq(links.map(l => [l.company_id, l.status]), [[net.companyA, 'active']], 'affiliations of P');
+    eq((await rows('org_members', `user_id=eq.${adminB}&status=eq.active`)).map(m => m.org_id), [net.companyB], 'seats of B admin');
+  });
+
+  await step("P's member registers a truck with RC and insurance numbers and it is usable", async () => {
+    const res = await post('memberP', `/tpl-portal/${net.partnerOrg}/vehicles`, {
+      plate_number: 'MH12TPL0001', vehicle_type: 'truck', capacity_kg: 8000, rc_number: 'RC-E2E-0001', insurance_number: 'INS-E2E-0001',
+    });
+    status(res, 201, 'register truck');
+    ok(res.body.usable, `not usable: ${JSON.stringify(res.body.documents)}`);
+    eq(res.body.carrier_org_id, net.partnerOrg, 'the truck belongs to P');
+    net.vehicle = res.body;
+  });
+
+  await step("P's member invites a driver, who signs in with a driver token, and is given the truck", async () => {
+    const res = await post('memberP', `/tpl-portal/${net.partnerOrg}/drivers/invite`, { full_name: 'Dev Partner Driver', phone: '+919900000011' });
+    status(res, 201, 'invite driver');
+    net.driverId = res.body.id;
+    eq(res.body.partner_org_id, net.partnerOrg, 'the driver joins P');
+    tokens.driverP = signBackendToken(net.driverId, 'driver');
+    status(await get('driverP', '/driver/pay'), 200, 'the partner driver token is accepted');
+    const set = await patch('memberP', `/tpl-portal/${net.partnerOrg}/vehicles/${net.vehicle.id}`, { driver_id: net.driverId });
+    status(set, 200, 'assign the driver');
+    eq(set.body.driver_id, net.driverId, 'truck driver');
+  });
+
+  await step('The vendor posts a load and company A accepts it', async () => {
+    const res = await post('vendor', '/vendor/shipment-request', {
+      pickup: { address: 'Okhla, Delhi', lat: 28.53, lng: 77.27 }, drop: { address: 'Sitapura, Jaipur', lat: 26.79, lng: 75.82 }, capacity: 1500,
+      metadata: { cargo: { gstRate: '18', declaredValue: '120000', description: 'Packaged goods' } },
+    });
+    status(res, [200, 201], 'post load');
+    net.request = res.body;
+    status(await put('superadmin', `/vendor/shipment-request/${net.request.id}/approve`, { cost: 22000 }), 200, 'accept');
+    eq((await one('vendor_shipment_requests', `id=eq.${net.request.id}`)).carrier_org_id, net.companyA, 'the load belongs to A');
+  });
+
+  await step("Company B's escalation to P is refused 400, and B cannot touch A's load (404)", async () => {
+    const [own] = await rest('vendor_shipment_requests', { method: 'POST', body: {
+      vendor_id: accounts.vendor.id, pickup_location: 'Okhla, Delhi', pickup_lat: 28.53, pickup_lng: 77.27, drop_location: 'Sitapura, Jaipur', drop_lat: 26.79, drop_lng: 75.82,
+      required_capacity_kg: 1000, status: 'approved', routing: 'chosen', carrier_org_id: net.companyB, cost: 15000,
+    } });
+    const res = await post('adminB', '/tpl-network/escalations', { request_id: own.id, partner_ids: [net.partnerRow] });
+    status(res, 400, "B escalates its own load to A's partner");
+    status(await post('adminB', '/tpl-network/escalations', { request_id: net.request.id, partner_ids: [net.partnerRow] }), 404, "B escalates A's load");
+    eq((await rows('tpl_offers', `partner_id=eq.${net.partnerRow}`)).length, 0, 'offers to P so far');
+  });
+
+  await step('Company A sends the load to P only (a targeted offer)', async () => {
+    const res = await post('superadmin', '/tpl-network/escalations', { request_id: net.request.id, partner_ids: [net.partnerRow] });
+    status(res, 201, 'escalate to P');
+    eq([res.body.created, res.body.offers.length], [1, 1], 'offers created');
+    net.offer = res.body.offers[0];
+    eq([net.offer.partner_id, net.offer.carrier_org_id, net.offer.targeted], [net.partnerRow, net.companyA, true], 'offer owner and target');
+  });
+
+  await step("Company B's staff cannot see P's offers or orders", async () => {
+    const list = await get('adminB', `/tpl-network/escalations?request_id=${net.request.id}`);
+    status(list, [200, 404], "B reads A's offers");
+    if (list.status === 200) eq([list.body.offers.length, list.body.order], [0, null], "offers B sees on A's load");
+    const orders = await get('adminB', `/tpl-network/orders?partner_id=${net.partnerRow}`);
+    status(orders, [200, 403, 404], "B reads P's orders");
+    if (orders.status === 200) eq(orders.body.length, 0, "orders of P that B sees");
+  });
+
+  await step("P sees A's offer in its list, grouped under company A", async () => {
+    const res = await get('memberP', '/tpl-network/my/offers');
+    status(res, 200, 'my offers');
+    ok(Array.isArray(res.body.items) && Array.isArray(res.body.companies), `shape: ${JSON.stringify(res.body).slice(0, 200)}`);
+    ok(res.body.items.some(o => o.id === net.offer.id), 'the offer is not listed');
+    ok(JSON.stringify(res.body.companies).includes(net.companyA), 'company A is not named');
+  });
+
+  await step('Accepting without a truck and driver is refused 400', async () => {
+    status(await post('memberP', `/tpl-network/my/offers/${net.offer.id}/accept`, { agreed_amount: 18000 }), 400, 'accept bare');
+    status(await post('memberP', `/tpl-network/my/offers/${net.offer.id}/accept`, { agreed_amount: 18000, vehicle_id: net.vehicle.id }), 400, 'accept without a driver');
+    eq((await one('tpl_offers', `id=eq.${net.offer.id}`)).status, 'offered', 'the offer is still open');
+  });
+
+  await step('P accepts with its truck and driver: the order has a trip owned by company A', async () => {
+    const res = await post('memberP', `/tpl-network/my/offers/${net.offer.id}/accept`, { agreed_amount: 18000, vehicle_id: net.vehicle.id, driver_id: net.driverId });
+    status(res, 201, 'accept');
+    net.order = res.body;
+    ok(net.order.manifest_id, 'the order has no trip');
+    eq([net.order.vehicle_id, net.order.driver_id], [net.vehicle.id, net.driverId], 'truck and driver on the order');
+    const manifest = await one('cargo_manifest', `id=eq.${net.order.manifest_id}`);
+    eq(manifest.carrier_org_id, net.companyA, "the trip's company");
+    eq(manifest.vehicle_id, net.vehicle.id, "the trip's truck");
+  });
+
+  await step("P's driver picks the load up and departs", async () => {
+    const ref = { manifest_id: net.order.manifest_id };
+    status(await post('driverP', '/cargo/custody', { ref, kind: 'pickup', pieces: 10, condition: 'good', photo_paths: [`cargo/${net.order.manifest_id}/photo_1.jpg`], lat: 28.53, lng: 77.27 }), [200, 201], 'pickup');
+    status(await post('driverP', '/cargo/custody', { ref, kind: 'departed' }), [200, 201], 'depart');
+    eq((await one('tpl_orders', `id=eq.${net.order.id}`)).status, 'in_transit', 'order status');
+  });
+
+  await step("P's driver delivers with a signed POD", async () => {
+    const id = net.order.manifest_id;
+    status(await post('driverP', '/cargo/custody', {
+      ref: { manifest_id: id }, kind: 'delivery', receiver_name: 'Jaipur consignee', photo_paths: [`cargo/${id}/photo_2.jpg`], signature_path: `cargo/${id}/signature_1.png`, lat: 26.79, lng: 75.82,
+    }), [200, 201], 'delivery');
+    eq((await one('cargo_manifest', `id=eq.${id}`)).status, 'delivered', 'trip status');
+  });
+
+  await step('The order is delivered with the photo and signature on file', async () => {
+    const o = await one('tpl_orders', `id=eq.${net.order.id}`);
+    eq(o.status, 'delivered', 'order status');
+    ok(o.pod_photo_url || o.pod_signature_url, 'no proof of delivery on the order');
+    ok(o.pod_signature_url, 'the signature is missing');
+    eq(o.pod_received_by, 'Jaipur consignee', 'receiver');
+  });
+
+  const period = today().slice(0, 4) + today().slice(5, 7);
+  const stmtPath = `/org/tpl-affiliations/${net.partnerOrg}/statements`;
+  await step("Company A builds this month's statement from P's delivered order", async () => {
+    const res = await post('superadmin', stmtPath, { period });
+    status(res, 201, 'build statement');
+    net.statement = res.body;
+    eq([res.body.status, res.body.order_ids, res.body.orders_total_paise], ['draft', [net.order.id], 1_800_000], 'statement');
+    eq(res.body.balance_paise, 1_800_000, 'balance before deductions');
+  });
+
+  await step('A adds a deduction, issues the statement and marks it paid: balance = orders total - deduction', async () => {
+    const draft = await patch('superadmin', `${stmtPath}/${net.statement.id}`, { deductions: [{ label: 'Damaged carton', amount_paise: 250_000, reason: 'One carton crushed' }] });
+    status(draft, 200, 'add deduction');
+    eq(draft.body.balance_paise, 1_550_000, 'balance after the deduction');
+    const issued = await post('superadmin', `${stmtPath}/${net.statement.id}/issue`);
+    status(issued, 200, 'issue');
+    eq(issued.body.status, 'issued', 'status after issue');
+    const paid = await post('superadmin', `${stmtPath}/${net.statement.id}/mark-paid`, { reference: 'UTR-E2E-1' });
+    status(paid, 200, 'mark paid');
+    eq(paid.body.status, 'paid', 'status after paying');
+    eq(paid.body.balance_paise, paid.body.orders_total_paise - 250_000, 'balance = orders total - deduction');
+    eq(paid.body.balance_paise, 1_550_000, 'balance paid');
+    const seen = await get('memberP', `/tpl-portal/${net.partnerOrg}/statements`);
+    status(seen, 200, 'P reads its statements');
+    ok(seen.body.items.some(s => s.id === net.statement.id), 'P does not see the issued statement');
+  });
+
+  await step('Marking that order paid on its own is refused 409, the statement covers it', async () => {
+    status(await post('superadmin', `/tpl-network/orders/${net.order.id}/paid`, { paid: true, reference: 'single' }), 409, 'per-order mark paid');
   });
 }
 

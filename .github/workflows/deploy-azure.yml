@@ -68,7 +68,7 @@ jobs:
             echo "::notice::No DATABASE_URL secret in the ${{ github.ref_name == 'main' && 'production' || 'test' }} environment yet; no migrations applied."
             exit 0
           fi
-          sudo apt-get install -y -qq postgresql-client >/dev/null 2>&1 || true
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client >/dev/null 2>&1 || true
           bash scripts/db-migrate.sh --dry-run
           bash scripts/db-migrate.sh
 

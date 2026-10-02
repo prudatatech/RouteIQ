@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Network } from 'lucide-react'
-import { Alert, Button, EmptyState, ErrorState, Input, Skeleton, StatusPill, useConfirm } from '@/components/ui'
+import { Alert, Button, Checkbox, EmptyState, ErrorState, Input, Skeleton, StatusPill, useConfirm } from '@/components/ui'
 import { tplNetworkAPI, type TplOffer, type TplSource } from '@/services/api'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatRelative, formatRupees } from '@/utils/display'
@@ -52,6 +52,13 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
     retry: false,
   })
   const newPartners = (preview.data?.partners ?? []).filter(p => !holding.has(p.partner_id))
+  const excluded = preview.data?.excluded ?? []
+  // Who gets the offer: every partner that matches the rules, or only the ones ticked here
+  const [audience, setAudience] = useState<'all' | 'chosen'>('all')
+  const [chosen, setChosen] = useState<string[]>([])
+  const chosenIds = chosen.filter(id => newPartners.some(p => p.partner_id === id))
+  const sendTo = audience === 'chosen' ? newPartners.filter(p => chosenIds.includes(p.partner_id)) : newPartners
+  const toggle = (id: string) => setChosen(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: listKey })
@@ -61,7 +68,7 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
   }
 
   const send = useMutation({
-    mutationFn: () => tplNetworkAPI.escalate(source, isRequest && priceInput !== '' && !priceError ? priceNumber : undefined),
+    mutationFn: () => tplNetworkAPI.escalate(source, isRequest && priceInput !== '' && !priceError ? priceNumber : undefined, audience === 'chosen' ? chosenIds : undefined),
     onSuccess: r => toast.success(`Sent to ${r.created} 3PL ${r.created === 1 ? 'partner' : 'partners'}. The first to accept gets the load.`),
     onError: err => toast.error(errorMessage(err, 'We could not send this load to partners. Try again.')),
     onSettled: refresh,
@@ -86,9 +93,9 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
   })
 
   const askSend = async () => {
-    const names = newPartners.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')
+    const names = sendTo.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')
     const ok = await confirm({
-      title: `Send to ${newPartners.length} 3PL ${newPartners.length === 1 ? 'partner' : 'partners'}?`,
+      title: `Send to ${sendTo.length} 3PL ${sendTo.length === 1 ? 'partner' : 'partners'}?`,
       message: `${names}. Each one is offered this load at their corridor rate (a partner without a usable rate quotes an amount when accepting), and the first to accept gets it.`,
       confirmLabel: 'Send offers',
     })
@@ -127,7 +134,7 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
       <div>
         <h3 id={`escalation-${id}`} className="text-base font-semibold text-text">3PL partners</h3>
         <p className="mt-0.5 text-sm text-muted">
-          Offer this load to partners with a corridor from the pickup to the drop-off. The first partner to accept gets it.
+          Offer this load to your partners whose rules and corridors fit the trip. The first partner to accept gets it.
         </p>
       </div>
 
@@ -232,11 +239,46 @@ export function EscalationPanel({ source, canEscalate, vendorPrice }: { source: 
                   {newPartners.length.toLocaleString('en-IN')} active {newPartners.length === 1 ? 'partner covers' : 'partners cover'} this trip:{' '}
                   {newPartners.map(p => `${p.company_name} (${partnerRate(p)})`).join(', ')}.
                 </p>
-                <Button icon={<Network size={16} />} loading={send.isPending} onClick={askSend}>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium text-text">Offer to</legend>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm text-text">
+                      <input type="radio" name={`audience-${id}`} className="accent-brand" checked={audience === 'all'} onChange={() => setAudience('all')} />
+                      All matching partners
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-text">
+                      <input type="radio" name={`audience-${id}`} className="accent-brand" checked={audience === 'chosen'} onChange={() => setAudience('chosen')} />
+                      Chosen partners
+                    </label>
+                  </div>
+                  {audience === 'chosen' && (
+                    <div className="space-y-2 rounded-control border border-border p-3" role="group" aria-label="Partners to offer to">
+                      {newPartners.map(p => (
+                        <Checkbox
+                          key={p.partner_id}
+                          label={p.company_name}
+                          description={`${p.corridor_name}, ${partnerRate(p)}`}
+                          checked={chosen.includes(p.partner_id)}
+                          onChange={() => toggle(p.partner_id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </fieldset>
+                <Button icon={<Network size={16} />} loading={send.isPending} disabled={sendTo.length === 0 || (audience === 'chosen' && chosenIds.length > 10)} onClick={askSend}>
                   {offers.length > 0 ? 'Send to more partners' : 'Escalate to 3PL partners'}
                 </Button>
               </div>
             )
+          )}
+
+          {canEscalate && !order && excluded.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-text">Not offered</p>
+              <ul className="space-y-1 text-sm text-muted">
+                {excluded.map(x => <li key={x.partner_id}><span className="text-text">{x.name}</span>: {x.reason}</li>)}
+              </ul>
+            </div>
           )}
         </>
       )}

@@ -5,10 +5,11 @@ import toast from 'react-hot-toast'
 import { ArrowRight, Check, Clock, Truck, X } from 'lucide-react'
 import clsx from 'clsx'
 import {
-  Alert, Button, Card, DataTable, EmptyState, ErrorState, Input, Modal, SectionHeader, Skeleton, StatusPill, useConfirm,
-  type Column,
+  Alert, Button, Card, DataTable, EmptyState, ErrorState, Input, Modal, SectionHeader, Select, Skeleton, StatusPill, useConfirm,
+  type Column, type SelectOption,
 } from '@/components/ui'
-import { tplNetworkAPI, type TplOffer, type TplOrder } from '@/services/api'
+import { tplNetworkAPI, tplPortalAPI, type TplOffer, type TplOrder } from '@/services/api'
+import { companySections } from './grouping'
 import { useNow } from '@/hooks/useNow'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
@@ -29,44 +30,60 @@ function waiting(since: string, now: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`
 }
 
-function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClose: () => void; onDone: () => void }) {
+export function AcceptModal({ partnerId, offer, onClose, onDone }: { partnerId: string; offer: TplOffer | null; onClose: () => void; onDone: () => void }) {
   const [pickup, setPickup] = useState('')
   const [delivery, setDelivery] = useState('')
   const [amount, setAmount] = useState('')
+  const [vehicleId, setVehicleId] = useState('')
+  const [driverId, setDriverId] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
   const needsAmount = offer != null && offer.proposed_price == null
   const amountNumber = Number(amount)
   const amountError = amount !== '' && (!Number.isFinite(amountNumber) || amountNumber <= 0) ? 'Enter an amount above 0' : undefined
   const timeError = pickup && delivery && new Date(delivery) <= new Date(pickup) ? 'Delivery must be after pickup' : undefined
 
+  const vehicles = useQuery({ queryKey: ['tpl-portal-vehicles', partnerId], queryFn: () => tplPortalAPI.vehicles(partnerId), enabled: !!offer })
+  const drivers = useQuery({ queryKey: ['tpl-portal-drivers', partnerId], queryFn: () => tplPortalAPI.drivers(partnerId), enabled: !!offer })
+
   const accept = useMutation({
     mutationFn: () => tplNetworkAPI.accept(offer!.id, {
+      vehicle_id: vehicleId,
+      driver_id: driverId,
       pickup_eta: toIso(pickup),
       delivery_eta: toIso(delivery),
       // An amount the partner types is what they will charge, and wins over the rate on their corridor
       ...(amount !== '' ? { agreed_amount: amountNumber } : {}),
     }),
     onSuccess: () => { toast.success('Load accepted. It is now in your orders.'); onDone(); onClose() },
-    onError: err => { toast.error(errorMessage(err, 'We could not accept this load. Try again.')); onDone() },
+    // The reason (the vehicle does not fit, is too small, is not yours) stays in the dialog so it can be fixed
+    onError: err => { setFailure(errorMessage(err, 'We could not accept this load. Try again.')); onDone() },
   })
+
+  const submit = () => {
+    setSubmitted(true)
+    setFailure(null)
+    if (!vehicleId || !driverId || amountError || timeError || (needsAmount && amount === '')) return
+    accept.mutate()
+  }
+
+  const vehicleOptions: SelectOption[] = (vehicles.data ?? []).map(v => ({
+    value: v.id,
+    label: `${v.plate_number}${v.capacity_kg ? `, ${formatKg(v.capacity_kg)}` : ''}`,
+  }))
+  const driverOptions: SelectOption[] = (drivers.data ?? []).map(d => ({ value: d.id, label: d.full_name ?? d.phone ?? 'Driver' }))
 
   return (
     <Modal
       open={!!offer}
       onClose={onClose}
-      onSubmit={() => accept.mutate()}
+      onSubmit={submit}
       title="Accept this load"
       description={offer ? `${shortPlace(offer.pickup_location)} to ${shortPlace(offer.drop_location)}` : undefined}
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            icon={<Check size={16} />}
-            loading={accept.isPending}
-            disabled={!!amountError || !!timeError || (needsAmount && amount === '')}
-          >
-            Accept load
-          </Button>
+          <Button type="submit" icon={<Check size={16} />} loading={accept.isPending}>Accept load</Button>
         </>
       )}
     >
@@ -77,6 +94,25 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
               ? <>At your corridor rate on {offer.corridor_name} you will be paid <span className="font-semibold">{formatRupees(offer.proposed_price)}</span>.</>
               : 'There is no rate for this load on your corridor (or it is per km and the distance is not known), so enter the amount you will charge.'}
           </p>
+          {failure && <Alert tone="danger" title="This load cannot go on that vehicle">{failure}</Alert>}
+          <Select
+            label="Vehicle"
+            required
+            placeholder={vehicles.isLoading ? 'Loading your vehicles' : vehicleOptions.length === 0 ? 'Add a vehicle in Fleet first' : 'Choose a vehicle'}
+            options={vehicleOptions}
+            value={vehicleId}
+            onChange={e => { setVehicleId(e.target.value); setFailure(null) }}
+            error={submitted && !vehicleId ? 'Choose the vehicle that will carry this load' : undefined}
+          />
+          <Select
+            label="Driver"
+            required
+            placeholder={drivers.isLoading ? 'Loading your drivers' : driverOptions.length === 0 ? 'Invite a driver in Drivers first' : 'Choose a driver'}
+            options={driverOptions}
+            value={driverId}
+            onChange={e => { setDriverId(e.target.value); setFailure(null) }}
+            error={submitted && !driverId ? 'Choose the driver who will run this trip' : undefined}
+          />
           <Input
             label="Amount (₹)"
             type="number"
@@ -85,7 +121,7 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
             hint={needsAmount ? undefined : 'Optional. Enter a different amount if you will charge more or less than your rate.'}
             value={amount}
             onChange={e => setAmount(e.target.value)}
-            error={amountError}
+            error={amountError ?? (submitted && needsAmount && amount === '' ? 'Enter the amount you will charge' : undefined)}
           />
           <Input
             label="Pickup time"
@@ -108,6 +144,24 @@ function AcceptModal({ offer, onClose, onDone }: { offer: TplOffer | null; onClo
   )
 }
 
+/** One block per company with its name as the header; with no company names (an older server) just the cards. */
+export function CompanyBlocks<T>({ sections, children }: { sections: { key: string; name: string | null; items: T[] }[]; children: (items: T[]) => React.ReactNode }) {
+  return (
+    <div className="space-y-5">
+      {sections.map(section => (
+        <div key={section.key} className="space-y-3">
+          {section.name && (
+            <h3 className="text-sm font-semibold text-text">
+              {section.name} <span className="font-normal text-muted">({section.items.length.toLocaleString('en-IN')})</span>
+            </h3>
+          )}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">{children(section.items)}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Where an order is on its way, as a line of steps; the current one is marked for screen readers too. */
 function OrderProgress({ status }: { status: TplOrder['status'] }) {
   const at = orderStepIndex(status)
@@ -127,7 +181,7 @@ function OrderProgress({ status }: { status: TplOrder['status'] }) {
  * The partner's Orders page: loads offered to them (accept before another partner takes it), then the orders
  * they accepted, each with the one step to do next, then finished orders and past offers.
  */
-export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
+export function TplOrdersTab({ partnerId, canAccept }: { partnerId: string; canAccept: boolean }) {
   const queryClient = useQueryClient()
   const { prompt } = useConfirm()
   const now = useNow(30_000)
@@ -141,7 +195,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
   useEffect(() => {
     const openId = searchParams.get('open')
     if (!openId || offers.isLoading) return
-    const match = (offers.data ?? []).find(o => o.id === openId && o.status === 'offered')
+    const match = (offers.data?.items ?? []).find(o => o.id === openId && o.status === 'offered')
     if (match) setAccepting(match)
     setSearchParams(params => { params.delete('open'); return params }, { replace: true })
   }, [searchParams, setSearchParams, offers.data, offers.isLoading])
@@ -197,11 +251,13 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
     update.mutate({ id: o.id, status: step.status })
   }
 
-  const openOffers = useMemo(() => (offers.data ?? []).filter(o => o.status === 'offered'), [offers.data])
-  const pastOffers = useMemo(() => (offers.data ?? []).filter(o => o.status !== 'offered' && o.status !== 'accepted'), [offers.data])
-  const allOrders = orders.data ?? []
-  const liveOrders = allOrders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
+  const allOffers = useMemo(() => offers.data?.items ?? [], [offers.data])
+  const pastOffers = useMemo(() => allOffers.filter(o => o.status !== 'offered' && o.status !== 'accepted'), [allOffers])
+  const allOrders = useMemo(() => orders.data?.items ?? [], [orders.data])
   const doneOrders = allOrders.filter(o => o.status === 'delivered' || o.status === 'cancelled')
+  // Open offers and live orders: one section per company, headed by the company name
+  const openSections = useMemo(() => companySections(offers.data, o => o.status === 'offered'), [offers.data])
+  const liveSections = useMemo(() => companySections(orders.data, o => o.status !== 'delivered' && o.status !== 'cancelled'), [orders.data])
 
   const doneColumns: Column<TplOrder>[] = [
     {
@@ -248,13 +304,13 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
         {!canAccept && <Alert tone="warning">Your account is not active, so you cannot accept loads until it is approved again.</Alert>}
         {offers.isLoading ? (
           <Skeleton className="h-24 w-full" />
-        ) : openOffers.length === 0 ? (
+        ) : openSections.length === 0 ? (
           <Card padded>
             <EmptyState compact icon={<Truck size={22} />} title="No load offers right now" description="When dispatch has a load on one of your corridors, it shows up here and you get a notification." />
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {openOffers.map(o => (
+          <CompanyBlocks sections={openSections}>
+            {openOffers => openOffers.map(o => (
               <Card key={o.id} padded className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -284,7 +340,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
                 </div>
               </Card>
             ))}
-          </div>
+          </CompanyBlocks>
         )}
       </section>
 
@@ -292,13 +348,13 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
         <SectionHeader title="Active orders" description="Loads you accepted. Do the next step as each one moves." />
         {orders.isLoading ? (
           <Skeleton className="h-24 w-full" />
-        ) : liveOrders.length === 0 ? (
+        ) : liveSections.length === 0 ? (
           <Card padded>
             <EmptyState compact icon={<Truck size={22} />} title="No active orders" description="Accept a load offer and it appears here." />
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {liveOrders.map(o => {
+          <CompanyBlocks sections={liveSections}>
+            {liveOrders => liveOrders.map(o => {
               const step = nextOrderStep(o.status)
               const late = o.due_by != null && new Date(o.due_by).getTime() < now
               return (
@@ -332,7 +388,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
                 </Card>
               )
             })}
-          </div>
+          </CompanyBlocks>
         )}
       </section>
 
@@ -350,7 +406,7 @@ export function TplOrdersTab({ canAccept }: { canAccept: boolean }) {
         </section>
       )}
 
-      <AcceptModal key={accepting?.id ?? 'none'} offer={accepting} onClose={() => setAccepting(null)} onDone={refresh} />
+      <AcceptModal key={accepting?.id ?? 'none'} partnerId={partnerId} offer={accepting} onClose={() => setAccepting(null)} onDone={refresh} />
     </div>
   )
 }
