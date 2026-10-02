@@ -6,6 +6,9 @@ import { Eye, EyeOff } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/services/supabase'
 import { destinationFor, loadAccount } from '@/services/account'
+import { orgAPI } from '@/services/api'
+import { useOrgStore } from '@/store/orgStore'
+import { destinationForOrgs } from '@/utils/orgAccess'
 import { useAuthStore } from '@/store/authStore'
 import { safeNextPath } from '@/utils/safeNext'
 import {
@@ -110,11 +113,13 @@ export default function LoginPage() {
   const [params, setParams] = useSearchParams()
   const audience: Audience = PARTNER_VALUES.includes(params.get('as') ?? '') ? 'partner' : 'staff'
   const next = safeNextPath(params.get('next'))
+  // "Register your logistics company": sign up or in, then the registration form
+  const registering = params.get('register') === 'company'
 
   const authInitialized = useAuthStore(s => s.authInitialized)
   const token = useAuthStore(s => s.token)
 
-  const [mode, setMode] = useState<Mode>(params.get('reset') ? 'reset' : 'sign-in')
+  const [mode, setMode] = useState<Mode>(params.get('reset') ? 'reset' : registering ? 'sign-up' : 'sign-in')
   const [email, setEmail] = useState(params.get('email') ?? '')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -129,7 +134,7 @@ export default function LoginPage() {
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
 
-  const title = titles[mode]
+  const title = registering && mode === 'sign-up' ? 'Register your logistics company' : titles[mode]
 
   useEffect(() => {
     const previous = document.title
@@ -149,6 +154,17 @@ export default function LoginPage() {
       const account = await loadAccount(session.user.id)
       role = account.role
       destination = destinationFor(account, next)
+      if (registering) {
+        // Anyone who signed up or in here goes on to the registration form
+        destination = '/register-company'
+        role = role ?? 'vendor'
+      } else if (role === 'vendor' && !account.hasVendorProfile && !account.tplPartnerId) {
+        // A company owner has no vendor profile: their organisation decides where they go
+        useAuthStore.getState().setSession(session, role)
+        const memberships = await orgAPI.mine().catch(() => [])
+        useOrgStore.getState().setMemberships(memberships)
+        destination = destinationForOrgs(memberships, useOrgStore.getState().activeOrgId) ?? destination
+      }
     } catch (err) {
       console.error('Failed to load account after sign-in', err)
       await signOut()
@@ -249,7 +265,7 @@ export default function LoginPage() {
       email: email.trim(),
       password,
       // The database gives self-registered accounts the vendor role only when they ask for it here.
-      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/login?as=vendor` },
+      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/login?${registering ? 'register=company' : 'as=vendor'}` },
     })
     if (error) {
       setFormError(describeAuthError(error, 'sign-up'))
@@ -317,7 +333,7 @@ export default function LoginPage() {
   }
   const subtitle = {
     'sign-in': audience === 'staff' ? 'For operations staff and drivers. Customers use the MargixIndia app, or can track a shipment from the tracking page.' : 'For vendors and 3PL partners.',
-    'sign-up': 'Find truck capacity, post loads and track your shipments.',
+    'sign-up': registering ? 'Create your account first. Next you add your company details.' : 'Find truck capacity, post loads and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',
   }[mode]
@@ -383,6 +399,11 @@ export default function LoginPage() {
   )
 
   const otherOptions: ReactNode[] = []
+  if (mode === 'sign-in' && !registering) {
+    otherOptions.push(
+      <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistics company</Link></>,
+    )
+  }
   if (mode === 'sign-in' && audience === 'partner') {
     otherOptions.push(
       <>New vendor? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create an account</button></>,

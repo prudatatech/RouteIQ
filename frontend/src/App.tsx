@@ -18,11 +18,12 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
+import { OrgGuard } from '@/components/OrgGuard'
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -42,6 +43,9 @@ const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
 const SettingsPage = adminSettings.Component
 const OrganisationPage = adminOrganisation.Component
+const PlatformOrganisationsPage = platformOrganisations.Component
+const RegisterCompanyPage = registerCompany.Component
+const WaitingForApprovalPage = waitingForApproval.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
@@ -267,6 +271,9 @@ export default function App() {
         <ChunkErrorBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
+          <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
+          <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
           <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
@@ -344,7 +351,9 @@ export default function App() {
 
           <Route element={
             <PrivateRoute>
-              <AppLayout />
+              <OrgGuard>
+                <AppLayout />
+              </OrgGuard>
             </PrivateRoute>
           }>
             <Route path="today" element={
@@ -465,6 +474,13 @@ export default function App() {
                 <OrganisationPage />
               </PrivateRoute>
             } />
+            {/* Platform owner only: OrgGuard sends anyone else back to Today */}
+            <Route path="platform/organisations" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <PlatformOrganisationsPage />
+              </PrivateRoute>
+            } />
+            <Route path="platform" element={<MovedTo to="/platform/organisations" />} />
             <Route path="admin/users" element={
               <PrivateRoute allowedRoles={OPERATIONS}>
                 <UsersPage />
