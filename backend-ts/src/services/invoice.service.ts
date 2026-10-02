@@ -16,8 +16,9 @@
  * A shipment or lot that settles as partially_delivered (nothing left on a vehicle or at a hub) is
  * invoiced too, for its price or freight_share; the short and refused pieces are written on the
  * invoice's notes so a claim can offset it. One that still holds pieces waits until it settles.
- * Every invoice is issued with a due date: the payment terms in Settings (company profile), 15 days by default.
- * No invoice is issued until the company profile has a name, GSTIN and state (409): the seller must be
+ * Every invoice is issued with a due date: the payment terms in the issuing company's Settings, 15 days by default.
+ * Numbers are the issuing company's own: its prefix and its own sequence per month (nextInvoiceNumber).
+ * No invoice is issued until the issuing company's profile has a name, GSTIN and state (409): the seller must be
  * on it. Delivery is never held up by this; the delivery waits under "To price" until Settings is filled in.
  * Every invoice stores who it is billed to (`bill_to`, see invoice-recipient.service.ts) and its GST in
  * integer paise: one rounding step per tax line, total = taxable value + tax lines exactly (core/gst.ts).
@@ -29,7 +30,8 @@ import { haversineKm, isValidPoint, ROAD_FACTOR } from './geo';
 import { formatINR } from '../core/format';
 import { notificationService } from './notification.service';
 import { bookingCustomer, manifestRequest } from './cargo/notify';
-import { assertCanIssueInvoices, sellerStateCode, COMPANY_PROFILE_INCOMPLETE } from './company.service';
+import { assertCanIssueInvoices, invoicePrefixFor, sellerStateCode, COMPANY_PROFILE_INCOMPLETE } from './company.service';
+import { resolveScope } from './company-settings.service';
 import { HttpError } from '../core/errors';
 import { fromPaise, taxLines, toPaise, type TaxBasis } from '../core/gst';
 import { resolveBillTo, snapshotOf } from './invoice-recipient.service';
@@ -55,10 +57,14 @@ async function shipmentGstRate(shipmentId: string): Promise<number> {
   return rates.length ? Math.max(...rates) : 0;
 }
 
-/** Next INV-YYYYMM-#### number for the current IST month. */
-async function nextInvoiceNumber(now: Date): Promise<string> {
+/** The Indian calendar month an invoice number is counted in, as YYYYMM. */
+const monthOf = (now: Date): string => {
   const ist = new Date(now.getTime() + 330 * 60 * 1000);
-  const prefix = `INV-${ist.getUTCFullYear()}${String(ist.getUTCMonth() + 1).padStart(2, '0')}-`;
+  return `${ist.getUTCFullYear()}${String(ist.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+/** The highest number taken under `PREFIX-YYYYMM-`, read from the invoices themselves. */
+async function highestIssued(prefix: string): Promise<number> {
   const { data, error } = await supabase.from('invoices').select('invoice_number').like('invoice_number', `${prefix}%`);
   if (error) throw new Error(`Failed to read invoice numbers: ${error.message}`);
   let max = 0;
@@ -68,7 +74,45 @@ async function nextInvoiceNumber(now: Date): Promise<string> {
     const seq = Number(num.slice(prefix.length));
     if (Number.isInteger(seq) && seq > max) max = seq;
   }
-  return `${prefix}${String(max + 1).padStart(4, '0')}`;
+  return max;
+}
+
+/**
+ * The next `PREFIX-YYYYMM-####` number for the issuing company: its own prefix (organizations.profile.invoice_prefix) and
+ * its own sequence per month. The sequence comes from public.next_invoice_number(), one atomic upsert-increment of the
+ * company's counter row, so two invoices issued at the same moment never get the same number.
+ *
+ * Without a company (organisations not set up yet) it is the old `INV-YYYYMM-####`, one sequence for everyone, found by
+ * reading the invoices; the same reading stands in when the counter function does not exist yet (before the migration
+ * ran), where the unique invoice_number plus the retry in insertInvoice keep numbers distinct.
+ */
+async function nextInvoiceNumber(issuerId: string | null, now: Date): Promise<string> {
+  const period = monthOf(now);
+  const prefix = issuerId ? await invoicePrefixFor(issuerId) : 'INV';
+  const stem = `${prefix}-${period}-`;
+  if (issuerId) {
+    const { data, error } = await supabase.rpc('next_invoice_number', { p_org: issuerId, p_prefix: prefix, p_period: period });
+    const seq = Number(data);
+    if (!error && Number.isInteger(seq) && seq > 0) return `${stem}${String(seq).padStart(4, '0')}`;
+    // Only "the function is not there" falls back; any other failure must not hand out a number
+    if (error && !['PGRST202', '42883', '42P01'].includes(String(error.code))) throw new Error(`Failed to get an invoice number: ${error.message}`);
+  }
+  return `${stem}${String((await highestIssued(stem)) + 1).padStart(4, '0')}`;
+}
+
+/**
+ * The company that issues an invoice: the one carrying the shipment or load (the invoice is theirs even when a
+ * platform admin delivers it), else the company the request acts for, else the default company. Null before
+ * the organisations migration has run.
+ */
+async function issuerOf(input: { shipment_id?: string; manifest_id?: string }): Promise<string | null> {
+  const table = input.shipment_id ? 'shipments' : input.manifest_id ? 'cargo_manifest' : null;
+  const id = input.shipment_id ?? input.manifest_id;
+  if (table && id) {
+    const { data } = await supabase.from(table).select('carrier_org_id').eq('id', id).maybeSingle();
+    if (data?.carrier_org_id) return data.carrier_org_id as string;
+  }
+  return issuerStamp().issuer_org_id ?? (await resolveScope());
 }
 
 interface NewInvoice {
@@ -144,7 +188,9 @@ export async function announceInvoice(invoiceId: string, event: 'issued' | 'paid
 
 /** Inserts the invoice, retrying with a fresh number if two deliveries raced for the same one. */
 async function insertInvoice(input: NewInvoice): Promise<string> {
-  const company = await assertCanIssueInvoices();
+  // The seller is the company issuing it: its GSTIN and state decide the GST split, its bank and terms are on the invoice
+  const issuerId = await issuerOf(input);
+  const company = await assertCanIssueInvoices(issuerId);
   const billTo = await resolveBillTo(input).catch(() => null);
   const sellerState = sellerStateCode(company);
   const buyerState = billTo?.state_code ?? null;
@@ -162,11 +208,11 @@ async function insertInvoice(input: NewInvoice): Promise<string> {
     const { data, error } = await supabase
       .from('invoices')
       .insert({
-        ...issuerStamp(),
+        ...(issuerId ? { issuer_org_id: issuerId } : {}),
         ...(billToOrg ? { bill_to_org_id: billToOrg } : {}),
         ...fields,
         ...(notes ? { notes } : {}),
-        invoice_number: await nextInvoiceNumber(now),
+        invoice_number: await nextInvoiceNumber(issuerId, now),
         amount,
         gst_amount: gstAmount,
         total: fromPaise(lines.total),
