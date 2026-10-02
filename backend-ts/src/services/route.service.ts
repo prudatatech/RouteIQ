@@ -19,6 +19,7 @@ import { recordTripPaySafe } from './driver-pay.service';
 import { syncOdometerAfterTripSafe } from './odometer-sync.service';
 import type { CargoHoldContext } from './shipment.service';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, orgFilter, scopeQuery } from '../core/org-scope';
 
 /** Sets a vehicle's status unless it is in maintenance or archived (those are changed by staff only). */
 export async function setOperatingVehicleStatus(vehicleId: string | null | undefined, status: 'on_route' | 'available' | 'idle'): Promise<void> {
@@ -449,7 +450,7 @@ export interface PlannedRouteInput {
  * place gets a new one. Dispatching it later is the same as for any route (changeStatus).
  */
 export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: string }): Promise<{ id: string; vehicle_id: string; status: string; stops: { delivery_point_id: string; sequence: number }[] }> {
-  const { data: vehicle, error: vErr } = await supabase.from('vehicles').select('id, status, plate_number, driver_id').eq('id', input.vehicle_id).maybeSingle();
+  const { data: vehicle, error: vErr } = await scopeQuery(supabase.from('vehicles').select('id, status, plate_number, driver_id, carrier_org_id').eq('id', input.vehicle_id), OWNED.carrier).maybeSingle();
   if (vErr) throw new Error(vErr.message);
   if (!vehicle) throw new HttpError(404, 'Vehicle not found');
   if (!isDispatchable(vehicle as { status?: string | null; plate_number?: string | null })) {
@@ -458,8 +459,15 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
 
   const reuseIds = input.stops.map(s => s.delivery_point_id).filter((id): id is string => !!id);
   if (reuseIds.length > 0) {
-    const { data: found, error } = await supabase.from('delivery_points').select('id').in('id', reuseIds);
+    const { data: found, error } = await supabase.from('delivery_points').select('id, shipments(carrier_org_id)').in('id', reuseIds);
     if (error) throw new Error(error.message);
+    // A stop that is part of another company's shipment is not this company's to plan
+    const mineOnly = orgFilter(OWNED.carrier);
+    const foreign = (found ?? []).some((d: any) => {
+      const sh = Array.isArray(d.shipments) ? d.shipments[0] : d.shipments;
+      return !!mineOnly && !!sh?.carrier_org_id && sh.carrier_org_id !== mineOnly.id;
+    });
+    if (foreign) throw new HttpError(404, 'Delivery point not found');
     const known = new Set((found ?? []).map((d: any) => d.id));
     if (reuseIds.some(id => !known.has(id))) throw new HttpError(400, 'One of the stops refers to a delivery point that no longer exists.');
   }
@@ -481,7 +489,8 @@ export async function createPlannedRoute(input: PlannedRouteInput, actor: { id: 
   const { data: route, error: routeErr } = await supabase
     .from('routes')
     .insert({
-      ...carrierStamp(),
+      // The company that runs the vehicle owns the trip
+      ...((vehicle as { carrier_org_id?: string | null }).carrier_org_id ? { carrier_org_id: (vehicle as { carrier_org_id: string }).carrier_org_id } : carrierStamp()),
       vehicle_id: input.vehicle_id,
       depot_id: null,
       status: 'pending',

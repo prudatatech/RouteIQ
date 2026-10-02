@@ -12,7 +12,7 @@ import { ROUTE_STATUS_TO_MANIFEST, cancelManifest, manifestAsRoute, routeService
 import { HttpError, sendError } from '../core/errors';
 import { attachTripDistance } from '../services/trip-distance';
 import { OPERATING_VEHICLE_STATUSES, ROUTE_STATUSES } from '../core/transitions';
-import { OWNED, scopeQuery } from '../core/org-scope';
+import { OWNED, isScoped, orgFilter, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
@@ -103,9 +103,16 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 // ── GET /delivery-points ───────────────────────────────────
 router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data, error } = await supabase.from('delivery_points').select('*');
+    // A delivery point has no owner column: it is the company's when its shipment or a stop of one of its trips is
+    const limited = isScoped(OWNED.carrier);
+    const { data, error } = await supabase.from('delivery_points')
+      .select(limited ? '*, shipments(carrier_org_id), route_stops(routes(carrier_org_id))' : '*');
     if (error) throw error;
-    res.json(data || []);
+    if (!limited) { res.json(data || []); return; }
+    const mine = (rows: any): boolean => (Array.isArray(rows) ? rows : rows ? [rows] : []).some((r: any) => r?.carrier_org_id === orgFilter(OWNED.carrier)?.id);
+    res.json((data ?? [])
+      .filter((p: any) => mine(p.shipments) || (p.route_stops ?? []).some((st: any) => mine(st.routes)))
+      .map(({ shipments: _s, route_stops: _r, ...point }: any) => point));
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -184,7 +191,7 @@ router.patch('/:route_id/status', requireAuth, async (req: Request, res: Respons
     }
 
     // A vendor load lives in its own table: dispatch can cancel it here, the driver moves it along from the app
-    const { data: manifest } = await supabase.from('cargo_manifest').select('id, vehicle_id').eq('id', req.params.route_id).maybeSingle();
+    const { data: manifest } = await scopeQuery(supabase.from('cargo_manifest').select('id, vehicle_id').eq('id', req.params.route_id), OWNED.carrier).maybeSingle();
     if (manifest) {
       if (!isStaff(req.user)) {
         res.status(403).json({ detail: 'Drivers start a load from the app' });
@@ -222,10 +229,10 @@ router.post('/:route_id/reroute', requireAuth, async (req: Request, res: Respons
     }
 
     // Fetch route with stops
-    const { data: route, error } = await supabase
+    const { data: route, error } = await scopeQuery(supabase
       .from('routes')
       .select('*, route_stops(*)')
-      .eq('id', req.params.route_id)
+      .eq('id', req.params.route_id), OWNED.carrier)
       .single();
 
     if (error || !route) {
@@ -269,10 +276,10 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { data: route, error } = await supabase
+    const { data: route, error } = await scopeQuery(supabase
       .from('routes')
       .select('id, status, vehicle_id')
-      .eq('id', req.params.route_id)
+      .eq('id', req.params.route_id), OWNED.carrier)
       .maybeSingle();
 
     if (error || !route) {
@@ -286,7 +293,7 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       if (!['pending', 'optimizing'].includes(route.status)) {
         throw new HttpError(409, `This trip is ${String(route.status).replace('_', ' ')}. Only a trip that has not started can change vehicle.`);
       }
-      const { data: vehicle } = await supabase.from('vehicles').select('id, status').eq('id', newVehicleId).maybeSingle();
+      const { data: vehicle } = await scopeQuery(supabase.from('vehicles').select('id, status').eq('id', newVehicleId), OWNED.carrier).maybeSingle();
       if (!vehicle) throw new HttpError(404, 'Vehicle not found');
       if (!(OPERATING_VEHICLE_STATUSES as readonly string[]).includes(String(vehicle.status))) {
         throw new HttpError(409, `That vehicle is in ${vehicle.status} and can't take a trip.`);
@@ -318,10 +325,10 @@ router.delete('/:route_id', requireAuth, async (req: Request, res: Response) => 
       return;
     }
 
-    const { data: route, error } = await supabase
+    const { data: route, error } = await scopeQuery(supabase
       .from('routes')
       .select('*, vehicles(*)')
-      .eq('id', req.params.route_id)
+      .eq('id', req.params.route_id), OWNED.carrier)
       .single();
 
     if (error || !route) {

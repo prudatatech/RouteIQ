@@ -8,6 +8,7 @@
  * agree. Distance is the planned distance of the routes dispatched in the period (active or
  * completed); there is no per-trip odometer to add up.
  */
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { supabase } from '../core/supabase';
 import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { isPlaceholderPlate } from '../core/vehicles';
@@ -53,20 +54,20 @@ export async function getFleetAnalytics(days: number) {
   const start = startOfIndianDay(span - 1);
   const end = startOfIndianDay(-1);
 
-  const { data: vehicleRows, error: vErr } = await supabase
+  const { data: vehicleRows, error: vErr } = await scopeQuery(supabase
     .from('vehicles')
-    .select('id, plate_number, status, capacity_kg, current_load_kg, available_capacity_kg');
+    .select('id, plate_number, status, capacity_kg, current_load_kg, available_capacity_kg'), OWNED.carrier);
   if (vErr) throw new Error(`Failed to read vehicles: ${vErr.message}`);
   const fleet = fleetVehicles((vehicleRows ?? []) as FleetVehicleRow[]);
 
   const routes: RouteRow[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('routes')
       .select('vehicle_id, total_distance_km, created_at')
       .in('status', ['active', 'completed'])
       .gte('created_at', start.toISOString())
-      .lt('created_at', end.toISOString())
+      .lt('created_at', end.toISOString()), OWNED.carrier)
       .order('created_at', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`Failed to read routes: ${error.message}`);

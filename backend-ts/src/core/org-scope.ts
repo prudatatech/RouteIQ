@@ -16,7 +16,7 @@
  */
 import { supabase } from './supabase';
 import { HttpError } from './errors';
-import { currentOrgContext } from './org-context';
+import { currentOrgContext, type OrgContext } from './org-context';
 
 /** The owner columns of a table, per kind of organisation. */
 export interface OwnerColumns {
@@ -93,3 +93,15 @@ export const OWNED = {
   carrierAndVendor: { carrier: 'carrier_org_id', vendor: 'vendor_org_id' } as OwnerColumns,
   invoice: { carrier: 'issuer_org_id', vendor: 'bill_to_org_id' } as OwnerColumns,
 };
+
+/**
+ * The company whose live events a staff connection receives: its id, or null for every company's
+ * (a platform admin acting as the platform, or organisations not set up yet). Someone in no organisation
+ * gets an id no event carries.
+ */
+export function feedScope(ctx: OrgContext): string | null {
+  if (!ctx.configured) return null;
+  if (!ctx.org) return NO_ORG_ID;
+  if (ctx.org.kind === 'platform') return ctx.isPlatformAdmin ? null : NO_ORG_ID;
+  return ctx.org.id;
+}

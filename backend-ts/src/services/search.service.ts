@@ -14,6 +14,8 @@
  */
 import { supabase } from '../core/supabase';
 import { manifestParcelCode } from '../core/parcelCode';
+import { OWNED, isScoped, memberOrgId, scopeQuery } from '../core/org-scope';
+import { currentOrgContext } from '../core/org-context';
 
 export interface SearchResultItem {
   id: string;
@@ -47,9 +49,9 @@ function anyIncludes(term: string, ...values: unknown[]): boolean {
 const CM_PREFIX_RE = /^CM-([0-9A-F]+)$/i;
 
 async function searchShipments(term: string): Promise<SearchResultItem[]> {
-  const { data, error } = await supabase
+  const { data, error } = await scopeQuery(supabase
     .from('shipments')
-    .select('id, tracking_id, status, origin_name, origin_address, created_at')
+    .select('id, tracking_id, status, origin_name, origin_address, created_at'), OWNED.carrier)
     .order('created_at', { ascending: false })
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
@@ -85,6 +87,8 @@ async function searchShipments(term: string): Promise<SearchResultItem[]> {
       const shipmentById = new Map(rows.map(s => [s.id, s]));
       for (const id of matchedShipmentIds) {
         const s = shipmentById.get(id);
+        // Another company's shipment is not found by its stop
+        if (!s && isScoped(OWNED.carrier)) continue;
         byId.set(id, {
           id,
           label: s?.tracking_id ?? id,
@@ -100,9 +104,9 @@ async function searchShipments(term: string): Promise<SearchResultItem[]> {
 }
 
 async function searchCargoManifests(term: string): Promise<SearchResultItem[]> {
-  const { data, error } = await supabase
+  const { data, error } = await scopeQuery(supabase
     .from('cargo_manifest')
-    .select('id, pickup_location, drop_location, status, created_at')
+    .select('id, pickup_location, drop_location, status, created_at'), OWNED.carrier)
     .order('created_at', { ascending: false })
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
@@ -127,9 +131,9 @@ async function searchCargoManifests(term: string): Promise<SearchResultItem[]> {
 }
 
 async function searchVehicles(term: string): Promise<SearchResultItem[]> {
-  const { data, error } = await supabase
+  const { data, error } = await scopeQuery(supabase
     .from('vehicles')
-    .select('id, plate_number, driver_name, status, created_at')
+    .select('id, plate_number, driver_name, status, created_at'), OWNED.carrier)
     .order('created_at', { ascending: false })
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
@@ -145,7 +149,36 @@ async function searchVehicles(term: string): Promise<SearchResultItem[]> {
     }));
 }
 
+/**
+ * The legacy ids (vendor user, 3PL partner) of the organisations a company works with: vendors whose orders
+ * it runs, and the 3PL partners affiliated with it. null when nothing is limited.
+ */
+async function workedWith(): Promise<{ vendors: Set<string>; partners: Set<string> } | null> {
+  const company = currentOrgContext()?.org;
+  if (!isScoped(OWNED.carrier) || !company) return null;
+  const orgIds = new Set<string>();
+  for (const table of ['shipments', 'cargo_manifest']) {
+    const { data, error } = await scopeQuery(supabase.from(table).select('vendor_org_id').not('vendor_org_id', 'is', null), OWNED.carrier).limit(1000);
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) orgIds.add((r as { vendor_org_id: string }).vendor_org_id);
+  }
+  const { data: affiliations, error: aErr } = await supabase.from('tpl_affiliations').select('tpl_id').eq('company_id', company.id).in('status', ['pending', 'active', 'paused']);
+  if (aErr) throw new Error(aErr.message);
+  for (const a of affiliations ?? []) orgIds.add((a as { tpl_id: string }).tpl_id);
+  const out = { vendors: new Set<string>(), partners: new Set<string>() };
+  if (orgIds.size === 0) return out;
+  const { data: orgs, error: oErr } = await supabase.from('organizations').select('id, kind, profile').in('id', [...orgIds]);
+  if (oErr) throw new Error(oErr.message);
+  for (const o of orgs ?? []) {
+    const profile = ((o as { profile?: Record<string, unknown> }).profile ?? {}) as Record<string, string | undefined>;
+    if ((o as { kind: string }).kind === 'vendor' && profile.legacy_user_id) out.vendors.add(profile.legacy_user_id);
+    if ((o as { kind: string }).kind === 'tpl_partner' && profile.legacy_tpl_partner_id) out.partners.add(profile.legacy_tpl_partner_id);
+  }
+  return out;
+}
+
 async function searchVendors(term: string): Promise<SearchResultItem[]> {
+  const mine = await workedWith();
   const { data, error } = await supabase
     .from('vendor_profiles')
     .select('id, company_name, gst_number, city, created_at')
@@ -153,6 +186,7 @@ async function searchVendors(term: string): Promise<SearchResultItem[]> {
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
   return (data ?? [])
+    .filter(v => !mine || mine.vendors.has(v.id))
     .filter(v => anyIncludes(term, v.company_name, v.gst_number))
     .slice(0, RESULT_LIMIT)
     .map(v => ({
@@ -165,6 +199,7 @@ async function searchVendors(term: string): Promise<SearchResultItem[]> {
 }
 
 async function searchPartners(term: string): Promise<SearchResultItem[]> {
+  const mine = await workedWith();
   const { data, error } = await supabase
     .from('tpl_partners')
     .select('id, company_name, custom_id, status, created_at')
@@ -172,6 +207,7 @@ async function searchPartners(term: string): Promise<SearchResultItem[]> {
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
   return (data ?? [])
+    .filter(p => !mine || mine.partners.has(p.id))
     .filter(p => anyIncludes(term, p.company_name, p.custom_id))
     .slice(0, RESULT_LIMIT)
     .map(p => ({
@@ -190,7 +226,15 @@ async function searchUsers(term: string, includeContact: boolean): Promise<Searc
     .order('created_at', { ascending: false })
     .limit(CANDIDATE_LIMIT);
   if (error) throw new Error(error.message);
+  const memberOf = memberOrgId();
+  let members: Set<string> | null = null;
+  if (memberOf) {
+    const { data: seats, error: mErr } = await supabase.from('org_members').select('user_id').eq('org_id', memberOf).eq('status', 'active');
+    if (mErr) throw new Error(mErr.message);
+    members = new Set((seats ?? []).map((m: { user_id: string }) => m.user_id));
+  }
   return (data ?? [])
+    .filter(u => !members || members.has(u.id))
     .filter(u => anyIncludes(term, u.full_name) || (includeContact && anyIncludes(term, u.email, u.phone)))
     .slice(0, RESULT_LIMIT)
     .map(u => ({

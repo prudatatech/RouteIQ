@@ -5,6 +5,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
+import { OWNED, scopeQuery } from '../core/org-scope';
+import { carrierOf, carrierOfVehicle, guardVehicle } from '../core/org-guards';
 import { STAFF_ROLES, isStaff, canAccessVehicle, canAccessRoute, assertTripSent, canAccessRouteStop, canAccessManifest } from '../core/ownership';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { cacheGet } from '../core/redis';
@@ -133,13 +135,14 @@ router.post('/sos/:id/cancel', requireAuth, requireRole('driver', ...STAFF_ROLES
     if (changed && byDriver) {
       try {
         const { data: vehicle } = alert.vehicle_id
-          ? await supabase.from('vehicles').select('plate_number, driver_name').eq('id', alert.vehicle_id).maybeSingle()
+          ? await supabase.from('vehicles').select('plate_number, driver_name, carrier_org_id').eq('id', alert.vehicle_id).maybeSingle()
           : { data: null };
         await notificationService.notifyStaff(
           'SOS cancelled',
           `${vehicle?.driver_name ?? 'The driver'} on ${vehicle?.plate_number ?? 'a vehicle'} cancelled their SOS. It was raised by mistake or is no longer needed.`,
           'sos',
           { alert_id: alert.id, vehicle_id: alert.vehicle_id, cancelled: true },
+          vehicle?.carrier_org_id,
         );
       } catch (e) {
         console.error('[telemetry] SOS cancel notification failed:', e);
@@ -169,7 +172,7 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByU
     // Get the driver's current vehicle
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('id, plate_number, driver_name')
+      .select('id, plate_number, driver_name, carrier_org_id')
       .eq('driver_id', userId)
       .single();
 
@@ -180,7 +183,7 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByU
     }
 
     const { data: created, error: sosErr } = await supabase.from('sos_alerts').insert({
-      ...carrierStamp(),
+      ...(vehicle.carrier_org_id ? { carrier_org_id: vehicle.carrier_org_id } : carrierStamp()),
       vehicle_id: vehicle.id,
       driver_id: userId,
       latitude: lat,
@@ -199,6 +202,7 @@ router.post('/sos/trigger', requireAuth, idempotent('sos-trigger'), rateLimitByU
         `${vehicle.driver_name ?? 'A driver'} on ${vehicle.plate_number ?? 'a vehicle'} triggered an SOS (${alertType.replace('_', ' ')}).`,
         'sos',
         { alert_id: created?.id ?? null, vehicle_id: vehicle.id },
+        vehicle.carrier_org_id,
       );
     } catch (e) {
       console.error('[telemetry] SOS notification failed:', e);
@@ -328,10 +332,11 @@ router.post('/mobile-session', requireAuth, requireRole(...STAFF_ROLES), async (
       return;
     }
 
-    const { data: vehicle, error } = await supabase
+    // Another company's vehicle is a 404, the same as one that does not exist
+    const { data: vehicle, error } = await scopeQuery(supabase
       .from('vehicles')
       .select('id, plate_number')
-      .eq('id', vehicleId)
+      .eq('id', vehicleId), OWNED.carrier)
       .single();
 
     if (error || !vehicle) {
@@ -360,7 +365,7 @@ router.post('/mobile-session', requireAuth, requireRole(...STAFF_ROLES), async (
 });
 
 // ── POST /call-driver/:vehicle_id ──────────────────────────
-router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', 'admin', 'manager'), async (req: Request, res: Response) => {
+router.post('/call-driver/:vehicle_id', requireAuth, requireRole('superadmin', 'admin', 'manager'), guardVehicle('vehicle_id'), async (req: Request, res: Response) => {
   try {
     const vehicleId = req.params.vehicle_id;
     // Broadcast via Supabase Realtime so the specific driver app picks it up
@@ -430,7 +435,7 @@ router.post('/mobile-push/:session_token', rateLimitByIp('mobile-push', 300, 60)
         speed: telemetryData.speed_kmph,
         source: 'mobile',
       },
-    });
+    }, await carrierOfVehicle(vehicleId));
 
     res.json({ status: 'ok', vehicle_id: vehicleId });
   } catch (e: any) {
@@ -575,7 +580,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
       await wsManager.broadcast({
         type: 'TELEMETRY_UPDATE',
         data: liveData,
-      });
+      }, await carrierOfVehicle(vehicle.id));
 
       // ── Geofence Auto-Complete Check ──
       // Check if driver is within 50m of any pending delivery point
@@ -626,7 +631,7 @@ router.post('/driver-ping', requireAuth, async (req: Request, res: Response) => 
                   delivery_point: dp.name,
                   distance_meters: Math.round(distMeters),
                 },
-              });
+              }, await carrierOfVehicle(vehicle.id));
 
               break; // Only alert for the nearest pending stop
             }
@@ -973,6 +978,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
           `A driver could not complete the ${isPickup ? 'pickup' : 'drop'} of a vendor load${reason ? ` (${String(reason).replace(/_/g, ' ')})` : ''}.`,
           'stop_failed',
           { manifest_id: manifestId, driver_id: req.user!.user_id },
+          manifest.carrier_org_id,
         ).catch(e => console.error('[telemetry] failed-stop notification failed:', e));
         res.json({ status: 'failed', stop_id, route_id: manifestId, remaining_stops: 1, route_completed: false });
         return;
@@ -1000,7 +1006,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         await wsManager.broadcast({
           type: 'STOP_COMPLETED',
           data: { stop_id, route_id: manifestId, completed_by: req.user!.user_id },
-        });
+        }, manifest.carrier_org_id);
       }
 
       // What is left for this vehicle: each load still to be delivered has a drop, and one still waiting has a pickup
@@ -1148,6 +1154,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
         `A driver could not complete a delivery${reason ? ` (${String(reason).replace(/_/g, ' ')})` : ''}.`,
         'stop_failed',
         { route_id: stop.route_id, shipment_id: dp?.shipment_id ?? null },
+        await carrierOf('routes', stop.route_id),
       ).catch(e => console.error('[telemetry] failed-stop notification failed:', e));
     }
 
@@ -1162,7 +1169,7 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
           remaining_stops: remainingStops?.length || 0,
           completed_by: req.user!.user_id,
         },
-      });
+      }, await carrierOf('routes', stop.route_id));
     }
 
     res.json({

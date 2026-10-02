@@ -5,7 +5,7 @@ import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
-import { notificationService } from './notification.service';
+import { notificationService, PLATFORM } from './notification.service';
 import { emailService } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
@@ -182,6 +182,7 @@ export const tplService = {
         `${companyName} applied to become a 3PL partner.`,
         'tpl_application',
         { partner_id: partnerId },
+        PLATFORM,
       );
     } catch (e) {
       console.error('[tpl] Application notification failed:', e);
@@ -576,6 +577,7 @@ export const tplService = {
         `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
         'tpl_update',
         { partner_id: partner.id },
+        PLATFORM,
       );
     } catch (e) {
       console.error('[tpl] Document notification failed:', e);
@@ -610,6 +612,7 @@ export const tplService = {
         `${partner.company_name} asked to change its SLA, tax treatment or corridors.`,
         'tpl_update',
         { partner_id: partner.id },
+        PLATFORM,
       );
     } catch (e) {
       console.error('[tpl] Settings notification failed:', e);

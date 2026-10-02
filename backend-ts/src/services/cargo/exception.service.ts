@@ -25,6 +25,7 @@ import { notifyOwner, notifyStaffSafe } from './notify';
 import { estimateMinutes, openDropPoints, planStopsOnVehicle } from './replan';
 import { carrierStamp, vendorOrgOf } from '../../core/org-context';
 import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
+import { carrierOfLinks } from '../../core/org-guards';
 
 export const EXCEPTION_TYPES = [
   'vehicle_accident', 'vehicle_breakdown', 'damage', 'shortage', 'excess', 'theft', 'refused', 'undeliverable', 'delay', 'seal_tamper', 'weather', 'other',
@@ -102,8 +103,11 @@ export function makeCode(prefix: 'EXC' | 'TRF' | 'CLM'): string {
 /** Inserts a row whose `code` must be unique, trying new codes on the rare clash. */
 export async function insertWithCode(table: 'cargo_exceptions' | 'cargo_transfers' | 'cargo_claims', prefix: 'EXC' | 'TRF' | 'CLM', row: Record<string, unknown>, columns = '*'): Promise<any> {
   // The company running the case; a claim a vendor raises also names the vendor's organisation
+  // The company that runs what the row is about owns it, whoever opens it (the scheduler and a platform admin act for none)
+  const derived = await carrierOfLinks(row as { vehicle_id?: string | null; from_vehicle_id?: string | null; shipment_id?: string | null; manifest_id?: string | null });
   const owners = {
     ...carrierStamp(),
+    ...(derived ? { carrier_org_id: derived } : {}),
     ...(table === 'cargo_claims' && row.raised_by_role === 'vendor' ? await vendorOrgOf(row.raised_by as string | undefined) : {}),
   };
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -169,6 +173,9 @@ export async function openException(input: OpenExceptionInput, actor: Actor | nu
   const severity = input.severity ?? DEFAULT_SEVERITY[input.type] ?? 'medium';
   if (!(SEVERITIES as readonly string[]).includes(severity)) throw new HttpError(400, `severity must be one of: ${SEVERITIES.join(', ')}`);
   const now = new Date();
+  // With no vehicle named, the company that runs the goods owns the case
+  const first = input.items[0]?.consignment;
+  const itemOwner = input.vehicle_id || !first ? null : await carrierOfLinks({ [first.kind === 'shipment' ? 'shipment_id' : 'manifest_id']: first.id });
   const row = await insertWithCode('cargo_exceptions', 'EXC', {
     type: input.type,
     severity,
@@ -177,6 +184,7 @@ export async function openException(input: OpenExceptionInput, actor: Actor | nu
     sos_alert_id: input.sos_alert_id ?? null,
     maintenance_job_id: input.maintenance_job_id ?? null,
     vehicle_id: input.vehicle_id ?? null,
+    ...(itemOwner ? { carrier_org_id: itemOwner } : {}),
     route_id: input.route_id ?? null,
     lat: input.lat ?? null,
     lng: input.lng ?? null,
@@ -215,7 +223,8 @@ export async function openException(input: OpenExceptionInput, actor: Actor | nu
 }
 
 async function loadException(id: string): Promise<any> {
-  const { data, error } = await supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS).eq('id', id).maybeSingle();
+  // Another company's case is a 404, the same as one that does not exist
+  const { data, error } = await scopeQuery(supabase.from('cargo_exceptions').select(EXCEPTION_COLUMNS).eq('id', id), OWNED.carrier).maybeSingle();
   if (error) throw new Error(`Failed to read the case: ${error.message}`);
   if (!data) throw new HttpError(404, 'Cargo case not found');
   return data;
@@ -678,9 +687,10 @@ export async function reliefVehicles(id: string) {
   }
   if (!origin || !isValidPoint(origin)) throw new HttpError(409, 'This case has no location, so nearby vehicles cannot be found.');
 
-  const { data: vehicles, error } = await supabase
+  // Relief comes from the company's own vehicles only
+  const { data: vehicles, error } = await scopeQuery(supabase
     .from('vehicles')
-    .select('id, plate_number, vehicle_type, status, driver_id, driver_name, latitude, longitude, capacity_kg, available_capacity_kg, current_load_kg, cargo_types, last_heartbeat')
+    .select('id, plate_number, vehicle_type, status, driver_id, driver_name, latitude, longitude, capacity_kg, available_capacity_kg, current_load_kg, cargo_types, last_heartbeat'), OWNED.carrier)
     .in('status', [...OPERATING_VEHICLE_STATUSES]);
   if (error) throw new Error(`Failed to read vehicles: ${error.message}`);
 

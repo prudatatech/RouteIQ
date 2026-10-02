@@ -11,6 +11,8 @@ import { haversineKm, isValidPoint, LatLng, ROAD_FACTOR } from './geo';
 import { placeMatchesSide } from '../utils/corridor-match';
 import { toPoint, travelMinutes } from '../utils/eta';
 import { carrierStamp, ownersOf, vendorOrgOf } from '../core/org-context';
+import { OWNED, assertVisible, scopeQuery } from '../core/org-scope';
+import { carrierOfVehicle } from '../core/org-guards';
 
 /** Notifications are informative; a failure must not undo the bid operation. */
 function notify(send: () => Promise<unknown>) {
@@ -161,9 +163,12 @@ export const capacityService = {
       vendor = data;
     }
     const nowIso = new Date().toISOString();
-    const { data, error } = await supabase
+    // Vendors see every company's open space (that is the marketplace); staff see their own company's
+    let openQuery = supabase
       .from('capacity_windows')
-      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg, latitude, longitude, current_location_name)')
+      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg, latitude, longitude, current_location_name)');
+    if (!vendorId) openQuery = scopeQuery(openQuery, OWNED.carrier);
+    const { data, error } = await openQuery
       .eq('status', 'open')
       .lte('opens_at', nowIso)
       .gt('closes_at', nowIso)
@@ -201,7 +206,7 @@ export const capacityService = {
 
     const { data: window, error: windowErr } = await supabase
       .from('capacity_windows')
-      .select('id, opens_at, closes_at, floor_price, status, winning_bid_id, vehicles(plate_number, latitude, longitude, current_location_name, available_capacity_kg)')
+      .select('id, opens_at, closes_at, floor_price, status, winning_bid_id, carrier_org_id, vehicles(plate_number, latitude, longitude, current_location_name, available_capacity_kg)')
       .eq('id', data.window_id)
       .maybeSingle();
     if (windowErr) throw new Error(`Failed to load window ${data.window_id}: ${windowErr.message}`);
@@ -289,7 +294,8 @@ export const capacityService = {
       'New bid',
       `A vendor bid ${formatINR(bidAmount)} for ${formatKg(weightKg)} on ${windowVehicle?.plate_number ?? 'a vehicle'}.`,
       'capacity_bid',
-      { bid_id: bid.id, window_id: data.window_id }
+      { bid_id: bid.id, window_id: data.window_id },
+      window.carrier_org_id,
     ));
     return bid;
   },
@@ -340,8 +346,9 @@ export const capacityService = {
     if (routes && routes.length > 0) {
       routeId = routes[0].id;
     } else {
+      const owner = await carrierOfVehicle(vehicleId);
       const { data: newRoute } = await supabase.from('routes').insert({
-        ...carrierStamp(),
+        ...(owner ? { carrier_org_id: owner } : carrierStamp()),
         id: uuidv4(),
         vehicle_id: vehicleId,
         status: 'active',
@@ -399,8 +406,9 @@ export const capacityService = {
       closesAt = new Date(opensAt.getTime() + durationMinutes * 60_000);
     }
 
-    const { data: vehicle, error: vehicleErr } = await supabase
-      .from('vehicles').select('id, plate_number, status, capacity_kg, current_load_kg, available_capacity_kg').eq('id', vehicleId).maybeSingle();
+    // Another company's vehicle is a 404, the same as one that does not exist
+    const { data: vehicle, error: vehicleErr } = await scopeQuery(supabase
+      .from('vehicles').select('id, plate_number, status, capacity_kg, current_load_kg, available_capacity_kg, carrier_org_id').eq('id', vehicleId), OWNED.carrier).maybeSingle();
     if (vehicleErr) throw new Error(`Failed to load vehicle: ${vehicleErr.message}`);
     if (!vehicle) throw new HttpError(404, 'Vehicle not found');
     if (!isDispatchable(vehicle)) {
@@ -417,7 +425,8 @@ export const capacityService = {
     if (await findOpenWindow(vehicleId)) throw new HttpError(409, 'This vehicle already has an open bidding window');
 
     const { data: window, error } = await supabase.from('capacity_windows').insert({
-      ...carrierStamp(),
+      // The company that runs the vehicle owns its window
+      ...(vehicle.carrier_org_id ? { carrier_org_id: vehicle.carrier_org_id } : carrierStamp()),
       vehicle_id: vehicleId,
       opens_at: opensAt.toISOString(),
       closes_at: closesAt.toISOString(),
@@ -484,9 +493,9 @@ export const capacityService = {
    * Windows for the console: recent first, with the vehicle, the linked shipment and how many bids wait.
    */
   async listWindowsForStaff(limit = 50) {
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('capacity_windows')
-      .select('id, vehicle_id, opens_at, closes_at, floor_price, winning_bid_id, fallback_shipment_id, trigger_type, status, resolved_at, vehicles(plate_number, vehicle_type, available_capacity_kg)')
+      .select('id, vehicle_id, opens_at, closes_at, floor_price, winning_bid_id, fallback_shipment_id, trigger_type, status, resolved_at, vehicles(plate_number, vehicle_type, available_capacity_kg)'), OWNED.carrier)
       .order('opens_at', { ascending: false })
       .limit(limit);
     if (error) throw new Error(`Failed to load windows: ${error.message}`);
@@ -541,7 +550,7 @@ export const capacityService = {
       .update({ status: mode, resolved_at: nowIso, ...(opts.keepEnd ? {} : { closes_at: nowIso }) })
       .eq('id', windowId)
       .eq('status', 'open')
-      .select('id, vehicle_id, winning_bid_id')
+      .select('id, vehicle_id, winning_bid_id, carrier_org_id')
       .maybeSingle();
     if (error) throw new Error(`Failed to end window ${windowId}: ${error.message}`);
     if (!window) return null;
@@ -591,6 +600,7 @@ export const capacityService = {
         `A bidding window has closed with ${pending.length} bid${pending.length === 1 ? '' : 's'} waiting for your decision.`,
         'capacity_window_closed',
         { window_id: windowId },
+        closed.carrier_org_id,
       ));
     }
     return true;
@@ -668,6 +678,8 @@ export const capacityService = {
     const { data: pre, error: preErr } = await supabase.from('capacity_bids').select('*').eq('id', bidId).maybeSingle();
     if (preErr) throw new Error(`Failed to load bid ${bidId}: ${preErr.message}`);
     if (!pre) throw new HttpError(404, 'Bid not found');
+    // A bid on another company's window is a 404, the same as one that does not exist
+    await assertVisible('capacity_windows', pre.window_id, OWNED.carrier, 'Bid not found');
     if (pre.status !== 'pending') throw new HttpError(409, `Bid is already ${pre.status}`);
 
     const [{ data: vendor }, { data: preWindow }] = await Promise.all([
@@ -842,6 +854,7 @@ export const capacityService = {
           const routeId = uuidv4();
           const { error: routeErr } = await supabase.from('routes').insert({
             ...carrierStamp(),
+            ...(window.carrier_org_id ? { carrier_org_id: window.carrier_org_id } : {}),
             id: routeId,
             vehicle_id: window.vehicle_id,
             status: 'active',
@@ -990,6 +1003,8 @@ export const capacityService = {
    * Superadmin manually rejects a backhaul bid
    */
   async rejectBid(bidId: string, reason: string) {
+    const { data: target } = await supabase.from('capacity_bids').select('window_id').eq('id', bidId).maybeSingle();
+    if (target) await assertVisible('capacity_windows', target.window_id, OWNED.carrier, 'Bid not found');
     const { data: bid, error: rejectErr } = await supabase
       .from('capacity_bids')
       .update({ status: 'rejected', rejection_reason: reason })
@@ -1032,7 +1047,7 @@ export const capacityService = {
   async handleFlaggedStop(confirmationId: string) {
     const { data: conf } = await supabase.from('driver_confirmations').select('id, route_stop_id, vehicle_id').eq('id', confirmationId).maybeSingle();
     if (!conf) return;
-    const { data: vehicle } = await supabase.from('vehicles').select('plate_number').eq('id', conf.vehicle_id).maybeSingle();
+    const { data: vehicle } = await supabase.from('vehicles').select('plate_number, carrier_org_id').eq('id', conf.vehicle_id).maybeSingle();
     const plate = vehicle?.plate_number ?? 'a vehicle';
 
     const { data: stop } = await supabase.from('route_stops').select('id, delivery_point_id').eq('id', conf.route_stop_id).maybeSingle();
@@ -1048,6 +1063,7 @@ export const capacityService = {
         'Driver flagged a stop',
         `The driver of ${plate} flagged a stop that was added to the trip. Please check it.`,
         'stop_flagged', { confirmation_id: confirmationId, route_stop_id: conf.route_stop_id },
+        vehicle?.carrier_org_id,
       ));
       return;
     }
@@ -1058,6 +1074,7 @@ export const capacityService = {
         ? `The driver of ${plate} flagged the stop for ${shipment.tracking_id}. The award was cancelled and the bidding window is open again.`
         : `The driver of ${plate} flagged the stop for ${shipment.tracking_id}. Please check it.`,
       'stop_flagged', { confirmation_id: confirmationId, bid_id: shipment.bid_id, window_id: revoked?.windowId ?? null },
+      vehicle?.carrier_org_id,
     ));
   },
 

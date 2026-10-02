@@ -19,6 +19,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { notificationService } from './notification.service';
+import { OWNED, assertVisible, scopeQuery } from '../core/org-scope';
 
 export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'cancelled'] as const;
 export type SosStatus = (typeof SOS_STATUSES)[number];
@@ -41,6 +42,8 @@ export interface SosAlertRow {
   status: string | null;
   created_at: string;
   updated_at: string | null;
+  /** The company that runs the vehicle: the one that is told. */
+  carrier_org_id?: string | null;
 }
 
 /** A missing status is an alert nobody has touched yet. */
@@ -63,6 +66,8 @@ export async function transitionSos(
     .maybeSingle();
   if (error) throw error;
   if (!existing || (opts.driverId && existing.driver_id !== opts.driverId)) throw new HttpError(404, 'SOS alert not found');
+  // Staff act on their own company's alerts only; another company's is a 404
+  if (!opts.driverId) await assertVisible('sos_alerts', id, OWNED.carrier, 'SOS alert not found');
 
   const current = statusOf(existing);
   if (current === next) return { alert: existing as SosAlertRow, changed: false };
@@ -122,7 +127,7 @@ const PAGE = 1000;
 export async function loadSosCounts(vehicleId?: string): Promise<Record<string, SosCounts>> {
   const rows: { vehicle_id: string | null; status: string | null; created_at: string }[] = [];
   for (let from = 0; ; from += PAGE) {
-    let q = supabase.from('sos_alerts').select('vehicle_id, status, created_at').order('created_at', { ascending: false });
+    let q = scopeQuery(supabase.from('sos_alerts').select('vehicle_id, status, created_at'), OWNED.carrier).order('created_at', { ascending: false });
     if (vehicleId) q = q.eq('vehicle_id', vehicleId);
     const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw new Error(`Failed to read SOS alerts: ${error.message}`);
@@ -172,7 +177,7 @@ export function reminderDue(
 export async function escalateStaleSos(nowMs: number = Date.now()): Promise<number> {
   const { data: open, error } = await supabase
     .from('sos_alerts')
-    .select('id, driver_id, vehicle_id, alert_type, status, created_at, updated_at')
+    .select('id, driver_id, vehicle_id, alert_type, status, created_at, updated_at, carrier_org_id')
     .in('status', [...OPEN_SOS_STATUSES])
     .order('created_at', { ascending: true })
     .limit(200);
@@ -219,6 +224,7 @@ export async function escalateStaleSos(nowMs: number = Date.now()): Promise<numb
         `The SOS on ${plate} was raised ${minutes} min ago and is ${waiting}. Open Emergencies to handle or close it.`,
         'sos',
         data,
+        alert.carrier_org_id,
       );
       reminded++;
     } catch (e) {

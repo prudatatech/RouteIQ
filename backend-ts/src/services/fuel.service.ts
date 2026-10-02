@@ -4,6 +4,7 @@
  * rebuilt, and the vehicle keeps its rolling km per litre (fuel_efficiency_kmpl) and, after a
  * full fill, the litres in the tank (current_fuel_liters).
  */
+import { visibleVehicleIds } from '../core/org-guards';
 import { supabase } from '../core/supabase';
 import { cacheDeletePattern } from '../core/redis';
 import {
@@ -203,7 +204,9 @@ export async function getFleetSummary(now = new Date()) {
     .order('filled_at', { ascending: false })
     .limit(MAX_LOG_ROWS * 5);
   if (error) throw error;
-  const logs = newestFirst((data ?? []).map(normalizeLog));
+  // Only the active company's vehicles (a fill has no owner column of its own)
+  const mine = await visibleVehicleIds();
+  const logs = newestFirst((data ?? []).map(normalizeLog).filter(l => !mine || mine.has(l.vehicle_id)));
   const byVehicle = new Map<string, FuelLogRow[]>();
   for (const l of logs) byVehicle.set(l.vehicle_id, [...(byVehicle.get(l.vehicle_id) ?? []), l]);
 

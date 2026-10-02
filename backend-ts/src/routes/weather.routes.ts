@@ -12,15 +12,16 @@ import { HttpError, sendError } from '../core/errors';
 import { supabase } from '../core/supabase';
 import { getWeather, isConditions } from '../services/weather.service';
 import { isValidPoint, LatLng, midpoint } from '../services/geo';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
 router.get('/route/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data: route, error } = await supabase
+    const { data: route, error } = await scopeQuery(supabase
       .from('routes')
       .select('id, vehicles(latitude, longitude), route_stops(sequence, delivery_points(latitude, longitude))')
-      .eq('id', req.params.route_id)
+      .eq('id', req.params.route_id), OWNED.carrier)
       .maybeSingle();
     if (error) throw error;
 
@@ -31,10 +32,10 @@ router.get('/route/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (
       push(r.vehicles?.latitude, r.vehicles?.longitude);
       for (const s of [...(r.route_stops ?? [])].sort((a: any, b: any) => a.sequence - b.sequence)) push(s.delivery_points?.latitude, s.delivery_points?.longitude);
     } else {
-      const { data: manifest, error: mErr } = await supabase
+      const { data: manifest, error: mErr } = await scopeQuery(supabase
         .from('cargo_manifest')
         .select('id, pickup_lat, pickup_lng, drop_lat, drop_lng, vehicles(latitude, longitude)')
-        .eq('id', req.params.route_id)
+        .eq('id', req.params.route_id), OWNED.carrier)
         .maybeSingle();
       if (mErr) throw mErr;
       if (!manifest) throw new HttpError(404, 'Trip not found');

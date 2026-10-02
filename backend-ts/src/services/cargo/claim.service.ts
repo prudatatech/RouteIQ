@@ -300,6 +300,8 @@ export async function updateClaim(id: string, input: unknown): Promise<any> {
   const parsed = UpdateClaimSchema.safeParse(input);
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
   const { status, ...fields } = parsed.data;
+  // Another company's claim is a 404, the same as one that does not exist
+  await assertVisible('cargo_claims', id, OWNED.carrier, 'Claim not found');
   const claim = await loadClaim(id);
   if (fields.claimed_amount != null && fields.claimed_amount !== claim.claimed_amount) {
     await assertWithinCeiling(await resolveRef(claim.shipment_id ? { shipment_id: claim.shipment_id } : { manifest_id: claim.manifest_id }), fields.claimed_amount);

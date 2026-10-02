@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
+import { guardOfVehicle, guardOwned, guardVehicle } from '../core/org-guards';
 import { HttpError, sendError } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
 import { rateLimitByUser } from '../core/rate-limit';
@@ -24,6 +25,8 @@ import { syncVehicleOdometer } from '../services/odometer-sync.service';
 
 const router = Router();
 const staff = [requireAuth, requireRole(...STAFF_ROLES)] as const;
+// Work on one vehicle: another company's is a 404
+const staffVehicle = [...staff, guardVehicle('id')] as const;
 
 const firstIssue = (parsed: { success: false; error: z.ZodError }) => parsed.error.issues[0].message;
 
@@ -48,7 +51,7 @@ router.get('/maintenance/jobs', ...staff, async (req: Request, res: Response) =>
 });
 
 // GET /fleet/vehicles/:id/maintenance/preview — what moving the vehicle to maintenance would interrupt
-router.get('/vehicles/:id/maintenance/preview', ...staff, async (req: Request, res: Response) => {
+router.get('/vehicles/:id/maintenance/preview', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     await requireVehicleRow(req.params.id);
     const [work, open] = await Promise.all([getOpenWork(req.params.id), listJobs({ vehicleId: req.params.id, status: 'open' })]);
@@ -59,7 +62,7 @@ router.get('/vehicles/:id/maintenance/preview', ...staff, async (req: Request, r
 });
 
 // POST /fleet/vehicles/:id/maintenance — move a vehicle to maintenance (opens a job)
-router.post('/vehicles/:id/maintenance', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/maintenance', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const parsed = OpenJobSchema.safeParse(req.body ?? {});
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -71,7 +74,7 @@ router.post('/vehicles/:id/maintenance', ...staff, async (req: Request, res: Res
 });
 
 // PATCH /fleet/maintenance/jobs/:id — change the expected return, workshop, reason or note of an open job
-router.patch('/maintenance/jobs/:id', ...staff, async (req: Request, res: Response) => {
+router.patch('/maintenance/jobs/:id', ...staff, guardOwned('vehicle_maintenance_jobs', 'id', 'Maintenance job not found'), async (req: Request, res: Response) => {
   try {
     const parsed = UpdateJobSchema.safeParse(req.body ?? {});
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -82,7 +85,7 @@ router.patch('/maintenance/jobs/:id', ...staff, async (req: Request, res: Respon
 });
 
 // POST /fleet/maintenance/jobs/:id/close — return to service: writes the service record and frees the vehicle
-router.post('/maintenance/jobs/:id/close', ...staff, async (req: Request, res: Response) => {
+router.post('/maintenance/jobs/:id/close', ...staff, guardOwned('vehicle_maintenance_jobs', 'id', 'Maintenance job not found'), async (req: Request, res: Response) => {
   try {
     const parsed = CloseJobSchema.safeParse(req.body ?? {});
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -93,7 +96,7 @@ router.post('/maintenance/jobs/:id/close', ...staff, async (req: Request, res: R
 });
 
 // POST /fleet/maintenance/jobs/:id/attachments — job card or photos for the job in progress
-router.post('/maintenance/jobs/:id/attachments', ...staff, async (req: Request, res: Response) => {
+router.post('/maintenance/jobs/:id/attachments', ...staff, guardOwned('vehicle_maintenance_jobs', 'id', 'Maintenance job not found'), async (req: Request, res: Response) => {
   try {
     const parsed = z.object({ attachments: z.array(AttachmentInputSchema).min(1).max(10) }).safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -106,7 +109,7 @@ router.post('/maintenance/jobs/:id/attachments', ...staff, async (req: Request, 
 // ── Service record attachments ─────────────────────────────
 
 // POST /fleet/vehicles/:id/service-attachments/upload-url — signed URL to upload one PDF, JPG or PNG
-router.post('/vehicles/:id/service-attachments/upload-url', ...staff, rateLimitByUser('service-attachment-upload', 60, 60 * 60), async (req: Request, res: Response) => {
+router.post('/vehicles/:id/service-attachments/upload-url', ...staffVehicle, rateLimitByUser('service-attachment-upload', 60, 60 * 60), async (req: Request, res: Response) => {
   try {
     await requireVehicleRow(req.params.id);
     res.json(await createAttachmentUpload(req.params.id, req.body?.content_type, req.body?.size));
@@ -116,7 +119,7 @@ router.post('/vehicles/:id/service-attachments/upload-url', ...staff, rateLimitB
 });
 
 // POST /fleet/service-log/:id/attachments — attach uploaded files to a record
-router.post('/service-log/:id/attachments', ...staff, async (req: Request, res: Response) => {
+router.post('/service-log/:id/attachments', ...staff, guardOfVehicle('vehicle_service_log', 'id', 'Service record not found'), async (req: Request, res: Response) => {
   try {
     const parsed = z.object({ attachments: z.array(AttachmentInputSchema).min(1).max(10) }).safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -130,7 +133,7 @@ router.post('/service-log/:id/attachments', ...staff, async (req: Request, res: 
 });
 
 // GET /fleet/service-attachments/:id/url?download=1 — short-lived link to view or download
-router.get('/service-attachments/:id/url', ...staff, async (req: Request, res: Response) => {
+router.get('/service-attachments/:id/url', ...staff, guardOfVehicle('vehicle_service_attachments', 'id', 'Attachment not found'), async (req: Request, res: Response) => {
   try {
     res.json(await attachmentLink(req.params.id, req.query.download === '1' || req.query.download === 'true'));
   } catch (e) {
@@ -138,7 +141,7 @@ router.get('/service-attachments/:id/url', ...staff, async (req: Request, res: R
   }
 });
 
-router.delete('/service-attachments/:id', ...staff, async (req: Request, res: Response) => {
+router.delete('/service-attachments/:id', ...staff, guardOfVehicle('vehicle_service_attachments', 'id', 'Attachment not found'), async (req: Request, res: Response) => {
   try {
     await deleteAttachment(req.params.id);
     res.json({ status: 'deleted' });
@@ -150,7 +153,7 @@ router.delete('/service-attachments/:id', ...staff, async (req: Request, res: Re
 // ── Service record items ───────────────────────────────────
 
 // POST /fleet/service-log/:id/items — parts replaced or repairs; the record's cost becomes items plus labour
-router.post('/service-log/:id/items', ...staff, async (req: Request, res: Response) => {
+router.post('/service-log/:id/items', ...staff, guardOfVehicle('vehicle_service_log', 'id', 'Service record not found'), async (req: Request, res: Response) => {
   try {
     const parsed = z.object({ items: z.array(ServiceItemSchema).min(1).max(50) }).safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, firstIssue(parsed));
@@ -160,7 +163,7 @@ router.post('/service-log/:id/items', ...staff, async (req: Request, res: Respon
   }
 });
 
-router.delete('/service-items/:id', ...staff, async (req: Request, res: Response) => {
+router.delete('/service-items/:id', ...staff, guardOfVehicle('vehicle_service_items', 'id', 'Item not found'), async (req: Request, res: Response) => {
   try {
     res.json(await deleteServiceItem(req.params.id));
   } catch (e) {
@@ -187,7 +190,7 @@ router.get('/service-plan-templates', ...staff, async (req: Request, res: Respon
 
 // POST /fleet/vehicles/:id/service-plans/defaults — add every default item the vehicle does not have yet.
 // Each starts from the latest service logged for it, or from today when none was logged.
-router.post('/vehicles/:id/service-plans/defaults', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/service-plans/defaults', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     const vehicle = await requireVehicleRow(req.params.id);
     const [templates, plans, log] = await Promise.all([
@@ -232,7 +235,7 @@ router.post('/vehicles/:id/service-plans/defaults', ...staff, async (req: Reques
 // ── Odometer auto sync ─────────────────────────────────────
 
 // POST /fleet/vehicles/:id/odometer/sync — add the distance driven since the last update, from GPS
-router.post('/vehicles/:id/odometer/sync', ...staff, async (req: Request, res: Response) => {
+router.post('/vehicles/:id/odometer/sync', ...staffVehicle, async (req: Request, res: Response) => {
   try {
     res.json(await syncVehicleOdometer(req.params.id, { userId: req.user!.user_id }));
   } catch (e) {

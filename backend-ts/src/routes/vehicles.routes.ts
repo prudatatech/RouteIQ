@@ -27,6 +27,7 @@ import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, rem
 import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeKey, scopeQuery } from '../core/org-scope';
+import { assertVehicleVisible } from '../core/org-guards';
 
 const router = Router();
 
@@ -290,6 +291,7 @@ router.post('/register', requireAuth, requireRole('driver'), rateLimitByUser('ve
 // One vehicle's SOS history, newest first, with its counts. Staff only.
 router.get('/:vehicle_id/sos', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
+    await assertVehicleVisible(req.params.vehicle_id);
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 500);
     const [{ data, error }, allCounts] = await Promise.all([
       supabase
@@ -545,6 +547,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 // Allowed moves are in VEHICLE_STATUS_TRANSITIONS; `on_route` is never set by hand.
 router.post('/:vehicle_id/status', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
   try {
+    await assertVehicleVisible(req.params.vehicle_id);
     const next = req.body?.status;
     if (typeof next !== 'string' || !(STAFF_SETTABLE_STATUSES as readonly string[]).includes(next)) {
       throw new HttpError(400, `status must be one of: ${STAFF_SETTABLE_STATUSES.join(', ')}`);
@@ -574,6 +577,7 @@ router.post('/:vehicle_id/status', requireAuth, requireRole('admin', 'manager'),
 for (const [action, target] of [['archive', 'archived'], ['unarchive', 'idle']] as const) {
   router.post(`/:vehicle_id/${action}`, requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
     try {
+      await assertVehicleVisible(req.params.vehicle_id);
       const { data: existing } = await supabase.from('vehicles').select('status, review_decision').eq('id', req.params.vehicle_id).maybeSingle();
       if (action === 'unarchive' && existing && existing.status !== 'archived') {
         throw new HttpError(409, 'This vehicle is not archived.');
@@ -620,7 +624,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
 
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('plate_number, driver_name, driver_id')
+      .select('plate_number, driver_name, driver_id, carrier_org_id')
       .eq('id', req.params.vehicle_id)
       .maybeSingle();
 
@@ -632,8 +636,9 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
     }
     const body = description || (byDriver ? 'Driver triggered SOS emergency alert' : 'Staff raised an SOS emergency alert');
 
+    // The company that runs the vehicle owns the alert, whoever raises it (a platform admin acts for no company)
     const { data: alert, error } = await supabase.from('sos_alerts').insert({
-      ...carrierStamp(),
+      ...(vehicle?.carrier_org_id ? { carrier_org_id: vehicle.carrier_org_id } : carrierStamp()),
       driver_id: byDriver ? req.user!.user_id : (vehicle?.driver_id ?? null),
       vehicle_id: req.params.vehicle_id,
       alert_type: alertType,
@@ -657,6 +662,7 @@ router.post('/:vehicle_id/sos', requireAuth, requireRole('driver', 'admin', 'man
         `${vehicle?.driver_name ?? 'A driver'} on ${vehicle?.plate_number ?? 'a vehicle'} triggered an SOS: ${alert.description}`,
         'sos',
         { alert_id: alert.id, vehicle_id: req.params.vehicle_id },
+        vehicle?.carrier_org_id,
       )
       .catch(e => console.error('[vehicles] SOS notification failed:', e));
 
@@ -728,6 +734,7 @@ async function vehicleHasHistory(vehicleId: string): Promise<boolean> {
 router.delete('/:vehicle_id', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
   try {
     const vehicleId = req.params.vehicle_id;
+    await assertVehicleVisible(vehicleId);
 
     const { data: vehicle } = await supabase
       .from('vehicles')

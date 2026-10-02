@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { capacityService } from '../services/capacity.service';
 import { requireAuth, requireRole } from '../core/auth';
+import { OWNED, assertVisible, orgFilter } from '../core/org-scope';
+import { carrierOf } from '../core/org-guards';
 import { STAFF_ROLES, canAccessConfirmation, canAccessRoute, canAccessVehicle, isStaff } from '../core/ownership';
 import { notificationService } from '../services/notification.service';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
@@ -175,6 +177,8 @@ router.get('/windows/:id/bid-count', requireAuth, async (req, res) => {
     } else if (!isStaff(req.user) && req.user!.role !== 'vendor') {
       res.status(403).json({ error: 'Not authorized' });
       return;
+    } else if (isStaff(req.user)) {
+      await assertVisible('capacity_windows', req.params.id, OWNED.carrier, 'Window not found');
     }
     const { count, error } = await supabase
       .from('capacity_bids')
@@ -304,7 +308,8 @@ router.post('/driver/postpone-route', requireAuth, requireRole('driver'), async 
         'Trip postponed by driver',
         `${driver?.full_name ?? 'A driver'} has not accepted the new trip yet and will be asked again in 10 minutes.`,
         'route_postponed',
-        { route_id, driver_id: req.user!.user_id }
+        { route_id, driver_id: req.user!.user_id },
+        (await carrierOf('routes', route_id)) ?? (await carrierOf('cargo_manifest', route_id)),
       );
     } catch (e) {
       // Dispatch missing the heads-up must not stop the driver from snoozing
@@ -322,12 +327,16 @@ router.get('/bids/pending', requireAuth, requireRole(...STAFF_ROLES), async (req
     const { supabase } = await import('../core/supabase');
     const { data, error } = await supabase
       .from('capacity_bids')
-      .select('*, vendor_profiles(company_name, city), delivery_points(name, address), capacity_windows!capacity_bids_window_id_fkey(vehicles(plate_number))')
+      .select('*, vendor_profiles(company_name, city), delivery_points(name, address), capacity_windows!capacity_bids_window_id_fkey(carrier_org_id, vehicles(plate_number))')
       .eq('status', 'pending')
       .order('submitted_at', { ascending: false });
       
     if (error) throw new Error(error.message);
-    res.json(data);
+    // Only the bids on this company's windows
+    const mine = orgFilter(OWNED.carrier);
+    res.json(mine
+      ? (data ?? []).filter((b: any) => (Array.isArray(b.capacity_windows) ? b.capacity_windows[0] : b.capacity_windows)?.carrier_org_id === mine.id)
+      : data);
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -388,6 +397,8 @@ router.post('/windows', requireAuth, requireRole(...WINDOW_STAFF), async (req, r
 for (const [action, mode] of [['close', 'closed'], ['cancel', 'cancelled']] as const) {
   router.post(`/windows/:id/${action}`, requireAuth, requireRole(...WINDOW_STAFF), async (req, res) => {
     try {
+      // Another company's window is a 404, the same as one that does not exist
+      await assertVisible('capacity_windows', req.params.id, OWNED.carrier, 'Window not found');
       const ended = await capacityService.endWindow(req.params.id, mode);
       if (!ended) {
         const { supabase } = await import('../core/supabase');

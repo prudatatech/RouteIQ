@@ -6,6 +6,7 @@
  * be, how complete a person's file is, the driving-licence status dispatch
  * warns on (and, when the setting says so, blocks on).
  */
+import { memberOrgId } from '../core/org-scope';
 import { supabase } from '../core/supabase';
 import { HttpError } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
@@ -304,7 +305,15 @@ export async function getPeopleAttention(limit = 10): Promise<PeopleAttention> {
   const { data: users, error } = await supabase.from('users').select('id, full_name, role, status')
     .in('role', ['superadmin', 'admin', 'manager', 'driver']).in('status', ['onboarding', 'active', 'on_leave']);
   if (error) throw new Error(`Failed to read people: ${error.message}`);
-  const people = users ?? [];
+  // Only the people of the organisation the caller acts for
+  const memberOf = memberOrgId();
+  let members: Set<string> | null = null;
+  if (memberOf) {
+    const { data: seats, error: mErr } = await supabase.from('org_members').select('user_id').eq('org_id', memberOf).eq('status', 'active');
+    if (mErr) throw new Error(`Failed to read members: ${mErr.message}`);
+    members = new Set((seats ?? []).map((m: { user_id: string }) => m.user_id));
+  }
+  const people = (users ?? []).filter(p => !members || members.has(p.id as string));
   const ids = people.map(p => p.id as string);
   const [docs, profiles, settings] = await Promise.all([
     liveDocumentsByUser(ids),

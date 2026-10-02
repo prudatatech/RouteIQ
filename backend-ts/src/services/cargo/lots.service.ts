@@ -30,7 +30,7 @@ import { ShipmentService, markAssigned, type LogActor } from '../shipment.servic
 import { InvoiceService } from '../invoice.service';
 import {
   MANIFEST_CUSTODY_COLUMNS, SHIPMENT_CUSTODY_COLUMNS, RefSchema, manifestStatusFor, piecesHeld, plannedVehicleOf, refColumns, refOf,
-  reload, resolveRef, toConsignment, vehicleSummary, wasPickedUp, weightOf, writeConsignment,
+  assertCompanyConsignment, reload, resolveRef, toConsignment, vehicleSummary, wasPickedUp, weightOf, writeConsignment,
   type Actor, type Consignment, type Holder, type Pieces, type RefKind,
 } from './consignment';
 import { openExceptionsFor, piecesView, recordLotEvent, timelineOf, type PiecesView, type WhereView } from './custody.service';
@@ -1183,6 +1183,7 @@ export async function mergeLots(refs: unknown[], actor: Actor): Promise<{ ref: {
   const cs: Consignment[] = [];
   for (const r of refs) {
     const c = await resolveRef(r);
+    await assertCompanyConsignment(c);
     if (!cs.some(x => x.id === c.id)) cs.push(c);
   }
   if (cs.length < 2) throw new HttpError(400, 'Name at least two different lots to merge');

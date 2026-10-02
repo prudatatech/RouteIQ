@@ -18,6 +18,8 @@ import { getAlertThresholds } from './alert-settings.service';
 import { haversineKm } from './odometer';
 import { lastSeenMs } from '../core/vehicles';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeQuery } from '../core/org-scope';
+import { carrierOfVehicle } from '../core/org-guards';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -87,10 +89,12 @@ export async function raiseAlert(input: RaiseAlertInput): Promise<RaiseAlertResu
   if (open) return bumpRepeat(open.id, open.occurrences ?? 1);
 
   const severity = input.severity ?? ALERT_META[input.type].severity;
+  // The company that runs the vehicle owns the alarm, and is the one told: a device webhook or the sweep acts for no company
+  const owner = await carrierOfVehicle(input.vehicleId);
   const { data: created, error } = await supabase
     .from('maintenance_alerts')
     .insert({
-      ...carrierStamp(),
+      ...(owner ? { carrier_org_id: owner } : carrierStamp()),
       vehicle_id: input.vehicleId,
       alert_type: input.type,
       severity,
@@ -128,13 +132,13 @@ export async function raiseAlert(input: RaiseAlertInput): Promise<RaiseAlertResu
       vehicle_id: input.vehicleId,
       alert_type: input.type,
       is_test: isTest,
-    });
+    }, owner);
     await wsManager.broadcast({
       type: severity === 'critical' ? 'ALERT_CRITICAL' : 'ALERT_WARNING',
       title,
       message: input.description,
       payload: { vehicle_id: input.vehicleId, plate_number: input.plate, alert_id: created.id },
-    });
+    }, owner);
   } catch (e) {
     console.warn('Could not notify staff about a fleet alarm:', (e as Error).message);
   }
@@ -203,12 +207,11 @@ const IDLE_RADIUS_KM = 0.1;
 const IDLE_COVERAGE = 0.2;
 
 export async function runAlertSweep(nowMs: number = Date.now()): Promise<{ gpsLost: number; idle: number }> {
-  const limits = await getAlertThresholds();
   const result = { gpsLost: 0, idle: 0 };
 
   const { data: routes, error } = await supabase
     .from('routes')
-    .select('id, vehicle_id, started_at, vehicles(id, plate_number, status, last_heartbeat, last_sync)')
+    .select('id, vehicle_id, started_at, vehicles(id, plate_number, status, last_heartbeat, last_sync, carrier_org_id)')
     .eq('status', 'active');
   if (error) throw error;
 
@@ -216,6 +219,8 @@ export async function runAlertSweep(nowMs: number = Date.now()): Promise<{ gpsLo
     const v: any = Array.isArray(route.vehicles) ? route.vehicles[0] : route.vehicles;
     if (!v) continue;
     const plate: string | null = v.plate_number ?? null;
+    // Each company's own alarm rules apply to its vehicles
+    const limits = await getAlertThresholds(v.carrier_org_id ?? null);
 
     const lastPing = lastSeenMs(v); // newer of heartbeat and sync: the same "last seen" the fleet views use
     const lostSince = lastPing ?? (route.started_at ? Date.parse(route.started_at) : null);
@@ -317,9 +322,9 @@ export async function listAlerts(opts: {
   vehicleId?: string;
   limit?: number;
 }): Promise<AlertRow[]> {
-  let q = supabase
+  let q = scopeQuery(supabase
     .from('maintenance_alerts')
-    .select(ALERT_COLUMNS)
+    .select(ALERT_COLUMNS), OWNED.carrier)
     .order('created_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 200, 500));
   if (opts.status === 'resolved') q = q.eq('is_resolved', true);
@@ -369,8 +374,8 @@ export async function alertSummary(): Promise<{
 }> {
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const [openRes, recentRes] = await Promise.all([
-    supabase.from('maintenance_alerts').select('severity, status').eq('is_resolved', false).eq('is_test', false),
-    supabase.from('maintenance_alerts').select('alert_type').eq('is_test', false).gte('created_at', since),
+    scopeQuery(supabase.from('maintenance_alerts').select('severity, status').eq('is_resolved', false).eq('is_test', false), OWNED.carrier),
+    scopeQuery(supabase.from('maintenance_alerts').select('alert_type').eq('is_test', false).gte('created_at', since), OWNED.carrier),
   ]);
   if (openRes.error) throw openRes.error;
   if (recentRes.error) throw recentRes.error;

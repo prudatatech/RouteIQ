@@ -4,6 +4,7 @@
  * Both go through processDeviceEvents, so a test alarm exercises the same
  * vehicle lookup, alarm and notification path as a real device event.
  */
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { z } from 'zod';
 import { supabase } from '../core/supabase';
 import { ALERT_META, DEVICE_EVENT_TYPES, raiseAlert, type DeviceEventType } from './alerts.service';
@@ -41,7 +42,8 @@ export interface EventResult {
 interface VehicleRef { id: string; plate_number: string | null }
 
 async function findVehicle(e: DeviceEvent): Promise<VehicleRef | null> {
-  let q = supabase.from('vehicles').select('id, plate_number');
+  // A test alarm sent from a company's settings reaches only that company's vehicles (the device webhook acts for none)
+  let q = scopeQuery(supabase.from('vehicles').select('id, plate_number'), OWNED.carrier);
   if (e.vehicle_id) q = q.eq('id', e.vehicle_id);
   else if (e.device_id) q = q.eq('spark_id', e.device_id);
   else q = q.eq('plate_number', e.plate_number!);
