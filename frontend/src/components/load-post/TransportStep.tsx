@@ -5,6 +5,7 @@ import { Alert, Card, Checkbox, Input, Skeleton } from '@/components/ui'
 import type { AssistResult, LoadDraft, LoadType, SpecialHandling, VehicleClass } from '@/types/load'
 import { hasPerishable, inr, itemTotals, localLoadType, TEMP_RANGES, type StepErrors } from './logic'
 import { capacityText } from './helpers'
+import CompanyPicker from './CompanyPicker'
 
 const SPECIAL: { id: SpecialHandling; label: string }[] = [
   { id: 'fragile', label: 'Fragile' },
@@ -128,6 +129,31 @@ export default function TransportStep({ draft, onChange, errors, vehicles, vehic
               />
             ))}
           </div>
+        </fieldset>
+      </Card>
+
+      <Card padded className="space-y-3 !p-4">
+        <fieldset>
+          <legend className="mb-2 text-sm font-medium text-text">Who should quote?</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Radio name="routing" value="open" checked={draft.routing !== 'chosen'} onChange={() => onChange({ routing: 'open' })}>
+              <span className="font-medium text-text">Open to all companies serving this lane</span>
+              <span className="block text-muted">Every company that runs between these cities can see your load.</span>
+            </Radio>
+            <Radio name="routing" value="chosen" checked={draft.routing === 'chosen'} onChange={() => onChange({ routing: 'chosen' })}>
+              <span className="font-medium text-text">Choose companies</span>
+              <span className="block text-muted">Only the companies you pick (up to 10) see your load.</span>
+            </Radio>
+          </div>
+          {draft.routing === 'chosen' && (
+            <div className="mt-3">
+              <CompanyPicker
+                pickupCity={draft.pickup_city} deliveryCity={draft.delivery_city}
+                selected={draft.company_ids} onChange={ids => onChange({ company_ids: ids })}
+              />
+            </div>
+          )}
+          {errors.company_ids && <p className="mt-1 text-xs text-danger" role="alert">{errors.company_ids}</p>}
         </fieldset>
       </Card>
 

@@ -8,7 +8,7 @@ import { copyText } from '@/components/fleet/location/clipboard'
 
 
 /** Shown after the load is posted (PRD 10.2): the load ID, the route, what happens next. */
-export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, quoteRequested = false, onPostAnother }: {
+export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, onPostAnother, chosenCount = 0, quoteRequested = false }: {
   loadId: string
   loadNumber: string
   pickupCity: string
@@ -20,6 +20,8 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
   /** The vendor asked logistic companies for quotes. */
   quoteRequested?: boolean
   onPostAnother: () => void
+  /** How many companies the vendor chose; 0 means the load is open to every company on the lane. */
+  chosenCount?: number
 }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
@@ -48,11 +50,17 @@ export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliv
         <div className="flex justify-between gap-4"><dt className="text-muted">Vehicle</dt><dd className="font-medium text-text">{vehicleName}</dd></div>
       </dl>
 
+      <p data-testid="routing-note" className="text-sm font-medium text-text">
+        {chosenCount > 0
+          ? `Sent to ${chosenCount} ${chosenCount === 1 ? 'company' : 'companies'}`
+          : `Open to companies serving ${pickupCity} → ${deliveryCity}`}
+      </p>
+
       {statusNote
         ? <Alert tone="warning" title="Your load is saved">{statusNote}</Alert>
         : <p className="text-sm text-text">{quoteRequested
-          ? 'Logistic companies serving this lane will send quotes, usually within 2 hours.'
-          : "Logistic companies serving this lane can now accept your load. We'll notify you when one does."}</p>}
+          ? 'They will send quotes, usually within 2 hours.'
+          : "They can now accept your load. We'll notify you when one does."}</p>}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
         <Link to={`/vendor/loads/${encodeURIComponent(loadId)}`} className={buttonClasses({ variant: 'primary', size: 'lg' })}>Track this load</Link>

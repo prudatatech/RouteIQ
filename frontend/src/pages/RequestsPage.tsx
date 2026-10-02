@@ -13,6 +13,7 @@ import { buttonClasses } from '@/components/ui/buttonStyles'
 import AssignVehicleModal, { type AssignResult } from '@/components/shipments/AssignVehicleModal'
 import { AcceptBookingModal, AcceptLoadModal } from '@/components/requests/AcceptModals'
 import { BookingDrawer, LoadDrawer } from '@/components/requests/RequestDrawers'
+import LoadMarket from '@/components/requests/LoadMarket'
 import {
   SOURCES, STAGE_IDS, STAGE_LABELS, customerRow, priceText, primaryLabel, shipmentHref, shortPlace, stageCounts, vendorName, vendorRow, customerName,
   type RequestRow, type RequestSource, type StageId, type VendorRequest,
@@ -90,6 +91,7 @@ export default function RequestsPage() {
       // Accepting, assigning or cancelling changes the linked shipment and the vehicle's load
       queryClient.invalidateQueries({ queryKey: ['shipments'] }),
       queryClient.invalidateQueries({ queryKey: ['vehicles'] }),
+      queryClient.invalidateQueries({ queryKey: ['company', 'market'] }),
     ])
   }
 
@@ -98,7 +100,7 @@ export default function RequestsPage() {
   const every = useMemo(() => [...allBookings.map(customerRow), ...allLoads.map(vendorRow)], [allBookings, allLoads])
   const inSource = useMemo(() => every.filter(r => source === 'all' || r.source === source), [every, source])
   const counts = useMemo(() => stageCounts(inSource), [inSource])
-  // Open on the first stage that has requests, not on an empty "To accept"
+  // Open on the first stage that has requests, not on an empty "New loads"
   useOpenOnWork(['accept', 'accepted', 'progress', 'done'] as const, bookings.isLoading || loads.isLoading ? {} : counts, tab, setTab)
   const sourceCounts = useMemo(() => ({ all: every.length, customer: allBookings.length, vendor: allLoads.length }), [every.length, allBookings.length, allLoads.length])
 
@@ -106,6 +108,8 @@ export default function RequestsPage() {
     const q = search.trim().toLowerCase()
     const list = inSource.filter(r => {
       if (tab !== 'all' && r.stage !== tab) return false
+      // Vendor loads waiting for a company are the market (New loads), not rows of this table
+      if (tab === 'accept' && r.source === 'vendor') return false
       if (!q) return true
       return [r.requester, r.pickup, r.drop, r.trackingId ?? ''].some(v => v.toLowerCase().includes(q))
     })
@@ -370,7 +374,7 @@ export default function RequestsPage() {
     },
   ]
 
-  const tabs = STAGE_IDS.map(id => ({ id, label: STAGE_LABELS[id], count: loading ? undefined : counts[id] }))
+  const tabs = STAGE_IDS.map(id => ({ id, label: STAGE_LABELS[id], count: loading || id === 'accept' ? undefined : counts[id] }))
 
   const exportCsv = () => {
     const csv = toCsv(rows.map(r => ({
@@ -446,7 +450,13 @@ export default function RequestsPage() {
       )}
 
       <TabPanel id={tab}>
-        <DataTable
+        {tab === 'accept' && source !== 'customer' && (
+          <div className="mb-6">
+            <LoadMarket onOpen={id => setSelected({ source: 'vendor', id })} selectedId={selectedLoad?.id ?? null} />
+          </div>
+        )}
+        {tab === 'accept' && source !== 'customer' && rows.length > 0 && <h2 className="mb-2 text-sm font-medium text-text">Customer bookings to accept</h2>}
+        {(tab !== 'accept' || source === 'customer' || rows.length > 0) && <DataTable
           caption="Requests"
           columns={columns}
           rows={rows}
@@ -467,7 +477,7 @@ export default function RequestsPage() {
             onToggleAll: (pageRows, checked) => selection.toggleAll(pageRows, checked),
             isRowSelectable: isBulkSelectable,
           }}
-        />
+        />}
 
         <div className="mt-3">
           <BulkActionBar count={selection.count} onClear={selection.clear}>

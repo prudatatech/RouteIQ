@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { vehiclesAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 import { Camera, FileText, Save, Truck, User } from 'lucide-react'
-import { Alert, Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
+import { Alert, Checkbox, Modal, Button, Input, Select, StatusPill, useConfirm, type SelectOption } from '@/components/ui'
 import { indianMobileError, rcNumberError } from '@/utils/validators'
 import { expiryStatus } from '@/utils/documentExpiry'
 import StagedPhotos, { type StagedPhotoFiles } from '@/components/fleet/photos/StagedPhotos'
@@ -38,6 +38,17 @@ const INDIAN_TRUCK_PRESETS: Record<string, { capacity_kg: number; container_leng
   'Custom': { capacity_kg: 1000, container_length_ft: 0, container_width_ft: 0, container_height_ft: 0, fuel_type: 'diesel', fuel_capacity_liters: 60, fuel_efficiency_kmpl: 12 },
 }
 
+// Matches the body types the backend's vehicle fit check knows (docs/order-routing.md).
+const BODY_TYPES: SelectOption[] = [
+  { value: '', label: 'Not set' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'open', label: 'Open' },
+  { value: 'container', label: 'Container' },
+  { value: 'reefer', label: 'Reefer' },
+  { value: 'tanker', label: 'Tanker' },
+  { value: 'trailer', label: 'Trailer' },
+]
+
 const DOCS = ['rc', 'insurance', 'fitness', 'permit', 'puc'] as const
 type DocKind = (typeof DOCS)[number]
 
@@ -55,6 +66,9 @@ interface VehicleFormData {
   container_length_ft: number
   container_width_ft: number
   container_height_ft: number
+  hazmat_certified: boolean
+  is_reefer: boolean
+  body_type: string
   status: string
   rc_number: string; rc_expiry: string; rc_document_url: string
   insurance_number: string; insurance_expiry: string; insurance_document_url: string
@@ -73,6 +87,7 @@ const DEFAULT_FORM_DATA: VehicleFormData = {
   fuel_type: 'diesel', fuel_capacity_liters: 60, fuel_efficiency_kmpl: 12,
   spark_id: '', driver_name: '', driver_phone: '',
   container_length_ft: 0, container_width_ft: 0, container_height_ft: 0,
+  hazmat_certified: false, is_reefer: false, body_type: '',
   rc_number: '', rc_expiry: '', rc_document_url: '',
   insurance_number: '', insurance_expiry: '', insurance_document_url: '',
   fitness_certificate_number: '', fitness_expiry: '', fitness_document_url: '',
@@ -130,6 +145,7 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   const withNullableDocs = (data: VehicleFormData) => {
     const payload: Record<string, unknown> = {}
     for (const key of Object.keys(DEFAULT_FORM_DATA)) payload[key] = data[key as keyof VehicleFormData]
+    if (!payload.body_type) delete payload.body_type
     for (const doc of DOCS) {
       if (!payload[`${doc}_expiry`]) payload[`${doc}_expiry`] = null
       if (!payload[docNumberKey(doc)]) payload[docNumberKey(doc)] = null
@@ -340,6 +356,12 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
               <Input hideLabel label="Width" type="number" step="0.5" trailing="W" value={formData.container_width_ft || ''} onChange={e => set('container_width_ft', Number(e.target.value))} />
               <Input hideLabel label="Height" type="number" step="0.5" trailing="H" value={formData.container_height_ft || ''} onChange={e => set('container_height_ft', Number(e.target.value))} />
             </div>
+          </fieldset>
+          <Select label="Body type" options={BODY_TYPES} value={formData.body_type} onChange={e => set('body_type', e.target.value)} />
+          <fieldset className="flex flex-wrap gap-x-6 gap-y-2">
+            <legend className="mb-1.5 text-sm font-medium text-text">What this vehicle may carry</legend>
+            <Checkbox label="Hazmat certified" checked={!!formData.hazmat_certified} onChange={e => set('hazmat_certified', e.target.checked)} />
+            <Checkbox label="Refrigerated (reefer)" checked={!!formData.is_reefer} onChange={e => set('is_reefer', e.target.checked)} />
           </fieldset>
         </div>
       )}

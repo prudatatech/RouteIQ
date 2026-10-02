@@ -16,7 +16,7 @@ export type StageId = typeof STAGE_IDS[number]
 type Stage = Exclude<StageId, 'all'>
 
 export const STAGE_LABELS: Record<StageId, string> = {
-  accept: 'To accept',
+  accept: 'New loads',
   accepted: 'Accepted',
   progress: 'In progress',
   done: 'Done',

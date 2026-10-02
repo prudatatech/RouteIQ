@@ -16,6 +16,7 @@ import type {
   AssistResult, BulkResult, BusinessProfile, BusinessProfileView, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
 } from '@/types/load'
 
+import type { LoadQuote, LoadQuotesResult, MarketLoad, MarketTab, MyQuote, QuoteInput } from '@/types/routing'
 import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
@@ -649,6 +650,42 @@ export const vendorAPI = {
     api.put('/vendor/business-profile', toServerProfile(body)).then(r => fromServerProfile(r.data)),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
+  /** The quotes companies sent on one of the vendor's loads, with the deadline and the award once made. */
+  loadQuotes: (loadId: string) =>
+    api.get(`/vendor/loads/${encodeURIComponent(loadId)}/quotes`).then(r => toQuotesResult(r.data)),
+  /** Awards the load to this quote. Atomic: only one award can happen. */
+  acceptQuote: (loadId: string, quoteId: string) =>
+    api.post(`/vendor/loads/${encodeURIComponent(loadId)}/quotes/${encodeURIComponent(quoteId)}/accept`).then(r => r.data),
+}
+
+/** Accepts a bare list or { items | quotes, quote_deadline, quote_requested, awarded }. */
+function toQuotesResult(d: unknown): LoadQuotesResult {
+  const o = (Array.isArray(d) ? { items: d } : (d ?? {})) as Record<string, unknown>
+  const quotes = ensureArray(o.items ?? o.quotes) as LoadQuote[]
+  const raw = (o.awarded ?? null) as { company_name?: string; amount_inr?: number; quote_id?: string } | null
+  const won = quotes.find(q => q.status === 'accepted')
+  const awarded = raw?.company_name
+    ? { company_name: raw.company_name, amount_inr: Number(raw.amount_inr ?? 0), quote_id: raw.quote_id ?? null }
+    : won ? { company_name: won.company_name, amount_inr: Number(won.amount_inr), quote_id: won.id } : null
+  const deadline = (o.quote_deadline ?? null) as string | null
+  return { quotes, quote_deadline: deadline, quote_requested: typeof o.quote_requested === 'boolean' ? o.quote_requested : !!deadline, awarded }
+}
+
+/** The loads a logistic company can quote on, by tab. Scoped to the active company. */
+export const companyLoadsAPI = {
+  market: (tab: MarketTab) =>
+    api.get('/company/loads/market', { params: { tab } }).then(r => {
+      const d = r.data
+      return ensureArray(Array.isArray(d) ? d : d?.items) as MarketLoad[]
+    }),
+  /** Creates or replaces this company's quote on the load. */
+  submitQuote: (loadId: string, body: QuoteInput) =>
+    api.post(`/company/loads/${encodeURIComponent(loadId)}/quotes`, body).then(r => r.data as MyQuote),
+  withdrawQuote: (loadId: string) =>
+    api.delete(`/company/loads/${encodeURIComponent(loadId)}/quotes/mine`).then(r => r.data),
+  /** Takes the load at the vendor's budget (or `amount_inr`). Refused when the vendor asked for quotes. */
+  accept: (loadId: string, body: { amount_inr?: number } = {}) =>
+    api.post(`/company/loads/${encodeURIComponent(loadId)}/accept`, body).then(r => r.data),
 }
 
 /** Documents, pre-dispatch check, settlement and timeline of one vendor load (backend-ts/src/routes/load-documents.routes.ts). */

@@ -228,7 +228,7 @@ describe('confirmation note', () => {
       <LoadConfirmation loadId="abc" loadNumber="MRX-2026-00144" pickupCity="Mumbai" deliveryCity="Delhi" pickupDate={null} vehicleName="Truck"
         quoteRequested onPostAnother={() => {}} />,
     ))
-    expect(screen.getByText('Logistic companies serving this lane will send quotes, usually within 2 hours.')).toBeTruthy()
+    expect(screen.getByText('They will send quotes, usually within 2 hours.')).toBeTruthy()
     expect(screen.queryByText(/can now accept your load/i)).toBeNull()
   })
 })

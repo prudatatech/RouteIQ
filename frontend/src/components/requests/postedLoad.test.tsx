@@ -17,6 +17,7 @@ vi.mock('@/components/load-documents/LoadDocumentsPanel', () => ({ LoadDocuments
 vi.mock('./CustomerProfileEditor', () => ({ CustomerDetailsBlock: () => null }))
 
 import { LoadDrawer } from './RequestDrawers'
+import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { specialHandlingLabels, taxFromItems, temperatureText } from './postedLoad'
 import type { VendorRequest } from './model'
 
@@ -76,9 +77,9 @@ function drawer(r: VendorRequest) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const noop = () => {}
   return render(
-    <QueryClientProvider client={client}><MemoryRouter>
+    <QueryClientProvider client={client}><MemoryRouter><ConfirmProvider>
       <LoadDrawer request={r} onClose={noop} busy={false} accepting={false} rejecting={false} onAccept={noop} onReject={noop} onAssign={noop} />
-    </MemoryRouter></QueryClientProvider>,
+    </ConfirmProvider></MemoryRouter></QueryClientProvider>,
   )
 }
 
