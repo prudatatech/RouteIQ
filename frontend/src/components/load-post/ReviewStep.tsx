@@ -24,7 +24,7 @@ const HANDLING_TEXT: Record<string, string> = {
 }
 
 /** Step 5: everything entered, read-only, with Edit buttons and the big Submit Load button. */
-export default function ReviewStep({ draft, assist, assistLoading, vehicles, onEdit, onSubmit, submitting, signedIn, error }: {
+export default function ReviewStep({ draft, assist, assistLoading, vehicles, onEdit, onSubmit, submitting, signedIn, error, disabled }: {
   draft: LoadDraft
   assist: AssistResult | null
   assistLoading?: boolean
@@ -33,6 +33,8 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
   onSubmit: () => void
   submitting: boolean
   signedIn: boolean
+  /** Staff and 3PL accounts cannot post a load. */
+  disabled?: boolean
   error?: string | null
 }) {
   const totals = itemTotals(draft.items)
@@ -123,7 +125,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
       {error && <Alert tone="danger">{error}</Alert>}
 
       <div className="space-y-2">
-        <Button size="lg" fullWidth loading={submitting} onClick={onSubmit} className="!h-14 text-base font-semibold">Submit Load</Button>
+        <Button size="lg" fullWidth loading={submitting} disabled={disabled} onClick={onSubmit} className="!h-14 text-base font-semibold">Submit Load</Button>
         <p className="text-center text-xs text-muted">
           {signedIn ? 'Nothing is posted until you press Submit Load.' : 'You will verify your mobile number next. Nothing is posted until then.'}
         </p>

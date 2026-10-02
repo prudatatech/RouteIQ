@@ -17,6 +17,7 @@ import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { HttpError, sendError } from '../core/errors';
 import { normalizeIndianMobile, normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
+import { loadMemberships } from '../core/org-context';
 import { buildEarnings } from '../services/driver-pay.service';
 import { getPayoutAccount } from '../services/people-bank.service';
 import { sendSms, smsConfigured } from '../services/sms.service';
@@ -172,6 +173,33 @@ async function verifyOtp(kind: OtpKind, phone: string, otp: unknown, res: Respon
   return true;
 }
 
+/** The number is already held by an account of another kind than the one signing in (staff, driver, 3PL partner, or a vendor). */
+const NUMBER_TAKEN: Record<'driver' | 'vendor', string> = {
+  driver: 'This number belongs to another account',
+  vendor: 'This number belongs to a company or partner account',
+};
+
+/**
+ * Whether the phone number belongs to an account that is not a plain `role` account: a users row of another role, or,
+ * for a vendor number, a vendor row that is a 3PL partner or a member of a company, 3PL or platform organisation.
+ * Phone sign-in must never open such an account, nor change its role.
+ */
+async function phoneBelongsToOtherKind(role: 'driver' | 'vendor', phone: string): Promise<boolean> {
+  const variants = [phone, phone.replace(/^\+/, ''), phone.replace(/^\+91/, '')];
+  const { data: others, error } = await supabase.from('users').select('id, role').in('phone', variants).neq('role', role).limit(1);
+  if (error) throw new HttpError(500, 'Could not check this number. Try again.');
+  if ((others ?? []).length > 0) return true;
+  if (role !== 'vendor') return false;
+  const { data: same } = await supabase.from('users').select('id').in('phone', variants).eq('role', 'vendor');
+  for (const { id } of (same ?? []) as { id: string }[]) {
+    const { data: partner } = await supabase.from('tpl_partners').select('id').eq('user_id', id).limit(1);
+    if ((partner ?? []).length > 0) return true;
+    const memberships = await loadMemberships(id);
+    if (memberships.some(m => m.org.kind !== 'vendor')) return true;
+  }
+  return false;
+}
+
 /**
  * The account of a phone number that just proved it (driver or vendor): creates the Supabase auth user with the role
  * in app_metadata, recovers one that exists already, and guarantees the public.users row (the vendor organisation is
@@ -194,6 +222,9 @@ async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string): Pro
       const existing = await findAuthUserByEmail(email);
       if (!existing) throw new HttpError(500, `Failed to recover existing ${role} account`);
       id = existing.id;
+      // Never change the role of an account that already exists
+      const { data: row } = await supabase.from('users').select('role').eq('id', id).maybeSingle();
+      if (row?.role && row.role !== role) throw new HttpError(403, NUMBER_TAKEN[role]);
     } else {
       console.error(`Failed to create auth user for ${role}:`, authError);
       throw new HttpError(500, `Failed to create ${role} account`);
@@ -231,6 +262,10 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
       .single();
 
     if (!driver) {
+      if (await phoneBelongsToOtherKind('driver', phone)) {
+        res.status(403).json({ detail: NUMBER_TAKEN.driver });
+        return;
+      }
       let authUserId: string;
       try {
         authUserId = (await provisionPhoneUser('driver', phone)).id;
@@ -436,6 +471,16 @@ router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
     }
     if (!(await verifyOtp('vendor', phone, req.body.otp, res))) return;
 
+    // A company, staff, driver or 3PL number is not a vendor's: refuse before anything is created or signed in
+    try {
+      if (await phoneBelongsToOtherKind('vendor', phone)) {
+        res.status(403).json({ detail: NUMBER_TAKEN.vendor });
+        return;
+      }
+    } catch (e) {
+      if (e instanceof HttpError) { res.status(e.status).json({ detail: e.message }); return; }
+      throw e;
+    }
     let { data: vendor } = await supabase.from('users').select('*').eq('phone', phone).eq('role', 'vendor').maybeSingle();
     let isNew = false;
     if (!vendor) {

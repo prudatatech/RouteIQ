@@ -7,6 +7,8 @@ import { supabase, openChannel } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { capacityAPI, publicAPI, vendorAPI, type PublicSpareSpace } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
+import { useBlockedFromVendorActions } from '@/store/accountKind'
+import NotVendorNotice from '@/components/vendor/NotVendorNotice'
 import { resolvePlace, suggestPlaces } from '@/services/geocoding'
 import PlaceBidModal, { type BidFields, type CapacityWindow } from '@/components/vendor/PlaceBidModal'
 import MyBids, { type VendorBid } from '@/components/vendor/MyBids'
@@ -107,7 +109,10 @@ export default function VendorCorridorPage() {
   const [profileWait, setProfileWait] = useState(false)
 
   const userId = useAuthStore(s => s.userId)
-  const session = useAuthStore(s => s.session)
+  const sessionState = useAuthStore(s => s.session)
+  const blockedKind = useBlockedFromVendorActions()
+  // Staff and 3PL accounts see the public list, as a visitor does, without bidding
+  const session = blockedKind ? null : sessionState
   const navigate = useNavigate()
   const authInitialized = useAuthStore(s => s.authInitialized)
   const { vendorProfile, isVendor } = useVendorContext()
@@ -206,7 +211,7 @@ export default function VendorCorridorPage() {
     if (!guestBidding) return
     const draft: BidDraft = { windowId: guestBidding.id, window: toBidWindow(guestBidding), fields }
     if (!saveGuestDraft('bid', draft)) toast('We could not save your bid on this device, so you may need to fill it in again after signing in.')
-    navigate(`/login?as=vendor&next=${encodeURIComponent(`/vendor/return-trips?bid=${guestBidding.id}&resume=1`)}`)
+    navigate(`/vendor/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${guestBidding.id}&resume=1`)}`)
   }
 
   // Back from sign-in: reopen the bid form with what was typed. The vendor confirms; nothing is placed automatically.
@@ -244,6 +249,7 @@ export default function VendorCorridorPage() {
     return (
       <Page>
         <PageHeader title="Return trips" description="Spare space on trucks heading back. Pick one and bid to fill it with your load." />
+        {blockedKind && <NotVendorNotice kind={blockedKind} />}
         <Alert tone="info" title="Look around freely">
           You only sign in or create an account when you place a bid. Your bid is kept while you sign in.
         </Alert>
@@ -282,7 +288,7 @@ export default function VendorCorridorPage() {
                       <p className="text-xs text-muted">From</p>
                       <p className="text-sm font-medium text-text">{sp.price_per_kg_from != null ? `${formatRupees(sp.price_per_kg_from)} per kg` : 'Name your price'}</p>
                     </div>
-                    <Button onClick={() => setGuestBidding(sp)}>Bid</Button>
+                    <Button disabled={!!blockedKind} onClick={() => setGuestBidding(sp)}>Bid</Button>
                   </div>
                 </Card>
               ))}

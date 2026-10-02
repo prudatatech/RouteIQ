@@ -6,6 +6,8 @@ import { Search, Truck } from 'lucide-react'
 import { publicAPI, type PublicSpareSpace } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useVendorContext } from '@/components/vendor/vendorContext'
+import { useBlockedFromVendorActions } from '@/store/accountKind'
+import NotVendorNotice from '@/components/vendor/NotVendorNotice'
 import AddressPicker from '@/components/map/AddressPicker'
 import PlaceBidModal, { type BidFields, type CapacityWindow } from '@/components/vendor/PlaceBidModal'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
@@ -49,6 +51,7 @@ function toBidWindow(p: PublicSpareSpace): CapacityWindow {
 export default function ShipPage() {
   const navigate = useNavigate()
   const session = useAuthStore(s => s.session)
+  const blockedKind = useBlockedFromVendorActions()
   const { vendorProfile, isVendor } = useVendorContext()
   const kycApproved = vendorProfile?.kycStatus === 'approved'
 
@@ -122,6 +125,7 @@ export default function ShipPage() {
   }
 
   const bookSpace = (sp: PublicSpareSpace) => {
+    if (blockedKind) return
     if (session && isVendor && !kycApproved) {
       toast('Finish your company KYC first. It only takes a few minutes.')
       navigate(vendorProfile ? '/vendor/company' : '/vendor/onboarding')
@@ -135,7 +139,7 @@ export default function ShipPage() {
     if (!booking) return
     const saved = saveGuestDraft('bid', { windowId: booking.id, window: toBidWindow(booking), fields })
     if (!saved) toast('We could not save your bid on this device, so you may need to fill it in again after signing in.')
-    navigate(`/login?as=vendor&next=${encodeURIComponent(`/vendor/return-trips?bid=${booking.id}&resume=1`)}`)
+    navigate(`/vendor/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${booking.id}&resume=1`)}`)
   }
 
   return (
@@ -144,6 +148,7 @@ export default function ShipPage() {
         title="Find a truck"
         description="See trucks with spare space, companies and an indicative price for your lane. No account needed to look."
       />
+      {blockedKind && <NotVendorNotice kind={blockedKind} />}
 
       <Card padded>
         <form noValidate onSubmit={onSearch} className="space-y-4" aria-label="Search a lane">
@@ -207,7 +212,7 @@ export default function ShipPage() {
                 compact
                 title="No spare space on this lane right now"
                 description="Post your load and companies on this lane can respond."
-                action={<Button onClick={postThisLoad}>Post this load</Button>}
+                action={<Button disabled={!!blockedKind} onClick={postThisLoad}>Post this load</Button>}
               />
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -225,7 +230,7 @@ export default function ShipPage() {
                       </p>
                       <p className="text-sm text-muted">{sp.price_per_kg_from != null ? `From ${formatRupees(sp.price_per_kg_from)} per kg` : 'Name your price'}</p>
                     </div>
-                    <Button className="mt-auto" onClick={() => bookSpace(sp)}>Book this space</Button>
+                    <Button className="mt-auto" disabled={!!blockedKind} onClick={() => bookSpace(sp)}>Book this space</Button>
                   </Card>
                 ))}
               </div>
@@ -270,7 +275,7 @@ export default function ShipPage() {
 
       {!session && (
         <p className="text-sm text-muted">
-          Already have an account? <Link className={buttonClasses({ variant: 'ghost', size: 'sm' })} to="/login?as=vendor&next=%2Fship">Sign in</Link>
+          Already have an account? <Link className={buttonClasses({ variant: 'ghost', size: 'sm' })} to="/vendor/login?next=%2Fship">Sign in</Link>
         </p>
       )}
 

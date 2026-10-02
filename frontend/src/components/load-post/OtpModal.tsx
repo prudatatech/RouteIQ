@@ -10,13 +10,15 @@ import { phoneDigits } from './logic'
  * Asked when a guest presses Submit Load: the mobile number, then the 6-digit code texted to it,
  * then a session. The page does not change, so the filled form stays as it is.
  */
-export default function OtpModal({ open, onClose, onVerified, emailSignInHref }: {
+export default function OtpModal({ open, onClose, onVerified, emailSignInHref, onUseEmail }: {
   open: boolean
   onClose: () => void
   /** Called once the session is set. */
   onVerified: () => void
   /** Where the email and password sign-in link goes (it returns to the saved form). */
-  emailSignInHref: string
+  emailSignInHref?: string
+  /** On the sign-in page itself there is nowhere to go: the link closes the modal instead. */
+  onUseEmail?: () => void
 }) {
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
@@ -96,7 +98,9 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref }:
         )}
         {error && <p className="text-sm text-danger" role="alert">{error}</p>}
         <p className="text-sm text-muted">
-          Prefer email? <Link to={emailSignInHref} className="font-medium text-brand hover:underline">Sign in with email and password</Link>. Your load is kept.
+          {onUseEmail
+            ? <>Prefer email? <button type="button" onClick={onUseEmail} className="font-medium text-brand hover:underline">Sign in with email and password</button>.</>
+            : <>Prefer email? <Link to={emailSignInHref ?? '/vendor/login'} className="font-medium text-brand hover:underline">Sign in with email and password</Link>. Your load is kept.</>}
         </p>
       </div>
     </Modal>

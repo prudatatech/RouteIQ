@@ -1,25 +1,30 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/services/supabase'
 import { destinationFor, loadAccount } from '@/services/account'
+import OtpModal from '@/components/load-post/OtpModal'
+import {
+  accountKindOf, homeForKind, legacyAudiencePath, LOGIN_PATH, nextForKind, wrongPageMessage, KIND_LABEL, type AccountKind,
+} from '@/utils/accountKind'
 import { orgAPI } from '@/services/api'
 import { useOrgStore } from '@/store/orgStore'
 import { destinationForOrgs } from '@/utils/orgAccess'
 import { useAuthStore } from '@/store/authStore'
 import { safeNextPath } from '@/utils/safeNext'
+import type { Membership } from '@/utils/orgs'
 import {
-  Alert, Button, Card, Field, IconButton, Input, LoadingState, TabPanel, Tabs, controlClasses,
+  Alert, Button, Card, Field, IconButton, Input, LoadingState, controlClasses,
 } from '@/components/ui'
 
-type Audience = 'staff' | 'partner'
+type Audience = AccountKind
+interface WrongPage { text: string; to: string; linkLabel: string }
 type Mode = 'sign-in' | 'sign-up' | 'forgot' | 'reset'
 type FieldErrors = { email?: string; password?: string; confirm?: string }
 
-const PARTNER_VALUES = ['vendor', 'partner', '3pl']
 const MIN_PASSWORD_LENGTH = 8
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -31,8 +36,38 @@ const linkClass =
   'rounded-control font-medium text-brand underline-offset-2 hover:underline focus-visible:outline ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand'
 
-const titles: Record<Mode, string> = {
-  'sign-in': 'Sign in',
+/** Each sign-in page has its own title and copy. */
+const COPY: Record<Audience, { title: string; subtitle: string }> = {
+  staff: {
+    title: 'Sign in to MargixIndia',
+    subtitle: 'For logistic company staff, platform admins and drivers. Customers use the MargixIndia app, or can track a shipment from the tracking page.',
+  },
+  vendor: {
+    title: 'Vendor sign in',
+    subtitle: 'Post loads, find truck space and track your shipments.',
+  },
+  tpl: {
+    title: '3PL partner sign in',
+    subtitle: 'For approved 3PL partners: orders, earnings, lanes and documents.',
+  },
+}
+
+const OTHER_PAGES: Record<Audience, { question: string; label: string; to: string }[]> = {
+  staff: [
+    { question: 'Are you a vendor?', label: 'Vendor sign in', to: LOGIN_PATH.vendor },
+    { question: 'Are you a 3PL partner?', label: '3PL partner sign in', to: LOGIN_PATH.tpl },
+  ],
+  vendor: [
+    { question: 'Are you company staff or a driver?', label: 'Staff sign in', to: LOGIN_PATH.staff },
+    { question: 'Are you a 3PL partner?', label: '3PL partner sign in', to: LOGIN_PATH.tpl },
+  ],
+  tpl: [
+    { question: 'Are you company staff or a driver?', label: 'Staff sign in', to: LOGIN_PATH.staff },
+    { question: 'Are you a vendor?', label: 'Vendor sign in', to: LOGIN_PATH.vendor },
+  ],
+}
+
+const modeTitles: Record<Exclude<Mode, 'sign-in'>, string> = {
   'sign-up': 'Create a vendor account',
   forgot: 'Reset your password',
   reset: 'Set a new password',
@@ -108,13 +143,29 @@ function PasswordField({ label, value, onChange, autoComplete, error, hint, inpu
   )
 }
 
-export default function LoginPage() {
+/**
+ * The sign-in pages: /login (staff), /vendor/login and /3pl/login. Each accepts only its own kind of account
+ * (utils/accountKind.ts); anyone else is signed out again and told which page to use. The old
+ * /login?as=vendor and ?as=3pl links open the page of that audience, keeping next and the other parameters.
+ */
+export default function LoginPage({ audience = 'staff' }: { audience?: Audience }) {
+  const { search, hash } = useLocation()
+  const legacy = audience === 'staff' ? legacyAudiencePath(new URLSearchParams(search).get('as')) : null
+  if (legacy) {
+    const rest = new URLSearchParams(search)
+    rest.delete('as')
+    const query = rest.toString()
+    return <Navigate to={{ pathname: legacy, search: query ? `?${query}` : '', hash }} replace />
+  }
+  return <SignInPage audience={audience} />
+}
+
+function SignInPage({ audience }: { audience: Audience }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const audience: Audience = PARTNER_VALUES.includes(params.get('as') ?? '') ? 'partner' : 'staff'
   const next = safeNextPath(params.get('next'))
-  // "Register your logistics company": sign up or in, then the registration form
-  const registering = params.get('register') === 'company'
+  // "Register your logistic company": sign up or in, then the registration form
+  const registering = audience === 'staff' && params.get('register') === 'company'
 
   const authInitialized = useAuthStore(s => s.authInitialized)
   const token = useAuthStore(s => s.token)
@@ -125,16 +176,21 @@ export default function LoginPage() {
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
+  const [wrongPage, setWrongPage] = useState<WrongPage | null>(null)
+  /** Someone already signed in with another kind of account opened this page: they keep their session. */
+  const [signedInAs, setSignedInAs] = useState<{ kind: AccountKind; home: string | null } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
+  const [otpOpen, setOtpOpen] = useState(false)
   const sessionChecked = useRef(false)
 
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
 
-  const title = registering && mode === 'sign-up' ? 'Register your logistics company' : titles[mode]
+  const copy = COPY[audience]
+  const title = mode === 'sign-in' ? copy.title : registering && mode === 'sign-up' ? 'Register your logistic company' : modeTitles[mode]
 
   useEffect(() => {
     const previous = document.title
@@ -142,28 +198,49 @@ export default function LoginPage() {
     return () => { document.title = previous }
   }, [title])
 
-  /** Resolves the account's role from the database and sends the user to the right place. */
-  const finishSignIn = async (session: Session) => {
+  /**
+   * Resolves what the account is from the database and sends the user to the right place. An account of another
+   * kind never keeps a session here: it is signed out and told which sign-in to use (unless it was already
+   * signed in before this page opened, which only gets a notice).
+   */
+  const finishSignIn = async (session: Session, alreadySignedIn = false) => {
     const signOut = async () => {
       await supabase.auth.signOut().catch(() => undefined)
       useAuthStore.getState().clearAuth()
     }
-    let destination: string | null
-    let role: string | null
+    let destination: string | null = null
     try {
       const account = await loadAccount(session.user.id)
-      role = account.role
-      destination = destinationFor(account, next)
-      if (registering) {
+      // The memberships call needs the session in the store
+      useAuthStore.getState().setSession(session, account.role, account.tplPartnerId)
+      const memberships: Membership[] = await orgAPI.mine().catch(() => [])
+      const kind = accountKindOf(account, memberships)
+
+      if (registering && kind !== 'tpl') {
         // Anyone who signed up or in here goes on to the registration form
+        useAuthStore.getState().setSession(session, account.role ?? 'vendor', account.tplPartnerId)
         destination = '/register-company'
-        role = role ?? 'vendor'
-      } else if (role === 'vendor' && !account.hasVendorProfile && !account.tplPartnerId) {
-        // A company owner has no vendor profile: their organisation decides where they go
-        useAuthStore.getState().setSession(session, role)
-        const memberships = await orgAPI.mine().catch(() => [])
+      } else if (!kind) {
+        await signOut()
+        setFormError(NO_ACCESS)
+        return
+      } else if (kind !== audience) {
+        if (alreadySignedIn) {
+          setSignedInAs({ kind, home: homeForKind(kind, account) })
+        } else {
+          await signOut()
+          setWrongPage(wrongPageMessage(audience, kind))
+        }
+        return
+      } else if (kind === 'staff') {
+        // A company waiting for approval has only the waiting screen
         useOrgStore.getState().setMemberships(memberships)
-        destination = destinationForOrgs(memberships, useOrgStore.getState().activeOrgId) ?? destination
+        destination = destinationForOrgs(memberships, useOrgStore.getState().activeOrgId)
+          ?? nextForKind('staff', next) ?? homeForKind('staff', account)
+      } else if (kind === 'vendor') {
+        destination = destinationFor(account, next)
+      } else {
+        destination = nextForKind('tpl', next) ?? homeForKind('tpl', account)
       }
     } catch (err) {
       console.error('Failed to load account after sign-in', err)
@@ -171,12 +248,11 @@ export default function LoginPage() {
       setFormError(ACCOUNT_LOAD_FAILED)
       return
     }
-    if (!destination || !role) {
+    if (!destination) {
       await signOut()
       setFormError(NO_ACCESS)
       return
     }
-    useAuthStore.getState().setSession(session, role)
     navigate(destination, { replace: true })
   }
 
@@ -189,7 +265,7 @@ export default function LoginPage() {
       setCheckingSession(false)
       return
     }
-    finishSignIn(session).finally(() => setCheckingSession(false))
+    finishSignIn(session, true).finally(() => setCheckingSession(false))
     // Runs once, when the stored session has been restored.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authInitialized])
@@ -203,13 +279,8 @@ export default function LoginPage() {
   const clearMessages = () => {
     setErrors({})
     setFormError(null)
+    setWrongPage(null)
     setNotice(null)
-  }
-
-  const chooseAudience = (value: Audience) => {
-    updateParams(p => (value === 'partner' ? p.set('as', 'vendor') : p.delete('as')))
-    if (value === 'staff' && mode === 'sign-up') setMode('sign-in')
-    clearMessages()
   }
 
   const switchMode = (value: Mode) => {
@@ -242,6 +313,7 @@ export default function LoginPage() {
 
   const run = async (action: () => Promise<void>) => {
     setFormError(null)
+    setWrongPage(null)
     setNotice(null)
     setSubmitting(true)
     try {
@@ -260,12 +332,26 @@ export default function LoginPage() {
     await finishSignIn(data.session)
   })
 
+  /** The mobile code sign-in (vendors): the session is set by the modal, then checked like any other sign-in. */
+  const onOtpVerified = () => run(async () => {
+    setOtpOpen(false)
+    const session = (await supabase.auth.getSession()).data.session
+    if (!session) {
+      setFormError(describeAuthError(null, 'sign-in'))
+      return
+    }
+    await finishSignIn(session)
+  })
+
   const signUp = () => run(async () => {
+    const back = registering
+      ? `${LOGIN_PATH.staff}?register=company`
+      : `${LOGIN_PATH[audience]}${next ? `?next=${encodeURIComponent(next)}` : ''}`
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       // The database gives self-registered accounts the vendor role only when they ask for it here.
-      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/login?${registering ? 'register=company' : 'as=vendor'}${next && !registering ? `&next=${encodeURIComponent(next)}` : ''}` },
+      options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}${back}` },
     })
     if (error) {
       setFormError(describeAuthError(error, 'sign-up'))
@@ -282,9 +368,8 @@ export default function LoginPage() {
   })
 
   const sendResetLink = () => run(async () => {
-    const redirect = new URL('/login', window.location.origin)
+    const redirect = new URL(LOGIN_PATH[audience], window.location.origin)
     redirect.searchParams.set('reset', '1')
-    if (audience === 'partner') redirect.searchParams.set('as', 'vendor')
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect.toString() })
     if (error) {
       setFormError(describeAuthError(error, 'forgot'))
@@ -310,6 +395,12 @@ export default function LoginPage() {
     await finishSignIn(session)
   })
 
+  const signOutHere = async () => {
+    await supabase.auth.signOut().catch(() => undefined)
+    useAuthStore.getState().clearAuth()
+    setSignedInAs(null)
+  }
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (submitting) return
@@ -332,7 +423,7 @@ export default function LoginPage() {
     reset: 'Save new password',
   }
   const subtitle = {
-    'sign-in': audience === 'staff' ? 'For operations staff and drivers. Customers use the MargixIndia app, or can track a shipment from the tracking page.' : 'For vendors and 3PL partners.',
+    'sign-in': copy.subtitle,
     'sign-up': registering ? 'Create your account first. Next you add your company details.' : 'Find truck capacity, post loads and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',
@@ -345,6 +436,11 @@ export default function LoginPage() {
     <form noValidate onSubmit={onSubmit} aria-labelledby="sign-in-title" className="space-y-4">
       {notice && <Alert tone="success">{notice}</Alert>}
       {formError && <Alert tone="danger">{formError}</Alert>}
+      {wrongPage && (
+        <Alert tone="danger">
+          {wrongPage.text} <Link className={linkClass} to={wrongPage.to}>{wrongPage.linkLabel}</Link>.
+        </Alert>
+      )}
 
       {mode !== 'reset' && (
         <Input
@@ -399,22 +495,26 @@ export default function LoginPage() {
   )
 
   const otherOptions: ReactNode[] = []
-  if (mode === 'sign-in' && !registering) {
-    otherOptions.push(
-      <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistics company</Link></>,
-    )
-  }
-  if (mode === 'sign-in' && audience === 'partner') {
-    otherOptions.push(
-      <>Approved 3PL partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
-      <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
-      <>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>,
-    )
-  } else if (mode === 'sign-in') {
-    otherOptions.push(
-      <>Staff and driver accounts are created by your administrator.</>,
-      <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
-    )
+  if (mode === 'sign-in') {
+    if (audience === 'staff') {
+      if (!registering) {
+        otherOptions.push(
+          <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistic company</Link></>,
+        )
+      }
+      otherOptions.push(
+        <>Staff and driver accounts are created by your administrator.</>,
+        <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
+      )
+    } else if (audience === 'vendor') {
+      otherOptions.push(<>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>)
+    } else {
+      otherOptions.push(
+        <>Approved partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
+        <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
+        <>Already applied? <Link className={linkClass} to="/3pl/onboard/track">Track your application</Link></>,
+      )
+    }
   } else if (mode === 'sign-up') {
     otherOptions.push(
       <>Already have an account? <button type="button" className={linkClass} onClick={() => switchMode('sign-in')}>Sign in</button></>,
@@ -445,30 +545,37 @@ export default function LoginPage() {
               <p className="mt-1 text-sm text-muted sm:text-base">{subtitle}</p>
 
               <Card padded className="mt-6">
-                {resetLinkMissing ? (
+                {signedInAs ? (
+                  <div className="space-y-4">
+                    <Alert tone="info" title={`You are signed in with a ${KIND_LABEL[signedInAs.kind]}`}>
+                      This is the {copy.title.toLowerCase()} page. Open your own area, or sign out to use a different account here.
+                    </Alert>
+                    {signedInAs.home && (
+                      <Button size="lg" fullWidth onClick={() => navigate(signedInAs.home as string)}>Open my area</Button>
+                    )}
+                    <Button variant="secondary" size="lg" fullWidth onClick={signOutHere}>Sign out</Button>
+                  </div>
+                ) : resetLinkMissing ? (
                   <div className="space-y-4">
                     <Alert tone="warning" title="This link has expired or was already used">
                       Reset links work once and for a limited time.
                     </Alert>
                     <Button variant="secondary" size="lg" fullWidth onClick={() => switchMode('forgot')}>Send a new link</Button>
                   </div>
-                ) : mode === 'sign-in' ? (
-                  <>
-                    <Tabs<Audience>
-                      label="Who is signing in"
-                      value={audience}
-                      onChange={chooseAudience}
-                      tabs={[{ id: 'staff', label: 'Staff' }, { id: 'partner', label: 'Vendor or 3PL partner' }]}
-                      className="mb-5"
-                    />
-                    <TabPanel id={audience}>{form}</TabPanel>
-                  </>
                 ) : (
-                  form
+                  <>
+                    {form}
+                    {audience === 'vendor' && mode === 'sign-in' && (
+                      <div className="mt-5 border-t border-border pt-4">
+                        <p className="mb-2 text-sm text-muted">Prefer your mobile number? We text you a 6-digit code.</p>
+                        <Button variant="secondary" size="lg" fullWidth onClick={() => setOtpOpen(true)}>Sign in with a mobile code</Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </Card>
 
-              {mode === 'sign-in' && audience === 'partner' && !resetLinkMissing && (
+              {audience === 'vendor' && mode === 'sign-in' && !signedInAs && !resetLinkMissing && (
                 <div className="mt-4 rounded-card border border-brand/40 bg-brand-soft p-4">
                   <p className="text-sm font-medium text-text">New here?</p>
                   <p className="mt-0.5 text-sm text-muted">Create a free vendor account. Anything you filled in is kept{next ? ' and you come straight back to it' : ''}.</p>
@@ -481,10 +588,26 @@ export default function LoginPage() {
               <ul className="mt-6 space-y-2 text-sm text-muted">
                 {otherOptions.map((option, i) => <li key={i}>{option}</li>)}
               </ul>
+              {mode === 'sign-in' && (
+                <ul className="mt-4 space-y-2 border-t border-border pt-4 text-sm text-muted" aria-label="Other sign-in pages">
+                  {OTHER_PAGES[audience].map(o => (
+                    <li key={o.to}>{o.question} <Link className={linkClass} to={o.to}>{o.label}</Link></li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </div>
       </main>
+
+      {audience === 'vendor' && (
+        <OtpModal
+          open={otpOpen}
+          onClose={() => setOtpOpen(false)}
+          onUseEmail={() => setOtpOpen(false)}
+          onVerified={onOtpVerified}
+        />
+      )}
     </div>
   )
 }

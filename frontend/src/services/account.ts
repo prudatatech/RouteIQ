@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { accountKindOf, nextForKind } from '@/utils/accountKind'
 
 export interface Account {
   /** superadmin, admin, manager, driver, vendor, or whatever public.users holds; null when there is no row. */
@@ -63,9 +64,11 @@ function hasPendingLoadRequest() {
 /** A step a visitor started before signing in: the saved form is restored there. */
 const RESUME_PATH = /^\/vendor\/(request|return-trips)\?(?:[^#]*&)?resume=1(?:&|$|#)/
 
-export function destinationFor(account: Account, next: string | null): string | null {
+export function destinationFor(account: Account, rawNext: string | null): string | null {
   const home = homeFor(account)
   if (!home) return null
+  // `next` only counts inside the account's own area (staff, vendor or 3PL), never in another one
+  const next = nextForKind(accountKindOf(account), rawNext)
   const isVendor = account.role === 'vendor'
   if (isVendor && !account.tplPartnerId && !account.hasVendorProfile) {
     // A new vendor who came to post a load or bid goes back to it (it shows what to finish); anything else sets up the company first

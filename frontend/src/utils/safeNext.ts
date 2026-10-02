@@ -1,6 +1,6 @@
 const PLACEHOLDER_ORIGIN = 'https://margixindia.invalid'
 /** Pages that must never be the target after signing in, or sign-in would loop. */
-const BLOCKED_PATHS = new Set(['/login', '/vendor/login'])
+const BLOCKED_PATHS = new Set(['/login', '/vendor/login', '/3pl/login'])
 
 /**
  * Returns `raw` as a same-origin path ("/vendor/shipments?tab=open") when it is safe to

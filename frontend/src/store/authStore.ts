@@ -14,11 +14,13 @@ interface AuthState {
   refreshToken: string | null
   role: string | null
   userId: string | null
+  /** The 3PL partner record linked to this sign-in (memory only; read again with the role on every load). */
+  tplPartnerId: string | null
   session: Session | null
   /** True once the initial supabase.auth.getSession() restore (App's effect) has resolved. */
   authInitialized: boolean
   setAuth: (token: string, refreshToken: string, role: string, userId: string) => void
-  setSession: (session: Session | null, role?: string | null) => void
+  setSession: (session: Session | null, role?: string | null, tplPartnerId?: string | null) => void
   setAuthInitialized: (initialized: boolean) => void
   clearAuth: () => void
 }
@@ -32,6 +34,7 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       role: null,
       userId: null,
+      tplPartnerId: null,
       session: null,
       authInitialized: false,
 
@@ -42,13 +45,14 @@ export const useAuthStore = create<AuthState>()(
       // New Supabase session setter
       // `role` must come from the database (services/account.ts). There is deliberately no
       // fallback to user_metadata or to a default role.
-      setSession: (session: Session | null, role?: string | null) => {
+      setSession: (session: Session | null, role?: string | null, tplPartnerId?: string | null) => {
         if (session) {
           set({
             token: session.access_token,
             refreshToken: session.refresh_token,
             userId: session.user.id,
             role: role ?? null,
+            tplPartnerId: tplPartnerId ?? null,
             session,
           })
         } else {
@@ -59,7 +63,7 @@ export const useAuthStore = create<AuthState>()(
       setAuthInitialized: (initialized: boolean) => set({ authInitialized: initialized }),
 
       clearAuth: () =>
-        set({ token: null, refreshToken: null, role: null, userId: null, session: null }),
+        set({ token: null, refreshToken: null, role: null, userId: null, tplPartnerId: null, session: null }),
     }),
     {
       name: LEGACY_PERSISTED_KEY,

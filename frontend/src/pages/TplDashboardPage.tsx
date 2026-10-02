@@ -44,7 +44,7 @@ export default function TplDashboardPage() {
   const signOut = async () => {
     try { await supabase.auth.signOut() } catch (err) { console.error('Sign-out failed', err) }
     useAuthStore.getState().clearAuth()
-    navigate('/login?as=vendor', { replace: true })
+    navigate('/3pl/login', { replace: true })
   }
 
   // Whose portal this account has: checked before anything of the address's partner is loaded
