@@ -27,9 +27,33 @@ export function sendError(req: Request, res: Response, err: unknown, key: ErrorK
     res.status(err.status).json({ ...err.extra, [key]: err.message });
     return;
   }
+  // A database refusal that is the caller's doing (a value that is not a uuid or date, a duplicate) is a 4xx, never a 500
+  const known = clientDatabaseError(err);
+  if (known) {
+    res.status(known.status).json({ [key]: known.message });
+    return;
+  }
   const requestId = res.getHeader('X-Request-ID');
   console.error(`[${requestId ?? '-'}] ${req.method} ${req.originalUrl}:`, err);
   res.status(500).json({ [key]: 'Internal server error', request_id: requestId });
+}
+
+/**
+ * PostgreSQL codes that say the request was wrong rather than the server: 22P02 / 22007 / 22008 / 22003 (a malformed
+ * uuid, enum, date or number in the URL or query), 23505 (already exists), 23503 (names a record that is not there).
+ */
+export function clientDatabaseError(err: unknown): { status: number; message: string } | null {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  switch (code) {
+    case '22P02': case '22007': case '22008': case '22003':
+      return { status: 400, message: 'One of the values sent is not valid' };
+    case '23505':
+      return { status: 409, message: 'That already exists' };
+    case '23503':
+      return { status: 409, message: 'It refers to something that does not exist' };
+    default:
+      return null;
+  }
 }
 
 /**

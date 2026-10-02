@@ -104,4 +104,19 @@ if [[ -n "${DATA_DOMAIN:-}" ]]; then
     fi
   fi
 fi
+# Realtime seeds its self-hosted tenant with ssl_enforced=false, so it opens the database connection for live updates
+# without encryption and Azure PostgreSQL refuses it ("no pg_hba.conf entry ... no encryption"): every live update
+# (notifications, the nav badges, the live map, SOS) failed with UnableToConnectToProject. Switch the tenant to SSL
+# (a plain boolean in _realtime.extensions) and restart the service so it drops its cached tenant. Idempotent.
+log "Realtime: tenant database over SSL"
+RT_SQL="UPDATE _realtime.extensions SET settings = jsonb_set(settings, '{ssl_enforced}', 'true'::jsonb) WHERE tenant_external_id = '$P-rt' AND coalesce(settings->>'ssl_enforced', 'false') <> 'true'"
+for _ in 1 2 3 4 5 6 7 8; do
+  if [[ "$(echo "SELECT to_regclass('_realtime.extensions') IS NOT NULL" | "${PSQL[@]}" -At 2>/dev/null)" == "t" ]]; then break; fi
+  sleep 5
+done
+if [[ "$(echo "SELECT count(*) FROM _realtime.extensions WHERE tenant_external_id = '$P-rt' AND coalesce(settings->>'ssl_enforced', 'false') <> 'true'" | "${PSQL[@]}" -At 2>/dev/null || echo 0)" != "0" ]]; then
+  echo "$RT_SQL" | "${PSQL[@]}" >/dev/null && az containerapp revision restart -g "$RG" -n "$P-rt" \
+    --revision "$(az containerapp revision list -g "$RG" -n "$P-rt" --query "[?properties.active] | [0].name" -o tsv)" -o none \
+    || warn "could not switch the realtime tenant to SSL: run the UPDATE on _realtime.extensions by hand"
+fi
 log "Done. Gateway (the app's SUPABASE_URL for $STAGE): $GATEWAY  Database: $PG_HOST"
