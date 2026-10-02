@@ -89,4 +89,19 @@ GATEWAY="$(az deployment group create -g "$RG" -n "$P-platform" --template-file 
     realtimeSecretKeyBase="$REALTIME_SECRET_KEY_BASE" \
     s3proxyIdentity="$S3PROXY_IDENTITY" s3proxyCredential="$S3PROXY_CREDENTIAL" \
   --only-show-errors --query properties.outputs.gatewayUrl.value -o tsv)"
+# The gateway's custom domain is not part of the Bicep template, and redeploying the app drops its hostname
+# binding (the site then answers with a TLS failure and every sign-in breaks). Bind it again every run, with the
+# managed certificate that already exists for it (created once when the domain was added).
+if [[ -n "${DATA_DOMAIN:-}" ]]; then
+  GW_APP="$P-gateway"
+  if ! az containerapp hostname list -g "$RG" -n "$GW_APP" --query "[?name=='$DATA_DOMAIN'] | length(@)" -o tsv 2>/dev/null | grep -qx 1; then
+    log "Re-binding $DATA_DOMAIN to $GW_APP"
+    CERT="$(az containerapp env certificate list -g "$RG" --name "${PREFIX}-env" --query "[?properties.subjectName=='$DATA_DOMAIN'].name | [0]" -o tsv 2>/dev/null || true)"
+    if [[ -n "$CERT" ]]; then
+      az containerapp hostname bind -g "$RG" -n "$GW_APP" --hostname "$DATA_DOMAIN" --environment "${PREFIX}-env" --certificate "$CERT" -o none
+    else
+      warn "no managed certificate for $DATA_DOMAIN yet: run  az containerapp hostname add / bind --validation-method CNAME  once (docs/DEPLOYMENT.md)"
+    fi
+  fi
+fi
 log "Done. Gateway (the app's SUPABASE_URL for $STAGE): $GATEWAY  Database: $PG_HOST"
