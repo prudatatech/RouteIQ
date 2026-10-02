@@ -15,7 +15,7 @@ import { useOrgStore } from '@/store/orgStore'
 import { destinationForOrgs } from '@/utils/orgAccess'
 import { useAuthStore } from '@/store/authStore'
 import { safeNextPath } from '@/utils/safeNext'
-import type { Membership } from '@/utils/orgs'
+import { platformMembership, type Membership } from '@/utils/orgs'
 import {
   Alert, Button, Card, Field, IconButton, Input, LoadingState, controlClasses,
 } from '@/components/ui'
@@ -235,8 +235,11 @@ function SignInPage({ audience }: { audience: Audience }) {
       } else if (kind === 'staff') {
         // A company waiting for approval has only the waiting screen
         useOrgStore.getState().setMemberships(memberships)
+        // The platform owner signs in to the platform console, even when they also sit in a company
+        const platform = platformMembership(memberships)
+        if (platform) useOrgStore.getState().setActiveOrg(platform.org.id)
         destination = destinationForOrgs(memberships, useOrgStore.getState().activeOrgId)
-          ?? nextForKind('staff', next) ?? homeForKind('staff', account)
+          ?? nextForKind('staff', next) ?? (platform ? '/platform/organisations' : homeForKind('staff', account))
       } else if (kind === 'vendor') {
         destination = destinationFor(account, next)
       } else {

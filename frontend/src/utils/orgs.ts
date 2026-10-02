@@ -29,11 +29,16 @@ export function groupMemberships(memberships: Membership[]): { kind: OrgKind; la
     .filter(g => g.items.length > 0)
 }
 
-/** The remembered org if the user is still a member of it, else the first membership, else null. */
+/** The platform organisation the user owns or administers, if any (the platform owner may also sit in a company). */
+export function platformMembership(memberships: Membership[]): Membership | null {
+  return memberships.find(m => m.org.kind === 'platform' && m.org.status === 'active' && (m.role === 'owner' || m.role === 'admin')) ?? null
+}
+
+/** The remembered org if the user is still a member of it, else the platform they run, else the first membership, else null. */
 export function pickActiveOrgId(memberships: Membership[], remembered: string | null): string | null {
   if (memberships.length === 0) return null
   if (remembered && memberships.some(m => m.org.id === remembered)) return remembered
-  return memberships[0].org.id
+  return (platformMembership(memberships) ?? memberships[0]).org.id
 }
 
 export function readStoredOrgId(): string | null {
