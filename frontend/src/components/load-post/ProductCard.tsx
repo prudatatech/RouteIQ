@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { SlidersHorizontal, X } from 'lucide-react'
 import clsx from 'clsx'
-import { Card, Checkbox, IconButton, Input, Select } from '@/components/ui'
+import { Alert, Card, Checkbox, IconButton, Input, Select } from '@/components/ui'
 import type { ProductHandling, ProductRow } from '@/types/load'
+import type { ProductNote } from './helpers'
 import HsnSearch from './HsnSearch'
 import { UNITS } from './logic'
 import type { StepErrors } from './validate'
@@ -16,7 +17,7 @@ const HANDLING: { id: ProductHandling; label: string }[] = [
 const num = (v: string) => v.replace(/[^\d.]/g, '')
 
 /** One product: the search that fills HSN and GST, then quantity, unit, weight, declared value and its own handling. */
-export default function ProductCard({ row, index, onChange, onRemove, onActivate, errors }: {
+export default function ProductCard({ row, index, onChange, onRemove, onActivate, errors, notes = [] }: {
   row: ProductRow
   index: number
   onChange: (patch: Partial<ProductRow>) => void
@@ -24,6 +25,8 @@ export default function ProductCard({ row, index, onChange, onRemove, onActivate
   /** Focus moved into this card: it is the one being edited, so it stays open. */
   onActivate?: () => void
   errors: StepErrors
+  /** The server's notes about this product (several GST rates, an HSN suggestion), shown beside it. */
+  notes?: ProductNote[]
 }) {
   const i = index
   const qty = useRef<HTMLInputElement>(null)
@@ -41,6 +44,11 @@ export default function ProductCard({ row, index, onChange, onRemove, onActivate
         row={row} index={i} onPicked={() => qty.current?.focus()} label={i === 0 ? 'Describe your goods' : `Product ${i + 1} name`} onChange={onChange}
         errors={{ name: errors[`product_name_${i}`], hsn: errors[`hsn_code_${i}`], rate: errors[`gst_rate_${i}`] }}
       />
+      {notes.length > 0 && (
+        <div className="space-y-2" data-testid={`product-notes-${i}`}>
+          {notes.map(n => <Alert key={n.key} tone={n.severity === 'warn' ? 'warning' : 'info'}>{n.message}</Alert>)}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Input
           ref={qty} label="Quantity" required inputMode="decimal" value={row.quantity}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MapPin } from 'lucide-react'
-import { Button, Input, Textarea } from '@/components/ui'
+import { Button, Input } from '@/components/ui'
 import AddressPicker from '@/components/map/AddressPicker'
 import type { ResolvedPlace } from '@/services/geocoding'
 import type { LoadDraft } from '@/types/load'
@@ -30,7 +30,7 @@ export default function AddressBlock({ side, draft, set, errors }: { side: Side;
   const listId = `${side}-city-suggestions`
 
   const address = draft[`${side}_address`]
-  const hasError = !!(errors[`${side}_address`] || errors[`${side}_city`] || errors[`${side}_pincode`] || errors[`${side}_lat`])
+  const hasError = !!(errors[`${side}_city`] || errors[`${side}_pincode`] || errors[`${side}_lat`])
   const fieldsOpen = editing || hasError
   const summary = !!address.trim() && !fieldsOpen
 
@@ -73,18 +73,13 @@ export default function AddressBlock({ side, draft, set, errors }: { side: Side;
         allowCurrentLocation={side === 'pickup'}
         recentPlacesKey={`load-${side}`}
         error={errors[`${side}_lat`]}
-        hint={fieldsOpen ? 'Pick a result to fill the address below, then correct it if needed.' : 'Indian addresses only. Pick a result to fill in the address.'}
+        hint={fieldsOpen ? 'Pick a result to fill the city and pin code below, then correct them if needed. A search result is needed to place the address on the map.' : 'Indian addresses only. Pick a result to fill in the address.'}
       />
       {!fieldsOpen && (
         <button type="button" onClick={() => setEditing(true)} className="text-sm font-medium text-brand hover:underline">Enter the address manually</button>
       )}
       {fieldsOpen && (
         <>
-          <Textarea
-            label="Address line" required rows={2}
-            value={address} onChange={e => set({ [`${side}_address`]: e.target.value })}
-            error={errors[`${side}_address`]} hint="Building, street and a landmark."
-          />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3">
             <Input
               label="City" required list={listId} value={draft[`${side}_city`]} onChange={e => set({ [`${side}_city`]: e.target.value })}
@@ -95,9 +90,12 @@ export default function AddressBlock({ side, draft, set, errors }: { side: Side;
               value={draft[`${side}_pincode`]} onChange={e => set({ [`${side}_pincode`]: e.target.value.replace(/\D/g, '').slice(0, 6) })}
               error={errors[`${side}_pincode`]} autoComplete="postal-code"
             />
-            <Input label="State" value={draft[`${side}_state_name`]} readOnly placeholder="From the pin code" />
+            <Input
+              label="State" value={draft[`${side}_state_name`]} placeholder="From the pin code" autoComplete="address-level1"
+              onChange={e => set({ [`${side}_state_name`]: e.target.value, [`${side}_state_code`]: '' })}
+            />
           </div>
-          {address.trim() && !hasError && <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Done</Button>}
+          {!hasError && (address.trim() || place) && <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Done</Button>}
         </>
       )}
       <datalist id={listId}>{cities.map(c => <option key={c} value={c} />)}</datalist>

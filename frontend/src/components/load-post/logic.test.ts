@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { profileErrors } from './helpers'
+import { productNotes, profileErrors, rateChoices } from './helpers'
 import type { LoadPayload, ProductRow } from '@/types/load'
 import {
   allSpecialHandling, applyRecommendation, applyRowPatch, deriveCapacity, derivedHandling, emptyDraft, emptyRow, ewayLocal, inr, itemTotals,
@@ -15,9 +15,36 @@ const sample = (): ProductRow[] => [
   ['Packaged spices', '0910', 5, '100', 'boxes', '800', '45000'],
   ['Soap & detergent', '3401', 18, '300', 'cartons', '3600', '210000'],
 ].map(([name, hsn, rate, qty, unit, kg, value]) => ({
-  ...emptyRow(), product_name: name as string, hsn_code: hsn as string, gst_rate: rate as number, hsn_locked: true,
+  ...emptyRow(), product_name: name as string, hsn_code: hsn as string, gst_rate: rate as number,
   rate_options: [rate as number], quantity: qty as string, unit: unit as string, weight_kg: kg as string, declared_value: value as string,
 }))
+
+describe('the rate choices and the product notes', () => {
+  it('lists the code\'s own rates first, then the other GST 2.0 rates', () => {
+    expect(rateChoices([5, 12], null)).toEqual([5, 12, 0, 0.25, 1.5, 3, 18, 40])
+    expect(rateChoices([], 18)).toEqual([0, 0.25, 1.5, 3, 5, 12, 18, 40])
+  })
+  it('gives each product only its own multi-rate and HSN notes, matched by index, fix field or HSN code', () => {
+    const a = { ...emptyRow(), hsn_code: '3004', rate_options: [5, 12] }
+    const b = { ...emptyRow(), hsn_code: '2523', rate_options: [18], gst_rate: 18 }
+    const c = { ...emptyRow(), hsn_code: '9999', rate_options: [5, 12] }
+    const items = [a, b, c]
+    const recs = [
+      { code: 'multi_rate', severity: 'warn' as const, message: 'HSN 3004 has more than one GST rate (5% OR 12%).' },
+      { code: 'hsn_ambiguous', severity: 'info' as const, message: 'Did you mean this?', action: { field: 'items.1.hsn_code', value: '2523' } },
+      { code: 'multi_rate', severity: 'warn' as const, message: 'Pick one', item_index: 2 },
+      { code: 'same_city', severity: 'info' as const, message: 'x' },
+    ]
+    expect(productNotes(a, 0, items, recs).map(n => n.message)).toEqual(['HSN 3004 has more than one GST rate (5% OR 12%).'])
+    expect(productNotes(b, 1, items, recs).map(n => n.message)).toEqual(['Did you mean this?'])
+    expect(productNotes(c, 2, items, recs).map(n => n.message)).toEqual(['Pick one'])
+  })
+  it('writes its own note for a product with several rates when the server has not answered', () => {
+    const a = { ...emptyRow(), hsn_code: '3004', rate_options: [5, 12] }
+    expect(productNotes(a, 0, [a], [])[0].message).toMatch(/HSN 3004 has more than one GST rate \(5% \/ 12%\)/)
+    expect(productNotes({ ...a, rate_options: [18] }, 0, [a], [])).toEqual([])
+  })
+})
 
 describe('totals and the e-way counter', () => {
   it('adds up the PRD sample to 20,900 kg and ₹7,62,500, e-way required', () => {
@@ -36,7 +63,7 @@ describe('totals and the e-way counter', () => {
 })
 
 const route = (): Partial<ReturnType<typeof emptyDraft>> => ({
-  pickup_city: 'Mumbai', pickup_address: 'Dock 4', pickup_pincode: '400001', delivery_city: 'Delhi', delivery_address: 'Plot 9',
+  pickup_city: 'Mumbai', pickup_address: 'Dock 4, Mumbai 400001', pickup_pincode: '400001', delivery_city: 'Delhi', delivery_address: 'Plot 9',
   delivery_pincode: '110001', pickup_date: '2026-10-02', pickup_contact_name: 'Ravi', pickup_contact_phone: '98200 12345',
   delivery_contact_name: 'Asha', delivery_contact_phone: '98111 22334',
   pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2,
@@ -59,6 +86,24 @@ describe('the four steps', () => {
     expect(validateStep(d, 0, '2026-10-02').pickup_date).toMatch(/past/)
     d.pickup_date = '2026-10-02'
     expect(validateStep(d, 0, '2026-10-02')).toEqual({})
+  })
+
+  it('step 0 needs no address line and no delivery date: the address comes from the search, with a fallback from city, pin and state', () => {
+    const d = { ...emptyDraft(), ...route(), pickup_address: '', delivery_address: '' }
+    expect(validateStep(d, 0, '2026-10-02')).toEqual({})
+    const p = toPayload({ ...d, pickup_state_name: 'Maharashtra' })
+    expect(p.pickup_address).toBe('Mumbai, 400001, Maharashtra')
+    expect(p.delivery_address).toBe('Delhi, 110001')
+    expect(toPayload({ ...d, pickup_address: '  Dock 4, Andheri East, Mumbai 400069 ' }).pickup_address).toBe('Dock 4, Andheri East, Mumbai 400069')
+    expect(toPayload({ ...d, pickup_address: 'x'.repeat(600) }).pickup_address).toHaveLength(500)
+    // The manual route still needs a picked place for the map
+    expect(Object.keys(validateStep({ ...d, pickup_lat: null, pickup_lng: null }, 0, '2026-10-02'))).toEqual(['pickup_lat'])
+  })
+
+  it('priority defaults to medium and is sent as priority', () => {
+    expect(emptyDraft().priority).toBe('medium')
+    expect(toPayload(emptyDraft()).priority).toBe('medium')
+    expect(toPayload({ ...emptyDraft(), priority: 'high' }).priority).toBe('high')
   })
 
   it('the receiver name and mobile are required, because the driver and the proof of delivery need them', () => {
@@ -101,22 +146,32 @@ describe('the four steps', () => {
     expect(toPayload({ ...ptl, vehicle_class: 'mini' }).vehicle_class).toBe('mini')
   })
 
-  it('pricing: quotes need no price, booking at my price needs a budget', () => {
-    const d = emptyDraft()
-    expect(d.quote_requested).toBe(true)
-    Object.assign(d, { load_type: 'ptl' })
-    expect(validateStep(d, 2)).toEqual({})
-    const direct = { ...d, quote_requested: false }
-    expect(validateStep(direct, 2).budget_inr).toMatch(/price you will pay/)
-    expect(validateStep({ ...direct, budget_inr: '0' }, 2).budget_inr).toBeTruthy()
-    expect(validateStep({ ...direct, budget_inr: '18000' }, 2)).toEqual({})
-    expect(toPayload({ ...direct, budget_inr: '18000' })).toMatchObject({ quote_requested: false, budget_inr: 18000 })
-    expect(toPayload({ ...d, budget_inr: '' })).toMatchObject({ quote_requested: true, budget_inr: null })
-    expect(toPayload({ ...d, budget_inr: '15000' })).toMatchObject({ quote_requested: true, budget_inr: 15000 })
+  it('recommend mode needs the suggestion to have a vehicle for FTL; manual mode needs a chosen one', () => {
+    const d = { ...emptyDraft(), load_type: 'ftl' as const }
+    expect(d.vehicle_mode).toBe('recommend')
+    expect(validateStep(d, 2).vehicle_class).toMatch(/no vehicle to suggest/i)
+    expect(validateStep({ ...d, vehicle_class: 'sxl_32' }, 2)).toEqual({})
+    expect(validateStep({ ...d, vehicle_mode: 'manual' }, 2).vehicle_class).toMatch(/choose a vehicle type/i)
+    expect(validateStep({ ...d, vehicle_mode: 'manual', vehicle_class: 'mini' }, 2)).toEqual({})
   })
 
-  it('chosen companies need at least one company', () => {
-    expect(validateStep({ ...emptyDraft(), load_type: 'ptl', routing: 'chosen' }, 2).company_ids).toBeTruthy()
+  it('there is no price or routing to validate, and the payload is always open, no budget, no quote round', () => {
+    const d = { ...emptyDraft(), load_type: 'ptl' as const }
+    expect(validateStep(d, 2)).toEqual({})
+    expect(toPayload(d)).toMatchObject({
+      routing: 'open', quote_requested: false, budget_inr: null, delivery_date: null,
+      loading_dock: false, access_restrictions: null, loading_help: false, unloading_help: false,
+    })
+    expect(toPayload(d).company_ids).toBeUndefined()
+  })
+
+  it('a product HSN code must have 4 to 8 digits', () => {
+    const d = emptyDraft()
+    d.items = sample()
+    d.items[0].hsn_code = '12'
+    expect(validateStep(d, 1).hsn_code_0).toMatch(/4 to 8 digits/)
+    d.items[0].hsn_code = '110100'
+    expect(validateStep(d, 1)).toEqual({})
   })
 
   it('maps each recommendation to its step', () => {
@@ -130,7 +185,7 @@ describe('the four steps', () => {
     const d = { ...emptyDraft(), ...route(), items: sample(), load_type: 'ptl' as const }
     expect(firstInvalidStep(d, '2026-10-02')).toBeNull()
     expect(firstInvalidStep({ ...d, items: [emptyRow()] }, '2026-10-02')).toBe(1)
-    expect(firstInvalidStep({ ...d, quote_requested: false }, '2026-10-02')).toBe(2)
+    expect(firstInvalidStep({ ...d, load_type: 'ftl' }, '2026-10-02')).toBe(2)
   })
 
   it('accepts Indian mobile numbers in common spellings', () => {
@@ -210,7 +265,8 @@ describe('draft and payload', () => {
     const next = applyRecommendation(d, { field: 'load_type', value: 'ftl' })
     expect(next.load_type).toBe('ftl')
     expect(next.transport_touched).toBe(true)
-    expect(applyRecommendation(d, { field: 'budget_inr', value: 18000 }).budget_inr).toBe('18000')
+    expect(applyRecommendation(d, { field: 'budget_inr', value: 18000 })).toBe(d)
+    expect(applyRecommendation(d, { field: 'vehicle_class', value: 'mini' })).toMatchObject({ vehicle_class: 'mini', vehicle_mode: 'manual' })
     expect(applyRecommendation(d, { field: 'items', value: 'x' })).toBe(d)
   })
 })
@@ -269,13 +325,29 @@ describe('old saved drafts', () => {
   it('keep the step of a version 2 draft', () => {
     expect(mergeDraft({ v: 2, step: 2 } as never).step).toBe(2)
   })
-  it('move load-level fragile and hazmat onto the product and keep the price mode meaningful', () => {
-    const old = { step: 3, items: [{ ...emptyRow(), product_name: 'Glass' }], special_handling: ['fragile', 'odc'], quote_requested: false, budget_inr: '' }
-    const d = mergeDraft(old as never)
+  it('move load-level fragile and hazmat onto the product', () => {
+    const d = mergeDraft({ step: 3, items: [{ ...emptyRow(), product_name: 'Glass' }], special_handling: ['fragile', 'odc'] } as never)
     expect(d.items[0].handling).toEqual(['fragile'])
     expect(d.special_handling).toEqual(['odc'])
-    expect(d.quote_requested).toBe(true)
-    expect(mergeDraft({ ...old, budget_inr: '9000' } as never).quote_requested).toBe(false)
+  })
+  it('drop the price, quote, company, delivery date and site fields, and default priority and vehicle mode', () => {
+    const old = {
+      v: 2, step: 2, budget_inr: '9000', quote_requested: false, routing: 'chosen', company_ids: ['a'], delivery_date: '2026-10-09',
+      loading_dock: true, access_restrictions: 'x', loading_help: true, unloading_help: true,
+    }
+    const d = mergeDraft(old as never) as unknown as Record<string, unknown>
+    for (const k of ['budget_inr', 'quote_requested', 'routing', 'company_ids', 'delivery_date', 'loading_dock', 'access_restrictions', 'loading_help', 'unloading_help']) expect(k in d).toBe(false)
+    expect(d.priority).toBe('medium')
+    expect(d.vehicle_mode).toBe('recommend')
+    const p = toPayload(mergeDraft(old as never))
+    expect(p).toMatchObject({ routing: 'open', quote_requested: false, budget_inr: null, delivery_date: null, loading_dock: false })
+  })
+  it('use manual vehicle mode only when the person had chosen a vehicle, and keep a saved priority', () => {
+    expect(mergeDraft({ v: 2, transport_touched: true, vehicle_class: 'mini' } as never).vehicle_mode).toBe('manual')
+    expect(mergeDraft({ v: 2, transport_touched: true, vehicle_class: '' } as never).vehicle_mode).toBe('recommend')
+    expect(mergeDraft({ v: 2, transport_touched: false, vehicle_class: 'mini' } as never).vehicle_mode).toBe('recommend')
+    expect(mergeDraft({ v: 2, priority: 'high' } as never).priority).toBe('high')
+    expect(mergeDraft({ v: 2, priority: 'urgent' } as never).priority).toBe('medium')
   })
 })
 
@@ -285,31 +357,35 @@ describe('repost', () => {
     pickup_city: 'Mumbai', pickup_address: 'Dock 4', pickup_pincode: '400001', pickup_date: '2026-10-05', pickup_slot: 'morning',
     pickup_contact_name: 'Ravi', pickup_contact_phone: '+919820012345', pickup_lat: 19.07, pickup_lng: 72.87, delivery_lat: 28.61, delivery_lng: 77.2,
     delivery_city: 'Delhi', delivery_address: 'Plot 9', delivery_pincode: '110001', delivery_date: '2026-10-09',
-    load_type: 'ftl', vehicle_class: 'sxl_32', capacity_t: 16, budget_inr: 90000,
+    load_type: 'ftl', vehicle_class: 'sxl_32', capacity_t: 16, budget_inr: 90000, priority: 'high',
   }
 
   it('keeps everything except the dates, and starts a new request', () => {
     const d = repostToDraft(payload, 'load-1')
     expect(d.pickup_date).toBe('')
-    expect(d.delivery_date).toBe('')
+    expect('delivery_date' in d).toBe(false)
     expect(d.pickup_city).toBe('Mumbai')
     expect(d.delivery_pincode).toBe('110001')
-    expect(d.items[0]).toMatchObject({ product_name: 'Cement', hsn_code: '2523', gst_rate: 18, hsn_locked: true, weight_kg: '5000' })
+    expect(d.items[0]).toMatchObject({ product_name: 'Cement', hsn_code: '2523', gst_rate: 18, weight_kg: '5000' })
     expect(d.vehicle_class).toBe('sxl_32')
     expect(d.capacity_t).toBe('16')
-    expect(d.budget_inr).toBe('90000')
-    expect(d.quote_requested).toBe(false)
+    expect(d.priority).toBe('high')
+    expect(d.vehicle_mode).toBe('manual')
+    expect(toPayload(d)).toMatchObject({ priority: 'high', budget_inr: null, quote_requested: false, routing: 'open' })
     expect([d.v, d.step]).toEqual([2, 0])
     expect(d.reposted_from).toBe('load-1')
     expect([d.pickup_lat, d.delivery_lng]).toEqual([19.07, 77.2])
     expect(toPayload(d).source).toBe('repost')
   })
 
-  it('moves a load-level fragile flag onto the product and asks for quotes when no price was named', () => {
+  it('defaults the priority to medium when the payload has none', () => {
+    expect(repostToDraft({ ...payload, priority: undefined }).priority).toBe('medium')
+  })
+
+  it('moves a load-level fragile flag onto the product', () => {
     const d = repostToDraft({ ...payload, budget_inr: null, special_handling: ['fragile', 'do_not_stack'] })
     expect(d.items[0].handling).toEqual(['fragile'])
     expect(d.special_handling).toEqual(['do_not_stack'])
-    expect(d.quote_requested).toBe(true)
   })
 })
 

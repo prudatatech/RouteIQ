@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 import { Alert, Button, Card } from '@/components/ui'
-import type { ProductRow } from '@/types/load'
+import type { ProductRow, Recommendation } from '@/types/load'
 import ProductCard from './ProductCard'
 import ProductSummaryRow from './ProductSummaryRow'
-import { productComplete } from './helpers'
+import { productComplete, productNotes } from './helpers'
 import { scrollElementIntoView } from './useScrollIntoView'
 import { ewayLocal, inr, itemTotals, kgText, MAX_ITEMS, EWAY_THRESHOLD_INR } from './logic'
 import type { StepErrors } from './validate'
@@ -34,7 +34,7 @@ const ROW_ERROR = /^(product_name|hsn_code|gst_rate|quantity|weight_kg)_(\d+)$/
  * Only the product being edited is open; a finished one folds into a one-line summary. A product that is not finished
  * yet, or has an error, stays open.
  */
-export default function GoodsStep({ items, onChangeRow, onAdd, onRemove, errors, notes, bulkHint }: {
+export default function GoodsStep({ items, onChangeRow, onAdd, onRemove, errors, notes, bulkHint, recommendations = [] }: {
   items: ProductRow[]
   onChangeRow: (index: number, patch: Partial<ProductRow>) => void
   onAdd: () => void
@@ -44,6 +44,8 @@ export default function GoodsStep({ items, onChangeRow, onAdd, onRemove, errors,
   notes?: ReactNode
   /** The server's bulk-template recommendation, when it came. Falls back to the plain hint at 3 or more products. */
   bulkHint?: string | null
+  /** The server's recommendations. The ones about one product (several GST rates, an HSN suggestion) show beside that product. */
+  recommendations?: Recommendation[]
 }) {
   const root = useRef<HTMLDivElement>(null)
   const [chosen, setChosen] = useState<string | null>(() => (items.find(r => !productComplete(r)) ?? items[0]).key)
@@ -72,8 +74,8 @@ export default function GoodsStep({ items, onChangeRow, onAdd, onRemove, errors,
     <div className="space-y-3" ref={root}>
       {items.map((row, i) => (
         productComplete(row) && row.key !== activeKey && !rowsWithErrors.has(i)
-          ? <ProductSummaryRow key={row.key} row={row} index={i} onEdit={() => setChosen(row.key)} onRemove={i > 0 ? () => onRemove(i) : undefined} />
-          : <ProductCard key={row.key} row={row} index={i} errors={errors} onActivate={() => setChosen(row.key)} onChange={p => onChangeRow(i, p)} onRemove={i > 0 ? () => onRemove(i) : undefined} />
+          ? <ProductSummaryRow key={row.key} row={row} index={i} onEdit={() => setChosen(row.key)} onRemove={i > 0 ? () => onRemove(i) : undefined} notes={productNotes(row, i, items, recommendations)} />
+          : <ProductCard key={row.key} row={row} index={i} errors={errors} notes={productNotes(row, i, items, recommendations)} onActivate={() => setChosen(row.key)} onChange={p => onChangeRow(i, p)} onRemove={i > 0 ? () => onRemove(i) : undefined} />
       ))}
       {errors.items && <p className="text-sm text-danger" role="alert">{errors.items}</p>}
       <Button variant="secondary" icon={<Plus size={16} />} onClick={add} disabled={items.length >= MAX_ITEMS}>Add another product</Button>

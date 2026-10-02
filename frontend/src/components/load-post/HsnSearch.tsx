@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { Lock } from 'lucide-react'
 import { publicAPI } from '@/services/api'
 import { Button, Input, Select } from '@/components/ui'
 import type { HsnHit, ProductRow } from '@/types/load'
-import { MANUAL_RATES } from './logic'
-import { applyHsnHit } from './helpers'
+import { applyHsnHit, rateChoices } from './helpers'
 import HsnList, { FIRST_HITS } from './HsnList'
 import WhyHsn from './WhyHsn'
 import { claimHsnList, releaseHsnList } from './hsnOpen'
@@ -13,12 +11,13 @@ import { scrollElementIntoView, stickyBarHeight, stickyHeaderHeight, visibleHeig
 export interface HsnFieldErrors { name?: string; hsn?: string; rate?: string }
 
 
-const UNLOCK: Partial<ProductRow> = { hsn_code: '', hsn_locked: false, rate_options: [], rate_note: null, gst_rate: null, category: null }
+const RESET: Partial<ProductRow> = { hsn_code: '', rate_options: [], rate_note: null, gst_rate: null, category: null }
 
 /**
  * "Describe your goods": searches the HSN master as you type (3 characters or more, up to 8
- * suggestions). Picking one fills and locks the code and the GST rate; a code with several rates
- * asks which one applies. Goods that are not in the list can be entered by HSN code.
+ * suggestions). Picking one fills the HSN code and the GST rate, and both stay editable: the code can be changed (it is
+ * looked up again when the box is left) and any GST rate can be chosen, the code's own rates first. A code with several
+ * rates asks which one applies. Goods that are not in the list can be entered by HSN code.
  */
 export default function HsnSearch({ row, index, onChange, onPicked, errors = {}, label = 'Describe your goods', placeholder = 'For example cement, rice, soap' }: {
   row: ProductRow
@@ -45,7 +44,9 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
   const scrolled = useRef(false)
 
   const query = row.product_name.trim()
-  const searchable = !row.hsn_locked && !manual && !row.hsn_code
+  const searchable = !manual && !row.hsn_code
+  // The code the rate options belong to: a lookup only runs when the code changed, so a rate the person chose is kept.
+  const knownCode = useRef(row.hsn_code.trim())
 
   useEffect(() => {
     if (!searchable || query.length < 3) { setHits([]); setFailed(false); return }
@@ -81,7 +82,7 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
     setMaxHeight(Math.round(Math.min(420, Math.max(192, room))))
   }
 
-  const pick = (hit: HsnHit) => { onChange(applyHsnHit(row, hit)); close(); setHits([]); onPicked?.() }
+  const pick = (hit: HsnHit) => { knownCode.current = hit.hsn_code; onChange(applyHsnHit(row, hit)); close(); setHits([]); onPicked?.() }
 
   const listShown = open && searchable && query.length >= 3
   const status = searching && hits.length === 0 ? 'searching' : failed ? 'failed' : hits.length === 0 ? 'empty' : 'ready'
@@ -109,19 +110,25 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
     }
   }
 
-  // A code typed by hand: look it up, so a known code still gets its real rate.
+  // A code typed or changed by hand: look it up, so a known code still gets its real rates.
   const lookupManual = async () => {
     const code = row.hsn_code.trim()
     setLookupNote(null)
-    if (code.length < 4) return
+    if (code.length < 4 || code === knownCode.current) return
+    knownCode.current = code
     try {
       const hit = await publicAPI.hsn(code)
-      if (hit) { onChange(applyHsnHit(row, hit)); setManual(false) } else setLookupNote('We do not have this code listed. Choose the GST rate yourself.')
+      if (hit) {
+        const patch = applyHsnHit(row, hit)
+        // Keep the rate the person had chosen when the new code allows it.
+        onChange(row.gst_rate !== null && hit.gst_rates.includes(row.gst_rate) ? { ...patch, gst_rate: row.gst_rate } : patch)
+        setManual(false)
+      } else setLookupNote('We do not have this code listed. Choose the GST rate yourself.')
     } catch { setLookupNote('We could not check this code. Choose the GST rate yourself.') }
   }
 
-  const rateOptions = row.rate_options.length > 1 ? row.rate_options : MANUAL_RATES
-  const showRateSelect = row.hsn_locked ? row.rate_options.length > 1 : !!row.hsn_code || manual
+  const showCode = !!row.hsn_code || manual
+  const rateOptions = rateChoices(row.rate_options, row.gst_rate)
   const nameId = `${listId}-name`
 
   return (
@@ -154,43 +161,39 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
         )}
       </div>
 
-      {row.hsn_locked ? (
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="HSN code" value={row.hsn_code} readOnly leading={<Lock size={14} aria-hidden="true" />} error={errors.hsn} />
-          {row.rate_options.length <= 1 && (
-            <Input label="GST rate" value={row.gst_rate === null ? '' : `${row.gst_rate}%`} readOnly leading={<Lock size={14} aria-hidden="true" />} />
-          )}
+      {showCode && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label="HSN code"
+            required
+            inputMode="numeric"
+            value={row.hsn_code}
+            onChange={e => {
+              const code = e.target.value.replace(/\D/g, '').slice(0, 8)
+              // The old code's rates no longer apply to a changed code; the lookup brings the new ones.
+              onChange(code === knownCode.current ? { hsn_code: code } : { hsn_code: code, rate_options: [], rate_note: null })
+            }}
+            onBlur={lookupManual}
+            error={errors.hsn}
+            hint={lookupNote ?? '4 to 8 digits, as on your invoice. You can change it.'}
+          />
+          <Select
+            label="GST rate"
+            required
+            value={row.gst_rate === null ? '' : String(row.gst_rate)}
+            onChange={e => onChange({ gst_rate: e.target.value === '' ? null : Number(e.target.value) })}
+            placeholder="Select rate"
+            options={rateOptions.map(r => ({ value: String(r), label: `${r}%` }))}
+            error={errors.rate}
+            hint={row.rate_note ?? undefined}
+          />
         </div>
-      ) : (manual || row.hsn_code) ? (
-        <Input
-          label="HSN code"
-          required
-          inputMode="numeric"
-          value={row.hsn_code}
-          onChange={e => onChange({ hsn_code: e.target.value.replace(/\D/g, '').slice(0, 8) })}
-          onBlur={lookupManual}
-          error={errors.hsn}
-          hint={lookupNote ?? '4 to 8 digits, as on your invoice.'}
-        />
-      ) : null}
-
-      {showRateSelect && (
-        <Select
-          label="Select applicable GST rate"
-          required
-          value={row.gst_rate === null ? '' : String(row.gst_rate)}
-          onChange={e => onChange({ gst_rate: e.target.value === '' ? null : Number(e.target.value) })}
-          placeholder="Select rate"
-          options={rateOptions.map(r => ({ value: String(r), label: `${r}%` }))}
-          error={errors.rate}
-          hint={row.rate_note ?? undefined}
-        />
       )}
-      {!row.hsn_locked && !showRateSelect && errors.hsn && <p className="text-xs text-danger" role="alert">{errors.hsn}</p>}
+      {!showCode && errors.hsn && <p className="text-xs text-danger" role="alert">{errors.hsn}</p>}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {row.hsn_locked || row.hsn_code ? (
-          <Button variant="ghost" size="sm" onClick={() => { onChange(UNLOCK); setManual(false); setLookupNote(null) }}>Change goods or code</Button>
+        {row.hsn_code ? (
+          <Button variant="ghost" size="sm" onClick={() => { knownCode.current = ''; onChange(RESET); setManual(false); setLookupNote(null) }}>Search for other goods</Button>
         ) : (
           <Button variant="ghost" size="sm" onClick={() => setManual(true)}>Can't find your goods? Enter HSN manually</Button>
         )}

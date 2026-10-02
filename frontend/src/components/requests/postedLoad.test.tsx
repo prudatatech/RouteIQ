@@ -117,9 +117,10 @@ describe('the staff load drawer', () => {
       'GST summary', 'IGST', 'Needed. The carrier or company adds it after assignment.',
       'Plot 4, MIDC Andheri, Mumbai, 400093', '5 Oct 2026', 'Morning', 'Ravi · +919800000000',
       'Warehouse 2, Okhla, Delhi, 110020', 'Asha · +919800000001', 'No trucks after 6pm',
-      'Full truck load (FTL)', 'Container (32 ft / SXL)', '22 t', '₹90,000', 'Fragile', 'Quote requested',
+      'Full truck load (FTL)', 'Container (32 ft / SXL)', '22 t', '₹90,000', 'Fragile',
     ]) expect(text(), expected).toContain(expected)
-    expect(within(section).getByText('Quote requested').nextSibling?.textContent).toBe('Yes')
+    expect(within(section).getByText('Priority').nextSibling?.textContent).toBe('Medium')
+    expect(text()).not.toContain('Quote requested')
   })
 
   it('shows ambient on a perishable load, and the hazmat note', async () => {

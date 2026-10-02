@@ -49,7 +49,7 @@ beforeEach(() => {
 })
 afterEach(() => cleanup())
 
-const done = (name: string): ProductRow => ({ ...emptyRow(), product_name: name, hsn_code: '1006', hsn_locked: true, gst_rate: 5, quantity: '20', weight_kg: '1000', declared_value: '40000' })
+const done = (name: string): ProductRow => ({ ...emptyRow(), product_name: name, hsn_code: '1006', rate_options: [5], gst_rate: 5, quantity: '20', weight_kg: '1000', declared_value: '40000' })
 
 function Rows({ initial, errors = {} }: { initial?: ProductRow[]; errors?: Record<string, string> }) {
   const [items, setItems] = useState<ProductRow[]>(initial ?? [emptyRow()])
@@ -91,7 +91,7 @@ describe('HSN list keyboard', () => {
     fireEvent.keyDown(input, { key: 'ArrowUp' })
     expect(input.getAttribute('aria-activedescendant')).toBe(within(screen.getByRole('listbox')).getAllByRole('option')[1].id)
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect((screen.getByLabelText('HSN code') as HTMLInputElement).value).toBe('2524')
+    expect((screen.getByLabelText(/^HSN code/) as HTMLInputElement).value).toBe('2524')
     expect(document.activeElement).toBe(document.querySelector('input[name="quantity_0"]'))
   })
 
@@ -100,7 +100,7 @@ describe('HSN list keyboard', () => {
     type(0, 'cement')
     await suggestions()
     fireEvent.keyDown(box(0), { key: 'Enter' })
-    expect(screen.queryByLabelText('HSN code')).toBeNull()
+    expect(screen.queryByLabelText(/^HSN code/)).toBeNull()
     fireEvent.keyDown(box(0), { key: 'Escape' })
     expect(screen.queryByRole('listbox')).toBeNull()
     fireEvent.keyDown(box(0), { key: 'ArrowDown' })
@@ -148,7 +148,7 @@ describe('several products', () => {
 
     type(1, 'cement')
     fireEvent.click(await screen.findByRole('option', { name: /2524/ }))
-    expect((screen.getByLabelText('HSN code') as HTMLInputElement).value).toBe('2524')
+    expect((screen.getByLabelText(/^HSN code/) as HTMLInputElement).value).toBe('2524')
     fireEvent.change(document.querySelector('input[name="quantity_1"]')!, { target: { value: '5' } })
     fireEvent.change(document.querySelector('input[name="weight_kg_1"]')!, { target: { value: '250' } })
 
@@ -200,12 +200,14 @@ describe('step 1 compact', () => {
     render(<AddressStep draft={picked} onChange={() => {}} errors={{}} />)
     const pickup = within(screen.getByRole('group', { name: 'Pickup' }))
     expect(pickup.getByTestId('pickup-address-summary').textContent).toMatch(/12 MG Road, Pune.*Pune · 411001 · Maharashtra/)
-    expect(pickup.queryByLabelText(/^address line/i)).toBeNull()
+    expect(pickup.queryByLabelText(/^city/i)).toBeNull()
     fireEvent.click(pickup.getByRole('button', { name: /edit address/i }))
-    expect(pickup.getByLabelText(/^address line/i)).toBeTruthy()
-    expect(pickup.getByLabelText(/^city/i)).toBeTruthy()
-    fireEvent.click(pickup.getByRole('button', { name: /^done$/i }))
     expect(pickup.queryByLabelText(/^address line/i)).toBeNull()
+    expect((pickup.getByLabelText(/^city/i) as HTMLInputElement).readOnly).toBe(false)
+    expect((pickup.getByLabelText(/^pin code/i) as HTMLInputElement).readOnly).toBe(false)
+    expect((pickup.getByLabelText(/^state/i) as HTMLInputElement).readOnly).toBe(false)
+    fireEvent.click(pickup.getByRole('button', { name: /^done$/i }))
+    expect(pickup.queryByLabelText(/^city/i)).toBeNull()
   })
 
   it('shows only the search and a manual link before a place is picked', () => {
@@ -214,7 +216,8 @@ describe('step 1 compact', () => {
     expect(delivery.getByTestId('Search the delivery address')).toBeTruthy()
     expect(delivery.queryByLabelText(/^city/i)).toBeNull()
     fireEvent.click(delivery.getByRole('button', { name: /enter the address manually/i }))
-    expect(delivery.getByLabelText(/^address line/i)).toBeTruthy()
+    expect(delivery.getByLabelText(/^city/i)).toBeTruthy()
+    expect(delivery.queryByLabelText(/^address line/i)).toBeNull()
   })
 
   it('opens the address fields by itself when one has an error', () => {
@@ -222,14 +225,20 @@ describe('step 1 compact', () => {
     expect(within(screen.getByRole('group', { name: 'Pickup' })).getByLabelText(/^pin code/i)).toBeTruthy()
   })
 
-  it('folds the site details away, and opens them when a value is set', () => {
-    const first = render(<AddressStep draft={emptyDraft()} onChange={() => {}} errors={{}} />)
-    expect(screen.queryByLabelText(/loading dock/i)).toBeNull()
-    fireEvent.click(within(screen.getByRole('group', { name: 'Pickup' })).getByRole('button', { name: /site details/i }))
-    expect(screen.getByLabelText(/loading dock/i)).toBeTruthy()
-    first.unmount()
-    render(<AddressStep draft={{ ...emptyDraft(), unloading_help: true }} onChange={() => {}} errors={{}} />)
-    expect((screen.getByLabelText(/need unloading help/i) as HTMLInputElement).checked).toBe(true)
+  it('has no site details, no delivery date and shows a Priority choice after the cards', () => {
+    render(<AddressStep draft={emptyDraft()} onChange={() => {}} errors={{}} />)
+    expect(screen.queryByRole('button', { name: /site details/i })).toBeNull()
+    expect(screen.queryByLabelText(/loading dock|access restrictions|loading help|unloading help|delivery date/i)).toBeNull()
+    const group = screen.getByRole('group', { name: 'Priority' })
+    expect(within(group).getAllByRole('radio')).toHaveLength(3)
+    expect((within(group).getByRole('radio', { name: /^medium/i }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('writes the chosen priority into the draft', () => {
+    const onChange = vi.fn()
+    render(<AddressStep draft={emptyDraft()} onChange={onChange} errors={{}} />)
+    fireEvent.click(screen.getByRole('radio', { name: /^low/i }))
+    expect(onChange).toHaveBeenCalledWith({ priority: 'low' })
   })
 })
 

@@ -4,7 +4,7 @@ import { Alert, Button, Card } from '@/components/ui'
 import type { AssistResult, LoadDraft, VehicleClass } from '@/types/load'
 import { formatDate } from '@/utils/display'
 import GstSummary from './GstSummary'
-import { allSpecialHandling, EWAY_THRESHOLD_INR, ewayLocal, inr, itemTotals, kgText, rateText, TEMP_RANGES } from './logic'
+import { addressOf, allSpecialHandling, EWAY_THRESHOLD_INR, ewayLocal, inr, itemTotals, kgText, priorityLabel, rangeText, rateText, TEMP_RANGES } from './logic'
 
 function Section({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
   return (
@@ -44,18 +44,23 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
   const totals = itemTotals(draft.items)
   const local = ewayLocal(draft.items)
   const eway = assist?.eway.required ?? local.required
-  const vehicle = vehicles.find(v => v.key === draft.vehicle_class)?.name ?? draft.vehicle_class
+  const vehicleName = vehicles.find(v => v.key === draft.vehicle_class)?.name ?? draft.vehicle_class
+  const vehicle = vehicleName
+    ? `${draft.vehicle_mode === 'manual' ? 'Chosen' : 'Recommended'}: ${vehicleName}`
+    : 'The logistic company decides'
+  const range = assist?.estimate ? rangeText(assist.estimate.low, assist.estimate.high) : null
   const temp = draft.temp_choice ? TEMP_RANGES[draft.temp_choice].label : null
   const handling = allSpecialHandling(draft)
 
   return (
     <div className="space-y-4">
       <Card padded className="!p-4" aria-label="Load summary">
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div><dt className="text-xs text-muted">Total weight</dt><dd className="font-semibold tabular text-text">{kgText(totals.weight_kg)}</dd></div>
           <div><dt className="text-xs text-muted">Total declared value</dt><dd className="font-semibold tabular text-text">{totals.declared_value > 0 ? inr(totals.declared_value) : 'Not declared'}</dd></div>
           <div><dt className="text-xs text-muted">From and to</dt><dd className="font-semibold text-text">{draft.pickup_city} → {draft.delivery_city}</dd></div>
           <div><dt className="text-xs text-muted">Pickup date</dt><dd className="font-semibold text-text">{draft.pickup_date ? formatDate(draft.pickup_date) : '—'}</dd></div>
+          <div><dt className="text-xs text-muted">Priority</dt><dd className="font-semibold text-text" data-testid="review-priority">{priorityLabel(draft.priority)}</dd></div>
         </dl>
       </Card>
 
@@ -95,19 +100,14 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-0.5 text-sm">
             <p className="font-medium text-text">Pickup: {draft.pickup_city}</p>
-            <p className="text-muted">{draft.pickup_address}, {draft.pickup_pincode}{draft.pickup_state_name ? `, ${draft.pickup_state_name}` : ''}</p>
+            <p className="text-muted">{addressOf(draft, 'pickup')}</p>
             <p className="text-muted">{draft.pickup_date ? formatDate(draft.pickup_date) : ''}{draft.pickup_slot ? `, ${SLOT_TEXT[draft.pickup_slot]}` : ''}</p>
             <p className="text-muted">Contact: {draft.pickup_contact_name}, {draft.pickup_contact_phone}</p>
-            {(draft.loading_dock || draft.access_restrictions || draft.loading_help) && (
-              <p className="text-muted">{[draft.loading_dock && 'Loading dock available', draft.access_restrictions, draft.loading_help && 'Loading help needed'].filter(Boolean).join('. ')}</p>
-            )}
           </div>
           <div className="space-y-0.5 text-sm">
             <p className="font-medium text-text">Delivery: {draft.delivery_city}</p>
-            <p className="text-muted">{draft.delivery_address}, {draft.delivery_pincode}{draft.delivery_state_name ? `, ${draft.delivery_state_name}` : ''}</p>
-            {draft.delivery_date && <p className="text-muted">By {formatDate(draft.delivery_date)}</p>}
+            <p className="text-muted">{addressOf(draft, 'delivery')}</p>
             <p className="text-muted">Receiver: {draft.delivery_contact_name}, {draft.delivery_contact_phone}</p>
-            {draft.unloading_help && <p className="text-muted">Unloading help needed</p>}
           </div>
         </div>
       </Section>
@@ -115,20 +115,19 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
       <Section title="Truck and price" onEdit={() => onEdit(2)}>
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div><dt className="text-xs text-muted">Load type</dt><dd className="font-medium text-text">{draft.load_type === 'ftl' ? 'Full truck load' : 'Part truck load'}</dd></div>
-          <div><dt className="text-xs text-muted">Vehicle</dt><dd className="font-medium text-text">{vehicle || 'Logistic company decides'}</dd></div>
+          <div><dt className="text-xs text-muted">Vehicle</dt><dd className="font-medium text-text" data-testid="review-vehicle">{vehicle}</dd></div>
           {draft.capacity_t && <div><dt className="text-xs text-muted">Capacity</dt><dd className="font-medium text-text">{draft.capacity_t} t</dd></div>}
           {temp && <div><dt className="text-xs text-muted">Temperature</dt><dd className="font-medium text-text">{temp}</dd></div>}
         </dl>
         {handling.length > 0 && <p className="flex flex-wrap items-center gap-2 text-sm text-muted">Handling: <Chips items={handling} /></p>}
-        <p className="text-sm text-text" data-testid="review-pricing">
-          {draft.quote_requested
-            ? <>Get quotes from companies{draft.budget_inr ? <span className="text-muted">, target budget {inr(Number(draft.budget_inr))}</span> : null}.</>
-            : <>Book at my price: <span className="font-semibold">{inr(Number(draft.budget_inr))}</span>.</>}
-        </p>
-        {assist?.estimate && (
-          <p className="text-sm text-text">Estimated freight: <span className="font-semibold">{inr(assist.estimate.low)} – {inr(assist.estimate.high)}</span> <span className="text-muted">{assist.estimate.label}</span></p>
+        {range && assist?.estimate ? (
+          <p className="text-sm text-text" data-testid="review-pricing">
+            Recommended freight: <span className="font-semibold">{range}</span> <span className="text-muted">({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km)</span>.
+            Logistic companies can book your load at any price in this range.
+          </p>
+        ) : (
+          <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the route.</p>
         )}
-        <p className="text-sm text-muted">{draft.routing === 'chosen' ? `Visible only to the ${draft.company_ids.length} logistic ${draft.company_ids.length === 1 ? 'company' : 'companies'} you chose.` : 'Visible to all companies on this lane.'}</p>
       </Section>
 
       {error && <Alert tone="danger">{error}</Alert>}

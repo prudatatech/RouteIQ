@@ -3,10 +3,16 @@
  * load. Plain functions, no screen.
  */
 import type { LoadDraft, LoadPayload, ProductHandling, ProductRow, SpecialHandling, TempChoice, TempMode } from '@/types/load'
-import { DRAFT_VERSION, emptyDraft, emptyRow, randomId, LAST_STEP } from './logic'
+import { DRAFT_VERSION, emptyDraft, emptyRow, isPriority, randomId, LAST_STEP } from './logic'
 
 /** Where an unversioned saved step (the five-step form) lands in the four-step form. */
 export const OLD_STEP_MAP: Record<number, number> = { 0: 1, 1: 1, 2: 0, 3: 2, 4: 3 }
+
+/** Fields an earlier draft may carry that the form no longer asks for. They are dropped, never sent. */
+const LEGACY_FIELDS = [
+  'budget_inr', 'quote_requested', 'routing', 'company_ids', 'delivery_date', 'loading_dock', 'access_restrictions',
+  'loading_help', 'unloading_help',
+] as const
 
 const LOAD_LEVEL: SpecialHandling[] = ['do_not_stack', 'this_side_up', 'odc']
 
@@ -35,9 +41,15 @@ export function mergeDraft(saved: Partial<LoadDraft> | null | undefined): LoadDr
   if (saved.v !== DRAFT_VERSION) {
     const old = Number.isInteger(saved.step) ? (saved.step as number) : 0
     merged.step = OLD_STEP_MAP[old] ?? 0
-    // The old form had a plain "request quotation" tick; with no price named, getting quotes is the only way to book.
-    if (!merged.quote_requested && !String(merged.budget_inr ?? '').trim()) merged.quote_requested = true
   }
+  // The price, quote, company, delivery date and site fields are gone: ignore what an old draft has in them.
+  for (const k of LEGACY_FIELDS) delete (merged as unknown as Record<string, unknown>)[k]
+  if (!isPriority(merged.priority)) merged.priority = 'medium'
+  // Recommend unless the person had chosen a vehicle themselves.
+  merged.vehicle_mode = saved.vehicle_mode === 'recommend' || saved.vehicle_mode === 'manual'
+    ? saved.vehicle_mode
+    : saved.transport_touched && saved.vehicle_class ? 'manual' : 'recommend'
+  merged.items = merged.items.map(i => { const { hsn_locked: _gone, ...row } = i as ProductRow & { hsn_locked?: boolean }; return row })
   merged.v = DRAFT_VERSION
   merged.step = Math.min(Math.max(merged.step, 0), LAST_STEP)
   const fixed = normalizeHandling(merged.items, Array.isArray(merged.special_handling) ? merged.special_handling : [])
@@ -64,7 +76,6 @@ export function repostToDraft(payload: Partial<LoadPayload>, repostedFrom: strin
     product_name: str(i.product_name),
     hsn_code: str(i.hsn_code),
     gst_rate: i.gst_rate ?? null,
-    hsn_locked: !!i.hsn_code && i.gst_rate !== undefined && i.gst_rate !== null,
     rate_options: i.gst_rate !== undefined && i.gst_rate !== null ? [i.gst_rate] : [],
     category: i.category ?? null,
     quantity: str(i.quantity),
@@ -74,7 +85,6 @@ export function repostToDraft(payload: Partial<LoadPayload>, repostedFrom: strin
     handling: (i.handling ?? []) as ProductHandling[],
   }))
   const fixed = normalizeHandling(items.length > 0 ? items : base.items, (payload.special_handling ?? []) as SpecialHandling[])
-  const budget = str(payload.budget_inr)
   return {
     ...base,
     items: fixed.items,
@@ -85,16 +95,13 @@ export function repostToDraft(payload: Partial<LoadPayload>, repostedFrom: strin
     delivery_city: str(payload.delivery_city), delivery_address: str(payload.delivery_address), delivery_pincode: str(payload.delivery_pincode),
     delivery_state_code: str(payload.delivery_state_code), delivery_lat: payload.delivery_lat ?? null, delivery_lng: payload.delivery_lng ?? null,
     delivery_contact_name: str(payload.delivery_contact_name), delivery_contact_phone: str(payload.delivery_contact_phone),
-    loading_dock: !!payload.loading_dock, access_restrictions: str(payload.access_restrictions),
-    load_type: payload.load_type ?? '', vehicle_class: str(payload.vehicle_class), capacity_t: str(payload.capacity_t),
+    priority: isPriority(payload.priority) ? payload.priority : 'medium',
+    load_type: payload.load_type ?? '', vehicle_class: str(payload.vehicle_class), vehicle_mode: payload.vehicle_class ? 'manual' : 'recommend', capacity_t: str(payload.capacity_t),
     transport_touched: !!(payload.load_type || payload.vehicle_class),
     temp_choice: tempChoiceOf(payload.temp_min_c, payload.temp_max_c, payload.temp_mode),
     special_handling: fixed.special,
-    // A load with no price named could only be booked through quotes
-    budget_inr: budget, quote_requested: !!payload.quote_requested || !budget,
-    loading_help: !!payload.loading_help, unloading_help: !!payload.unloading_help,
-    // The dates are cleared on purpose: the person picks new ones.
-    pickup_date: '', delivery_date: '',
+    // The pickup date is cleared on purpose: the person picks a new one.
+    pickup_date: '',
     reposted_from: repostedFrom ?? payload.reposted_from ?? null,
   }
 }

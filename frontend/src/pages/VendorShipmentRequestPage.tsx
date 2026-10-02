@@ -17,6 +17,7 @@ import BusinessProfileStep from '@/components/load-post/BusinessProfileStep'
 import LoadConfirmation from '@/components/load-post/LoadConfirmation'
 import OtpModal from '@/components/load-post/OtpModal'
 import GoodsStep from '@/components/load-post/GoodsStep'
+import { isProductRecommendation } from '@/components/load-post/helpers'
 import RecommendationList from '@/components/load-post/RecommendationList'
 import ReviewStep from '@/components/load-post/ReviewStep'
 import TransportStep from '@/components/load-post/TransportStep'
@@ -80,17 +81,20 @@ export default function VendorShipmentRequestPage() {
 
   const { assist, loading: assistLoading } = useLoadAssist(draft, stage === 'form')
 
-  // While the person has not chosen the transport themselves, it follows the suggestion.
+  // The load type follows the suggestion until the person chooses one; the vehicle follows it while "Recommend for my goods" is on.
   useEffect(() => {
     const s = assist?.suggested
-    if (!s || draft.transport_touched) return
+    if (!s) return
+    const next: Partial<LoadDraft> = {}
+    if (!draft.transport_touched && draft.load_type !== s.load_type) next.load_type = s.load_type
     // The server may suggest a type without a vehicle (nothing fits yet)
     const vehicle = s.vehicle_class ?? ''
-    if (draft.load_type !== s.load_type || draft.vehicle_class !== vehicle) patch({ load_type: s.load_type, vehicle_class: vehicle })
-  }, [assist, draft.transport_touched, draft.load_type, draft.vehicle_class, patch])
+    if (draft.vehicle_mode === 'recommend' && draft.vehicle_class !== vehicle) next.vehicle_class = vehicle
+    if (Object.keys(next).length > 0) patch(next)
+  }, [assist, draft.transport_touched, draft.vehicle_mode, draft.load_type, draft.vehicle_class, patch])
 
   // The capacity is never typed: it follows the suggestion and the chosen vehicle, and is sent as capacity_t.
-  const capacity = deriveCapacity(assist?.suggested.capacity_t, vehicles.find(v => v.key === draft.vehicle_class), draft.transport_touched)
+  const capacity = deriveCapacity(assist?.suggested.capacity_t, vehicles.find(v => v.key === draft.vehicle_class), draft.vehicle_mode === 'manual')
   const capacityText = capacity === null || itemTotals(draft.items).weight_kg <= 0 ? '' : String(capacity)
   useEffect(() => {
     if (draft.capacity_t !== capacityText) patch({ capacity_t: capacityText })
@@ -191,13 +195,15 @@ export default function VendorShipmentRequestPage() {
 
   if (stage === 'done' && posted) {
     const vehicleName = vehicles.find(v => v.key === draft.vehicle_class)?.name ?? draft.vehicle_class
+    const est = assist?.estimate
     return (
       <Page width="form">
         <LoadConfirmation
           loadId={posted.id} loadNumber={posted.load_number}
           pickupCity={draft.pickup_city} deliveryCity={draft.delivery_city} pickupDate={draft.pickup_date || null}
           vehicleName={vehicleName} statusNote={posted.status_note ?? null} onPostAnother={postAnother}
-          chosenCount={draft.routing === 'chosen' ? draft.company_ids.length : 0} quoteRequested={draft.quote_requested}
+          priority={posted.priority ?? draft.priority}
+          priceMin={posted.price_min_inr ?? est?.low ?? null} priceMax={posted.price_max_inr ?? est?.high ?? null}
         />
       </Page>
     )
@@ -220,7 +226,7 @@ export default function VendorShipmentRequestPage() {
 
       {blockedKind && <NotVendorNotice kind={blockedKind} />}
       {draft.reposted_from && (
-        <Alert tone="info" title="Copied from an earlier load">Everything is filled in except the dates. Choose the new pickup date, then review.</Alert>
+        <Alert tone="info" title="Copied from an earlier load">Everything is filled in except the pickup date. Choose the new pickup date, then review.</Alert>
       )}
       {resumed && step === LAST_STEP && (
         <Alert tone="success" title="Welcome back">Your load is exactly as you left it. Press Submit Load when you are ready.</Alert>
@@ -241,21 +247,21 @@ export default function VendorShipmentRequestPage() {
         {step === 1 && (
           <GoodsStep
             items={draft.items} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
-            notes={notes(recsFor(1).filter(r => r.code !== 'bulk_template' && r.code !== 'eway_required'))}
+            recommendations={recs}
+            notes={notes(recsFor(1).filter(r => r.code !== 'bulk_template' && r.code !== 'eway_required' && !isProductRecommendation(r)))}
             bulkHint={recs.find(r => r.code === 'bulk_template')?.message}
           />
         )}
         {step === 2 && (
           <TransportStep
             draft={draft} onChange={patch} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesQuery.isLoading}
-            assist={assist}
+            assist={assist} assistLoading={assistLoading}
             truckNotes={notes(recsFor(2).filter(r => r.code !== 'budget_below_estimate'))}
-            priceNotes={notes(recsFor(2, ['budget_below_estimate']))}
           />
         )}
         {step === 3 && (
           <>
-            {notes(recs.filter(r => r.severity === 'warn' && r.code !== 'eway_required'))}
+            {notes(recs.filter(r => r.severity === 'warn' && r.code !== 'eway_required' && r.code !== 'budget_below_estimate' && !isProductRecommendation(r)))}
             <ReviewStep
               draft={draft} assist={assist} assistLoading={assistLoading} vehicles={vehicles}
               onEdit={goTo} onSubmit={onSubmit} submitting={submitting} signedIn={!!token} error={submitError} disabled={!!blockedKind}
