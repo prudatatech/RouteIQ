@@ -10,6 +10,8 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
+import RulesEditor from '@/components/tpl/RulesEditor'
+import StatementsPanel from '@/components/tpl/StatementsPanel'
 import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
 import { corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
@@ -354,6 +356,13 @@ export default function TplPartnerDetailPage() {
 
       {(partner.status === 'active' || partner.status === 'paused') && (
         <TplPartnerPerformance partnerId={partner.id} slaCommitment={partner.sla_commitment} />
+      )}
+
+      {!canDecide && (partner.status === 'active' || partner.status === 'paused') && (
+        <>
+          <RulesEditor tplId={partner.id} corridors={(partner.tpl_corridors ?? []).map(c => ({ id: c.id, corridor_name: c.corridor_name }))} />
+          <StatementsPanel tplId={partner.id} />
+        </>
       )}
 
       {partner.status === 'pending' && !canDecide && (
