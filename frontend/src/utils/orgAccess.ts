@@ -29,7 +29,13 @@ export const actorFor = (active: Membership | null): Actor => (isPlatformActor(a
 /** Where a path may be opened by this actor: /platform/* is for the platform owner only. */
 export function canOpenPath(pathname: string, active: Membership | null): boolean {
   if (pathname === '/platform' || pathname.startsWith('/platform/')) return isPlatformActor(active)
+  if (isPlatformOnlyPath(pathname)) return isPlatformActor(active)
   return true
+}
+
+/** Approvals belong to the platform: vendor KYC review and the 3PL application pages (a deep link shows a message, not a redirect). */
+export function isPlatformOnlyPath(pathname: string): boolean {
+  return pathname === '/admin/kyc' || pathname.startsWith('/admin/kyc/') || pathname.startsWith('/3pl-partners/')
 }
 
 /**

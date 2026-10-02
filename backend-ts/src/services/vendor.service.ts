@@ -13,6 +13,7 @@ import { gstinError, normalizeGstin } from '../utils/gstin';
 import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
 import { vendorOrgOf, currentOrgContext } from '../core/org-context';
+import { scopeQuery } from '../core/org-scope';
 import { releaseHeldLoads } from './loads/loads.service';
 import { HOLD_UNVERIFIED, acceptDirect, filterVisibleToCompany } from './loads/order-routing';
 import { assertVehicleFits } from './loads/vehicle-fit';
@@ -539,6 +540,32 @@ export const vendorService = {
    * can be decided, so a vendor who edits mid-review (or a second reviewer)
    * is not overwritten. Tells the vendor and leaves an audit entry.
    */
+  /** Basic profiles of the given vendors that the caller may see (see GET /vendor/basic). */
+  async basicProfiles(ids: string[]): Promise<Array<{ id: string; company_name: string | null; city: string | null; has_location: boolean }>> {
+    if (ids.length === 0) return [];
+    let allowed = ids;
+    const ctx = currentOrgContext();
+    if (ctx?.configured && !ctx.isPlatformAdmin) {
+      const org = ctx.org?.id;
+      if (!org) return [];
+      const seen = new Set<string>();
+      // vendors whose load is routed to the company, or is open to every company
+      const { data: loads, error } = await supabase.from('vendor_shipment_requests').select('vendor_id')
+        .in('vendor_id', ids).or(`carrier_org_id.eq.${org},carrier_org_id.is.null`);
+      if (error) throw new Error(error.message);
+      for (const l of loads ?? []) seen.add(l.vendor_id as string);
+      // vendors with a bid on one of the company's windows
+      const { data: bids, error: bErr } = await scopeQuery(supabase.from('capacity_bids').select('vendor_id, capacity_windows!inner(carrier_org_id)').in('vendor_id', ids), { carrier: 'capacity_windows.carrier_org_id' });
+      if (bErr) throw new Error(bErr.message);
+      for (const b of bids ?? []) seen.add(b.vendor_id as string);
+      allowed = ids.filter(i => seen.has(i));
+      if (allowed.length === 0) return [];
+    }
+    const { data, error } = await supabase.from('vendor_profiles').select('id, company_name, city, latitude, longitude').in('id', allowed);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(p => ({ id: p.id as string, company_name: (p.company_name as string) ?? null, city: (p.city as string) ?? null, has_location: p.latitude != null && p.longitude != null }));
+  },
+
   async approveKyc(vendorId: string, actor: AuditActor) {
     const { data, error } = await supabase
       .from('vendor_profiles')

@@ -277,7 +277,7 @@ export default function AppLayout() {
 
   // Managers are staff too: they get search, notifications and the menu counts for their sections
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
-  const badges = useNavBadges(isStaff, role === 'superadmin' || role === 'admin')
+  const badges = useNavBadges(isStaff, role === 'superadmin')
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
   const actor = actorFor(useOrgStore(selectActiveMembership))
   const sections = menuFor(role, actor)

@@ -10,6 +10,7 @@ import PartnersTab from '@/components/tpl/PartnersTab'
 import { returnTripKeys, useReturnTripsBoard } from '@/components/returnTrips/data'
 import { useNow } from '@/hooks/useNow'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
+import { useEffectiveRole } from '@/store/effectiveRole'
 
 export const RETURN_TRIP_TABS = ['open', 'bids', 'pool', 'partners'] as const
 export type ReturnTripTab = typeof RETURN_TRIP_TABS[number]
@@ -60,11 +61,13 @@ export default function ReturnTripsPage() {
     setTab('bids')
   }
 
+  // 3PL applications are the platform's to review: a company does not get the tab
+  const platform = useEffectiveRole().role === 'superadmin'
   const tabs: TabItem<ReturnTripTab>[] = [
     { id: 'open', label: 'Open return trips' },
     { id: 'bids', label: 'Bids to decide' },
     { id: 'pool', label: 'Combine loads' },
-    { id: 'partners', label: '3PL partners' },
+    ...(platform ? [{ id: 'partners' as const, label: '3PL partners' }] : []),
   ]
 
   return (
@@ -85,7 +88,7 @@ export default function ReturnTripsPage() {
           <BidsToDecideTab board={board} now={now} selectedBidId={selectedBidId} onSelectBid={setSelectedBidId} focusWindowId={focusWindowId} />
         )}
         {tab === 'pool' && <PoolTools />}
-        {tab === 'partners' && <PartnersTab />}
+        {tab === 'partners' && platform && <PartnersTab />}
       </TabPanel>
 
       <OpenWindowModal open={opening} onClose={() => setOpening(false)} />
