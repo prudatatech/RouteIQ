@@ -23,7 +23,7 @@ describe('the staff menu', () => {
     expect(links).not.toContain('/admin/kyc')
     expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
     expect(links).not.toContain('/admin/audit')
-    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit', '/admin/kyc']))
+    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
   })
 
   it('puts KYC review in the platform section', () => {
