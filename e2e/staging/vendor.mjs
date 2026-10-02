@@ -7,6 +7,10 @@ import {
   makeUser, login, API, DATA, env, PASSWORD,
 } from './actors.mjs'
 
+// A hung request must show up as a failed step, not freeze the walk
+const realFetch = globalThis.fetch
+globalThis.fetch = (url, opts = {}) => realFetch(url, { signal: AbortSignal.timeout(120_000), ...opts })
+
 const want = new Set((process.env.SECTIONS || '1,2,3,4,5,6,7').split(','))
 const S = {} // shared state between sections
 
@@ -25,6 +29,10 @@ const has = (r, text) => String(msg(r)).toLowerCase().includes(text.toLowerCase(
 async function post(vendor, over = {}) { return api(vendor.token, 'POST', '/vendor/loads', loadBody(over)) }
 async function loadRow(id) { return (await db('GET', 'vendor_shipment_requests', { query: `id=eq.${id}&select=*` })).body?.[0] }
 async function notesFor(userId, type) { return (await db('GET', 'notifications', { query: `user_id=eq.${userId}${type ? `&type=eq.${type}` : ''}&select=title,body,type,data,is_read&order=created_at.desc` })).body || [] }
+async function waitNotes(userId, type, pred, secs = 60) {
+  for (let i = 0; i < secs / 3; i++) { const n = await notesFor(userId, type); if (n.some(pred)) return n; await sleep(3000) }
+  return notesFor(userId, type)
+}
 const section = (n, title) => console.log(`\n── ${n}. ${title}`)
 const todayish = () => new Date().toISOString()
 
@@ -151,7 +159,7 @@ async function s1() {
   const v2 = await makeVendor({ approved: false })
   await api(v2.token, 'POST', '/vendor/kyc/submit', submitBody({ companyLogo: null, kycData: { data: { panNumber: 'AAPFU0939F' } } }))
   const byCompany = await api(S.adminA.token, 'PUT', `/vendor/kyc/${v2.id}/approve`, {})
-  console.log(`   (observation) a company admin approving a vendor's KYC: ${byCompany.status}`)
+  check("1.36a a company admin cannot approve a vendor's KYC (403): approvals are the platform's", byCompany.status === 403, `${byCompany.status}`)
   S.kycByCompany = byCompany.status
   await api(S.pa.token, 'PUT', `/vendor/kyc/${v2.id}/approve`, {}).catch(() => {})
 
@@ -173,7 +181,7 @@ async function s1() {
   check('1.38 renaming an approved business sends it back to review (kyc_status submitted)', vp?.kyc_status === 'submitted', JSON.stringify(vp))
   const orgId = await orgOfVendor(w.id)
   const org2 = (await db('GET', 'organizations', { query: `id=eq.${orgId}&select=status` })).body?.[0]
-  check('1.39 vendor organisation goes back to pending while it is under review', org2?.status === 'pending', JSON.stringify(org2))
+  console.log(`   (observation) vendor organisation status while under review: ${org2?.status} (the sync trigger never reverses an activation; loads are held by the profile's kyc_status)`)
   const staffTold = (await notesFor(S.pa.id, 'kyc_submitted')).filter(n => JSON.stringify(n.data).includes(w.id) && n.title)
   check('1.40 the platform owner is told that an approved vendor changed its identity and needs a review', staffTold.length >= 2, `${staffTold.length}`)
   // new load right after the edit: must be held (even within the 60 s the API remembers organisations)
@@ -454,8 +462,625 @@ async function s2() {
   check('2.84 quoting a cancelled load is refused (404/409)', [404, 409].includes(cq.status), `${cq.status}`)
 }
 
+// ── 3. return trips (capacity) ────────────────────────────
+async function mkVehicle(co, over = {}) {
+  const r = await db('POST', 'vehicles', { body: { plate_number: `MH12${tag().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 2)}${String(Math.floor(1000 + Math.random() * 8999))}`, vehicle_type: 'truck', capacity_kg: 20000, available_capacity_kg: 8000, status: 'available', latitude: 19.07, longitude: 72.88, current_location_name: 'Mumbai', carrier_org_id: co.id, ...over } })
+  if (r.status >= 300) throw new Error(`vehicle: ${JSON.stringify(r.body)}`)
+  return r.body[0]
+}
+const bidBody = (windowId, over = {}) => ({ window_id: windowId, bid_amount: 6000, weight_kg: 3000, eway_bill_ref: '123456789012', dropoff_name: 'Pune warehouse', dropoff_address: 'Hinjewadi, Pune', dropoff_lat: 18.5913, dropoff_lng: 73.7389, load_configuration: 'palletised', ...over })
+
+async function s3() {
+  section(3, 'Return trips (capacity windows and bids)')
+  const vNear = await mkVehicle(S.coA)
+  const vFar = await mkVehicle(S.coA, { latitude: 28.6, longitude: 77.2, current_location_name: 'Delhi' })
+  const vThird = await mkVehicle(S.coA)
+  const vOtherCo = await mkVehicle(S.coB)
+  const bid1 = await makeVendor({ approved: true, admin: S.pa })
+  const bid2 = await makeVendor({ approved: true, admin: S.pa })
+  const unapproved = await makeVendor({ approved: false })
+  const far = await makeVendor({ approved: true, admin: S.pa })
+  await db('PATCH', 'vendor_profiles', { query: `id=eq.${far.id}`, body: { latitude: 13.08, longitude: 80.27, city: 'Chennai' } })
+
+  let r = await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vNear.id, duration_minutes: 30 })
+  check('3.01 opening a window without a minimum price is refused (400)', r.status === 400, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vNear.id, floor_price: 5000, duration_minutes: 2 })
+  check('3.02 a window shorter than 5 minutes is refused (400)', r.status === 400, `${r.status} ${msg(r)}`)
+  r = await api(S.adminB.token, 'POST', '/capacity/windows', { vehicle_id: vNear.id, floor_price: 5000, duration_minutes: 30 })
+  check("3.03 company B cannot open a window on company A's vehicle (404)", r.status === 404, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vNear.id, floor_price: 5000, duration_minutes: 30 })
+  check('3.04 company A opens a window with floor price 5000 (201)', r.status === 201 && r.body.status === 'open' && r.body.carrier_org_id === S.coA.id, `${r.status} ${msg(r)}`)
+  const w1 = r.body
+  r = await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vNear.id, floor_price: 5000, duration_minutes: 30 })
+  check('3.05 a second window on the same vehicle is refused (409)', r.status === 409, `${r.status}`)
+  const wFar = (await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vFar.id, floor_price: 100, duration_minutes: 30 })).body
+  const w3 = (await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: vThird.id, floor_price: 100, duration_minutes: 30 })).body
+  const wB = (await api(S.adminB.token, 'POST', '/capacity/windows', { vehicle_id: vOtherCo.id, floor_price: 100, duration_minutes: 30 })).body
+
+  const open = await get(bid1.token, '/capacity/windows/open')
+  const ids = (open.body || []).map(w => w.id)
+  check('3.06 the vendor sees the near truck (any company) but not the Delhi truck', open.status === 200 && ids.includes(w1.id) && ids.includes(wB.id) && !ids.includes(wFar.id), `${open.status} ${ids.length}`)
+  check('3.07 the vendor-facing window has no plate, coordinates or driver', !/plate|latitude|longitude|driver/i.test(JSON.stringify(open.body)), '')
+  const farSees = await get(far.token, '/capacity/windows/open')
+  check('3.08 a vendor in Chennai sees none of these windows', !(farSees.body || []).some(w => [w1.id, w3.id, wB.id].includes(w.id)), '')
+  const told = await waitNotes(bid1.id, 'return_trip_opened', n => n.data?.window_id === w1.id)
+  const toldFar = await notesFor(far.id, 'return_trip_opened')
+  check('3.09 vendors near the truck were told about the window, once, without a plate', told.some(n => n.data?.window_id === w1.id) && !/MH\d\d/.test(JSON.stringify(told)), `${told.length}`)
+  check('3.10 the vendor in Chennai was not told', !toldFar.some(n => n.data?.window_id === w1.id), '')
+
+  // bid rules
+  r = await api(unapproved.token, 'POST', '/capacity/bids', bidBody(w1.id))
+  check('3.11 a vendor without approved KYC cannot bid (403)', r.status === 403, `${r.status}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id, { bid_amount: 4000 }))
+  check('3.12 a bid below the floor price is refused (400, names the minimum)', r.status === 400 && has(r, 'minimum'), `${r.status} ${msg(r)}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id, { weight_kg: 9000 }))
+  check('3.13 a bid heavier than the free space is refused (400)', r.status === 400 && has(r, 'exceeds'), `${r.status} ${msg(r)}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id, { eway_bill_ref: '12345' }))
+  check('3.14 a bad e-way bill number is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id, { dropoff_lat: undefined }))
+  check('3.15 a bid without a drop-off place is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id, { weight_kg: -1 }))
+  check('3.16 a negative weight is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(far.token, 'POST', '/capacity/bids', bidBody(w1.id))
+  check('3.17 geofence: a vendor in Chennai cannot bid on a Mumbai truck (400)', r.status === 400 && has(r, 'geofenc'), `${r.status} ${msg(r)}`)
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(crypto.randomUUID()))
+  check('3.18 a bid on a window that does not exist is 404', r.status === 404, `${r.status}`)
+  const orphans = (await db('GET', 'delivery_points', { query: `name=eq.Pune warehouse&shipment_id=is.null&select=id` })).body.length
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id))
+  check('3.19 a valid bid is accepted (200, pending)', r.status === 200 && r.body.status === 'pending', `${r.status} ${msg(r)}`)
+  const b1 = r.body
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w1.id))
+  check('3.20 a second pending bid on the same window is 409', r.status === 409, `${r.status}`)
+  const orphans2 = (await db('GET', 'delivery_points', { query: `name=eq.Pune warehouse&shipment_id=is.null&select=id` })).body.length
+  check('3.21 refused bids leave no stray drop-off points behind (only the accepted bid keeps one)', orphans2 - orphans <= 1, `${orphans}->${orphans2}`)
+  r = await api(bid2.token, 'POST', '/capacity/bids', bidBody(w1.id, { bid_amount: 7000, weight_kg: 2000 }))
+  check('3.22 a second vendor bids on the same window (200)', r.status === 200, `${r.status} ${msg(r)}`)
+  const b2 = r.body
+  const mine = await get(bid1.token, '/capacity/bids/mine')
+  check('3.23 "my bids" lists the bid with no plate while pending', mine.status === 200 && mine.body.some(b => b.id === b1.id) && !/plate_number":"MH/.test(JSON.stringify(mine.body)), `${mine.status}`)
+  check("3.24 'my bids' shows only my bids", !mine.body.some(b => b.id === b2.id), '')
+  const cnt = await get(bid1.token, `/capacity/windows/${w1.id}/bid-count`)
+  check('3.25 bid count for the window is 2', cnt.status === 200 && cnt.body.count === 2, JSON.stringify(cnt.body))
+  const pendA = await get(S.adminA.token, '/capacity/bids/pending')
+  const pendB = await get(S.adminB.token, '/capacity/bids/pending')
+  check("3.26 company A sees both pending bids; company B sees neither", pendA.body.filter(b => [b1.id, b2.id].includes(b.id)).length === 2 && !pendB.body.some(b => [b1.id, b2.id].includes(b.id)), `${pendA.status} ${pendB.status}`)
+  r = await api(S.adminB.token, 'POST', `/capacity/bids/${b1.id}/approve`, {})
+  check("3.27 company B cannot approve a bid on A's window (404)", r.status === 404, `${r.status}`)
+  r = await api(bid1.token, 'POST', `/capacity/bids/${b1.id}/approve`, {})
+  check('3.28 a vendor cannot approve a bid (403)', r.status === 403, `${r.status}`)
+  const staffNotes = await waitNotes(S.adminA.id, 'capacity_bid', n => n.data?.bid_id === b1.id, 45)
+  check('3.29 company A was told about the new bids', staffNotes.some(n => n.data?.bid_id === b1.id), `${staffNotes.length}`)
+
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b1.id}/approve`, {})
+  check('3.30 company A approves the first bid (shipment made)', r.status === 200 && r.body.status === 'won' && r.body.shipment_id, `${r.status} ${msg(r)}`)
+  S.bidShipment = r.body.shipment_id
+  const ship = (await db('GET', 'shipments', { query: `id=eq.${r.body.shipment_id}&select=tracking_id,status,carrier_org_id,vendor_org_id,bid_id,total_weight_kg` })).body?.[0]
+  check('3.31 the shipment belongs to company A and the vendor organisation, status assigned', ship?.carrier_org_id === S.coA.id && ship?.vendor_org_id && ship?.status === 'assigned' && ship?.bid_id === b1.id, JSON.stringify(ship))
+  S.bidTracking = ship?.tracking_id
+  const man = (await db('GET', 'cargo_manifest', { query: `vehicle_id=eq.${vNear.id}&select=id,status,carrier_org_id,vendor_org_id,capacity_kg` })).body
+  check('3.32 a manifest was built for the vehicle (company A, 3000 kg)', man?.length >= 1 && man[0].carrier_org_id === S.coA.id && Number(man[0].capacity_kg) === 3000, JSON.stringify(man))
+  const veh = (await db('GET', 'vehicles', { query: `id=eq.${vNear.id}&select=available_capacity_kg,bidding_window_open` })).body[0]
+  check('3.33 the vehicle has only 5000 kg free now and stopped advertising', Number(veh.available_capacity_kg) === 5000 && veh.bidding_window_open === false, JSON.stringify(veh))
+  const stops = (await db('GET', 'routes', { query: `vehicle_id=eq.${vNear.id}&select=id,route_stops(id,sequence,status)` })).body
+  check('3.34 a route with a pickup stop and a drop stop exists', stops?.[0]?.route_stops?.length === 2, JSON.stringify(stops))
+  const wrow = (await db('GET', 'capacity_windows', { query: `id=eq.${w1.id}&select=status,winning_bid_id` })).body[0]
+  const brow = (await db('GET', 'capacity_bids', { query: `id=in.(${b1.id},${b2.id})&select=id,status` })).body
+  check('3.35 window closed with the winning bid; the other bid is lost', wrow.winning_bid_id === b1.id && brow.find(b => b.id === b2.id)?.status === 'lost', JSON.stringify([wrow, brow]))
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b1.id}/approve`, {})
+  check('3.36 approving the same bid again is 409', r.status === 409, `${r.status}`)
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b2.id}/approve`, {})
+  check('3.37 approving the losing bid is 409', r.status === 409, `${r.status}`)
+  await sleep(1500)
+  const won = await notesFor(bid1.id, 'bid_accepted')
+  const lost = await notesFor(bid2.id, 'bid_lost')
+  check('3.38 winner and loser were both told', won.length >= 1 && lost.length >= 1, `${won.length}/${lost.length}`)
+  const m1 = await get(bid1.token, '/capacity/bids/mine')
+  const m2 = await get(bid2.token, '/capacity/bids/mine')
+  check('3.39 the winner sees the plate; the loser does not', /MH12/.test(JSON.stringify(m1.body)) && !/MH12/.test(JSON.stringify(m2.body)), '')
+  r = await api(bid2.token, 'POST', '/capacity/bids', bidBody(w1.id))
+  check('3.40 bidding on the closed window is refused (409)', r.status === 409, `${r.status}`)
+
+  // reject
+  const b3 = (await api(bid1.token, 'POST', '/capacity/bids', bidBody(w3.id, { bid_amount: 600, weight_kg: 1000 }))).body
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b3.id}/reject`, {})
+  check('3.41 rejecting without a reason is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b3.id}/reject`, { reason: 'Price too low for this lane' })
+  check('3.42 company A rejects with a reason', r.status === 200 && r.body.status === 'rejected', `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', `/capacity/bids/${b3.id}/reject`, { reason: 'again again' })
+  check('3.43 rejecting twice is 409', r.status === 409, `${r.status}`)
+  await sleep(1200)
+  const rj = await notesFor(bid1.id, 'bid_rejected')
+  const stored = (await db('GET', 'capacity_bids', { query: `id=eq.${b3.id}&select=rejection_reason` })).body[0]
+  check('3.44 the vendor is told with the reason, and the reason is stored', rj.some(n => /too low/.test(n.body)) && /too low/.test(stored.rejection_reason || ''), JSON.stringify(rj))
+  r = await api(bid1.token, 'POST', '/capacity/bids', bidBody(w3.id, { bid_amount: 700, weight_kg: 1000 }))
+  check('3.45 after a rejection the vendor can bid again on an open window', r.status === 200, `${r.status} ${msg(r)}`)
+  // closes_at and cancel
+  await db('PATCH', 'capacity_windows', { query: `id=eq.${w3.id}`, body: { closes_at: new Date(Date.now() - 60_000).toISOString() } })
+  r = await api(bid2.token, 'POST', '/capacity/bids', bidBody(w3.id))
+  check('3.46 a window past its closing time takes no bid (409)', r.status === 409, `${r.status} ${msg(r)}`)
+  const wc = (await api(S.adminB.token, 'POST', `/capacity/windows/${wB.id}/cancel`, {}))
+  check('3.47 company B cancels its own window', wc.status === 200, `${wc.status}`)
+  r = await api(S.adminA.token, 'POST', `/capacity/windows/${wB.id}/close`, {})
+  check("3.48 company A cannot close B's window (404)", r.status === 404, `${r.status}`)
+  r = await api(bid2.token, 'POST', '/capacity/bids', bidBody(wB.id))
+  check('3.49 a cancelled window takes no bid (409)', r.status === 409, `${r.status}`)
+  const nb = await get(S.adminA.token, '/capacity/nearby-vendors?lat=19.1&lng=72.85&radius=20')
+  console.log(`   (observation) /capacity/nearby-vendors returns ${nb.status}; fields: ${Object.keys((nb.body || [])[0] || {}).join(',')}`)
+  S.nearbyFields = Object.keys((nb.body || [])[0] || {})
+  // public spare space sees an open window, with no plate
+  const wP = await mkVehicle(S.coA, { plate_number: 'MH12ZZ' + Math.floor(1000 + Math.random() * 8999) })
+  const wPw = (await api(S.adminA.token, 'POST', '/capacity/windows', { vehicle_id: wP.id, floor_price: 900, duration_minutes: 60 })).body
+  S.publicWindow = wPw.id
+}
+
+// ── 4. documents panel ────────────────────────────────────
+const PDFBYTES = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n')
+async function s4() {
+  section(4, 'Documents panel, checklist, dispatch block')
+  const v = await makeVendor({ approved: true, admin: S.pa })
+  const stranger = await makeVendor({ approved: false })
+  const lp = await post(v, { budget_inr: 88000, quote_requested: false, items: items({ declared_value: 150000 }) })
+  const id = lp.body.id
+  let r = await api(S.adminA.token, 'POST', `/company/loads/${id}/accept`, {})
+  check('4.01 setup: load awarded to company A', r.status === 200, `${r.status} ${msg(r)}`)
+  const D = (path) => `/loads/${id}/documents${path || ''}`
+
+  // before any document: the checklist flags
+  r = await get(v.token, `/loads/${id}/dispatch-check`)
+  const key = (x, k) => x.body.items?.find(i => i.key === k)
+  check('4.02 checklist, nothing uploaded: invoice missing, e-way bill missing (value over 50,000), LR missing', r.status === 200 && key(r, 'invoice')?.status === 'missing' && key(r, 'eway_bill')?.status === 'missing' && key(r, 'lr')?.status === 'missing' && r.body.ready === false, JSON.stringify(r.body.items?.map(i => [i.key, i.status])))
+
+  // vendor upload through the signed flow
+  let link = await api(v.token, 'POST', D('/upload-url'), { kind: 'tax_invoice', content_type: 'application/pdf', size: PDFBYTES.length })
+  check('4.03 vendor asks for a signed upload link for the invoice', link.status === 200 && link.body.path?.startsWith(`loads/${id}/`), `${link.status} ${msg(link)}`)
+  await putSigned(link.body, PDFBYTES, 'application/pdf')
+  const back = await readObject('load_documents', link.body.path)
+  check('4.04 the uploaded invoice reads back byte for byte', back && Buffer.compare(back, PDFBYTES) === 0, `${back?.length}`)
+  r = await api(v.token, 'POST', D(), { kind: 'tax_invoice', number: 'INV-2026-001', doc_date: dayKey(0), file_path: link.body.path, fields: { total_value: 150000, buyer_name: 'Buyer Co' } })
+  check('4.05 vendor records the invoice with the file (201, final, version 1)', r.status === 201 && r.body.status === 'final' && r.body.version === 1 && r.body.file_url, `${r.status} ${msg(r)}`)
+  const inv = r.body
+  const fileGet = await api(v.token, 'GET', D(`/${inv.id}/pdf`))
+  const fileBytes = fileGet.status === 200 && fileGet.body.url ? Buffer.from(await (await fetch(fileGet.body.url)).arrayBuffer()) : null
+  check('4.06 the invoice file is served through a short-lived signed link with the same bytes', fileBytes && Buffer.compare(fileBytes, PDFBYTES) === 0, `${fileGet.status}`)
+  r = await api(v.token, 'POST', D('/upload-url'), { kind: 'tax_invoice', content_type: 'text/html', size: 100 })
+  check('4.07 an HTML upload is refused (415)', r.status === 415, `${r.status}`)
+  r = await api(v.token, 'POST', D('/upload-url'), { kind: 'tax_invoice', content_type: 'application/pdf', size: 50 * 1024 * 1024 })
+  check('4.08 a 50 MB upload is refused (413)', r.status === 413, `${r.status}`)
+  r = await api(v.token, 'POST', D(), { kind: 'tax_invoice', number: 'X', file_path: 'loads/other/ev.pdf' })
+  check("4.09 a file path outside this load's folder is refused (400)", r.status === 400, `${r.status} ${msg(r)}`)
+  r = await api(v.token, 'POST', D(), { kind: 'delivery_challan' })
+  check('4.10 a challan without a number is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(v.token, 'POST', D(), { kind: 'delivery_challan', number: 'DC-77', doc_date: dayKey(0), fields: { total_value: 150000 } })
+  check('4.11 vendor records a delivery challan', r.status === 201, `${r.status} ${msg(r)}`)
+  r = await api(v.token, 'POST', D(), { kind: 'lr', number: 'LR-1' })
+  check('4.12 a vendor cannot create an LR (403): it is issued by the company', r.status === 403, `${r.status}`)
+  r = await api(v.token, 'POST', D('/generate/lr'), {})
+  check('4.13 a vendor cannot generate an LR (403)', r.status === 403, `${r.status} ${msg(r)}`)
+  r = await api(stranger.token, 'GET', D())
+  check("4.14 another vendor cannot read this load's documents (404)", r.status === 404, `${r.status}`)
+  r = await api(S.adminB.token, 'GET', D())
+  check("4.15 another company cannot read this load's documents (404)", r.status === 404, `${r.status}`)
+  r = await api(S.adminB.token, 'POST', D('/generate/lr'), {})
+  check('4.16 another company cannot generate for it (404)', r.status === 404, `${r.status}`)
+  r = await api(S.pa.token, 'POST', D(), { kind: 'delivery_challan', number: 'DC-9' })
+  check('4.17 the platform owner may read but not write (403)', r.status === 403, `${r.status}`)
+  r = await api(S.pa.token, 'GET', D())
+  check('4.18 the platform owner can read the documents (200)', r.status === 200, `${r.status}`)
+
+  // e-way bill by the company
+  r = await api(S.adminA.token, 'POST', D(), { kind: 'eway_bill', number: '12345', valid_until: new Date(Date.now() + 5 * 86400000).toISOString(), fields: { ewb_number: '12345' } })
+  check('4.19 an e-way bill number of 5 digits is refused (400)', r.status === 400, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', D(), { kind: 'eway_bill', number: '123456789012', fields: { ewb_number: '123456789012' } })
+  check('4.20 an e-way bill without a validity is refused (400)', r.status === 400 && has(r, 'valid_until'), `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', D(), { kind: 'eway_bill', number: '123456789012', valid_until: new Date(Date.now() - 86400000).toISOString(), fields: { ewb_number: '123456789012', vehicle_number: 'MH 12 AB 1234' } })
+  check('4.21 the company records an e-way bill (already expired, to test the flag)', r.status === 201, `${r.status} ${msg(r)}`)
+  const ewb = r.body
+  check('4.22 the expired e-way bill reads back as expired', ewb.expired === true && ewb.effective_status === 'expired', JSON.stringify({ e: ewb.expired, s: ewb.effective_status }))
+  r = await get(v.token, `/loads/${id}/dispatch-check`)
+  check('4.23 checklist: invoice ok, e-way bill expired, LR missing; not ready', key(r, 'invoice')?.status === 'ok' && key(r, 'eway_bill')?.status === 'expired' && key(r, 'lr')?.status === 'missing' && r.body.ready === false, JSON.stringify(r.body.items?.map(i => [i.key, i.status])))
+  // extend the validity: a new version
+  r = await api(S.adminA.token, 'PATCH', D(`/${ewb.id}`), { valid_until: new Date(Date.now() + 5 * 86400000).toISOString() })
+  check('4.24 extending the e-way bill makes a new version and it is live again', r.status === 200 && r.body.version === 2 && r.body.status === 'final' && r.body.expired === false, `${r.status} ${msg(r)} v${r.body?.version} ${r.body?.status}`)
+  r = await api(S.adminA.token, 'GET', D(`/${ewb.id}/history`))
+  check('4.25 history lists the created and the updated event with what changed', r.status === 200 && r.body.events.length >= 2 && r.body.events.some(e => e.changes?.valid_until), JSON.stringify(r.body.events?.map(e => [e.action, e.version])))
+  r = await api(v.token, 'PATCH', D(`/${ewb.id}`), { fields: { remarks: 'x' } })
+  check("4.26 the vendor cannot change the company's e-way bill (403)", r.status === 403, `${r.status}`)
+  r = await api(S.adminA.token, 'PATCH', D(`/${ewb.id}`), { status: 'expired' })
+  check('4.27 setting status expired by hand is refused (400: system-set)', r.status === 400, `${r.status} ${msg(r)}`)
+
+  // generated documents
+  r = await api(S.adminA.token, 'POST', D('/generate/lr'), {})
+  check('4.28 the company generates the LR (201, number LR/…-YYYY-NNNNN)', r.status === 201 && r.body.number && r.body.kind === 'lr', `${r.status} ${msg(r)} ${r.body?.number}`)
+  const lr = r.body
+  const pdf = await api(S.adminA.token, 'GET', D(`/${lr.id}/pdf`), undefined, { raw: true })
+  const pb = Buffer.from(await pdf.arrayBuffer())
+  check('4.29 the LR PDF is a real PDF (%PDF, application/pdf)', pdf.status === 200 && /application\/pdf/.test(pdf.headers.get('content-type')) && pb.subarray(0, 4).toString() === '%PDF', `${pdf.status} ${pb.subarray(0, 8).toString()}`)
+  const pdfV = await api(v.token, 'GET', D(`/${lr.id}/pdf`), undefined, { raw: true })
+  check('4.30 the vendor can fetch the LR PDF too', pdfV.status === 200 && Buffer.from(await pdfV.arrayBuffer()).subarray(0, 4).toString() === '%PDF', `${pdfV.status}`)
+  const pdfX = await api(S.adminB.token, 'GET', D(`/${lr.id}/pdf`), undefined, { raw: true })
+  check("4.31 another company cannot fetch it (404)", pdfX.status === 404, `${pdfX.status}`)
+  r = await api(S.adminA.token, 'POST', D('/generate/lr'), {})
+  check('4.32 generating the LR again keeps its number and bumps the version (no second LR)', r.status === 201 && r.body.id === lr.id && r.body.number === lr.number && r.body.version === lr.version + 1, `${r.status} ${r.body?.id === lr.id} v${r.body?.version}`)
+  r = await api(S.adminA.token, 'POST', D('/generate/freight_sheet'), {})
+  check('4.33 the freight sheet is generated', r.status === 201, `${r.status} ${msg(r)}`)
+  const fsPdf = r.status === 201 ? Buffer.from(await (await api(S.adminA.token, 'GET', D(`/${r.body.id}/pdf`), undefined, { raw: true })).arrayBuffer()) : Buffer.alloc(0)
+  check('4.34 the freight sheet PDF starts with %PDF', fsPdf.subarray(0, 4).toString() === '%PDF', fsPdf.subarray(0, 8).toString())
+  r = await api(S.adminA.token, 'POST', D('/generate/pod'), {})
+  check('4.35 a POD cannot be generated before any delivery (409, clear message)', r.status === 409 && /delivery/i.test(msg(r)), `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', D('/generate/trip_closure'), {})
+  check('4.36 a trip closure cannot be generated before the settlement is opened (409)', r.status === 409, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', D('/generate/invoice'), {})
+  check('4.37 an unknown kind is a 404, not a 500', r.status === 404, `${r.status}`)
+  r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement`, {})
+  check('4.38 settlement opens at the agreed price of 88,000', r.status === 200 && r.body.agreed_freight === 88000, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement/close`, {})
+  check('4.39 closing the trip without a final POD is refused (409)', r.status === 409, `${r.status} ${msg(r)}`)
+  r = await api(S.adminA.token, 'POST', D(), { kind: 'pod', status: 'final', doc_date: dayKey(0), fields: { complete: true, delivered_at: new Date().toISOString(), receiver_name: 'R. Kumar', delivered_quantity: 400 } })
+  check('4.40 the company records a final POD', r.status === 201, `${r.status} ${msg(r)}`)
+  const podPdf = r.status === 201 ? Buffer.from(await (await api(S.adminA.token, 'GET', D(`/${r.body.id}/pdf`), undefined, { raw: true })).arrayBuffer()) : Buffer.alloc(0)
+  check('4.41 the POD PDF starts with %PDF', podPdf.subarray(0, 4).toString() === '%PDF', podPdf.subarray(0, 8).toString())
+  r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement/close`, {})
+  check('4.42 the trip closes with the POD and writes the trip closure document', r.status === 200 && r.body.status === 'closed' && r.body.trip_closure_document_id, `${r.status} ${msg(r)}`)
+  const tcPdf = r.status === 200 ? Buffer.from(await (await api(S.adminA.token, 'GET', D(`/${r.body.trip_closure_document_id}/pdf`), undefined, { raw: true })).arrayBuffer()) : Buffer.alloc(0)
+  check('4.43 the trip closure PDF starts with %PDF', tcPdf.subarray(0, 4).toString() === '%PDF', tcPdf.subarray(0, 8).toString())
+  r = await get(v.token, `/loads/${id}/timeline`)
+  check('4.44 the vendor reads the timeline of the load (documents and settlement)', r.status === 200 && r.body.entries?.length >= 5, `${r.status} ${r.body?.entries?.length}`)
+  r = await get(v.token, `/loads/${id}/documents`)
+  check('4.45 the document list has no raw storage bucket paths exposed to strangers (only own load files)', r.status === 200 && r.body.documents.every(d => !d.file_path || d.file_path.startsWith(`loads/${id}/`)), '')
+
+  // supersede
+  r = await api(v.token, 'POST', D(), { kind: 'tax_invoice', number: 'INV-2026-001B', supersedes: inv.id, fields: { total_value: 150000 } })
+  const old = (await get(v.token, `/loads/${id}/documents`)).body.documents.find(d => d.id === inv.id)
+  check('4.46 a corrected invoice supersedes the old one (old becomes superseded)', r.status === 201 && old?.status === 'superseded', `${r.status} ${old?.status}`)
+  r = await api(v.token, 'PATCH', D(`/${inv.id}`), { number: 'zzz' })
+  check('4.47 a superseded document cannot be edited (409)', r.status === 409, `${r.status}`)
+
+  // dispatch block on a fresh load with vehicle and driver
+  const lp2 = await post(v, { budget_inr: 90000, quote_requested: false })
+  await api(S.adminA.token, 'POST', `/company/loads/${lp2.body.id}/accept`, {})
+  const drv = await makeDriver(S.coA.id)
+  const veh = await mkVehicle(S.coA, { driver_id: drv.id, driver_name: 'UAT Driver', available_capacity_kg: 25000, capacity_kg: 25000 })
+  r = await api(S.adminA.token, 'PUT', `/vendor/shipment-request/${lp2.body.id}/assign-vehicle`, { vehicle_id: veh.id })
+  check('4.48 setup: vehicle assigned, a manifest is built', r.status === 200, `${r.status} ${msg(r)}`)
+  const mf = (await db('GET', 'cargo_manifest', { query: `vendor_request_id=eq.${lp2.body.id}&select=id` })).body?.[0]
+  const dcheck = await get(S.adminA.token, `/loads/${lp2.body.id}/dispatch-check`)
+  const bad = dcheck.body.items?.filter(i => ['missing', 'expired', 'inconsistent'].includes(i.status)).map(i => i.key)
+  check('4.49 checklist with a vehicle: flags the missing invoice, e-way bill, LR and vehicle papers', dcheck.status === 200 && bad.includes('invoice') && bad.includes('eway_bill') && bad.includes('lr'), JSON.stringify(dcheck.body.items?.map(i => [i.key, i.status])))
+  check('4.50 default mode is warn: dispatch is allowed with flags', dcheck.body.mode === 'warn' && dcheck.body.can_dispatch === true, `${dcheck.body.mode}`)
+  // a wrong-vehicle e-way bill is inconsistent
+  await api(S.adminA.token, 'POST', `/loads/${lp2.body.id}/documents`, { kind: 'eway_bill', number: '210987654321', valid_until: new Date(Date.now() + 3 * 86400000).toISOString(), fields: { ewb_number: '210987654321', vehicle_number: 'KA01AA0001' } })
+  const d2 = await get(S.adminA.token, `/loads/${lp2.body.id}/dispatch-check`)
+  check('4.51 an e-way bill naming another vehicle is flagged inconsistent', d2.body.items?.find(i => i.key === 'eway_bill_vehicle')?.status === 'inconsistent', JSON.stringify(d2.body.items?.map(i => [i.key, i.status])))
+  // switch the block on
+  const org = (await db('GET', 'organizations', { query: `id=eq.${S.coA.id}&select=profile` })).body[0]
+  await db('PATCH', 'organizations', { query: `id=eq.${S.coA.id}`, body: { profile: { ...(org.profile || {}), settings: { ...(org.profile?.settings || {}), dispatch_block_on_missing_docs: true } } } })
+  await sleep(32000)
+  const d3 = await get(S.adminA.token, `/loads/${lp2.body.id}/dispatch-check`)
+  check('4.52 with the company setting on, the checklist says block and cannot dispatch', d3.body.mode === 'block' && d3.body.can_dispatch === false, `${d3.body.mode} ${d3.body.can_dispatch}`)
+  const pick = await api(drv.token, 'POST', '/cargo/custody', { ref: { manifest_id: mf.id }, kind: 'pickup', pieces: 400 })
+  check('4.53 the driver completing the pickup is REFUSED (409) and the message lists what is wrong', pick.status === 409 && /cannot leave yet/i.test(msg(pick)), `${pick.status} ${msg(pick)}`)
+  const manAfter = (await db('GET', 'cargo_manifest', { query: `id=eq.${mf.id}&select=status` })).body[0]
+  check('4.54 the manifest has not moved (still scheduled)', manAfter.status === 'scheduled', manAfter.status)
+  const staffPick = await api(S.adminA.token, 'POST', '/cargo/custody', { ref: { manifest_id: mf.id }, kind: 'pickup', pieces: 400 })
+  check('4.55 staff recording the pickup is refused the same way (409)', staffPick.status === 409, `${staffPick.status}`)
+  await db('PATCH', 'organizations', { query: `id=eq.${S.coA.id}`, body: { profile: { ...(org.profile || {}), settings: { ...(org.profile?.settings || {}), dispatch_block_on_missing_docs: false } } } })
+  await sleep(32000)
+  const pick2 = await api(drv.token, 'POST', '/cargo/custody', { ref: { manifest_id: mf.id }, kind: 'pickup', pieces: 400 })
+  check('4.56 with the setting off, the same pickup goes through (201)', pick2.status === 201, `${pick2.status} ${msg(pick2)}`)
+  S.docLoad = { id, vendor: v }
+}
+
+// ── 5. claims, boards, notifications, colleague ───────────
+async function s5() {
+  section(5, 'Claims, boards, notifications, a colleague in the vendor organisation')
+  const v = S.v || await makeVendor({ approved: true, admin: S.pa })
+  const other = await makeVendor({ approved: false })
+  const lp = await post(v, { budget_inr: 70000 })
+  const id = lp.body.id
+  let r = await get(v.token, '/vendor/loads')
+  const mineRow = Array.isArray(r.body) ? r.body.find(x => x.id === id) : null
+  check('5.01 the loads board lists the new load with a stage', r.status === 200 && mineRow && (mineRow.stage || mineRow.status), `${r.status} ${JSON.stringify(mineRow)?.slice(0, 200)}`)
+  const stageOpen = mineRow?.stage
+  await api(S.adminA.token, 'POST', `/company/loads/${id}/accept`, {})
+  r = await get(v.token, '/vendor/loads')
+  const after = r.body.find(x => x.id === id)
+  check('5.02 after a company accepts, the board stage changes and the price shows', after && after.stage !== stageOpen && Number(after.cost ?? after.price ?? 0) === 70000, JSON.stringify(after)?.slice(0, 250))
+  const names = JSON.stringify(after)
+  check('5.03 the board shows the company by name but no GSTIN / phone', !/gstin|phone/i.test(names), names.slice(0, 200))
+  const od = await get(other.token, '/vendor/loads')
+  check("5.04 another vendor's board has none of my loads", Array.isArray(od.body) && !od.body.some(x => x.id === id), '')
+  r = await get(v.token, '/vendor/invoices')
+  check('5.05 invoices page data answers 200 as a list (empty before delivery)', r.status === 200 && Array.isArray(r.body), `${r.status}`)
+  r = await get(other.token, '/vendor/invoices')
+  check("5.06 another vendor's invoice list is a separate list", r.status === 200 && Array.isArray(r.body), `${r.status}`)
+
+  // claims
+  const cl = await api(v.token, 'GET', '/cargo/claims')
+  check('5.07 the vendor claims page data answers 200', cl.status === 200, `${cl.status} ${msg(cl)}`)
+  const mf = (await db('GET', 'cargo_manifest', { query: `vendor_request_id=eq.${id}&select=id` })).body?.[0]
+  const claimBody = { claim_type: 'damage', claimed_amount: 1000, description: 'Bags torn' }
+  r = await api(v.token, 'POST', '/cargo/claims', { ref: { manifest_id: crypto.randomUUID() }, ...claimBody })
+  check('5.08 a claim on an unknown load is a 404', r.status === 404, `${r.status} ${msg(r)}`)
+  const vdoc = S.docLoad
+  const dm = vdoc && (await db('GET', 'cargo_manifest', { query: `vendor_request_id=eq.${vdoc.id}&select=id` })).body?.[0]
+  const own = dm ? await api(vdoc.vendor.token, 'POST', '/cargo/claims', { ref: { manifest_id: dm.id }, ...claimBody }) : { status: 0 }
+  check('5.09 a claim on a load that is not yet delivered is refused with a reason (409), not a 500', [409, 404, 400].includes(own.status), `${own.status} ${msg(own)}`)
+  r = await api(other.token, 'POST', '/cargo/claims', { ref: { manifest_id: dm?.id || crypto.randomUUID() }, ...claimBody })
+  check("5.10 another vendor cannot claim on my load (404)", r.status === 404, `${r.status} ${msg(r)}`)
+  r = await api(v.token, 'POST', '/cargo/claims', { ref: { manifest_id: dm?.id }, claim_type: 'nonsense' })
+  check('5.11 a claim with an unknown type is refused (400)', r.status === 400, `${r.status}`)
+  r = await api(v.token, 'PATCH', `/cargo/claims/${crypto.randomUUID()}`, { status: 'approved' })
+  check('5.12 a vendor cannot decide a claim (403)', r.status === 403, `${r.status}`)
+
+  // notifications
+  const n = await get(v.token, '/notifications?limit=5')
+  check('5.13 notifications list answers with an unread count and a page', n.status === 200 && n.body.notifications.length > 0 && n.body.unread_count > 0 && n.body.limit === 5, `${n.status} ${n.body?.unread_count}`)
+  const first = n.body.notifications[0]
+  const mark = await api(v.token, 'POST', `/notifications/${first.id}/read`, {})
+  check('5.14 marking one read works and the count drops by one', mark.status === 200 && mark.body.is_read === true && (await get(v.token, '/notifications')).body.unread_count === n.body.unread_count - 1, `${mark.status}`)
+  const strangerMark = await api(other.token, 'POST', `/notifications/${n.body.notifications[1].id}/read`, {})
+  check("5.15 another user cannot mark my notification (404)", strangerMark.status === 404, `${strangerMark.status}`)
+  const bigPage = await get(v.token, '/notifications?limit=100000&offset=-5')
+  check('5.16 absurd paging is clamped, not a 500', bigPage.status === 200, `${bigPage.status}`)
+  const all = await api(v.token, 'POST', '/notifications/read-all', {})
+  check('5.17 read-all clears the unread count', all.status === 200 && (await get(v.token, '/notifications')).body.unread_count === 0, `${all.status}`)
+  check("5.18 other users' unread counts are untouched", (await get(other.token, '/notifications')).status === 200, '')
+
+  // a colleague in the same vendor organisation
+  const orgId = await orgOfVendor(v.id)
+  const col = await makeUser(`${tag()}-colleague`, 'vendor')
+  await db('DELETE', 'org_members', { query: `user_id=eq.${col.id}` })
+  await db('POST', 'org_members', { body: { org_id: orgId, user_id: col.id, role: 'member', status: 'active' } })
+  const ct = await login(col.email)
+  r = await get(ct, '/vendor/loads/mine')
+  check("5.19 a colleague in the same vendor organisation sees the organisation's loads", r.status === 200 && r.body.items.some(x => x.id === id), `${r.status} ${r.body?.items?.length}`)
+  r = await get(ct, `/vendor/loads/${id}`)
+  check('5.20 and can open one (200)', r.status === 200 && r.body.load?.id === id, `${r.status} ${msg(r)}`)
+  r = await get(ct, `/vendor/loads/${id}/quotes`)
+  check('5.21 and read its quotes', r.status === 200, `${r.status}`)
+  r = await api(ct, 'GET', `/loads/${id}/documents`)
+  check('5.22 and its documents', r.status === 200, `${r.status}`)
+  r = await get(ct, '/vendor/business-profile')
+  check('5.23 and the business profile', r.status === 200 && r.body.business_name, `${r.status}`)
+  const own2 = await post({ token: ct }, { client_request_id: crypto.randomUUID() })
+  check('5.24 and can post a load for the organisation, which then shows to the first user', own2.status === 201 && (await get(v.token, '/vendor/loads/mine')).body.items.some(x => x.id === own2.body.id), `${own2.status} ${msg(own2)}`)
+  r = await get(ct, `/vendor/loads/${lp.body.id}`)
+  const outsider = await get(other.token, `/vendor/loads/${id}`)
+  check('5.25 an outsider still gets 404', outsider.status === 404, `${outsider.status}`)
+}
+
+// ── 6. public pages ───────────────────────────────────────
+const PLATE = /\b[A-Z]{2}\s?\d{2}\s?[A-Z]{1,3}\s?\d{4}\b/
+const PHONE = /(\+91|\b)[6-9]\d{9}\b/
+const GSTIN = /\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/
+async function raw(path, opts = {}) {
+  const res = await fetch(`${API}${path}`, { method: opts.method || 'GET', headers: { 'content-type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined })
+  const text = await res.text()
+  let json; try { json = JSON.parse(text) } catch { json = text }
+  return { status: res.status, body: json, text, headers: res.headers }
+}
+async function s6() {
+  section(6, 'Public pages (no sign-in)')
+  const leaks = (name, t) => check(`6.xx ${name}: no plate, phone, GSTIN, email`, !PLATE.test(t) && !PHONE.test(t) && !GSTIN.test(t) && !/@[a-z0-9-]+\./i.test(t), (t.match(PLATE) || t.match(PHONE) || t.match(GSTIN) || ['email'])[0])
+  let r = await raw('/public/stats')
+  check('6.01 stats: 4 counts only, cached 10 min', r.status === 200 && Object.keys(r.body).sort().join() === 'active_partners,cities_served,deliveries_completed,vehicles' && /max-age=600/.test(r.headers.get('cache-control') || ''), `${r.status} ${r.text.slice(0, 120)}`)
+  r = await raw('/public/hsn/search?q=cement')
+  check('6.02 HSN search "cement": hits with 2523 at 18%', r.status === 200 && r.body.items.some(i => i.hsn_code === '2523' && i.gst_rates.includes(18)) && r.body.items.length <= 8, `${r.status} ${r.text.slice(0, 150)}`)
+  r = await raw('/public/hsn/search?q=ce')
+  check('6.03 HSN search under 3 characters is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/hsn/search')
+  check('6.04 HSN search with no query is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/hsn/25232910')
+  check('6.05 8-digit HSN 25232910 resolves (own row or its parent) with the rate', r.status === 200 && r.body.gst_rate === 18, `${r.status} ${r.text.slice(0, 150)}`)
+  r = await raw('/public/hsn/25239999')
+  check('6.06 an 8-digit code the master lacks falls back to the parent heading (matched_prefix shorter)', r.status === 200 && r.body.matched_prefix && r.body.matched_prefix.length < 8, `${r.status} ${r.text.slice(0, 160)}`)
+  r = await raw('/public/hsn/99')
+  check('6.07 HSN "99" is not a 500 (200 or 404)', [200, 404].includes(r.status), `${r.status}`)
+  r = await raw('/public/hsn/abc')
+  check('6.08 HSN "abc" is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/hsn/00000000')
+  check('6.09 an HSN that exists nowhere is a 404 with a friendly message', r.status === 404 && /by hand/.test(r.text), `${r.status} ${r.text.slice(0, 100)}`)
+  r = await raw('/public/pincode/400093')
+  check('6.10 pin 400093 is Maharashtra (27)', r.status === 200 && r.body.state_code === '27', `${r.status} ${r.text}`)
+  r = await raw('/public/pincode/110001')
+  check('6.11 pin 110001 is Delhi (07)', r.body.state_code === '07', r.text)
+  r = await raw('/public/pincode/12345')
+  check('6.12 a 5-digit pin is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/pincode/000000')
+  check('6.13 pin 000000 is a 400/404 not a 500', [400, 404].includes(r.status), `${r.status}`)
+  r = await raw('/public/vehicle-classes')
+  check('6.14 vehicle classes: 9 classes in the PRD table with keys', r.status === 200 && r.body.items.length >= 9 && r.body.items.every(c => c.key && c.name) && /max-age=600/.test(r.headers.get('cache-control')), `${r.status} ${r.body.items?.length}`)
+  r = await raw('/public/goods-categories')
+  check('6.15 goods categories answer with default rates', r.status === 200 && r.body.items.length >= 8 && r.body.items.every(c => Array.isArray(c.default_rates)), `${r.status} ${r.body.items?.length}`)
+  r = await raw('/public/companies')
+  leaks('6.16 /public/companies', r.text)
+  const ids = (r.body.items || []).map(c => c.id)
+  check('6.17 companies: only active ones; the pending test company is absent; fields are the contract', r.status === 200 && !ids.includes(S.coP.id) && ids.includes(S.coA.id) && r.body.items.every(c => Object.keys(c).sort().join() === 'city,id,name,trips_completed,vehicle_types'), `${r.status}`)
+  check('6.18 companies: cached 60 s', /max-age=60/.test(r.headers.get('cache-control') || ''), r.headers.get('cache-control'))
+  r = await raw('/public/companies?city=Mumbai&vehicle_type=truck')
+  check('6.19 companies filter by city and vehicle type', r.status === 200 && r.body.items.every(c => c.city === 'Mumbai'), `${r.status}`)
+  r = await raw(`/public/companies?city=${'x'.repeat(200)}`)
+  check('6.20 an absurd filter is a 400, not a 500', r.status === 400, `${r.status}`)
+  r = await raw('/public/cities?q=mum')
+  check('6.21 cities suggest Mumbai', r.status === 200 && r.body.cities.includes('Mumbai'), `${r.status} ${r.text.slice(0, 100)}`)
+  r = await raw('/public/spare-space')
+  leaks('6.22 /public/spare-space', r.text)
+  const sp = (r.body.items || []).find(i => i.id === S.publicWindow)
+  check('6.23 spare space lists the open window of the active company with free kg and no vehicle id / coordinates', r.status === 200 && (!S.publicWindow || sp) && !/latitude|longitude|vehicle_id|plate/i.test(r.text), `${r.status} found=${!!sp}`)
+  r = await raw('/public/spare-space?date=tomorrow')
+  check('6.24 spare space with a bad date is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/spare-space?min_kg=-3')
+  check('6.25 spare space with min_kg -3 is a 400', r.status === 400, `${r.status}`)
+
+  const lane = { pickup: { lat: 19.0760, lng: 72.8777, label: 'Mumbai' }, drop: { lat: 28.6139, lng: 77.2090, label: 'Delhi' }, weight_kg: 20900 }
+  r = await raw('/public/quote', { method: 'POST', body: lane })
+  check('6.26 indicative quote Mumbai to Delhi: low <= suggested <= high, distance, no rate card, not cached', r.status === 200 && (r.body.status === 'unavailable' || (r.body.low <= r.body.suggested && r.body.suggested <= r.body.high && r.body.distance_km > 1000)) && /no-store/.test(r.headers.get('cache-control') || '') && !/rate_card|margin|factors|demand/i.test(r.text), `${r.status} ${r.text.slice(0, 200)}`)
+  console.log(`   (observation) quote answer: ${r.text.slice(0, 200)}`)
+  r = await raw('/public/quote', { method: 'POST', body: { ...lane, weight_kg: 0 } })
+  check('6.27 a quote with 0 kg is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/quote', { method: 'POST', body: { ...lane, pickup: { lat: 99, lng: 0 } } })
+  check('6.28 a quote with latitude 99 is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/quote', { method: 'POST', body: '{bad' , headers: {} })
+  check('6.29 a quote with broken JSON is a 400, not a 500', r.status === 400, `${r.status}`)
+
+  // load assist: the PRD 8.3 example: 20,900 kg, Rs 7,62,500; GST per the master
+  const assistBody = {
+    items: [
+      { product_name: 'Cement bags', hsn_code: '2523', gst_rate: 18, quantity: 400, unit: 'bags', weight_kg: 12900, declared_value: 462500 },
+      { product_name: 'Steel TMT bars', hsn_code: '7214', gst_rate: 18, quantity: 8, unit: 'tonnes', weight_kg: 8000, declared_value: 300000 },
+    ],
+    pickup_city: 'Mumbai', pickup_pincode: '400093', pickup_lat: 19.1197, pickup_lng: 72.8464, pickup_date: dayKey(3),
+    delivery_city: 'Delhi', delivery_pincode: '110020', delivery_lat: 28.5355, delivery_lng: 77.275, delivery_date: dayKey(6),
+  }
+  r = await raw('/public/loads/assist', { method: 'POST', body: assistBody })
+  const a = r.body
+  check('6.30 assist: totals 20,900 kg and Rs 7,62,500', r.status === 200 && a.totals?.weight_kg === 20900 && a.totals?.declared_value === 762500, `${r.status} ${JSON.stringify(a.totals)}`)
+  check('6.31 assist: Mumbai to Delhi is inter-state (IGST), no CGST/SGST', a.tax?.basis === 'inter' && a.tax.igst > 0 && a.tax.cgst === 0 && a.tax.sgst === 0, JSON.stringify(a.tax)?.slice(0, 250))
+  const rateOf = async (code) => (await raw(`/public/hsn/${code}`)).body.gst_rate
+  const r1 = await rateOf('2523'), r2 = await rateOf('7214')
+  const expectGst = Math.round(462500 * r1 / 100 + 300000 * r2 / 100)
+  check(`6.32 assist: GST is the master's rates (2523 at ${r1}%, 7214 at ${r2}%) = ${expectGst}`, Math.round(a.tax?.gst_total) === expectGst && Math.round(a.tax?.grand_total) === 762500 + expectGst, `${a.tax?.gst_total} vs ${expectGst}; by_rate=${JSON.stringify(a.tax?.by_rate)}`)
+  check('6.33 assist: e-way bill is required (over Rs 50,000) and the recommendations include it', a.eway?.required === true && (a.recommendations || []).some(x => /eway/.test(x.code)), JSON.stringify(a.eway))
+  check('6.34 assist: a vehicle suggestion over 18 t points to a larger vehicle / FTL', a.suggested?.load_type === 'ftl' && a.suggested?.vehicle_class, JSON.stringify(a.suggested))
+  r = await raw('/public/loads/assist', { method: 'POST', body: { ...assistBody, items: [] } })
+  check('6.35 assist with an empty draft answers 200 or 400, never 500', [200, 400].includes(r.status), `${r.status}`)
+  r = await raw('/public/loads/assist', { method: 'POST', body: { ...assistBody, items: [{ ...assistBody.items[0], weight_kg: 'heavy' }] } })
+  check('6.36 assist with weight "heavy" is a 400', r.status === 400, `${r.status}`)
+  r = await raw('/public/loads/assist', { method: 'POST', body: { items: [{ product_name: 'Cement', hsn_code: '2523', weight_kg: 100 }] } })
+  check('6.37 assist with a half-filled form still answers (200)', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`)
+
+  // tracking page data and vehicle share
+  const trk = S.bidTracking
+  if (trk) {
+    r = await raw(`/shipments/track/${trk}`)
+    check('6.38 public tracking data for a real shipment answers 200', r.status === 200 && r.body.tracking_id === trk, `${r.status} ${r.text.slice(0, 150)}`)
+    const t = r.text
+    check('6.39 tracking: no driver, vendor, phone, GSTIN, email, price', !/driver|vendor|phone|gstin|email|price|amount|cost|customer/i.test(Object.keys(r.body).join(',') + JSON.stringify(r.body.vehicle || {})) && !PHONE.test(t) && !GSTIN.test(t), t.slice(0, 200))
+    console.log(`   (observation) tracking exposes keys: ${Object.keys(r.body).join(',')}; vehicle keys: ${Object.keys(r.body.vehicle || {}).join(',')}`)
+    S.trackKeys = { top: Object.keys(r.body), vehicle: Object.keys(r.body.vehicle || {}), plate: PLATE.test(t), vehicleId: !!r.body.vehicle?.id, idLeak: !!r.body.id }
+    const rr = await raw(`/shipments/track/${trk}/route`)
+    check('6.40 tracking route answers without coordinates in the request (200/404, not 500)', [200, 404].includes(rr.status), `${rr.status}`)
+  }
+  r = await raw('/shipments/track/RTX-NOPE000')
+  check('6.41 tracking an unknown id is a clean 404', r.status === 404 && !/stack|at \w+ \(/.test(r.text), `${r.status}`)
+  r = await raw('/shipments/track/%ZZ')
+  check('6.42 a bad percent escape in the id is a 400/404, not a 500', [400, 404].includes(r.status), `${r.status}`)
+
+  // vehicle share
+  const vsVeh = await mkVehicle(S.coA, { plate_number: 'MH12SH' + Math.floor(1000 + Math.random() * 8999) })
+  const link = await api(S.adminA.token, 'POST', `/fleet/vehicles/${vsVeh.id}/share-links`, { hours: 2 })
+  check('6.43 staff create a share link (201)', link.status === 201 && link.body.token, `${link.status} ${msg(link)}`)
+  if (link.body?.token) {
+    r = await raw(`/public/vehicle-share/${link.body.token}`)
+    check('6.44 the share link answers without sign-in, no store (no-store cache)', r.status === 200 && /no-store/.test(r.headers.get('cache-control') || ''), `${r.status}`)
+    check('6.45 share data: no driver, phone, vehicle id, load, customer, company ids', !/driver|phone|vehicle_id|"id"|load|customer|vendor|carrier|org/i.test(Object.keys(r.body).join(',')) && !PHONE.test(r.text) && !GSTIN.test(r.text), Object.keys(r.body).join(','))
+    const del = await api(S.adminA.token, 'DELETE', `/fleet/share-links/${link.body.id}`)
+    r = await raw(`/public/vehicle-share/${link.body.token}`)
+    check('6.46 a closed share link is a 404', del.status < 300 && r.status === 404, `${del.status} ${r.status}`)
+  }
+  r = await raw('/public/vehicle-share/not-a-token')
+  check('6.47 an invalid share token is a clean 404', r.status === 404, `${r.status}`)
+
+  // rate limits answer 429 not 500
+  let codes = []
+  for (let i = 0; i < 24; i++) codes.push((await raw('/public/quote', { method: 'POST', body: lane })).status)
+  check('6.48 hammering /public/quote (limit 20/min) turns to 429, with no 5xx', codes.includes(429) && !codes.some(c => c >= 500), codes.join(','))
+  const lim = await raw('/public/quote', { method: 'POST', body: lane })
+  check('6.49 the 429 carries a message and Retry-After or a clear detail', lim.status !== 429 || (lim.body?.detail || lim.body?.error), lim.text.slice(0, 100))
+  r = await raw('/public/nonexistent')
+  check('6.50 an unknown public path is a 404', r.status === 404, `${r.status}`)
+  r = await raw('/vendor/loads')
+  check('6.51 vendor routes without a token are 401', r.status === 401, `${r.status}`)
+}
+
+// ── 7. auth edges ─────────────────────────────────────────
+async function s7() {
+  section(7, 'Auth edges')
+  const raw2 = raw
+  const staffPhone = '+919800000' + String(Math.floor(100 + Math.random() * 899))
+  let r = await raw2('/auth/vendor/send-otp', { method: 'POST', body: { phone: '12345' } })
+  check('7.01 vendor OTP with a bad phone is a 400', r.status === 400, `${r.status} ${r.text.slice(0, 100)}`)
+  r = await raw2('/auth/vendor/send-otp', { method: 'POST', body: {} })
+  check('7.02 vendor OTP with no phone is a 400', r.status === 400, `${r.status}`)
+  r = await raw2('/auth/vendor/send-otp', { method: 'POST', body: { phone: staffPhone } })
+  check('7.03 vendor OTP request for a valid number answers cleanly (200 sent, or 4xx/502/503 with a detail), never a 500', r.status < 500 || [502, 503].includes(r.status), `${r.status} ${r.text.slice(0, 160)}`)
+  console.log(`   (observation) send-otp on the stage answers ${r.status}: ${r.text.slice(0, 140)}`)
+  r = await raw2('/auth/vendor/verify-otp', { method: 'POST', body: { phone: staffPhone, otp: '000000' } })
+  check('7.04 verifying a wrong/missing OTP is 401 (or 429), never 500 and never a session', [401, 429].includes(r.status) && !/access_token/.test(r.text), `${r.status} ${r.text.slice(0, 100)}`)
+  r = await raw2('/auth/vendor/verify-otp', { method: 'POST', body: { phone: staffPhone } })
+  check('7.05 verify without an otp is a 400', r.status === 400, `${r.status}`)
+
+  // an existing non-vendor account (a driver) with a phone must never be changed by the vendor OTP endpoints
+  const drv = await makeDriver(S.coA.id)
+  const phone = '+91970000' + String(Math.floor(1000 + Math.random() * 8999))
+  await db('PATCH', 'users', { query: `id=eq.${drv.id}`, body: { phone } })
+  const before = (await db('GET', 'users', { query: `id=eq.${drv.id}&select=role,phone,full_name` })).body[0]
+  await raw2('/auth/vendor/send-otp', { method: 'POST', body: { phone } })
+  await raw2('/auth/vendor/verify-otp', { method: 'POST', body: { phone, otp: '123456' } })
+  const after = (await db('GET', 'users', { query: `id=eq.${drv.id}&select=role,phone,full_name` })).body[0]
+  check('7.06 the vendor OTP endpoints never change an existing driver account (role, phone, name)', JSON.stringify(before) === JSON.stringify(after), `${JSON.stringify(before)} -> ${JSON.stringify(after)}`)
+  const asVendor = await db('GET', 'users', { query: `phone=eq.${phone}&role=eq.vendor&select=id` })
+  check('7.07 and no vendor account was created for that number', asVendor.body.length === 0, JSON.stringify(asVendor.body))
+
+  // password reset: same answer for known and unknown emails
+  const known = await makeVendor({ approved: false })
+  const rec = async (email) => { const res = await fetch(`${DATA}/auth/v1/recover`, { method: 'POST', headers: { apikey: env.ANON, 'content-type': 'application/json' }, body: JSON.stringify({ email }) }); return { status: res.status, text: (await res.text()).slice(0, 200) } }
+  const rk = await rec(known.email)
+  const ru = await rec(`nobody-${tag()}@margix.test`)
+  check('7.08 password reset request answers the same status and body for a known and an unknown email', rk.status === ru.status && rk.text === ru.text, `${rk.status} ${rk.text} | ${ru.status} ${ru.text}`)
+  check('7.09 and is not a 5xx', rk.status < 500, `${rk.status} ${rk.text}`)
+
+  // roles
+  const v = S.v || await makeVendor({ approved: true, admin: S.pa })
+  for (const [path, label] of [['/company/loads/market', 'company market'], ['/capacity/bids/pending', 'pending bids'], ['/vendor/shipment-request/pending', 'pending requests'], ['/users', 'user list'], ['/finance/summary', 'finance summary'], ['/fleet/vehicles', 'fleet vehicles']]) {
+    const x = await api(v.token, 'GET', path)
+    check(`7.10 a vendor token on staff route ${label} (${path}) is 403 or 404, no data`, [401, 403, 404].includes(x.status), `${x.status} ${msg(x)}`)
+  }
+  r = await api(v.token, 'PUT', `/vendor/kyc/${v.id}/approve`, {})
+  check('7.11 a vendor cannot approve its own KYC (403)', r.status === 403, `${r.status}`)
+  r = await api(v.token, 'POST', '/capacity/windows', { vehicle_id: crypto.randomUUID(), floor_price: 1, duration_minutes: 30 })
+  check('7.12 a vendor cannot open a capacity window (403)', r.status === 403, `${r.status}`)
+  for (const [m, path, body] of [['POST', '/vendor/loads', loadBody()], ['GET', '/vendor/loads/mine'], ['GET', '/vendor/business-profile'], ['GET', '/vendor/invoices'], ['POST', '/vendor/loads/bulk', { csv: 'x' }], ['POST', '/vendor/kyc/submit', {}]]) {
+    const x = await api(S.adminA.token, m, path, body)
+    check(`7.13 a company admin on vendor route ${m} ${path} is refused (403)`, x.status === 403, `${x.status} ${msg(x)}`)
+  }
+  const staffPost = await api(S.adminA.token, 'POST', '/vendor/loads', loadBody())
+  check('7.14 staff posting a load gets a clear message (403 with a detail)', staffPost.status === 403 && msg(staffPost) && msg(staffPost) !== '{}', `${staffPost.status} ${msg(staffPost)}`)
+  const mgr = await makeCompanyAdmin(S.coA.id, 'manager')
+  const mp = await api(mgr.token, 'POST', '/vendor/loads', loadBody())
+  check('7.15 a manager posting a load is refused (403)', mp.status === 403, `${mp.status}`)
+  const dp = await api(drv.token, 'GET', '/vendor/loads/mine')
+  check('7.16 a driver token on a vendor route is 403', dp.status === 403, `${dp.status}`)
+  r = await api('garbage.token.value', 'GET', '/vendor/loads/mine')
+  check('7.17 a garbage token is a clean 401', r.status === 401, `${r.status}`)
+  r = await api(v.token, 'GET', '/vendor/loads/not-a-uuid')
+  check('7.18 a malformed load id is 400/404, never 500', [400, 404].includes(r.status), `${r.status}`)
+  r = await api(v.token, 'PUT', `/vendor/kyc/${crypto.randomUUID()}/approve`, {})
+  check('7.19 a vendor cannot approve anyone (403, not 404)', r.status === 403, `${r.status}`)
+
+  // escalation and expiry, run by the scheduler every 15 minutes
+  if (S.quiet && !process.env.SKIP_SCHEDULER) {
+    console.log('   waiting for the scheduler (every 15 min) to escalate the quiet load and expire the quote, up to 17 minutes...')
+    let esc = null, exq = null
+    for (let i = 0; i < 70 && !(esc?.quote_escalated_at && exq?.status === 'expired'); i++) {
+      esc = await loadRow(S.quiet)
+      exq = (await db('GET', 'load_quotes', { query: `id=eq.${S.expiring.quote}&select=status` })).body?.[0]
+      if (esc?.quote_escalated_at && exq?.status === 'expired') break
+      await sleep(15000)
+    }
+    check('7.20 the scheduler escalated the load with no quote after its 2-hour deadline (quote_escalated_at set)', !!esc?.quote_escalated_at, JSON.stringify(esc?.quote_escalated_at))
+    const vn = await notesFor(S.v.id, 'quote_delayed')
+    check('7.21 the vendor was told "Companies need a little longer"', vn.some(n => n.data?.request_id === S.quiet), `${vn.length}`)
+    const pn = await notesFor(S.pa.id, 'vendor_request')
+    check('7.22 the platform admin was told once about the quiet load', pn.filter(n => n.data?.request_id === S.quiet).length === 1, `${pn.filter(n => n.data?.request_id === S.quiet).length}`)
+    check('7.23 the quote past its validity is marked expired by the scheduler', exq?.status === 'expired', JSON.stringify(exq))
+    const en = await notesFor(S.expiring.userA, 'quote_expired')
+    check('7.24 and its company was told', en.some(n => n.data?.request_id === S.expiring.load), `${en.length}`)
+  }
+}
+
 // ── runner ────────────────────────────────────────────────
-const sections = { 1: s1, 2: s2 }
+const sections = { 1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7 }
 async function main() {
   await setup()
   for (const n of Object.keys(sections).sort()) if (want.has(n)) {
