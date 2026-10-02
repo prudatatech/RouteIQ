@@ -19,7 +19,10 @@ import { emailService, escapeHtml } from './email.service';
 import { ShipmentService } from './shipment.service';
 import { vendorService, type LoadEvent } from './vendor.service';
 import { InvoiceService } from './invoice.service';
-import { carrierStamp } from '../core/org-context';
+import { carrierStamp, loadMemberships } from '../core/org-context';
+import { isDispatchable } from '../core/vehicles';
+import { assertVehicleFits } from './loads/vehicle-fit';
+import { assertCapacity, insertManifest, putLoadOnVehicle } from './loads/create-manifest';
 
 export type SourceType = 'request' | 'shipment';
 
@@ -56,6 +59,45 @@ export interface PartnerMatch {
   rate: CorridorRate | null;
   /** The price for this load at that rate: per trip as is, per km x the distance. Null when the rate is missing or the distance is unknown. */
   price: number | null;
+}
+
+export interface PartnerSession {
+  id: string;
+  company_name: string;
+  status: string;
+  sla_commitment: string | null;
+  email: string | null;
+  /** The partner's organisation (kind tpl_partner); null before organisations are set up. */
+  org_id: string | null;
+}
+
+/** Of the 3PL organisations a user belongs to, the one that is partner `partnerId`'s. */
+async function partnerOrgIdOf(partnerId: string, orgIds: string[]): Promise<string | null> {
+  const { data } = await supabase.from('organizations').select('id, profile').in('id', orgIds);
+  const hit = (data ?? []).find(o => (o.profile as { legacy_tpl_partner_id?: string } | null)?.legacy_tpl_partner_id === partnerId);
+  return hit?.id ?? null;
+}
+
+/** Display names of organisations, by id. */
+async function orgNames(ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((i): i is string => !!i))];
+  const names = new Map<string, string>();
+  if (unique.length === 0) return names;
+  const { data } = await supabase.from('organizations').select('id, name').in('id', unique);
+  for (const o of data ?? []) names.set(o.id, o.name);
+  return names;
+}
+
+/** Rows grouped by the company that handed the work over (`carrier_org_id`), in the order they arrive. */
+function groupByCompany<T extends { carrier_org_id?: string | null }>(rows: T[], names: Map<string, string>, key: 'offers' | 'orders') {
+  const groups = new Map<string, { org_id: string | null; name: string | null } & Record<string, unknown>>();
+  for (const row of rows) {
+    const id = row.carrier_org_id ?? null;
+    const k = id ?? '';
+    if (!groups.has(k)) groups.set(k, { org_id: id, name: id ? names.get(id) ?? null : null, [key]: [] });
+    (groups.get(k)![key] as T[]).push(row);
+  }
+  return [...groups.values()];
 }
 
 const sourceColumn = (type: SourceType) => (type === 'request' ? 'request_id' : 'shipment_id');
@@ -239,6 +281,151 @@ export interface EscalationResult {
   already_offered: number;
   matched: number;
   offers: unknown[];
+}
+
+interface Execution {
+  vehicle: Record<string, any>;
+  driverId: string;
+  /** The vendor request being carried (its manifest is made on accept); null for a shipment, which has no manifest. */
+  load: Record<string, any> | null;
+  capacity: { required: number; free: number | null };
+}
+
+/**
+ * The vehicle and driver a partner runs an accepted load with. Null for the older flow with no vehicle (a
+ * partner that has none registered). Both must belong to the partner's organisation, the driver must be the
+ * one the vehicle is given to (the driver app finds a trip by the driver's vehicle), the vehicle must be
+ * ready and fit the goods, and have the room for them.
+ */
+async function resolveExecution(
+  partner: { id: string; org_id?: string | null },
+  offer: Record<string, any>,
+  sourceType: SourceType,
+  sourceId: string,
+  input: { vehicle_id?: unknown; driver_id?: unknown },
+): Promise<Execution | null> {
+  const vehicleId = typeof input.vehicle_id === 'string' && input.vehicle_id ? input.vehicle_id : null;
+  const driverId = typeof input.driver_id === 'string' && input.driver_id ? input.driver_id : null;
+  const orgId = partner.org_id ?? null;
+
+  if (!vehicleId) {
+    if (driverId) throw new HttpError(400, 'Choose the vehicle that will carry this load');
+    if (orgId) {
+      const { data: owned, error } = await supabase
+        .from('vehicles').select('id').eq('carrier_org_id', orgId).neq('status', 'archived').limit(1);
+      if (error) dbError('Failed to check your vehicles', error);
+      if ((owned ?? []).length > 0) throw new HttpError(400, 'Choose the vehicle and driver that will carry this load. Update the app if you do not see them.');
+    }
+    return null;
+  }
+  if (!driverId) throw new HttpError(400, 'Choose the driver for this load');
+  if (!orgId) throw new HttpError(409, 'Your partner organisation is not set up yet, so vehicles cannot be assigned');
+
+  const { data: vehicle, error: vErr } = await supabase
+    .from('vehicles')
+    .select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id, carrier_org_id, hazmat_certified, is_reefer, body_type')
+    .eq('id', vehicleId).maybeSingle();
+  if (vErr) dbError('Failed to load the vehicle', vErr);
+  // A vehicle of another organisation is never confirmed to exist
+  if (!vehicle || vehicle.carrier_org_id !== orgId) throw new HttpError(404, 'Vehicle not found');
+  const { data: member, error: mErr } = await supabase
+    .from('org_members').select('user_id').eq('org_id', orgId).eq('user_id', driverId).eq('status', 'active').maybeSingle();
+  if (mErr) dbError('Failed to load the driver', mErr);
+  if (!member) throw new HttpError(404, 'Driver not found');
+  if (vehicle.driver_id !== driverId) {
+    throw new HttpError(409, `${vehicle.plate_number ?? 'This vehicle'} is not assigned to that driver. Choose the vehicle's own driver, or give the vehicle this driver in Fleet.`);
+  }
+  if (!isDispatchable(vehicle)) {
+    throw new HttpError(409, `This vehicle is ${vehicle.status === 'maintenance' || vehicle.status === 'archived' ? `in ${vehicle.status}` : 'not ready for dispatch'} and can't take a load`);
+  }
+
+  if (sourceType === 'request') {
+    const { data: load, error: lErr } = await supabase.from('vendor_shipment_requests').select('*').eq('id', sourceId).maybeSingle();
+    if (lErr) dbError('Failed to load the request', lErr);
+    if (!load) throw new HttpError(404, 'Request not found');
+    const { data: goods, error: gErr } = await supabase.from('load_items').select('is_hazmat, is_perishable').eq('load_id', sourceId);
+    if (gErr) dbError('Failed to load the goods', gErr);
+    assertVehicleFits({ ...load, items: goods ?? [] }, vehicle);
+    return { vehicle, driverId, load, capacity: assertCapacity(vehicle, load.required_capacity_kg) };
+  }
+  // A shipment keeps its own custody trail: the partner's vehicle is recorded on the order only
+  return { vehicle, driverId, load: null, capacity: assertCapacity(vehicle, offer.weight_kg) };
+}
+
+/** Where a manifest's status puts a 3PL order; null leaves the order as it is (held, in an exception, not yet moving). */
+function orderStatusForManifest(manifestStatus: string): OrderStatus | 'cancelled' | null {
+  switch (manifestStatus) {
+    case 'picked_up': return 'picked_up';
+    case 'in_transit': return 'in_transit';
+    case 'delivered':
+    case 'completed': return 'delivered';
+    case 'cancelled': return 'cancelled';
+    default: return null;
+  }
+}
+
+/** The proof of delivery a manifest holds; a master load takes its lots' when it has none of its own. */
+async function manifestPod(manifest: Record<string, any>): Promise<{ photo: string | null; signature: string | null; receivedBy: string | null }> {
+  let { photo_url: photo, signature_url: signature, received_by: receivedBy } = manifest;
+  if (!photo && !signature && manifest.is_master) {
+    const { data: lots } = await supabase.from('cargo_manifest')
+      .select('photo_url, signature_url, received_by').eq('parent_manifest_id', manifest.id).order('lot_seq', { ascending: true });
+    const lot = (lots ?? []).find(l => l.photo_url || l.signature_url);
+    if (lot) ({ photo_url: photo, signature_url: signature, received_by: receivedBy } = { ...lot, received_by: receivedBy ?? lot.received_by });
+  }
+  return { photo: photo ?? null, signature: signature ?? null, receivedBy: receivedBy ?? null };
+}
+
+/**
+ * Keeps a 3PL order in step with the trip that carries it: when the manifest is picked up, in transit,
+ * delivered or cancelled, the order follows with its timestamps (and, at delivery, the proof of delivery the
+ * driver captured). Moves forward only. Returns the updated order, or null when the manifest backs no order
+ * or nothing changed. Called from the custody transition hook; failures are the caller's to log.
+ */
+export async function syncTplOrderFromManifest(manifestId: string): Promise<Record<string, any> | null> {
+  const { data: order, error } = await supabase
+    .from('tpl_orders').select('*').eq('manifest_id', manifestId).neq('status', 'cancelled').maybeSingle();
+  if (error) dbError('Failed to load the order of a trip', error);
+  if (!order) return null;
+  const { data: manifest, error: mErr } = await supabase
+    .from('cargo_manifest').select('id, status, is_master, photo_url, signature_url, received_by').eq('id', manifestId).maybeSingle();
+  if (mErr) dbError('Failed to load the trip', mErr);
+  if (!manifest) return null;
+
+  const target = orderStatusForManifest(String(manifest.status));
+  if (!target) return null;
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { updated_at: now };
+  if (target === 'cancelled') {
+    if (order.status === 'delivered') return null;
+    patch.status = 'cancelled';
+  } else {
+    const from = ORDER_STATUS_FLOW.indexOf(order.status as OrderStatus);
+    const to = ORDER_STATUS_FLOW.indexOf(target);
+    if (from < 0 || to <= from) return null;
+    patch.status = target;
+    if (!order.picked_up_at) patch.picked_up_at = now;
+    if (target === 'delivered') {
+      patch.delivered_at = now;
+      const pod = await manifestPod(manifest);
+      if (pod.photo) patch.pod_photo_url = pod.photo;
+      if (pod.signature) patch.pod_signature_url = pod.signature;
+      if (pod.receivedBy) patch.pod_received_by = pod.receivedBy;
+    }
+  }
+  const { data: updated, error: uErr } = await supabase
+    .from('tpl_orders').update(patch).eq('id', order.id).eq('status', order.status).select().maybeSingle();
+  if (uErr) dbError('Failed to update the order of a trip', uErr);
+  if (!updated) return null;
+  try {
+    const label = target === 'delivered' ? 'delivered' : target === 'in_transit' || target === 'picked_up' ? 'picked up and on its way' : 'cancelled';
+    await notificationService.notifyStaff(`3PL order ${target === 'cancelled' ? 'cancelled' : label}`,
+      `${shortPlace(order.pickup_location)} to ${shortPlace(order.drop_location)} is ${label}.`,
+      'tpl_order_status', { order_id: order.id, partner_id: order.partner_id }, await carrierOf('cargo_manifest', manifestId));
+  } catch (e) {
+    console.error('[tpl-network] Trip sync notification failed:', e);
+  }
+  return updated;
 }
 
 export const tplNetworkService = {
@@ -442,22 +629,43 @@ export const tplNetworkService = {
 
   // ── Partner side ─────────────────────────────────────────────────
 
-  async partnerForUser(userId: string) {
+  /**
+   * The partner a signed-in user works for: the row linked to them (`tpl_partners.user_id`), or the partner of
+   * a 3PL organisation they are an active member of (a manager the partner invited). `org_id` is the partner's
+   * organisation, null before organisations are set up.
+   */
+  async partnerForUser(userId: string): Promise<PartnerSession> {
+    const memberships = (await loadMemberships(userId)).filter(m => m.org.kind === 'tpl_partner');
     const { data, error } = await supabase
       .from('tpl_partners').select('id, company_name, status, sla_commitment, email').eq('user_id', userId).maybeSingle();
     if (error) dbError('Failed to load partner', error);
-    if (!data) throw new HttpError(403, 'This account is not linked to a 3PL partner');
-    return data as { id: string; company_name: string; status: string; sla_commitment: string | null; email: string | null };
+    if (data) {
+      let orgId: string | null = null;
+      if (memberships.length === 1) orgId = memberships[0].org.id;
+      else if (memberships.length > 1) orgId = (await partnerOrgIdOf(data.id, memberships.map(m => m.org.id))) ?? memberships[0].org.id;
+      return { ...(data as Omit<PartnerSession, 'org_id'>), org_id: orgId };
+    }
+    for (const m of memberships) {
+      const { data: org } = await supabase.from('organizations').select('profile').eq('id', m.org.id).maybeSingle();
+      const legacy = (org?.profile as { legacy_tpl_partner_id?: string } | null)?.legacy_tpl_partner_id;
+      if (!legacy) continue;
+      const { data: p } = await supabase
+        .from('tpl_partners').select('id, company_name, status, sla_commitment, email').eq('id', legacy).maybeSingle();
+      if (p) return { ...(p as Omit<PartnerSession, 'org_id'>), org_id: m.org.id };
+    }
+    throw new HttpError(403, 'This account is not linked to a 3PL partner');
   },
 
   async offersForPartner(partnerId: string) {
     const { data, error } = await supabase
       .from('tpl_offers').select('*').eq('partner_id', partnerId).order('offered_at', { ascending: false }).limit(200);
     if (error) dbError('Failed to load offers', error);
-    return data ?? [];
+    const items = data ?? [];
+    const names = await orgNames(items.map(o => o.carrier_org_id));
+    return { companies: groupByCompany(items, names, 'offers'), items };
   },
 
-  async accept(partner: { id: string; company_name: string; status: string; sla_commitment: string | null }, offerId: string, input: { pickup_eta?: unknown; delivery_eta?: unknown; agreed_amount?: unknown }) {
+  async accept(partner: Omit<PartnerSession, 'email' | 'org_id'> & { org_id?: string | null }, offerId: string, input: { pickup_eta?: unknown; delivery_eta?: unknown; agreed_amount?: unknown; vehicle_id?: unknown; driver_id?: unknown }) {
     if (partner.status !== 'active') throw new HttpError(403, 'Your partner account is not active, so you cannot accept loads');
     const { data: offer, error } = await supabase
       .from('tpl_offers').select('*').eq('id', offerId).eq('partner_id', partner.id).maybeSingle();
@@ -490,6 +698,9 @@ export const tplNetworkService = {
     const col = sourceColumn(sourceType);
     const now = new Date();
     const nowIso = now.toISOString();
+
+    // The partner's own vehicle and driver run the load: checked before anything is claimed
+    const execution = await resolveExecution(partner, offer, sourceType, sourceId, input);
 
     // 1. This offer: only one accept can flip it from "offered".
     const { data: claimedOffer, error: cErr } = await supabase
@@ -533,6 +744,7 @@ export const tplNetworkService = {
         weight_kg: offer.weight_kg,
         agreed_amount: amount,
         status: 'accepted',
+        ...(execution ? { vehicle_id: execution.vehicle.id, driver_id: execution.driverId } : {}),
         pickup_eta: pickupEta?.toISOString() ?? null,
         due_by: dueBy?.toISOString() ?? null,
         accepted_at: nowIso,
@@ -546,6 +758,33 @@ export const tplNetworkService = {
       if ((oErr as { code?: string }).code === '23505') await giveUp('Another partner already took this load');
       await supabase.from('tpl_offers').update({ status: 'offered', responded_at: null, updated_at: nowIso }).eq('id', offerId);
       dbError('Failed to create order', oErr);
+    }
+
+    // 2b. The trip: a manifest for the load on the partner's vehicle, kept with the company that owns the load
+    let manifestId: string | null = null;
+    if (execution?.load) {
+      try {
+        const company: string | null = execution.load.carrier_org_id ?? offer.carrier_org_id ?? null;
+        const manifest = await insertManifest(execution.load, execution.vehicle.id, { executedByOrg: partner.org_id ?? null, carrierOrgId: company });
+        manifestId = manifest.id;
+        const { error: lErr } = await supabase.from('tpl_orders').update({ manifest_id: manifestId }).eq('id', order.id);
+        if (lErr) dbError('Failed to link the trip to the order', lErr);
+        order.manifest_id = manifestId;
+      } catch (e) {
+        // Undo the claim so another try (or partner) can take the load
+        await supabase.from('tpl_orders').delete().eq('id', order.id);
+        if (manifestId) await supabase.from('cargo_manifest').delete().eq('id', manifestId);
+        await supabase.from('vendor_shipment_requests').update({ status: 'escalated', updated_at: nowIso }).eq('id', sourceId).eq('status', 'assigned_to_partner');
+        await supabase.from('tpl_offers').update({ status: 'offered', responded_at: null, updated_at: nowIso }).eq('id', offerId);
+        throw e;
+      }
+    }
+    if (execution) {
+      try {
+        await putLoadOnVehicle(execution.vehicle, execution.vehicle.id, execution.load ?? { id: sourceId, pickup_location: offer.pickup_location }, execution.capacity);
+      } catch (e) {
+        console.error('[tpl-network] Putting the load on the vehicle failed:', e);
+      }
     }
 
     // 3. Everyone else who was offered it now sees "taken".
@@ -614,7 +853,9 @@ export const tplNetworkService = {
     const { data, error } = await supabase
       .from('tpl_orders').select('*').eq('partner_id', partnerId).order('accepted_at', { ascending: false }).limit(500);
     if (error) dbError('Failed to load orders', error);
-    return data ?? [];
+    const items = data ?? [];
+    const names = await orgNames(items.map(o => o.carrier_org_id));
+    return { companies: groupByCompany(items, names, 'orders'), items };
   },
 
   /** Moves an order forward: picked up, in transit, then delivered (which needs a proof-of-delivery note). */
@@ -624,12 +865,26 @@ export const tplNetworkService = {
     }
     const note = typeof noteInput === 'string' ? noteInput.trim() : '';
     if (note.length > 500) throw new HttpError(400, 'The note can be at most 500 characters');
-    if (next === 'delivered' && note.length < 3) throw new HttpError(400, 'Add a proof of delivery note, such as who received the load');
 
     const { data: order, error } = await supabase
       .from('tpl_orders').select('*').eq('id', orderId).eq('partner_id', partner.id).maybeSingle();
     if (error) dbError('Failed to load order', error);
     if (!order) throw new HttpError(404, 'Order not found');
+    // A trip the partner's driver runs in the driver app moves by the driver's steps, and is delivered with their proof
+    const backed = !!order.manifest_id;
+    let pod: { photo: string | null; signature: string | null; receivedBy: string | null } | null = null;
+    if (backed) {
+      if (next !== 'delivered') throw new HttpError(409, 'The driver moves this trip in the driver app: pickup and departure update this order by themselves');
+      const { data: manifest, error: mErr } = await supabase
+        .from('cargo_manifest').select('id, is_master, photo_url, signature_url, received_by').eq('id', order.manifest_id).maybeSingle();
+      if (mErr) dbError('Failed to load the trip', mErr);
+      pod = manifest ? await manifestPod(manifest) : null;
+      if (!pod || (!pod.photo && !pod.signature)) {
+        throw new HttpError(409, 'The driver has not captured the proof of delivery yet. Delivery needs a photo or a signature taken in the driver app');
+      }
+    } else if (next === 'delivered' && note.length < 3) {
+      throw new HttpError(400, 'Add a proof of delivery note, such as who received the load');
+    }
     const from = ORDER_STATUS_FLOW.indexOf(order.status as OrderStatus);
     if (from < 0) throw new HttpError(409, `This order is ${order.status} and cannot be updated`);
     if (from >= ORDER_STATUS_FLOW.indexOf(next as OrderStatus)) throw new HttpError(409, `This order is already ${String(order.status).replace(/_/g, ' ')}`);
@@ -637,7 +892,15 @@ export const tplNetworkService = {
     const now = new Date().toISOString();
     const patch: Record<string, unknown> = { status: next, updated_at: now };
     if (!order.picked_up_at) patch.picked_up_at = now;
-    if (next === 'delivered') { patch.delivered_at = now; patch.pod_note = note; }
+    if (next === 'delivered') {
+      patch.delivered_at = now;
+      if (pod) {
+        if (pod.photo) patch.pod_photo_url = pod.photo;
+        if (pod.signature) patch.pod_signature_url = pod.signature;
+        if (pod.receivedBy) patch.pod_received_by = pod.receivedBy;
+        if (note) patch.pod_note = note;
+      } else patch.pod_note = note;
+    }
     const { data: updated, error: uErr } = await supabase
       .from('tpl_orders').update(patch).eq('id', orderId).eq('status', order.status).select().maybeSingle();
     if (uErr) dbError('Failed to update order', uErr);
@@ -645,7 +908,9 @@ export const tplNetworkService = {
 
     // Keep the load in step
     try {
-      if (order.source_type === 'shipment' && order.shipment_id) {
+      if (backed) {
+        // The manifest is the source of truth: the vendor was told, the load closed and billed when it was delivered
+      } else if (order.source_type === 'shipment' && order.shipment_id) {
         // The partner's truck is not one of ours: the steps go through custody with the partner named
         const { recordCustody } = await import('./cargo/custody.service');
         const by = `3PL partner ${partner.company_name}`;
@@ -662,7 +927,7 @@ export const tplNetworkService = {
           await recordCustody({ shipment_id: order.shipment_id }, { kind: 'delivery', receiver_name: note, notes: `${by}: ${note}` }, null, { via: 'tpl', legacyEvidence: true, logMetadata: log });
         }
       }
-      if (order.source_type === 'request' && order.request_id) {
+      if (!backed && order.source_type === 'request' && order.request_id) {
         if (next === 'delivered') {
           await supabase.from('vendor_shipment_requests')
             .update({ status: 'completed', updated_at: now }).eq('id', order.request_id).eq('status', 'assigned_to_partner');
@@ -683,7 +948,7 @@ export const tplNetworkService = {
 
   /** Accepted orders grouped by month (Indian calendar), with paid and unpaid totals. */
   async earnings(partnerId: string) {
-    const orders = (await this.ordersForPartner(partnerId)).filter(o => o.status !== 'cancelled');
+    const orders = (await this.ordersForPartner(partnerId)).items.filter(o => o.status !== 'cancelled');
     return groupEarnings(orders);
   },
 

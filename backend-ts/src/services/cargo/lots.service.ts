@@ -350,6 +350,15 @@ export async function rollupMaster(kind: RefKind, masterId: string, actor: Actor
     if (error) throw new Error(`Failed to update the master: ${error.message}`);
     if (!data) continue;
     if (stored !== master.rawStatus) await afterMasterStatus(master, status, actor, lots.filter(l => l.rawStatus !== 'cancelled').length);
+    if (kind === 'manifest' && stored !== master.rawStatus) {
+      // A load split into lots is one 3PL order: it follows the master
+      try {
+        const { syncTplOrderFromManifest } = await import('../tpl-network.service');
+        await syncTplOrderFromManifest(masterId);
+      } catch (e) {
+        console.error(`[cargo] The 3PL order of trip ${masterId} was not updated:`, e);
+      }
+    }
     return { status, holder };
   }
   console.error(`[cargo] The rollup of ${kind} ${masterId} kept losing to other writes`);

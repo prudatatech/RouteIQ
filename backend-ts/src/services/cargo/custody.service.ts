@@ -307,6 +307,16 @@ async function afterManifestDelivered(c: Consignment): Promise<void> {
   if (vehicleId && !(await vehicleHasOpenWork(vehicleId, { manifestId: c.id }))) await setOperatingVehicleStatus(vehicleId, 'available');
 }
 
+/** A trip run by a 3PL partner's driver moves the partner's order with it (never blocks the step). */
+async function syncTpl(manifestId: string): Promise<void> {
+  try {
+    const { syncTplOrderFromManifest } = await import('../tpl-network.service');
+    await syncTplOrderFromManifest(manifestId);
+  } catch (e) {
+    console.error(`[custody] The 3PL order of trip ${manifestId} was not updated:`, e);
+  }
+}
+
 /** Side effects of a status change, by kind of consignment. */
 async function afterStatus(c: Consignment, previous: string, next: string, actor: Actor | null): Promise<void> {
   // A partial delivery whose last pieces are settled later (returned, found short) keeps its status:
@@ -328,6 +338,7 @@ async function afterStatus(c: Consignment, previous: string, next: string, actor
   const { vendorService } = await import('../vendor.service');
   const [from, to] = [manifestStatusFor(previous), manifestStatusFor(next)];
   if (from === to) return;
+  await syncTpl(c.id);
   if (to === 'in_transit' && from === 'scheduled') await vendorService.notifyVendorLoadEvent(c.id, 'picked_up');
   if (to === 'delivered') {
     await afterManifestDelivered(c);

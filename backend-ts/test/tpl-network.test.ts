@@ -227,8 +227,8 @@ describe('partner responses', () => {
   it('shows a partner only their own offers', async () => {
     const res = await request(app).get('/api/v1/tpl-network/my/offers').set(asPartner('u1'));
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].partner_id).toBe(P1);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].partner_id).toBe(P1);
   });
 
   it('keeps other accounts out', async () => {
