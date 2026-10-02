@@ -6,7 +6,7 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { HttpError } from '../core/errors';
 import { notificationService, PLATFORM } from './notification.service';
-import { emailService } from './email.service';
+import { emailService, fromAddress } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
 import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
@@ -647,7 +647,7 @@ export const tplService = {
     if (!apiKey) return;
     const { Resend } = await import('resend');
     const { error: sendErr } = await new Resend(apiKey).emails.send({
-      from: 'MargixIndia <onboarding@resend.dev>',
+      from: fromAddress(),
       to: email,
       subject: 'MargixIndia: set up your 3PL account password',
       html: `
