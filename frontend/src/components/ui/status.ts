@@ -110,6 +110,7 @@ const kindOverrides: Record<StatusKind, Record<string, { tone?: Tone; label?: st
   kyc: {
     submitted: { tone: 'warning', label: 'Waiting for review' },
     pending: { tone: 'neutral', label: 'Not submitted' },
+    info_requested: { tone: 'info', label: 'More details asked' },
   },
   // Capacity-bidding window states.
   window: {

@@ -14,7 +14,7 @@ import { StatusPill } from './StatusPill'
 import { LoadingState } from './Spinner'
 import { NotificationsBell } from './NotificationsBell'
 
-const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'approved', 'rejected']
+const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'info_requested', 'approved', 'rejected']
 
 /** Warms a route's JS chunk on hover/focus of its nav link (see `AppLayout` for the same pattern). */
 function prefetchRoute(to: string) {
@@ -156,7 +156,7 @@ export default function VendorLayout() {
           <div className={clsx('min-w-0', !inMenu && 'text-right')}>
             <p className="truncate text-sm font-medium text-text">{vendorProfile.company_name || 'Your company'}</p>
             <StatusPill status={vendorProfile.kycStatus} className="mt-0.5">
-              {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
+              {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'info_requested' ? 'More details needed' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
             </StatusPill>
           </div>
         </div>
