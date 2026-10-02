@@ -313,7 +313,7 @@ class MockSupabase {
   authAdmin = false;
   /** Supabase Auth users (id, email, app_metadata, user_metadata). */
   /** Every RPC the app called (`/rest/v1/rpc/<name>`), with its JSON arguments. */
-  rpcCalls: Array<{ name: string; args: any }> = [];
+  rpcCalls: Array<{ name: string; fn: string; args: any }> = [];
   /** What an RPC answers (default: null). Cleared by reset(). */
   rpcHandlers = new Map<string, (args: any) => unknown>();
   /** Answer the magic-link calls behind createSupabaseSession with a fixed test session. Cleared by reset(). */
@@ -364,6 +364,11 @@ class MockSupabase {
     this.authAdmin = false;
     this.failures.clear();
     clearAllMemos();
+  }
+
+  /** Answer rpc calls to `fn` with `handler(args)`. */
+  onRpc(fn: string, handler: (args: any) => unknown): void {
+    this.rpcHandlers.set(fn, handler);
   }
 
   /** Live rows of a table (mutable). */
@@ -454,10 +459,10 @@ class MockSupabase {
         return send(200, { keys: [jwk] });
       }
       if (url.pathname.startsWith('/rest/v1/rpc/')) {
-        const name = url.pathname.slice('/rest/v1/rpc/'.length);
+        const name = decodeURIComponent(url.pathname.slice('/rest/v1/rpc/'.length));
         let args: unknown = null;
         try { args = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
-        this.rpcCalls.push({ name, args });
+        this.rpcCalls.push({ name, fn: name, args });
         const handler = this.rpcHandlers.get(name);
         return send(200, handler ? handler(args) : null);
       }
