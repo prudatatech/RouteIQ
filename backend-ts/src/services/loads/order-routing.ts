@@ -25,6 +25,8 @@ export const HOLD_UNVERIFIED = 'vendor_unverified';
 export const MAX_CHOSEN_COMPANIES = 10;
 /** How long companies get to quote when the vendor asked for quotes. */
 export const QUOTE_WINDOW_MS = 2 * 60 * 60 * 1000;
+/** How many people are told at the same time when a load goes out. */
+const NOTIFY_CONCURRENCY = 20;
 /** The market and the won list show at most this many loads at a time. */
 const MARKET_LIMIT = 300;
 
@@ -122,17 +124,23 @@ export async function notifyCompanies(load: Record<string, any>): Promise<string
   const kg = Math.round(Number(load.total_weight_kg ?? load.required_capacity_kg ?? 0)).toLocaleString('en-IN');
   const quote = load.quote_requested ? ' The vendor asked for quotes.' : '';
   const body = `Load ${load.load_number ?? ''}: ${kg} kg, ${lane(load)}${when ? `, pickup ${when}` : ''}.${quote}`.replace('Load : ', 'Load: ');
+  const title = load.routing === 'chosen' ? 'A vendor sent you a load' : 'New load for your lanes';
   const told: string[] = [];
+  const sends: Array<() => Promise<unknown>> = [];
   for (const [orgId, users] of people) {
     for (const userId of users) {
-      try {
-        await notificationService.sendNotification(userId, load.routing === 'chosen' ? 'A vendor sent you a load' : 'New load for your lanes', body, 'vendor_request', { request_id: load.id, load_number: load.load_number ?? null });
-      } catch (e) {
-        console.error('[routing] notification failed:', e);
-      }
+      sends.push(async () => {
+        try {
+          await notificationService.sendNotification(userId, title, body, 'vendor_request', { request_id: load.id, load_number: load.load_number ?? null });
+        } catch (e) {
+          console.error('[routing] notification failed:', e);
+        }
+      });
     }
     if (users.length) told.push(orgId);
   }
+  // A few at a time: one after another, a vendor posting an open load waited on every company's people in turn
+  for (let i = 0; i < sends.length; i += NOTIFY_CONCURRENCY) await Promise.all(sends.slice(i, i + NOTIFY_CONCURRENCY).map(f => f()));
   return told;
 }
 

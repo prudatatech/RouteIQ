@@ -10,6 +10,8 @@ import { supabase } from '../../core/supabase';
 import { HttpError } from '../../core/errors';
 import { GST_STATES } from '../../core/gst';
 import { gstinService } from '../gstin.service';
+import { notificationService } from '../notification.service';
+import { lookupPincode } from '../goods/pincode';
 import type { BusinessProfileInput } from '../../schemas/loads';
 import type { Caller } from './loads.service';
 
@@ -85,7 +87,15 @@ export async function saveBusinessProfile(c: Caller, input: BusinessProfileInput
   let gstinStatus: string | null = null;
   if (input.gstin) gstinStatus = await checkGstin(input.gstin);
 
-  const stateCode = input.gstin ? input.gstin.slice(0, 2) : (input.state_code ?? null);
+  // The GSTIN names the state; without one, the state the form sent, else the state of the pin code
+  let stateCode: string | null = input.gstin ? input.gstin.slice(0, 2) : (input.state_code ?? null);
+  if (!stateCode) {
+    try {
+      stateCode = (await lookupPincode(input.pincode))?.state_code ?? null;
+    } catch (e) {
+      console.warn('[business-profile] pin code lookup failed:', e instanceof Error ? e.message : e);
+    }
+  }
   const { data: current, error: curErr } = await supabase.from('organizations').select('id, profile').eq('id', orgId).maybeSingle();
   if (curErr) throw new Error(`Failed to read the business: ${curErr.message}`);
   if (!current) throw new HttpError(404, 'Business not found');
@@ -123,17 +133,31 @@ async function mirrorToVendorProfile(userId: string, input: BusinessProfileInput
   const { data: existing, error: readErr } = await supabase.from('vendor_profiles').select('kyc_status, company_name, gst_number, address, city').eq('id', userId).maybeSingle();
   if (readErr) throw new Error(`Failed to read the vendor profile: ${readErr.message}`);
   const changes: Record<string, unknown> = {
-    id: userId,
     company_name: companyName,
     gst_number: input.gstin ?? '',
     address: input.address,
     updated_at: new Date().toISOString(),
   };
-  if (existing?.city == null || existing.city === '') changes.city = '';
+  let backToReview = false;
   if (existing?.kyc_status === 'approved'
       && (['company_name', 'gst_number', 'address'] as const).some(f => (changes[f] ?? null) !== (existing[f] ?? null))) {
     Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
+    backToReview = true;
   }
-  const { error } = await supabase.from('vendor_profiles').upsert(changes);
-  if (error) throw new Error(`Failed to save the vendor profile: ${error.message}`);
+  if (existing) {
+    // An existing row is updated, not upserted: an upsert's insert half has no city, and the column is NOT NULL
+    const { error } = await supabase.from('vendor_profiles').update(changes).eq('id', userId);
+    if (error) throw new Error(`Failed to save the vendor profile: ${error.message}`);
+  } else {
+    const { error } = await supabase.from('vendor_profiles').insert({ id: userId, city: '', ...changes });
+    if (error) throw new Error(`Failed to save the vendor profile: ${error.message}`);
+  }
+  // Tell the platform owner, as every other way of sending an approved profile back to review does. A failure cannot undo the save.
+  if (backToReview) {
+    try {
+      await notificationService.notifySuperAdmins('KYC submitted', `${companyName} changed its business details and needs a new review.`, 'kyc_submitted', { profile_id: userId });
+    } catch (e) {
+      console.error('[business-profile] KYC notification failed:', e);
+    }
+  }
 }

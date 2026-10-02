@@ -50,7 +50,8 @@ const todayOrLater = (v: string) => v >= indianDateKey(new Date());
 
 /** The fields of a load, before the cross-field checks (the bulk rows reuse them). */
 export const LoadDraftBase = z.object({
-  client_request_id: z.string().uuid('client_request_id must be a UUID').optional(),
+  // null is what a repost draft carries (a new request id is made); it means "none"
+  client_request_id: z.string().uuid('client_request_id must be a UUID').optional().nullable(),
   source: z.enum(['web', 'app', 'bulk', 'api', 'repost']).optional(),
   items: z.array(LoadItemSchema).min(1, 'Add at least one product').max(MAX_LOAD_ITEMS, `A load can have at most ${MAX_LOAD_ITEMS} products`),
 
