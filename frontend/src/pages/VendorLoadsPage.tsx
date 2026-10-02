@@ -100,7 +100,12 @@ export default function VendorLoadsPage() {
         <EmptyState
           title="Sign in to see your loads"
           description="Your loads, invoices and claims are shown to signed-in vendors."
-          action={<Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/loads')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
+          action={(
+            <div className="flex flex-col items-center gap-3 sm:flex-row">
+              <Link to={`/login?as=vendor&next=${encodeURIComponent('/vendor/loads')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>
+              <Link to="/ship" className={buttonClasses({ variant: 'secondary' })}>Find a truck without an account</Link>
+            </div>
+          )}
         />
       </Page>
     )

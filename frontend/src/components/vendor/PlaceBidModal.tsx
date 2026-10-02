@@ -19,7 +19,16 @@ const LOAD_CONFIGURATIONS = [
   { value: 'Containerized', label: 'Containerized' },
 ]
 
-interface CapacityWindow {
+/** What a bid form holds; saved for a visitor who has to sign in first. */
+export interface BidFields {
+  bidAmount: string
+  weightKg: string
+  dropoff: ResolvedPlace | null
+  ewayBill: string
+  loadConfiguration: string
+}
+
+export interface CapacityWindow {
   id: string
   floor_price: number | null
   closes_at: string
@@ -35,21 +44,28 @@ function useCountdown(until: string) {
   return Math.max(0, remaining)
 }
 
-export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
+export default function PlaceBidModal({ window: w, onClose, onPlaced, guest = false, onGuestContinue, initial, restored = false }: {
   window: CapacityWindow
   onClose: () => void
   onPlaced: () => void
+  /** A visitor with no account: the form is filled in, then saved while they sign in (see `onGuestContinue`). */
+  guest?: boolean
+  onGuestContinue?: (fields: BidFields) => void
+  /** Values to start from, such as a bid saved before signing in. */
+  initial?: Partial<BidFields>
+  /** The form came back after sign-in: ask for a final confirmation. */
+  restored?: boolean
 }) {
   const capacityKg = w.vehicles?.available_capacity_kg ?? null
   // The window's minimum bid, when staff set one; otherwise it comes from the price check for this load (see `minimum`)
   const windowMinimum = w.floor_price != null ? Number(w.floor_price) : null
 
-  const [bidAmount, setBidAmount] = useState(windowMinimum ? String(windowMinimum) : '')
-  const [weightKg, setWeightKg] = useState('')
-  const [dropoff, setDropoff] = useState<ResolvedPlace | null>(null)
-  const [dropoffTouched, setDropoffTouched] = useState(false)
-  const [ewayBill, setEwayBill] = useState('')
-  const [loadConfiguration, setLoadConfiguration] = useState(LOAD_CONFIGURATIONS[0].value)
+  const [bidAmount, setBidAmount] = useState(initial?.bidAmount ?? (windowMinimum ? String(windowMinimum) : ''))
+  const [weightKg, setWeightKg] = useState(initial?.weightKg ?? '')
+  const [dropoff, setDropoff] = useState<ResolvedPlace | null>(initial?.dropoff ?? null)
+  const [dropoffTouched, setDropoffTouched] = useState(!!initial?.dropoff)
+  const [ewayBill, setEwayBill] = useState(initial?.ewayBill ?? '')
+  const [loadConfiguration, setLoadConfiguration] = useState(initial?.loadConfiguration ?? LOAD_CONFIGURATIONS[0].value)
   const [submitting, setSubmitting] = useState(false)
   const [attempted, setAttempted] = useState(false)
 
@@ -57,6 +73,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
   const profile = useQuery({
     queryKey: ['vendor-profile'],
     queryFn: () => vendorAPI.profile() as Promise<{ address?: string | null; latitude?: number | null; longitude?: number | null }>,
+    enabled: !guest,
   })
   const pickupPoint = profile.data?.latitude != null && profile.data?.longitude != null
     ? { lat: profile.data.latitude, lng: profile.data.longitude, label: profile.data.address ?? null }
@@ -94,6 +111,10 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
     setDropoffTouched(true)
     setAttempted(true)
     if (!valid || !dropoff) return
+    if (guest) {
+      onGuestContinue?.({ bidAmount, weightKg, dropoff, ewayBill, loadConfiguration })
+      return
+    }
     setSubmitting(true)
     try {
       await capacityAPI.placeBid({
@@ -127,7 +148,7 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={submitting} disabled={closed}>Submit bid</Button>
+          <Button type="submit" loading={submitting} disabled={closed}>{guest ? 'Continue to sign in' : restored ? 'Confirm bid' : 'Submit bid'}</Button>
         </>
       }
     >
@@ -143,6 +164,9 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
             {closed ? 'Bidding closed' : <>Closes in <span className="tabular font-medium text-text">{minutes}:{String(seconds).padStart(2, '0')}</span></>}
           </span>
         </div>
+
+        {restored && <Alert tone="info">Welcome back. Your bid is filled in. Check it, then press Confirm bid.</Alert>}
+        {guest && <Alert tone="info">You can fill in your bid now. We ask you to sign in or create an account next, and bring you back here.</Alert>}
 
         {closed && <Alert tone="danger">This return trip has closed. Choose another one.</Alert>}
 
@@ -170,7 +194,9 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced }: {
 
         <div className="space-y-2 rounded-control border border-border p-3">
           <p className="text-sm font-medium text-text">Suggested price</p>
-          {profile.isSuccess && !pickupPoint ? (
+          {guest ? (
+            <p className="text-sm text-muted">Sign in to see a suggested price based on your pickup address.</p>
+          ) : profile.isSuccess && !pickupPoint ? (
             <p className="text-sm text-muted">Add your warehouse address under Company to see a suggested price. The truck collects from that address.</p>
           ) : (
             <PriceSuggestion

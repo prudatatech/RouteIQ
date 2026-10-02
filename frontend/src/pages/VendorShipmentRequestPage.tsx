@@ -1,9 +1,10 @@
 import { errorMessage } from '@/utils/display'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Sparkles, Warehouse } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { clearGuestDraft, loadGuestDraft, saveGuestDraft } from '@/utils/guestDraft'
 import { useVendorContext } from '@/components/vendor/vendorContext'
 import { vendorAPI } from '@/services/api'
 import { searchHSN, type HSNEntry } from '@/utils/hsnDatabase'
@@ -32,6 +33,18 @@ const SPECIAL_HANDLING = [
 
 const STEPS = ['Trip', 'Cargo', 'Review'] as const
 
+/** Everything typed on the form, saved while the visitor signs in. */
+interface RequestDraft {
+  pickup: ResolvedPlace | null
+  drop: ResolvedPlace | null
+  consigneeName: string; consigneeContact: string; consigneeEmail: string
+  productCategory: string; productName: string; brand: string; modelVariant: string
+  packagingType: string; noOfPackages: string; quantity: string; unit: string; capacity: string; declaredValue: string
+  hsnCode: string; hsnDescription: string; gstRate: string
+  specialHandling: Record<string, boolean>
+  remarks: string; myPrice: string
+}
+
 interface VendorProfileLite {
   company_name?: string
   address?: string | null
@@ -43,6 +56,10 @@ export default function VendorShipmentRequestPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const token = useAuthStore(s => s.token)
+  const authInitialized = useAuthStore(s => s.authInitialized)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const resumeRequested = searchParams.get('resume') === '1'
+  const [restored, setRestored] = useState(false)
   const { vendorProfile: kycProfile, profileLoading, isVendor } = useVendorContext()
   const kycBlocked = isVendor && !profileLoading && kycProfile?.kycStatus !== 'approved'
 
@@ -81,38 +98,54 @@ export default function VendorShipmentRequestPage() {
   const [remarks, setRemarks] = useState('')
   const [myPrice, setMyPrice] = useState('')
 
-  // Restore a pending request after sign-in, or seed the drop location from a link elsewhere in the app.
+  // Seed the lane from a link elsewhere (the Find a truck page): drop as query/lat/lng, pickup as from/fromLat/fromLng.
   useEffect(() => {
-    let restored = false
-    if (token) {
-      const pending = sessionStorage.getItem('pendingMapRequest')
-      if (pending) {
-        try {
-          const data = JSON.parse(pending)
-          setPickup(data.pickup ?? null)
-          setDrop(data.drop ?? null)
-          setCapacity(data.capacity ? String(data.capacity) : '')
-        } catch { /* ignore malformed session data */ }
-        sessionStorage.removeItem('pendingMapRequest')
-        restored = true
-      }
+    const params = new URLSearchParams(location.search)
+    if (params.get('resume') === '1') return
+    const place = (q: string, la: string, ln: string): ResolvedPlace | null => {
+      const text = params.get(q)
+      const lat = parseFloat(params.get(la) ?? '')
+      const lng = parseFloat(params.get(ln) ?? '')
+      return text && Number.isFinite(lat) && Number.isFinite(lng) ? { address: text, lat, lng } : null
     }
-    if (!restored) {
-      const params = new URLSearchParams(location.search)
-      const query = params.get('query')
-      const lat = params.get('lat')
-      const lng = params.get('lng')
-      const dropLat = parseFloat(lat ?? '')
-      const dropLng = parseFloat(lng ?? '')
-      if (query && Number.isFinite(dropLat) && Number.isFinite(dropLng)) {
-        setDrop({ address: query, lat: dropLat, lng: dropLng })
-      }
-    }
+    const dropPlace = place('query', 'lat', 'lng')
+    const pickupPlace = place('from', 'fromLat', 'fromLng')
+    if (dropPlace) setDrop(dropPlace)
+    if (pickupPlace) setPickup(pickupPlace)
+    const weight = parseFloat(params.get('weight') ?? '')
+    if (Number.isFinite(weight) && weight > 0) setCapacity(String(weight))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     if (token) {
       vendorAPI.profile().then(setVendorProfile).catch(err => console.warn('Failed to load vendor profile', err))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
+
+  // Coming back from sign-in: put the saved form back and show the review. Nothing is posted until the vendor confirms.
+  useEffect(() => {
+    if (!resumeRequested || restored || !authInitialized) return
+    if (!token) return
+    const d = loadGuestDraft<RequestDraft>('request')
+    setRestored(true)
+    if (!d) {
+      toast('We could not find your saved load. Please fill it in again.')
+      setSearchParams({}, { replace: true })
+      return
+    }
+    setPickup(d.pickup ?? null); setDrop(d.drop ?? null)
+    setConsigneeName(d.consigneeName ?? ''); setConsigneeContact(d.consigneeContact ?? ''); setConsigneeEmail(d.consigneeEmail ?? '')
+    setProductCategory(d.productCategory ?? ''); setProductName(d.productName ?? ''); setBrand(d.brand ?? ''); setModelVariant(d.modelVariant ?? '')
+    setPackagingType(d.packagingType ?? ''); setNoOfPackages(d.noOfPackages ?? ''); setQuantity(d.quantity ?? ''); setUnit(d.unit ?? '')
+    setCapacity(d.capacity ?? ''); setDeclaredValue(d.declaredValue ?? '')
+    setHsnCode(d.hsnCode ?? ''); setHsnDescription(d.hsnDescription ?? ''); setGstRate(d.gstRate ?? '')
+    setSpecialHandling(d.specialHandling ?? {}); setRemarks(d.remarks ?? ''); setMyPrice(d.myPrice ?? '')
+    setStep(STEPS.length - 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeRequested, restored, authInitialized, token])
+  /** True while the restored form waits for the vendor's confirmation. */
+  const confirming = restored && resumeRequested && !!token
 
   useEffect(() => {
     const query = hsnCode || productName
@@ -189,7 +222,7 @@ export default function VendorShipmentRequestPage() {
 
   // Suggested price for the Review step (signed-in vendors only)
   const loadType = specialHandling.hazardous ? 'hazardous' : specialHandling.coldChain ? 'cold_chain' : specialHandling.fragile ? 'fragile' : 'general'
-  const quoteInput: QuoteRequest | null = step === 2 && token && pickup && drop && Number(capacity) > 0
+  const quoteInput: QuoteRequest | null = step === 2 && pickup && drop && Number(capacity) > 0
     ? {
         pickup: { lat: pickup.lat, lng: pickup.lng, label: pickup.address },
         drop: { lat: drop.lat, lng: drop.lng, label: drop.address },
@@ -198,7 +231,7 @@ export default function VendorShipmentRequestPage() {
         source: 'vendor_request',
       }
     : null
-  const quote = usePriceQuote(quoteInput)
+  const quote = usePriceQuote(quoteInput, { guest: !token })
   const quoteId = quote.data?.status === 'ok' ? quote.data.quote_id : null
   const myPriceNumber = myPrice.trim() === '' ? null : Number(myPrice)
   const myPriceError = myPriceNumber !== null && !(myPriceNumber > 0) ? 'Enter a price above 0, or leave it blank' : undefined
@@ -253,15 +286,23 @@ export default function VendorShipmentRequestPage() {
     }
 
     if (!token) {
-      sessionStorage.setItem('pendingMapRequest', JSON.stringify(payload))
-      toast('Sign in to post this load — we will bring you right back', { icon: '🔒' })
-      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request')}`)
+      // Keep the whole form in this browser, then sign in. The vendor lands back on the review and confirms.
+      const draft: RequestDraft = {
+        pickup, drop, consigneeName, consigneeContact, consigneeEmail,
+        productCategory, productName, brand, modelVariant,
+        packagingType, noOfPackages, quantity, unit, capacity, declaredValue,
+        hsnCode, hsnDescription, gstRate, specialHandling, remarks, myPrice,
+      }
+      if (!saveGuestDraft('request', draft)) toast('We could not save your load on this device, so you may need to fill it in again after signing in.')
+      else toast('Sign in to post this load. We will bring you right back with everything filled in.')
+      navigate(`/login?as=vendor&next=${encodeURIComponent('/vendor/request?resume=1')}`)
       return
     }
 
     setIsSubmitting(true)
     try {
       await vendorAPI.createShipmentRequest(payload)
+      clearGuestDraft('request')
       toast.success('Load posted. Dispatch will assign a vehicle.')
       navigate('/vendor/loads')
     } catch (err) {
@@ -277,8 +318,20 @@ export default function VendorShipmentRequestPage() {
       <PageHeader
         title="Post a load"
         description="Tell us the trip and cargo — we'll match it with available capacity."
-        back={{ to: '/vendor/loads', label: 'My loads' }}
+        back={token ? { to: '/vendor/loads', label: 'My loads' } : { to: '/ship', label: 'Find a truck' }}
       />
+
+      {confirming && (
+        <Alert tone="info" title="Welcome back. Check your load, then confirm.">
+          Your details are filled in. Nothing is posted until you press Confirm and post.
+        </Alert>
+      )}
+
+      {!token && (
+        <Alert tone="info" title="You can fill this in without an account">
+          You will be asked to sign in or create a free account when you post.
+        </Alert>
+      )}
 
       {kycBlocked && (
         <Alert
@@ -443,16 +496,12 @@ export default function VendorShipmentRequestPage() {
               <div>
                 <p className="mb-2 text-sm font-medium text-text">Price</p>
                 <div className="space-y-4 rounded-card border border-border p-4">
-                  {token ? (
-                    <PriceSuggestion
-                      query={quote}
-                      onUse={q => setMyPrice(String(q.suggested))}
-                      useLabel="Offer this price"
-                      idle="Enter a gross weight to see a suggested price."
-                    />
-                  ) : (
-                    <p className="text-sm text-muted">Sign in to see a suggested price for this load. You can still submit without one.</p>
-                  )}
+                  <PriceSuggestion
+                    query={quote}
+                    onUse={q => setMyPrice(String(q.suggested))}
+                    useLabel="Offer this price"
+                    idle="Enter a gross weight to see a suggested price."
+                  />
                   <Input
                     label="Your price (₹)" type="number" min={0} value={myPrice} onChange={e => setMyPrice(e.target.value)}
                     hint="Optional. Dispatch sees your price when they assign a vehicle."
@@ -472,7 +521,7 @@ export default function VendorShipmentRequestPage() {
               {step < STEPS.length - 1 ? (
                 <Button type="button" onClick={goNext}>Continue</Button>
               ) : (
-                <Button type="button" onClick={submit} loading={isSubmitting} disabled={kycBlocked}>Post load</Button>
+                <Button type="button" onClick={submit} loading={isSubmitting} disabled={kycBlocked}>{confirming ? 'Confirm and post' : 'Post load'}</Button>
               )}
             </div>
           </div>

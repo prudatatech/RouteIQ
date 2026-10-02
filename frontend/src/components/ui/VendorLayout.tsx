@@ -23,8 +23,9 @@ function prefetchRoute(to: string) {
 
 /** The vendor's menu, in the order the work happens. */
 const links = [
+  { to: '/ship', label: 'Find a truck', requiresSignIn: false },
   { to: '/vendor/loads', label: 'My loads', requiresSignIn: true },
-  { to: '/vendor/request', label: 'Post a load', requiresSignIn: true },
+  { to: '/vendor/request', label: 'Post a load', requiresSignIn: false },
   { to: '/vendor/return-trips', label: 'Return trips', requiresSignIn: false },
   { to: '/vendor/invoices', label: 'Invoices and proofs', requiresSignIn: true },
   { to: '/vendor/claims', label: 'Claims', requiresSignIn: true },
@@ -118,18 +119,18 @@ export default function VendorLayout() {
     navigate('/login?as=vendor')
   }
 
-  const target = (link: typeof links[number]) =>
-    link.requiresSignIn && !session ? `/login?as=vendor&next=${encodeURIComponent(link.to)}` : link.to
+  // A visitor sees only the public sections; the account pages appear once they sign in.
+  const visibleLinks = links.filter(link => !link.requiresSignIn || !!session)
 
   const isVendor = !!session && role === 'vendor'
   const context: VendorOutletContext = { vendorProfile, profileLoading, isSignedIn: !!session, isVendor, refreshProfile: loadProfile }
   // The company page needs the vendor when the KYC is not approved, or the profile has no pickup location
   const needsKyc = isVendor && (vendorProfile ? vendorProfile.kycStatus !== 'approved' || !vendorProfile.hasLocation : !profileLoading)
 
-  const navLinks = (vertical: boolean) => links.map(link => (
+  const navLinks = (vertical: boolean) => visibleLinks.map(link => (
     <NavLink
       key={link.to}
-      to={target(link)}
+      to={link.to}
       onMouseEnter={() => prefetchRoute(link.to)}
       onFocus={() => prefetchRoute(link.to)}
       className={({ isActive }) => clsx(
@@ -165,7 +166,7 @@ export default function VendorLayout() {
     </div>
   ) : (
     <NavLink to={`/login?as=vendor&next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-      <LogIn size={16} aria-hidden="true" /> Sign in
+      <LogIn size={16} aria-hidden="true" /> Sign in / Sign up
     </NavLink>
   )
 
@@ -174,7 +175,7 @@ export default function VendorLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4 xl:gap-6">
-            <NavLink to="/vendor/loads" className="flex items-center gap-2.5">
+            <NavLink to={session ? '/vendor/loads' : '/ship'} className="flex items-center gap-2.5">
               <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
               <span className="text-lg font-semibold text-text">MargixIndia</span>
               <span className="hidden text-sm text-muted xl:inline">for vendors</span>
