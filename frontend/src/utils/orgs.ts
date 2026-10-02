@@ -73,3 +73,47 @@ export interface OrgMember {
 
 /** Only owners and admins of the active organisation manage its profile and members. */
 export const canManageOrg = (role: OrgRole | undefined): boolean => role === 'owner' || role === 'admin'
+
+export type OrgStatus = 'pending' | 'active' | 'suspended' | 'rejected'
+
+/** Fields the registration form sends; empty strings are left out of the request. */
+export interface OrgRegistration {
+  name: string
+  legal_name: string
+  gstin: string
+  pan: string
+  state: string
+  city: string
+  address: string
+  pincode: string
+  phone: string
+  email: string
+}
+
+/** A row of GET /admin/orgs (and the answer of POST /orgs and the decisions). */
+export interface OrgRow {
+  id: string
+  kind: OrgKind
+  name: string
+  legal_name?: string | null
+  gstin?: string | null
+  pan?: string | null
+  state?: string | null
+  city?: string | null
+  address?: string | null
+  pincode?: string | null
+  phone?: string | null
+  email?: string | null
+  status: OrgStatus
+  profile?: Record<string, unknown> | null
+  approved_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface OrgPage {
+  items: OrgRow[]
+  total: number
+  limit: number
+  offset: number
+}

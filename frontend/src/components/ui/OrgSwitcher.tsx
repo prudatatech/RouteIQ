@@ -1,6 +1,8 @@
 import { Building2 } from 'lucide-react'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import { groupMemberships } from '@/utils/orgs'
+import { StatusPill } from './StatusPill'
+import { orgOptionLabel } from '@/utils/orgAccess'
 
 /**
  * The active organisation in the header. One membership shows its name; more than one shows a
@@ -18,6 +20,9 @@ export function OrgSwitcher({ className }: { className?: string }) {
         <span className="flex items-center gap-2 text-sm font-medium text-text">
           <Building2 size={16} aria-hidden="true" className="shrink-0 text-muted" />
           <span className="truncate">{active.org.name}</span>
+          {(active.org.status === 'pending' || active.org.status === 'suspended') && (
+            <StatusPill status={active.org.status} tone={active.org.status === 'pending' ? 'warning' : 'danger'} dot={false}>{active.org.status === 'pending' ? 'Pending' : 'Suspended'}</StatusPill>
+          )}
         </span>
       </div>
     )
@@ -35,7 +40,7 @@ export function OrgSwitcher({ className }: { className?: string }) {
         >
           {groupMemberships(memberships).map(g => (
             <optgroup key={g.kind} label={g.label}>
-              {g.items.map(m => <option key={m.org.id} value={m.org.id}>{m.org.name}</option>)}
+              {g.items.map(m => <option key={m.org.id} value={m.org.id}>{orgOptionLabel(m)}</option>)}
             </optgroup>
           ))}
         </select>

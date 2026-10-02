@@ -1,6 +1,6 @@
 import {
   BarChart3, Banknote, CalendarCheck, Inbox, MapPinned, Package, Route, Settings, Truck, Users, Waypoints, type LucideIcon,
-  ClipboardList,
+  ClipboardList, Building2,
 } from 'lucide-react'
 
 export type StaffRole = 'admin' | 'superadmin' | 'manager'
@@ -13,7 +13,7 @@ export type NavBadge =
   | 'fleet' | 'vehicleRequests'
   | 'people' | 'documents' | 'kyc'
   | 'returnTrips' | 'bids' | 'pendingPartners'
-  | 'money'
+  | 'money' | 'pendingOrgs'
 
 export interface NavChild {
   /** Path, with the query string when the link opens a filtered view (`/routes?status=active`). */
@@ -132,11 +132,18 @@ export const navSections: NavSection[] = [
   },
 ]
 
+/** The platform owner's section. Shown only while acting as the platform organisation. */
+export const platformSection: NavSection = {
+  to: '/platform/organisations', label: 'Platform', icon: Building2, roles: admins, badge: 'pendingOrgs',
+  children: [{ to: '/platform/organisations', label: 'Organisations', roles: admins, badge: 'pendingOrgs' }],
+}
+
 /** Sections and links this role may see. A section left with no page of its own is dropped. */
-export function menuFor(role: string | null | undefined): NavSection[] {
+export function menuFor(role: string | null | undefined, actor: 'platform' | 'company' = 'company'): NavSection[] {
   if (!role) return []
   const allowed = (roles: StaffRole[]) => (roles as string[]).includes(role)
-  return navSections
+  const sections = (actor === 'platform' ? [navSections[0], platformSection, ...navSections.slice(1)] : navSections)
+  return sections
     .filter(s => allowed(s.roles))
     .map(s => ({ ...s, children: s.children.filter(c => allowed(c.roles)) }))
 }
@@ -189,7 +196,7 @@ export interface QueueCounts {
 }
 
 /** Menu badge counts from the Today queues (plus 3PL applications, which have no queue on Today). */
-export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners: number): Record<NavBadge, number> {
+export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners: number, pendingOrgs = 0): Record<NavBadge, number> {
   const n = (q?: { count: number }) => q?.count ?? 0
   const sos = n(queues?.sos)
   const problems = n(queues?.problems)
@@ -219,6 +226,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     bids,
     pendingPartners,
     money: n(queues?.unpriced) + n(queues?.payment_reports),
+    pendingOrgs,
   }
 }
 

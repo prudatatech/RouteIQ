@@ -8,7 +8,7 @@ import type { ShipmentOverview } from '@/components/shipments/types'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 
-import type { Membership, OrgMember, OrgProfile, OrgProfileInput, OrgRole } from '@/utils/orgs'
+import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
 if (baseURL && !baseURL.endsWith('/api/v1') && !baseURL.startsWith('/api')) {
@@ -161,6 +161,24 @@ export const orgAPI = {
   addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
   updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
     api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
+}
+
+export const orgRegisterAPI = {
+  /** POST /orgs: a new organisation, pending until the platform approves it. Empty fields are left out. */
+  create: (kind: 'logistic_company' | 'vendor', data: Partial<OrgRegistration>) => {
+    const body: Record<string, string> = {}
+    for (const [key, value] of Object.entries(data)) if (typeof value === 'string' && value.trim()) body[key] = value.trim()
+    return api.post('/orgs', { kind, ...body }).then(r => r.data as OrgRow)
+  },
+  /** PATCH /org: the owner corrects the registration (also while it is pending or rejected). */
+  update: (data: Partial<OrgRegistration>) => api.patch('/org', data).then(r => r.data as OrgRow),
+}
+
+export const adminOrgsAPI = {
+  list: (params: { kind?: string; status?: string; limit?: number; offset?: number }) =>
+    api.get('/admin/orgs', { params }).then(r => r.data as OrgPage),
+  decide: (id: string, decision: 'approve' | 'reject' | 'suspend', reason?: string) =>
+    api.put(`/admin/orgs/${id}/${decision}`, reason ? { reason } : {}).then(r => r.data as OrgRow),
 }
 
 export const vehicleRequestsAPI = {
