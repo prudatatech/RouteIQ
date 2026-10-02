@@ -475,6 +475,7 @@ export async function acceptDirect(orgId: string, userId: string, loadId: string
   const amount = opts.amount ?? num(load.budget_inr);
   if (!amount || amount <= 0) throw new HttpError(400, 'This load has no budget. Enter the amount you will carry it for.');
   const result = await award({ p_load: loadId, p_quote: null, p_carrier: orgId, p_amount: amount, p_actor: userId, p_direct: true, p_cost_per_km: opts.costPerKm ?? null });
+  result.load = await freshLoad(loadId) ?? result.load;
   await afterAward(result, 'direct');
   return { load: result.load, quote: toQuoteView(result.quote)! };
 }
@@ -531,9 +532,18 @@ export async function listVendorQuotes(c: Caller, loadId: string) {
 }
 
 /** The vendor picks a quote: the load is awarded to that company, the other quotes are declined. Atomic. */
+
+/** The load as it is stored right now (the award function returns its pre-update read). */
+async function freshLoad(loadId: string): Promise<Record<string, unknown> | null> {
+  const { data } = await supabase.from('vendor_shipment_requests').select('*').eq('id', loadId).maybeSingle();
+  return data ?? null;
+}
+
 export async function acceptQuote(c: Caller, loadId: string, quoteId: string) {
   await readVendorLoad(c, loadId);
   const result = await award({ p_load: loadId, p_quote: quoteId, p_carrier: null, p_amount: null, p_actor: c.userId, p_direct: false, p_cost_per_km: null });
+  // The award function answers with the row it read before updating: hand back what is now stored
+  result.load = await freshLoad(loadId) ?? result.load;
   await afterAward(result, 'quote');
   return { load: loadSummary(result.load), quote: toQuoteView(result.quote)! };
 }

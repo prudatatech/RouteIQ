@@ -46,9 +46,18 @@ AUTH_ADMIN_PASSWORD=$(r)
 STORAGE_ADMIN_PASSWORD=$(r)
 REALTIME_ADMIN_PASSWORD=$(r)
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 32)
+S3PROXY_IDENTITY=$(r)
+S3PROXY_CREDENTIAL=$(openssl rand -hex 32)
 EOF
   )
   log "Generated $PF"
+fi
+# Older env files predate the S3 object store (the s3proxy app): add its credentials once.
+if ! grep -q '^S3PROXY_IDENTITY=' "$PF"; then
+  ( umask 077
+    { echo "S3PROXY_IDENTITY=$(openssl rand -hex 24)"
+      echo "S3PROXY_CREDENTIAL=$(openssl rand -hex 32)"; } >> "$PF" )
+  log "Added S3PROXY_IDENTITY and S3PROXY_CREDENTIAL to $PF"
 fi
 set -a; # shellcheck disable=SC1090
 source "$PF"; set +a
@@ -71,12 +80,28 @@ log "Roles and schemas"
 
 WEB_HOST="$(az staticwebapp show -g "$RG" -n "$WEB_APP" --query defaultHostname -o tsv)"
 SITE_URL="https://${CUSTOM_DOMAIN:-$WEB_HOST}"
-log "Services ($P-gateway, -auth, -rest, -rt, -storage); sign-in redirects to $SITE_URL"
+log "Services ($P-gateway, -auth, -rest, -rt, -storage, -s3proxy); sign-in redirects to $SITE_URL"
 GATEWAY="$(az deployment group create -g "$RG" -n "$P-platform" --template-file "$INFRA_DIR/platform.bicep" \
   --parameters stage="$STAGE" prefix="$PREFIX" location="$LOCATION" pgHost="$PG_HOST" siteUrl="$SITE_URL" dataDomain="${DATA_DOMAIN:-}" \
     jwtSecret="$JWT_SECRET" anonKey="$ANON_KEY" serviceRoleKey="$SERVICE_ROLE_KEY" \
     authenticatorPassword="$AUTHENTICATOR_PASSWORD" authAdminPassword="$AUTH_ADMIN_PASSWORD" \
     storageAdminPassword="$STORAGE_ADMIN_PASSWORD" realtimeAdminPassword="$REALTIME_ADMIN_PASSWORD" \
     realtimeSecretKeyBase="$REALTIME_SECRET_KEY_BASE" \
+    s3proxyIdentity="$S3PROXY_IDENTITY" s3proxyCredential="$S3PROXY_CREDENTIAL" \
   --only-show-errors --query properties.outputs.gatewayUrl.value -o tsv)"
+# The gateway's custom domain is not part of the Bicep template, and redeploying the app drops its hostname
+# binding (the site then answers with a TLS failure and every sign-in breaks). Bind it again every run, with the
+# managed certificate that already exists for it (created once when the domain was added).
+if [[ -n "${DATA_DOMAIN:-}" ]]; then
+  GW_APP="$P-gateway"
+  if ! az containerapp hostname list -g "$RG" -n "$GW_APP" --query "[?name=='$DATA_DOMAIN'] | length(@)" -o tsv 2>/dev/null | grep -qx 1; then
+    log "Re-binding $DATA_DOMAIN to $GW_APP"
+    CERT="$(az containerapp env certificate list -g "$RG" --name "${PREFIX}-env" --query "[?properties.subjectName=='$DATA_DOMAIN'].name | [0]" -o tsv 2>/dev/null || true)"
+    if [[ -n "$CERT" ]]; then
+      az containerapp hostname bind -g "$RG" -n "$GW_APP" --hostname "$DATA_DOMAIN" --environment "${PREFIX}-env" --certificate "$CERT" -o none
+    else
+      warn "no managed certificate for $DATA_DOMAIN yet: run  az containerapp hostname add / bind --validation-method CNAME  once (docs/DEPLOYMENT.md)"
+    fi
+  fi
+fi
 log "Done. Gateway (the app's SUPABASE_URL for $STAGE): $GATEWAY  Database: $PG_HOST"

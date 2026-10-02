@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabaseMock } from './support/mock-supabase';
 import { ORG, orgWorld, uid } from './support/org-world';
+import { loadMemberships } from '../src/core/org-context';
 import { copyItemsToManifest, releaseHeldLoads } from '../src/services/loads/loads.service';
 import { vendorService } from '../src/services/vendor.service';
 
@@ -62,5 +63,20 @@ describe('loads held for business verification', () => {
     expect(supabaseMock.rows('vendor_shipment_requests').find(r => r.id === HELD)!.metadata).toEqual({ cargo: { name: 'x' } });
     expect(supabaseMock.rows('notifications').filter(n => n.type === 'vendor_request' && n.data?.request_id === HELD).length).toBeGreaterThan(0);
     expect((await vendorService.getPendingRequests()).map((r: any) => r.id).sort()).toEqual([HELD, LOAD].sort());
+  });
+
+  it('KYC approval refreshes the vendor\'s remembered organisations (the database trigger already activated it)', async () => {
+    supabaseMock.rows('vendor_profiles').push({ id: uid('vendor-1'), kyc_status: 'submitted', company_name: 'V One' });
+    const vorg = supabaseMock.rows('organizations').find(o => o.kind === 'vendor')!;
+    const setStatus = (status: string) => {
+      vorg.status = status;
+      for (const m of supabaseMock.rows('org_members')) if (m.org_id === vorg.id) m.organizations = { ...m.organizations, status };
+    };
+    setStatus('pending');
+    expect((await loadMemberships(uid('vendor-1')))[0].org.status).toBe('pending'); // remembered
+    setStatus('active'); // what the trigger on vendor_profiles does
+    expect((await loadMemberships(uid('vendor-1')))[0].org.status).toBe('pending'); // still remembered
+    await vendorService.approveKyc(uid('vendor-1'), { user_id: uid('super-1'), role: 'superadmin' } as any);
+    expect((await loadMemberships(uid('vendor-1')))[0].org.status).toBe('active');
   });
 });

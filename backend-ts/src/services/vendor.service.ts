@@ -1,3 +1,4 @@
+import { invalidateOrgContext } from '../core/org-context';
 import { supabase } from '../core/supabase';
 import { withWarnings } from './people-common';
 import { checkIfscForSave } from './ifsc.service';
@@ -570,7 +571,10 @@ export const vendorService = {
     } catch (e) {
       console.error('[vendor] KYC approval notification failed:', e);
     }
-    // Loads posted while the business was unverified now go to the companies
+    // The database already made the vendor's organisation active (trigger on vendor_profiles.kyc_status), but the
+    // API remembers a person's organisations for a minute: forget this vendor's, or their session keeps saying
+    // "waiting for approval" and the loads they posted stay hidden from the companies for that long.
+    invalidateOrgContext(vendorId);
     try {
       await releaseHeldLoads(vendorId);
     } catch (e) {
@@ -601,6 +605,7 @@ export const vendorService = {
     if (error) throw new Error(error.message);
     if (!data) throw new HttpError(409, 'This KYC is no longer waiting for review');
 
+    invalidateOrgContext(vendorId);
     await notificationService.sendNotification(
       vendorId,
       'KYC rejected',
