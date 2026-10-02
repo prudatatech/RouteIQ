@@ -5,6 +5,9 @@ import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
+import type {
+  DispatchCheck, DocumentEvent, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, Settlement, TimelineItem,
+} from '@/types/loadDocuments'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
@@ -579,6 +582,36 @@ export const vendorAPI = {
   load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
+}
+
+/** Documents, pre-dispatch check, settlement and timeline of one vendor load. One place to fix if the contract moves. */
+const loadBase = (id: string) => `/loads/${encodeURIComponent(id)}`
+export const loadDocumentsAPI = {
+  list: (id: string): Promise<{ items: LoadDocument[] }> => api.get(`${loadBase(id)}/documents`).then(r => r.data),
+  uploadUrl: (id: string, data: { kind: string; file_name: string }): Promise<{ upload_url: string; path: string }> =>
+    api.post(`${loadBase(id)}/documents/upload-url`, data).then(r => r.data),
+  create: (id: string, data: DocumentInput): Promise<LoadDocument> =>
+    api.post(`${loadBase(id)}/documents`, data).then(r => r.data),
+  update: (id: string, docId: string, data: DocumentPatch): Promise<LoadDocument> =>
+    api.patch(`${loadBase(id)}/documents/${encodeURIComponent(docId)}`, data).then(r => r.data),
+  generate: (id: string, kind: GenerateKind): Promise<LoadDocument> =>
+    api.post(`${loadBase(id)}/documents/generate/${kind}`).then(r => r.data),
+  pdf: (id: string, docId: string): Promise<{ url: string }> =>
+    api.get(`${loadBase(id)}/documents/${encodeURIComponent(docId)}/pdf`).then(r => r.data),
+  history: (id: string, docId: string): Promise<{ items: DocumentEvent[] }> =>
+    api.get(`${loadBase(id)}/documents/${encodeURIComponent(docId)}/history`).then(r => r.data),
+  dispatchCheck: (id: string): Promise<DispatchCheck> => api.get(`${loadBase(id)}/dispatch-check`).then(r => r.data),
+  /** Assumed (not in the agreed contract): the current settlement, or 404 / null when none is open. */
+  settlement: (id: string): Promise<Settlement | null> => api.get(`${loadBase(id)}/settlement`).then(r => r.data ?? null),
+  openSettlement: (id: string): Promise<Settlement> => api.post(`${loadBase(id)}/settlement`).then(r => r.data),
+  addExtraCharge: (id: string, data: { label: string; amount: number }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/extra-charges`, data).then(r => r.data),
+  approveExtraCharge: (id: string, idx: number): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/extra-charges/${idx}/approve`).then(r => r.data),
+  addDeduction: (id: string, data: { label: string; amount: number; reason: string }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/deductions`, data).then(r => r.data),
+  closeSettlement: (id: string): Promise<Settlement> => api.post(`${loadBase(id)}/settlement/close`).then(r => r.data),
+  timeline: (id: string): Promise<{ items: TimelineItem[] }> => api.get(`${loadBase(id)}/timeline`).then(r => r.data),
 }
 
 export const authAPI = {
