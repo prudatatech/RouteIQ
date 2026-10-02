@@ -57,7 +57,13 @@ const shipStatus = async id => (await db('GET', 'shipments', { query: `id=eq.${i
 const vehRow = async id => (await db('GET', 'vehicles', { query: `id=eq.${id}&select=status,current_load_kg,available_capacity_kg,driver_id` })).body?.[0]
 const routeRow = async id => (await db('GET', 'routes', { query: `id=eq.${id}&select=*` })).body?.[0]
 const stopsOf = async id => (await db('GET', 'route_stops', { query: `route_id=eq.${id}&select=*&order=sequence.asc` })).body
-const notifsOf = async (userId, type) => (await db('GET', 'notifications', { query: `user_id=eq.${userId}${type ? `&type=eq.${type}` : ''}&select=*&order=created_at.desc` })).body
+// problems (cargo cases) that list a shipment among their goods
+const casesOf = async shipmentId => {
+  const items = (await db('GET', 'cargo_exception_items', { query: `shipment_id=eq.${shipmentId}&select=exception_id` })).body || []
+  if (!items.length) return []
+  return (await db('GET', 'cargo_exceptions', { query: `id=in.(${[...new Set(items.map(i => i.exception_id))].join(',')})&select=*` })).body
+}
+const notifsOf =async (userId, type) => (await db('GET', 'notifications', { query: `user_id=eq.${userId}${type ? `&type=eq.${type}` : ''}&select=*&order=created_at.desc` })).body
 
 // ───────────────────────────────────────────────────────────
 section('1. Plan a trip (staff)')
@@ -211,7 +217,7 @@ await guard('driver day', async () => {
   check('2.21 failed stop recorded (failed, 1 remaining)', fail.status === 200 && fail.body.status === 'failed' && fail.body.remaining_stops === 1, `${fail.status} ${J(fail.body)}`)
   const s2row = await shipStatus(S2.id)
   check('2.22 S2 goes to exception, attempts = 1, still on the vehicle', s2row.status === 'exception' && Number(s2row.delivery_attempts) === 1 && s2row.current_holder === 'vehicle', J(s2row))
-  const exc = (await db('GET', 'cargo_exceptions', { query: `shipment_id=eq.${S2.id}&select=*` })).body
+  const exc = (await casesOf(S2.id))
   check('2.23 a delivery problem (case) was opened for S2 and mentions the attempt', exc.length === 1 && /attempt 1 of/i.test(exc[0].description || ''), J(exc))
   const staffNotifs = await notifsOf(staff.id, 'stop_failed')
   check('2.24 dispatch staff were told about the failed stop', staffNotifs.length >= 1, `${staffNotifs.length}`)
@@ -287,7 +293,7 @@ await guard('sos', async () => {
   check('3.8 vehicle is held in maintenance after a serious accident', vh.status === 'maintenance', J(vh))
   const A2 = await shipStatus(A.id)
   check('3.9 cargo on board A goes on_hold (not stranded), stays on the vehicle', A2.status === 'on_hold' && A2.current_holder === 'vehicle' && A2.current_vehicle_id === V3.id, J(A2))
-  const exs = (await db('GET', 'cargo_exceptions', { query: `shipment_id=eq.${A.id}&select=*` })).body
+  const exs = (await casesOf(A.id))
   check('3.10 a vehicle_accident case was auto-opened and linked to the SOS', exs.length === 1 && exs[0].type === 'vehicle_accident' && /sos/i.test(J(exs[0])), J(exs))
   const ack = await api(staff.token, 'PUT', `/telemetry/sos/${sosId}/acknowledge`)
   check('3.11 staff acknowledge', ack.status === 200 && ack.body.status === 'acknowledged', `${ack.status} ${J(ack.body)}`)
@@ -321,7 +327,7 @@ await guard('sos', async () => {
   await api(d4.token, 'PATCH', `/telemetry/sos/${t4.body.id}/details`, { severity: 'serious' })
   const hold4 = await vehRow(V4.id)
   check('3.21 serious breakdown (nothing picked up yet) holds the vehicle', hold4.status === 'maintenance', J(hold4))
-  const exB = (await db('GET', 'cargo_exceptions', { query: `shipment_id=eq.${B.id}&select=*` })).body
+  const exB = (await casesOf(B.id))
   const bs = await shipStatus(B.id)
   check('3.22 assigned-but-not-picked-up cargo B is not put on hold (still with the consignor)', bs.status === 'assigned' || bs.status === 'created', J([bs, exB.length]))
   await db('PATCH', 'sos_alerts', { query: `id=eq.${t4.body.id}`, body: { created_at: new Date(Date.now() - 20 * 60_000).toISOString(), updated_at: new Date(Date.now() - 20 * 60_000).toISOString() } })
@@ -388,7 +394,7 @@ await guard('extras', async () => {
   const fuel2 = await api(d2.token, 'POST', `/fleet/vehicles/${V2.id}/fuel-logs`, { litres: 40, price_per_litre: 92.5, bill_path: billPath, station_name: 'HP Vashi', payment_mode: 'cash', idempotency_key: fk })
   check('4.17 resend with same key: not a second fill', fuel2.status === 201 && fuel2.body.id === fuel.body.id, J(fuel2.body))
   const exp = await api(staff.token, 'GET', '/finance/expenses')
-  check('4.18 the fill appears as a company expense for finance, with the receipt', exp.status === 200 && J(exp.body).includes(billPath.split('/')[1]), `${exp.status} ${J(exp.body).slice(0, 200)}`)
+  check('4.18 the fill appears as a company expense for finance, with the receipt', exp.status === 200 && exp.body.some(e => e.receipt_path === billPath), `${exp.status} ${J(exp.body).slice(0, 200)}`)
   const otherFuel = await api(d1.token, 'POST', `/fleet/vehicles/${V2.id}/fuel-logs`, { litres: 10, price_per_litre: 90 })
   check('4.19 a driver cannot log fuel on another driver\'s vehicle (403)', otherFuel.status === 403, `${otherFuel.status}`)
   const otherCo = await api(staff2.token, 'GET', `/fleet/vehicles/${V2.id}/fuel-logs`)
@@ -397,11 +403,13 @@ await guard('extras', async () => {
   // documents
   const docs = await api(d2.token, 'GET', `/people/${d2.id}/documents`)
   check('4.21 driver reads own documents list', docs.status === 200, `${docs.status} ${J(docs.body)}`)
-  const upl = await api(d2.token, 'POST', `/people/${d2.id}/documents/upload-url`, { content_type: 'image/png', size: PNG.length, doc_type: 'driving_licence' })
+  const cons = await api(d2.token, 'POST', `/people/${d2.id}/consent`, { method: 'in_app' })
+  check('4.21b driver records their own consent (needed before documents)', cons.status === 200, `${cons.status} ${J(cons.body)}`)
+  const upl = await api(d2.token, 'POST', `/people/${d2.id}/documents/upload-url`, { file_name: 'licence.png', content_type: 'image/png', size: PNG.length, doc_type: 'driving_licence' })
   check('4.22 driver asks for a document upload link', upl.status === 200 && upl.body.signed_url, `${upl.status} ${J(upl.body)}`)
   if (upl.status === 200) {
     const p = await putSigned(upl.body)
-    const add = await api(d2.token, 'POST', `/people/${d2.id}/documents`, { doc_type: 'driving_licence', file_path: p, number: 'MH1220260001', expiry_date: '2030-01-01' })
+    const add = await api(d2.token, 'POST', `/people/${d2.id}/documents`, { doc_type: 'driving_licence', file_path: p, doc_number: 'MH1220260001', name_on_document: 'UAT Driver', expires_on: '2031-01-01' })
     check('4.23 driver adds a document record', add.status === 201 || add.status === 200, `${add.status} ${J(add.body)}`)
   }
   const peek = await api(d1.token, 'GET', `/people/${d2.id}/documents`)
@@ -452,21 +460,15 @@ await guard('cancel', async () => {
   await api(staff.token, 'POST', `/shipments/${C2.id}/assign`, { vehicle_id: VC.id })
   const rt = (await db('GET', 'routes', { query: `vehicle_id=eq.${VC.id}&select=*` })).body[0]
   const vL = await vehRow(VC.id)
-  check('6.1 setup: pending trip, vehicle loaded 800 kg', rt.status === 'pending' && Number(vL.current_load_kg) === 800, J([rt.status, vL]))
-  const noVeh = await api(staff.token, 'PATCH', `/routes/${rt.id}`, { vehicle_id: VNODRIVER.id })
-  check('6.2 a pending trip can change vehicle', noVeh.status === 200 || noVeh.status === 409, `${noVeh.status} ${J(noVeh.body)}`)
-  if (noVeh.status === 200) {
-    const noD = await api(staff.token, 'PATCH', `/routes/${rt.id}/status`, { status: 'active' })
-    check('6.2b sending a trip whose vehicle has no driver is refused or warns (not silently lost)', noD.status === 409 || noD.status === 400 || noD.status === 200, `${noD.status} ${J(noD.body)}`)
-    if (noD.status === 200) {
-      console.log('   NOTE trip with no driver on its vehicle was sent:', J(noD.body))
-      await api(staff.token, 'PATCH', `/routes/${rt.id}/status`, { status: 'cancelled' })
-    }
-  }
-  const rt2 = (await db('GET', 'routes', { query: `id=eq.${rt.id}&select=status` })).body[0]
-  if (rt2.status === 'active') {
-    // sent to a no-driver vehicle: cancel it for the next steps
-  }
+  check('6.1 setup: pending trip, vehicle loaded 800 kg', rt.status === 'pending' && Number(vL.current_load_kg) === 800 && Number(vL.available_capacity_kg) === 4200, J([rt.status, vL]))
+  const mv = await api(staff.token, 'PATCH', `/routes/${rt.id}`, { vehicle_id: VNODRIVER.id })
+  check('6.2 a pending trip can change vehicle', mv.status === 200, `${mv.status} ${J(mv.body)}`)
+  const vOld = await vehRow(VC.id), vNew = await vehRow(VNODRIVER.id), cM = await shipStatus(C1.id)
+  check('6.2b the shipments, and both vehicles\' load, follow the move', cM.current_vehicle_id === VNODRIVER.id && Number(vOld.current_load_kg) === 0 && Number(vNew.current_load_kg) === 800, J([cM, vOld, vNew]))
+  const noD = await api(staff.token, 'PATCH', `/routes/${rt.id}/status`, { status: 'active' })
+  check('6.2c sending a trip whose vehicle has no driver is refused (409)', noD.status === 409, `${noD.status} ${J(noD.body)}`)
+  const back = await api(staff.token, 'PATCH', `/routes/${rt.id}`, { vehicle_id: VC.id })
+  check('6.2d the trip can move back', back.status === 200 && Number((await vehRow(VC.id)).current_load_kg) === 800, `${back.status}`)
   // cancel a pending trip: shipments released
   const trip2 = (await db('GET', 'routes', { query: `vehicle_id=eq.${VC.id}&select=*&status=eq.pending` })).body[0] || (await db('GET', 'routes', { query: `id=eq.${rt.id}&select=*` })).body[0]
   if (trip2.status === 'pending') {
@@ -502,7 +504,7 @@ await guard('cancel', async () => {
   const e1 = await shipStatus(E1.id), e2 = await shipStatus(E2.id)
   check('6.13 picked-up goods E1 are held on the vehicle (never stranded, not released as "created")', e1.status === 'on_hold' && e1.current_holder === 'vehicle', J(e1))
   check('6.14 not-picked-up E2 goes back to created', e2.status === 'created', J(e2))
-  const exE = (await db('GET', 'cargo_exceptions', { query: `shipment_id=eq.${E1.id}&select=type,status,description` })).body
+  const exE = (await casesOf(E1.id))
   check('6.15 a case holds the goods (cargo problem opened)', exE.length >= 1, J(exE))
   const vE = await vehRow(VE.id)
   check('6.16 vehicle is NOT freed while goods are on it', vE.status !== 'available' || Number(vE.current_load_kg) > 0, J(vE))

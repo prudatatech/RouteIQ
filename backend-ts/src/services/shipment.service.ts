@@ -251,6 +251,22 @@ export function estimateLegs(start: { lat: number; lng: number } | null, points:
   return { distance_km: km, duration_minutes: Math.round((km / ESTIMATE_KMH) * 60 + points.length * ESTIMATE_STOP_MINUTES) };
 }
 
+/**
+ * A trip that has not started moves to another vehicle: the shipments planned on it follow (their vehicle is the
+ * trip's vehicle until pickup), and both vehicles' load and free space are worked out again.
+ */
+export async function moveTripToVehicle(routeId: string, fromVehicleId: string | null, toVehicleId: string): Promise<void> {
+  const { data: stops } = await supabase.from('route_stops').select('delivery_point_id').eq('route_id', routeId);
+  const dpIds = (stops || []).map((s: any) => s.delivery_point_id);
+  if (dpIds.length > 0) {
+    const { data: dps } = await supabase.from('delivery_points').select('shipment_id').in('id', dpIds);
+    const ids = Array.from(new Set((dps || []).map((d: any) => d.shipment_id).filter(Boolean)));
+    if (ids.length > 0) await supabase.from('shipments').update({ current_vehicle_id: toVehicleId }).in('id', ids as string[]).eq('status', 'assigned');
+  }
+  await ShipmentService.recalculateVehicleCapacity(toVehicleId);
+  if (fromVehicleId) await ShipmentService.recalculateVehicleCapacity(fromVehicleId);
+}
+
 /** The vehicle classes the database knows (vehicles.vehicle_type). */
 const VEHICLE_CLASSES = ['truck', 'van', 'bike', 'car'] as const;
 
@@ -366,12 +382,18 @@ export class ShipmentService {
 
     const { data: shipments } = await supabase
       .from('shipments')
-      .select('total_weight_kg')
+      .select('total_weight_kg, status, pieces_total, pieces_delivered')
       .in('id', shipmentIds as string[])
       .in('status', [...ShipmentService.LOAD_STATUSES])
       // A master's weight is carried by its lots
       .neq('is_master', true);
-    return (shipments || []).reduce((sum: number, s: any) => sum + (Number(s.total_weight_kg) || 0), 0);
+    return (shipments || []).reduce((sum: number, s: any) => {
+      const weight = Number(s.total_weight_kg) || 0;
+      // A partly delivered shipment keeps only the pieces still on the truck
+      const total = Number(s.pieces_total) || 0;
+      const left = s.status === 'partially_delivered' && total > 0 ? Math.max(0, total - (Number(s.pieces_delivered) || 0)) / total : 1;
+      return sum + weight * left;
+    }, 0);
   }
 
   /** Shipment statuses whose weight counts against the vehicle carrying them. */

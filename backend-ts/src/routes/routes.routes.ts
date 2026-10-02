@@ -300,6 +300,8 @@ router.patch('/:route_id', requireAuth, async (req: Request, res: Response) => {
       }
       const { error: vehicleErr } = await supabase.from('routes').update({ vehicle_id: newVehicleId }).eq('id', route.id).eq('status', route.status);
       if (vehicleErr) throw new Error(vehicleErr.message);
+      const { moveTripToVehicle } = await import('../services/shipment.service');
+      await moveTripToVehicle(route.id, route.vehicle_id, newVehicleId);
     }
 
     if (parsed.data.status) await routeService.changeStatus(route.id, parsed.data.status);
