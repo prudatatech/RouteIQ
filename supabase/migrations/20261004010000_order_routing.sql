@@ -195,12 +195,20 @@ CREATE POLICY load_quotes_update ON public.load_quotes FOR UPDATE TO authenticat
   USING (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) AND status = 'submitted')
   WITH CHECK (carrier_org_id = ANY ((SELECT app.user_org_ids())::uuid[]) AND status IN ('submitted', 'withdrawn'));
 
--- Realtime: the vendor's quotes card and the company's market refresh when a quote changes
+-- Realtime: the vendor's quotes card and the company's market refresh when a quote changes. The publication
+-- belongs to the admin login (infra/platform-db.sh), so this runs as the admin, then back to app_owner.
+RESET ROLE;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
      AND NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'load_quotes') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.load_quotes;
+  END IF;
+END $$;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN
+    SET LOCAL ROLE app_owner;
   END IF;
 END $$;
 
