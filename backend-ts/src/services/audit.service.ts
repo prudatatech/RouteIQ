@@ -10,12 +10,52 @@
  */
 import crypto from 'crypto';
 import { supabase } from '../core/supabase';
+import { currentOrgContext } from '../core/org-context';
+import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
+import { isUuid } from '../core/validate';
 
 export type AuditConsole = 'staff-console' | 'vendor-portal' | 'partner-portal' | 'driver-app' | 'system';
 
 export interface AuditActor {
   user_id: string;
   role: string;
+}
+
+type LogRow = { vehicle_id?: string | null; route_id?: string | null; input_data?: any };
+
+/**
+ * The entries a company may see: those it made (stamped with its organisation), and older ones about its own
+ * vehicles or trips or by its own members. The audit table has no owner column, so this reads each entry's own
+ * references rather than adding one. A platform admin acting as the platform, and a setup with no organisations
+ * yet, see everything.
+ */
+export async function auditEntriesForOrg<T extends LogRow>(rows: T[]): Promise<T[]> {
+  const orgId = memberOrgId();
+  if (!orgId) return rows;
+  const idsOf = (get: (r: T) => unknown) => [...new Set(rows.map(get).filter(isUuid))];
+  const people = (r: T) => [r.input_data?.actor_id, r.input_data?.user_id];
+  const [vehicles, trips, members] = await Promise.all([
+    chunked(idsOf(r => r.vehicle_id), ids => supabase.from('vehicles').select('id').in('id', ids), OWNED.carrier),
+    chunked(idsOf(r => r.route_id), ids => supabase.from('routes').select('id').in('id', ids), OWNED.carrier),
+    chunked([...new Set(rows.flatMap(people).filter(isUuid))], ids => supabase.from('org_members').select('user_id').eq('org_id', orgId).eq('status', 'active').in('user_id', ids), null),
+  ]);
+  return rows.filter(r => {
+    const stamped = r.input_data?.org_id;
+    if (stamped) return stamped === orgId;
+    return (isUuid(r.vehicle_id) && vehicles.has(r.vehicle_id)) || (isUuid(r.route_id) && trips.has(r.route_id))
+      || people(r).some(p => isUuid(p) && members.has(p));
+  });
+}
+
+async function chunked(ids: string[], read: (chunk: string[]) => any, cols: typeof OWNED.carrier | null): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const query = read(ids.slice(i, i + 100));
+    const { data, error } = await (cols ? scopeQuery(query, cols) : query);
+    if (error) throw new Error(`Failed to check audit entries: ${error.message}`);
+    for (const r of data ?? []) out.add((r.id ?? r.user_id) as string);
+  }
+  return out;
 }
 
 export const auditService = {
@@ -36,7 +76,8 @@ export const auditService = {
         id: crypto.randomUUID(),
         agent_name: source,
         action,
-        input_data: { actor_id: actor.user_id, actor_role: actor.role, ...subject },
+        // The organisation the actor acted for, so a company can be shown its own entries
+        input_data: { actor_id: actor.user_id, actor_role: actor.role, ...(currentOrgContext()?.org ? { org_id: currentOrgContext()!.org!.id } : {}), ...subject },
         output_data: outcome ?? null,
         status: 'success',
         vehicle_id: typeof subject.vehicle_id === 'string' ? subject.vehicle_id : null,

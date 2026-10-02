@@ -9,6 +9,8 @@ import { AnalyticsService } from '../services/analytics.service';
 import { getDemandOverview } from '../services/demand.service';
 import { settings } from '../core/config';
 import { sendError } from '../core/errors';
+import { auditEntriesForOrg } from '../services/audit.service';
+import { memberOrgId } from '../core/org-scope';
 import { indianDayEnd, indianDayStart, resolveIndianDateRange } from '../core/istDate';
 
 const router = Router();
@@ -138,20 +140,31 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
     const limit = Math.min(AUDIT_LOG_MAX_LIMIT, Math.max(1, parseInt(req.query.limit as string, 10) || AUDIT_LOG_DEFAULT_LIMIT));
     const offset = Math.max(0, parseInt(req.query.offset as string, 10) || 0);
 
-    let query = supabase
-      .from('ai_agent_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(offset + limit + 1); // +1 tells us whether there's another page, without a separate count query
-
     const fromStr = typeof req.query.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : null;
     const toStr = typeof req.query.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : null;
-    if (fromStr) query = query.gte('created_at', indianDayStart(fromStr).toISOString());
-    if (toStr) query = query.lt('created_at', indianDayEnd(toStr).toISOString());
+    const want = offset + limit + 1; // +1 tells us whether there's another page, without a separate count query
+    const readPage = async (from: number, count: number) => {
+      let query = supabase.from('ai_agent_logs').select('*').order('created_at', { ascending: false }).range(from, from + count - 1);
+      if (fromStr) query = query.gte('created_at', indianDayStart(fromStr).toISOString());
+      if (toStr) query = query.lt('created_at', indianDayEnd(toStr).toISOString());
+      const { data, error: readError } = await query;
+      if (readError) throw readError;
+      return data || [];
+    };
 
-    const { data: logs, error } = await query;
-
-    if (error) throw error;
+    // A company sees only its own entries, so the table is read page by page until enough of them are found
+    let logs: any[];
+    if (memberOrgId()) {
+      logs = [];
+      const pageSize = 500;
+      for (let from = 0, pages = 0; logs.length < want && pages < 20; from += pageSize, pages++) {
+        const page = await readPage(from, pageSize);
+        logs.push(...(await auditEntriesForOrg(page)));
+        if (page.length < pageSize) break;
+      }
+    } else {
+      logs = await readPage(0, want);
+    }
 
     // ai_agent_logs has agent_name/action/input_data/output_data/status/created_at —
     // the previous mapping read task_description/action_taken/result, none of which

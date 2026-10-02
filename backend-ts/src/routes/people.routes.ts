@@ -27,7 +27,7 @@ const handle = (fn: (req: Request, res: Response) => Promise<void>): RequestHand
 
 const actorOf = (req: Request): Actor => ({ user_id: req.user!.user_id, role: req.user!.role });
 const idOf = (req: Request): string => req.params.id;
-const subjectOf = (req: Request) => loadPerson(idOf(req));
+const subjectOf = (req: Request) => loadPerson(idOf(req), req.user!.user_id);
 const staffOnly = requireRole(...STAFF_ROLES);
 const adminOnly = requireRole('admin');
 
