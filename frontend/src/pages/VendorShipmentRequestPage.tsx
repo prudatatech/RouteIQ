@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import clsx from 'clsx'
-import { Alert, Button, Page, PageHeader } from '@/components/ui'
+import { Alert, Page, PageHeader } from '@/components/ui'
 import { publicAPI, vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useBlockedFromVendorActions } from '@/store/accountKind'
@@ -11,6 +10,9 @@ import { clearGuestDraft, loadGuestDraft, saveGuestDraft } from '@/utils/guestDr
 import { errorMessage } from '@/utils/display'
 import type { BusinessProfile, LoadDraft, PostedLoad, ProductRow, Recommendation } from '@/types/load'
 import AddressStep from '@/components/load-post/AddressStep'
+import FormStepper from '@/components/load-post/FormStepper'
+import StepActions from '@/components/load-post/StepActions'
+import { scrollPageTop, useScrollToFirstInvalid } from '@/components/load-post/useScrollIntoView'
 import BusinessProfileStep from '@/components/load-post/BusinessProfileStep'
 import LoadConfirmation from '@/components/load-post/LoadConfirmation'
 import OtpModal from '@/components/load-post/OtpModal'
@@ -40,34 +42,6 @@ function initialDraft(params: URLSearchParams): LoadDraft {
   const weight = parseFloat(params.get('weight') ?? '')
   if (Number.isFinite(weight) && weight > 0) { d.items[0].weight_kg = String(weight) }
   return d
-}
-
-function Stepper({ step, onGo }: { step: number; onGo: (s: number) => void }) {
-  return (
-    <nav aria-label="Steps">
-      <p className="text-sm font-medium text-text sm:hidden">Step {step + 1} of {STEP_LABELS.length}: {STEP_LABELS[step]}</p>
-      <ol className="mt-2 flex gap-1 sm:mt-0">
-        {STEP_LABELS.map((label, i) => (
-          <li key={label} className="min-w-0 flex-1">
-            <button
-              type="button"
-              disabled={i > step}
-              onClick={() => onGo(i)}
-              aria-current={i === step ? 'step' : undefined}
-              className={clsx(
-                'flex w-full flex-col gap-1 border-t-4 pt-1.5 text-left text-xs',
-                i <= step ? 'border-brand-fill' : 'border-border',
-                i === step ? 'font-semibold text-text' : 'text-muted',
-                i > step && 'cursor-default',
-              )}
-            >
-              <span className="hidden truncate sm:block">{i + 1}. {label}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </nav>
-  )
 }
 
 export default function VendorShipmentRequestPage() {
@@ -130,10 +104,15 @@ export default function VendorShipmentRequestPage() {
   const apply = (action: NonNullable<Recommendation['action']>) => setDraft(d => applyRecommendation(d, action))
   const notes = (list: Recommendation[]) => <RecommendationList recommendations={list} onApply={apply} vehicles={vehicles} />
 
-  const goTo = (s: number) => { patch({ step: s }); window.scrollTo?.({ top: 0 }) }
+  const formRoot = useRef<HTMLElement>(null)
+  const [focusTick, setFocusTick] = useState(0)
+  useScrollToFirstInvalid(formRoot, focusTick)
+
+  const goTo = (s: number) => { patch({ step: s }); scrollPageTop() }
   const next = () => {
     setAttempted(a => ({ ...a, [step]: true }))
     if (Object.keys(validateStep(draft, step)).length === 0) goTo(step + 1)
+    else setFocusTick(t => t + 1)
   }
 
   const changeRow = (i: number, p: Partial<ProductRow>) => setDraft(d => ({ ...d, items: d.items.map((r, n) => (n === i ? applyRowPatch(r, p) : r)) }))
@@ -178,7 +157,8 @@ export default function VendorShipmentRequestPage() {
     const bad = firstInvalidStep(draft)
     if (bad !== null) {
       setAttempted(a => ({ ...a, [bad]: true }))
-      goTo(bad)
+      patch({ step: bad })
+      setFocusTick(t => t + 1)
       return
     }
     if (!token) { setOtpOpen(true); return }
@@ -234,8 +214,8 @@ export default function VendorShipmentRequestPage() {
     )
   }
 
-    return (
-    <Page width="form">
+  return (
+    <Page width="form" className="!space-y-4">
       <PageHeader title="Post a load" description="Tell us what you are moving and where. You sign in only when you submit." />
 
       {blockedKind && <NotVendorNotice kind={blockedKind} />}
@@ -246,10 +226,10 @@ export default function VendorShipmentRequestPage() {
         <Alert tone="success" title="Welcome back">Your load is exactly as you left it. Press Submit Load when you are ready.</Alert>
       )}
 
-      <Stepper step={step} onGo={goTo} />
+      <FormStepper step={step} onGo={goTo} />
 
-      <section aria-labelledby="step-title" className="space-y-4">
-        <h2 id="step-title" className="text-lg font-semibold text-text">{STEP_LABELS[step]}</h2>
+      <section aria-labelledby="step-title" className="space-y-3" ref={formRoot}>
+        <h2 id="step-title" className="scroll-mt-24 text-lg font-semibold text-text">{STEP_LABELS[step]}</h2>
 
         {step === 0 && (
           <AddressStep
@@ -284,15 +264,7 @@ export default function VendorShipmentRequestPage() {
         )}
       </section>
 
-      {step < LAST_STEP && (
-        <div className="flex gap-2 sm:justify-end">
-          {step > 0 && <Button variant="secondary" size="lg" onClick={() => goTo(step - 1)}>Back</Button>}
-          <Button size="lg" className="flex-1 sm:flex-none" onClick={next}>Next</Button>
-        </div>
-      )}
-      {step === LAST_STEP && (
-        <div><Button variant="ghost" onClick={() => goTo(step - 1)}>Back</Button></div>
-      )}
+      <StepActions step={step} last={LAST_STEP} onBack={() => goTo(step - 1)} onNext={next} />
 
       <OtpModal
         open={otpOpen}

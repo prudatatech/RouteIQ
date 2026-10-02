@@ -1,49 +1,31 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { HelpCircle, Lock } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { Lock } from 'lucide-react'
 import { publicAPI } from '@/services/api'
 import { Button, Input, Select } from '@/components/ui'
 import type { HsnHit, ProductRow } from '@/types/load'
-import { MANUAL_RATES, rateText } from './logic'
+import { MANUAL_RATES } from './logic'
 import { applyHsnHit } from './helpers'
+import HsnList, { FIRST_HITS } from './HsnList'
+import WhyHsn from './WhyHsn'
+import { claimHsnList, releaseHsnList } from './hsnOpen'
+import { scrollElementIntoView, stickyHeaderHeight, visibleHeight } from './useScrollIntoView'
 
 export interface HsnFieldErrors { name?: string; hsn?: string; rate?: string }
 
 
 const UNLOCK: Partial<ProductRow> = { hsn_code: '', hsn_locked: false, rate_options: [], rate_note: null, gst_rate: null, category: null }
 
-function WhyHsn() {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        onBlur={() => setOpen(false)}
-        aria-expanded={open}
-        aria-describedby={open ? id : undefined}
-        className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
-      >
-        <HelpCircle size={14} aria-hidden="true" /> Why is HSN needed?
-      </button>
-      {open && (
-        <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 rounded-control border border-border bg-surface p-2 text-xs text-text shadow-raised">
-          Required for e-Way Bill and GST invoice generation
-        </span>
-      )}
-    </span>
-  )
-}
-
 /**
  * "Describe your goods": searches the HSN master as you type (3 characters or more, up to 8
  * suggestions). Picking one fills and locks the code and the GST rate; a code with several rates
  * asks which one applies. Goods that are not in the list can be entered by HSN code.
  */
-export default function HsnSearch({ row, index, onChange, errors = {}, label = 'Describe your goods', placeholder = 'For example cement, rice, soap' }: {
+export default function HsnSearch({ row, index, onChange, onPicked, errors = {}, label = 'Describe your goods', placeholder = 'For example cement, rice, soap' }: {
   row: ProductRow
   index: number
   onChange: (patch: Partial<ProductRow>) => void
+  /** Called after a suggestion is picked (the row moves on to the quantity). */
+  onPicked?: () => void
   errors?: HsnFieldErrors
   label?: string
   placeholder?: string
@@ -55,7 +37,12 @@ export default function HsnSearch({ row, index, onChange, errors = {}, label = '
   const [failed, setFailed] = useState(false)
   const [manual, setManual] = useState(false)
   const [lookupNote, setLookupNote] = useState<string | null>(null)
+  const [active, setActive] = useState(-1)
+  const [showAll, setShowAll] = useState(false)
+  const [maxHeight, setMaxHeight] = useState(288)
   const box = useRef<HTMLDivElement>(null)
+  const field = useRef<HTMLDivElement>(null)
+  const scrolled = useRef(false)
 
   const query = row.product_name.trim()
   const searchable = !row.hsn_locked && !manual && !row.hsn_code
@@ -66,20 +53,61 @@ export default function HsnSearch({ row, index, onChange, errors = {}, label = '
     const timer = setTimeout(() => {
       setSearching(true)
       publicAPI.hsnSearch(query, ctrl.signal)
-        .then(items => { setHits(items.slice(0, 8)); setFailed(false) })
+        .then(items => { setHits(items.slice(0, 8)); setFailed(false); setActive(-1); setShowAll(false) })
         .catch(err => { if (!ctrl.signal.aborted) { setHits([]); setFailed(true); console.warn('HSN search failed', err) } })
         .finally(() => { if (!ctrl.signal.aborted) setSearching(false) })
     }, 250)
     return () => { clearTimeout(timer); ctrl.abort() }
   }, [query, searchable])
 
+  const close = useCallback(() => { setOpen(false); setActive(-1); scrolled.current = false }, [])
+  useEffect(() => () => releaseHsnList(close), [close])
+
   useEffect(() => {
-    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) close() }
     document.addEventListener('mousedown', away)
     return () => document.removeEventListener('mousedown', away)
-  }, [])
+  }, [close])
 
-  const pick = (hit: HsnHit) => { onChange(applyHsnHit(row, hit)); setOpen(false); setHits([]) }
+
+  /** Open the list: close any other row's list, bring this box under the header so the list has room, cap its height to what is visible. */
+  const openList = () => {
+    claimHsnList(close)
+    setOpen(true)
+    const wrapper = field.current
+    if (!wrapper) return
+    if (!scrolled.current) { scrolled.current = true; scrollElementIntoView(wrapper) }
+    const room = visibleHeight() - stickyHeaderHeight() - 12 - wrapper.offsetHeight - 52
+    setMaxHeight(Math.round(Math.min(420, Math.max(192, room))))
+  }
+
+  const pick = (hit: HsnHit) => { onChange(applyHsnHit(row, hit)); close(); setHits([]); onPicked?.() }
+
+  const listShown = open && searchable && query.length >= 3
+  const status = searching && hits.length === 0 ? 'searching' : failed ? 'failed' : hits.length === 0 ? 'empty' : 'ready'
+  const visible = showAll ? hits.length : Math.min(hits.length, FIRST_HITS)
+
+  useEffect(() => {
+    if (active < 0) return
+    document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [active, listId])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab') { close(); return }
+    if (e.key === 'Escape') { if (listShown) { e.preventDefault(); close() } return }
+    if (!searchable) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (query.length < 3) return
+      e.preventDefault()
+      if (!listShown) { openList(); return }
+      if (visible === 0) return
+      const down = e.key === 'ArrowDown'
+      setActive(a => (down ? (a + 1) % visible : a <= 0 ? visible - 1 : a - 1))
+    } else if (e.key === 'Enter' && listShown && active >= 0 && hits[active]) {
+      e.preventDefault()
+      pick(hits[active])
+    }
+  }
 
   // A code typed by hand: look it up, so a known code still gets its real rate.
   const lookupManual = async () => {
@@ -98,42 +126,31 @@ export default function HsnSearch({ row, index, onChange, errors = {}, label = '
 
   return (
     <div className="space-y-3" ref={box}>
-      <div className="relative">
+      <div className="relative scroll-mt-24" ref={field}>
         <Input
           id={nameId}
           label={label}
           required
           value={row.product_name}
-          onChange={e => { onChange({ product_name: e.target.value }); setOpen(true) }}
-          onFocus={() => setOpen(true)}
+          onChange={e => { onChange({ product_name: e.target.value }); openList() }}
+          onFocus={openList}
+          onBlur={() => { scrolled.current = false }}
+          onKeyDown={onKeyDown}
           placeholder={placeholder}
           error={errors.name}
           role="combobox"
-          aria-expanded={open && hits.length > 0}
-          aria-controls={listId}
+          aria-expanded={listShown}
+          aria-controls={listShown ? listId : undefined}
+          aria-activedescendant={listShown && active >= 0 ? `${listId}-opt-${active}` : undefined}
           aria-autocomplete="list"
           autoComplete="off"
           name={`product_name_${index}`}
         />
-        {open && searchable && query.length >= 3 && (
-          <ul id={listId} role="listbox" aria-label="HSN suggestions" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-control border border-border bg-surface shadow-raised">
-            {searching && hits.length === 0 && <li className="px-3 py-2 text-sm text-muted">Searching…</li>}
-            {failed && <li className="px-3 py-2 text-sm text-danger">We could not search just now. Enter the HSN code instead.</li>}
-            {!searching && !failed && hits.length === 0 && <li className="px-3 py-2 text-sm text-muted">No match found.</li>}
-            {hits.map(hit => (
-              <li key={hit.hsn_code} role="option" aria-selected={false}>
-                <button
-                  type="button"
-                  onClick={() => pick(hit)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-surface-subtle focus-visible:bg-surface-subtle"
-                >
-                  <span className="shrink-0 font-mono text-sm font-medium text-text">{hit.hsn_code}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-muted">{hit.description}</span>
-                  <span className="shrink-0 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">{rateText(hit.gst_rates)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {listShown && (
+          <HsnList
+            id={listId} hits={hits} active={active} status={status} maxHeight={maxHeight} showAll={showAll}
+            onShowAll={() => setShowAll(true)} onPick={pick} onHover={setActive}
+          />
         )}
       </div>
 

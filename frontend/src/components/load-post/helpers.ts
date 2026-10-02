@@ -5,6 +5,7 @@
 import type { ResolvedPlace } from '@/services/geocoding'
 import type { BusinessProfile, HsnHit, ProductHandling, ProductRow, VehicleClass } from '@/types/load'
 import { checkGstin } from '@/utils/gstin'
+import { toNum } from './logic'
 
 /** The city, pin code and full address a chosen place gives. Anything the geocoder lacks is left as typed. */
 export function placeToFields(place: ResolvedPlace): { city?: string; pincode?: string; address: string } {
@@ -57,3 +58,7 @@ export const capacityText = (v: VehicleClass): string => {
   if (v.max_t != null) return `up to ${v.max_t} T`
   return 'by volume'
 }
+
+/** A product with everything the form asks for: name, HSN code, rate, quantity and weight. */
+export const productComplete = (r: ProductRow): boolean =>
+  r.product_name.trim().length >= 3 && !!r.hsn_code.trim() && r.gst_rate !== null && toNum(r.quantity) > 0 && toNum(r.weight_kg) > 0

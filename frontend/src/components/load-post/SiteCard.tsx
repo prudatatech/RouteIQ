@@ -1,22 +1,21 @@
-import { useState, type ReactNode } from 'react'
-import { Card, Checkbox, Input, Select, Textarea } from '@/components/ui'
-import AddressPicker from '@/components/map/AddressPicker'
-import type { ResolvedPlace } from '@/services/geocoding'
+import type { ReactNode } from 'react'
+import { Card, Checkbox, Input, Select } from '@/components/ui'
 import type { LoadDraft } from '@/types/load'
 import { isWeekend, todayIso } from './logic'
 import type { StepErrors } from './validate'
-import { placeToFields } from './helpers'
-import { useCitySuggestions, usePinState, type Side } from './useAddressLookups'
+import type { Side } from './useAddressLookups'
+import AddressBlock from './AddressBlock'
+import SiteDetails from './SiteDetails'
 
 const SLOTS = [
-  { value: 'morning', label: 'Morning (6am–12pm)' },
-  { value: 'afternoon', label: 'Afternoon (12pm–6pm)' },
-  { value: 'evening', label: 'Evening (6pm–10pm)' },
+  { value: 'morning', label: 'Morning, 6am–12pm' },
+  { value: 'afternoon', label: 'Afternoon, 12–6pm' },
+  { value: 'evening', label: 'Evening, 6–10pm' },
 ]
 
 /**
- * One end of the trip: one search box that fills a small editable address block (address line, city, pin code, state
- * from the pin code), then the date, the person to call and what the site needs.
+ * One end of the trip: the address (one search box, then a one-line summary), the date, the person to call, and the
+ * optional site details. Each part is as short as it can be; nothing the form asks for is dropped.
  */
 export default function SiteCard({ side, draft, onChange, errors, notes }: {
   side: Side
@@ -25,64 +24,17 @@ export default function SiteCard({ side, draft, onChange, errors, notes }: {
   errors: StepErrors
   notes?: ReactNode
 }) {
-  // A restored draft keeps the chosen place's address and coordinates; show it in the picker straight away.
-  const [place, setPlace] = useState<ResolvedPlace | null>(() => {
-    const lat = draft[`${side}_lat`]
-    const lng = draft[`${side}_lng`]
-    const address = draft[`${side}_address`]
-    return typeof lat === 'number' && typeof lng === 'number' && address ? { address, lat, lng } : null
-  })
   const pickup = side === 'pickup'
   const title = pickup ? 'Pickup' : 'Delivery'
-  usePinState(side, draft[`${side}_pincode`], draft[`${side}_state_code`], onChange)
-  const cities = useCitySuggestions(draft[`${side}_city`])
-  const listId = `${side}-city-suggestions`
   const set = (patch: Record<string, unknown>) => onChange(patch as Partial<LoadDraft>)
-
-  const pick = (p: ResolvedPlace | null) => {
-    setPlace(p)
-    if (!p) { set({ [`${side}_lat`]: null, [`${side}_lng`]: null }); return }
-    const f = placeToFields(p)
-    set({
-      [`${side}_lat`]: p.lat,
-      [`${side}_lng`]: p.lng,
-      [`${side}_address`]: f.address,
-      ...(f.city ? { [`${side}_city`]: f.city } : {}),
-      ...(f.pincode ? { [`${side}_pincode`]: f.pincode } : {}),
-    })
-  }
+  const hasSiteValue = pickup ? draft.loading_dock || !!draft.access_restrictions.trim() || draft.loading_help : draft.unloading_help
 
   return (
-    <Card padded className="space-y-4 !p-4" role="group" aria-label={title}>
+    <Card padded className="scroll-mt-24 space-y-3 !p-4" role="group" aria-label={title}>
       <h3 className="text-base font-semibold text-text">{title}</h3>
-      <AddressPicker
-        label={`Search the ${side} address`}
-        value={place}
-        onChange={pick}
-        kind={pickup ? 'pickup' : 'drop'}
-        showMap={false}
-        allowCurrentLocation={pickup}
-        recentPlacesKey={`load-${side}`}
-        error={errors[`${side}_lat`]}
-        hint="Indian addresses only. Pick a result to fill the address below, then correct it if needed."
-      />
-      <Textarea
-        label="Address line" required rows={2}
-        value={draft[`${side}_address`]} onChange={e => set({ [`${side}_address`]: e.target.value })}
-        error={errors[`${side}_address`]} hint="Building, street and a landmark."
-      />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Input label="City" required list={listId} value={draft[`${side}_city`]} onChange={e => set({ [`${side}_city`]: e.target.value })} error={errors[`${side}_city`]} autoComplete="address-level2" />
-        <Input
-          label="Pin code" required inputMode="numeric" maxLength={6}
-          value={draft[`${side}_pincode`]} onChange={e => set({ [`${side}_pincode`]: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-          error={errors[`${side}_pincode`]} autoComplete="postal-code"
-        />
-        <Input label="State" value={draft[`${side}_state_name`]} readOnly placeholder="From the pin code" />
-      </div>
-      <datalist id={listId}>{cities.map(c => <option key={c} value={c} />)}</datalist>
+      <AddressBlock side={side} draft={draft} set={set} errors={errors} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3">
         {pickup ? (
           <>
             <Input
@@ -100,28 +52,25 @@ export default function SiteCard({ side, draft, onChange, errors, notes }: {
           <Input
             label="Preferred delivery date" type="date" min={draft.pickup_date || todayIso()}
             value={draft.delivery_date} onChange={e => onChange({ delivery_date: e.target.value })}
-            error={errors.delivery_date} hint="Optional. Helps the logistic company plan the trip."
+            error={errors.delivery_date} hint="Optional" className="col-span-2 sm:col-span-1"
           />
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
         <Input
           label={pickup ? 'Contact name' : 'Receiver name'} required
           value={draft[`${side}_contact_name`]} onChange={e => set({ [`${side}_contact_name`]: e.target.value })}
-          error={errors[`${side}_contact_name`]} hint={pickup ? 'The person at the loading point.' : 'The consignee who signs for the goods.'}
-          autoComplete="off"
+          error={errors[`${side}_contact_name`]} autoComplete="off"
         />
         <Input
           label={pickup ? 'Contact mobile' : 'Receiver mobile'} required type="tel" inputMode="tel"
           value={draft[`${side}_contact_phone`]} onChange={e => set({ [`${side}_contact_phone`]: e.target.value })}
-          error={errors[`${side}_contact_phone`]} hint={pickup ? 'Shown to the driver for coordination.' : 'The driver calls this number before delivery.'}
-          autoComplete="off"
+          error={errors[`${side}_contact_phone`]} autoComplete="off"
         />
       </div>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-1 text-sm font-medium text-text">{pickup ? 'At the loading point' : 'At the delivery point'}</legend>
+      <SiteDetails id={`${side}-site-details`} hasValue={hasSiteValue}>
         {pickup ? (
           <>
             <Checkbox label="Loading dock available" description="A dock lets us send a higher-bed truck." checked={draft.loading_dock} onChange={e => onChange({ loading_dock: e.target.checked })} />
@@ -134,7 +83,7 @@ export default function SiteCard({ side, draft, onChange, errors, notes }: {
         ) : (
           <Checkbox label="Need unloading help (labour)" description="Labour at delivery. A surcharge may apply." checked={draft.unloading_help} onChange={e => onChange({ unloading_help: e.target.checked })} />
         )}
-      </fieldset>
+      </SiteDetails>
       {notes}
     </Card>
   )

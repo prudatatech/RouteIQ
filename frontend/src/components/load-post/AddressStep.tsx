@@ -15,9 +15,12 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
 }) {
   const basis = taxBasisLocal(draft)
   return (
-    <div className="space-y-4">
-      <SiteCard side="pickup" draft={draft} onChange={onChange} errors={errors} notes={pickupNotes} />
-      <SiteCard side="delivery" draft={draft} onChange={onChange} errors={errors} notes={deliveryNotes} />
+    <div className="space-y-3">
+      {/* Side by side from md; on wide screens the pair breaks out of the 720px form column so each side has room. */}
+      <div className="grid gap-3 md:grid-cols-2 md:items-start lg:relative lg:left-1/2 lg:w-[min(60rem,calc(100vw-6rem))] lg:-translate-x-1/2">
+        <SiteCard side="pickup" draft={draft} onChange={onChange} errors={errors} notes={pickupNotes} />
+        <SiteCard side="delivery" draft={draft} onChange={onChange} errors={errors} notes={deliveryNotes} />
+      </div>
       {basis !== 'unknown' && (
         <Alert tone="info" title={basis === 'inter' ? 'Interstate (IGST)' : 'Within state (CGST + SGST)'}>
           {basis === 'inter'

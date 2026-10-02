@@ -76,6 +76,7 @@ beforeEach(() => {
   api.loadAssist.mockRejectedValue(new Error('not asked in this test'))
 })
 afterEach(() => cleanup())
+window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
 
 function Rows({ initial }: { initial?: ProductRow[] }) {
   const [items, setItems] = useState<ProductRow[]>(initial ?? [emptyRow()])
@@ -110,7 +111,11 @@ describe('goods step', () => {
     render(<Rows />)
     expect(screen.getAllByLabelText(/describe your goods/i)).toHaveLength(1)
     const card = screen.getByRole('group', { name: 'Product 1' })
-    for (const label of [/describe your goods/i, /^quantity/i, /^unit/i, /^weight/i, /^declared value/i, /^fragile/i, /^hazardous/i]) expect(within(card).getByLabelText(label)).toBeTruthy()
+    for (const label of [/describe your goods/i, /^quantity/i, /^unit/i, /^weight/i, /^declared value/i]) expect(within(card).getByLabelText(label)).toBeTruthy()
+    // Handling is folded away until the Handling chip is opened
+    expect(within(card).queryByLabelText(/^fragile/i)).toBeNull()
+    fireEvent.click(within(card).getByRole('button', { name: /^handling/i }))
+    for (const label of [/^fragile/i, /^hazardous/i]) expect(within(card).getByLabelText(label)).toBeTruthy()
   })
 
   it('fills the weight from a quantity in kg, and lets it be changed', () => {
@@ -148,7 +153,7 @@ describe('HSN search', () => {
     fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'cement' } })
     const option = await screen.findByRole('option', { name: /2523/ })
     expect(within(option).getByText('18%')).toBeTruthy()
-    fireEvent.click(within(option).getByRole('button'))
+    fireEvent.click(option)
     const code = screen.getByLabelText('HSN code') as HTMLInputElement
     expect(code.value).toBe('2523')
     expect(code.readOnly).toBe(true)
@@ -159,7 +164,7 @@ describe('HSN search', () => {
   it('asks which rate applies for a multi-rate code, limited to its valid rates', async () => {
     render(<Single />)
     fireEvent.change(screen.getByLabelText(/describe your goods/i), { target: { value: 'medicine' } })
-    fireEvent.click(within(await screen.findByRole('option', { name: /3004/ })).getByRole('button'))
+    fireEvent.click(await screen.findByRole('option', { name: /3004/ }))
     const rate = screen.getByLabelText(/select applicable gst rate/i) as HTMLSelectElement
     expect(Array.from(rate.options).map(o => o.value).filter(Boolean)).toEqual(['5', '12'])
     expect(screen.getByText('5% or 12% by product')).toBeTruthy()
@@ -382,6 +387,7 @@ describe('city suggestions', () => {
     api.cities.mockResolvedValue(['Pune', 'Pimpri'])
     const base = emptyDraft()
     const { container } = render(<AddressStep draft={{ ...base, pickup_city: 'P' + 'u' }} onChange={() => {}} errors={{}} />)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Pickup' })).getByRole('button', { name: /enter the address manually/i }))
     await waitFor(() => expect(api.cities).toHaveBeenCalledWith('Pu'))
     await waitFor(() => expect(container.querySelectorAll('datalist#pickup-city-suggestions option')).toHaveLength(2))
     const box = within(screen.getByRole('group', { name: 'Pickup' })).getByLabelText(/^city/i)
@@ -390,16 +396,14 @@ describe('city suggestions', () => {
   })
 })
 
-describe('the address picker after a reload', () => {
-  it('shows the restored place from the saved draft, and nothing when no place was chosen', () => {
+describe('the address after a reload', () => {
+  it('shows the restored address as a summary line, and the search box when no address was chosen', () => {
     const base = emptyDraft()
-    const saved = { ...base, pickup_address: '12 MG Road, Pune', pickup_lat: 18.52, pickup_lng: 73.85 }
-    const first = render(<AddressStep draft={saved} onChange={() => {}} errors={{}} />)
-    expect(screen.getByTestId('Search the pickup address').textContent).toBe('12 MG Road, Pune')
+    const saved = { ...base, pickup_address: '12 MG Road, Pune', pickup_lat: 18.52, pickup_lng: 73.85, pickup_city: 'Pune', pickup_pincode: '411001' }
+    render(<AddressStep draft={saved} onChange={() => {}} errors={{}} />)
+    expect(screen.getByTestId('pickup-address-summary').textContent).toMatch(/12 MG Road, Pune/)
+    expect(screen.queryByTestId('Search the pickup address')).toBeNull()
     expect(screen.getByTestId('Search the delivery address').textContent).toBe('')
-    first.unmount()
-    render(<AddressStep draft={{ ...base, pickup_address: 'typed only' }} onChange={() => {}} errors={{}} />)
-    expect(screen.getByTestId('Search the pickup address').textContent).toBe('')
   })
 })
 

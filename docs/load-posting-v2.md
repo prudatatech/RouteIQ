@@ -62,3 +62,28 @@ still opens the review (`LAST_STEP`).
 
 Code: `components/load-post/` (`logic.ts` payload and numbers, `draft.ts` migration and repost, `validate.ts` checks and
 recommendation steps).
+
+## UX pass (HSN search on every product, shorter first step)
+
+Frontend only; draft and payload field names are unchanged.
+
+- **HSN search (`HsnSearch`, `HsnList`, `hsnOpen`)**: a real combobox. ArrowUp/Down move an active option
+  (`aria-activedescendant`, `aria-selected`), Enter picks, Escape and Tab close. When the box gets focus it scrolls
+  under the sticky header (smooth, plain jump for reduced motion) so the list has room; the list is capped to the
+  visible height (`visualViewport`, at least 12rem), scrolls inside itself, shows 6 of up to 8 matches with
+  "Show all N" and an "N matches" footer. Descriptions wrap to two lines. Opening one row's list closes any other.
+  Picking moves focus to Quantity of the same row.
+- **Products**: only the product being edited is open. A finished one (name, HSN, rate, quantity, weight) folds to
+  `2. Basmati rice · HSN 1006 · 5% · 20 bags · 1,000 kg · ₹40,000` with Edit and Remove. Add another product opens the
+  new row, scrolls to it and focuses its search. A row with a validation error opens. Fragile / temperature / hazmat
+  sit behind a Handling chip (open when a flag is set).
+- **Route & dates**: pickup and delivery side by side from md (wider than the 720px column from lg). One address search
+  per side; after a pick (or a restored address) a one-line summary with Edit address (and Done); before a pick, the
+  search and "Enter the address manually". City, pin code and state share a row; date and slot share a row; contact name
+  and mobile share a row from sm. Site details are a collapsed "Site details (optional)" per side, open when a value is
+  set. Any address error opens the fields.
+- **Navigation**: a step change scrolls smoothly to the top; a refused Next scrolls to and focuses the first invalid
+  field (`useScrollToFirstInvalid`). Back/Next is a sticky bottom bar on phones (safe-area padding). The stepper is
+  "Step 2 of 4 · Goods" over a thin four-segment bar on phones. Scroll helpers: `useScrollIntoView.ts`.
+- Tests: `loadPostUx.test.tsx` (keyboard, products 2 and 3, one list at a time, folding, address summary, site details,
+  scroll calls).
