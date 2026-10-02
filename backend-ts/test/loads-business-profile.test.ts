@@ -9,6 +9,7 @@ import { testApp } from './support/test-app';
 import { ORG, as, orgWorld, uid } from './support/org-world';
 import { gstinCheckChar } from '../src/utils/gstin';
 import { gstinService } from '../src/services/gstin.service';
+import { goodsTables } from './support/goods-world';
 
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
@@ -23,7 +24,7 @@ const body = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
-  supabaseMock.reset(orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), company_name: 'Vik Vendor', gst_number: '', city: 'Mumbai', address: null, kyc_status: 'pending' }] }));
+  supabaseMock.reset(orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), company_name: 'Vik Vendor', gst_number: '', city: 'Mumbai', address: null, kyc_status: 'pending' }], ...goodsTables() }));
 });
 
 const put = (b: unknown, who = as('vendor-1')) => request(app).put(api('/vendor/business-profile')).set(who).send(b as object);
@@ -112,6 +113,32 @@ describe('PUT /vendor/business-profile', () => {
     supabaseMock.rows('vendor_profiles')[0].kyc_status = 'approved';
     await put(body());
     expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
+  });
+
+  it('updates an existing vendor profile instead of upserting it (an upsert has no city and the column is NOT NULL)', async () => {
+    await put(body());
+    expect(supabaseMock.writes('vendor_profiles', 'POST')).toHaveLength(0);
+    expect(supabaseMock.writes('vendor_profiles', 'PATCH')).toHaveLength(1);
+    expect(supabaseMock.rows('vendor_profiles')[0].city).toBe('Mumbai');
+  });
+
+  it('creates the profile (with an empty city) when the vendor has none yet', async () => {
+    supabaseMock.rows('vendor_profiles').length = 0;
+    expect((await put(body())).status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ id: uid('vendor-1'), city: '', company_name: 'Acme Traders Pvt Ltd' });
+  });
+
+  it('tells the platform owner when a business-profile change sends an approved vendor back to review', async () => {
+    supabaseMock.rows('users').push({ id: uid('owner-1'), role: 'superadmin', email: 'owner@example.test', is_active: true });
+    supabaseMock.rows('vendor_profiles')[0].kyc_status = 'approved';
+    await put(body());
+    expect(supabaseMock.rows('notifications').filter(n => n.user_id === uid('owner-1') && n.type === 'kyc_submitted')).toHaveLength(1);
+  });
+
+  it('takes the state from the pin code when there is no GSTIN', async () => {
+    const res = await put(body({ account_type: 'customer', gstin: null, pincode: '411001' }));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ state_code: '27', state: 'Maharashtra' });
   });
 
   it('then reads back as complete', async () => {

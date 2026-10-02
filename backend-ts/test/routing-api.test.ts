@@ -345,6 +345,21 @@ describe('who is told about a new load', () => {
     expect(notesFor('driver-a', 'vendor_request')).toHaveLength(0);
   });
 
+  it('open: every person of a long list of companies is told exactly once (they are told a batch at a time)', async () => {
+    withPosting();
+    const extra = Array.from({ length: 45 }, (_, i) => ({ org: `b0000000-0000-4000-8000-${String(i).padStart(12, '0')}`, user: uid(`bulk-admin-${i}`) }));
+    for (const e of extra) {
+      supabaseMock.rows('organizations').push({ id: e.org, kind: 'logistic_company', name: `Bulk ${e.user}`, status: 'active', city: 'Mumbai', state: 'Maharashtra', profile: {} });
+      supabaseMock.rows('users').push({ id: e.user, role: 'admin', name: 'Bulk', email: `${e.user}@example.test`, is_active: true });
+      supabaseMock.rows('org_members').push({ org_id: e.org, user_id: e.user, role: 'admin', status: 'active' });
+    }
+    const res = await post(draft());
+    expect(res.status).toBe(201);
+    const counts = new Map<string, number>();
+    for (const n of supabaseMock.rows('notifications').filter(n => n.type === 'vendor_request')) counts.set(n.user_id, (counts.get(n.user_id) ?? 0) + 1);
+    for (const e of extra) expect(counts.get(e.user)).toBe(1);
+  });
+
   it('open, with no company serving the lane: every active company', async () => {
     withPosting();
     await post(draft({ pickup_city: 'Chennai', delivery_city: 'Madurai', pickup_pincode: '600001', delivery_pincode: '625001' }));
