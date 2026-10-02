@@ -302,6 +302,10 @@ class MockSupabase {
   mutations: Mutation[] = [];
   /** Every request URL (path and query), in order. */
   requests: URL[] = [];
+  /** Every rpc call: the function and its arguments. */
+  rpcCalls: Array<{ fn: string; args: any }> = [];
+  /** Answers to rpc calls (by function name); a function without one returns null. Cleared by reset(). */
+  private rpcHandlers = new Map<string, (args: any) => unknown>();
   /** `<bucket>/<path>` of every signed upload URL issued. */
   signedUploads: string[] = [];
   /** `<bucket>/<path>` of every signed download URL issued. */
@@ -350,11 +354,18 @@ class MockSupabase {
     this.requests = [];
     this.signedUploads = [];
     this.signedReads = [];
+    this.rpcCalls = [];
+    this.rpcHandlers.clear();
     this.authUsers = [];
     this.authCalls = [];
     this.authAdmin = false;
     this.failures.clear();
     clearAllMemos();
+  }
+
+  /** Answer rpc calls to `fn` with `handler(args)`. */
+  onRpc(fn: string, handler: (args: any) => unknown): void {
+    this.rpcHandlers.set(fn, handler);
   }
 
   /** Live rows of a table (mutable). */
@@ -444,7 +455,18 @@ class MockSupabase {
         const jwk = { ...this.keys.publicKey.export({ format: 'jwk' }), kid: this.kid, alg: 'ES256', use: 'sig' };
         return send(200, { keys: [jwk] });
       }
-      if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
+      if (url.pathname.startsWith('/rest/v1/rpc/')) {
+        const fn = decodeURIComponent(url.pathname.slice('/rest/v1/rpc/'.length));
+        let args: any = {};
+        try {
+          args = raw ? JSON.parse(raw) : {};
+        } catch {
+          args = {};
+        }
+        this.rpcCalls.push({ fn, args });
+        const handler = this.rpcHandlers.get(fn);
+        return send(200, handler ? handler(args) : null);
+      }
       if (this.authAdmin && (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite')) {
         return this.handleAuthAdmin(req.method ?? 'GET', url, raw, send);
       }
