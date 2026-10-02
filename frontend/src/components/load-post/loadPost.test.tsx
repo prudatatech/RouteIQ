@@ -26,7 +26,9 @@ vi.mock('@/services/api', () => ({
 }))
 vi.mock('@/services/supabase', () => ({ supabase: { auth: { setSession: api.setSession } } }))
 // The map picker is not under test here and needs a browser map.
-vi.mock('@/components/map/AddressPicker', () => ({ default: () => null }))
+vi.mock('@/components/map/AddressPicker', () => ({
+  default: ({ label, value }: { label: string; value: { address: string } | null }) => <div data-testid={label}>{value?.address ?? ''}</div>,
+}))
 
 import HsnSearch from './HsnSearch'
 import ProductRows from './ProductRows'
@@ -34,7 +36,8 @@ import OtpModal from './OtpModal'
 import LoadConfirmation from './LoadConfirmation'
 import PostedLoads from './PostedLoads'
 import VendorShipmentRequestPage from '@/pages/VendorShipmentRequestPage'
-import { emptyRow } from './logic'
+import AddressStep from './AddressStep'
+import { emptyDraft, emptyRow } from './logic'
 import { loadGuestDraft } from '@/utils/guestDraft'
 
 const cement: HsnHit = { hsn_code: '2523', description: 'Portland cement', category: 'construction', gst_rates: [18], rate_note: null, is_hazmat: false, is_perishable: false }
@@ -267,5 +270,18 @@ describe('the form draft', () => {
     fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
     expect(screen.getByText(/describe your goods \(at least 3 characters\)/i)).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Goods & HSN' })).toBeTruthy()
+  })
+})
+
+describe('the address picker after a reload', () => {
+  it('shows the restored place from the saved draft, and nothing when no place was chosen', () => {
+    const base = emptyDraft()
+    const saved = { ...base, pickup_address: '12 MG Road, Pune', pickup_lat: 18.52, pickup_lng: 73.85 }
+    const first = render(<AddressStep draft={saved} onChange={() => {}} errors={{}} />)
+    expect(screen.getByTestId('Search the pickup address').textContent).toBe('12 MG Road, Pune')
+    expect(screen.getByTestId('Search the delivery address').textContent).toBe('')
+    first.unmount()
+    render(<AddressStep draft={{ ...base, pickup_address: 'typed only' }} onChange={() => {}} errors={{}} />)
+    expect(screen.getByTestId('Search the pickup address').textContent).toBe('')
   })
 })

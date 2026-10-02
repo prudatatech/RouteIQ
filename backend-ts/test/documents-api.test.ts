@@ -355,6 +355,35 @@ describe('dispatch checklist', () => {
   });
 });
 
+describe('dispatch block at pickup', () => {
+  const pickup = () => request(app).post('/api/v1/telemetry/driver-ping/complete-stop').set(as('driver-a', ORG.companyA)).send({ stop_id: `${MAN}_pickup`, status: 'completed' });
+  const scheduled = { cargo_manifest: [{ id: MAN, vendor_request_id: LOAD, vehicle_id: VEH, current_vehicle_id: VEH, carrier_org_id: ORG.companyA, vendor_org_id: ORG.vendorV, status: 'scheduled', pieces_total: 120, pieces_delivered: 0, created_at: '2026-10-01T08:00:00.000Z' }] };
+  const blocking = (on: boolean) => ORGS.map(o => (o.id === ORG.companyA ? { ...o, profile: { settings: { dispatch_block_on_missing_docs: on } } } : { ...o }));
+
+  it('refuses the pickup with a 409 listing what is missing when the company blocks dispatch', async () => {
+    world({ orgs: blocking(true), extra: scheduled });
+    const res = await pickup();
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toMatch(/Invoice or challan/);
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('scheduled');
+  });
+
+  it('lets the goods leave once nothing is missing, even with blocking on', async () => {
+    world({ orgs: blocking(true), extra: scheduled });
+    supabaseMock.onRpc('next_lr_number', () => 1);
+    await request(app).post(api(`/${LOAD}/documents`)).set(vendor()).send(invoice());
+    await request(app).post(api(`/${LOAD}/documents/generate/lr`)).set(carrier()).send({});
+    expect((await pickup()).status).toBe(200);
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('in_transit');
+  });
+
+  it('only warns with the setting off: the pickup goes ahead with documents missing', async () => {
+    world({ orgs: blocking(false), extra: scheduled });
+    expect((await pickup()).status).toBe(200);
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('in_transit');
+  });
+});
+
 describe('trip settlement', () => {
   const settle = (path: string, body: object = {}, who = carrier()) => request(app).post(api(`/${LOAD}/settlement${path}`)).set(who).send(body);
 

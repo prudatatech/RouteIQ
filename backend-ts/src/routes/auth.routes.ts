@@ -15,7 +15,7 @@ import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
 import { HttpError, sendError } from '../core/errors';
-import { normalizePhone } from '../utils/phone';
+import { normalizeIndianMobile, normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { buildEarnings } from '../services/driver-pay.service';
 import { getPayoutAccount } from '../services/people-bank.service';
@@ -88,7 +88,7 @@ async function createSupabaseSession(email: string | undefined | null) {
  */
 async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void> {
   try {
-    const phone = normalizePhone(req.body.phone);
+    const phone = kind === 'vendor' ? normalizeIndianMobile(req.body.phone) : normalizePhone(req.body.phone);
     if (!phone) {
       res.status(400).json({ detail: 'Invalid phone number' });
       return;
@@ -429,7 +429,7 @@ router.post('/vendor/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Reque
 // made by the users trigger; the business profile and KYC come after sign-in.
 router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
   try {
-    const phone = normalizePhone(req.body.phone);
+    const phone = normalizeIndianMobile(req.body.phone);
     if (!phone) {
       res.status(400).json({ detail: 'phone and otp are required' });
       return;
