@@ -23,7 +23,7 @@ import { carrierStamp, currentOrgContext, loadMemberships } from '../core/org-co
 import { isDispatchable } from '../core/vehicles';
 import { assertVehicleFits } from './loads/vehicle-fit';
 import { assertCapacity, insertManifest, putLoadOnVehicle } from './loads/create-manifest';
-import { memberOrgId } from '../core/org-scope';
+import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
 import { statementCoveringOrder } from './tpl-statement.service';
 import { activePartnersOf, fleetFlagsOf, ruleExclusion, type AffiliatedPartner } from './tpl-affiliation';
 
@@ -686,7 +686,8 @@ export const tplNetworkService = {
   /** Offers for one load (with partner names) and the order, if a partner accepted. */
   async listForSource(sourceType: SourceType, id: string) {
     const col = sourceColumn(sourceType);
-    const { data: offers, error } = await supabase.from('tpl_offers').select('*').eq(col, id).order('offered_at', { ascending: false });
+    // A company sees only its own escalations (platform admins see all): the same rule as every staff list
+    const { data: offers, error } = await scopeQuery(supabase.from('tpl_offers').select('*').eq(col, id), OWNED.carrier).order('offered_at', { ascending: false });
     if (error) dbError('Failed to load offers', error);
     const partnerIds = [...new Set((offers ?? []).map(o => o.partner_id))];
     const names = new Map<string, string>();
@@ -695,7 +696,7 @@ export const tplNetworkService = {
       if (pErr) dbError('Failed to load partners', pErr);
       for (const p of partners ?? []) names.set(p.id, p.company_name);
     }
-    const { data: orders, error: oErr } = await supabase.from('tpl_orders').select('*').eq(col, id).neq('status', 'cancelled');
+    const { data: orders, error: oErr } = await scopeQuery(supabase.from('tpl_orders').select('*').eq(col, id), OWNED.carrier).neq('status', 'cancelled');
     if (oErr) dbError('Failed to load order', oErr);
     return {
       offers: (offers ?? []).map(o => ({ ...o, partner_name: names.get(o.partner_id) ?? null })),
@@ -1067,7 +1068,7 @@ export const tplNetworkService = {
   // ── Staff side ───────────────────────────────────────────────────
 
   async ordersForStaff(partnerId?: string) {
-    let query = supabase.from('tpl_orders').select('*').order('accepted_at', { ascending: false }).limit(500);
+    let query = scopeQuery(supabase.from('tpl_orders').select('*'), OWNED.carrier).order('accepted_at', { ascending: false }).limit(500);
     if (partnerId) query = query.eq('partner_id', partnerId);
     const { data, error } = await query;
     if (error) dbError('Failed to load orders', error);

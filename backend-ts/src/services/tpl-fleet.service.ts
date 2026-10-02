@@ -123,6 +123,9 @@ export async function createVehicle(orgId: string, userId: string, body: unknown
     id: crypto.randomUUID(),
     plate_number: normalizePlate(parsed.plate_number),
     carrier_org_id: orgId, // always the partner's own organisation, whatever the body says
+    // A new truck is empty: its whole capacity is free (the company create does the same)
+    available_capacity_kg: parsed.capacity_kg ?? null,
+    current_load_kg: 0,
     status: ready ? 'available' : PENDING_VEHICLE_STATUS,
     review_decision: ready ? 'approved' : null,
     reviewed_at: ready ? now : null,
