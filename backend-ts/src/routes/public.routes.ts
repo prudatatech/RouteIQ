@@ -17,6 +17,7 @@ import { getPublicShare } from '../services/vehicle-location.service';
 import { freeCapacityKg } from '../services/capacity.service';
 import { pricingService } from '../services/pricing.service';
 import { normalizePlace } from '../utils/corridor-match';
+import { assessLoad, findHsn, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, searchHsn, toHit } from '../services/goods';
 
 const router = Router();
 
@@ -267,6 +268,85 @@ router.post('/quote', rateLimitByIp('public-quote', 20, 60), async (req: Request
       per_km_suggested: out.per_km_suggested,
       generated_at: out.generated_at,
     });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Goods master and the load assistant (docs/load-posting-design.md section 1) ──────────────────────
+// The HSN master, pin codes, vehicle classes and goods categories are public reference data (no sign-in). The HSN
+// index is held in memory for 10 minutes, so a search costs no query.
+
+const GOODS_CACHE = 'public, max-age=600';
+
+const HsnSearchQuery = z.object({ q: z.string().trim().min(3, 'Type at least 3 characters').max(80) });
+
+// GET /public/hsn/search?q= — up to 8 suggestions: code, description, category, GST rate(s), flags
+router.get('/hsn/search', rateLimitByIp('public-hsn', 120, 60), async (req: Request, res: Response) => {
+  try {
+    const parsed = HsnSearchQuery.safeParse(req.query);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    const items = searchHsn(await loadHsnIndex(), parsed.data.q);
+    res.set('Cache-Control', GOODS_CACHE);
+    res.json({ items });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /public/hsn/:code — one HSN code with every rate it allows
+router.get('/hsn/:code', rateLimitByIp('public-hsn', 120, 60), async (req: Request, res: Response) => {
+  try {
+    if (!/^\d{2,8}$/.test(req.params.code)) return void res.status(400).json({ detail: 'An HSN code is 2 to 8 digits' });
+    const e = findHsn(await loadHsnIndex(), req.params.code);
+    if (!e) return void res.status(404).json({ detail: 'We do not have that HSN code. You can still enter it by hand.' });
+    res.set('Cache-Control', GOODS_CACHE);
+    res.json({ ...toHit(e), gst_rate: e.gst_rate, eway_always: e.eway_always });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /public/pincode/:pin — the state of a pin code (it sets CGST+SGST or IGST)
+router.get('/pincode/:pin', rateLimitByIp('public-pincode', 120, 60), async (req: Request, res: Response) => {
+  try {
+    if (!isPincode(req.params.pin)) return void res.status(400).json({ detail: 'A pin code is 6 digits' });
+    const info = await lookupPincode(req.params.pin);
+    if (!info) return void res.status(404).json({ detail: 'We could not place that pin code. Check it and try again.' });
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.json(info);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// GET /public/vehicle-classes and /public/goods-categories — the reference tables the form offers
+router.get('/vehicle-classes', rateLimitByIp('public-goods-ref', 60, 60), async (req: Request, res: Response) => {
+  try {
+    res.set('Cache-Control', GOODS_CACHE);
+    res.json({ items: await loadVehicleClasses() });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+router.get('/goods-categories', rateLimitByIp('public-goods-ref', 60, 60), async (req: Request, res: Response) => {
+  try {
+    res.set('Cache-Control', GOODS_CACHE);
+    res.json({ items: await loadGoodsCategories() });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /public/loads/assist — totals, GST per line, e-way bill, hazmat, suggested vehicle, the freight estimate and the
+// recommendations for the draft load. Nothing is stored.
+router.post('/loads/assist', rateLimitByIp('public-load-assist', 60, 60), async (req: Request, res: Response) => {
+  try {
+    const parsed = LoadDraftSchema.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    res.set('Cache-Control', 'no-store');
+    res.json(await assessLoad(parsed.data as LoadDraft));
   } catch (e: any) {
     sendError(req, res, e);
   }
