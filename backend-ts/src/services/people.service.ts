@@ -15,6 +15,7 @@
 import { supabase } from '../core/supabase';
 import { HttpError, parseRejectionReason } from '../core/errors';
 import { invalidateRoleCache } from '../core/auth';
+import { mayGrantSuperadmin } from '../core/org-context';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { cacheDeletePattern } from '../core/redis';
 import { invalidateDriverVehicles } from '../core/ownership';
@@ -344,7 +345,7 @@ const CREATABLE_ROLES: readonly string[] = PERSON_ROLES;
 export async function checkNewPerson(actor: Actor, body: Record<string, any>) {
   const role = typeof body.role === 'string' ? body.role : '';
   if (!CREATABLE_ROLES.includes(role)) throw new HttpError(400, `role must be one of ${PERSON_ROLES.join(', ')}`);
-  if (role === 'superadmin' && actor.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can create a superadmin');
+  if (role === 'superadmin' && !mayGrantSuperadmin(actor.role)) throw new HttpError(403, 'Only a superadmin can create a superadmin');
   if ((role === 'admin' || role === 'manager') && !canManage(actor)) throw new HttpError(403, 'Not authorized for this action');
   const fullName = parseRequiredText(body.full_name, 'Name', 100, 2);
 
@@ -460,6 +461,7 @@ export async function updatePerson(actor: Actor, id: string, body: Record<string
   let newRole: PersonRole | null = null;
   if (body.role !== undefined && body.role !== subject.role) {
     if (actor.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can change a role');
+    if ((body.role === 'superadmin' || subject.role === 'superadmin') && !mayGrantSuperadmin(actor.role)) throw new HttpError(403, 'Only the platform can grant or change a superadmin');
     if (!(PERSON_ROLES as readonly string[]).includes(body.role)) throw new HttpError(400, `role must be one of ${PERSON_ROLES.join(', ')}`);
     if ((body.role === 'driver') !== (subject.role === 'driver')) throw new HttpError(409, ROLE_SWAP_MESSAGE);
     if (id === actor.user_id) throw new HttpError(409, "You can't change your own role. Ask another superadmin");
