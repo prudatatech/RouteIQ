@@ -555,7 +555,7 @@ export const vendorService = {
       if (error) throw new Error(error.message);
       for (const l of loads ?? []) seen.add(l.vendor_id as string);
       // vendors with a bid on one of the company's windows
-      const { data: bids, error: bErr } = await scopeQuery(supabase.from('capacity_bids').select('vendor_id, capacity_windows!inner(carrier_org_id)').in('vendor_id', ids), { carrier: 'capacity_windows.carrier_org_id' });
+      const { data: bids, error: bErr } = await scopeQuery(supabase.from('capacity_bids').select('vendor_id, capacity_windows!capacity_bids_window_id_fkey!inner(carrier_org_id)').in('vendor_id', ids), { carrier: 'capacity_windows.carrier_org_id' });
       if (bErr) throw new Error(bErr.message);
       for (const b of bids ?? []) seen.add(b.vendor_id as string);
       allowed = ids.filter(i => seen.has(i));

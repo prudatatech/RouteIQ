@@ -95,6 +95,8 @@ export async function platformConsole({ matrix }) {
   // 3PL partner approval queue
   const q = await api(A.token, 'GET', '/tpl/queue')
   console.log(`   3PL partner approval queue for a company admin: ${q.status}`)
-  check('5.21 the 3PL partner approval queue (a platform decision) is not a company admin\'s', q.status === 403, `${q.status}`)
+  // A company sees only its OWN partners there, never bank details, PAN or documents; deciding is the platform's (approve/reject are superadmin-only)
+  const rows = Array.isArray(q.body) ? q.body : []
+  check('5.21 the 3PL queue shows a company only its own partners, without bank details or PAN', q.status === 200 && rows.every(r => !('bank_account_no' in r) && !('pan_number' in r)), `${q.status} ${rows.length} rows`)
   matrix.push({ section: 'console', note: 'see PASS/FAIL list' })
 }
