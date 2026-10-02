@@ -40,8 +40,8 @@ describe('cancelling a route with goods on board', () => {
     expect(supabaseMock.rows('cargo_custody_events')).toEqual([expect.objectContaining({ kind: 'hold', shipment_id: ID.s1, exception_id: exc.id })]);
     expect(supabaseMock.rows('shipment_logs').some(l => l.shipment_id === ID.s1 && l.status === 'on_hold')).toBe(true);
 
-    // The vehicle keeps its load while goods wait on it; the vendor load (another job) is left alone
-    expect(one('vehicles', ID.v1).current_load_kg).toBe(300);
+    // The vehicle keeps its load while goods wait on it: the held shipment and the vendor load (another job, left alone)
+    expect(one('vehicles', ID.v1).current_load_kg).toBe(1300);
     expect(one('cargo_manifest', ID.m1).status).toBe('in_transit');
     // Staff and the customer hear about it
     expect(notesFor(ID.admin).some(n => n.type === 'cargo_exception_opened')).toBe(true);

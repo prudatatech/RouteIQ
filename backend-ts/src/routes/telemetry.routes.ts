@@ -18,9 +18,10 @@ import { wsManager } from '../core/websocket';
 import crypto from 'crypto';
 import { HttpError, sendError } from '../core/errors';
 import { notificationService } from '../services/notification.service';
+import { ShipmentService } from '../services/shipment.service';
 import {
   routeService, setOperatingVehicleStatus, holdVehicleAfterSos, manifestRouteStops, operatingStatusFor,
-  releaseVehicleLoad, OPEN_MANIFEST_STATUSES, VEHICLE_DOWN_SOS_TYPES,
+  OPEN_MANIFEST_STATUSES, VEHICLE_DOWN_SOS_TYPES,
 } from '../services/route.service';
 import { CARGO_MANIFEST_TRANSITIONS, OPERATING_VEHICLE_STATUSES, assertTransition } from '../core/transitions';
 import { parseCoordinate, uuidParam } from '../core/validate';
@@ -1143,12 +1144,15 @@ router.post('/driver-ping/complete-stop', requireAuth, idempotent('complete-stop
     if (!remainingStops || remainingStops.length === 0) {
       // All stops done: the route completes through the shared status path
       if (!repeat) await completeRouteAfterLastStop(stop.route_id);
-    } else if (!repeat && status === 'completed' && dp?.shipment_id && routeInfo?.vehicle_id) {
-      // A delivery takes its goods off the truck (a failed or refused one stays on it)
-      const { data: shipment } = await supabase.from('shipments').select('total_weight_kg, pieces_total, pieces_delivered').eq('id', dp.shipment_id).maybeSingle();
-      const weight = Number(shipment?.total_weight_kg) || 0;
-      const share = kind === 'partial_delivery' && Number(shipment?.pieces_total) > 0 ? (Number(shipment?.pieces_delivered) || 0) / Number(shipment!.pieces_total) : 1;
-      await releaseVehicleLoad(routeInfo.vehicle_id, Math.round(weight * share * 100) / 100);
+    }
+    // A delivery takes its goods off the truck (a failed or refused one stays on it): the vehicle's load and free
+    // space are worked out again from what is still on or assigned to it, the same way assigning does it.
+    if (!repeat && (status === 'completed' || !remainingStops || remainingStops.length === 0) && routeInfo?.vehicle_id) {
+      try {
+        await ShipmentService.recalculateVehicleCapacity(routeInfo.vehicle_id);
+      } catch (e) {
+        console.error('[telemetry] Could not update the vehicle load after a stop:', e);
+      }
     }
 
     // Tell dispatch a delivery failed, with what they need to follow it up

@@ -1503,5 +1503,11 @@
     "paid_by",
     "created_at",
     "updated_at"
+  ],
+  "invoice_counters": [
+    "org_id",
+    "prefix",
+    "period",
+    "last_seq"
   ]
 }

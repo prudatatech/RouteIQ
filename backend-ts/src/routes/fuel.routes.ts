@@ -14,6 +14,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessVehicle, isStaff } from '../core/ownership';
 import { guardOfVehicle, visibleVehicleIds } from '../core/org-guards';
 import { HttpError, sendError } from '../core/errors';
+import { isUuid } from '../core/validate';
 import { indianDateKey } from '../core/istDate';
 import { rateLimitByUser } from '../core/rate-limit';
 import { idempotent } from '../core/idempotency';
@@ -152,6 +153,7 @@ async function syncExpense(log: FuelLogRow): Promise<void> {
 }
 
 async function loadLog(id: string): Promise<FuelLogRow> {
+  if (!isUuid(id)) throw new HttpError(404, 'Fuel entry not found');
   const { data, error } = await supabase.from('vehicle_fuel_logs').select(FUEL_LOG_COLUMNS).eq('id', id).maybeSingle();
   if (error) throw error;
   if (!data) throw new HttpError(404, 'Fuel entry not found');
@@ -342,7 +344,13 @@ router.delete('/fuel-logs/:logId', ...staff, guardOfVehicle('vehicle_fuel_logs',
 router.get('/fuel-logs/:logId/bill-url', requireAuth, async (req: Request, res: Response) => {
   try {
     const log = await loadLog(req.params.logId);
-    await requireVehicleAccess(req, log.vehicle_id);
+    // Someone who may not see the vehicle gets the answer for an entry that does not exist, never a 403 that says it does
+    try {
+      await requireVehicleAccess(req, log.vehicle_id);
+    } catch (e) {
+      if (e instanceof HttpError && (e.status === 403 || e.status === 404)) throw new HttpError(404, 'Fuel entry not found');
+      throw e;
+    }
     if (!log.bill_path) throw new HttpError(404, 'This entry has no bill');
     const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUrl(log.bill_path, 600);
     if (error || !data) throw new HttpError(404, 'The bill file is no longer available');

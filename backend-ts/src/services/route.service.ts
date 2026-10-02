@@ -333,6 +333,11 @@ export const routeService = {
       throw new HttpError(409, `This trip's vehicle is in ${vehicle.status} and can't be dispatched.`);
     }
 
+    // A trip nobody drives would be "sent" to no one: no notice, nothing in any app
+    if (starting && route.status === 'pending' && vehicle && !vehicle.driver_id) {
+      throw new HttpError(409, "This trip's vehicle has no driver. Give it a driver before sending the trip.");
+    }
+
     // A route is finished by its stops; it cannot be closed with deliveries still to make
     if (next === 'completed') {
       const { data: pending, error: pendingErr } = await supabase

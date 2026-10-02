@@ -43,6 +43,8 @@ param storageAdminPassword string
 param realtimeAdminPassword string
 @secure()
 param realtimeSecretKeyBase string
+@description('Seed Realtime\'s self-hosted tenant at start-up. Only for the very first start of a stage: the seed DELETES and re-creates the tenant with ssl_enforced=false and a 100 ms poll, undoing the settings platform.sh stores in _realtime.extensions (the database refuses the unencrypted connection)')
+param seedRealtimeTenant bool = false
 @secure()
 param s3proxyIdentity string
 @secure()
@@ -58,6 +60,9 @@ param smtpSender string = ''
 var p = stage == 'live' ? prefix : '${prefix}-test'
 var gatewayHost = empty(dataDomain) ? '${p}-gateway.${env.properties.defaultDomain}' : dataDomain
 var minReplicas = stage == 'live' ? 1 : 0
+// The test database (B1ms) accepts 50 connections, 10 reserved: PostgREST's 10 plus Realtime's ~14 left Realtime
+// "DatabaseLackOfConnections". Test traffic is light, so test keeps a small pool; live (B2s) keeps 10.
+var postgrestPool = stage == 'live' ? '10' : '4'
 var blobAccountName = take(toLower(replace('${p}objects${uniqueString(resourceGroup().id, p)}', '-', '')), 24)
 var objectsContainer = '${p}-objects'
 
@@ -167,7 +172,7 @@ resource rest 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'PGRST_DB_USE_LEGACY_GUCS', value: 'false' }
           { name: 'PGRST_APP_SETTINGS_JWT_SECRET', secretRef: 'jwt-secret' }
           { name: 'PGRST_APP_SETTINGS_JWT_EXP', value: '3600' }
-          { name: 'PGRST_DB_POOL', value: '10' }
+          { name: 'PGRST_DB_POOL', value: postgrestPool }
         ]
       }]
       scale: { minReplicas: minReplicas, maxReplicas: 1 }
@@ -213,7 +218,7 @@ resource rt 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'DNS_NODES', value: '\'\'' }
           { name: 'RLIMIT_NOFILE', value: '10000' }
           { name: 'APP_NAME', value: 'realtime' }
-          { name: 'SEED_SELF_HOST', value: 'true' }
+          { name: 'SEED_SELF_HOST', value: string(seedRealtimeTenant) }
           { name: 'SELF_HOST_TENANT_NAME', value: '${p}-rt' }
           { name: 'RUN_JANITOR', value: 'true' }
         ]

@@ -13,6 +13,7 @@ import { supabase } from './supabase';
 import { registerClearable } from './memo';
 import { HttpError } from './errors';
 import { OWNED, assertVisible, orgFilter, scopeQuery } from './org-scope';
+import { isUuid } from './validate';
 
 export const assertVehicleVisible = (id: string | null | undefined, notFound = 'Vehicle not found'): Promise<void> =>
   id ? assertVisible('vehicles', id, OWNED.carrier, notFound) : Promise.resolve();
@@ -96,15 +97,24 @@ const guard = (check: (req: Request) => Promise<void>): Guard => (req, res, next
 };
 
 /** 404 unless the vehicle named by the route parameter is one the active company runs. */
-export const guardVehicle = (param = 'id'): Guard => guard(req => assertVehicleVisible(req.params[param]));
+export const guardVehicle = (param = 'id'): Guard => guard(async req => {
+  if (!isUuid(req.params[param])) throw new HttpError(404, 'Vehicle not found');
+  await assertVehicleVisible(req.params[param]);
+});
 
 /** 404 unless the row `table` named by the route parameter belongs to a vehicle the active company runs. */
 export const guardOfVehicle = (table: string, param: string, notFound: string): Guard =>
-  guard(req => assertOfVisibleVehicle(table, req.params[param], notFound));
+  guard(async req => {
+    if (!isUuid(req.params[param])) throw new HttpError(404, notFound); // an id that cannot exist, not a database error
+    await assertOfVisibleVehicle(table, req.params[param], notFound);
+  });
 
 /** 404 unless the row `table` named by the route parameter carries the active company's carrier_org_id. */
 export const guardOwned = (table: string, param: string, notFound: string): Guard =>
-  guard(req => assertVisible(table, req.params[param], OWNED.carrier, notFound));
+  guard(async req => {
+    if (!isUuid(req.params[param])) throw new HttpError(404, notFound);
+    await assertVisible(table, req.params[param], OWNED.carrier, notFound);
+  });
 
 /** 404 unless the shipment (or vendor load) named by the route parameter is one the active company runs. */
 export const guardShipment = (param = 'shipment_id'): Guard => guard(req => assertShipmentVisible(req.params[param]));
