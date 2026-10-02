@@ -46,10 +46,13 @@ Migration `20261003010000_goods_master.sql`.
   - the PRD §13 top-50 table;
   - the §3.3 category rows;
   - the 150 entries in `frontend/src/utils/hsnDatabase.ts`.
-  Mark rates with `needs_review = true`: **the PRD's rates predate GST 2.0 (22 Sep 2025, slabs 5/18/40)**.
-  The platform admin edits rates and synonyms in the admin console. `scripts/import-hsn.ts` loads the full
-  5,000+ master from a CSV (`hsn_code, description, gst_rates, category`); the owner supplies the file
-  (the CBIC/GST portal HSN list).
+  The PRD's rates predated GST 2.0 (22 Sep 2025). Migration `20261005010000_hsn_master_gst2.sql` loads the
+  full official HSN list (about 21,800 codes) with the current rates of notification 9/2025-Central Tax (Rate)
+  and its amendments, and corrects the seeded rows; `docs/gst-rates.md` has the sources, the method, the
+  counts and the limits, and `supabase/seed/hsn_master.csv` the rows. `needs_review` marks the codes whose
+  mapping a person should confirm. The platform admin edits rates and synonyms in the admin console;
+  `scripts/import-hsn.ts` loads a CSV (`hsn_code, description, gst_rates, category`, optionally `gst_rate` and
+  `rate_note`).
 - **`goods_categories`:** `key`, `name`, `examples`, `hsn_range`, `default_rates`, `eway_threshold_inr`
   (default 50000), `is_hazmat`, `is_perishable`, `recommended_vehicle_class`. Seeded from §3.3.
 - **`vehicle_classes`:** `key`, `name`, `min_t`, `max_t`, `best_for`, `notes`, `interstate_ok`,
@@ -68,9 +71,11 @@ Migration `20261003010000_goods_master.sql`.
   `state_name`. Seeded with the postal-circle map. A lookup tries the full pin code first (a table
   `pincodes(pincode, district, state_code)`, empty until the owner imports the India Post directory), then
   the prefix.
-- **Service `services/goods/`.** The HSN index is loaded into memory and cached for 10 minutes, so 5,000
-  rows are trivial. Search ports the layered fuzzy match from `hsnDatabase.ts`: exact code prefix, then
-  synonyms ("clothes" → textiles), then word prefix, then trigram and Levenshtein. It returns up to 8 hits.
+- **Service `services/goods/`.** The HSN index is loaded into memory and cached for 10 minutes (about 21,800
+  rows; a word index keeps a search to a few milliseconds). Search ports the layered fuzzy match from
+  `hsnDatabase.ts`: exact code prefix, then synonyms ("clothes" → textiles), then word prefix, then trigram and
+  Levenshtein; curated rows and headings rank above long tariff-item texts. Descriptions come back in sentence
+  case (the official list is in capitals; the stored text is unchanged). It returns up to 8 hits.
   It does not depend on pg_trgm, which Azure would need allow-listed.
 
 Public endpoints (no sign-in, rate-limited, cached):
@@ -366,6 +371,6 @@ On a vendor load or shipment in the company dashboard, a **Documents** panel:
 - **SMS OTP on live:** Twilio credentials and Upstash Redis on the live API. Live has no Redis today.
 - **WhatsApp:** a Meta Business account, a WhatsApp Cloud API token and phone ID, and an approved
   `load_posted` template.
-- **The full HSN master (5,000+):** the CBIC/GST portal file, run through `scripts/import-hsn.ts`. Have
-  the GST rates confirmed against GST 2.0.
+- **The full HSN master:** loaded by migration `20261005010000_hsn_master_gst2.sql` from the GST portal list
+  and the CBIC notifications. Have a CA confirm the codes marked `needs_review` (`docs/gst-rates.md`).
 - **The India Post pin code directory** (optional; the prefix map works without it).

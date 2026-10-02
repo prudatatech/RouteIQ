@@ -12,7 +12,7 @@ describe('HSN search', () => {
   it('finds cement first: "cement" -> 2523', () => {
     const hits = searchHsn(index, 'cement');
     expect(hits[0].hsn_code).toBe('2523');
-    expect(hits[0]).toMatchObject({ description: 'Portland cement, aluminous cement', gst_rates: [12, 28], category: 'construction', rate_note: '28% for bags over 25 kg' });
+    expect(hits[0]).toMatchObject({ description: 'Portland cement, aluminous cement', gst_rates: [18], category: 'construction', rate_note: null });
   });
 
   it('does not pad "cement" with weak fuzzy hits', () => {
@@ -44,10 +44,10 @@ describe('HSN search', () => {
     expect(codes('doodh')[0]).toBe('0401');
   });
 
-  it('finds medicines at 5% or 12%', () => {
+  it('finds medicines at 5% or nil', () => {
     const hit = searchHsn(index, 'medicine')[0];
     expect(hit.hsn_code).toBe('3004');
-    expect(hit.gst_rates).toEqual([5, 12]);
+    expect(hit.gst_rates).toEqual([0, 5]);
   });
 
   it('tolerates typos', () => {
@@ -84,7 +84,7 @@ describe('HSN search', () => {
   });
 
   it('looks one code up', () => {
-    expect(findHsn(index, '2523')?.gst_rates).toEqual([12, 28]);
+    expect(findHsn(index, '2523')?.gst_rates).toEqual([18]);
     expect(findHsn(index, ' 2523 ')?.hsn_code).toBe('2523');
     expect(findHsn(index, '0000')).toBeNull();
   });
@@ -105,14 +105,14 @@ describe('public goods endpoints', () => {
     expect((await request(app).get('/api/v1/public/hsn/search')).status).toBe(400);
     const res = await request(app).get('/api/v1/public/hsn/search?q=cement');
     expect(res.status).toBe(200);
-    expect(res.body.items[0]).toMatchObject({ hsn_code: '2523', gst_rates: [12, 28] });
+    expect(res.body.items[0]).toMatchObject({ hsn_code: '2523', gst_rates: [18] });
     expect(res.headers['cache-control']).toMatch(/public/);
   });
 
   it('GET /public/hsn/:code returns the code or 404', async () => {
     const ok = await request(app).get('/api/v1/public/hsn/2523');
     expect(ok.status).toBe(200);
-    expect(ok.body).toMatchObject({ hsn_code: '2523', gst_rate: 12, gst_rates: [12, 28], eway_always: false });
+    expect(ok.body).toMatchObject({ hsn_code: '2523', gst_rate: 18, gst_rates: [18], eway_always: false });
     expect((await request(app).get('/api/v1/public/hsn/0001')).status).toBe(404);
     expect((await request(app).get('/api/v1/public/hsn/abc')).status).toBe(400);
   });
@@ -120,7 +120,7 @@ describe('public goods endpoints', () => {
   it('GET /public/hsn/:code falls back to the longest known prefix for 6 and 8 digit codes', async () => {
     const six = await request(app).get('/api/v1/public/hsn/252310');
     expect(six.status).toBe(200);
-    expect(six.body).toMatchObject({ hsn_code: '2523', gst_rates: [12, 28], matched_prefix: '2523' });
+    expect(six.body).toMatchObject({ hsn_code: '2523', gst_rates: [18], matched_prefix: '2523' });
     const eight = await request(app).get('/api/v1/public/hsn/25232010');
     expect(eight.status).toBe(200);
     expect(eight.body.matched_prefix).toBe('2523');
