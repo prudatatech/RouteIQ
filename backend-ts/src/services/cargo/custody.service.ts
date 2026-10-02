@@ -13,6 +13,7 @@ import { supabase } from '../../core/supabase';
 import { HttpError } from '../../core/errors';
 import { settings } from '../../core/config';
 import { isStaff } from '../../core/ownership';
+import { OWNED, scopeQuery } from '../../core/org-scope';
 import { canTransition, OPERATING_VEHICLE_STATUSES, SHIPMENT_TRANSITIONS } from '../../core/transitions';
 import { ShipmentService } from '../shipment.service';
 import { InvoiceService } from '../invoice.service';
@@ -695,7 +696,8 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
     case 'hub_in': {
       const depotId = input.depot_id;
       if (!depotId) throw new HttpError(400, 'depot_id is required for a hub arrival');
-      const { data: depot } = await supabase.from('depots').select('id, name').eq('id', depotId).maybeSingle();
+      // Another company's hub is a 404, the same as one that does not exist
+      const { data: depot } = await scopeQuery(supabase.from('depots').select('id, name').eq('id', depotId), OWNED.carrier).maybeSingle();
       if (!depot) throw new HttpError(404, 'Hub not found');
       if (c.holder !== 'vehicle') throw new HttpError(409, 'Only goods on a vehicle can be dropped at a hub.');
       const previous = c.status;
