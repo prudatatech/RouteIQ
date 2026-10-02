@@ -5,6 +5,7 @@ import AddressPicker from '@/components/map/AddressPicker'
 import type { ResolvedPlace } from '@/services/geocoding'
 import type { LoadDraft } from '@/types/load'
 import { isWeekend, taxBasisLocal, todayIso, type StepErrors } from './logic'
+import { placeToFields } from './helpers'
 
 type Side = 'pickup' | 'delivery'
 
@@ -14,12 +15,6 @@ const SLOTS = [
   { value: 'evening', label: 'Evening (6pm–10pm)' },
 ]
 
-/** The city, pin code and full address a chosen place gives. Anything the geocoder lacks is left as typed. */
-export function placeToFields(place: ResolvedPlace): { city?: string; pincode?: string; address: string } {
-  const pin = place.parts?.pincode?.replace(/\D/g, '')
-  const city = place.parts?.city || place.parts?.district || place.address.split(',')[0]?.trim()
-  return { address: place.address, city: city || undefined, pincode: pin && pin.length === 6 ? pin : undefined }
-}
 
 /** Looks the state up when a 6-digit pin code is entered, and clears it when the pin code changes. */
 function usePinState(side: Side, pin: string, stateCode: string, onChange: (patch: Partial<LoadDraft>) => void) {

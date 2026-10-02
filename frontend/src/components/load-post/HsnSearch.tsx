@@ -2,28 +2,12 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { HelpCircle, Lock } from 'lucide-react'
 import { publicAPI } from '@/services/api'
 import { Button, Input, Select } from '@/components/ui'
-import type { HsnHit, ProductHandling, ProductRow } from '@/types/load'
+import type { HsnHit, ProductRow } from '@/types/load'
 import { MANUAL_RATES, rateText } from './logic'
+import { applyHsnHit } from './helpers'
 
 export interface HsnFieldErrors { name?: string; hsn?: string; rate?: string }
 
-/** What picking a search result does to a row: fill and lock the code and rate, and flag hazardous or perishable goods. */
-export function applyHsnHit(row: ProductRow, hit: HsnHit): Partial<ProductRow> {
-  const handling = new Set<ProductHandling>(row.handling)
-  if (hit.is_hazmat) handling.add('hazmat')
-  if (hit.is_perishable) handling.add('temperature_controlled')
-  const typed = row.product_name.trim()
-  return {
-    product_name: typed.length >= 3 ? typed : hit.description,
-    hsn_code: hit.hsn_code,
-    hsn_locked: true,
-    rate_options: hit.gst_rates,
-    rate_note: hit.rate_note,
-    gst_rate: hit.gst_rates.length === 1 ? hit.gst_rates[0] : null,
-    category: hit.category,
-    handling: Array.from(handling),
-  }
-}
 
 const UNLOCK: Partial<ProductRow> = { hsn_code: '', hsn_locked: false, rate_options: [], rate_note: null, gst_rate: null, category: null }
 

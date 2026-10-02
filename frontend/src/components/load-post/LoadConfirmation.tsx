@@ -4,15 +4,8 @@ import toast from 'react-hot-toast'
 import { Check, Copy } from 'lucide-react'
 import { Alert, Button, buttonClasses, Card } from '@/components/ui'
 import { formatDate } from '@/utils/display'
+import { copyText } from '@/components/fleet/location/clipboard'
 
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
 
 /** Shown after the load is posted (PRD 10.2): the load ID, the route, what happens next. */
 export default function LoadConfirmation({ loadId, loadNumber, pickupCity, deliveryCity, pickupDate, vehicleName, statusNote, onPostAnother }: {

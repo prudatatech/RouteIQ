@@ -2,32 +2,14 @@ import { useState } from 'react'
 import { Alert, Button, Card, Input, Select } from '@/components/ui'
 import type { BusinessProfile } from '@/types/load'
 import { checkGstin, normalizeGstin } from '@/utils/gstin'
+import { emptyProfile, profileErrors } from './helpers'
 
 // The backend's enums (schemas/loads.ts): anything else is refused
 const BUSINESS_TYPES = ['manufacturer', 'trader', 'distributor', 'retailer', 'exporter', 'other']
   .map(v => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))
 const MONTHLY = ['1-5', '6-20', '21-50', '50+'].map(v => ({ value: v, label: v }))
 
-export const emptyProfile = (): BusinessProfile => ({
-  full_name: '', business_name: '', account_type: 'customer', gstin: '', address: '', pincode: '', email: '', business_type: '', monthly_loads: '',
-})
 
-/** What is missing in the business profile, by field. GSTIN is required for a Business Partner. */
-export function profileErrors(p: BusinessProfile): Record<string, string> {
-  const e: Record<string, string> = {}
-  if (!p.full_name.trim()) e.full_name = 'Enter your full name.'
-  if (p.account_type === 'business_partner' && !p.business_name.trim()) e.business_name = 'Enter your business name.'
-  if (p.account_type === 'business_partner' && !p.gstin.trim()) e.gstin = 'A GSTIN is required for a Business Partner.'
-  else if (p.gstin.trim()) {
-    const check = checkGstin(p.gstin)
-    if (!check.valid) e.gstin = check.message ?? 'Check the GSTIN.'
-  }
-  if (!p.address.trim()) e.address = 'Enter your business address.'
-  if (!/^\d{6}$/.test(p.pincode.trim())) e.pincode = 'Enter the 6-digit pin code.'
-  if (!p.email.trim()) e.email = 'Enter your email.'
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) e.email = 'Enter a valid email.'
-  return e
-}
 
 /** Asked once after the first sign-in (PRD 9). The same details are used for every later load. */
 export default function BusinessProfileStep({ initial, saving, error, onSave, onBack }: {

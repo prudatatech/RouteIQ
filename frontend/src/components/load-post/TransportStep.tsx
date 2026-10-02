@@ -4,6 +4,7 @@ import { Container, Droplets, Package, Snowflake, Truck } from 'lucide-react'
 import { Alert, Card, Checkbox, Input, Skeleton } from '@/components/ui'
 import type { AssistResult, LoadDraft, LoadType, SpecialHandling, VehicleClass } from '@/types/load'
 import { hasPerishable, inr, itemTotals, localLoadType, TEMP_RANGES, type StepErrors } from './logic'
+import { capacityText } from './helpers'
 
 const SPECIAL: { id: SpecialHandling; label: string }[] = [
   { id: 'fragile', label: 'Fragile' },
@@ -13,11 +14,6 @@ const SPECIAL: { id: SpecialHandling; label: string }[] = [
   { id: 'odc', label: 'Over-dimensional cargo (ODC)' },
 ]
 
-export const capacityText = (v: VehicleClass): string => {
-  if (v.min_t != null && v.max_t != null) return `${v.min_t}–${v.max_t} T`
-  if (v.max_t != null) return `up to ${v.max_t} T`
-  return 'by volume'
-}
 
 function VehicleIcon({ v }: { v: VehicleClass }) {
   const Icon = v.is_reefer ? Snowflake : v.is_tanker ? Droplets : v.is_open ? Package : v.key.includes('container') ? Container : Truck
