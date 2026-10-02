@@ -20,8 +20,8 @@ const VENDOR_W = 'a0000000-0000-4000-8000-0000000000e5';
 const EXTRA_ORGS: Row[] = [{ id: VENDOR_W, kind: 'vendor', name: 'Zed Exports', status: 'active', profile: {}, created_at: NOW }];
 const EXTRA_PEOPLE = [
   { id: 'vendor-2', role: 'vendor', full_name: 'Wen Vendor', email: 'wen@example.test', is_active: true },
-  { id: 'desk-v', role: 'admin', full_name: 'Desk Vee', email: 'deskv@example.test', is_active: true },
-  { id: 'desk-w', role: 'admin', full_name: 'Desk Dub', email: 'deskw@example.test', is_active: true },
+  { id: 'desk-v', role: 'vendor', full_name: 'Desk Vee', email: 'deskv@example.test', is_active: true },
+  { id: 'desk-w', role: 'vendor', full_name: 'Desk Dub', email: 'deskw@example.test', is_active: true },
 ].map(p => ({ ...p, id: uid(p.id) }));
 const vendorSeat = (user: string, org: string, role = 'member'): Row => ({
   org_id: org, user_id: uid(user), role, status: 'active', created_at: NOW, organizations: [...ORGS, ...EXTRA_ORGS].find(o => o.id === org),
@@ -204,19 +204,12 @@ describe('another company\'s record is a 404, never a 403', () => {
 describe('a vendor sees only what is made for it', () => {
   beforeEach(() => seed());
 
-  it('shipments', async () => {
-    expect(ids((await get('/shipments', 'desk-v')).body)).toEqual([U.sa1, U.sb1]);
-    expect(ids((await get('/shipments', 'desk-w')).body)).toEqual([U.sa2]);
-    expect((await get(`/shipments/${U.sa2}/overview`, 'desk-v')).status).toBe(404);
-    expect((await get(`/shipments/${U.sa1}`, 'desk-v')).status).toBe(200);
-    expect((await get(`/shipments/${U.sa1}`, 'desk-w')).status).toBe(404);
-  });
-
-  it('invoices, listed and opened', async () => {
-    expect(ids((await get('/finance/invoices?range=all', 'desk-v')).body)).toEqual([U.ia1, U.ib1]);
-    expect(ids((await get('/finance/invoices?range=all', 'desk-w')).body)).toEqual([U.ia2]);
-    expect((await get(`/invoices/${U.ia2}`, 'desk-v')).status).toBe(404);
-    expect((await get(`/invoices/${U.ia1}`, 'desk-v')).status).toBe(200);
+  it('a desk in a vendor organisation has the vendor role: no staff lists, nobody else\'s shipment or invoice', async () => {
+    expect(ids((await get('/shipments', 'desk-v')).body)).toEqual([]);
+    expect(ids((await get('/finance/invoices?range=all', 'desk-v')).body)).toEqual([]);
+    expect([403, 404]).toContain((await get(`/shipments/${U.sa2}/overview`, 'desk-v')).status);
+    expect([403, 404]).toContain((await get(`/invoices/${U.ia2}`, 'desk-v')).status);
+    expect([403, 404]).toContain((await get(`/invoices/${U.ia1}`, 'desk-w')).status);
   });
 
   it('the vendor\'s own sign-in gets its invoice PDF and nobody else\'s', async () => {

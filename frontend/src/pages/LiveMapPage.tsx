@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Truck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { analyticsAPI, vehiclesAPI } from '@/services/api'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import LiveMap from '@/components/map/LiveMap'
 import { Button, StatusPill, SearchInput, EmptyState, ErrorState, Skeleton } from '@/components/ui'
 import { isFleetVehicle, isVehicleLive } from '@/utils/vehicles'
@@ -35,7 +35,7 @@ export default function LiveMapPage() {
   const [zoomEvent, setZoomEvent] = useState(0)
   const [search, setSearch] = useState('')
 
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const isStaff = role === 'admin' || role === 'superadmin'
   const queryClient = useQueryClient()
   const syncGps = useMutation({

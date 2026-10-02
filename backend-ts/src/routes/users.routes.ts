@@ -4,6 +4,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
+import { mayGrantSuperadmin } from '../core/org-context';
 import { invalidateRoleCache, requireAuth, requireRole } from '../core/auth';
 import { UserUpdateSchema } from '../schemas';
 import { HttpError, sendError } from '../core/errors';
@@ -26,7 +27,12 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ detail: 'User not found' });
       return;
     }
-    res.json(user);
+    // `role` stays what the account was created as; `effective_role` is what the active organisation grants
+    res.json({
+      ...user,
+      effective_role: req.user!.role,
+      org: req.org ? { id: req.org.id, kind: req.org.kind, name: req.org.name, status: req.org.status, role: req.orgRole } : null,
+    });
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -157,6 +163,9 @@ router.patch('/:user_id', requireAuth, requireRole('admin', 'superadmin'), async
     // Only a superadmin changes roles, and never between driver and staff on the same record
     if (existingUser && payload.role !== undefined && payload.role !== existingUser.role) {
       if (req.user!.role !== 'superadmin') throw new HttpError(403, 'Only a superadmin can change a role');
+      if ((payload.role === 'superadmin' || existingUser.role === 'superadmin') && !mayGrantSuperadmin(req.user!.role)) {
+        throw new HttpError(403, 'Only the platform can grant or change a superadmin');
+      }
       if ((payload.role === 'driver') !== (existingUser.role === 'driver')) {
         throw new HttpError(409, "A driver can't be turned into staff, or the reverse, on the same record. Create a new person instead");
       }

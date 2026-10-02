@@ -4,6 +4,8 @@ export type OrgRole = 'owner' | 'admin' | 'ops' | 'finance' | 'dispatcher' | 'dr
 export interface Membership {
   org: { id: string; kind: OrgKind; name: string; status: string }
   role: OrgRole
+  /** The app role this membership grants (superadmin, admin, manager, driver, vendor); see utils/effectiveRole.ts. */
+  app_role?: string
 }
 
 export const ORG_STORAGE_KEY = 'margixindia-active-org'

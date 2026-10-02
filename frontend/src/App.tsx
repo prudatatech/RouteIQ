@@ -1,6 +1,8 @@
 import { Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
+import { useEffectiveRole } from '@/store/effectiveRole'
+import { roleCanOpen } from '@/utils/effectiveRole'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
@@ -159,12 +161,13 @@ function BlockedRedirect({ to, from }: { to: string; from: string }) {
 function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) {
   const location = useLocation()
   const token = useAuthStore(s => s.token)
-  const role = useAuthStore(s => s.role)
+  const { role, ready: orgsReady } = useEffectiveRole()
   const authInitialized = useAuthStore(s => s.authInitialized)
 
   // Supabase's session (and this store) haven't finished restoring yet — e.g. a hard
   // reload of a deep link. Show a spinner instead of bouncing to /login prematurely.
-  if (!authInitialized) {
+  // Also wait for a signed-in person's organisations: their role is the one they hold in the active organisation
+  if (!authInitialized || (token && !orgsReady)) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-bg">
         <Spinner size={32} />
@@ -180,7 +183,7 @@ function PrivateRoute({ children, allowedRoles }: { children: React.ReactNode, a
   }
 
   // If this route is restricted to certain roles
-  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+  if (!roleCanOpen(role, allowedRoles)) {
     const home = homeForRole(role)
     // Accounts with no area in the web app (no role, customers) would
     // otherwise bounce between redirects forever.

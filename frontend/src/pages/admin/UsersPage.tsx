@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { Building2, Download, Upload, UserPlus, UsersRound } from 'lucide-react'
 import { usersAPI, authAPI, peopleAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import {
   Button, buttonClasses, DataTable, Input, Modal, MoreMenu, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
   parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
@@ -81,7 +82,7 @@ function inTab(p: PersonRow, t: TabId) {
 
 export default function UsersPage() {
   const navigate = useNavigate()
-  const myRole = useAuthStore(s => s.role)
+  const myRole = useEffectiveRole().role
   const canAdd = myRole === 'admin' || myRole === 'superadmin'
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'all')
   const [search, setSearch] = useUrlState('q', { debounceMs: 300 })
@@ -241,7 +242,7 @@ function VendorsTable({ search }: { search: string }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const currentUserId = useAuthStore(s => s.userId)
-  const myRole = useAuthStore(s => s.role)
+  const myRole = useEffectiveRole().role
   const users = useQuery<User[]>({
     queryKey: ['users'],
     queryFn: async () => { const d = await usersAPI.list(); return Array.isArray(d) ? d : [] },

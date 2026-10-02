@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, MapPin } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Button, Modal } from '@/components/ui'
@@ -102,7 +102,7 @@ function SosCargo({ alert, onCase }: { alert: SosAlert; onCase: (id: string | nu
 
 /** Raises new driver SOS alerts to staff anywhere in the console, with an alarm. */
 export default function SOSListener() {
-  const role = useAuthStore(s => s.role)
+  const role = useEffectiveRole().role
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [alerts, setAlerts] = useState<SosAlert[]>([])

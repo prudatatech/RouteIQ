@@ -38,6 +38,11 @@ export interface Membership {
 }
 
 export interface OrgContext {
+  /**
+   * The app role the caller has in the active organisation (superadmin, admin, manager, driver, vendor), see
+   * appRoleFor(). Equal to `users.role` when organisations are not set up or the caller has no membership.
+   */
+  appRole: string;
   /** False until the organisations migration has run: nothing is scoped or stamped. */
   configured: boolean;
   org: OrgSummary | null;
@@ -54,6 +59,8 @@ declare global {
       orgRole?: OrgRole | null;
       memberships?: Membership[];
       isPlatformAdmin?: boolean;
+      /** The effective app role in the active organisation (the same value as req.user.role once authenticated). */
+      appRole?: string;
     }
   }
 }
@@ -84,6 +91,29 @@ type MembershipRow = { role: string; organizations: OrgSummary | OrgSummary[] | 
 function sortMemberships(list: Membership[]): Membership[] {
   return [...list].sort((a, b) =>
     KIND_ORDER.indexOf(a.org.kind) - KIND_ORDER.indexOf(b.org.kind) || a.org.name.localeCompare(b.org.name) || a.org.id.localeCompare(b.org.id));
+}
+
+const STAFF_APP_ROLES = ['superadmin', 'admin', 'manager'];
+
+/**
+ * The app role a membership grants. Permissions come from the person's role in the organisation they act for,
+ * never from the global `users.role` (which only says what they signed up as):
+ *   platform: owner/admin -> superadmin, anyone else -> admin;
+ *   logistic company: owner/admin -> admin; ops, dispatcher, finance, member -> manager; driver -> driver;
+ *   vendor and 3PL partner -> vendor.
+ * Staff roles need an active organisation: a pending (or suspended, rejected) one gives none, and a caller
+ * who was staff by `users.role` drops to vendor there. No membership (or no organisation set up): `baseRole`.
+ */
+export function appRoleFor(membership: Membership | null, baseRole: string): string {
+  if (!membership) return baseRole;
+  const { org, role } = membership;
+  const elevated = role === 'owner' || role === 'admin';
+  if (org.status !== 'active') return STAFF_APP_ROLES.includes(baseRole) ? 'vendor' : baseRole;
+  switch (org.kind) {
+    case 'platform': return elevated ? 'superadmin' : 'admin';
+    case 'logistic_company': return elevated ? 'admin' : role === 'driver' ? 'driver' : 'manager';
+    default: return 'vendor'; // vendor, tpl_partner
+  }
 }
 
 /** The user's active memberships, whatever the organisation's status (a pending organisation still sees itself). */
@@ -135,19 +165,32 @@ function requestedOrg(req: Request): string | undefined {
  * caller is not a member of.
  */
 export async function attachOrgContext(req: Request, userId: string, role: string): Promise<OrgContext> {
-  const none: OrgContext = { configured: false, org: null, role: null, memberships: [], isPlatformAdmin: false };
+  const none: OrgContext = { appRole: role, configured: false, org: null, role: null, memberships: [], isPlatformAdmin: false };
   let ctx = none;
   if (role !== 'customer' && (await orgsConfigured())) {
     const memberships = await loadMemberships(userId);
     const active = pickActive(memberships, requestedOrg(req));
-    ctx = { configured: true, org: active?.org ?? null, role: active?.role ?? null, memberships, isPlatformAdmin: isPlatformAdminOf(memberships) };
+    ctx = { appRole: appRoleFor(active, role), configured: true, org: active?.org ?? null, role: active?.role ?? null, memberships, isPlatformAdmin: isPlatformAdminOf(memberships) };
   }
   req.org = ctx.org;
   req.orgRole = ctx.role;
   req.memberships = ctx.memberships;
   req.isPlatformAdmin = ctx.isPlatformAdmin;
+  req.appRole = ctx.appRole;
   setRequestOrg(ctx);
   return ctx;
+}
+
+/**
+ * Whether the caller may create, invite, promote to or otherwise grant `superadmin` (platform control). Only the
+ * platform's owner or admin acting as the platform organisation may; a company, whoever runs it, never. Without an
+ * active organisation (not set up, or no membership) the account's own role decides, as it always did.
+ */
+export function mayGrantSuperadmin(actorRole: string): boolean {
+  if (actorRole !== 'superadmin') return false;
+  const ctx = currentOrgContext();
+  if (!ctx?.org) return true;
+  return ctx.org.kind === 'platform' && ctx.org.status === 'active' && (ctx.role === 'owner' || ctx.role === 'admin');
 }
 
 /** Whether this request is for an organisation that may not work any more (suspended or rejected). */

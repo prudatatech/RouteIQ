@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { CheckCircle2 } from 'lucide-react'
 import clsx from 'clsx'
 import { depotsAPI, peopleAPI, tplAPI } from '@/services/api'
-import { useAuthStore } from '@/store/authStore'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { Alert, Button, Input, Modal, Select } from '@/components/ui'
 import { errorMessage } from '@/utils/display'
 import { DuplicateNotice } from './DuplicateNotice'
@@ -27,7 +27,7 @@ const ROLE_HELP: Record<string, string> = {
 export function AddPersonModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const myRole = useAuthStore(s => s.role)
+  const myRole = useEffectiveRole().role
   const [step, setStep] = useState<Step>('role')
   const [role, setRole] = useState('driver')
   const [fullName, setFullName] = useState('')
