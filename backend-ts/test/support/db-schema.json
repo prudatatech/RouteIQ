@@ -906,7 +906,10 @@
     "quote_deadline",
     "awarded_at",
     "awarded_quote_id",
-    "quote_escalated_at"
+    "quote_escalated_at",
+    "priority",
+    "price_min_inr",
+    "price_max_inr"
   ],
   "customer_bookings": [
     "id",

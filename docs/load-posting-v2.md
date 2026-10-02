@@ -87,3 +87,20 @@ Frontend only; draft and payload field names are unchanged.
   "Step 2 of 4 · Goods" over a thin four-segment bar on phones. Scroll helpers: `useScrollIntoView.ts`.
 - Tests: `loadPostUx.test.tsx` (keyboard, products 2 and 3, one list at a time, folding, address summary, site details,
   scroll calls).
+
+## Backend: priority, recommended range, direct booking (2 Oct 2026)
+
+The form drops quotes versus own price, the budget, "who can see it", delivery date, dock, access restrictions and
+loading/unloading help. It adds a priority. Details in `docs/order-routing.md`.
+
+- `POST /vendor/loads` accepts `priority` (`high` | `medium` | `low`, default `medium`). Every earlier field is still accepted
+  (the web sends null / false for the dropped ones; the columns stay).
+- The server stores `price_min_inr` and `price_max_inr`: the recommended range from the same estimator as
+  `POST /public/loads/assist` (shape unchanged: `estimate { low, high, distance_km, label }`), whole rupees, never taken from
+  the client. Null when no estimate is possible.
+- Responses of posted loads (create, detail `load`, `/vendor/loads/mine`, the "My loads" board, quotes summary) include
+  `priority`, `price_min_inr`, `price_max_inr`. A repost draft has `priority`.
+- A load posted without `quote_requested` / `budget_inr` is direct-book: a company books it at any price inside the range
+  (`POST /company/loads/:id/accept { amount_inr }`, 400 outside it).
+- Companies are told in internal order: high priority goes first to the bigger networks (own active vehicles plus those of
+  active affiliated 3PL partners), urgent; medium and low go to all.

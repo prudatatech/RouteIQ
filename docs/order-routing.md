@@ -47,6 +47,8 @@ company serving the lane. Companies quote or accept, the vendor picks one, and t
   - `DELETE /company/loads/:id/quotes/mine` withdraws it.
   - `POST /company/loads/:id/accept` `{ amount_inr? }` is a direct accept at the vendor's budget, or at the amount
     given, allowed only when `quote_requested` is false. It creates an `accepted` quote and awards it at once.
+    When the load has a recommended range, see "Priority, recommended range and booking" below: the amount is required
+    and must be inside it.
 - **Vendor side.**
   - `GET /vendor/loads/:id/quotes` lists the quotes: company name, the company's completed trips, amount, validity,
     ETA, notes.
@@ -87,3 +89,42 @@ company serving the lane. Companies quote or accept, the vendor picks one, and t
   - a **Quote** form, plus **Accept at ₹X** when allowed.
   - Won loads go to the existing assign and documents flow.
 - **Fleet.** The vehicle form gets "Hazmat certified", "Refrigerated (reefer)" and the body type.
+
+## Priority, recommended range and booking (migration `20261010120000_load_priority_price_range.sql`)
+
+Owner decision, 2 Oct 2026. The vendor no longer chooses quotes versus an own price, gives no budget and does not choose
+who sees the load. The platform shows a recommended freight range, a logistic company books the load at any price inside
+it, and every load is offered to all companies serving the lane (routing `open`). Internal order matching decides who is
+told first. The older fields stay in the table and the API for old loads and API clients.
+
+- **Columns on `vendor_shipment_requests`.**
+  - `priority` (`high` | `medium` | `low`, default `medium`): how urgent the load is. The vendor picks it.
+  - `price_min_inr`, `price_max_inr` (`numeric(12,2)`, `min <= max` when both are set): the recommended range.
+  - Index `idx_vsr_board` on (`priority`, `pickup_date`, `created_at`) for pending, unawarded loads.
+  - `create_vendor_load(jsonb)` writes the three columns.
+- **The range is computed on the server** when the load is created (`recommendedRange` in `loads.service.ts`): the same
+  estimator as `POST /public/loads/assist` (`estimateFreight`, the pricing service), rounded to the rupee, on the server's
+  own totals. A range sent by the client is ignored. When no estimate can be made (no rate card, routing down) the load is
+  posted with both prices null and a warning is logged; it then behaves as before (budget, quotes).
+- **Direct book.** A payload without `quote_requested` and `budget_inr` (the new web form) is a direct-book load
+  (`quote_requested` false). Loads with `quote_requested` true (older loads, API clients) keep the quote flow.
+- **Booking inside the range.** `POST /company/loads/:id/accept { amount_inr }`: when the load has a range, `amount_inr` is
+  required and must be within `[price_min_inr, price_max_inr]`, bounds included; otherwise 400 with the range in the message
+  ("...within the recommended range for this load: Rs 18,000 to Rs 24,000."). Without a range: the budget, or the amount
+  given, as before.
+- **Views.**
+  - Company market list and load detail: `priority`, `price_min_inr`, `price_max_inr`. The `new` and `quoted` tabs are ordered
+    by priority (high, medium, low), then pickup date (no date last), then newest post first. `network_vehicles` (this
+    company's network size) is on the market rows for platform staff only; a company never sees how it is ranked.
+  - Vendor views: `POST /vendor/loads` answers with `priority`, `price_min_inr`, `price_max_inr` (also inside `load`); the
+    posted-load detail (`load`), `/vendor/loads/mine`, the "My loads" board (`GET /vendor/loads`) and the quotes summary carry
+    them. A repost draft copies `priority`; the range is worked out again when the draft is posted.
+- **Matching (internal order).** `rankCompanies` in `order-routing.ts` scores each company by network size and sorts the
+  highest first (ties by id, so the order is always the same).
+  - Network size = the company's active vehicles (not archived, not pending approval) + the active vehicles of its active
+    affiliated 3PL partners (`tpl_affiliations.status = 'active'`, `vehicles.carrier_org_id`).
+  - `notifyCompanies`: `high` tells the companies one after another in rank order and marks the notification urgent
+    (title "Urgent: ...", `data.priority = 'high'`, `data.urgent = true`); `medium` and `low` tell everyone as before with
+    `data.priority` set (low may be batched later).
+  - The scorer is a function (`CompanyScorer`); N2 (carrier scores, `docs/network-blueprint.md`) replaces `networkSizeScorer`.
+  - Matching never gates visibility: `app.can_see_load` is unchanged, every company serving the lane can still open the load.

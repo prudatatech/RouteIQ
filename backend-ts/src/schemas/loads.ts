@@ -98,6 +98,11 @@ export const LoadDraftBase = z.object({
   routing: z.enum(['open', 'chosen']).optional(),
   company_ids: z.array(z.string().uuid('A chosen company is not valid')).max(10, 'You can send a load to at most 10 companies').optional().default([]),
   reposted_from: z.string().uuid().optional().nullable(),
+  /**
+   * How urgent the load is. Higher priority is offered first to the companies with the biggest network. The freight price
+   * is not asked: the server works out the recommended range and a company books inside it (docs/order-routing.md).
+   */
+  priority: z.enum(['high', 'medium', 'low']).optional().default('medium'),
 });
 
 type Draft = z.infer<typeof LoadDraftBase>;

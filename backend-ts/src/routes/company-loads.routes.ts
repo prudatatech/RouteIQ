@@ -32,7 +32,7 @@ function actingCompany(req: Request): string {
 router.get('/market', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const { tab } = parseBody(MarketQuery, req.query);
-    res.json(await listMarket(actingCompany(req), tab));
+    res.json(await listMarket(actingCompany(req), tab, { isPlatformAdmin: !!req.isPlatformAdmin }));
   } catch (error: any) {
     sendError(req, res, error);
   }

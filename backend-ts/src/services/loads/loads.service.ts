@@ -18,6 +18,7 @@ import { sendLoadPosted } from '../whatsapp.service';
 import { loadVehicleClasses } from '../goods/master';
 import { HOLD_UNVERIFIED, assertChosenCompanies, loadVisibleToAnyCompany, notifyCompanies, quoteDeadline } from './order-routing';
 import { assessLoad, type LoadAssessment } from './assess';
+import { estimateFreight, toNestedDraft, type LoadDraft } from '../goods';
 import { csvLine, parseCsv } from './csv';
 import { LoadDraftSchema, MAX_BULK_ROWS, type LoadDraftInput } from '../../schemas/loads';
 
@@ -100,7 +101,7 @@ export async function getPostedLoad(c: Caller, id: string): Promise<{ load: Reco
 export async function listMyLoads(c: Caller, page: number, pageSize: number, status?: string) {
   const from = (page - 1) * pageSize;
   let q = supabase.from('vendor_shipment_requests')
-    .select('id, load_number, status, pickup_city, delivery_city, pickup_location, drop_location, pickup_date, vehicle_class, load_type, total_weight_kg, required_capacity_kg, total_declared_value, cost, eway_required, source, created_at', { count: 'exact' });
+    .select('id, load_number, status, pickup_city, delivery_city, pickup_location, drop_location, pickup_date, vehicle_class, load_type, total_weight_kg, required_capacity_kg, total_declared_value, cost, eway_required, source, priority, price_min_inr, price_max_inr, quote_requested, created_at', { count: 'exact' });
   q = c.vendorOrg ? q.or(`vendor_org_id.eq.${c.vendorOrg.id},vendor_id.eq.${c.userId}`) : q.eq('vendor_id', c.userId);
   if (status) q = q.eq('status', status);
   const { data, error, count } = await q.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
@@ -109,6 +110,25 @@ export async function listMyLoads(c: Caller, page: number, pageSize: number, sta
 }
 
 // ── Creating ────────────────────────────────────────────────
+
+/**
+ * The recommended freight range for a load being posted, worked out here with the same estimator as the public assist
+ * (never the client's). Whole rupees. Null when no estimate can be made (no rate card, routing down): the load is then
+ * posted without a range and a company books it at the budget or the amount it gives, as before.
+ */
+export async function recommendedRange(input: LoadDraftInput, assessment: LoadAssessment): Promise<{ min: number; max: number } | null> {
+  try {
+    const est = await estimateFreight(toNestedDraft(input) as LoadDraft, assessment.totals.weight_kg, input.vehicle_class ?? assessment.suggested.vehicle_class);
+    if (!est || !(est.low > 0) || !(est.high >= est.low)) {
+      console.warn('[loads] no freight estimate for a new load; posting it without a price range');
+      return null;
+    }
+    return { min: Math.round(est.low), max: Math.max(Math.round(est.high), Math.round(est.low)) };
+  } catch (e) {
+    console.warn('[loads] the freight estimate failed; posting without a price range:', e);
+    return null;
+  }
+}
 
 /** The line that stands for the load on older screens: the largest declared value, ties broken by weight. */
 export function primaryItem<T extends { declared_value: number; weight_kg: number }>(items: T[]): T {
@@ -177,6 +197,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
   const pickup = { lat: input.pickup_lat, lng: input.pickup_lng };
   const drop = { lat: input.delivery_lat, lng: input.delivery_lng };
   const km = roadKm(pickup, drop) ?? 0;
+  const range = await recommendedRange(input, assessment);
 
   const load = {
     vendor_id: c.userId,
@@ -247,6 +268,9 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     client_request_id: crid,
     bulk_batch_id: opts.bulkBatchId ?? null,
     reposted_from: input.reposted_from ?? null,
+    priority: input.priority,
+    price_min_inr: range?.min ?? null,
+    price_max_inr: range?.max ?? null,
   };
   const items = input.items.map(i => ({
     product_name: i.product_name, hsn_code: i.hsn_code, gst_rate: i.gst_rate, quantity: i.quantity, unit: i.unit,
@@ -357,6 +381,7 @@ export async function repostDraft(c: Caller, id: string) {
     temp_mode: l.metadata?.temp_mode ?? null, temp_min_c: num(l.temp_min_c), temp_max_c: num(l.temp_max_c), special_handling: l.special_handling ?? [],
     budget_inr: num(l.budget_inr), quote_requested: !!l.quote_requested, loading_help: !!l.loading_help, unloading_help: !!l.unloading_help,
     routing: l.routing ?? 'open', company_ids: l.company_ids ?? [],
+    priority: l.priority ?? 'medium',
   };
 }
 

@@ -113,33 +113,89 @@ export async function companiesFor(load: Record<string, any>): Promise<string[]>
 const shortDate = (iso: string | null | undefined) =>
   iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : null;
 
+// ── Ranking the companies (internal order matching) ─────────
+
+export const PRIORITIES = ['high', 'medium', 'low'] as const;
+export type Priority = (typeof PRIORITIES)[number];
+/** 0 is first. A load without a priority (an older row) counts as medium. */
+export const priorityRank = (p: unknown): number => { const i = PRIORITIES.indexOf(p as Priority); return i < 0 ? 1 : i; };
+
+/** A scorer gives each company a number; the higher the score, the earlier it is told. N2 (carrier scores) replaces it. */
+export type CompanyScorer = (companyIds: string[]) => Promise<Map<string, number>>;
+
+/** A vehicle that can take work: not archived and not waiting for approval. */
+const activeVehicle = (v: { status?: string | null }) => v.status !== 'archived' && v.status !== 'pending_approval';
+
+/**
+ * Network size of each company: its own active vehicles plus the active vehicles of its active affiliated 3PL partners
+ * (tpl_affiliations.status = 'active'; vehicles.carrier_org_id is the owner). A partner affiliated to two companies counts
+ * for both.
+ */
+export const networkSizeScorer: CompanyScorer = async (companyIds) => {
+  const out = new Map<string, number>(companyIds.map(id => [id, 0]));
+  if (companyIds.length === 0) return out;
+  const affiliations = await selectIn<any>('tpl_affiliations', 'company_id', companyIds, 'company_id, tpl_id', q => q.eq('status', 'active'));
+  const owners = [...new Set([...companyIds, ...affiliations.map(a => a.tpl_id)])] as string[];
+  const vehicles = await selectIn<any>('vehicles', 'carrier_org_id', owners, 'carrier_org_id, status');
+  const perOwner = new Map<string, number>();
+  for (const v of vehicles) if (activeVehicle(v)) perOwner.set(v.carrier_org_id, (perOwner.get(v.carrier_org_id) ?? 0) + 1);
+  for (const id of companyIds) {
+    const partners = new Set(affiliations.filter(a => a.company_id === id).map(a => a.tpl_id as string));
+    partners.delete(id);
+    let n = perOwner.get(id) ?? 0;
+    for (const t of partners) n += perOwner.get(t) ?? 0;
+    out.set(id, n);
+  }
+  return out;
+};
+
+/** The companies, biggest score first; equal scores keep a fixed order (by id), so the order is the same every time. */
+export async function rankCompanies(companyIds: string[], scorer: CompanyScorer = networkSizeScorer): Promise<Array<{ id: string; score: number }>> {
+  const scores = await scorer(companyIds);
+  return [...new Set(companyIds)].map(id => ({ id, score: scores.get(id) ?? 0 })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
 /**
  * Tells the matching companies about a load: the owners and admins of the companies it is for, never every staff member
  * platform-wide. Returns the organisations told. Callers must not announce a held load (see HOLD_UNVERIFIED).
  */
 export async function notifyCompanies(load: Record<string, any>): Promise<string[]> {
-  const orgIds = await companiesFor(load);
+  const priority: Priority = PRIORITIES.includes(load.priority) ? load.priority : 'medium';
+  let orgIds = await companiesFor(load);
+  // A high priority load goes first to the companies with the biggest network: told one company after another, in rank order
+  if (priority === 'high' && orgIds.length > 1) orgIds = (await rankCompanies(orgIds)).map(r => r.id);
   const people = await ownersAndAdmins(orgIds);
   const when = shortDate(load.pickup_date);
   const kg = Math.round(Number(load.total_weight_kg ?? load.required_capacity_kg ?? 0)).toLocaleString('en-IN');
   const quote = load.quote_requested ? ' The vendor asked for quotes.' : '';
   const body = `Load ${load.load_number ?? ''}: ${kg} kg, ${lane(load)}${when ? `, pickup ${when}` : ''}.${quote}`.replace('Load : ', 'Load: ');
-  const title = load.routing === 'chosen' ? 'A vendor sent you a load' : 'New load for your lanes';
+  const urgent = priority === 'high';
+  const title = `${urgent ? 'Urgent: ' : ''}${load.routing === 'chosen' ? 'A vendor sent you a load' : 'New load for your lanes'}`;
+  const data = { request_id: load.id, load_number: load.load_number ?? null, priority, ...(urgent ? { urgent: true } : {}) };
   const told: string[] = [];
+  const send = async (userId: string) => {
+    try {
+      await notificationService.sendNotification(userId, title, body, 'vendor_request', data);
+    } catch (e) {
+      console.error('[routing] notification failed:', e);
+    }
+  };
+  if (urgent) {
+    // Rank order: each company's people are told together, the next company after them
+    for (const orgId of orgIds) {
+      const users = people.get(orgId) ?? [];
+      await Promise.all(users.map(send));
+      if (users.length) told.push(orgId);
+    }
+    return told;
+  }
+  // Medium and low: everyone, a few at a time (one after another, a vendor posting an open load waited on every company's people in turn).
+  // The priority is on the notification; a low load may be batched later.
   const sends: Array<() => Promise<unknown>> = [];
   for (const [orgId, users] of people) {
-    for (const userId of users) {
-      sends.push(async () => {
-        try {
-          await notificationService.sendNotification(userId, title, body, 'vendor_request', { request_id: load.id, load_number: load.load_number ?? null });
-        } catch (e) {
-          console.error('[routing] notification failed:', e);
-        }
-      });
-    }
+    for (const userId of users) sends.push(() => send(userId));
     if (users.length) told.push(orgId);
   }
-  // A few at a time: one after another, a vendor posting an open load waited on every company's people in turn
   for (let i = 0; i < sends.length; i += NOTIFY_CONCURRENCY) await Promise.all(sends.slice(i, i + NOTIFY_CONCURRENCY).map(f => f()));
   return told;
 }
@@ -210,7 +266,7 @@ const toQuoteView = (q: Record<string, any> | null | undefined): QuoteView | nul
 }) : null;
 
 /** What a company reads of a load. An explicit list, never a spread of the row. */
-function toMarketLoad(l: Record<string, any>, items: any[], quote: Record<string, any> | null, vendorName: string | null, redact: boolean) {
+function toMarketLoad(l: Record<string, any>, items: any[], quote: Record<string, any> | null, vendorName: string | null, redact: boolean, networkVehicles?: number) {
   return {
     id: l.id,
     load_number: l.load_number ?? null,
@@ -252,6 +308,10 @@ function toMarketLoad(l: Record<string, any>, items: any[], quote: Record<string
     eway_required: !!l.eway_required,
     hazmat_mixed: !!l.hazmat_mixed,
     budget_inr: num(l.budget_inr),
+    priority: PRIORITIES.includes(l.priority) ? l.priority : 'medium',
+    price_min_inr: num(l.price_min_inr),
+    price_max_inr: num(l.price_max_inr),
+    ...(networkVehicles !== undefined ? { network_vehicles: networkVehicles } : {}),
     quote_requested: !!l.quote_requested,
     quote_deadline: l.quote_deadline ?? null,
     carrier_org_id: l.carrier_org_id ?? null,
@@ -279,6 +339,13 @@ async function vendorNames(loads: Array<Record<string, any>>): Promise<Map<strin
   return new Map(orgs.map(o => [o.id, o.name ?? null]));
 }
 
+/** Board order: priority (high, medium, low), then pickup date (no date last), then newest first. */
+export function boardOrder(a: Record<string, any>, b: Record<string, any>): number {
+  return priorityRank(a.priority) - priorityRank(b.priority)
+    || String(a.pickup_date ?? '9999-12-31').localeCompare(String(b.pickup_date ?? '9999-12-31'))
+    || String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+}
+
 /**
  * The loads this company can see, by tab:
  *   new     open to it, no live quote from it yet;
@@ -287,7 +354,7 @@ async function vendorNames(loads: Array<Record<string, any>>): Promise<Map<strin
  *   lost    it quoted and the vendor chose another company, or the quote expired and the load closed.
  * `counts` are the sizes of all four tabs.
  */
-export async function listMarket(orgId: string, tab: MarketTab) {
+export async function listMarket(orgId: string, tab: MarketTab, opts: { isPlatformAdmin?: boolean } = {}) {
   const [open, mine, quotes] = await Promise.all([
     supabase.from('vendor_shipment_requests').select('*').eq('status', 'pending').is('carrier_org_id', null)
       .order('created_at', { ascending: false }).limit(MARKET_LIMIT),
@@ -316,8 +383,13 @@ export async function listMarket(orgId: string, tab: MarketTab) {
   sets.lost = (await selectIn<any>('vendor_shipment_requests', 'id', lostIds, '*'))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 
+  // The board: high priority first, then the earliest pickup, then the newest post
+  for (const t of ['new', 'quoted'] as const) sets[t].sort(boardOrder);
+
   const counts = { new: sets.new.length, quoted: sets.quoted.length, won: sets.won.length, lost: sets.lost.length };
   const loads = sets[tab];
+  // The size of this company's network is for platform staff only: a company must not see how it is ranked
+  const networkVehicles = opts.isPlatformAdmin ? (await networkSizeScorer([orgId])).get(orgId) ?? 0 : undefined;
   const [items, names] = await Promise.all([
     tab === 'lost' ? Promise.resolve([] as any[]) : selectIn<any>('load_items', 'load_id', loads.map(l => l.id), '*'),
     vendorNames(loads),
@@ -328,7 +400,7 @@ export async function listMarket(orgId: string, tab: MarketTab) {
   return {
     tab,
     counts,
-    items: loads.map(l => toMarketLoad(l, itemsOf.get(l.id) ?? [], pickQuote(myQuotes.get(l.id) ?? []), names.get(l.vendor_org_id) ?? null, tab === 'lost')),
+    items: loads.map(l => toMarketLoad(l, itemsOf.get(l.id) ?? [], pickQuote(myQuotes.get(l.id) ?? []), names.get(l.vendor_org_id) ?? null, tab === 'lost', networkVehicles)),
   };
 }
 
@@ -473,15 +545,21 @@ async function afterAward(result: AwardResult, how: 'quote' | 'direct'): Promise
 }
 
 /**
- * A company takes the load now, at the amount given or the vendor's budget. Allowed only when the vendor did not ask for
- * quotes. Creates an accepted quote and awards it at once.
+ * A company takes the load now. With a recommended range the amount is required and must be inside it; without one, the
+ * amount given or the vendor's budget. Allowed only when the vendor did not ask for quotes. Creates an accepted quote and awards it at once.
  */
 export async function acceptDirect(orgId: string, userId: string, loadId: string, opts: { amount?: number | null; costPerKm?: number | null } = {}) {
   const load = await readVisibleLoad(orgId, loadId);
   if (load.carrier_org_id || load.status !== 'pending') throw new HttpError(409, 'This load has already been awarded.');
   if (load.quote_requested) throw new HttpError(409, AWARD_ERRORS.quote_required[1]);
+  // A load with a recommended range is booked at any price inside it, and the amount must be given
+  const min = num(load.price_min_inr), max = num(load.price_max_inr);
+  const ranged = min != null || max != null;
+  const rangeText = min != null && max != null ? `${formatINR(min)} to ${formatINR(max)}` : min != null ? `at least ${formatINR(min)}` : `at most ${formatINR(max)}`;
+  if (ranged && opts.amount == null) throw new HttpError(400, `Enter the amount you will carry this load for. It must be within the recommended range of ${rangeText}.`);
   const amount = opts.amount ?? num(load.budget_inr);
   if (!amount || amount <= 0) throw new HttpError(400, 'This load has no budget. Enter the amount you will carry it for.');
+  if ((min != null && amount < min) || (max != null && amount > max)) throw new HttpError(400, `The amount must be within the recommended range for this load: ${rangeText}.`);
   const result = await award({ p_load: loadId, p_quote: null, p_carrier: orgId, p_amount: amount, p_actor: userId, p_direct: true, p_cost_per_km: opts.costPerKm ?? null });
   result.load = await freshLoad(loadId) ?? result.load;
   await afterAward(result, 'direct');
@@ -506,7 +584,8 @@ async function readVendorLoad(c: Caller, loadId: string): Promise<Record<string,
 
 const loadSummary = (l: Record<string, any>) => ({
   id: l.id, load_number: l.load_number ?? null, status: l.status, routing: l.routing ?? 'open', quote_requested: !!l.quote_requested,
-  quote_deadline: l.quote_deadline ?? null, budget_inr: num(l.budget_inr), carrier_org_id: l.carrier_org_id ?? null,
+  quote_deadline: l.quote_deadline ?? null, budget_inr: num(l.budget_inr), priority: PRIORITIES.includes(l.priority) ? l.priority : 'medium',
+  price_min_inr: num(l.price_min_inr), price_max_inr: num(l.price_max_inr), carrier_org_id: l.carrier_org_id ?? null,
   awarded_at: l.awarded_at ?? null, awarded_quote_id: l.awarded_quote_id ?? null,
 });
 
