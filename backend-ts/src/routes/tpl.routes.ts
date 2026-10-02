@@ -123,8 +123,8 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
   }
 });
 
-// GET /api/v1/tpl/queue — platform only (a superadmin, i.e. acting as the platform): view and decide (approve, reject, pause, resume, delete)
-router.get('/queue', requireAuth, requireRole('superadmin'), async (req, res) => {
+// GET /api/v1/tpl/queue — the platform reviews every application in full; a company admin sees only its own partners, without bank details, PAN or documents
+router.get('/queue', requireAuth, requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const status = req.query.status as string || 'pending';
     const rows = await tplService.getQueue(status);

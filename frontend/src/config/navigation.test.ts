@@ -18,13 +18,12 @@ describe('the staff menu', () => {
     }
   })
 
-  it('shows a company admin the return trips but neither KYC review nor 3PL applications (the platform decides those), nor the audit log', () => {
+  it('shows a company admin the return trips and its own 3PL partners, but not KYC review (the platform decides that), nor the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
     expect(links).not.toContain('/admin/kyc')
-    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool']))
-    expect(links).not.toContain('/return-trips?tab=partners')
+    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
     expect(links).not.toContain('/admin/audit')
-    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
+    expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit', '/admin/kyc']))
   })
 
   it('puts KYC review in the platform section', () => {

@@ -33,9 +33,9 @@ export function canOpenPath(pathname: string, active: Membership | null): boolea
   return true
 }
 
-/** Approvals belong to the platform: vendor KYC review and the 3PL application pages (a deep link shows a message, not a redirect). */
+/** Vendor verification belongs to the platform (a deep link shows a message, not a redirect). A company still opens its own partners' pages: the API shows it only what a company may see. */
 export function isPlatformOnlyPath(pathname: string): boolean {
-  return pathname === '/admin/kyc' || pathname.startsWith('/admin/kyc/') || pathname.startsWith('/3pl-partners/')
+  return pathname === '/admin/kyc' || pathname.startsWith('/admin/kyc/')
 }
 
 /**

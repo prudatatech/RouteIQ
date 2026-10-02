@@ -99,7 +99,7 @@ export const navSections: NavSection[] = [
       { to: '/return-trips', label: 'Open return trips', roles: admins },
       { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
       { to: '/return-trips?tab=pool', label: 'Combine loads', roles: admins },
-      { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
+      { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
     ],
   },
   {

@@ -47,8 +47,13 @@ describe('vendor KYC decisions', () => {
 });
 
 describe('3PL applications', () => {
-  it('can be listed and read in full by the platform only', async () => {
-    expect((await request(app).get(api('/tpl/queue')).set(as('admin-a'))).status).toBe(403);
+  it('can be listed and read in full by the platform only; a company sees its own partners without private details', async () => {
+    const mine = await request(app).get(api('/tpl/queue?status=all')).set(as('admin-a'));
+    expect(mine.status).toBe(200);
+    for (const row of mine.body) {
+      expect(row).not.toHaveProperty('bank_account_no');
+      expect(row).not.toHaveProperty('pan_number');
+    }
     expect((await request(app).get(api('/tpl/queue')).set(as('super-1', ORG.platform))).status).toBe(200);
     expect((await request(app).get(api(`/tpl/${P1}`)).set(as('admin-a'))).body.user_id).toBeUndefined();
     expect((await request(app).get(api(`/tpl/${P1}`)).set(as('super-1', ORG.platform))).body.user_id).toBe(uid('tpl-1'));
