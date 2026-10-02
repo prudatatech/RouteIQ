@@ -15,6 +15,7 @@
  * with no odometer, service plan or document dates is not "100, Good" just because
  * it has had no alarms. Test alarms never count.
  */
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { supabase } from '../core/supabase';
 import { getAlertThresholds } from './alert-settings.service';
 import { daysUntil, loadPlans, serviceStatus, type ServiceItemStatus } from './service-plans.service';
@@ -183,12 +184,12 @@ export function computeHealth(
 
 /** Health for every vehicle (or just `vehicleId`), archived vehicles left out. */
 export async function loadFleetHealth(vehicleId?: string, now: Date = new Date()): Promise<VehicleHealth[]> {
-  let vq = supabase
+  let vq = scopeQuery(supabase
     .from('vehicles')
-    .select('id, plate_number, status, odometer_km, rc_expiry, insurance_expiry, fitness_expiry, permit_expiry, puc_expiry, fuel_level_pct, fuel_reported_at, last_heartbeat, last_sync');
+    .select('id, plate_number, status, odometer_km, rc_expiry, insurance_expiry, fitness_expiry, permit_expiry, puc_expiry, fuel_level_pct, fuel_reported_at, last_heartbeat, last_sync'), OWNED.carrier);
   if (vehicleId) vq = vq.eq('id', vehicleId);
   const since = new Date(now.getTime() - ALARM_WINDOW_DAYS * 86_400_000).toISOString();
-  let aq = supabase.from('maintenance_alerts').select('vehicle_id, alert_type, severity').eq('is_test', false).gte('created_at', since);
+  let aq = scopeQuery(supabase.from('maintenance_alerts').select('vehicle_id, alert_type, severity').eq('is_test', false).gte('created_at', since), OWNED.carrier);
   if (vehicleId) aq = aq.eq('vehicle_id', vehicleId);
   // None of the four reads needs another's result: one round trip
   const [{ data: vehicles, error }, plans, alertsRes, limits] = await Promise.all([

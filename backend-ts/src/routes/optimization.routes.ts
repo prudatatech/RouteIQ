@@ -28,6 +28,8 @@ import { evaluateReroute } from '../services/reroute.service';
 import { evaluateRerouteLocal } from '../services/optimizer/reroute-local';
 import { logFallback, mlPost } from '../services/optimizer/ml-client';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeQuery } from '../core/org-scope';
+import { assertTripVisible, guardVehicle } from '../core/org-guards';
 
 /** A stand-in vehicle (auto-created for a driver, or a wizard draft) is never planned onto. */
 
@@ -50,7 +52,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     // ── Load depot ──
     let depot: any = null;
     if (payload.depot_id && payload.depot_id !== '00000000-0000-0000-0000-000000000001') {
-      const { data } = await supabase.from('depots').select('*').eq('id', payload.depot_id).single();
+      const { data } = await scopeQuery(supabase.from('depots').select('*').eq('id', payload.depot_id), OWNED.carrier).single();
       depot = data;
       if (!depot) {
         // Try as delivery point
@@ -59,7 +61,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
       }
     }
     if (!depot) {
-      const { data } = await supabase.from('depots').select('*').limit(1).single();
+      const { data } = await scopeQuery(supabase.from('depots').select('*'), OWNED.carrier).limit(1).single();
       depot = data;
       if (!depot) {
         res.status(400).json({ detail: 'No depots configured in system. Please create a depot first.' });
@@ -69,7 +71,7 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
 
     // ── Load vehicles ──
     // Only vehicles that take part in dispatch: not in maintenance or archived, and not a placeholder
-    let vehicleQuery = supabase.from('vehicles').select('*').in('status', [...OPERATING_VEHICLE_STATUSES]);
+    let vehicleQuery = scopeQuery(supabase.from('vehicles').select('*'), OWNED.carrier).in('status', [...OPERATING_VEHICLE_STATUSES]);
     if (payload.vehicle_ids.length > 0) {
       vehicleQuery = vehicleQuery.in('id', payload.vehicle_ids);
     } else {
@@ -85,9 +87,9 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     // ── Load shipments ──
     let dpQuery;
     if (payload.shipment_ids && payload.shipment_ids.length > 0) {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('id', payload.shipment_ids).in('status', PLANNABLE_STATUSES).neq('is_master', true);
+      dpQuery = scopeQuery(supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)'), OWNED.carrier).in('id', payload.shipment_ids).in('status', PLANNABLE_STATUSES).neq('is_master', true);
     } else {
-      dpQuery = supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)').in('status', PLANNABLE_STATUSES).neq('is_master', true).limit(100);
+      dpQuery = scopeQuery(supabase.from('shipments').select('*, delivery_points!delivery_points_shipment_id_fkey(*)'), OWNED.carrier).in('status', PLANNABLE_STATUSES).neq('is_master', true).limit(100);
     }
     const { data: shipmentRows, error: dpErr } = await dpQuery;
     // The final drop is the destination (see core/destination)
@@ -179,13 +181,15 @@ router.post('/', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, 
     // ── Save routes to DB ──
     const routeResponses: any[] = [];
 
+    // The company that runs a vehicle owns its trips, whoever plans them
+    const vehicleOwner = new Map<string, string | null>(vehicles.map((v: any) => [v.id, v.carrier_org_id ?? null]));
     for (const optRoute of solution.routes || []) {
       if (!optRoute.stop_ids || optRoute.stop_ids.length === 0) continue;
 
       const { data: routeRow, error: routeErr } = await supabase
         .from('routes')
         .insert({
-          ...carrierStamp(),
+          ...(vehicleOwner.get(optRoute.vehicle_id) ? { carrier_org_id: vehicleOwner.get(optRoute.vehicle_id) } : carrierStamp()),
           vehicle_id: optRoute.vehicle_id,
           depot_id: depot.id,
           status: 'pending',
@@ -333,7 +337,7 @@ router.post('/eta', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
 });
 
 // ── POST /incubate/:vehicle_id — AI Incubator ──────────────
-router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), guardVehicle('vehicle_id'), async (req: Request, res: Response) => {
   try {
     // ML service when it is there, otherwise the remaining stops are re-solved in-process
     const decision = await evaluateReroute(req.params.vehicle_id);
@@ -375,16 +379,19 @@ router.post('/incubate/:vehicle_id', requireAuth, requireRole(...STAFF_ROLES), a
 router.post('/reoptimize/:route_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
     const { route_id } = req.params;
+    // Another company's trip is a 404, the same as one that does not exist
+    await assertTripVisible(route_id);
 
     // 1. Get route to find vehicle_id
-    const { data: route } = await supabase
+    // Another company's trip is a 404, the same as one that does not exist
+    const { data: route } = await scopeQuery(supabase
       .from('routes')
       .select('vehicle_id, status')
-      .eq('id', route_id)
+      .eq('id', route_id), OWNED.carrier)
       .maybeSingle();
 
     if (!route) {
-      const { data: manifest } = await supabase.from('cargo_manifest').select('id').eq('id', route_id).maybeSingle();
+      const { data: manifest } = await scopeQuery(supabase.from('cargo_manifest').select('id').eq('id', route_id), OWNED.carrier).maybeSingle();
       if (manifest) {
         res.status(409).json({ detail: 'A vendor load has one pickup and one drop, so there is nothing to optimize.' });
         return;

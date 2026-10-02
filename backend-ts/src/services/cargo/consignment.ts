@@ -13,6 +13,7 @@ import { manifestParcelCode } from '../../core/parcelCode';
 import { recordTripPaySafe } from '../driver-pay.service';
 import { getDriverVehicleIds, isStaff, canAccessManifest, canAccessShipment } from '../../core/ownership';
 import type { TokenData } from '../../core/auth';
+import { OWNED, assertVisible } from '../../core/org-scope';
 import {
   CARGO_MANIFEST_TRANSITIONS, ON_VEHICLE_STATUSES, assertShipmentTransition, assertTransition,
 } from '../../core/transitions';
@@ -387,12 +388,17 @@ export async function driverVehicleId(driverId: string): Promise<string> {
 
 // ── Who may act or look ─────────────────────────────────────
 
+/** Staff work on their own company's goods: another company's shipment or load is a 404. */
+export async function assertCompanyConsignment(c: { kind: RefKind; id: string }): Promise<void> {
+  await assertVisible(c.kind === 'shipment' ? 'shipments' : 'cargo_manifest', c.id, OWNED.carrier, 'Shipment not found');
+}
+
 /**
  * Drivers act only on consignments on their current vehicle: the one holding the goods, or,
  * before pickup, the one planned to carry them. Staff act on any. Everyone else is refused.
  */
 export async function assertCanAct(user: TokenData, c: Consignment): Promise<void> {
-  if (isStaff(user)) return;
+  if (isStaff(user)) return assertCompanyConsignment(c);
   if (user.role !== 'driver') throw new HttpError(403, 'Only drivers and staff record custody');
   const mine = await getDriverVehicleIds(user.user_id);
   const vehicle = await plannedVehicleOf(c);
@@ -423,7 +429,10 @@ export async function manifestVendorId(manifestId: string): Promise<string | nul
  * for their vehicle. Returns whether they get the redacted view.
  */
 export async function assertCanView(user: TokenData, c: Consignment): Promise<{ redacted: boolean }> {
-  if (isStaff(user)) return { redacted: false };
+  if (isStaff(user)) {
+    await assertCompanyConsignment(c);
+    return { redacted: false };
+  }
   if (user.role === 'customer') {
     if (c.kind === 'shipment' && (await customerOwnsShipment(user.user_id, c.id))) return { redacted: true };
     throw new HttpError(404, 'Shipment not found');

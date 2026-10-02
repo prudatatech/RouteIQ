@@ -9,6 +9,7 @@
  * Everything that turns a provider's answer into our shape, and the fuel and pickup-before-drop
  * rules, are plain functions so they are tested without a network.
  */
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { createHash } from 'crypto';
 import { settings } from '../core/config';
 import { supabase } from '../core/supabase';
@@ -442,7 +443,7 @@ export async function resolveFuelPrice(vehicleId: string, fuelType: string | nul
   const latest = positive(own?.[0]?.price_per_litre);
   if (latest !== null) return { price_per_litre: round2(latest), source: 'vehicle_log' };
 
-  let sameFuel = supabase.from('vehicles').select('id');
+  let sameFuel = scopeQuery(supabase.from('vehicles').select('id'), OWNED.carrier);
   if (fuelType) sameFuel = sameFuel.eq('fuel_type', fuelType);
   const { data: peers, error: peersErr } = await sameFuel.limit(1000);
   if (peersErr) throw peersErr;
@@ -542,10 +543,11 @@ function planCacheKey(input: PlanInput, profile: TruckProfile, isNow: boolean, d
 }
 
 export async function loadVehicleForPlan(vehicleId: string): Promise<VehicleForPlan> {
-  const { data, error } = await supabase
+  // Another company's vehicle is a 404, the same as one that does not exist
+  const { data, error } = await scopeQuery(supabase
     .from('vehicles')
     .select('id, plate_number, status, capacity_kg, current_load_kg, container_length_ft, container_width_ft, container_height_ft, fuel_type, fuel_efficiency_kmpl')
-    .eq('id', vehicleId)
+    .eq('id', vehicleId), OWNED.carrier)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new HttpError(404, 'Vehicle not found');
@@ -723,9 +725,9 @@ const point = (id: string | null, name: unknown, address: unknown, lat: unknown,
 
 /** Shipments waiting for a vehicle and vendor loads waiting to be picked up, with their real pickup and drop points. */
 export async function listOpenLoads(): Promise<OpenLoad[]> {
-  const { data: shipments, error } = await supabase
+  const { data: shipments, error } = await scopeQuery(supabase
     .from('shipments')
-    .select('id, tracking_id, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points!delivery_points_shipment_id_fkey(id, name, address, latitude, longitude, created_at)')
+    .select('id, tracking_id, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points!delivery_points_shipment_id_fkey(id, name, address, latitude, longitude, created_at)'), OWNED.carrier)
     .in('status', ['created', 'exception'])
     .neq('is_master', true)
     .order('created_at', { ascending: false })
@@ -741,9 +743,9 @@ export async function listOpenLoads(): Promise<OpenLoad[]> {
     out.push({ id: s.id, kind: 'shipment', reference: s.tracking_id || String(s.id).slice(0, 8), weight_kg: positive(s.total_weight_kg), pickup, drops });
   }
 
-  const { data: manifests, error: mErr } = await supabase
+  const { data: manifests, error: mErr } = await scopeQuery(supabase
     .from('cargo_manifest')
-    .select('id, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, capacity_kg, status, created_at')
+    .select('id, pickup_location, pickup_lat, pickup_lng, drop_location, drop_lat, drop_lng, capacity_kg, status, created_at'), OWNED.carrier)
     .eq('status', 'scheduled')
     .neq('is_master', true)
     .order('created_at', { ascending: false })

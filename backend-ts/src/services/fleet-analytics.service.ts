@@ -8,6 +8,7 @@
  * agree. Distance is the planned distance of the routes dispatched in the period (active or
  * completed); there is no per-trip odometer to add up.
  */
+import { OWNED, scopeQuery } from '../core/org-scope';
 import { supabase } from '../core/supabase';
 import { indianDateKey, startOfIndianDay } from '../core/istDate';
 import { isPlaceholderPlate } from '../core/vehicles';

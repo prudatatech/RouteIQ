@@ -5,10 +5,11 @@
 import WebSocket from 'ws';
 
 class ConnectionManager {
-  private connections: Set<WebSocket> = new Set();
+  /** Each connection with the company whose events it receives; null receives every company's (the platform, or no organisations yet). */
+  private connections: Map<WebSocket, string | null> = new Map();
 
-  connect(ws: WebSocket): void {
-    this.connections.add(ws);
+  connect(ws: WebSocket, orgId: string | null = null): void {
+    this.connections.set(ws, orgId);
   }
 
   disconnect(ws: WebSocket): void {
@@ -21,11 +22,16 @@ class ConnectionManager {
     }
   }
 
-  async broadcast(message: object | string): Promise<void> {
+  /**
+   * Send to every connection that may see it: `ownerOrgId` is the company the news is about, and only its
+   * connections (and the unscoped ones) receive it. With no owner only the unscoped ones do.
+   */
+  async broadcast(message: object | string, ownerOrgId?: string | null): Promise<void> {
     const payload = typeof message === 'string' ? message : JSON.stringify(message);
     const failed: WebSocket[] = [];
 
-    for (const ws of this.connections) {
+    for (const [ws, scope] of this.connections) {
+      if (scope !== null && scope !== ownerOrgId) continue;
       try {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(payload);

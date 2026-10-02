@@ -14,7 +14,7 @@ import { rateLimitByUser } from '../core/rate-limit';
 import { STAFF_ROLES, getDriverVehicleIds, isStaff, requireVehicleAccess } from '../core/ownership';
 import { supabase } from '../core/supabase';
 import {
-  CONDITIONS, RefSchema, assertCanAct, assertCanView, driverVehicleId, resolveRef, type Actor,
+  CONDITIONS, RefSchema, assertCanAct, assertCanView, assertCompanyConsignment, driverVehicleId, resolveRef, type Actor,
 } from '../services/cargo/consignment';
 import {
   CUSTODY_KINDS, createCustodyUploadUrl, recordCustody, timelineOf, whereIs, type CustodyInput,
@@ -137,7 +137,9 @@ router.post('/custody/upload-url', requireAuth, requireRole('driver', ...STAFF_R
 router.post('/otp/send', requireAuth, requireRole(...STAFF_ROLES), rateLimitByUser('cargo-otp-send', 30, 60 * 60), idempotent('cargo-otp-send'), async (req: Request, res: Response) => {
   try {
     const { ref } = parse(z.object({ ref: RefSchema }), req.body);
-    res.json(await sendDeliveryOtp(await resolveRef(ref), actorOf(req)));
+    const c = await resolveRef(ref);
+    await assertCompanyConsignment(c);
+    res.json(await sendDeliveryOtp(c, actorOf(req)));
   } catch (e) {
     sendError(req, res, e);
   }
@@ -255,6 +257,7 @@ router.post('/lots/split', requireAuth, requireRole(...STAFF_ROLES), idempotent(
   try {
     const body = parse(SplitSchema, req.body);
     const c = await resolveRef(body.ref);
+    await assertCompanyConsignment(c);
     res.status(201).json(await splitConsignment(c, { reason: body.reason, lots: body.lots, note: body.note ?? null }, actorOf(req), { via: 'api' }));
   } catch (e) {
     sendError(req, res, e);
@@ -274,7 +277,9 @@ router.post('/lots/merge', requireAuth, requireRole(...STAFF_ROLES), idempotent(
 router.post('/lots/eway', requireAuth, requireRole(...STAFF_ROLES), idempotent('cargo-lots-eway'), async (req: Request, res: Response) => {
   try {
     const body = parse(LotEwaySchema, req.body);
-    res.json(await setLotEway(await resolveRef(body.ref), body.eway_bill_ref));
+    const c = await resolveRef(body.ref);
+    await assertCompanyConsignment(c);
+    res.json(await setLotEway(c, body.eway_bill_ref));
   } catch (e) {
     sendError(req, res, e);
   }

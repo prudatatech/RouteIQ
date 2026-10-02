@@ -12,6 +12,7 @@ import { OPEN_EXCEPTION_STATUSES } from './cargo/exception.service';
 import { countVehicleRequests } from './vehicle-approval.service';
 import { getUnpricedDeliveries } from './finance.service';
 import { vehicleIdsOnActiveTrip } from './vehicle-activity';
+import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
 
 /** Notification types a driver's refused action or a flagged stop sends to staff. */
 export const DRIVER_ACTION_NOTIFICATION_TYPES = ['driver_action_rejected', 'stop_flagged'] as const;
@@ -28,6 +29,25 @@ async function countOf(query: PromiseLike<{ count: number | null; error: { messa
 }
 
 const head = (table: string) => supabase.from(table).select('id', { count: 'exact', head: true });
+/** A count of the active company's own rows (tables with a carrier_org_id). */
+const owned = (table: string) => scopeQuery(head(table), OWNED.carrier);
+
+/**
+ * Documents waiting for review, of the people in the active organisation. A document has no owner column of
+ * its own, so they are read and matched to the members.
+ */
+async function countDocumentsToReview(): Promise<number> {
+  const org = memberOrgId();
+  if (!org) return countOf(head('user_documents').eq('status', 'pending').is('archived_at', null), 'documents to review');
+  const [{ data: docs, error }, { data: seats, error: sErr }] = await Promise.all([
+    supabase.from('user_documents').select('user_id').eq('status', 'pending').is('archived_at', null),
+    supabase.from('org_members').select('user_id').eq('org_id', org).eq('status', 'active'),
+  ]);
+  if (error) throw new Error(`Failed to count documents to review: ${error.message}`);
+  if (sErr) throw new Error(`Failed to read members: ${sErr.message}`);
+  const members = new Set((seats ?? []).map((m: { user_id: string }) => m.user_id));
+  return (docs ?? []).filter((d: { user_id: string }) => members.has(d.user_id)).length;
+}
 
 /** Windows that closed with a bid waiting and no winner: the bids staff still have to decide. */
 async function countBidsToDecide(nowISO: string): Promise<number> {
@@ -36,7 +56,7 @@ async function countBidsToDecide(nowISO: string): Promise<number> {
   const windowIds = [...new Set((data ?? []).map((b: { window_id: string | null }) => b.window_id).filter((id): id is string => !!id))];
   if (windowIds.length === 0) return 0;
   return countOf(
-    head('capacity_windows').in('id', windowIds).is('winning_bid_id', null).neq('status', 'cancelled').lt('closes_at', nowISO),
+    owned('capacity_windows').in('id', windowIds).is('winning_bid_id', null).neq('status', 'cancelled').lt('closes_at', nowISO),
     'bids to decide',
   );
 }
@@ -58,22 +78,22 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     activeTrips, vehiclesOnRoad, routesToday, routesDoneToday,
     kyc, bids, unpriced, paymentReports,
   ] = await Promise.all([
-    countOf(head('sos_alerts').in('status', [...OPEN_SOS_STATUSES]), 'open SOS alerts'),
-    countOf(head('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]), 'open problems'),
-    countOf(head('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]).lt('sla_due_at', nowISO), 'overdue problems'),
+    countOf(owned('sos_alerts').in('status', [...OPEN_SOS_STATUSES]), 'open SOS alerts'),
+    countOf(owned('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]), 'open problems'),
+    countOf(owned('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]).lt('sla_due_at', nowISO), 'overdue problems'),
     countOf(head('customer_bookings').eq('status', 'requested'), 'new bookings'),
     countOf(head('vendor_shipment_requests').eq('status', 'pending'), 'new vendor loads'),
     // A split shipment is counted by its lots, never also as its master
-    countOf(head('shipments').eq('status', 'created').neq('is_master', true), 'shipments needing a vehicle'),
+    countOf(owned('shipments').eq('status', 'created').neq('is_master', true), 'shipments needing a vehicle'),
     countOf(head('vendor_shipment_requests').in('status', VENDOR_LOAD_NEEDS_VEHICLE), 'vendor loads needing a vehicle'),
-    countOf(head('routes').eq('status', 'pending'), 'trips to send'),
+    countOf(owned('routes').eq('status', 'pending'), 'trips to send'),
     countVehicleRequests(),
-    countOf(head('user_documents').eq('status', 'pending').is('archived_at', null), 'documents to review'),
+    countDocumentsToReview(),
     countOf(head('notifications').eq('user_id', userId).eq('is_read', false).in('type', [...DRIVER_ACTION_NOTIFICATION_TYPES]), 'driver actions'),
-    countOf(head('routes').eq('status', 'active'), 'active trips'),
+    countOf(owned('routes').eq('status', 'active'), 'active trips'),
     vehicleIdsOnActiveTrip().then(ids => ids.size),
-    countOf(head('routes').gte('created_at', todayISO), 'trips today'),
-    countOf(head('routes').eq('status', 'completed').gte('created_at', todayISO), 'trips completed today'),
+    countOf(owned('routes').gte('created_at', todayISO), 'trips today'),
+    countOf(owned('routes').eq('status', 'completed').gte('created_at', todayISO), 'trips completed today'),
     all ? countOf(head('vendor_profiles').eq('kyc_status', 'submitted'), 'KYC to review') : Promise.resolve(null),
     all ? countBidsToDecide(nowISO) : Promise.resolve(null),
     all ? unpricedDeliveries() : Promise.resolve(null),

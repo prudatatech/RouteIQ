@@ -12,6 +12,7 @@ import { supabase } from '../core/supabase';
 import { settings } from '../core/config';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES, canAccessVehicle, isStaff } from '../core/ownership';
+import { guardOfVehicle, visibleVehicleIds } from '../core/org-guards';
 import { HttpError, sendError } from '../core/errors';
 import { indianDateKey } from '../core/istDate';
 import { rateLimitByUser } from '../core/rate-limit';
@@ -268,7 +269,7 @@ router.get('/vehicles/:id/fuel-stats', requireAuth, async (req: Request, res: Re
 // ── One fill ───────────────────────────────────────────────
 
 // PUT /fleet/fuel-logs/:logId — staff correct an entry, or mark it reviewed
-router.put('/fuel-logs/:logId', ...staff, async (req: Request, res: Response) => {
+router.put('/fuel-logs/:logId', ...staff, guardOfVehicle('vehicle_fuel_logs', 'logId', 'Fuel entry not found'), async (req: Request, res: Response) => {
   try {
     const existing = await loadLog(req.params.logId);
     const b = parse(UpdateBody, req.body);
@@ -322,7 +323,7 @@ router.put('/fuel-logs/:logId', ...staff, async (req: Request, res: Response) =>
 });
 
 // DELETE /fleet/fuel-logs/:logId — staff remove an entry, with its expense row and bill file
-router.delete('/fuel-logs/:logId', ...staff, async (req: Request, res: Response) => {
+router.delete('/fuel-logs/:logId', ...staff, guardOfVehicle('vehicle_fuel_logs', 'logId', 'Fuel entry not found'), async (req: Request, res: Response) => {
   try {
     const existing = await loadLog(req.params.logId);
     const { error } = await supabase.from('vehicle_fuel_logs').delete().eq('id', existing.id);
@@ -373,7 +374,9 @@ router.get('/fuel-anomalies', ...staff, async (req: Request, res: Response) => {
     if (typeof req.query.vehicle_id === 'string' && req.query.vehicle_id) query = query.eq('vehicle_id', req.query.vehicle_id);
     const { data, error } = await query;
     if (error) throw error;
+    const mine = await visibleVehicleIds();
     const rows = newestFirst((data ?? []).map(normalizeLog)).filter(l => {
+      if (mine && !mine.has(l.vehicle_id)) return false;
       if (!l.flags.length) return false;
       if (type && !l.flags.includes(type as FuelFlag)) return false;
       if (reviewed === 'false') return !l.reviewed_at;

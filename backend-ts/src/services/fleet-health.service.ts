@@ -52,14 +52,13 @@ export class FleetHealthMonitor {
     try {
       const thresholdMs = nowMs - this.timeoutSeconds * 1000;
       const thresholdDate = new Date(thresholdMs).toISOString();
-      const limits = await getAlertThresholds();
 
       const { data: activeRoutes } = await supabase.from('routes').select('vehicle_id').eq('status', 'active');
       const onActiveRoute = new Set((activeRoutes ?? []).map((r: any) => r.vehicle_id));
 
       const { data: staleVehicles } = await supabase
         .from('vehicles')
-        .select('id, plate_number, status, cargo_types, last_heartbeat, last_sync')
+        .select('id, plate_number, status, cargo_types, last_heartbeat, last_sync, carrier_org_id')
         .in('status', ['available', 'on_route', 'idle'])
         .not('last_heartbeat', 'is', null)
         .lt('last_heartbeat', thresholdDate);
@@ -68,6 +67,7 @@ export class FleetHealthMonitor {
         if (isPlaceholderPlate(vehicle.plate_number)) continue;
         const seen = lastSeenMs(vehicle);
         if (seen != null && seen >= thresholdMs) continue; // the GPS provider synced recently
+        const limits = await getAlertThresholds(vehicle.carrier_org_id ?? null); // the company's own GPS-lost window
         if (onActiveRoute.has(vehicle.id) && seen != null && nowMs - seen <= limits.gps_lost_minutes * 60_000) continue;
 
         const cargoTypes: string[] = vehicle.cargo_types || [];
@@ -94,7 +94,7 @@ export class FleetHealthMonitor {
               ? `CRITICAL: ${vehicle.plate_number} (${(vehicle.cargo_types || ['general']).join(', ')}) has disconnected!`
               : `${vehicle.plate_number} went offline.`,
           },
-        });
+        }, vehicle.carrier_org_id);
       }
 
       // Offline vehicles that are reporting again come back per their route

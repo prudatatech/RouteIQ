@@ -10,6 +10,7 @@ import { sendError } from '../core/errors';
 import { FUEL_PRICE_PER_LITER } from '../services/analytics.service';
 import { startOfIndianDay } from '../core/istDate';
 import { getPeopleAttention } from '../services/people-docs.service';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
@@ -43,16 +44,16 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
       }
     } else {
       // Admin/manager view
-      const { count } = await supabase
+      const { count } = await scopeQuery(supabase
         .from('vehicles')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'on_route');
+        .eq('status', 'on_route'), OWNED.carrier);
       activeVehicles = count || 0;
 
-      const { data: routes } = await supabase
+      const { data: routes } = await scopeQuery(supabase
         .from('routes')
         .select('*')
-        .gte('created_at', todayISO);
+        .gte('created_at', todayISO), OWNED.carrier);
       routesToday = routes || [];
     }
 
@@ -101,12 +102,12 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
   try {
     const results = await Promise.all(
       SHIPMENT_STATUSES.map(async status => {
-        const { count, error } = await supabase
+        const { count, error } = await scopeQuery(supabase
           .from('shipments')
           .select('id', { count: 'exact', head: true })
           .eq('status', status)
           // A split consignment is counted by its lots, never also as its master
-          .neq('is_master', true);
+          .neq('is_master', true), OWNED.carrier);
         if (error) throw error;
         return [status, count ?? 0] as const;
       }),
@@ -120,7 +121,7 @@ router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (
     };
     const manifestCounts = await Promise.all(
       Object.keys(manifestStatus).map(async status => {
-        const { count, error } = await supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status).neq('is_master', true);
+        const { count, error } = await scopeQuery(supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status).neq('is_master', true), OWNED.carrier);
         if (error) throw error;
         return [status, count ?? 0] as const;
       }),

@@ -27,6 +27,7 @@ import { notificationService } from './notification.service';
 import { auditService } from './audit.service';
 import { listPhotosFor, listVehiclePhotos, primaryPhoto, type VehiclePhoto } from './vehicle-photos.service';
 import { carrierStamp } from '../core/org-context';
+import { OWNED, scopeQuery } from '../core/org-scope';
 
 type Row = Record<string, any>;
 
@@ -121,6 +122,7 @@ export async function registerDriverVehicle(driverId: string, input: DriverVehic
         `${me.full_name ?? 'A driver'} registered ${plate} and is waiting for approval.`,
         'vehicle_request',
         { vehicle_id: vehicle.id, driver_id: driverId },
+        vehicle.carrier_org_id,
       )
       .catch(e => console.error('[vehicles] vehicle request notification failed:', e));
   }
@@ -172,10 +174,10 @@ export interface VehicleRequest {
 
 /** Vehicles waiting for a decision, oldest first, with their driver and photos. */
 export async function listVehicleRequests(limit = 100): Promise<VehicleRequest[]> {
-  const { data, error } = await supabase
+  const { data, error } = await scopeQuery(supabase
     .from('vehicles')
     .select('*')
-    .eq('status', PENDING_VEHICLE_STATUS)
+    .eq('status', PENDING_VEHICLE_STATUS), OWNED.carrier)
     .order('submitted_at', { ascending: true })
     .limit(limit);
   if (error) throw error;
@@ -200,7 +202,7 @@ export async function listVehicleRequests(limit = 100): Promise<VehicleRequest[]
 }
 
 export async function countVehicleRequests(): Promise<number> {
-  const { count, error } = await supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', PENDING_VEHICLE_STATUS);
+  const { count, error } = await scopeQuery(supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', PENDING_VEHICLE_STATUS), OWNED.carrier);
   if (error) throw error;
   return count ?? 0;
 }
@@ -208,7 +210,7 @@ export async function countVehicleRequests(): Promise<number> {
 interface Actor { user_id: string; role: string }
 
 async function loadReviewable(vehicleId: string): Promise<Row> {
-  const { data, error } = await supabase.from('vehicles').select('*').eq('id', vehicleId).maybeSingle();
+  const { data, error } = await scopeQuery(supabase.from('vehicles').select('*').eq('id', vehicleId), OWNED.carrier).maybeSingle();
   if (error) throw error;
   if (!data) throw new HttpError(404, 'Vehicle not found');
   return data;
