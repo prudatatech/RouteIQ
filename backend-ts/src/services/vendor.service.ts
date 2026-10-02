@@ -1,4 +1,4 @@
-import { decideOrg } from './org.service';
+import { invalidateOrgContext } from '../core/org-context';
 import { supabase } from '../core/supabase';
 import { withWarnings } from './people-common';
 import { checkIfscForSave } from './ifsc.service';
@@ -571,18 +571,10 @@ export const vendorService = {
     } catch (e) {
       console.error('[vendor] KYC approval notification failed:', e);
     }
-    // An approved business is a working vendor: its organisation becomes active (companies only see loads
-    // of an active vendor organisation), with the same audit and notice as a platform approval.
-    try {
-      const { data: vorg } = await supabase
-        .from('org_members').select('org_id, organizations(id, kind, status)')
-        .eq('user_id', vendorId).eq('status', 'active');
-      const pending = (vorg ?? []).map((m: any) => (Array.isArray(m.organizations) ? m.organizations[0] : m.organizations))
-        .find((o: any) => o?.kind === 'vendor' && o.status === 'pending');
-      if (pending) await decideOrg(actor, pending.id, 'approve');
-    } catch (e) {
-      console.error('[vendor] activating the vendor organisation failed:', e);
-    }
+    // The database already made the vendor's organisation active (trigger on vendor_profiles.kyc_status), but the
+    // API remembers a person's organisations for a minute: forget this vendor's, or their session keeps saying
+    // "waiting for approval" and the loads they posted stay hidden from the companies for that long.
+    invalidateOrgContext(vendorId);
     try {
       await releaseHeldLoads(vendorId);
     } catch (e) {
@@ -613,6 +605,7 @@ export const vendorService = {
     if (error) throw new Error(error.message);
     if (!data) throw new HttpError(409, 'This KYC is no longer waiting for review');
 
+    invalidateOrgContext(vendorId);
     await notificationService.sendNotification(
       vendorId,
       'KYC rejected',
