@@ -63,4 +63,13 @@ describe('loads held for business verification', () => {
     expect(supabaseMock.rows('notifications').filter(n => n.type === 'vendor_request' && n.data?.request_id === HELD).length).toBeGreaterThan(0);
     expect((await vendorService.getPendingRequests()).map((r: any) => r.id).sort()).toEqual([HELD, LOAD].sort());
   });
+
+  it('KYC approval makes the vendor organisation active, so companies can see its loads', async () => {
+    supabaseMock.rows('vendor_profiles').push({ id: uid('vendor-1'), kyc_status: 'submitted', company_name: 'V One' });
+    const vorg = supabaseMock.rows('organizations').find(o => o.kind === 'vendor')!;
+    vorg.status = 'pending';
+    for (const m of supabaseMock.rows('org_members')) if (m.org_id === vorg.id) m.organizations = { ...m.organizations, status: 'pending' };
+    await vendorService.approveKyc(uid('vendor-1'), { user_id: uid('super-1'), role: 'superadmin' } as any);
+    expect(supabaseMock.rows('organizations').find(o => o.id === vorg.id)!.status).toBe('active');
+  });
 });

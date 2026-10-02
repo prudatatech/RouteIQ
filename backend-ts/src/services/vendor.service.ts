@@ -1,3 +1,4 @@
+import { decideOrg } from './org.service';
 import { supabase } from '../core/supabase';
 import { withWarnings } from './people-common';
 import { checkIfscForSave } from './ifsc.service';
@@ -570,7 +571,18 @@ export const vendorService = {
     } catch (e) {
       console.error('[vendor] KYC approval notification failed:', e);
     }
-    // Loads posted while the business was unverified now go to the companies
+    // An approved business is a working vendor: its organisation becomes active (companies only see loads
+    // of an active vendor organisation), with the same audit and notice as a platform approval.
+    try {
+      const { data: vorg } = await supabase
+        .from('org_members').select('org_id, organizations(id, kind, status)')
+        .eq('user_id', vendorId).eq('status', 'active');
+      const pending = (vorg ?? []).map((m: any) => (Array.isArray(m.organizations) ? m.organizations[0] : m.organizations))
+        .find((o: any) => o?.kind === 'vendor' && o.status === 'pending');
+      if (pending) await decideOrg(actor, pending.id, 'approve');
+    } catch (e) {
+      console.error('[vendor] activating the vendor organisation failed:', e);
+    }
     try {
       await releaseHeldLoads(vendorId);
     } catch (e) {
