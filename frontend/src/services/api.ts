@@ -660,7 +660,7 @@ export interface PaymentDetails {
 
 /** One invoice: the document with its links, and its PDF. */
 export const invoicesAPI = {
-  paymentDetails: () => api.get('/invoices/payment-details').then(r => r.data as PaymentDetails),
+  paymentDetails: (invoiceId?: string) => api.get('/invoices/payment-details', { params: invoiceId ? { invoice: invoiceId } : undefined }).then(r => r.data as PaymentDetails),
   get: (id: string) => api.get(`/invoices/${id}`).then(r => r.data as InvoiceDetail),
   pdf: (id: string) => api.get(`/invoices/${id}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
 }

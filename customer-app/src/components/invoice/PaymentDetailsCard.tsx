@@ -15,9 +15,10 @@ const COPIED_MS = 2000;
  * "How to pay": MargixIndia's bank account and UPI id from Settings, each with a copy button. Until
  * staff have saved any, it says the details will be shared.
  */
-export function PaymentDetailsCard() {
+export function PaymentDetailsCard({ invoiceId }: { invoiceId?: string } = {}) {
   const { t } = useTranslation();
-  const { data, loading, error, reload } = useRemote(() => api.getPaymentDetails(), 'payment-details', t('pay_load_failed'));
+  // With an invoice, the details of the company that issued it
+  const { data, loading, error, reload } = useRemote(() => api.getPaymentDetails(invoiceId), `payment-details:${invoiceId ?? ''}`, t('pay_load_failed'));
 
   const rows: { label: string; value: string | null; mono?: boolean }[] = data
     ? [

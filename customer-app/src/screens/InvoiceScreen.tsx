@@ -131,7 +131,7 @@ function Details({ invoice, loading, reload, navigation, t }: { invoice: Invoice
         ) : null}
       </Card>
 
-      {!paid ? <PaymentDetailsCard /> : null}
+      {!paid ? <PaymentDetailsCard invoiceId={invoice.id} /> : null}
 
       {notice ? <Banner tone="info" icon="check-circle" message={notice} /> : null}
       {form === 'paid' ? <PaymentReportForm invoice={invoice} t={t} onSent={() => sent('paid')} onCancel={() => setForm(null)} /> : null}

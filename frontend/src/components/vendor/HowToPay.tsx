@@ -20,8 +20,9 @@ function paymentLines(d: PaymentDetails, invoiceNumber?: string): { label: strin
 }
 
 /** Where to pay: the company's bank and UPI details from Settings, with a copy button. */
-export default function HowToPay({ invoiceNumber }: { invoiceNumber?: string }) {
-  const details = useQuery({ queryKey: ['invoices', 'payment-details'], queryFn: invoicesAPI.paymentDetails, staleTime: 5 * 60_000 })
+export default function HowToPay({ invoiceNumber, invoiceId }: { invoiceNumber?: string; invoiceId?: string }) {
+  // With an invoice, the details of the company that issued it (each company has its own bank account)
+  const details = useQuery({ queryKey: ['invoices', 'payment-details', invoiceId ?? null], queryFn: () => invoicesAPI.paymentDetails(invoiceId), staleTime: 5 * 60_000 })
   if (details.isLoading) return null
 
   const d = details.data

@@ -266,7 +266,7 @@ export default function VendorLoadPage() {
               <Link to="/vendor/invoices" className={buttonClasses({ variant: 'ghost' })}>All invoices</Link>
             </div>
             </Card>
-            {data.invoice.status === 'issued' && <HowToPay invoiceNumber={data.invoice.invoice_number} />}
+            {data.invoice.status === 'issued' && <HowToPay invoiceNumber={data.invoice.invoice_number} invoiceId={data.invoice.id} />}
           </div>
         ) : (
           <p className="text-sm text-muted">{finished ? 'MargixIndia has not issued the invoice yet. You will be told when it is ready.' : 'An invoice is issued once your load is delivered.'}</p>
