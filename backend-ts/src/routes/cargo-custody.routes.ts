@@ -100,8 +100,8 @@ router.post('/custody', requireAuth, requireRole('driver', ...STAFF_ROLES), idem
     const body = parse(CustodySchema, req.body);
     const c = await resolveRef(body.ref);
     await assertCanAct(req.user!, c);
-    // The goods leave with a vendor load's pickup: same dispatch block as completing the pickup stop
-    if (body.kind === 'pickup' && c.kind === 'manifest' && c.row.vendor_request_id && c.rawStatus !== 'in_transit') {
+    // The goods leave with a vendor load's pickup or departure: same dispatch block as completing the pickup stop
+    if ((body.kind === 'pickup' || body.kind === 'departed') && c.kind === 'manifest' && c.row.vendor_request_id && c.rawStatus !== 'in_transit') {
       await assertDispatchReady(c.row.vendor_request_id);
     }
     const { ref: _ref, ...input } = body;
