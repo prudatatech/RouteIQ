@@ -11,13 +11,14 @@ import { testApp } from './support/test-app';
 import { ORG, as, orgWorld, uid } from './support/org-world';
 import { draft } from './support/load-draft';
 import { assessLoad } from '../src/services/loads/assess';
+import { goodsTables } from './support/goods-world';
 
 const app = testApp();
 const api = (p: string) => `/api/v1${p}`;
 let seq: number;
 function world(opts: { vendorStatus?: string; extra?: Record<string, any[]> } = {}) {
   seq = 0;
-  const fixtures = orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), kyc_status: 'approved' }], vendor_shipment_requests: [], load_items: [], cargo_manifest: [], ...opts.extra });
+  const fixtures = orgWorld({ vendor_profiles: [{ id: uid('vendor-1'), kyc_status: 'approved' }], vendor_shipment_requests: [], load_items: [], cargo_manifest: [], ...goodsTables(), ...opts.extra });
   if (opts.vendorStatus) {
     fixtures.organizations.find(o => o.id === ORG.vendorV)!.status = opts.vendorStatus;
     for (const m of fixtures.org_members) if (m.org_id === ORG.vendorV) m.organizations = { ...m.organizations, status: opts.vendorStatus };
@@ -83,8 +84,10 @@ describe('POST /vendor/loads', () => {
     expect(load.eway_required).toBe(true);
     expect(load.tax_basis).toBe('inter');
     expect(load.hazmat_mixed).toBe(false);
-    expect(res.body.assessment.tax.gst_total).toBe(137250);
-    expect(res.body.assessment.tax.igst).toBe(137250);
+    // A rate the HSN master doesn't allow for the code is not trusted: cement (2523) is 12/28 in the seed, so the
+    // client's 18% falls back to the code's default 12% (84,000 + paint 9,000 + tiles 1,800 + fasteners 450)
+    expect(res.body.assessment.tax.gst_total).toBe(95250);
+    expect(res.body.assessment.tax.igst).toBe(95250);
   });
 
   it('writes metadata.cargo from the primary product (the largest value) for older screens', async () => {
@@ -171,16 +174,17 @@ describe('POST /vendor/loads', () => {
   });
 });
 
-describe('assessLoad (the seam)', () => {
-  it('sums the lines, flags the e-way bill over 50,000 and picks the basis from the pin codes', () => {
-    const a = assessLoad({ items: [{ weight_kg: 100, declared_value: 50000, gst_rate: 18 }], pickup_pincode: '400001', delivery_pincode: '400050' });
+describe('assessLoad (posting uses the goods engine)', () => {
+  it('sums the lines, flags the e-way bill over 50,000 and picks the basis from the state codes', async () => {
+    const a = await assessLoad({ items: [{ weight_kg: 100, declared_value: 50000, gst_rate: 18 }], pickup_state_code: '27', delivery_state_code: '27' });
     expect(a.eway.required).toBe(false);
     expect(a.tax.basis).toBe('intra');
-    expect(a.tax).toMatchObject({ cgst: 4500, sgst: 4500, igst: 0, gst_total: 9000, grand_total: 59000 });
-    const b = assessLoad({ items: [{ weight_kg: 100, declared_value: 50001, gst_rate: 18 }], pickup_pincode: '400001', delivery_pincode: '110001' });
+    expect(a.tax).toMatchObject({ cgst: 4500, sgst: 4500, igst: 0, gst_total: 9000, grand_total: 59000, pickup_state_code: '27' });
+    const b = await assessLoad({ items: [{ weight_kg: 100, declared_value: 50001, gst_rate: 18 }], pickup_state_code: '27', delivery_state_code: '07' });
     expect(b.eway.required).toBe(true);
     expect(b.tax.basis).toBe('inter');
-    expect(assessLoad({ items: [] }).tax.basis).toBe('unknown');
+    expect((await assessLoad({ items: [] })).tax.basis).toBe('unknown');
+    expect(a.estimate).toBeNull();
   });
 });
 

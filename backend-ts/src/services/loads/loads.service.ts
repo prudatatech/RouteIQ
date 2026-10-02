@@ -142,12 +142,12 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
   if (input.client_request_id) {
     const first = await findDuplicate(c, input.client_request_id);
     if (first) {
-      return { load: first, items: await itemsOf(first.id), assessment: assessLoad(input), duplicate: true, status_note: first.metadata?.hold === HOLD_UNVERIFIED ? HOLD_NOTE : null };
+      return { load: first, items: await itemsOf(first.id), assessment: await assessLoad(input), duplicate: true, status_note: first.metadata?.hold === HOLD_UNVERIFIED ? HOLD_NOTE : null };
     }
   }
 
   // Never trust the client's totals, tax or e-way flag: work them out again
-  const assessment = assessLoad(input);
+  const assessment = await assessLoad(input);
   const verified = await vendorVerified(c);
   const primary = primaryItem(input.items);
   const pickup = { lat: input.pickup_lat, lng: input.pickup_lng };
@@ -195,7 +195,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     pickup_city: input.pickup_city,
     pickup_address: input.pickup_address,
     pickup_pincode: input.pickup_pincode,
-    pickup_state_code: validState(input.pickup_state_code) ?? validState(assessment.tax.pickup_state),
+    pickup_state_code: validState(input.pickup_state_code) ?? validState(assessment.tax.pickup_state_code),
     pickup_date: input.pickup_date,
     pickup_slot: input.pickup_slot ?? null,
     pickup_contact_name: input.pickup_contact_name,
@@ -203,7 +203,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     delivery_city: input.delivery_city,
     delivery_address: input.delivery_address,
     delivery_pincode: input.delivery_pincode,
-    delivery_state_code: validState(input.delivery_state_code) ?? validState(assessment.tax.delivery_state),
+    delivery_state_code: validState(input.delivery_state_code) ?? validState(assessment.tax.delivery_state_code),
     delivery_date: input.delivery_date ?? null,
     delivery_contact_name: input.delivery_contact_name,
     delivery_contact_phone: input.delivery_contact_phone,

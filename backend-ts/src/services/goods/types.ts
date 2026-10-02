@@ -77,8 +77,12 @@ export interface TaxByRate { rate: number; taxable: number; gst: number }
 
 export interface TaxSummary {
   basis: 'intra' | 'inter' | 'unknown';
+  /** State names, for display */
   pickup_state: string | null;
   delivery_state: string | null;
+  /** GST state codes ('27'), for storing */
+  pickup_state_code?: string | null;
+  delivery_state_code?: string | null;
   lines: TaxLine[];
   by_rate: TaxByRate[];
   taxable: number;

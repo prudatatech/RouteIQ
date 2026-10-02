@@ -300,7 +300,7 @@ describe('POST /public/loads/assist', () => {
     const res = await request(app).post('/api/v1/public/loads/assist').send(draft());
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['estimate', 'eway', 'hazmat_mixed', 'perishable', 'recommendations', 'suggested', 'tax', 'totals']);
-    expect(Object.keys(res.body.tax).sort()).toEqual(['basis', 'by_rate', 'cgst', 'delivery_state', 'grand_total', 'gst_total', 'igst', 'lines', 'pickup_state', 'sgst', 'taxable']);
+    expect(Object.keys(res.body.tax).sort()).toEqual(['basis', 'by_rate', 'cgst', 'delivery_state', 'delivery_state_code', 'grand_total', 'gst_total', 'igst', 'lines', 'pickup_state', 'pickup_state_code', 'sgst', 'taxable']);
     expect(Object.keys(res.body.eway).sort()).toEqual(['reason', 'required', 'threshold']);
     expect(Object.keys(res.body.suggested).sort()).toEqual(['capacity_t', 'load_type', 'vehicle_class']);
     expect(res.body.totals).toEqual({ weight_kg: 20900, declared_value: 762500, product_count: 4 });

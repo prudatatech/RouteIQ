@@ -41,6 +41,23 @@ const item = z.object({
   is_perishable: z.boolean().nullish(),
 });
 
+/**
+ * The web form and POST /vendor/loads send a flat body (pickup_city, pickup_pincode, ...); the assistant reads
+ * nested places. Accepts either and returns the nested draft (extra keys are dropped by the schema).
+ */
+export function toNestedDraft(body: any): unknown {
+  if (!body || typeof body !== 'object' || body.pickup || body.delivery) return body;
+  const place = (side: 'pickup' | 'delivery') => ({
+    city: body[`${side}_city`] ?? null,
+    pincode: body[`${side}_pincode`] ?? null,
+    state_code: body[`${side}_state_code`] ?? null,
+    lat: body[`${side}_lat`] ?? null,
+    lng: body[`${side}_lng`] ?? null,
+    date: body[`${side}_date`] ?? null,
+  });
+  return { ...body, pickup: place('pickup'), delivery: place('delivery') };
+}
+
 /** The draft load the assistant accepts: at most 50 products (docs/load-posting-design.md section 2). */
 export const LoadDraftSchema = z.object({
   items: z.array(item).max(50),
@@ -128,6 +145,7 @@ export async function assessLoad(draft: LoadDraft, refs: AssessRefs = {}): Promi
 
   return {
     totals: { weight_kg: weight, declared_value: value, product_count: lines.length },
-    eway, tax, hazmat_mixed, perishable, suggested, estimate, recommendations,
+    eway, tax: { ...tax, pickup_state_code: pickupState, delivery_state_code: deliveryState },
+    hazmat_mixed, perishable, suggested, estimate, recommendations,
   };
 }

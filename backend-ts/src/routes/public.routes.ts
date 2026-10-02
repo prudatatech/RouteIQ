@@ -17,7 +17,7 @@ import { getPublicShare } from '../services/vehicle-location.service';
 import { freeCapacityKg } from '../services/capacity.service';
 import { pricingService } from '../services/pricing.service';
 import { normalizePlace } from '../utils/corridor-match';
-import { assessLoad, findHsn, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, searchHsn, toHit } from '../services/goods';
+import { assessLoad, findHsn, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, searchHsn, toHit, toNestedDraft } from '../services/goods';
 
 const router = Router();
 
@@ -343,7 +343,7 @@ router.get('/goods-categories', rateLimitByIp('public-goods-ref', 60, 60), async
 // recommendations for the draft load. Nothing is stored.
 router.post('/loads/assist', rateLimitByIp('public-load-assist', 60, 60), async (req: Request, res: Response) => {
   try {
-    const parsed = LoadDraftSchema.safeParse(req.body);
+    const parsed = LoadDraftSchema.safeParse(toNestedDraft(req.body));
     if (!parsed.success) return badRequest(res, parsed.error);
     res.set('Cache-Control', 'no-store');
     res.json(await assessLoad(parsed.data as LoadDraft));
