@@ -94,7 +94,7 @@ export const interstateIgst: Rule = ctx => {
   if (ctx.tax.basis !== 'inter') return null;
   return {
     code: 'interstate_igst', severity: 'info',
-    message: `This is an interstate route (${stateName(ctx.tax.pickup_state, 'pickup')} to ${stateName(ctx.tax.delivery_state, 'delivery')}). IGST applies, not CGST+SGST.`,
+    message: `This load crosses states (${stateName(ctx.tax.pickup_state, 'pickup')} to ${stateName(ctx.tax.delivery_state, 'delivery')}). IGST applies, not CGST+SGST.`,
   };
 };
 

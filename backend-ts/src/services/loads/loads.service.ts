@@ -177,7 +177,7 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
         declaredValue: assessment.totals.declared_value,
         specialHandling: Object.fromEntries(input.special_handling.map(h => [h, true])),
       },
-      transporter: 'Route IQ',
+      transporter: 'MargixIndia',
       consignor_id: c.userId,
       routing: { estimated_distance_km: Math.round(km) },
       ...(verified ? {} : { hold: HOLD_UNVERIFIED }),
@@ -268,7 +268,7 @@ async function announceLoad(c: Caller, row: Record<string, any>, verified: boole
     const email = user?.email && !/\.margixindia\.local$/.test(user.email) ? user.email : null;
     if (!sent && email) {
       await emailService.send(email, `Load ${row.load_number} posted`,
-        `<p>Your load <b>${escapeHtml(row.load_number)}</b> was posted.</p><p>Route: ${escapeHtml(route)}<br>Pickup: ${escapeHtml(shortDate(row.pickup_date))}<br>Vehicle: ${escapeHtml(vehicle)}<br>Total weight: ${Math.round(Number(row.total_weight_kg ?? 0)).toLocaleString('en-IN')} kg</p><p>${verified ? 'We are matching a verified carrier.' : escapeHtml(HOLD_NOTE)}</p>`);
+        `<p>Your load <b>${escapeHtml(row.load_number)}</b> was posted.</p><p>From and to: ${escapeHtml(route)}<br>Pickup: ${escapeHtml(shortDate(row.pickup_date))}<br>Vehicle: ${escapeHtml(vehicle)}<br>Total weight: ${Math.round(Number(row.total_weight_kg ?? 0)).toLocaleString('en-IN')} kg</p><p>${verified ? 'We are matching a verified carrier.' : escapeHtml(HOLD_NOTE)}</p>`);
     }
   })());
   const results = await Promise.allSettled(tasks);

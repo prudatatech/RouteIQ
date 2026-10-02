@@ -25,7 +25,7 @@ export const DOC_LABELS: Record<DocKind, string> = {
   bill_of_supply: 'Bill of supply',
   delivery_challan: 'Delivery challan',
   eway_bill: 'E-way bill',
-  lr: 'LR / GR consignment note',
+  lr: 'LR / GR (lorry receipt)',
   freight_sheet: 'Freight sheet',
   pod: 'Proof of delivery',
   loading_report: 'Loading report',

@@ -100,9 +100,9 @@ export function evaluateChecklist(input: ChecklistInput): ChecklistItem[] {
 
   // LR once a company has accepted
   const lr = docs.find(d => d.kind === 'lr');
-  if (!input.accepted) add('lr', 'LR / GR consignment note', false, 'not_required', 'Generated once a logistic company accepts the load');
-  else if (lr) add('lr', 'LR / GR consignment note', true, 'ok', `LR ${lr.number ?? ''} is generated`.replace('  ', ' '), lr.id);
-  else add('lr', 'LR / GR consignment note', true, 'missing', 'Generate the LR / GR consignment note');
+  if (!input.accepted) add('lr', 'LR / GR (lorry receipt)', false, 'not_required', 'Generated once a logistic company accepts the load');
+  else if (lr) add('lr', 'LR / GR (lorry receipt)', true, 'ok', `LR ${lr.number ?? ''} is generated`.replace('  ', ' '), lr.id);
+  else add('lr', 'LR / GR (lorry receipt)', true, 'missing', 'Generate the LR / GR (lorry receipt)');
 
   // Vehicle and its documents
   if (!input.accepted) {

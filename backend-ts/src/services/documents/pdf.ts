@@ -36,7 +36,7 @@ function layoutOf(doc: Pick<DocumentRow, 'kind' | 'fields'>): Layout {
       return {
         sections: [
           { heading: 'Parties', rows: [['Consignor', f.consignor_name], ['Consignor GSTIN', f.consignor_gstin], ['Consignee', f.consignee_name], ['Transporter', f.transporter_name], ['Transporter GSTIN', f.transporter_gstin]] },
-          { heading: 'Route', rows: [['Pickup', f.pickup_address], ['Delivery', f.delivery_address], ['Route', f.route]] },
+          { heading: 'Pickup and delivery', rows: [['Pickup', f.pickup_address], ['Delivery', f.delivery_address], ['From and to', f.route]] },
           { heading: 'Goods', rows: [['Description', f.goods_description], ['Packages', num(f.packages)], ['Actual weight', num(f.actual_weight_kg, ' kg')]] },
           { heading: 'Vehicle', rows: [['Vehicle number', f.vehicle_number], ['Driver', f.driver_name], ['Driver phone', f.driver_phone]] },
           { heading: 'References', rows: [['Invoice number', f.invoice_number], ['E-way bill number', f.eway_bill_number]] },
@@ -86,7 +86,7 @@ function layoutOf(doc: Pick<DocumentRow, 'kind' | 'fields'>): Layout {
       const items: any[] = Array.isArray(f.items) ? f.items : [];
       return {
         sections: [
-          { heading: 'Exception', rows: [['Type', label(f.exception_type)], ['Affected quantity', num(f.affected_quantity)], ['Description', f.description], ['Receiver remarks', f.receiver_remarks], ['Photos', Array.isArray(f.photo_paths) && f.photo_paths.length ? `${f.photo_paths.length} attached` : undefined], ['Report date', date(f.report_date)], ['Responsible person', f.responsible_person]] },
+          { heading: 'Problem', rows: [['Type', label(f.exception_type)], ['Affected quantity', num(f.affected_quantity)], ['Description', f.description], ['Receiver remarks', f.receiver_remarks], ['Photos', Array.isArray(f.photo_paths) && f.photo_paths.length ? `${f.photo_paths.length} attached` : undefined], ['Report date', date(f.report_date)], ['Responsible person', f.responsible_person]] },
         ],
         tables: items.length ? [{
           heading: 'Affected goods', headers: ['Case', 'Type', 'Pieces', 'Weight', 'Condition', 'Note'], align: ['left', 'left', 'right', 'right', 'left', 'left'], widths: [0.14, 0.14, 0.1, 0.12, 0.18, 0.32],
