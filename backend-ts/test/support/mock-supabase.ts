@@ -144,7 +144,8 @@ function validateFilters(table: string, params: URLSearchParams): ColumnError | 
       }
       continue;
     }
-    if (!columns.includes(key)) {
+    const base = key.split('->')[0]; // a JSON path (input_data->>vendor_id) is checked by its column
+    if (!columns.includes(base)) {
       return { message: `column ${table}.${key} does not exist` };
     }
   }
@@ -259,7 +260,8 @@ function matches(row: Row, params: URLSearchParams): boolean {
       continue;
     }
     if (IGNORED_PARAMS.has(column) || column.includes('.')) continue;
-    if (!filterHolds(row[column], filter)) return false;
+    const path = /^([a-z_]+)->>?([a-z_]+)$/i.exec(column); // JSON path: input_data->>vendor_id
+    if (!filterHolds(path ? row[path[1]]?.[path[2]] : row[column], filter)) return false;
   }
   return true;
 }

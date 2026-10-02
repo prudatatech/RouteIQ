@@ -159,7 +159,7 @@ export const vendorReviewService = {
 
     const [requests, logs, loads, invoices] = await Promise.all([
       supabase.from('kyc_info_requests').select('id, message, items, status, requested_at, requested_by, answered_at, answers').eq('vendor_id', vendorId).order('requested_at', { ascending: false }),
-      supabase.from('ai_agent_logs').select('created_at, action, input_data, output_data').contains('input_data', { vendor_id: vendorId }).like('action', 'kyc_%').order('created_at', { ascending: false }).limit(200),
+      supabase.from('ai_agent_logs').select('created_at, action, input_data, output_data').filter('input_data->>vendor_id', 'eq', vendorId).like('action', 'kyc_%').order('created_at', { ascending: false }).limit(200),
       supabase.from('vendor_shipment_requests').select('id, status, carrier_org_id, created_at').eq('vendor_id', vendorId).order('created_at', { ascending: false }).limit(2000),
       supabase.from('invoices').select('id').eq('vendor_id', vendorId).neq('status', 'void').limit(5000),
     ]);
