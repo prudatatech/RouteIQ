@@ -10,6 +10,8 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
+import { OWNED, scopeQuery } from '../core/org-scope';
+import { assertShipmentVisible, assertVehicleVisible, guardOwned } from '../core/org-guards';
 import { sendError, HttpError } from '../core/errors';
 import { logFallback, mlPost } from '../services/optimizer/ml-client';
 import { orderDropsInProcess } from '../services/optimizer/pooling';
@@ -27,11 +29,12 @@ const router = Router();
  * location.
  */
 async function getReferenceDepot(): Promise<{ id: string; name: string; latitude: number; longitude: number } | null> {
-  const { data } = await supabase
+  // The company's own depot only: another company's yard is not a reference point for its trips
+  const { data } = await scopeQuery(supabase
     .from('depots')
     .select('id, name, latitude, longitude')
     .not('latitude', 'is', null)
-    .not('longitude', 'is', null)
+    .not('longitude', 'is', null), OWNED.carrier)
     .limit(1)
     .maybeSingle();
   return data || null;
@@ -61,11 +64,12 @@ export interface OpenLoad {
  * only those shipments are returned (still only if they are open).
  */
 async function loadOpenLoads(ids?: string[]): Promise<OpenLoad[]> {
-  let query = supabase
+  // Only the active company's own shipments (a platform admin acting as the platform sees every company's)
+  let query = scopeQuery(supabase
     .from('shipments')
     .select('id, tracking_id, status, priority, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, created_at, delivery_points!delivery_points_shipment_id_fkey(id, name, address, latitude, longitude)')
     .eq('status', 'created')
-    .neq('is_master', true)
+    .neq('is_master', true), OWNED.carrier)
     .order('created_at', { ascending: false });
   query = ids ? query.in('id', ids) : query.limit(100);
 
@@ -139,7 +143,7 @@ const km = (metres: number) => Math.round((metres / 1000) * 10) / 10;
 // ── GET /shipments ─────────────────────────────────────────
 router.get('/shipments', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data, error } = await supabase.from('shipments').select('*');
+    const { data, error } = await scopeQuery(supabase.from('shipments').select('*'), OWNED.carrier);
     if (error) throw error;
     res.json(data || []);
   } catch (e: any) {
@@ -159,10 +163,10 @@ router.get('/open-loads', requireAuth, requireRole(...STAFF_ROLES), async (req: 
 // ── GET /security-alerts ───────────────────────────────────
 router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const { data: alerts, error } = await supabase
+    const { data: alerts, error } = await scopeQuery(supabase
       .from('maintenance_alerts')
       .select('*, vehicles(plate_number)')
-      .eq('is_resolved', false)
+      .eq('is_resolved', false), OWNED.carrier)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -186,7 +190,7 @@ router.get('/security-alerts', requireAuth, requireRole(...STAFF_ROLES), async (
 
 // ── POST /resolve-alert/:alert_id ──────────────────────────
 // Kept for older clients; the console resolves alarms with POST /fleet/alerts/:id/resolve.
-router.post('/resolve-alert/:alert_id', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.post('/resolve-alert/:alert_id', requireAuth, requireRole(...STAFF_ROLES), guardOwned('maintenance_alerts', 'alert_id', 'Alert not found'), async (req: Request, res: Response) => {
   try {
     const result = await resolveAlert(req.params.alert_id, req.user!.user_id);
     if (result === 'not_found') {
@@ -217,6 +221,7 @@ router.post('/optimize-pooling', requireAuth, requireRole(...STAFF_ROLES), async
       throw new HttpError(400, 'Choose the vehicle that will carry the pooled loads.');
     }
 
+    await assertVehicleVisible(vehicleId);
     const { data: vehicle, error: vehicleErr } = await supabase
       .from('vehicles')
       .select('id, plate_number, capacity_kg')
@@ -440,6 +445,7 @@ router.post('/verify-pod', requireAuth, requireRole(...STAFF_ROLES), idempotent(
       res.status(404).json({ detail: 'Shipment not found' });
       return;
     }
+    await assertShipmentVisible(shipment.id); // another company's shipment is a 404, like one that does not exist
     if (shipment.status === 'delivered' || shipment.status === 'cancelled') {
       res.status(409).json({ detail: `Shipment is already ${shipment.status}` });
       return;
