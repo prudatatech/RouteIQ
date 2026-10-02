@@ -25,7 +25,8 @@ import { notifyOwner, notifyStaffSafe } from './notify';
 import { estimateMinutes, openDropPoints, planStopsOnVehicle } from './replan';
 import { carrierStamp, vendorOrgOf } from '../../core/org-context';
 import { OWNED, assertVisible, scopeQuery } from '../../core/org-scope';
-import { carrierOfLinks } from '../../core/org-guards';
+import { assertVehicleVisible, carrierOfLinks } from '../../core/org-guards';
+import { isUuid } from '../../core/validate';
 
 export const EXCEPTION_TYPES = [
   'vehicle_accident', 'vehicle_breakdown', 'damage', 'shortage', 'excess', 'theft', 'refused', 'undeliverable', 'delay', 'seal_tamper', 'weather', 'other',
@@ -1097,6 +1098,11 @@ export async function createManualException(body: Record<string, any>, actor: Ac
   }
   const vehicleId = body.vehicle_id ?? null;
   if (opts.driverVehicleIds && vehicleId && !opts.driverVehicleIds.includes(vehicleId)) throw new HttpError(403, 'Not your vehicle');
+  // A case is raised on a vehicle the company runs: another company's vehicle is a 404 and nothing is written
+  if (vehicleId != null) {
+    if (!isUuid(vehicleId)) throw new HttpError(404, 'Vehicle not found');
+    await assertVehicleVisible(vehicleId);
+  }
   const lat = body.lat == null ? null : Number(body.lat);
   const lng = body.lng == null ? null : Number(body.lng);
   if ((lat != null && (!Number.isFinite(lat) || Math.abs(lat) > 90)) || (lng != null && (!Number.isFinite(lng) || Math.abs(lng) > 180))) throw new HttpError(400, 'lat and lng must be coordinates');

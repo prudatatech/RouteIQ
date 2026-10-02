@@ -28,6 +28,8 @@ import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-ac
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeKey, scopeQuery } from '../core/org-scope';
 import { assertVehicleVisible } from '../core/org-guards';
+import { isInActiveOrg } from '../services/people-common';
+import { joinActiveCompany } from '../services/people.service';
 
 const router = Router();
 
@@ -49,7 +51,7 @@ function normalizeDriverPhone(raw: string): string {
  * Drivers sign in with phone OTP, so no password is set; the email matches
  * the one driver OTP login uses for the same phone.
  */
-async function resolveDriverUser(name: string, rawPhone: string): Promise<string | null> {
+async function resolveDriverUser(name: string, rawPhone: string, actorId?: string): Promise<string | null> {
   const phone = normalizeDriverPhone(rawPhone);
   const driverEmail = `driver_${phone.replace(/\+/g, '')}@driver.margixindia.local`;
 
@@ -71,6 +73,10 @@ async function resolveDriverUser(name: string, rawPhone: string): Promise<string
       .eq('phone', phone)
       .eq('role', 'driver')
       .maybeSingle();
+    // Only a driver of the company the request acts for can be put on its vehicle: another company's driver is not ours to take
+    if (existing?.id && !(await isInActiveOrg(existing.id))) {
+      throw new HttpError(409, 'That phone number belongs to a driver who is not in your company. Ask them to join your company first.');
+    }
     return existing?.id ?? null;
   }
   if (!authUser.user) return null;
@@ -82,7 +88,14 @@ async function resolveDriverUser(name: string, rawPhone: string): Promise<string
     role: 'driver',
     full_name: name,
   }, { onConflict: 'id' });
+  // The new driver belongs to the company that added them (the database would otherwise put them in the default one)
+  if (actorId) await joinActiveCompany(actorId, authUser.user.id, 'driver');
   return authUser.user.id;
+}
+
+/** A driver put on a vehicle by id must be a member of the company the request acts for (a 404, like an unknown person). */
+async function assertDriverInCompany(driverId: string | null | undefined): Promise<void> {
+  if (driverId && !(await isInActiveOrg(driverId))) throw new HttpError(404, 'Driver not found');
 }
 
 const isUniqueViolation = (e: { code?: string } | null | undefined) => e?.code === '23505';
@@ -162,8 +175,9 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
       insertData.reviewed_by = req.user!.user_id;
       insertData.reviewed_at = new Date().toISOString();
     }
+    await assertDriverInCompany(insertData.driver_id);
     if (!isDraft && insertData.driver_phone && insertData.driver_name) {
-      const driverId = await resolveDriverUser(insertData.driver_name, insertData.driver_phone);
+      const driverId = await resolveDriverUser(insertData.driver_name, insertData.driver_phone, req.user!.user_id);
       if (driverId) insertData.driver_id = driverId;
     }
 
@@ -469,6 +483,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       }
     }
 
+    if (!isDriver) await assertDriverInCompany(updateData.driver_id);
     // Editing the driver's name or phone links the driver account the same way creating does.
     if (!isDriver && (updateData.status ?? current.status) !== 'archived') {
       const phone = updateData.driver_phone !== undefined ? updateData.driver_phone : current.driver_phone;
@@ -477,7 +492,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
       if (updateData.driver_phone === null || updateData.driver_phone === '') {
         if (updateData.driver_id === undefined) updateData.driver_id = null;
       } else if (phone && name && (phoneChanged || !current.driver_id) && updateData.driver_id === undefined) {
-        const driverId = await resolveDriverUser(name, phone);
+        const driverId = await resolveDriverUser(name, phone, req.user!.user_id);
         if (driverId) updateData.driver_id = driverId;
       }
       if (updateData.driver_id && updateData.driver_id !== current.driver_id) {

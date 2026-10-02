@@ -383,7 +383,7 @@ const ORG_ROLE_FOR: Record<string, string> = { superadmin: 'owner', admin: 'admi
  * different one, that membership is taken back. Nothing happens before organisations are set up, or when the
  * request acts as the platform (the database default stands).
  */
-async function joinActiveCompany(actorId: string, userId: string, role: string, partnerOrgId?: string): Promise<void> {
+export async function joinActiveCompany(actorId: string, userId: string, role: string, partnerOrgId?: string): Promise<void> {
   // A driver a 3PL partner invites joins the partner organisation, never a company
   const org = partnerOrgId ? { id: partnerOrgId } : currentOrgContext()?.org;
   if (!org || (!partnerOrgId && (org as { kind?: string }).kind !== 'logistic_company')) return;
