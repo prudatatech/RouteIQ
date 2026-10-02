@@ -12,6 +12,8 @@ import {
   Alert, Button, buttonClasses, Card, EmptyState, ErrorState, Page, PageHeader, SearchInput, Skeleton,
 } from '@/components/ui'
 import { formatDate } from '@/utils/display'
+import PostedLoads from '@/components/load-post/PostedLoads'
+import BulkUpload from '@/components/load-post/BulkUpload'
 
 const CLOSED: LoadStage = 'closed'
 
@@ -69,6 +71,9 @@ export default function VendorLoadsPage() {
     enabled: isVendor,
     refetchInterval: 30_000,
   })
+  // Same query as the Posted loads section, so the "No loads yet" message is not shown beside posted loads.
+  const posted = useQuery({ queryKey: ['vendor', 'posted-loads'], queryFn: () => vendorAPI.myPostedLoads(), enabled: isVendor, retry: false })
+  const postedCount = posted.data?.items.length ?? 0
   const invoices = useQuery<VendorInvoice[]>({
     queryKey: ['vendor', 'invoices'],
     queryFn: () => vendorAPI.invoices() as Promise<VendorInvoice[]>,
@@ -123,13 +128,17 @@ export default function VendorLoadsPage() {
 
       <ActionStrip items={items} />
 
+      <PostedLoads enabled={isVendor} />
+
+      <BulkUpload />
+
       {total > 6 && <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />}
 
       {loads.isLoading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
       ) : loads.isError ? (
         <ErrorState title="We could not load your loads" description="Check your connection and try again." onRetry={() => loads.refetch()} />
-      ) : total === 0 ? (
+      ) : total === 0 && postedCount > 0 ? null : total === 0 ? (
         <EmptyState
           title="No loads yet"
           description="Post a load and MargixIndia will accept it, set the price and assign a truck. You can also bid on spare truck space under Return trips."

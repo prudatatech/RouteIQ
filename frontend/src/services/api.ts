@@ -5,10 +5,18 @@ import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
 import type { ShipmentOverview } from '@/components/shipments/types'
+import type {
+  ClosedSettlement, DispatchCheck, DocumentHistory, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, LoadDocumentsResponse,
+  LoadTimelineResponse, Settlement, UploadUrl,
+} from '@/types/loadDocuments'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
+import type {
+  AssistResult, BulkResult, BusinessProfile, BusinessProfileView, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
+} from '@/types/load'
 
+import type { LoadQuote, LoadQuotesResult, MarketLoad, MarketTab, MyQuote, QuoteInput } from '@/types/routing'
 import type { Membership, OrgMember, OrgPage, OrgProfile, OrgProfileInput, OrgRegistration, OrgRole, OrgRow } from '@/utils/orgs'
 
 let baseURL = import.meta.env.VITE_API_URL || 'https://api.margixindia.com/api/v1';
@@ -512,6 +520,26 @@ export const publicAPI = {
   /** City suggestions for a lane search. */
   cities: (q: string) =>
     publicClient.get('/public/cities', { params: { q } }).then(r => ensureArray(r.data?.cities).filter((c): c is string => typeof c === 'string' && c.length > 0)),
+  /** HSN suggestions for what the person typed (at least 3 characters), up to 8. */
+  hsnSearch: (q: string, signal?: AbortSignal) =>
+    publicClient.get('/public/hsn/search', { params: { q }, signal }).then(r => ensureArray(r.data?.items) as HsnHit[]),
+  /** One HSN code with its rate or rates; null when the code is not in the master. */
+  hsn: (code: string) =>
+    publicClient.get(`/public/hsn/${encodeURIComponent(code)}`)
+      .then(r => (r.data?.item ?? r.data) as HsnHit)
+      .catch(err => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err }),
+  /** The state a 6-digit pin code is in; null when it is not known. */
+  pincode: (pin: string) =>
+    publicClient.get(`/public/pincode/${encodeURIComponent(pin)}`)
+      .then(r => r.data as PincodeInfo)
+      .catch(err => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err }),
+  vehicleClasses: () =>
+    publicClient.get('/public/vehicle-classes').then(r => ensureArray(r.data?.items ?? r.data) as VehicleClass[]),
+  goodsCategories: () =>
+    publicClient.get('/public/goods-categories').then(r => ensureArray(r.data?.items ?? r.data) as GoodsCategory[]),
+  /** Totals, tax, e-way, suggestions and the estimate for a load being filled in. Writes nothing. */
+  loadAssist: (draft: LoadPayload, signal?: AbortSignal) =>
+    publicClient.post('/public/loads/assist', draft, { signal }).then(r => r.data as AssistResult),
   /** The live-location page behind a shared link. No sign-in header, short timeout. */
   vehicleShare: (token: string) => axios
     .get(`${baseURL}/public/vehicle-share/${encodeURIComponent(token)}`, { timeout: 20_000 })
@@ -546,6 +574,29 @@ export const capacityAPI = {
   rejectBid: (id: string, reason: string) => api.post(`/capacity/bids/${id}/reject`, { reason }).then(r => r.data),
 }
 
+/** The server sends null for what is not filled in; the form wants text. */
+function fromServerProfile(d: Record<string, unknown> | null | undefined): BusinessProfileView {
+  const s = (v: unknown) => (typeof v === 'string' ? v : '')
+  const p = d ?? {}
+  return {
+    full_name: s(p.full_name), business_name: s(p.business_name),
+    account_type: p.account_type === 'business_partner' ? 'business_partner' : 'customer',
+    gstin: s(p.gstin), address: s(p.address), pincode: s(p.pincode), state_code: s(p.state_code), email: s(p.email),
+    business_type: s(p.business_type) as BusinessProfile['business_type'],
+    monthly_loads: s(p.monthly_loads) as BusinessProfile['monthly_loads'],
+    state: s(p.state), complete: p.complete === true, gstin_status: typeof p.gstin_status === 'string' ? p.gstin_status : null,
+  }
+}
+
+/** The server's enums reject an empty string, so an unchosen option goes as null. */
+function toServerProfile(b: BusinessProfile) {
+  return {
+    full_name: b.full_name, business_name: b.business_name || null, account_type: b.account_type, gstin: b.gstin || null,
+    address: b.address, pincode: b.pincode, ...(b.state_code ? { state_code: b.state_code } : {}), email: b.email.trim() || null,
+    business_type: b.business_type || null, monthly_loads: b.monthly_loads || null,
+  }
+}
+
 export const vendorAPI = {
   profile: () => api.get('/vendor/profile').then(r => r.data),
   /** Create or update the company profile without submitting KYC (status stays as it is, "pending" for a new profile). */
@@ -577,11 +628,121 @@ export const vendorAPI = {
   loads: () => api.get('/vendor/loads').then(r => ensureArray(r.data)),
   /** One load with where it is, lots, proof of delivery, problems in plain words, claims and whether a claim can be raised. */
   load: (id: string) => api.get(`/vendor/loads/${encodeURIComponent(id)}`).then(r => r.data),
+  /** Posts a load. The same client_request_id returns the first load instead of a second one. */
+  postLoad: (body: LoadPayload) => api.post('/vendor/loads', body).then(r => r.data as PostedLoad),
+  /** The CSV template for a bulk upload, fetched with the sign-in header. */
+  bulkTemplate: () => api.get('/vendor/loads/template.csv', { responseType: 'blob' }).then(r => r.data as Blob),
+  /** Posts one load per CSV row (up to 50). `csv` is the file's text. */
+  bulkPost: (csv: string, fileName?: string) =>
+    api.post('/vendor/loads/bulk', { csv, ...(fileName ? { file_name: fileName } : {}) }).then(r => r.data as BulkResult),
+  /** The vendor's posted loads, newest first. */
+  myPostedLoads: (params: { page?: number } = {}) =>
+    api.get('/vendor/loads/mine', { params }).then(r => {
+      const d = r.data
+      const items = (Array.isArray(d) ? d : ensureArray(d?.items)) as LoadSummary[]
+      return { items, total: d?.total, page: d?.page } as LoadListPage
+    }),
+  /** { draft }: a copy of a posted load with the dates and client_request_id null. Creates nothing. */
+  repostLoad: (id: string) =>
+    api.post(`/vendor/loads/${encodeURIComponent(id)}/repost`).then(r => r.data.draft as Partial<LoadPayload>),
+  businessProfile: () => api.get('/vendor/business-profile').then(r => fromServerProfile(r.data)),
+  saveBusinessProfile: (body: BusinessProfile) =>
+    api.put('/vendor/business-profile', toServerProfile(body)).then(r => fromServerProfile(r.data)),
   assignVehicle: (id: string, data: { vehicle_id: string, cost?: number, cost_per_km?: number }) =>
     api.put(`/vendor/shipment-request/${id}/assign-vehicle`, data).then(r => r.data),
+  /** The quotes companies sent on one of the vendor's loads, with the deadline and the award once made. */
+  loadQuotes: (loadId: string) =>
+    api.get(`/vendor/loads/${encodeURIComponent(loadId)}/quotes`).then(r => toQuotesResult(r.data)),
+  /** Awards the load to this quote. Atomic: only one award can happen. */
+  acceptQuote: (loadId: string, quoteId: string) =>
+    api.post(`/vendor/loads/${encodeURIComponent(loadId)}/quotes/${encodeURIComponent(quoteId)}/accept`).then(r => r.data),
+}
+
+/** Accepts a bare list or { items | quotes, quote_deadline, quote_requested, awarded }. */
+function toQuotesResult(d: unknown): LoadQuotesResult {
+  const o = (Array.isArray(d) ? { items: d } : (d ?? {})) as Record<string, unknown>
+  const quotes = ensureArray(o.items ?? o.quotes) as LoadQuote[]
+  const raw = (o.awarded ?? null) as { company_name?: string; amount_inr?: number; quote_id?: string } | null
+  const won = quotes.find(q => q.status === 'accepted')
+  const awarded = raw?.company_name
+    ? { company_name: raw.company_name, amount_inr: Number(raw.amount_inr ?? 0), quote_id: raw.quote_id ?? null }
+    : won ? { company_name: won.company_name, amount_inr: Number(won.amount_inr), quote_id: won.id } : null
+  const deadline = (o.quote_deadline ?? null) as string | null
+  return { quotes, quote_deadline: deadline, quote_requested: typeof o.quote_requested === 'boolean' ? o.quote_requested : !!deadline, awarded }
+}
+
+/** The loads a logistic company can quote on, by tab. Scoped to the active company. */
+export const companyLoadsAPI = {
+  market: (tab: MarketTab) =>
+    api.get('/company/loads/market', { params: { tab } }).then(r => {
+      const d = r.data
+      return ensureArray(Array.isArray(d) ? d : d?.items) as MarketLoad[]
+    }),
+  /** Creates or replaces this company's quote on the load. */
+  submitQuote: (loadId: string, body: QuoteInput) =>
+    api.post(`/company/loads/${encodeURIComponent(loadId)}/quotes`, body).then(r => r.data as MyQuote),
+  withdrawQuote: (loadId: string) =>
+    api.delete(`/company/loads/${encodeURIComponent(loadId)}/quotes/mine`).then(r => r.data),
+  /** Takes the load at the vendor's budget (or `amount_inr`). Refused when the vendor asked for quotes. */
+  accept: (loadId: string, body: { amount_inr?: number } = {}) =>
+    api.post(`/company/loads/${encodeURIComponent(loadId)}/accept`, body).then(r => r.data),
+}
+
+/** Documents, pre-dispatch check, settlement and timeline of one vendor load (backend-ts/src/routes/load-documents.routes.ts). */
+const loadBase = (id: string) => `/loads/${encodeURIComponent(id)}`
+const docBase = (id: string, docId: string) => `${loadBase(id)}/documents/${encodeURIComponent(docId)}`
+export const loadDocumentsAPI = {
+  list: (id: string): Promise<LoadDocumentsResponse> => api.get(`${loadBase(id)}/documents`).then(r => r.data),
+  /** `size` is in bytes; PDF, JPG or PNG up to 10 MB. Put the file with supabase.storage.from(bucket).uploadToSignedUrl(path, token, file). */
+  uploadUrl: (id: string, data: { kind: string; content_type: string; size: number }): Promise<UploadUrl> =>
+    api.post(`${loadBase(id)}/documents/upload-url`, data).then(r => r.data),
+  create: (id: string, data: DocumentInput): Promise<LoadDocument> =>
+    api.post(`${loadBase(id)}/documents`, data).then(r => r.data),
+  update: (id: string, docId: string, data: DocumentPatch): Promise<LoadDocument> =>
+    api.patch(docBase(id, docId), data).then(r => r.data),
+  generate: (id: string, kind: GenerateKind): Promise<LoadDocument> =>
+    api.post(`${loadBase(id)}/documents/generate/${kind}`).then(r => r.data),
+  /**
+   * A generated document streams as application/pdf (returned as a blob); an uploaded file answers { url, expires_in }.
+   * Fetched with the sign-in header either way.
+   */
+  pdf: async (id: string, docId: string): Promise<{ blob: Blob } | { url: string }> => {
+    const res = await api.get(`${docBase(id, docId)}/pdf`, { responseType: 'blob' })
+    const blob = res.data as Blob
+    if (String(blob.type).includes('application/json')) {
+      const body = JSON.parse(await blob.text()) as { url?: string }
+      if (!body.url) throw new Error('The file is not available')
+      return { url: body.url }
+    }
+    return { blob }
+  },
+  history: (id: string, docId: string): Promise<DocumentHistory> => api.get(`${docBase(id, docId)}/history`).then(r => r.data),
+  dispatchCheck: (id: string): Promise<DispatchCheck> => api.get(`${loadBase(id)}/dispatch-check`).then(r => r.data),
+  /** The settlement, or null when none is opened (the API answers 404). */
+  settlement: (id: string): Promise<Settlement | null> =>
+    api.get(`${loadBase(id)}/settlement`).then(r => r.data as Settlement).catch(err => {
+      if (err?.response?.status === 404) return null
+      throw err
+    }),
+  openSettlement: (id: string, data?: { agreed_freight?: number; advance_paid?: number; payment_terms?: Settlement['payment_terms'] }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement`, data ?? {}).then(r => r.data),
+  addExtraCharge: (id: string, data: { label: string; amount: number }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/extra-charges`, data).then(r => r.data),
+  approveExtraCharge: (id: string, idx: number): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/extra-charges/${idx}/approve`).then(r => r.data),
+  addDeduction: (id: string, data: { label: string; amount: number; reason: string }): Promise<Settlement> =>
+    api.post(`${loadBase(id)}/settlement/deductions`, data).then(r => r.data),
+  closeSettlement: (id: string, data?: { payment_status?: Settlement['payment_status'] }): Promise<ClosedSettlement> =>
+    api.post(`${loadBase(id)}/settlement/close`, data ?? {}).then(r => r.data),
+  timeline: (id: string): Promise<LoadTimelineResponse> => api.get(`${loadBase(id)}/timeline`).then(r => r.data),
 }
 
 export const authAPI = {
+  /** Texts a 6-digit code to a vendor's phone. No sign-in needed. */
+  vendorSendOtp: (phone: string) => publicClient.post('/auth/vendor/send-otp', { phone }).then(r => r.data),
+  /** Checks the code; the answer carries a session to hand to supabase.auth.setSession. */
+  vendorVerifyOtp: (phone: string, otp: string) =>
+    publicClient.post('/auth/vendor/verify-otp', { phone, otp }).then(r => r.data as VendorSession),
   inviteVendor: (email: string, password: string) =>
     api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }

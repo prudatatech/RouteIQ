@@ -4,6 +4,7 @@
  * stage; this file only words it and decides what the vendor should do next.
  */
 import { formatPieces, formatRupees } from '@/utils/display'
+import type { LoadItem } from '@/types/load'
 import type { KycStatus } from './vendorContext'
 
 export const LOAD_STAGES = ['waiting', 'accepted', 'assigned', 'on_the_way', 'delivered', 'closed'] as const
@@ -103,6 +104,11 @@ export interface VendorLoadDetail extends Omit<VendorLoad, 'problems'> {
   problems: LoadProblem[]
   claims: LoadClaimSummary[]
   claim_window: { allowed: boolean; reason: string | null; until: string | null }
+  /** The posted load itself (GET /vendor/loads/:id answers { ...board fields, load, items }). */
+  load?: { id: string; load_number: string | null; status?: string }
+  load_number?: string | null
+  /** Its goods lines. */
+  items?: LoadItem[]
 }
 
 export interface VendorInvoice {

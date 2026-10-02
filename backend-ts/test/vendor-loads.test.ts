@@ -133,6 +133,15 @@ describe('GET /vendor/loads/:id', () => {
     expect((await get('/vendor/loads/not-a-uuid')).status).toBe(404);
   });
 
+  it('shows the MRX load number as the load code, on the board and on its page; REQ- only when there is none', async () => {
+    const board = Object.fromEntries((await get('/vendor/loads')).body.map((l: any) => [l.id, l]));
+    expect(board[POSTED].code).toMatch(/^REQ-/);
+    Object.assign(supabaseMock.rows('vendor_shipment_requests').find(r => r.id === POSTED)!, { load_number: 'MRX-2026-00007' });
+    const after = Object.fromEntries((await get('/vendor/loads')).body.map((l: any) => [l.id, l]));
+    expect(after[POSTED].code).toBe('MRX-2026-00007');
+    expect((await get(`/vendor/loads/${POSTED}`)).body.code).toBe('MRX-2026-00007');
+  });
+
   it('gives a load waiting to be accepted with no truck, record or claim yet', async () => {
     const res = await get(`/vendor/loads/${POSTED}`);
     expect(res.status).toBe(200);

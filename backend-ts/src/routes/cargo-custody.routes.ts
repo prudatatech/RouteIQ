@@ -13,6 +13,7 @@ import { idempotent } from '../core/idempotency';
 import { rateLimitByUser } from '../core/rate-limit';
 import { STAFF_ROLES, getDriverVehicleIds, isStaff, requireVehicleAccess } from '../core/ownership';
 import { supabase } from '../core/supabase';
+import { assertDispatchReady } from '../services/documents/dispatch-guard';
 import {
   CONDITIONS, RefSchema, assertCanAct, assertCanView, assertCompanyConsignment, driverVehicleId, resolveRef, type Actor,
 } from '../services/cargo/consignment';
@@ -99,6 +100,10 @@ router.post('/custody', requireAuth, requireRole('driver', ...STAFF_ROLES), idem
     const body = parse(CustodySchema, req.body);
     const c = await resolveRef(body.ref);
     await assertCanAct(req.user!, c);
+    // The goods leave with a vendor load's pickup or departure: same dispatch block as completing the pickup stop
+    if ((body.kind === 'pickup' || body.kind === 'departed') && c.kind === 'manifest' && c.row.vendor_request_id && c.rawStatus !== 'in_transit') {
+      await assertDispatchReady(c.row.vendor_request_id);
+    }
     const { ref: _ref, ...input } = body;
     res.status(201).json(await recordCustody(c, input as CustodyInput, actorOf(req), { via: 'api' }));
   } catch (e) {

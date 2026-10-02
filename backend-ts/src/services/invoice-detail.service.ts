@@ -12,7 +12,7 @@ import { HttpError } from '../core/errors';
 import { isUuid } from '../core/validate';
 import { isStaff } from '../core/ownership';
 import type { TokenData } from '../core/auth';
-import { stateOf } from '../core/gst';
+import { FREIGHT_SAC, gtaTerms, stateOf } from '../core/gst';
 import { indianDateKey } from '../core/istDate';
 import { rupeesInWords } from '../core/words';
 import { finalDeliveryPoint } from '../core/destination';
@@ -50,12 +50,14 @@ export interface InvoiceRecord {
   price_source: string | null;
   /** The billed party as it was when the invoice was issued (null on invoices issued before it was stored). */
   bill_to?: unknown;
+  /** How the freight GST was charged (rcm_5, fcm_5, fcm_18); null on invoices issued before this was recorded. */
+  tax_mode?: string | null;
   /** The company that issued it; null on invoices from before companies existed. */
   issuer_org_id?: string | null;
 }
 
 export const INVOICE_COLUMNS =
-  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source, bill_to, issuer_org_id';
+  'id, invoice_number, shipment_id, manifest_id, vendor_request_id, vendor_id, amount, gst_rate, gst_amount, total, status, issued_at, due_date, paid_at, voided_at, payment_method, payment_reference, void_reason, price_source, bill_to, issuer_org_id, tax_mode';
 
 /**
  * The due date shown for an invoice: the one saved on issue, or (for invoices issued before due dates
@@ -110,7 +112,11 @@ export interface InvoiceDetail extends InvoiceRecord {
   lines: Array<{ description: string; sac_code: string | null; quantity: number; unit_price: number; amount: number }>;
   goods: Array<{ hsn_code: string | null; description: string | null; gst_rate: number | null }>;
   tax: InvoiceTax;
+  /** Set when the invoice charges no GST because the recipient pays it under reverse charge (tax_mode rcm_5). */
+  reverse_charge: { applies: boolean; rate: number; note: string | null };
   total_in_words: string;
+  /** The MRX load number, when the invoice links to a vendor request that has one. */
+  load_number: string | null;
   links: {
     /** The consignment the page /shipments/:id opens: a shipment, a vendor load or a vendor request. */
     shipment: { id: string; code: string } | null;
@@ -119,6 +125,13 @@ export interface InvoiceDetail extends InvoiceRecord {
     requester: { kind: string; id: string | null; name: string | null } | null;
     trip: { id: string; status: string } | null;
   };
+}
+
+/** The reverse-charge statement for an invoice issued under reverse charge; nothing for the other options and for older invoices. */
+export function reverseChargeOf(taxMode: string | null | undefined): InvoiceDetail['reverse_charge'] {
+  if (taxMode !== 'rcm_5') return { applies: false, rate: 0, note: null };
+  const { reverse_charge_rate: rate } = gtaTerms('rcm_5');
+  return { applies: true, rate, note: `Tax payable on reverse charge: Yes. GST ${rate}% is payable by the recipient.` };
 }
 
 export function computeTax(amount: number, rate: number, gstAmount: number, sellerState: string | null, buyerState: string | null): InvoiceTax {
@@ -170,6 +183,18 @@ export async function loadInvoiceFor(id: string, user: TokenData): Promise<Invoi
   throw new HttpError(404, 'Invoice not found');
 }
 
+/** The MRX load number of the vendor request the invoice is for (directly, or through its manifest). */
+async function loadNumberOf(inv: Pick<InvoiceRecord, 'vendor_request_id' | 'manifest_id'>, fallbackRequestId: string | null): Promise<string | null> {
+  let requestId = inv.vendor_request_id ?? fallbackRequestId;
+  if (!requestId && inv.manifest_id) {
+    const { data } = await supabase.from('cargo_manifest').select('vendor_request_id').eq('id', inv.manifest_id).maybeSingle();
+    requestId = (data as any)?.vendor_request_id ?? null;
+  }
+  if (!requestId) return null;
+  const { data } = await supabase.from('vendor_shipment_requests').select('load_number').eq('id', requestId).maybeSingle();
+  return (data as any)?.load_number ?? null;
+}
+
 export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDetail> {
   // The seller is the company that issued the invoice, whoever opens it (an invoice from before companies: the default one)
   const company = await getCompanyProfile(inv.issuer_org_id ?? (await defaultCompanyId()));
@@ -195,11 +220,14 @@ export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDet
   const code = overview?.code ?? null;
   const description = ['Freight (road transport of goods)', code ? `shipment ${code}` : null, route].filter(Boolean).join(', ');
 
+  // Goods lines: a booking's shipment, or a vendor load's manifest / the load itself (copied there at assignment)
   let goods: InvoiceDetail['goods'] = [];
-  if (inv.shipment_id) {
-    const masterId = row?.parent_shipment_id ?? inv.shipment_id;
-    const { data: hsn } = await supabase.from('shipment_hsn').select('hsn_code, description, gst_rate').eq('shipment_id', masterId);
-    goods = (hsn ?? []).map((h: any) => ({ hsn_code: h.hsn_code ?? null, description: h.description ?? null, gst_rate: h.gst_rate != null ? Number(h.gst_rate) : null }));
+  const goodsBy: [string, string] | null = inv.shipment_id ? ['shipment_id', row?.parent_shipment_id ?? inv.shipment_id]
+    : inv.manifest_id ? ['manifest_id', inv.manifest_id]
+    : inv.vendor_request_id ? ['load_id', inv.vendor_request_id] : null;
+  if (goodsBy) {
+    const { data: hsn } = await supabase.from('shipment_hsn').select('hsn_code, description, product_name, gst_rate').eq(goodsBy[0], goodsBy[1]);
+    goods = (hsn ?? []).map((h: any) => ({ hsn_code: h.hsn_code ?? null, description: h.description ?? h.product_name ?? null, gst_rate: h.gst_rate != null ? Number(h.gst_rate) : null }));
   }
 
   const amount = Number(inv.amount ?? 0);
@@ -219,10 +247,12 @@ export async function buildInvoiceDetail(inv: InvoiceRecord): Promise<InvoiceDet
     seller: { ...company, state_code: sellerState.code, state_name: sellerState.name },
     seller_gaps: companyGaps(company),
     buyer,
-    lines: [{ description, sac_code: company.sac_code, quantity: 1, unit_price: amount, amount }],
+    lines: [{ description, sac_code: company.sac_code ?? FREIGHT_SAC, quantity: 1, unit_price: amount, amount }],
     goods,
     tax,
+    reverse_charge: reverseChargeOf(inv.tax_mode),
     total_in_words: rupeesInWords(total),
+    load_number: await loadNumberOf(inv, overview?.requester.kind === 'vendor_load' ? overview.requester.id : null),
     links: {
       shipment: ref && overview ? { id: ref, code: overview.code } : null,
       manifest_id: inv.manifest_id,

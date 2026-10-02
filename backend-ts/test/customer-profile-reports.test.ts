@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
-import { ID, auth, cargoWorld, notesFor, one } from './support/cargo-world';
+import { COMPANY_SETTING_FCM18, ID, auth, cargoWorld, notesFor, one } from './support/cargo-world';
 import { InvoiceService } from '../src/services/invoice.service';
 import { customerDisplayName } from '../src/core/customer-name';
 
@@ -127,7 +127,7 @@ describe('staff view and edit a customer\'s profile', () => {
 
 describe('invoices use the customer profile (bill_to and the GST split)', () => {
   const issued = () => supabaseMock.rows('invoices').find(i => i.shipment_id === ID.s1)!;
-  const deliver = () => { world({ invoices: [] }); Object.assign(one('shipments', ID.s1), { status: 'delivered', freight_charge: 10000 }); supabaseMock.rows('shipment_hsn').splice(0); supabaseMock.rows('shipment_hsn').push({ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 18 }); };
+  const deliver = () => { world({ invoices: [], system_settings: [COMPANY_SETTING_FCM18] }); Object.assign(one('shipments', ID.s1), { status: 'delivered', freight_charge: 10000 }); supabaseMock.rows('shipment_hsn').splice(0); supabaseMock.rows('shipment_hsn').push({ id: 'h1', shipment_id: ID.s1, hsn_code: '8471', gst_rate: 18 }); };
 
   it('bills the company with GSTIN and address, and splits CGST + SGST for a buyer in the seller\'s state', async () => {
     deliver();

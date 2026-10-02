@@ -55,13 +55,25 @@ if [[ "$MODE" == "--stamp-all" ]]; then
   echo "recorded ${#pending[@]} files as applied (nothing was run)"; exit 0
 fi
 
+# Dry run: every pending file in ONE transaction, in order, then roll back. A later file can depend on an earlier
+# pending one (a table it creates), exactly as when they are applied for real.
+if [[ "$MODE" == "--dry-run" ]]; then
+  if [[ ${#pending[@]} -gt 0 ]]; then
+    log="$(mktemp)"
+    if ! { echo "SET lock_timeout = '5s'; BEGIN;"
+           # each file starts as the login role, as it does when applied on its own (a file may SET LOCAL ROLE)
+           for f in "${pending[@]}"; do echo "RESET ROLE;"; echo "\\echo 'checking  $(basename "$f")'"; cat "$f"; echo; done
+           echo "ROLLBACK;"; } | run >"$log"; then
+      echo "FAILED in $(grep '^checking' "$log" | tail -1 | sed 's/^checking  //')" >&2
+      exit 3
+    fi
+    grep '^checking' "$log" | sed 's/^checking/ok (rolled back)/'
+  fi
+  exit 0
+fi
+
 for f in "${pending[@]}"; do
   name="$(basename "$f")"
-  if [[ "$MODE" == "--dry-run" ]]; then
-    { echo "SET lock_timeout = '5s'; BEGIN;"; cat "$f"; echo "ROLLBACK;"; } | run >/dev/null
-    echo "ok (rolled back)  $name"
-  else
-    { echo "SET lock_timeout = '5s'; BEGIN;"; cat "$f"; echo "INSERT INTO public.app_migrations (name) VALUES ('$name');"; echo "COMMIT;"; } | run >/dev/null
-    echo "applied  $name"
-  fi
+  { echo "SET lock_timeout = '5s'; BEGIN;"; cat "$f"; echo "INSERT INTO public.app_migrations (name) VALUES ('$name');"; echo "COMMIT;"; } | run >/dev/null
+  echo "applied  $name"
 done

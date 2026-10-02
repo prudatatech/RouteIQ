@@ -15,3 +15,13 @@ export function normalizePhone(raw: unknown): string | null {
   }
   return phone.replace(/\D/g, '').length >= 10 ? phone : null;
 }
+
+/**
+ * A strict Indian mobile number as +91XXXXXXXXXX; null when it is not one.
+ * Spaces and dashes are ignored; 10 digits starting 6-9, optionally prefixed by +91, 91 or 0.
+ */
+export function normalizeIndianMobile(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const m = raw.replace(/[\s-]+/g, '').match(/^(?:\+91|91|0)?([6-9][0-9]{9})$/);
+  return m ? `+91${m[1]}` : null;
+}

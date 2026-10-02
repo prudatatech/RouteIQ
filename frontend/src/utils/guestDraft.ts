@@ -9,7 +9,7 @@ const PREFIX = 'margix:guest-draft:'
 export const GUEST_DRAFT_TTL_MS = 24 * 60 * 60 * 1000
 
 /** What a draft is for. One slot per kind. */
-export type GuestDraftKind = 'request' | 'bid'
+export type GuestDraftKind = 'request' | 'bid' | 'load'
 
 interface Stored<T> { savedAt: number; data: T }
 

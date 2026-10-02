@@ -1,14 +1,19 @@
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Check, ExternalLink, Truck, X } from 'lucide-react'
-import { Alert, Button, DetailList, Drawer, StatusPill, humanize } from '@/components/ui'
+import { Alert, Button, DetailList, Drawer, StatusPill, TabPanel, Tabs, humanize } from '@/components/ui'
 import { buttonClasses } from '@/components/ui/buttonStyles'
 import { EscalationPanel } from '@/components/tpl/EscalationPanel'
 import VendorLoadCargo from '@/components/cargo/VendorLoadCargo'
 import { supabase } from '@/services/supabase'
 import type { CustomerBooking } from '@/services/api'
 import { formatDate, formatDateTime, formatKg, formatRelative, formatRupees } from '@/utils/display'
+import { LoadDocumentsPanel } from '@/components/load-documents/LoadDocumentsPanel'
+import QuotePanel from './QuotePanel'
 import { CustomerDetailsBlock } from './CustomerProfileEditor'
+import PostedLoadDetails from './PostedLoadDetails'
+import { plainText, specialHandlingLabels, type PostedLoadFields } from './postedLoad'
 import { bookingNeedsVehicle, customerName, customerRow, loadNeedsVehicle, shipmentHref, shortPlace, vendorName, vendorRow, type VendorRequest } from './model'
 
 /** Link that looks like a secondary button. */
@@ -133,6 +138,10 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
   const open = !!request && (request.status === 'pending' || request.status === 'approved')
   const showPartners = !!request && ['pending', 'approved', 'escalated', 'assigned_to_partner', 'completed'].includes(request.status)
   const assignedPlate = useAssignedPlate(request?.assigned_vehicle_id)
+  // Documents are for loads we have taken on: not while the request is new or after it was turned down
+  const showDocs = !!request && request.status !== 'pending' && request.status !== 'rejected'
+  const [tab, setTab] = useState<'details' | 'documents'>('details')
+  useEffect(() => { setTab('details') }, [request?.id])
   const row = request ? vendorRow(request) : null
   const shipment = row ? shipmentHref(row) : null
   const cargo = request?.metadata?.cargo
@@ -146,7 +155,7 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
       open={!!request}
       onClose={onClose}
       title={request ? vendorName(request) : 'Load'}
-      description={request ? `${shortPlace(request.pickup_location)} to ${shortPlace(request.drop_location)}` : undefined}
+      description={request ? `${request.load_number ? `${request.load_number} · ` : ''}${shortPlace(request.pickup_location)} to ${shortPlace(request.drop_location)}` : undefined}
       footer={request && (open || shipment) ? (
         <>
           {open && <Button variant="secondary" icon={<X size={16} />} disabled={busy} loading={rejecting} onClick={() => onReject(request)}>Reject request</Button>}
@@ -160,7 +169,21 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
         </>
       ) : undefined}
     >
-      {request && (
+      {request && showDocs && (
+        <Tabs
+          className="mb-4"
+          label="Load sections"
+          value={tab}
+          onChange={setTab}
+          tabs={[{ id: 'details', label: 'Details' }, { id: 'documents', label: 'Documents' }]}
+        />
+      )}
+      {request && showDocs && tab === 'documents' && (
+        <TabPanel id="documents">
+          <LoadDocumentsPanel key={request.id} loadId={request.id} role="carrier" />
+        </TabPanel>
+      )}
+      {request && !(showDocs && tab === 'documents') && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-2">
             {row && <StatusPill tone={row.statusTone}>{row.statusLabel}</StatusPill>}
@@ -177,6 +200,8 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
             </Alert>
           )}
 
+          <QuotePanel key={request.id} loadId={request.id} status={request.status} />
+
           <DetailList
             items={[
               { label: 'Vendor', value: request.vendor_id ? <Link to={`/admin/users/${encodeURIComponent(request.vendor_id)}`} className="underline">{vendorName(request)}</Link> : vendorName(request) },
@@ -185,17 +210,19 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
               { label: 'Weight', value: <span className="tabular">{formatKg(request.required_capacity_kg)}</span> },
               ...(request.metadata?.offered_price_inr ? [{ label: 'Vendor’s price', value: <span className="tabular">{formatRupees(request.metadata.offered_price_inr)}</span> }] : []),
               { label: 'Vendor city', value: request.vendor?.city ?? 'Not given' },
-              ...(cargo?.name || cargo?.category ? [{ label: 'Goods', value: [cargo.name, cargo.category].filter(Boolean).join(' · ') }] : []),
+              ...(plainText(cargo?.name) || plainText(cargo?.category) ? [{ label: 'Goods', value: [plainText(cargo?.name), plainText(cargo?.category)].filter(Boolean).join(' · ') }] : []),
               ...(cargo?.noOfPackages ? [{ label: 'Packages', value: `${Number(cargo.noOfPackages).toLocaleString('en-IN')}${cargo.packagingType ? ` · ${cargo.packagingType}` : ''}` }] : []),
               ...(declared ? [{ label: 'Declared value', value: declared }] : []),
-              ...(cargo?.specialHandling ? [{ label: 'Special handling', value: cargo.specialHandling }] : []),
+              ...(specialHandlingLabels(cargo?.specialHandling).length > 0 ? [{ label: 'Special handling', value: specialHandlingLabels(cargo?.specialHandling).join(', ') }] : []),
               ...(consignee?.name ? [{ label: 'Receiver', value: [consignee.name, consignee.contact].filter(Boolean).join(' · ') }] : []),
-              ...(cargo?.remarks ? [{ label: 'Notes', value: cargo.remarks }] : []),
+              ...(plainText(cargo?.remarks) ? [{ label: 'Notes', value: plainText(cargo?.remarks) }] : []),
               { label: 'Posted', value: formatDateTime(request.created_at) },
               ...(request.assigned_vehicle_id ? [{ label: 'Vehicle', value: <span className="font-mono">{assignedPlate ?? 'Assigned'}</span> }] : []),
               ...(request.cost ? [{ label: 'Agreed price', value: <span className="tabular">{formatRupees(request.cost)}{request.cost_per_km ? ` (${formatRupees(request.cost_per_km)} per km)` : ''}</span> }] : []),
             ]}
           />
+
+          {request.load_number && <PostedLoadDetails request={request as { id: string } & Partial<PostedLoadFields>} />}
 
           {request.assigned_vehicle_id && <VendorLoadCargo key={request.id} requestId={request.id} />}
 

@@ -27,8 +27,8 @@ const month = (() => { const d = new Date(Date.now() + 330 * 60_000); return `${
 const orgRows = (profiles: Record<string, Record<string, unknown>>) =>
   ORGS.map(o => ({ ...o, profile: profiles[o.id] ?? {} }));
 
-const ALPHA = { legal_name: 'Alpha Logistics Pvt Ltd', gstin: SELLER_MH, state: 'Maharashtra', address: 'Plot 1, Pune', sac_code: '996511', payment_terms_days: 30 };
-const BETA = { legal_name: 'Beta Freight LLP', gstin: SELLER_GJ, state: 'Gujarat', address: 'Unit 9, Surat', sac_code: '996512', payment_terms_days: 7 };
+const ALPHA = { legal_name: 'Alpha Logistics Pvt Ltd', gstin: SELLER_MH, state: 'Maharashtra', address: 'Plot 1, Pune', sac_code: '996511', payment_terms_days: 30, gta_gst_option: 'fcm_18' };
+const BETA = { legal_name: 'Beta Freight LLP', gstin: SELLER_GJ, state: 'Gujarat', address: 'Unit 9, Surat', sac_code: '996512', payment_terms_days: 7, gta_gst_option: 'fcm_18' };
 
 /** Two delivered shipments per company, each with a won bid by the one vendor, billed at 18% GST. */
 function twoCompanyWorld(profiles = { [ORG.companyA]: { ...ALPHA, invoice_prefix: 'ALP' }, [ORG.companyB]: BETA }, buyerGstin = BUYER_MH) {

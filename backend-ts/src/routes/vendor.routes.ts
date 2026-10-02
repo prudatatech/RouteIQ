@@ -10,6 +10,13 @@ import { manifestParcelCode } from '../core/parcelCode';
 import { HttpError, parseRejectionReason, sendError } from '../core/errors';
 import { parseUuid, uuidParam } from '../core/validate';
 import { rateLimitByUser } from '../core/rate-limit';
+import { idempotent } from '../core/idempotency';
+import { BusinessProfileSchema, LoadDraftSchema, LoadsMineQuery } from '../schemas/loads';
+import {
+  bulkTemplateCsv, callerOf, createLoad, getPostedLoad, listMyLoads, repostDraft, runBulk,
+} from '../services/loads/loads.service';
+import { getBusinessProfile, saveBusinessProfile } from '../services/loads/business-profile.service';
+import { acceptQuote, listVendorQuotes } from '../services/loads/order-routing';
 import {
   KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
@@ -129,11 +136,122 @@ router.get('/loads', requireAuth, requireRole('vendor'), async (req: any, res: a
   }
 });
 
-// One of the vendor's loads: where it is, its lots, proof of delivery, problems, claims and invoice
-router.get('/loads/:id', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+// ── Posting a load (docs/load-posting-design.md section 2) ──
+// Route order matters: /loads/mine, /loads/template.csv and /loads/bulk are literal paths and sit before /loads/:id.
+
+// Post a load: the server recomputes totals, tax and e-way need. Allowed before KYC approval (the load waits for verification).
+router.post('/loads', requireAuth, requireRole('vendor'), rateLimitByUser('vendor-load-post', 60, 60 * 60), idempotent('vendor-load'), async (req: any, res: any) => {
   try {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) throw new HttpError(404, 'Load not found');
-    res.json(await vendorLoadDetail(req.user.user_id, req.params.id));
+    const input = parseBody(LoadDraftSchema, req.body);
+    const out = await createLoad(callerOf(req), input);
+    res.status(out.duplicate ? 200 : 201).json({
+      id: out.load.id,
+      load_number: out.load.load_number,
+      status: out.load.status,
+      duplicate: out.duplicate,
+      status_note: out.status_note,
+      load: out.load,
+      items: out.items,
+      assessment: out.assessment,
+    });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The vendor organisation's posted loads, newest first (paged: ?page=1&page_size=20&status=pending)
+router.get('/loads/mine', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    const q = parseBody(LoadsMineQuery, req.query);
+    res.json(await listMyLoads(callerOf(req), q.page, q.page_size, q.status));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The CSV template for a bulk upload
+router.get('/loads/template.csv', requireAuth, requireRole('vendor'), (_req: any, res: any) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="margix-bulk-loads-template.csv"');
+  res.send(bulkTemplateCsv());
+});
+
+// Bulk upload: { file_name?, csv } with up to 50 rows, one load per row. Valid rows are posted, the report lists the errors.
+router.post('/loads/bulk', requireAuth, requireRole('vendor'), rateLimitByUser('vendor-load-bulk', 10, 60 * 60), async (req: any, res: any) => {
+  try {
+    const { file_name, csv } = req.body ?? {};
+    if (typeof csv !== 'string' || !csv.trim()) throw new HttpError(400, 'Send the file contents as csv text');
+    if (csv.length > 500_000) throw new HttpError(400, 'The file is too large');
+    const name = typeof file_name === 'string' ? file_name.slice(0, 200) : null;
+    res.status(201).json(await runBulk(callerOf(req), name, csv));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// A posted load as a draft for the form (dates cleared). Creates nothing.
+router.post('/loads/:id/repost', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json({ draft: await repostDraft(callerOf(req), uuidParam(req.params.id, 'Load not found')) });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The quotes on the vendor's load: company name and completed trips, amount, validity, ETA, notes (withdrawn ones are left out)
+router.get('/loads/:id/quotes', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await listVendorQuotes(callerOf(req), uuidParam(req.params.id, 'Load not found')));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Pick a quote: awards the load to that company (atomic, only one award can happen), declines the other quotes
+router.post('/loads/:id/quotes/:quoteId/accept', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await acceptQuote(callerOf(req), uuidParam(req.params.id, 'Load not found'), uuidParam(req.params.quoteId, 'Quote not found')));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// One load. A posted load answers { ...board fields (vendor only), load, items }. A load the caller may not see (not their
+// vendor organisation, not the carrier of its manifest, not a platform admin) is a 404. Return-trip space (a bid) keeps its old shape.
+router.get('/loads/:id', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req: any, res: any) => {
+  try {
+    const id = uuidParam(req.params.id, 'Load not found');
+    const caller = callerOf(req);
+    const posted = await getPostedLoad(caller, id);
+    if (!posted) {
+      if (caller.role !== 'vendor') throw new HttpError(404, 'Load not found');
+      res.json(await vendorLoadDetail(caller.userId, id));
+      return;
+    }
+    let board: object = {};
+    if (caller.role === 'vendor') {
+      // getPostedLoad has checked organisation access, so a colleague in the same vendor business sees the poster's board too
+      const poster = (posted.load as { vendor_id?: string | null }).vendor_id ?? caller.userId;
+      try { board = await vendorLoadDetail(poster, id); } catch (e) { if (!(e instanceof HttpError) || e.status !== 404) throw e; }
+    }
+    res.json({ ...board, load: posted.load, items: posted.items });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The vendor's business profile (name, GSTIN, address, email...) and whether it is complete
+router.get('/business-profile', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await getBusinessProfile(callerOf(req)));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+router.put('/business-profile', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await saveBusinessProfile(callerOf(req), parseBody(BusinessProfileSchema, req.body)));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }
@@ -173,7 +291,7 @@ router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), a
 router.put('/shipment-request/:id/approve', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const { cost, cost_per_km } = req.body ?? {};
-    const request = await vendorService.approveRequest(uuidParam(req.params.id, 'Request not found'), cost, cost_per_km);
+    const request = await vendorService.approveRequest(uuidParam(req.params.id, 'Request not found'), cost, cost_per_km, req.user.user_id);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');

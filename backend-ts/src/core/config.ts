@@ -84,8 +84,17 @@ export const settings = {
   OTP_EXPIRY_SECONDS: envInt('OTP_EXPIRY_SECONDS', 300), // 5 minutes
   OTP_LENGTH: envInt('OTP_LENGTH', 6),
 
+  // WhatsApp Cloud API (Meta): the load-posted confirmation. Unset means no WhatsApp messages are sent.
+  WHATSAPP_TOKEN: env('WHATSAPP_TOKEN'),
+  WHATSAPP_PHONE_ID: env('WHATSAPP_PHONE_ID'),
+  WHATSAPP_TEMPLATE_LOAD_POSTED: env('WHATSAPP_TEMPLATE_LOAD_POSTED'),
+  // Same body parameters; sent instead when the vendor's business is not verified yet. Unset: no WhatsApp for those loads (email only).
+  WHATSAPP_TEMPLATE_LOAD_HELD: env('WHATSAPP_TEMPLATE_LOAD_HELD'),
+  WHATSAPP_API_VERSION: env('WHATSAPP_API_VERSION', 'v20.0'),
+
   // KYC / 3PL document uploads (backend-issued signed upload URLs)
   KYC_DOCUMENTS_BUCKET: env('KYC_DOCUMENTS_BUCKET', 'kyc_documents'),
+  LOAD_DOCUMENTS_BUCKET: env('LOAD_DOCUMENTS_BUCKET', 'load_documents'),
   TPL_UPLOAD_MAX_BYTES: envInt('TPL_UPLOAD_MAX_BYTES', 2 * 1024 * 1024),
   TPL_UPLOAD_URLS_PER_HOUR: envInt('TPL_UPLOAD_URLS_PER_HOUR', 30),
   // Expense receipts go in the same private bucket under expenses/

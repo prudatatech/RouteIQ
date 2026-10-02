@@ -112,7 +112,18 @@ export interface CompanyProfile {
   invoice_footer: string | null
   /** Letters invoice numbers start with, e.g. MIL for MIL-202610-0001. Unique per company; null until set or until the first invoice. */
   invoice_prefix: string | null
+  /** How GST on freight is charged on new invoices. Reverse charge 5% (no GST on the invoice) unless the company chooses otherwise. */
+  gta_gst_option: GtaGstOption
 }
+
+export type GtaGstOption = 'rcm_5' | 'fcm_5' | 'fcm_18'
+
+/** The three ways to charge GST on freight, in the words the Settings page uses. */
+export const GTA_GST_OPTIONS: { value: GtaGstOption; label: string }[] = [
+  { value: 'rcm_5', label: 'Customer pays 5% themselves (reverse charge). The invoice shows no GST.' },
+  { value: 'fcm_5', label: 'We charge 5% on the invoice, without input tax credit.' },
+  { value: 'fcm_18', label: 'We charge 18% on the invoice, with input tax credit.' },
+]
 
 /** One invoice as its page shows it (GET /invoices/:id). */
 export interface InvoiceDetail {
@@ -150,6 +161,10 @@ export interface InvoiceDetail {
   goods: { hsn_code: string | null; description: string | null; gst_rate: number | null }[]
   tax: { basis: 'intra' | 'inter' | 'unknown' | 'none'; rate: number; cgst: number; sgst: number; igst: number; total: number; note: string | null }
   total_in_words: string
+  /** The MRX load number, when the invoice is for a vendor load that has one. */
+  load_number?: string | null
+  /** Set when no GST is charged because the recipient pays it under reverse charge. */
+  reverse_charge?: { applies: boolean; rate: number; note: string | null }
   links: {
     shipment: { id: string; code: string } | null
     manifest_id: string | null

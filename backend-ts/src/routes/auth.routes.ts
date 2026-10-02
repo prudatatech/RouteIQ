@@ -14,8 +14,8 @@ import { authenticateToken, createAccessToken, createRefreshToken, requireAuth, 
 import { settings } from '../core/config';
 import { cacheDelete, cacheGet, cacheSet } from '../core/redis';
 import { consumeRateLimit, rateLimitByIp } from '../core/rate-limit';
-import { sendError } from '../core/errors';
-import { normalizePhone } from '../utils/phone';
+import { HttpError, sendError } from '../core/errors';
+import { normalizeIndianMobile, normalizePhone } from '../utils/phone';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { buildEarnings } from '../services/driver-pay.service';
 import { getPayoutAccount } from '../services/people-bank.service';
@@ -31,7 +31,8 @@ const router = Router();
 // DRIVER AUTH — Twilio Phone OTP (like Ola/Uber/Zomato)
 // ═══════════════════════════════════════════════════════════
 
-type OtpKind = 'driver' | 'customer';
+type OtpKind = 'driver' | 'customer' | 'vendor';
+const OTP_KIND_LABEL: Record<OtpKind, string> = { driver: 'Driver', customer: 'Customer', vendor: 'Vendor' };
 
 const OTP_MAX_ATTEMPTS = 5;            // wrong guesses per issued code
 const OTP_SENDS_PER_WINDOW = 3;        // codes per phone per 10 minutes
@@ -87,7 +88,7 @@ async function createSupabaseSession(email: string | undefined | null) {
  */
 async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void> {
   try {
-    const phone = normalizePhone(req.body.phone);
+    const phone = kind === 'vendor' ? normalizeIndianMobile(req.body.phone) : normalizePhone(req.body.phone);
     if (!phone) {
       res.status(400).json({ detail: 'Invalid phone number' });
       return;
@@ -106,13 +107,13 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
     await cacheSet(`otp:${kind}:${phone}`, { otp, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
 
     const { data: existing } = await supabase
-      .from(kind === 'driver' ? 'users' : 'customers')
+      .from(kind === 'customer' ? 'customers' : 'users')
       .select('id')
       .eq('phone', phone)
       .maybeSingle();
 
     let message = `Your margixindia ${kind} login OTP is: ${otp}. Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Do not share this code.`;
-    if (!existing) message = `Welcome ${kind === 'driver' ? 'Driver' : 'Customer'}! ${message}`;
+    if (!existing) message = `Welcome ${OTP_KIND_LABEL[kind]}! ${message}`;
 
     if (!(await sendSms(phone, message))) {
       await cacheDelete(`otp:${kind}:${phone}`);
@@ -171,6 +172,42 @@ async function verifyOtp(kind: OtpKind, phone: string, otp: unknown, res: Respon
   return true;
 }
 
+/**
+ * The account of a phone number that just proved it (driver or vendor): creates the Supabase auth user with the role
+ * in app_metadata, recovers one that exists already, and guarantees the public.users row (the vendor organisation is
+ * made by the users trigger). Throws an HttpError 500 when the account cannot be made.
+ */
+async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string): Promise<{ id: string; email: string }> {
+  const email = `${role}_${phone.replace(/\+/g, '')}@${role}.margixindia.local`;
+  const fullName = `${OTP_KIND_LABEL[role]} ${phone.slice(-4)}`;
+  const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    app_metadata: { role },
+    user_metadata: { full_name: fullName, role, phone },
+  });
+
+  let id: string;
+  if (authError) {
+    // The auth user may exist already (the profile trigger failed earlier): recover it
+    if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
+      const existing = await findAuthUserByEmail(email);
+      if (!existing) throw new HttpError(500, `Failed to recover existing ${role} account`);
+      id = existing.id;
+    } else {
+      console.error(`Failed to create auth user for ${role}:`, authError);
+      throw new HttpError(500, `Failed to create ${role} account`);
+    }
+  } else {
+    id = authUser.user!.id;
+  }
+
+  // Guarantee the public profile exists via manual upsert (bypassing trigger unreliability)
+  const { error } = await supabase.from('users').upsert({ id, email, phone, role, full_name: fullName }, { onConflict: 'id' });
+  if (error) console.error(`[auth] Failed to upsert ${role} profile:`, error.message);
+  return { id, email };
+}
+
 // ── POST /driver/send-otp — Send OTP to the driver's phone ──
 router.post('/driver/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Request, res: Response) => sendOtp('driver', req, res));
 
@@ -193,48 +230,14 @@ router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
       .eq('role', 'driver')
       .single();
 
-    let authUserId: string;
-
     if (!driver) {
-      const driverEmail = `driver_${phone.replace(/\+/g, '')}@driver.margixindia.local`;
-      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-        email: driverEmail,
-        email_confirm: true,
-        app_metadata: { role: 'driver' },
-        user_metadata: {
-          full_name: `Driver ${phone.slice(-4)}`,
-          role: 'driver',
-          phone,
-        },
-      });
-
-      if (authError) {
-        // If user already exists in auth.users (trigger failed previously), recover gracefully!
-        if (authError.message.includes('already been registered') || (authError as any).code === 'email_exists') {
-          const existingUser = await findAuthUserByEmail(driverEmail);
-          if (existingUser) {
-            authUserId = existingUser.id;
-          } else {
-            res.status(500).json({ detail: 'Failed to recover existing driver account' });
-            return;
-          }
-        } else {
-          console.error('Failed to create auth user for driver:', authError);
-          res.status(500).json({ detail: 'Failed to create driver account' });
-          return;
-        }
-      } else {
-        authUserId = authUser.user!.id;
+      let authUserId: string;
+      try {
+        authUserId = (await provisionPhoneUser('driver', phone)).id;
+      } catch (e) {
+        if (e instanceof HttpError) { res.status(e.status).json({ detail: e.message }); return; }
+        throw e;
       }
-
-      // Guarantee the public profile exists via manual upsert (bypassing trigger unreliability)
-      await supabase.from('users').upsert({
-        id: authUserId,
-        email: driverEmail,
-        phone: phone,
-        role: 'driver',
-        full_name: `Driver ${phone.slice(-4)}`
-      }, { onConflict: 'id' });
 
       // Fetch the created driver profile
       const { data: newDriver } = await supabase
@@ -408,6 +411,69 @@ router.post('/customer/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async
         language_preference,
         vehicle_type: customer.vehicle_type,
       },
+    });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// VENDOR AUTH — Phone OTP for the web "Post a load" flow
+// ═══════════════════════════════════════════════════════════
+
+// ── POST /vendor/send-otp — Send OTP to the vendor's phone ──
+router.post('/vendor/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Request, res: Response) => sendOtp('vendor', req, res));
+
+// ── POST /vendor/verify-otp — Verify OTP, find or create the vendor, return a Supabase session ──
+// The web calls supabase.auth.setSession({ access_token, refresh_token }) with `session`. The vendor's organisation is
+// made by the users trigger; the business profile and KYC come after sign-in.
+router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
+  try {
+    const phone = normalizeIndianMobile(req.body.phone);
+    if (!phone) {
+      res.status(400).json({ detail: 'phone and otp are required' });
+      return;
+    }
+    if (!(await verifyOtp('vendor', phone, req.body.otp, res))) return;
+
+    let { data: vendor } = await supabase.from('users').select('*').eq('phone', phone).eq('role', 'vendor').maybeSingle();
+    let isNew = false;
+    if (!vendor) {
+      let id: string;
+      try {
+        id = (await provisionPhoneUser('vendor', phone)).id;
+      } catch (e) {
+        if (e instanceof HttpError) { res.status(e.status).json({ detail: e.message }); return; }
+        throw e;
+      }
+      const { data: created } = await supabase.from('users').select('*').eq('id', id).maybeSingle();
+      if (!created) {
+        res.status(500).json({ detail: 'Failed to create vendor profile' });
+        return;
+      }
+      vendor = created;
+      isNew = true;
+    }
+    if (vendor.is_active === false) {
+      res.status(403).json({ detail: 'This account is disabled. Contact support.' });
+      return;
+    }
+
+    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', vendor.id);
+    const { data: authUser } = await supabase.auth.admin.getUserById(vendor.id);
+    const session = await createSupabaseSession(authUser?.user?.email ?? vendor.email);
+    if (!session) {
+      res.status(502).json({ detail: 'Could not start your session. Please try again.' });
+      return;
+    }
+
+    res.json({
+      status: 'authenticated',
+      role: 'vendor',
+      user_id: vendor.id,
+      is_new_user: isNew,
+      session,
+      vendor: { id: vendor.id, phone: vendor.phone, full_name: vendor.full_name },
     });
   } catch (e: any) {
     sendError(req, res, e);

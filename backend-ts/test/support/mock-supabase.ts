@@ -312,6 +312,12 @@ class MockSupabase {
    */
   authAdmin = false;
   /** Supabase Auth users (id, email, app_metadata, user_metadata). */
+  /** Every RPC the app called (`/rest/v1/rpc/<name>`), with its JSON arguments. */
+  rpcCalls: Array<{ name: string; fn: string; args: any }> = [];
+  /** What an RPC answers (default: null). Cleared by reset(). */
+  rpcHandlers = new Map<string, (args: any) => unknown>();
+  /** Answer the magic-link calls behind createSupabaseSession with a fixed test session. Cleared by reset(). */
+  sessions = false;
   authUsers: Row[] = [];
   /** Every Supabase Auth admin call: `{ op, body }`. */
   authCalls: Array<{ op: 'create' | 'invite' | 'update' | 'delete'; id?: string; body: any }> = [];
@@ -351,10 +357,18 @@ class MockSupabase {
     this.signedUploads = [];
     this.signedReads = [];
     this.authUsers = [];
+    this.rpcCalls = [];
+    this.rpcHandlers.clear();
+    this.sessions = false;
     this.authCalls = [];
     this.authAdmin = false;
     this.failures.clear();
     clearAllMemos();
+  }
+
+  /** Answer rpc calls to `fn` with `handler(args)`. */
+  onRpc(fn: string, handler: (args: any) => unknown): void {
+    this.rpcHandlers.set(fn, handler);
   }
 
   /** Live rows of a table (mutable). */
@@ -444,7 +458,26 @@ class MockSupabase {
         const jwk = { ...this.keys.publicKey.export({ format: 'jwk' }), kid: this.kid, alg: 'ES256', use: 'sig' };
         return send(200, { keys: [jwk] });
       }
-      if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
+      if (url.pathname.startsWith('/rest/v1/rpc/')) {
+        const name = decodeURIComponent(url.pathname.slice('/rest/v1/rpc/'.length));
+        let args: unknown = null;
+        try { args = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
+        this.rpcCalls.push({ name, fn: name, args });
+        const handler = this.rpcHandlers.get(name);
+        const out = handler ? handler(args) : null;
+        // A handler raises a database error the way plpgsql RAISE EXCEPTION does: { __rpcError: 'message' }
+        if (out && typeof out === 'object' && '__rpcError' in (out as object)) {
+          return send(400, { code: 'P0001', message: (out as { __rpcError: string }).__rpcError, details: null, hint: null });
+        }
+        return send(200, out);
+      }
+      // Magic-link sessions (createSupabaseSession): off unless a test turns `sessions` on
+      if (this.sessions && url.pathname === '/auth/v1/admin/generate_link') {
+        return send(200, { action_link: 'http://localhost/verify', email_otp: '123456', hashed_token: 'test-hashed-token', verification_type: 'magiclink', properties: { hashed_token: 'test-hashed-token' } });
+      }
+      if (this.sessions && url.pathname === '/auth/v1/verify') {
+        return send(200, { access_token: 'sb-access-token', refresh_token: 'sb-refresh-token', token_type: 'bearer', expires_in: 3600, expires_at: 2_000_000_000, user: { id: 'sb-user', aud: 'authenticated' } });
+      }
       if (this.authAdmin && (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite')) {
         return this.handleAuthAdmin(req.method ?? 'GET', url, raw, send);
       }

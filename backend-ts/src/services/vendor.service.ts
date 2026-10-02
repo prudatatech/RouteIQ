@@ -12,7 +12,10 @@ import { gstinError, normalizeGstin } from '../utils/gstin';
 import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
-import { vendorOrgOf, carrierStamp, ownersOf } from '../core/org-context';
+import { vendorOrgOf, carrierStamp, ownersOf, currentOrgContext } from '../core/org-context';
+import { copyItemsToManifest, releaseHeldLoads } from './loads/loads.service';
+import { HOLD_UNVERIFIED, acceptDirect, filterVisibleToCompany } from './loads/order-routing';
+import { assertVehicleFits } from './loads/vehicle-fit';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
 function cleanVendorGstin(raw: unknown): string {
@@ -74,6 +77,22 @@ async function transitionRequest(requestId: string, from: string[], update: Reco
     throw new HttpError(409, `Request is already ${existing.status}`);
   }
   return data;
+}
+
+/** An id no organisation has: stands for "the caller is no logistic company". */
+const NO_COMPANY = 'none';
+
+/**
+ * The logistic company whose view a request is limited to: its id; null for no limit (organisations not set up, or a
+ * platform admin acting as the platform); NO_COMPANY when the caller acts for an organisation that is not a logistic company.
+ */
+function actingCompanyId(): string | typeof NO_COMPANY | null {
+  const ctx = currentOrgContext();
+  if (!ctx?.configured) return null;
+  const org = ctx.org;
+  if (!org) return NO_COMPANY;
+  if (org.kind === 'platform') return ctx.isPlatformAdmin ? null : NO_COMPANY;
+  return org.kind === 'logistic_company' ? org.id : NO_COMPANY;
 }
 
 /** Legal identity columns this service writes; changing one on an approved profile needs a new KYC review. */
@@ -319,11 +338,19 @@ export const vendorService = {
    * the dashboard count match the list.
    */
   async getPendingRequests() {
-    const { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', NEEDS_VEHICLE_STATUSES).order('created_at', { ascending: false });
+    let { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', NEEDS_VEHICLE_STATUSES).order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
     
     if (!requests || requests.length === 0) return [];
-    
+
+    // A load held for the vendor's business verification is not offered to the companies yet
+    requests = requests.filter((r: any) => r.metadata?.hold !== HOLD_UNVERIFIED);
+    // A company sees the loads routed to it and the ones awarded to it, never another company's
+    const company = actingCompanyId();
+    if (company === NO_COMPANY) return [];
+    if (company) requests = await filterVisibleToCompany(requests, company);
+    if (requests.length === 0) return [];
+
     const vendorIds = [...new Set(requests.map(r => r.vendor_id))];
     const { data: profiles, error: profError } = await supabase
       .from('vendor_profiles')
@@ -344,11 +371,12 @@ export const vendorService = {
   },
 
   /**
-   * Staff accept a vendor's load at a price. The price is required (a flat amount, or a rate per km that
-   * is turned into an amount on the road distance) unless the request already carries one. A vehicle can
-   * be assigned only after this.
+   * A company accepts a vendor's load directly ("Accept and price"): at the price given (a flat amount, or a rate per km
+   * turned into an amount on the road distance), else at the vendor's budget. Only when the vendor did not ask for quotes.
+   * The load then belongs to the acting company (carrier_org_id), atomically, and only one company can win it. Before
+   * organisations are set up it just moves the request to approved. A vehicle can be assigned only after this.
    */
-  async approveRequest(requestId: string, cost?: number | null, costPerKm?: number | null) {
+  async approveRequest(requestId: string, cost?: number | null, costPerKm?: number | null, actorId?: string) {
     for (const [label, amount] of [['Price', cost], ['Rate per km', costPerKm]] as const) {
       if (amount !== undefined && amount !== null && (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) {
         throw new HttpError(400, `${label} must be a number between 0 and 10,000,000`);
@@ -356,7 +384,7 @@ export const vendorService = {
     }
     const { data: before, error: beforeErr } = await supabase
       .from('vendor_shipment_requests')
-      .select('status, cost, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .select('status, cost, budget_inr, pickup_lat, pickup_lng, drop_lat, drop_lng')
       .eq('id', requestId).maybeSingle();
     if (beforeErr) throw new Error(beforeErr.message);
     if (!before) throw new HttpError(404, 'Request not found');
@@ -370,11 +398,22 @@ export const vendorService = {
     }
     const existing = Number(before.cost);
     const price = agreed ?? (Number.isFinite(existing) && existing > 0 ? existing : undefined);
-    if (price === undefined) throw new HttpError(400, 'Enter a price (a flat amount, or a rate per km) to accept this load.');
+
+    const company = actingCompanyId();
+    if (company === NO_COMPANY) throw new HttpError(403, 'Switch to your logistic company to accept loads.');
+    if (company) {
+      const { load } = await acceptDirect(company, actorId ?? '', requestId, { amount: price ?? null, costPerKm: ratePerKm ?? null });
+      return load;
+    }
+
+    // Organisations not set up, or a platform admin acting as the platform: the request is approved without an owner
+    const budget = Number(before.budget_inr);
+    const amount = price ?? (Number.isFinite(budget) && budget > 0 ? budget : undefined);
+    if (amount === undefined) throw new HttpError(400, 'Enter a price (a flat amount, or a rate per km) to accept this load.');
 
     const data = await transitionRequest(requestId, ['pending'], {
       status: 'approved',
-      cost: price,
+      cost: amount,
       ...(ratePerKm !== undefined ? { cost_per_km: ratePerKm } : {}),
     });
 
@@ -382,9 +421,9 @@ export const vendorService = {
     await notificationService.sendNotification(
       data.vendor_id,
       'Load accepted',
-      `Accepted at ${formatINR(price)}. We'll assign a truck next.`,
+      `Accepted at ${formatINR(amount)}. We'll assign a truck next.`,
       'request_approved',
-      { request_id: data.id, cost: price }
+      { request_id: data.id, cost: amount }
     );
 
     return data;
@@ -394,6 +433,18 @@ export const vendorService = {
    * Super admin rejects a vendor shipment request
    */
   async rejectRequest(requestId: string, reason: string) {
+    // A company can decline only a load it holds: rejecting one it merely sees would close it for every other company
+    const company = actingCompanyId();
+    if (company) {
+      const { data: row, error: rowErr } = await supabase.from('vendor_shipment_requests').select('*').eq('id', requestId).maybeSingle();
+      if (rowErr) throw new Error(rowErr.message);
+      if (!row || company === NO_COMPANY) throw new HttpError(404, 'Request not found');
+      if (row.carrier_org_id !== company) {
+        const sees = !row.carrier_org_id && (await filterVisibleToCompany([row], company)).length === 1;
+        if (!sees) throw new HttpError(404, 'Request not found');
+        throw new HttpError(409, 'You can decline a load only after you have accepted it. To pass on this one, do not quote it.');
+      }
+    }
     const data = await transitionRequest(requestId, OPEN_REQUEST_STATUSES, { status: 'rejected', rejection_reason: reason });
 
     // Notify the vendor
@@ -518,6 +569,12 @@ export const vendorService = {
       );
     } catch (e) {
       console.error('[vendor] KYC approval notification failed:', e);
+    }
+    // Loads posted while the business was unverified now go to the companies
+    try {
+      await releaseHeldLoads(vendorId);
+    } catch (e) {
+      console.error('[vendor] releasing held loads failed:', e);
     }
     await auditService.record('staff-console', actor, 'kyc_approved', { vendor_id: vendorId, company_name: data.company_name });
     return data;
@@ -648,7 +705,7 @@ export const vendorService = {
     const ratePerKm = costPerKm ?? undefined;
 
     const { data: assignee, error: assigneeErr } = await supabase
-      .from('vehicles').select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id').eq('id', vehicleId).maybeSingle();
+      .from('vehicles').select('id, status, plate_number, capacity_kg, current_load_kg, available_capacity_kg, driver_id, carrier_org_id, hazmat_certified, is_reefer, body_type').eq('id', vehicleId).maybeSingle();
     if (assigneeErr) throw new Error(assigneeErr.message);
     if (!assignee) throw new HttpError(404, 'Vehicle not found');
     if (!assignee.driver_id) throw new HttpError(409, `${assignee.plate_number ?? 'This vehicle'} has no driver. Give it a driver before assigning a load.`);
@@ -658,11 +715,26 @@ export const vendorService = {
 
     const { data: before, error: beforeErr } = await supabase
       .from('vendor_shipment_requests')
-      .select('status, required_capacity_kg, pickup_lat, pickup_lng, drop_lat, drop_lng')
+      .select('status, required_capacity_kg, pickup_lat, pickup_lng, drop_lat, drop_lng, carrier_org_id, hazmat_mixed, special_handling, temp_min_c, temp_max_c')
       .eq('id', requestId).maybeSingle();
     if (beforeErr) throw new Error(beforeErr.message);
     if (!before) throw new HttpError(404, 'Request not found');
+
+    // Only the company the load was awarded to (or a platform admin) assigns it, and only one of its own vehicles
+    const ctx = currentOrgContext();
+    if (ctx?.configured) {
+      if (!ctx.isPlatformAdmin) {
+        if (before.carrier_org_id && before.carrier_org_id !== ctx.org?.id) throw new HttpError(404, 'Request not found');
+        if (!before.carrier_org_id && before.status !== 'pending') throw new HttpError(409, 'This load is not awarded to your company, so you cannot assign a vehicle to it.');
+      }
+      if (before.carrier_org_id && assignee.carrier_org_id !== before.carrier_org_id) throw new HttpError(404, 'Vehicle not found');
+    }
     if (before.status === 'pending') throw new HttpError(409, 'Accept the request with a price first. A vehicle can be assigned after that.');
+
+    // The vehicle must suit the goods: hazmat certified, a reefer for a temperature range, an open body for ODC
+    const { data: goods, error: goodsErr } = await supabase.from('load_items').select('is_hazmat, is_perishable').eq('load_id', requestId);
+    if (goodsErr) throw new Error(goodsErr.message);
+    assertVehicleFits({ ...before, items: goods ?? [] }, assignee);
 
     // Free capacity: what the vehicle reports, else its rated capacity less what it already carries
     const required = Number(before.required_capacity_kg) || 0;
@@ -700,7 +772,7 @@ export const vendorService = {
     }
 
     // Insert into cargo_manifest
-    const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
+    const { data: manifest, error: manifestErr } = await supabase.from('cargo_manifest').insert({
       ...carrierStamp(),
       ...ownersOf(req),
       vehicle_id: vehicleId,
@@ -714,7 +786,9 @@ export const vendorService = {
       capacity_kg: req.required_capacity_kg,
       status: 'scheduled',
       created_at: new Date().toISOString()
-    });
+    }).select('id').single();
+
+    if (!manifestErr && manifest?.id) await copyItemsToManifest(req, manifest.id);
 
     if (manifestErr) {
       console.error('Failed to create cargo_manifest:', manifestErr);

@@ -71,6 +71,12 @@ export const COMPANY_SETTING = {
   value: { value: { legal_name: 'Margix Logistics Pvt Ltd', gstin: '27AAPFU0939F1ZV', state: 'Maharashtra' } },
 };
 
+/** The same seller, charging freight GST as a 18% forward charge (the default is reverse charge: no GST on the invoice). */
+export const COMPANY_SETTING_FCM18 = {
+  key: 'company_profile',
+  value: { value: { ...COMPANY_SETTING.value.value, gta_gst_option: 'fcm_18' } },
+};
+
 export function cargoWorld(over: Record<string, Row[]> = {}): Record<string, Row[]> {
   return {
     users: [

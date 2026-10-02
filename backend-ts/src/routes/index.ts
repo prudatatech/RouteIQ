@@ -47,6 +47,8 @@ import driverRoutes from './driver.routes';
 import messagesRoutes from './messages.routes';
 import peopleRoutes from './people.routes';
 import opsRoutes from './ops.routes';
+import loadDocumentsRoutes from './load-documents.routes';
+import companyLoadsRoutes from './company-loads.routes';
 import { adminOrgsRouter, orgRouter, orgsRouter, tplAffiliationsRouter } from './org.routes';
 
 const apiRouter = Router();
@@ -94,6 +96,8 @@ apiRouter.use('/driver', driverRoutes);
 apiRouter.use('/messages', messagesRoutes);
 apiRouter.use('/people', peopleRoutes);
 apiRouter.use('/ops', opsRoutes);
+apiRouter.use('/loads', loadDocumentsRoutes);
+apiRouter.use('/company/loads', companyLoadsRoutes);
 apiRouter.use('/orgs', orgsRouter);
 apiRouter.use('/org', orgRouter);
 apiRouter.use('/admin/orgs', adminOrgsRouter);

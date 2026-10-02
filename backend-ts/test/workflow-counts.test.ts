@@ -74,10 +74,10 @@ describe('vendor-load invoices', () => {
     system_settings: [COMPANY_SETTING],
   });
 
-  it('bills the agreed cost with the GST rate the vendor entered', async () => {
+  it('bills the agreed cost with freight GST under the default reverse charge, never the goods rate the vendor entered', async () => {
     reset({ cost: 10000, metadata: { cargo: { gstRate: 18 } } });
     expect((await InvoiceService.createForManifest('m1')).status).toBe('created');
-    expect(supabaseMock.rows('invoices')[0]).toMatchObject({ amount: 10000, gst_rate: 18, gst_amount: 1800, total: 11800, price_source: 'vendor_request' });
+    expect(supabaseMock.rows('invoices')[0]).toMatchObject({ amount: 10000, gst_rate: 0, gst_amount: 0, total: 10000, price_source: 'vendor_request', tax_mode: 'rcm_5' });
   });
 
   it('prices a rate per km over the trip distance', async () => {
