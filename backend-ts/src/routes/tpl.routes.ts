@@ -9,12 +9,12 @@ import { withWarnings } from '../services/people-common';
 import { Router, Request, Response, NextFunction } from 'express';
 import { tplService } from '../services/tpl.service';
 import { optionalAuth, requireAuth, requireRole } from '../core/auth';
-import { isStaff } from '../core/ownership';
 import { HttpError, sendError } from '../core/errors';
 import { uuidParam } from '../core/validate';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { settings } from '../core/config';
 import { attachOrgContext, currentOrgContext } from '../core/org-context';
+import { isStaff } from '../core/ownership';
 import { partnerRowIdsOf, withoutPrivateDetails } from '../services/tpl-affiliation';
 
 const router = Router();
@@ -65,8 +65,18 @@ function companyScope(req: Request): string | null {
   return ctx.org.id;
 }
 
-/** Staff of the platform: the only staff who may change an application they do not own. */
-const platformStaff = (req: Request): boolean => isStaff(req.user) && companyScope(req) === null;
+/**
+ * Whether the caller acts as the platform (effective role superadmin). These routes use optionalAuth, which does not
+ * resolve the organisation the caller acts for, so it is resolved here: an account whose own role is superadmin acting
+ * for a company is that company's admin and gets no platform view.
+ */
+async function actsAsPlatform(req: Request): Promise<boolean> {
+  if (!req.user) return false;
+  if (req.user.source !== 'supabase') return req.user.role === 'superadmin';
+  if (req.user.role !== 'superadmin' && req.user.role !== 'admin' && req.user.role !== 'manager') return false;
+  const ctx = await attachOrgContext(req, req.user.user_id, req.user.role);
+  return ctx.appRole === 'superadmin';
+}
 
 async function panMatches(req: Request, partner: any, pan: unknown): Promise<boolean> {
   if (typeof pan !== 'string' || !pan) return false;
@@ -97,7 +107,7 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
     if (application_id !== undefined) {
       if (typeof application_id !== 'string' || !application_id) throw new HttpError(400, 'application_id must be a string');
       const partner = await tplService.getPartner(application_id);
-      const owner = platformStaff(req) || (!!req.user && partner.user_id === req.user.user_id);
+      const owner = (await actsAsPlatform(req)) || (!!req.user && partner.user_id === req.user.user_id);
       if (!owner) {
         if (!(await panMatches(req, partner, verify_pan))) throw new HttpError(403, 'PAN does not match this application');
         if (partner.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
@@ -113,8 +123,8 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
   }
 });
 
-// GET /api/v1/tpl/queue — admins can view the partners; only a superadmin decides (approve, reject, pause, resume, delete)
-router.get('/queue', requireAuth, requireRole('admin', 'superadmin'), async (req, res) => {
+// GET /api/v1/tpl/queue — platform only (a superadmin, i.e. acting as the platform): view and decide (approve, reject, pause, resume, delete)
+router.get('/queue', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
     const status = req.query.status as string || 'pending';
     const rows = await tplService.getQueue(status);
@@ -131,7 +141,7 @@ router.get('/queue', requireAuth, requireRole('admin', 'superadmin'), async (req
 // GET /api/v1/tpl/by-user/:userId
 router.get('/by-user/:userId', requireAuth, async (req, res) => {
   try {
-    if (req.params.userId !== req.user!.user_id && !isStaff(req.user)) {
+    if (req.params.userId !== req.user!.user_id && req.user!.role !== 'superadmin') {
       throw new HttpError(403, 'Not authorized');
     }
     res.json(await tplService.getPartnerByUserId(req.params.userId));
@@ -144,13 +154,13 @@ router.get('/by-user/:userId', requireAuth, async (req, res) => {
 router.get('/:id', rateLimitByIp('tpl-lookup', 60, 60), ...optionalOrgAuth, async (req, res) => {
   try {
     const partner = await tplService.getPartner(req.params.id);
-    const company = isStaff(req.user) ? companyScope(req) : null;
+    const company = isStaff(req.user) && !(await actsAsPlatform(req)) ? companyScope(req) : null;
     if (company) {
       // A company reads its own partners (no bank details); a stranger's application is the status view
       res.json((await partnerRowIdsOf(company)).has(partner.id) ? withoutPrivateDetails(partner) : publicView(partner));
       return;
     }
-    const full = isStaff(req.user)
+    const full = (await actsAsPlatform(req))
       || (req.user && partner.user_id === req.user.user_id)
       || (await panMatches(req, partner, req.query.pan));
     res.json(full ? partner : publicView(partner));
@@ -185,7 +195,7 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
 router.patch('/:id', ...optionalOrgAuth, async (req, res) => {
   try {
     uuidParam(req.params.id, 'Application not found');
-    if (!platformStaff(req)) {
+    if (!(await actsAsPlatform(req))) {
       const partner = await tplService.getPartner(req.params.id);
       if (!(await panMatches(req, partner, req.body.verify_pan))) {
         throw new HttpError(403, 'PAN does not match this application');

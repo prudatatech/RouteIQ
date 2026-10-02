@@ -5,11 +5,11 @@ import { testApp } from './support/test-app';
 
 const app = testApp();
 const VENDOR = 'vendor-1';
-const adminToken = () => supabaseMock.signUserToken('admin-1');
+const adminToken = () => supabaseMock.signUserToken('super-1');
 
 beforeEach(() => {
   supabaseMock.reset({
-    users: [{ id: 'admin-1', role: 'admin', is_active: true }],
+    users: [{ id: 'super-1', role: 'superadmin', is_active: true }, { id: 'admin-1', role: 'admin', is_active: true }],
     vendor_profiles: [{ id: VENDOR, company_name: 'Acme Logistics', kyc_status: 'submitted' }],
     notifications: [],
   });

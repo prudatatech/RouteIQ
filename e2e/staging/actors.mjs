@@ -123,7 +123,17 @@ export async function makePlatformAdmin() {
   return { ...user, orgId: platform, role: 'superadmin', token: await login(user.email) }
 }
 
-/** A vendor with a complete profile. `approved` runs KYC through a company admin so the vendor organisation is active. */
+let sharedPlatformAdmin
+/** One platform admin per run, for approvals (vendor KYC is the platform's, never a company's). */
+async function platformApprover() {
+  sharedPlatformAdmin ||= makePlatformAdmin()
+  return sharedPlatformAdmin
+}
+
+/**
+ * A vendor with a complete profile. `approved` runs KYC through the platform admin (acting as the platform) so the
+ * vendor organisation is active. The old `admin` option is accepted and ignored: a company admin cannot approve KYC.
+ */
 export async function makeVendor({ approved = true, admin } = {}) {
   const label = `${tag()}-vendor`
   const user = await makeUser(label, 'vendor')
@@ -135,15 +145,15 @@ export async function makeVendor({ approved = true, admin } = {}) {
   if (prof.status >= 300) throw new Error(`profile: ${JSON.stringify(prof.body)}`)
   const out = { ...user, token }
   if (approved) {
-    const a = admin || await makeCompanyAdmin()
+    const a = await platformApprover()
     const k = await api(token, 'POST', '/vendor/kyc/submit', {
       companyName: `Flow Traders ${label}`, gstNumber: '27AAPFU0939F1ZV', city: 'Mumbai', address: 'Plot 9, MIDC Andheri East', lat: 19.1197, lng: 72.8464,
       kycData: { data: { vendorType: 'Trader', panNumber: 'AAPFU0939F', contactPerson: 'UAT', mobile: '9876501234', bankBeneficiary: 'Flow Traders', bankAccount: '50100123456789', bankIfsc: 'HDFC0000123', bankName: 'HDFC Bank', bankBranch: 'Andheri East' } },
     })
     if (k.status >= 300) throw new Error(`kyc submit: ${JSON.stringify(k.body)}`)
-    const ap = await api(a.token, 'PUT', `/vendor/kyc/${user.id}/approve`, {})
+    const ap = await api(a.token, 'PUT', `/vendor/kyc/${user.id}/approve`, {}, { org: a.orgId })
     if (ap.status >= 300) throw new Error(`kyc approve: ${JSON.stringify(ap.body)}`)
-    out.admin = a
+    out.admin = admin || a
   }
   return out
 }

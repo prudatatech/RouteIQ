@@ -10,7 +10,6 @@ import { Router, Request, Response } from 'express';
 import { supabase } from '../core/supabase';
 import { requireAuth, requireRole } from '../core/auth';
 import { STAFF_ROLES } from '../core/ownership';
-import { OWNED, scopeQuery } from '../core/org-scope';
 import { assertShipmentVisible, assertVehicleVisible, guardOwned } from '../core/org-guards';
 import { sendError, HttpError } from '../core/errors';
 import { logFallback, mlPost } from '../services/optimizer/ml-client';
@@ -18,7 +17,7 @@ import { orderDropsInProcess } from '../services/optimizer/pooling';
 import { MapplsService } from '../services/mappls.service';
 import { resolveAlert } from '../services/alerts.service';
 import { idempotent } from '../core/idempotency';
-import { OWNED, assertVisible } from '../core/org-scope';
+import { OWNED, assertVisible, scopeQuery } from '../core/org-scope';
 import { cargoFolder, isPathIn, recordCustody } from '../services/cargo/custody.service';
 
 const router = Router();

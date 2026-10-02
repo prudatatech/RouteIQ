@@ -89,7 +89,6 @@ export const navSections: NavSection[] = [
     to: '/admin/users', label: 'People', icon: Users, roles: everyone, badge: 'people',
     children: [
       { to: '/admin/users', label: 'People', roles: everyone, badge: 'documents' },
-      { to: '/admin/kyc', label: 'KYC review', roles: admins, badge: 'kyc' },
     ],
   },
   {
@@ -100,7 +99,7 @@ export const navSections: NavSection[] = [
       { to: '/return-trips', label: 'Open return trips', roles: admins },
       { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
       { to: '/return-trips?tab=pool', label: 'Combine loads', roles: admins },
-      { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
+      { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
     ],
   },
   {
@@ -135,7 +134,11 @@ export const navSections: NavSection[] = [
 /** The platform owner's section. Shown only while acting as the platform organisation. */
 export const platformSection: NavSection = {
   to: '/platform/organisations', label: 'Platform', icon: Building2, roles: admins, badge: 'pendingOrgs',
-  children: [{ to: '/platform/organisations', label: 'Organisations', roles: admins, badge: 'pendingOrgs' }],
+  children: [
+    { to: '/platform/organisations', label: 'Organisations', roles: admins, badge: 'pendingOrgs' },
+    // Vendor verification is the platform's, not a company's (docs/platform-model.md)
+    { to: '/admin/kyc', label: 'KYC review', roles: admins, badge: 'kyc' },
+  ],
 }
 
 /** Sections and links this role may see. A section left with no page of its own is dropped. */
