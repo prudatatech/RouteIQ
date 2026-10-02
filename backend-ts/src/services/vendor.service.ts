@@ -13,6 +13,7 @@ import { OPERATING_VEHICLE_STATUSES } from '../core/transitions';
 import { isDispatchable } from '../core/vehicles';
 import { roadKm, toPoint, travelMinutes } from '../utils/eta';
 import { vendorOrgOf, carrierStamp, ownersOf } from '../core/org-context';
+import { HOLD_UNVERIFIED, copyItemsToManifest, releaseHeldLoads } from './loads/loads.service';
 
 /** GSTIN is optional for vendors; when given it must be valid. Returns it cleaned up, or ''. */
 function cleanVendorGstin(raw: unknown): string {
@@ -319,11 +320,15 @@ export const vendorService = {
    * the dashboard count match the list.
    */
   async getPendingRequests() {
-    const { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', NEEDS_VEHICLE_STATUSES).order('created_at', { ascending: false });
+    let { data: requests, error } = await supabase.from('vendor_shipment_requests').select('*').in('status', NEEDS_VEHICLE_STATUSES).order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
     
     if (!requests || requests.length === 0) return [];
-    
+
+    // A load held for the vendor's business verification is not offered to the companies yet
+    requests = requests.filter((r: any) => r.metadata?.hold !== HOLD_UNVERIFIED);
+    if (requests.length === 0) return [];
+
     const vendorIds = [...new Set(requests.map(r => r.vendor_id))];
     const { data: profiles, error: profError } = await supabase
       .from('vendor_profiles')
@@ -519,6 +524,12 @@ export const vendorService = {
     } catch (e) {
       console.error('[vendor] KYC approval notification failed:', e);
     }
+    // Loads posted while the business was unverified now go to the companies
+    try {
+      await releaseHeldLoads(vendorId);
+    } catch (e) {
+      console.error('[vendor] releasing held loads failed:', e);
+    }
     await auditService.record('staff-console', actor, 'kyc_approved', { vendor_id: vendorId, company_name: data.company_name });
     return data;
   },
@@ -700,7 +711,7 @@ export const vendorService = {
     }
 
     // Insert into cargo_manifest
-    const { error: manifestErr } = await supabase.from('cargo_manifest').insert({
+    const { data: manifest, error: manifestErr } = await supabase.from('cargo_manifest').insert({
       ...carrierStamp(),
       ...ownersOf(req),
       vehicle_id: vehicleId,
@@ -714,7 +725,9 @@ export const vendorService = {
       capacity_kg: req.required_capacity_kg,
       status: 'scheduled',
       created_at: new Date().toISOString()
-    });
+    }).select('id').single();
+
+    if (!manifestErr && manifest?.id) await copyItemsToManifest(req, manifest.id);
 
     if (manifestErr) {
       console.error('Failed to create cargo_manifest:', manifestErr);

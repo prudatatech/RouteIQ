@@ -312,6 +312,12 @@ class MockSupabase {
    */
   authAdmin = false;
   /** Supabase Auth users (id, email, app_metadata, user_metadata). */
+  /** Every RPC the app called (`/rest/v1/rpc/<name>`), with its JSON arguments. */
+  rpcCalls: Array<{ name: string; args: any }> = [];
+  /** What an RPC answers (default: null). Cleared by reset(). */
+  rpcHandlers = new Map<string, (args: any) => unknown>();
+  /** Answer the magic-link calls behind createSupabaseSession with a fixed test session. Cleared by reset(). */
+  sessions = false;
   authUsers: Row[] = [];
   /** Every Supabase Auth admin call: `{ op, body }`. */
   authCalls: Array<{ op: 'create' | 'invite' | 'update' | 'delete'; id?: string; body: any }> = [];
@@ -351,6 +357,9 @@ class MockSupabase {
     this.signedUploads = [];
     this.signedReads = [];
     this.authUsers = [];
+    this.rpcCalls = [];
+    this.rpcHandlers.clear();
+    this.sessions = false;
     this.authCalls = [];
     this.authAdmin = false;
     this.failures.clear();
@@ -444,7 +453,21 @@ class MockSupabase {
         const jwk = { ...this.keys.publicKey.export({ format: 'jwk' }), kid: this.kid, alg: 'ES256', use: 'sig' };
         return send(200, { keys: [jwk] });
       }
-      if (url.pathname.startsWith('/rest/v1/rpc/')) return send(200, null);
+      if (url.pathname.startsWith('/rest/v1/rpc/')) {
+        const name = url.pathname.slice('/rest/v1/rpc/'.length);
+        let args: unknown = null;
+        try { args = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
+        this.rpcCalls.push({ name, args });
+        const handler = this.rpcHandlers.get(name);
+        return send(200, handler ? handler(args) : null);
+      }
+      // Magic-link sessions (createSupabaseSession): off unless a test turns `sessions` on
+      if (this.sessions && url.pathname === '/auth/v1/admin/generate_link') {
+        return send(200, { action_link: 'http://localhost/verify', email_otp: '123456', hashed_token: 'test-hashed-token', verification_type: 'magiclink', properties: { hashed_token: 'test-hashed-token' } });
+      }
+      if (this.sessions && url.pathname === '/auth/v1/verify') {
+        return send(200, { access_token: 'sb-access-token', refresh_token: 'sb-refresh-token', token_type: 'bearer', expires_in: 3600, expires_at: 2_000_000_000, user: { id: 'sb-user', aud: 'authenticated' } });
+      }
       if (this.authAdmin && (url.pathname.startsWith('/auth/v1/admin/users') || url.pathname === '/auth/v1/invite')) {
         return this.handleAuthAdmin(req.method ?? 'GET', url, raw, send);
       }
