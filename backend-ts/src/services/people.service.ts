@@ -383,9 +383,10 @@ const ORG_ROLE_FOR: Record<string, string> = { superadmin: 'owner', admin: 'admi
  * different one, that membership is taken back. Nothing happens before organisations are set up, or when the
  * request acts as the platform (the database default stands).
  */
-async function joinActiveCompany(actorId: string, userId: string, role: string): Promise<void> {
-  const org = currentOrgContext()?.org;
-  if (!org || org.kind !== 'logistic_company') return;
+async function joinActiveCompany(actorId: string, userId: string, role: string, partnerOrgId?: string): Promise<void> {
+  // A driver a 3PL partner invites joins the partner organisation, never a company
+  const org = partnerOrgId ? { id: partnerOrgId } : currentOrgContext()?.org;
+  if (!org || (!partnerOrgId && (org as { kind?: string }).kind !== 'logistic_company')) return;
   const { error } = await supabase.from('org_members')
     .upsert({ org_id: org.id, user_id: userId, role: ORG_ROLE_FOR[role] ?? 'member', status: 'active', invited_by: actorId }, { onConflict: 'org_id,user_id' });
   if (error) throw new Error(`Failed to add the person to the company: ${error.message}`);
@@ -397,8 +398,15 @@ async function joinActiveCompany(actorId: string, userId: string, role: string):
   invalidateOrgContext(userId);
 }
 
-export async function createPerson(actor: Actor, body: Record<string, any>) {
+/**
+ * `opts.partnerOrgId`: the person is a driver of that 3PL partner organisation (docs/network-design.md): they join it,
+ * and the body carries employer_type 'partner' with the partner row id so the older screens keep working.
+ */
+export async function createPerson(actor: Actor, body: Record<string, any>): Promise<Awaited<ReturnType<typeof getPersonDetail>>>;
+export async function createPerson(actor: Actor, body: Record<string, any>, opts: { partnerOrgId: string }): Promise<{ id: string; role: string; full_name: string; phone: string | null; status: string; partner_org_id: string }>;
+export async function createPerson(actor: Actor, body: Record<string, any>, opts: { partnerOrgId?: string } = {}): Promise<any> {
   const { role, fullName, phone, email, profilePatch, clearance } = await checkNewPerson(actor, body);
+  if (opts.partnerOrgId && role !== 'driver') throw new HttpError(400, 'A partner can only invite drivers');
   if (clearance.releaseFrom) await releasePhone(clearance.releaseFrom.holder, clearance.releaseFrom.leftOn, actor.user_id);
 
   let id: string;
@@ -440,7 +448,7 @@ export async function createPerson(actor: Actor, body: Record<string, any>) {
   }
 
   try {
-    await joinActiveCompany(actor.user_id, id, role);
+    await joinActiveCompany(actor.user_id, id, role, opts.partnerOrgId);
     await saveProfile(id, actor.user_id, {
       ...profilePatch,
       ...(role !== 'driver' ? { employer_type: 'company', employer_partner_id: null } : {}),
@@ -455,6 +463,8 @@ export async function createPerson(actor: Actor, body: Record<string, any>) {
   if (phone) await recordPhoneChange(id, null, phone);
   await supabase.from('user_status_history').insert({ user_id: id, from_status: null, to_status: 'onboarding', reason: 'Person added', changed_by: actor.user_id, created_at: nowIso() });
   await logActivity(id, actor.user_id, 'person_created', { role, ...(clearance.releaseFrom ? { phone_reused_from: clearance.releaseFrom.holder.id } : {}) });
+  // A partner's driver is not in the active company, so the company-scoped detail would not find them
+  if (opts.partnerOrgId) return { id, role, full_name: fullName, phone, status: 'onboarding', partner_org_id: opts.partnerOrgId };
   return getPersonDetail(actor, id);
 }
 

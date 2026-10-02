@@ -570,7 +570,8 @@
     "requested_by",
     "approved_by",
     "approved_at",
-    "created_at"
+    "created_at",
+    "rules"
   ],
   "tpl_corridors": [
     "id",
@@ -610,7 +611,8 @@
     "created_by",
     "created_at",
     "updated_at",
-    "carrier_org_id"
+    "carrier_org_id",
+    "targeted"
   ],
   "tpl_orders": [
     "id",
@@ -638,7 +640,13 @@
     "rated_by",
     "created_at",
     "updated_at",
-    "carrier_org_id"
+    "carrier_org_id",
+    "vehicle_id",
+    "driver_id",
+    "manifest_id",
+    "pod_photo_url",
+    "pod_signature_url",
+    "pod_received_by"
   ],
   "tpl_partners": [
     "id",
@@ -1473,6 +1481,25 @@
     "notes",
     "status",
     "created_by",
+    "created_at",
+    "updated_at"
+  ],
+  "tpl_partner_statements": [
+    "id",
+    "partner_org_id",
+    "company_org_id",
+    "period",
+    "order_ids",
+    "orders_total_paise",
+    "deductions",
+    "balance_paise",
+    "status",
+    "issued_at",
+    "paid_at",
+    "paid_reference",
+    "created_by",
+    "issued_by",
+    "paid_by",
     "created_at",
     "updated_at"
   ]

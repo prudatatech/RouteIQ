@@ -3,6 +3,8 @@ import { ShipmentService } from './shipment.service';
 import { tplNetworkService } from './tpl-network.service';
 import { HttpError } from '../core/errors';
 import { DISPATCHABLE_STATUSES, isDispatchable } from '../core/vehicles';
+import { memberOrgId } from '../core/org-scope';
+import { activePartnerOrgIds } from './tpl-affiliation';
 
 const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
 
@@ -15,13 +17,17 @@ async function autoEscalationEnabled(): Promise<boolean> {
 
 export const matchingService = {
   /**
-   * Run the Availability Scoring Engine for a shipment
+   * Run the Availability Scoring Engine for a shipment.
+   *
+   * Counts the dispatchable vehicles of ONE company: `companyOrgId`, else the company the caller acts for, else the
+   * company that runs the shipment. With `include_network` the vehicles of the company's active 3PL partners count too.
+   * With no company at all (organisations not set up yet) every vehicle counts, as it always did.
    */
-  async computeAvailabilityScore(shipmentId: string) {
+  async computeAvailabilityScore(shipmentId: string, companyOrgId?: string | null, options: { include_network?: boolean } = {}) {
     // 1. Fetch Shipment Details
     const { data: shipment, error: shipErr } = await supabase
       .from('shipments')
-      .select('origin_lat, origin_lng, required_vehicle_type, metadata')
+      .select('origin_lat, origin_lng, required_vehicle_type, metadata, carrier_org_id')
       .eq('id', shipmentId)
       .single();
 
@@ -37,11 +43,17 @@ export const matchingService = {
 
     // 2. Query available vehicles
     // In production, we'd use PostGIS ST_DWithin. Here we fetch idle trucks and calculate distance.
-    const { data: vehicles, error: vehErr } = await supabase
+    const company = companyOrgId ?? memberOrgId() ?? shipment.carrier_org_id ?? null;
+    let vehicleQuery = supabase
       .from('vehicles')
       .select('id, latitude, longitude, status, vehicle_type, plate_number')
       .in('status', [...DISPATCHABLE_STATUSES]) // The one definition of "can be dispatched" (core/vehicles.ts)
       .eq('vehicle_type', required_vehicle_type || 'Tractor Trailer');
+    if (company) {
+      const owners = options.include_network ? [company, ...(await activePartnerOrgIds(company))] : [company];
+      vehicleQuery = owners.length === 1 ? vehicleQuery.eq('carrier_org_id', owners[0]) : vehicleQuery.in('carrier_org_id', owners);
+    }
+    const { data: vehicles, error: vehErr } = await vehicleQuery;
 
     if (vehErr) {
       console.error('Scoring Engine - Vehicle Fetch Error:', vehErr);
@@ -108,7 +120,8 @@ export const matchingService = {
     const { data: shipment } = await supabase.from('shipments').select('*').eq('id', shipmentId).single();
     if (!shipment) throw new Error('Shipment not found');
 
-    const score = await this.computeAvailabilityScore(shipmentId);
+    // The company's own fleet decides whether to reach for its partners, so the network is not counted here
+    const score = await this.computeAvailabilityScore(shipmentId, shipment.carrier_org_id ?? null);
 
     let escalationLevel = 'Tier 0';
     let broadcastedTo = 0;
@@ -138,7 +151,7 @@ export const matchingService = {
       // hand from the console, so partners aren't flooded while the own fleet is small.
       if (await autoEscalationEnabled()) {
         try {
-          const result = await tplNetworkService.escalate('shipment', shipmentId, null);
+          const result = await tplNetworkService.escalate('shipment', shipmentId, null, { companyOrgId: shipment.carrier_org_id ?? null });
           broadcastedTo = result.created;
         } catch (e) {
           if (!(e instanceof HttpError)) console.error('Cascade Matcher - 3PL escalation failed:', e);

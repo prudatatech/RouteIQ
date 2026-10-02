@@ -19,7 +19,10 @@ import { emailService, escapeHtml } from './email.service';
 import { ShipmentService } from './shipment.service';
 import { vendorService, type LoadEvent } from './vendor.service';
 import { InvoiceService } from './invoice.service';
-import { carrierStamp } from '../core/org-context';
+import { carrierStamp, currentOrgContext } from '../core/org-context';
+import { memberOrgId } from '../core/org-scope';
+import { statementCoveringOrder } from './tpl-statement.service';
+import { activePartnersOf, fleetFlagsOf, ruleExclusion, type AffiliatedPartner } from './tpl-affiliation';
 
 export type SourceType = 'request' | 'shipment';
 
@@ -47,16 +50,28 @@ export interface Load {
   metadata: Record<string, unknown> | null;
   /** Road distance between pickup and drop when both have coordinates; needed to price a per-km rate. */
   distanceKm: number | null;
+  /** The company that runs the load (the awarded company, or the shipment's carrier); null when unrouted. */
+  carrierOrgId: string | null;
+  /** The vehicle class the load needs, when it says. */
+  vehicleClass: string | null;
 }
 
 export interface PartnerMatch {
   partner: { id: string; company_name: string; user_id: string | null; email: string | null };
-  corridor: { id: string; corridor_name: string };
+  /** The partner's organisation (null only when organisations are not set up). */
+  orgId: string | null;
+  /** The corridor that matched; null for a partner the company chose by hand that has none from this pickup to this drop. */
+  corridor: { id: string; corridor_name: string } | null;
   /** The corridor's numeric rate, if it has one. */
   rate: CorridorRate | null;
   /** The price for this load at that rate: per trip as is, per km x the distance. Null when the rate is missing or the distance is unknown. */
   price: number | null;
 }
+
+/** A partner left out of an offer, and why (the company's rules, or the partner itself). */
+export interface ExcludedPartner { partner_id: string; name: string; reason: string }
+
+export interface PartnerMatchResult { matches: PartnerMatch[]; excluded: ExcludedPartner[] }
 
 const sourceColumn = (type: SourceType) => (type === 'request' ? 'request_id' : 'shipment_id');
 const inr = formatINR;
@@ -94,7 +109,7 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
   if (sourceType === 'request') {
     const { data: r, error } = await supabase
       .from('vendor_shipment_requests')
-      .select('id, vendor_id, pickup_location, drop_location, pickup_lat, pickup_lng, drop_lat, drop_lng, required_capacity_kg, status, metadata')
+      .select('id, vendor_id, pickup_location, drop_location, pickup_lat, pickup_lng, drop_lat, drop_lng, required_capacity_kg, status, metadata, carrier_org_id, vehicle_class')
       .eq('id', id)
       .maybeSingle();
     if (error) dbError('Failed to load request', error);
@@ -108,12 +123,13 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
       weightKg: r.required_capacity_kg != null ? Number(r.required_capacity_kg) : null,
       vendorId: r.vendor_id ?? null, requestStatus: r.status, metadata: r.metadata ?? null,
       distanceKm: roadKm(toPoint(r.pickup_lat, r.pickup_lng), toPoint(r.drop_lat, r.drop_lng)),
+      carrierOrgId: r.carrier_org_id ?? null, vehicleClass: r.vehicle_class ?? null,
     };
   }
 
   const { data: s, error } = await supabase
     .from('shipments')
-    .select('id, tracking_id, status, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, bid_id')
+    .select('id, tracking_id, status, origin_name, origin_address, origin_lat, origin_lng, total_weight_kg, bid_id, carrier_org_id, required_vehicle_type')
     .eq('id', id)
     .maybeSingle();
   if (error) dbError('Failed to load shipment', error);
@@ -154,20 +170,72 @@ async function loadSource(sourceType: SourceType, id: string): Promise<Load> {
     weightKg: s.total_weight_kg != null ? Number(s.total_weight_kg) : null,
     vendorId: null, requestStatus: null, metadata: null,
     distanceKm: roadKm(toPoint(s.origin_lat, s.origin_lng), toPoint(last?.latitude, last?.longitude)),
+    carrierOrgId: s.carrier_org_id ?? null, vehicleClass: s.required_vehicle_type ?? null,
   };
 }
 
 // ── Matching ─────────────────────────────────────────────────────────
 
-/** Active partners with a corridor that runs from `pickup` to `drop`, each with the best matching corridor. */
-export async function findMatchingPartners(pickup: string, drop: string, distanceKm: number | null = null): Promise<PartnerMatch[]> {
-  if (!pickup.trim() || !drop.trim()) return [];
-  const { data: partners, error } = await supabase
-    .from('tpl_partners')
-    .select('id, company_name, user_id, email')
-    .eq('status', 'active');
+/**
+ * The company whose partners a load may go to: the one the caller acts for, else the company that runs the load.
+ * null means "not scoped" (organisations are not set up yet). A caller of another company gets a 404, as for any
+ * record that is not theirs; a platform admin acting as the platform needs the load to have a company.
+ */
+function companyFor(load: Load, explicit?: string | null): string | null {
+  const mine = memberOrgId();
+  if (mine && load.carrierOrgId && mine !== load.carrierOrgId) {
+    throw new HttpError(404, load.sourceType === 'request' ? 'Request not found' : 'Shipment not found');
+  }
+  const company = mine ?? explicit ?? load.carrierOrgId ?? null;
+  if (!company && currentOrgContext()?.configured) throw new HttpError(409, 'This load has no company yet, so there are no partners to offer it to');
+  return company;
+}
+
+const priorityOf = (c: { priority: unknown }) => {
+  const m = String(c.priority ?? '').match(/\d+/);
+  return m ? Number(m[0]) : 99;
+};
+
+/**
+ * The active partners of `companyOrgId` (its active affiliations only, never another company's), each with the best
+ * matching corridor, minus the ones the company's affiliation rules keep out (with the reason). A null company means
+ * organisations are not set up: every active partner and no rules (how it worked before).
+ * `opts.partnerIds` offers only to those partners, chosen by hand: they need no matching corridor, the rules still apply.
+ */
+export async function findMatchingPartners(
+  companyOrgId: string | null,
+  pickup: string,
+  drop: string,
+  distanceKm: number | null = null,
+  opts: { vehicleClass?: string | null; partnerIds?: string[] | null } = {},
+): Promise<PartnerMatchResult> {
+  const result: PartnerMatchResult = { matches: [], excluded: [] };
+  const chosen = opts.partnerIds && opts.partnerIds.length > 0 ? new Set(opts.partnerIds) : null;
+  if (!chosen && (!pickup.trim() || !drop.trim())) return result;
+
+  // Who may be offered the load: the company's active partners, by partner row id
+  let affiliated: Map<string, AffiliatedPartner> | null = null;
+  if (companyOrgId) {
+    affiliated = new Map();
+    for (const a of await activePartnersOf(companyOrgId)) if (a.partnerId) affiliated.set(a.partnerId, a);
+    if (chosen) {
+      for (const id of chosen) {
+        if (!affiliated.has(id)) throw new HttpError(400, 'One of the chosen partners is not an active partner of your company');
+      }
+    }
+  }
+
+  let query = supabase.from('tpl_partners').select('id, company_name, user_id, email').eq('status', 'active');
+  if (affiliated) {
+    const ids = [...(chosen ?? affiliated.keys())];
+    if (ids.length === 0) return result;
+    query = query.in('id', ids);
+  } else if (chosen) {
+    query = query.in('id', [...chosen]);
+  }
+  const { data: partners, error } = await query;
   if (error) dbError('Failed to load partners', error);
-  if (!partners || partners.length === 0) return [];
+  if (!partners || partners.length === 0) return result;
 
   const { data: corridors, error: cErr } = await supabase
     .from('tpl_corridors')
@@ -175,27 +243,43 @@ export async function findMatchingPartners(pickup: string, drop: string, distanc
     .in('partner_id', partners.map(p => p.id));
   if (cErr) dbError('Failed to load corridors', cErr);
 
-  const priorityOf = (c: { priority: unknown }) => {
-    const m = String(c.priority ?? '').match(/\d+/);
-    return m ? Number(m[0]) : 99;
-  };
-  const matches: PartnerMatch[] = [];
+  const links = [...(affiliated?.values() ?? [])];
+  const needsFleet = links.some(a => a.rules.gps_required || a.rules.insurance_required);
+  const fleets = needsFleet ? await fleetFlagsOf(links.map(a => a.orgId)) : new Map();
+
   for (const partner of partners) {
-    const best = (corridors ?? [])
-      .filter(c => c.partner_id === partner.id && corridorMatches(c.corridor_name, pickup, drop))
-      .sort((a, b) => priorityOf(a) - priorityOf(b))[0];
-    if (best) {
-      // A rate the partner did not enter as a number and a unit is never turned into a price
-      const rate = corridorRate(best);
-      matches.push({
-        partner,
-        corridor: { id: best.id, corridor_name: best.corridor_name },
-        rate,
-        price: priceAtRate(rate, distanceKm),
-      });
+    const link = affiliated?.get(partner.id);
+    const rules = link?.rules ?? {};
+    const mine = (corridors ?? []).filter(c => c.partner_id === partner.id && corridorMatches(c.corridor_name, pickup, drop));
+    const allowedLanes = rules.corridor_ids && rules.corridor_ids.length > 0 ? new Set(rules.corridor_ids) : null;
+    const usable = allowedLanes ? mine.filter(c => allowedLanes.has(c.id)) : mine;
+    const best = [...usable].sort((a, b) => priorityOf(a) - priorityOf(b))[0];
+
+    if (!best) {
+      if (mine.length > 0) {
+        result.excluded.push({ partner_id: partner.id, name: partner.company_name, reason: 'Its lane from this pickup to this drop is not one your rules allow' });
+        continue;
+      }
+      if (!chosen) continue; // no corridor: not a candidate, nothing to explain
     }
+    // A rate the partner did not enter as a number and a unit is never turned into a price
+    const rate = best ? corridorRate(best) : null;
+    const price = priceAtRate(rate, distanceKm);
+    const why = ruleExclusion(rules, {
+      vehicleClass: opts.vehicleClass ?? null, distanceKm, rate, price,
+      fleet: link ? fleets.get(link.orgId) ?? null : null,
+    });
+    if (why) {
+      result.excluded.push({ partner_id: partner.id, name: partner.company_name, reason: why });
+      continue;
+    }
+    result.matches.push({
+      partner, orgId: link?.orgId ?? null,
+      corridor: best ? { id: best.id, corridor_name: best.corridor_name } : null,
+      rate, price,
+    });
   }
-  return matches;
+  return result;
 }
 
 // ── Escalation ───────────────────────────────────────────────────────
@@ -210,7 +294,7 @@ async function notifyPartner(match: PartnerMatch, load: Load, price: number | nu
       await emailService.send(
         match.partner.email,
         'New load offer on MargixIndia',
-        `<p>Hello ${escapeHtml(match.partner.company_name ?? '')},</p><p>A load matches your corridor ${escapeHtml(match.corridor.corridor_name)}: ${escapeHtml(body)}</p><p>The first partner to accept gets the load.</p>`,
+        `<p>Hello ${escapeHtml(match.partner.company_name ?? '')},</p><p>A load ${match.corridor ? `matches your corridor ${escapeHtml(match.corridor.corridor_name)}` : 'was offered to you'}: ${escapeHtml(body)}</p><p>The first partner to accept gets the load.</p>`,
       );
     }
   } catch (e) {
@@ -239,17 +323,31 @@ export interface EscalationResult {
   already_offered: number;
   matched: number;
   offers: unknown[];
+  /** Partners the company's rules kept out, with the reason. */
+  excluded: ExcludedPartner[];
+}
+
+/** `partner_ids` of an escalation: absent for "every matching partner", else 1 to 10 distinct partner ids. */
+export function parsePartnerIds(input: unknown): string[] | null {
+  if (input === undefined || input === null) return null;
+  if (!Array.isArray(input)) throw new HttpError(400, 'partner_ids must be a list of partner ids');
+  const ids = [...new Set(input.map(v => String(v)))];
+  if (ids.length < 1 || ids.length > 10) throw new HttpError(400, 'Choose between 1 and 10 partners');
+  if (!ids.every(id => /^[0-9a-fA-F-]{36}$/.test(id))) throw new HttpError(400, 'A partner id is not valid');
+  return ids;
 }
 
 export const tplNetworkService = {
   /** Partners that would receive an offer, without sending anything. */
-  async preview(sourceType: SourceType, id: string) {
+  async preview(sourceType: SourceType, id: string, options: { partnerIds?: string[] | null } = {}) {
     const load = await loadSource(sourceType, id);
-    const matches = await findMatchingPartners(load.pickup, load.drop, load.distanceKm);
+    const company = companyFor(load);
+    const { matches, excluded } = await findMatchingPartners(company, load.pickup, load.drop, load.distanceKm, { vehicleClass: load.vehicleClass, partnerIds: options.partnerIds });
     return {
       pickup: load.pickup, drop: load.drop,
       distance_km: load.distanceKm,
-      partners: matches.map(m => ({ partner_id: m.partner.id, company_name: m.partner.company_name, corridor_name: m.corridor.corridor_name, price: m.price, rate: m.rate })),
+      partners: matches.map(m => ({ partner_id: m.partner.id, company_name: m.partner.company_name, corridor_name: m.corridor?.corridor_name ?? null, price: m.price, rate: m.rate })),
+      excluded,
     };
   },
 
@@ -257,15 +355,27 @@ export const tplNetworkService = {
    * Sends the load to every active partner whose corridor matches. Partners with an open or accepted
    * offer for it are skipped, so escalating twice is safe.
    */
-  async escalate(sourceType: SourceType, id: string, createdBy: string | null, options: { vendorPrice?: unknown } = {}): Promise<EscalationResult> {
+  async escalate(
+    sourceType: SourceType,
+    id: string,
+    createdBy: string | null,
+    options: { vendorPrice?: unknown; partnerIds?: unknown; companyOrgId?: string | null } = {},
+  ): Promise<EscalationResult> {
+    const partnerIds = parsePartnerIds(options.partnerIds);
     const load = await loadSource(sourceType, id);
+    const company = companyFor(load, options.companyOrgId);
     // The price the vendor pays is staff's to set, here or later; it is what the vendor's invoice is made from
     if (sourceType === 'request' && options.vendorPrice !== undefined && options.vendorPrice !== null && options.vendorPrice !== '') {
       await this.setVendorPrice(id, options.vendorPrice);
     }
-    const matches = await findMatchingPartners(load.pickup, load.drop, load.distanceKm);
+    const { matches, excluded } = await findMatchingPartners(company, load.pickup, load.drop, load.distanceKm, { vehicleClass: load.vehicleClass, partnerIds });
     if (matches.length === 0) {
-      throw new HttpError(409, 'No active 3PL partner has a corridor from this pickup to this drop-off');
+      if (excluded.length > 0) {
+        throw new HttpError(409, `Your partner rules keep every matching partner out: ${excluded.map(e => `${e.name}: ${e.reason}`).join('; ')}`, { excluded });
+      }
+      throw new HttpError(409, partnerIds
+        ? 'None of the chosen partners can take this load'
+        : 'No active 3PL partner of yours has a corridor from this pickup to this drop-off');
     }
 
     const col = sourceColumn(sourceType);
@@ -298,11 +408,14 @@ export const tplNetworkService = {
     const now = new Date().toISOString();
     const rows = fresh.map(m => ({
       ...carrierStamp(),
+      // The company that makes the offer, also when the scheduler does (no request, so no stamp)
+      ...(company ? { carrier_org_id: company } : {}),
+      targeted: !!partnerIds,
       partner_id: m.partner.id,
       source_type: sourceType,
       [col]: id,
-      corridor_id: m.corridor.id,
-      corridor_name: m.corridor.corridor_name,
+      corridor_id: m.corridor?.id ?? null,
+      corridor_name: m.corridor?.corridor_name ?? null,
       pickup_location: load.pickup,
       drop_location: load.drop,
       weight_kg: load.weightKg,
@@ -345,7 +458,7 @@ export const tplNetworkService = {
       }
     }
 
-    return { created: (offers ?? []).length, already_offered: matches.length - fresh.length, matched: matches.length, offers: offers ?? [] };
+    return { created: (offers ?? []).length, already_offered: matches.length - fresh.length, matched: matches.length, offers: offers ?? [], excluded };
   },
 
   /**
@@ -723,6 +836,11 @@ export const tplNetworkService = {
   },
 
   async markPaid(orderId: string, paid: boolean, referenceInput: unknown) {
+    // An order inside an issued statement is settled by that statement, not one order at a time
+    const statement = await statementCoveringOrder(orderId);
+    if (statement) {
+      throw new HttpError(409, `This order is part of the ${statement.period} statement (${statement.status}). Mark the statement paid instead`);
+    }
     const reference = typeof referenceInput === 'string' ? referenceInput.trim().slice(0, 100) : '';
     const now = new Date().toISOString();
     const { data, error } = await supabase

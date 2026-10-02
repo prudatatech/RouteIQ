@@ -13,6 +13,7 @@ import { notificationService } from './notification.service';
 import { auditService, type AuditActor } from './audit.service';
 import { normalizePhone } from '../utils/phone';
 import type { MemberInvite, MemberUpdate, OrgCreate, OrgUpdate } from '../schemas/org';
+import { assertAffiliated, legacyPartnerIdOf, readRules, type AffiliationRules } from './tpl-affiliation';
 
 const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at';
 const MEMBER_ROLES_WHO_MANAGE: OrgRole[] = ['owner', 'admin'];
@@ -27,7 +28,7 @@ export interface OrgRow {
 }
 
 /** Tell the active owners and admins of an organisation. Never blocks or undoes the action. */
-async function notifyOrg(orgId: string, title: string, body: string, type: string, data: Record<string, unknown>): Promise<void> {
+export async function notifyOrg(orgId: string, title: string, body: string, type: string, data: Record<string, unknown>): Promise<void> {
   try {
     const { data: seats } = await supabase.from('org_members').select('user_id').eq('org_id', orgId).eq('status', 'active').in('role', ['owner', 'admin']);
     for (const seat of seats ?? []) await notificationService.sendNotification(seat.user_id as string, title, body, type, data);
@@ -257,11 +258,24 @@ export async function requestAffiliation(actor: AuditActor, tplOrgId: string, co
 export async function listCompanyAffiliations(companyId: string) {
   const { data, error } = await supabase
     .from('tpl_affiliations')
-    .select('tpl_id, status, requested_by, approved_by, approved_at, created_at')
+    .select('tpl_id, status, rules, requested_by, approved_by, approved_at, created_at')
     .eq('company_id', companyId)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`Failed to read affiliations: ${error.message}`);
   return withOrgs(data ?? [], 'tpl_id');
+}
+
+/** One partner of a company, with its rules and organisation details; a 404 when the company has no (live) affiliation with it. */
+export async function getCompanyAffiliation(companyId: string, tplId: string) {
+  const { data, error } = await supabase
+    .from('tpl_affiliations')
+    .select('tpl_id, status, rules, requested_by, approved_by, approved_at, created_at')
+    .eq('company_id', companyId)
+    .eq('tpl_id', tplId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to read the affiliation: ${error.message}`);
+  if (!data || data.status === 'ended') throw new HttpError(404, 'Partner not found');
+  return (await withOrgs([{ ...data, rules: readRules(data.rules) }], 'tpl_id'))[0];
 }
 
 /** The companies a 3PL partner has joined or asked to join. */
@@ -281,6 +295,29 @@ async function withOrgs<T extends Record<string, any>>(rows: T[], idKey: string)
   if (error) throw new Error(`Failed to read organisations: ${error.message}`);
   const byId = new Map((data ?? []).map(o => [o.id as string, o]));
   return rows.map(r => ({ ...r, organization: byId.get(r[idKey] as string) ?? null }));
+}
+
+/**
+ * The company sets what it allows of one partner: vehicle classes, lanes, minimum rate per km, GPS and insurance.
+ * The rules replace the old ones as a whole (an empty object clears them). Lanes must be the partner's own.
+ */
+export async function updateAffiliationRules(actor: AuditActor, companyId: string, tplId: string, rules: AffiliationRules) {
+  await assertAffiliated(companyId, tplId);
+  if (rules.corridor_ids && rules.corridor_ids.length > 0) {
+    const partnerId = await legacyPartnerIdOf(tplId);
+    const { data, error } = partnerId
+      ? await supabase.from('tpl_corridors').select('id').eq('partner_id', partnerId).in('id', rules.corridor_ids)
+      : { data: [] as Array<{ id: string }>, error: null };
+    if (error) throw new Error(`Failed to check the lanes: ${error.message}`);
+    const known = new Set((data ?? []).map(c => c.id as string));
+    if (rules.corridor_ids.some(id => !known.has(id))) throw new HttpError(422, 'One of the lanes is not a lane of this partner', { field: 'corridor_ids' });
+  }
+  const { data, error } = await supabase.from('tpl_affiliations').update({ rules })
+    .eq('company_id', companyId).eq('tpl_id', tplId).select('company_id, tpl_id, status, rules').maybeSingle();
+  if (error) throw new Error(`Failed to save the rules: ${error.message}`);
+  if (!data) throw new HttpError(404, 'Partner not found');
+  await audit(actor, 'tpl_affiliation.rules', { company_id: companyId, tpl_id: tplId }, 'Partner rules updated');
+  return data;
 }
 
 /** The company approves, pauses or ends the affiliation with one of its 3PL partners. */
